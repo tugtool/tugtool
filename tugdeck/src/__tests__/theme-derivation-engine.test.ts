@@ -25,8 +25,19 @@ import {
   DARK_PRESET,
   LIGHT_PRESET,
   generateResolvedCssExport,
+  resolveHueSlots,
+  computeTones,
+  evaluateRules,
+  ACHROMATIC_ADJACENT_HUES,
+  primaryColorName,
+  applyWarmthBias,
   type ModePreset,
+  type MoodKnobs,
+  type ComputedTones,
+  type ResolvedHueSlots,
+  type ResolvedColor,
 } from "@/components/tugways/theme-derivation-engine";
+import { CORE_VISUAL_RULES, RULES } from "@/components/tugways/derivation-rules";
 
 
 import {
@@ -1572,5 +1583,787 @@ describe("derivation-engine convergence stress tests", () => {
       (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
+  });
+});
+
+// =============================================================================
+// Step 3: resolveHueSlots() tests
+// =============================================================================
+
+describe("resolveHueSlots — Step 3", () => {
+  // -------------------------------------------------------------------------
+  // T-RESOLVE: resolveHueSlots(EXAMPLE_RECIPES.brio, 50) produces expected
+  // angle/name/ref for each slot.
+  //
+  // Brio dark recipe:
+  //   cardBg.hue = "indigo-violet"  -> atm
+  //   text.hue   = "cobalt"         -> txt
+  //   canvas     = "indigo-violet"  -> canvas
+  //   cardFrame  = "indigo"         -> cardFrame
+  //   borderTint = "indigo-violet"  -> borderTint
+  //   link       = "cyan"           -> interactive
+  //   active     = undefined -> "blue"
+  //   accent     = undefined -> "orange"
+  //
+  // At warmth=50, warmthBias=0, so no angle shift for achromatic hues.
+  // -------------------------------------------------------------------------
+  it("T-RESOLVE: Brio recipe at warmth=50 produces correct slot for each key", () => {
+    const slots: ResolvedHueSlots = resolveHueSlots(EXAMPLE_RECIPES.brio, 50);
+
+    // atm: "indigo-violet" — hyphenated, warmth bias = 0 at warmth=50
+    expect(slots.atm.name).toBeTruthy();
+    expect(slots.atm.angle).toBeGreaterThan(0);
+    expect(slots.atm.ref).toBeTruthy();
+    expect(slots.atm.primaryName).toBeTruthy();
+
+    // txt: "cobalt" — bare name, achromatic-adjacent, warmth=50 -> no bias
+    expect(slots.txt.ref).toBe("cobalt");
+    expect(slots.txt.name).toBe("cobalt");
+    expect(slots.txt.primaryName).toBe("cobalt");
+
+    // canvas: same as atm for Brio
+    expect(slots.canvas.ref).toBe(slots.atm.ref);
+    expect(slots.canvas.angle).toBe(slots.atm.angle);
+
+    // cardFrame: "indigo"
+    expect(slots.cardFrame.ref).toBe("indigo");
+    expect(slots.cardFrame.name).toBe("indigo");
+
+    // borderTint: same as atm for Brio
+    expect(slots.borderTint.ref).toBe(slots.atm.ref);
+
+    // interactive: "cyan" — not achromatic-adjacent, no warmth bias
+    expect(slots.interactive.ref).toBe("cyan");
+    expect(slots.interactive.name).toBe("cyan");
+
+    // active: "blue" (default)
+    expect(slots.active.ref).toBe("blue");
+
+    // accent: "orange" (default)
+    expect(slots.accent.ref).toBe("orange");
+
+    // Semantic hues (no warmth bias)
+    expect(slots.destructive.ref).toBe("red");
+    expect(slots.success.ref).toBe("green");
+    expect(slots.caution.ref).toBe("yellow");
+    expect(slots.agent.ref).toBe("violet");
+    expect(slots.data.ref).toBe("teal");
+
+    // surfBareBase: bare base of "indigo-violet" -> "violet"
+    expect(slots.surfBareBase.ref).toBe("violet");
+    expect(slots.surfBareBase.primaryName).toBe("violet");
+
+    // surfScreen: dark mode "indigo"
+    expect(slots.surfScreen.ref).toBe("indigo");
+    expect(slots.surfScreen.name).toBe("indigo");
+
+    // fgMuted: dark mode -> bare primary of "cobalt" = "cobalt"
+    expect(slots.fgMuted.ref).toBe("cobalt");
+
+    // fgSubtle: dark mode "indigo-cobalt"
+    expect(slots.fgSubtle.name).toBe("indigo-cobalt");
+
+    // fgDisabled: dark mode "indigo-cobalt"
+    expect(slots.fgDisabled.name).toBe("indigo-cobalt");
+
+    // fgInverse: dark mode "sapphire-cobalt"
+    expect(slots.fgInverse.name).toBe("sapphire-cobalt");
+
+    // fgPlaceholder: same as fgMuted
+    expect(slots.fgPlaceholder.ref).toBe(slots.fgMuted.ref);
+    expect(slots.fgPlaceholder.angle).toBe(slots.fgMuted.angle);
+
+    // selectionInactive: dark mode "yellow" (fixed)
+    expect(slots.selectionInactive.ref).toBe("yellow");
+    expect(slots.selectionInactive.name).toBe("yellow");
+
+    // borderTintBareBase: bare base of "indigo-violet" -> "violet"
+    expect(slots.borderTintBareBase.ref).toBe("violet");
+
+    // borderStrong: borderTint angle - 5 degrees
+    // "indigo-violet" angle minus 5° — just verify it differs from borderTint
+    expect(slots.borderStrong.angle).not.toBe(slots.borderTint.angle);
+
+    // All slots must have required fields
+    const allSlots = Object.values(slots) as ResolvedHueSlot[];
+    for (const s of allSlots) {
+      expect(typeof s.angle).toBe("number");
+      expect(typeof s.name).toBe("string");
+      expect(typeof s.ref).toBe("string");
+      expect(typeof s.primaryName).toBe("string");
+      expect(s.name.length).toBeGreaterThan(0);
+      expect(s.ref.length).toBeGreaterThan(0);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T-RESOLVE-LIGHT: resolveHueSlots for a light-mode recipe produces correct
+  // per-tier hues (fg tiers collapse to txt; selection uses atmBaseAngle-20).
+  // -------------------------------------------------------------------------
+  it("T-RESOLVE-LIGHT: light-mode recipe collapses fg tiers to txt", () => {
+    const lightRecipe = {
+      name: "test-light",
+      mode: "light" as const,
+      cardBg: { hue: "yellow" },
+      text: { hue: "cobalt" },
+      warmth: 50,
+    };
+    const slots: ResolvedHueSlots = resolveHueSlots(lightRecipe, 50);
+
+    // In light mode, fg tiers all collapse to txt hue (fgPlaceholder is the exception: uses atm)
+    expect(slots.fgMuted.ref).toBe("cobalt");
+    expect(slots.fgSubtle.ref).toBe("cobalt");
+    expect(slots.fgDisabled.ref).toBe("cobalt");
+    expect(slots.fgInverse.ref).toBe("cobalt");
+    // fgPlaceholder in light mode uses atm hue (Harmony pattern), not txt hue
+    expect(slots.fgPlaceholder.ref).toBe("yellow");
+
+    // selectionInactive in light: atm angle (yellow ≈ 85°) - 20 = ~65° -> some hue near green/lime
+    // Verify it's NOT yellow (the dark mode fixed value)
+    expect(slots.selectionInactive.ref).not.toBe("yellow");
+
+    // surfScreen: light mode -> txt
+    expect(slots.surfScreen.ref).toBe("cobalt");
+  });
+
+  // -------------------------------------------------------------------------
+  // T-WARMTH: warmth bias produces correct angle shifts for achromatic-adjacent hues.
+  //
+  // At warmth=100: warmthBias = ((100-50)/50)*12 = +12°
+  // "cobalt" base angle ≈ 250°; with +12° bias = 262° -> "indigo-cobalt" or similar
+  // At warmth=0: warmthBias = -12°; "cobalt" 250° - 12° = 238° -> "sapphire-cobalt"
+  // Non-achromatic hues (e.g., "orange") must NOT shift.
+  // -------------------------------------------------------------------------
+  it("T-WARMTH: applyWarmthBias shifts achromatic hues and leaves vivid hues unchanged", () => {
+    // Achromatic hue "cobalt" shifts with bias
+    const cobaltAngle = 250; // approximate
+    const biasedUp = applyWarmthBias("cobalt", cobaltAngle, 12);
+    expect(biasedUp).toBeCloseTo(262, 0);
+
+    const biasedDown = applyWarmthBias("cobalt", cobaltAngle, -12);
+    expect(biasedDown).toBeCloseTo(238, 0);
+
+    const noBias = applyWarmthBias("cobalt", cobaltAngle, 0);
+    expect(noBias).toBe(cobaltAngle);
+
+    // Vivid hue "orange" must NOT shift regardless of bias
+    const orangeAngle = 40; // approximate
+    expect(applyWarmthBias("orange", orangeAngle, 12)).toBe(orangeAngle);
+    expect(applyWarmthBias("red", 30, 12)).toBe(30);
+    expect(applyWarmthBias("green", 140, 12)).toBe(140);
+    expect(applyWarmthBias("yellow", 85, -12)).toBe(85);
+    expect(applyWarmthBias("cyan", 195, 12)).toBe(195);
+  });
+
+  it("T-WARMTH: resolveHueSlots at warmth extremes shifts cobalt txt angle", () => {
+    const baseRecipe = {
+      name: "test-warmth",
+      mode: "dark" as const,
+      cardBg: { hue: "violet" },
+      text: { hue: "cobalt" },
+    };
+
+    const slotsW50 = resolveHueSlots(baseRecipe, 50);
+    const slotsW100 = resolveHueSlots(baseRecipe, 100);
+    const slotsW0 = resolveHueSlots(baseRecipe, 0);
+
+    // At warmth=50 (no bias), cobalt txt angle stays near 250°
+    const baseAngle = slotsW50.txt.angle;
+
+    // At warmth=100, txt shifts by +12°
+    expect(slotsW100.txt.angle).toBeCloseTo(baseAngle + 12, 0);
+
+    // At warmth=0, txt shifts by -12°
+    expect(slotsW0.txt.angle).toBeCloseTo((baseAngle - 12 + 360) % 360, 0);
+
+    // Orange accent must not shift regardless of warmth
+    expect(slotsW100.accent.angle).toBe(slotsW50.accent.angle);
+    expect(slotsW0.accent.angle).toBe(slotsW50.accent.angle);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-BARE-BASE: bare base extraction returns "violet" for "indigo-violet".
+  // -------------------------------------------------------------------------
+  it("T-BARE-BASE: surfBareBase returns violet for indigo-violet atmosphere", () => {
+    const recipe = {
+      name: "test-bare-base",
+      mode: "dark" as const,
+      cardBg: { hue: "indigo-violet" },
+      text: { hue: "cobalt" },
+    };
+    const slots = resolveHueSlots(recipe, 50);
+    expect(slots.surfBareBase.ref).toBe("violet");
+    expect(slots.surfBareBase.primaryName).toBe("violet");
+  });
+
+  it("T-BARE-BASE: surfBareBase returns bare name for non-hyphenated atmosphere", () => {
+    const recipe = {
+      name: "test-bare-base-bare",
+      mode: "dark" as const,
+      cardBg: { hue: "violet" },
+      text: { hue: "cobalt" },
+    };
+    const slots = resolveHueSlots(recipe, 50);
+    // For bare "violet", bare base is "violet" itself
+    expect(slots.surfBareBase.primaryName).toBe("violet");
+  });
+
+  it("T-BARE-BASE: borderTintBareBase mirrors surfBareBase logic for borderTint hue", () => {
+    const recipe = {
+      name: "test-bt-bare",
+      mode: "dark" as const,
+      cardBg: { hue: "indigo-violet" },
+      text: { hue: "cobalt" },
+      borderTint: "indigo-violet",
+    };
+    const slots = resolveHueSlots(recipe, 50);
+    expect(slots.borderTintBareBase.ref).toBe("violet");
+    expect(slots.borderTintBareBase.primaryName).toBe("violet");
+  });
+
+  // -------------------------------------------------------------------------
+  // T-RESOLVE-MATCH: resolveHueSlots output matches existing inline deriveTheme
+  // variables for the Brio recipe at warmth=50.
+  //
+  // This is the assertion required by the plan: "Add assertion that resolveHueSlots
+  // output matches existing inline variables for Brio recipe."
+  //
+  // We verify by calling deriveTheme on Brio and checking that the token values
+  // produced are identical before and after — ensuring resolveHueSlots() running
+  // in parallel doesn't change any output.
+  // -------------------------------------------------------------------------
+  it("T-RESOLVE-MATCH: deriveTheme(brio) output is unchanged after adding resolveHueSlots call", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+
+    // Token count must remain 373
+    expect(Object.keys(output.tokens).length).toBe(373);
+
+    // Key Brio dark token spot-checks (from T-BRIO-MATCH fixture)
+    // bg-app: indigo-violet i:2 t:5
+    expect(output.tokens["--tug-base-bg-app"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
+
+    // fg-default: cobalt i:3 t:94
+    expect(output.tokens["--tug-base-fg-default"]).toBe("--tug-color(cobalt, i: 3, t: 94)");
+
+    // fg-subtle: indigo-cobalt i:7 t:37
+    expect(output.tokens["--tug-base-fg-subtle"]).toBe("--tug-color(indigo-cobalt, i: 7, t: 37)");
+
+    // fg-inverse: sapphire-cobalt i:3 t:100
+    expect(output.tokens["--tug-base-fg-inverse"]).toBe("--tug-color(sapphire-cobalt, i: 3, t: 100)");
+
+    // selection-bg-inactive: yellow i:0 t:30 a:25
+    expect(output.tokens["--tug-base-selection-bg-inactive"]).toMatch(/yellow/);
+
+    // surface-sunken: violet (surfBareBase) i:5 t:11
+    expect(output.tokens["--tug-base-surface-sunken"]).toBe("--tug-color(violet, i: 5, t: 11)");
+  });
+
+  // -------------------------------------------------------------------------
+  // T-ACHROMATIC-SET: ACHROMATIC_ADJACENT_HUES contains expected members.
+  // -------------------------------------------------------------------------
+  it("T-ACHROMATIC-SET: ACHROMATIC_ADJACENT_HUES contains expected hue families", () => {
+    const expected = ["violet", "cobalt", "blue", "indigo", "purple", "sky", "sapphire", "iris", "cerulean"];
+    for (const hue of expected) {
+      expect(ACHROMATIC_ADJACENT_HUES.has(hue)).toBe(true);
+    }
+    // Vivid hues should not be in the set
+    expect(ACHROMATIC_ADJACENT_HUES.has("orange")).toBe(false);
+    expect(ACHROMATIC_ADJACENT_HUES.has("red")).toBe(false);
+    expect(ACHROMATIC_ADJACENT_HUES.has("yellow")).toBe(false);
+    expect(ACHROMATIC_ADJACENT_HUES.has("green")).toBe(false);
+    expect(ACHROMATIC_ADJACENT_HUES.has("cyan")).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-PRIMARY-NAME: primaryColorName extracts the dominant hue from expressions.
+  // -------------------------------------------------------------------------
+  it("T-PRIMARY-NAME: primaryColorName extracts first segment from hyphenated names", () => {
+    expect(primaryColorName("cobalt")).toBe("cobalt");
+    expect(primaryColorName("indigo-cobalt")).toBe("indigo");
+    expect(primaryColorName("indigo-violet")).toBe("indigo");
+    expect(primaryColorName("sapphire-cobalt")).toBe("sapphire");
+    expect(primaryColorName("orange")).toBe("orange");
+  });
+});
+
+// =============================================================================
+// Step 4: computeTones() tests
+// =============================================================================
+
+describe("computeTones — Step 4", () => {
+  // Standard knobs shared across tests
+  const DARK_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
+  const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-DARK: computeTones(DARK_PRESET, sc=50) matches Brio dark ground truth.
+  //
+  // Brio dark ground truth (surfaceContrast=50, from T-BRIO-MATCH fixture):
+  //   bg-app=5, bg-canvas=5, sunken=11, default=12, raised=11, overlay=14, inset=6, content=6, screen=16
+  //   divider-default=17, divider-muted=15, divider-tone=17
+  //   disabled-bg=22, disabled-fg=38, disabled-border=28
+  //   outlined-bg-rest=8 (inset+2=8), outlined-bg-hover=12 (raised+1=12), outlined-bg-active=14 (overlay=14)
+  //   toggle-track-off=28, toggle-disabled=22
+  //   signalI=50
+  // ---------------------------------------------------------------------------
+  it("T-TONES-DARK: Brio dark at sc=50 matches ground-truth tone values", () => {
+    const ct: ComputedTones = computeTones(DARK_PRESET, DARK_KNOBS_50);
+
+    // Surface tones (Brio ground truth)
+    expect(ct.bgApp).toBe(5);
+    expect(ct.bgCanvas).toBe(5);
+    expect(ct.surfaceSunken).toBe(11);
+    expect(ct.surfaceDefault).toBe(12);
+    expect(ct.surfaceRaised).toBe(11);
+    expect(ct.surfaceOverlay).toBe(14);
+    expect(ct.surfaceInset).toBe(6);
+    expect(ct.surfaceContent).toBe(6);
+    expect(ct.surfaceScreen).toBe(16);
+
+    // Divider tones
+    expect(ct.dividerDefault).toBe(17);
+    expect(ct.dividerMuted).toBe(15);
+    expect(ct.dividerTone).toBe(17);
+
+    // Control/field derived tones
+    expect(ct.disabledBgTone).toBe(22);
+    expect(ct.disabledFgTone).toBe(38);
+    expect(ct.disabledBorderTone).toBe(28);
+
+    // Outlined bg: inset+2=8, raised+1=12, overlay=14
+    expect(ct.outlinedBgRestTone).toBe(8);
+    expect(ct.outlinedBgHoverTone).toBe(12);
+    expect(ct.outlinedBgActiveTone).toBe(14);
+
+    // Toggle
+    expect(ct.toggleTrackOffTone).toBe(28);
+    expect(ct.toggleDisabledTone).toBe(22);
+
+    // Signal intensity
+    expect(ct.signalI).toBe(50);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-LIGHT: computeTones(LIGHT_PRESET, sc=50) matches current light-mode
+  // inline values at surfaceContrast=50.
+  //
+  // Light preset ground truth (from LIGHT_PRESET + inline formula at sc=50):
+  //   bg-app=20, bg-canvas=Math.round(35 + (50/100)*10)=40
+  //   sunken=44, default=99, raised=24, overlay=48, inset=100, content=100, screen=80
+  //   divider-default=Math.round(48-2)=46, divider-muted=48
+  //   disabled-bg=Math.round(70 + (50/100)*10)=75
+  //   disabled-fg=44 (=LIGHT_PRESET.fgDisabledTone)
+  //   disabled-border=46 (=dividerTone at sc=50 light)
+  //   outlined-bg-rest=51, outlined-bg-hover=99, outlined-bg-active=48
+  //   toggle-track-off=46 (=dividerTone), toggle-disabled=48 (=surfaceOverlay)
+  //   signalI=50
+  // ---------------------------------------------------------------------------
+  it("T-TONES-LIGHT: light mode at sc=50 matches expected light-mode inline values", () => {
+    const ct: ComputedTones = computeTones(LIGHT_PRESET, LIGHT_KNOBS_50);
+
+    // Surface tones
+    expect(ct.bgApp).toBe(20);
+    // bgCanvas light: Math.round(35 + (50/100)*10) = Math.round(40) = 40
+    expect(ct.bgCanvas).toBe(40);
+    expect(ct.surfaceSunken).toBe(44);
+    expect(ct.surfaceDefault).toBe(99);
+    expect(ct.surfaceRaised).toBe(24);
+    expect(ct.surfaceOverlay).toBe(48);
+    expect(ct.surfaceInset).toBe(100);
+    expect(ct.surfaceContent).toBe(100);
+    expect(ct.surfaceScreen).toBe(80);
+
+    // Divider tones: light = surfaceOverlay-2 / surfaceOverlay
+    expect(ct.dividerDefault).toBe(46); // Math.round(48-2)
+    expect(ct.dividerMuted).toBe(48);   // Math.round(48)
+    expect(ct.dividerTone).toBe(46);
+
+    // disabled-bg: Math.round(70 + (50/100)*10) = 75
+    expect(ct.disabledBgTone).toBe(75);
+    // disabled-fg: LIGHT_PRESET.fgDisabledTone = 44
+    expect(ct.disabledFgTone).toBe(44);
+    // disabled-border: dividerTone at sc=50 = 46
+    expect(ct.disabledBorderTone).toBe(46);
+
+    // Outlined bg: flat light values
+    expect(ct.outlinedBgRestTone).toBe(51);
+    expect(ct.outlinedBgHoverTone).toBe(99);
+    expect(ct.outlinedBgActiveTone).toBe(48);
+
+    // Toggle: light uses divider/overlay
+    expect(ct.toggleTrackOffTone).toBe(46); // = dividerTone
+    expect(ct.toggleDisabledTone).toBe(48); // = surfaceOverlay
+
+    // Signal intensity
+    expect(ct.signalI).toBe(50);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-SC: surfaceContrast=0 and surfaceContrast=100 produce expected extremes.
+  //
+  // Dark mode extreme values (derived from DARK_PRESET formulas):
+  //   sc=0:   bgApp = round(5 + (0-50)/50 * 8) = round(5 - 8) = round(-3) = -3
+  //           (clamping is not applied by computeTones; rules/deriveTheme clamp)
+  //   sc=100: bgApp = round(5 + (100-50)/50 * 8) = round(5 + 8) = 13
+  //   surfaceSunken sc=0: round(11 + (0-50)/50*5) = round(11-5) = 6
+  //   surfaceSunken sc=100: round(11 + (100-50)/50*5) = round(11+5) = 16
+  // ---------------------------------------------------------------------------
+  it("T-TONES-SC: dark mode surfaceContrast=0 produces minimum tone values", () => {
+    const ct: ComputedTones = computeTones(DARK_PRESET, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
+
+    // bgApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
+    expect(ct.bgApp).toBe(-3);
+    // surfaceSunken: 11 + (0-50)/50 * 5 = 11 - 5 = 6
+    expect(ct.surfaceSunken).toBe(6);
+    // surfaceDefault: 12 + (0-50)/50 * 3 = 12 - 3 = 9
+    expect(ct.surfaceDefault).toBe(9);
+    // surfaceOverlay: 14 + (0-50)/50 * 5 = 14 - 5 = 9
+    expect(ct.surfaceOverlay).toBe(9);
+    // signalI: direct from knob
+    expect(ct.signalI).toBe(50);
+  });
+
+  it("T-TONES-SC: dark mode surfaceContrast=100 produces maximum tone values", () => {
+    const ct: ComputedTones = computeTones(DARK_PRESET, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
+
+    // bgApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
+    expect(ct.bgApp).toBe(13);
+    // surfaceSunken: 11 + (100-50)/50 * 5 = 11 + 5 = 16
+    expect(ct.surfaceSunken).toBe(16);
+    // surfaceDefault: 12 + (100-50)/50 * 3 = 12 + 3 = 15
+    expect(ct.surfaceDefault).toBe(15);
+    // surfaceScreen: 16 + (100-50)/50 * 13 = 16 + 13 = 29
+    expect(ct.surfaceScreen).toBe(29);
+  });
+
+  it("T-TONES-SC: signal intensity extremes map directly to signalI", () => {
+    const ct0 = computeTones(DARK_PRESET, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
+    const ct100 = computeTones(DARK_PRESET, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
+    expect(ct0.signalI).toBe(0);
+    expect(ct100.signalI).toBe(100);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-MATCH: computeTones output matches existing inline deriveTheme values
+  // for Brio at sc=50. Verifies the parallel computation is consistent.
+  // ---------------------------------------------------------------------------
+  it("T-TONES-MATCH: deriveTheme(brio) output unchanged after adding computeTones call", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+
+    // Token count must remain 373
+    expect(Object.keys(output.tokens).length).toBe(373);
+
+    // Surface tokens spot-check (from T-BRIO-MATCH fixture)
+    expect(output.tokens["--tug-base-bg-app"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
+    expect(output.tokens["--tug-base-surface-sunken"]).toBe("--tug-color(violet, i: 5, t: 11)");
+    expect(output.tokens["--tug-base-surface-default"]).toBe("--tug-color(violet, i: 5, t: 12)");
+    expect(output.tokens["--tug-base-surface-overlay"]).toBe("--tug-color(violet, i: 4, t: 14)");
+    expect(output.tokens["--tug-base-surface-inset"]).toBe("--tug-color(indigo-violet, i: 5, t: 6)");
+
+    // Divider tokens
+    expect(output.tokens["--tug-base-divider-default"]).toBe("--tug-color(indigo-violet, i: 6, t: 17)");
+    expect(output.tokens["--tug-base-divider-muted"]).toBe("--tug-color(violet, i: 4, t: 15)");
+
+    // Disabled control
+    expect(output.tokens["--tug-base-control-disabled-bg"]).toBeDefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-INTERFACE: ComputedTones has all required fields (type completeness).
+  // ---------------------------------------------------------------------------
+  it("T-TONES-INTERFACE: computeTones returns all required ComputedTones fields", () => {
+    const ct: ComputedTones = computeTones(DARK_PRESET, DARK_KNOBS_50);
+
+    // All fields from Spec S03 must be present and be numbers
+    const requiredFields: (keyof ComputedTones)[] = [
+      "bgApp", "bgCanvas", "surfaceSunken", "surfaceDefault", "surfaceRaised",
+      "surfaceOverlay", "surfaceInset", "surfaceContent", "surfaceScreen",
+      "dividerDefault", "dividerMuted", "dividerTone",
+      "disabledBgTone", "disabledFgTone", "disabledBorderTone",
+      "outlinedBgRestTone", "outlinedBgHoverTone", "outlinedBgActiveTone",
+      "toggleTrackOffTone", "toggleDisabledTone",
+      "signalI",
+    ];
+    for (const field of requiredFields) {
+      expect(typeof ct[field]).toBe("number");
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Step 5 tests: T-RULES-SURFACES, T-RULES-FG, T-RULES-INVARIANT
+  // These verify that CORE_VISUAL_RULES + evaluateRules() produce the same
+  // output as the imperative deriveTheme() code for section A tokens.
+  // ---------------------------------------------------------------------------
+
+  /** Run evaluateRules for CORE_VISUAL_RULES against the given recipe. */
+  function runCoreRules(recipe: typeof EXAMPLE_RECIPES.brio): {
+    ruleTokens: Record<string, string>;
+    ruleResolved: Record<string, ResolvedColor>;
+    imperative: ReturnType<typeof deriveTheme>;
+  } {
+    const warmth = recipe.warmth ?? 50;
+    const surfaceContrast = recipe.surfaceContrast ?? 50;
+    const signalIntensity = recipe.signalIntensity ?? 50;
+    const isLight = recipe.mode === "light";
+    const preset = isLight ? LIGHT_PRESET : DARK_PRESET;
+    const knobs = { surfaceContrast, signalIntensity, warmth };
+    const resolvedSlots = resolveHueSlots(recipe, warmth);
+    const computed = computeTones(preset, knobs);
+
+    const ruleTokens: Record<string, string> = {};
+    const ruleResolved: Record<string, ResolvedColor> = {};
+
+    evaluateRules(
+      CORE_VISUAL_RULES,
+      resolvedSlots,
+      preset,
+      knobs,
+      computed,
+      ruleTokens,
+      ruleResolved,
+      (alpha) => `--tug-color(black, i: 0, t: 0, a: ${Math.round(alpha)})`,
+      (alpha) => `--tug-color(white, a: ${Math.round(alpha)})`,
+      (alpha) => `--tug-color(white, i: 0, t: 100, a: ${Math.round(alpha)})`,
+      { L: 0, C: 0, h: 0, alpha: 1 },
+      { L: 1, C: 0, h: 0, alpha: 1 },
+      (name, hueRef, _hueAngle, i, t, a) => {
+        const ri = Math.round(i), rt = Math.round(t), ra = Math.round(a);
+        if (hueRef === "black") {
+          ruleTokens[name] = ra === 100 ? "--tug-color(black)" : `--tug-color(black, a: ${ra})`;
+          return;
+        }
+        if (hueRef === "white") {
+          ruleTokens[name] = ra === 100 ? "--tug-color(white)" : `--tug-color(white, a: ${ra})`;
+          return;
+        }
+        if (ri === 50 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef})`; return; }
+        if (ri === 20 && rt === 85 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-light)`; return; }
+        if (ri === 50 && rt === 20 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-dark)`; return; }
+        if (ri === 90 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-intense)`; return; }
+        if (ri === 50 && rt === 42 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-muted)`; return; }
+        const isVerboseAlpha = ra !== 100 && ri === 50 && rt === 50;
+        const parts: string[] = [];
+        if (isVerboseAlpha || ri !== 50) parts.push(`i: ${ri}`);
+        if (isVerboseAlpha || rt !== 50) parts.push(`t: ${rt}`);
+        if (ra !== 100) parts.push(`a: ${ra}`);
+        ruleTokens[name] = `--tug-color(${hueRef}, ${parts.join(", ")})`;
+      },
+    );
+
+    const imperative = deriveTheme(recipe);
+    return { ruleTokens, ruleResolved, imperative };
+  }
+
+  // ---------------------------------------------------------------------------
+  // T-RULES-SURFACES: Rule-derived surface tokens match imperative output (Brio dark)
+  // ---------------------------------------------------------------------------
+  it("T-RULES-SURFACES: rule-derived surface tokens match imperative output for Brio dark", () => {
+    const { ruleTokens, imperative } = runCoreRules(EXAMPLE_RECIPES.brio);
+
+    const SURFACE_TOKENS = [
+      "--tug-base-bg-app",
+      "--tug-base-bg-canvas",
+      "--tug-base-surface-sunken",
+      "--tug-base-surface-default",
+      "--tug-base-surface-raised",
+      "--tug-base-surface-overlay",
+      "--tug-base-surface-inset",
+      "--tug-base-surface-content",
+      "--tug-base-surface-screen",
+    ];
+
+    const mismatches: string[] = [];
+    for (const token of SURFACE_TOKENS) {
+      const rule = ruleTokens[token];
+      const imp = imperative.tokens[token];
+      if (rule !== imp) mismatches.push(`${token}:\n  rule: ${rule}\n  imp:  ${imp}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-RULES-FG: Rule-derived foreground tokens match imperative output (Brio dark)
+  // ---------------------------------------------------------------------------
+  it("T-RULES-FG: rule-derived foreground tokens match imperative output for Brio dark", () => {
+    const { ruleTokens, imperative } = runCoreRules(EXAMPLE_RECIPES.brio);
+
+    const FG_TOKENS = [
+      "--tug-base-fg-default",
+      "--tug-base-fg-muted",
+      "--tug-base-fg-subtle",
+      "--tug-base-fg-disabled",
+      "--tug-base-fg-inverse",
+      "--tug-base-fg-placeholder",
+      "--tug-base-fg-link",
+      "--tug-base-fg-link-hover",
+      "--tug-base-fg-onAccent",
+      "--tug-base-fg-onDanger",
+      "--tug-base-fg-onCaution",
+      "--tug-base-fg-onSuccess",
+    ];
+
+    const mismatches: string[] = [];
+    for (const token of FG_TOKENS) {
+      const rule = ruleTokens[token];
+      const imp = imperative.tokens[token];
+      if (rule !== imp) mismatches.push(`${token}:\n  rule: ${rule}\n  imp:  ${imp}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-RULES-INVARIANT: All invariant tokens are present and correct
+  // ---------------------------------------------------------------------------
+  it("T-RULES-INVARIANT: rule table invariant tokens are present and match expected values", () => {
+    const { ruleTokens } = runCoreRules(EXAMPLE_RECIPES.brio);
+
+    const EXPECTED_INVARIANTS: Record<string, string> = {
+      "--tug-base-font-family-sans": '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+      "--tug-base-font-size-md": "14px",
+      "--tug-base-space-md": "8px",
+      "--tug-base-radius-md": "6px",
+      "--tug-base-chrome-height": "36px",
+      "--tug-base-icon-size-md": "15px",
+      "--tug-base-motion-duration-fast": "calc(100ms * var(--tug-timing))",
+      "--tug-base-motion-easing-standard": "cubic-bezier(0.2, 0, 0, 1)",
+    };
+
+    for (const [token, expected] of Object.entries(EXPECTED_INVARIANTS)) {
+      expect(ruleTokens[token]).toBe(expected);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-RULES-SURFACES-LIGHT: Surface tokens also match for Brio light recipe
+  // ---------------------------------------------------------------------------
+  it("T-RULES-SURFACES-LIGHT: rule-derived surface tokens match imperative output for Brio light", () => {
+    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
+    const { ruleTokens, imperative } = runCoreRules(brioLight);
+
+    const SURFACE_TOKENS = [
+      "--tug-base-bg-app",
+      "--tug-base-bg-canvas",
+      "--tug-base-surface-sunken",
+      "--tug-base-surface-default",
+      "--tug-base-surface-raised",
+      "--tug-base-surface-overlay",
+      "--tug-base-surface-inset",
+      "--tug-base-surface-content",
+      "--tug-base-surface-screen",
+    ];
+
+    const mismatches: string[] = [];
+    for (const token of SURFACE_TOKENS) {
+      const rule = ruleTokens[token];
+      const imp = imperative.tokens[token];
+      if (rule !== imp) mismatches.push(`${token}:\n  rule: ${rule}\n  imp:  ${imp}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 6 tests: T-RULES-COMPLETE, T-RULES-DARK-MATCH, T-RULES-LIGHT-MATCH
+// These verify that the full RULES table covers all 373 tokens and that
+// evaluateRules(RULES, ...) matches imperative output for both dark and light modes.
+// ---------------------------------------------------------------------------
+
+describe("derivation-engine step-6 rules", () => {
+  /** Run evaluateRules for RULES (full table) against the given recipe. */
+  function runAllRules(recipe: Parameters<typeof deriveTheme>[0]): {
+    ruleTokens: Record<string, string>;
+    imperative: ReturnType<typeof deriveTheme>;
+  } {
+    const warmth = recipe.warmth ?? 50;
+    const surfaceContrast = recipe.surfaceContrast ?? 50;
+    const signalIntensity = recipe.signalIntensity ?? 50;
+    const isLight = recipe.mode === "light";
+    const preset = isLight ? LIGHT_PRESET : DARK_PRESET;
+    const knobs = { surfaceContrast, signalIntensity, warmth };
+    const resolvedSlots = resolveHueSlots(recipe, warmth);
+    const computed = computeTones(preset, knobs);
+
+    const ruleTokens: Record<string, string> = {};
+    const ruleResolved: Record<string, ResolvedColor> = {};
+
+    evaluateRules(
+      RULES,
+      resolvedSlots,
+      preset,
+      knobs,
+      computed,
+      ruleTokens,
+      ruleResolved,
+      (alpha) => `--tug-color(black, i: 0, t: 0, a: ${Math.round(alpha)})`,
+      (alpha) => `--tug-color(white, a: ${Math.round(alpha)})`,
+      (alpha) => `--tug-color(white, i: 0, t: 100, a: ${Math.round(alpha)})`,
+      { L: 0, C: 0, h: 0, alpha: 1 },
+      { L: 1, C: 0, h: 0, alpha: 1 },
+      (name, hueRef, _hueAngle, i, t, a) => {
+        const ri = Math.round(i), rt = Math.round(t), ra = Math.round(a);
+        if (hueRef === "black") {
+          ruleTokens[name] = ra === 100 ? "--tug-color(black)" : `--tug-color(black, a: ${ra})`;
+          return;
+        }
+        if (hueRef === "white") {
+          ruleTokens[name] = ra === 100 ? "--tug-color(white)" : `--tug-color(white, a: ${ra})`;
+          return;
+        }
+        if (ri === 50 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef})`; return; }
+        if (ri === 20 && rt === 85 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-light)`; return; }
+        if (ri === 50 && rt === 20 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-dark)`; return; }
+        if (ri === 90 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-intense)`; return; }
+        if (ri === 50 && rt === 42 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-muted)`; return; }
+        const isVerboseAlpha = ra !== 100 && ri === 50 && rt === 50;
+        const parts: string[] = [];
+        if (isVerboseAlpha || ri !== 50) parts.push(`i: ${ri}`);
+        if (isVerboseAlpha || rt !== 50) parts.push(`t: ${rt}`);
+        if (ra !== 100) parts.push(`a: ${ra}`);
+        ruleTokens[name] = `--tug-color(${hueRef}, ${parts.join(", ")})`;
+      },
+    );
+
+    const imperative = deriveTheme(recipe);
+    return { ruleTokens, imperative };
+  }
+
+  // -------------------------------------------------------------------------
+  // T-RULES-COMPLETE: RULES table has exactly 373 entries
+  // -------------------------------------------------------------------------
+  it("T-RULES-COMPLETE: RULES table has exactly 373 entries", () => {
+    expect(Object.keys(RULES).length).toBe(373);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-RULES-DARK-MATCH: All RULES-derived dark tokens match imperative output
+  // -------------------------------------------------------------------------
+  it("T-RULES-DARK-MATCH: all rule-derived dark tokens match imperative output", () => {
+    const { ruleTokens, imperative } = runAllRules(EXAMPLE_RECIPES.brio);
+
+    const mismatches: string[] = [];
+    for (const [token, ruleValue] of Object.entries(ruleTokens)) {
+      const impValue = imperative.tokens[token];
+      if (ruleValue !== impValue) {
+        mismatches.push(`${token}:\n  rule: ${ruleValue}\n  imp:  ${impValue}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-RULES-LIGHT-MATCH: All RULES-derived light tokens match imperative output
+  // -------------------------------------------------------------------------
+  it("T-RULES-LIGHT-MATCH: all rule-derived light tokens match imperative output", () => {
+    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
+    const { ruleTokens, imperative } = runAllRules(brioLight);
+
+    const mismatches: string[] = [];
+    for (const [token, ruleValue] of Object.entries(ruleTokens)) {
+      const impValue = imperative.tokens[token];
+      if (ruleValue !== impValue) {
+        mismatches.push(`${token}:\n  rule: ${ruleValue}\n  imp:  ${impValue}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
   });
 });

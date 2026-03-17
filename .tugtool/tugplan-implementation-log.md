@@ -9,6 +9,114 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-17T02:04:55Z
+---
+
+## step-9: Final verification: 1817 tests pass, T-BRIO-MATCH passes, 373 tokens generated (baseline match), zero isLight in deriveTheme()/evaluateRules(). Cleaned 2 stale step-reference comments in derivation-rules.ts.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
+step: step-8
+date: 2025-03-17T01:49:53Z
+---
+
+## step-8: Updated module-level JSDoc to describe three-layer pipeline, fixed token count to 373, cleaned stale step-annotation comments, deleted .tugtool/baseline-tokens.css and .tugtool/islight-audit.md temporary artifacts.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
+step: step-7
+date: 2025-03-17T01:37:31Z
+---
+
+## step-7: Replaced ~1286 lines of imperative code with 3-layer pipeline: resolveHueSlots + computeTones + evaluateRules(373 rules). Zero isLight branches remain in deriveTheme(). File shrank from 3464 to 2210 lines. All 1817 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
+step: step-6
+date: 2025-03-17T01:25:52Z
+---
+
+## step-6: Added ~284 rules to derivation-rules.ts covering sections B-F (accent, semantic tones, selection/highlight, tab chrome, controls, badges). RULES table now has 373 entries matching all imperative tokens. Factory functions for filled/outlined/ghost/badge patterns. All 1817 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
+step: step-5
+date: 2025-03-17T01:06:09Z
+---
+
+## step-5: Created derivation-rules.ts with 90 CORE_VISUAL_RULES entries (surfaces, fg, icons, borders, elevation, invariants). Implemented evaluateRules() with dual hueSlot resolution and sentinel dispatch. Runs in parallel with existing imperative code. All 1814 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
+step: step-4
+date: 2025-03-17T00:31:34Z
+---
+
+## step-4: Implemented computeTones() with 21 ComputedTones fields, MoodKnobs interface, added isLight to ModePreset. Runs in parallel with existing inline code. 7 new tests, all 1810 pass.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
+step: step-3
+date: 2025-03-17T00:17:21Z
+---
+
+## step-3: Implemented resolveHueSlots() with 23 slots, extracted ACHROMATIC_ADJACENT_HUES/primaryColorName/applyWarmthBias to module scope, added tabBgActive/InactiveHueSlot to ModePreset, added T-RESOLVE/T-WARMTH/T-BARE-BASE tests. Runs in parallel with existing code.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
+step: step-2
+date: 2025-03-16T23:59:32Z
+---
+
+## step-2: Added ~130 new fields to ModePreset interface and populated both DARK_PRESET and LIGHT_PRESET. Fields cover hue slots, intensity/tone/alpha overrides, formula params, and per-state control emphasis. No behavioral changes.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
+step: step-1
+date: 2025-03-16T23:45:56Z
+---
+
+## step-1: Captured baseline tokens (452 lines, 373 tokens) and audited all 81 isLight branches in theme-derivation-engine.ts, confirming all can be expressed as ModePreset field differences
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-7
 date: 2025-03-16T16:07:34Z
 ---
