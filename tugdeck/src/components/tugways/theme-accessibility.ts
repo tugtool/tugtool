@@ -351,8 +351,16 @@ function lToTone(L: number, hueName: string): number {
  *
  * Forward formula matching the derivation engine's resolveOklch():
  *   L = L_DARK + min(tone,50)*(canonL-L_DARK)/50 + max(tone-50,0)*(L_LIGHT-canonL)/50
+ *
+ * Used by enforceContrastFloor in theme-derivation-engine.ts for the binary
+ * search in tone space — avoids a hex round-trip when both element and surface L
+ * values are already known.
+ *
+ * @param tone - Tone value in [0, 100]
+ * @param hueName - Hue name for canonical L lookup (e.g. "cobalt", "violet")
+ * @returns OKLCH lightness value in [L_DARK, L_LIGHT]
  */
-function toneToL(tone: number, hueName: string): number {
+export function toneToL(tone: number, hueName: string): number {
   const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.77;
   return (
     L_DARK +
@@ -681,14 +689,6 @@ export function autoAdjustContrast(
 // ---------------------------------------------------------------------------
 // Internal helpers re-exported for testing
 // ---------------------------------------------------------------------------
-
-/**
- * Compute L value from tone and hue name (exported for testing).
- * @internal
- */
-export function _toneToL(tone: number, hueName: string): number {
-  return toneToL(tone, hueName);
-}
 
 /**
  * Compute tone from L value and hue name (exported for testing).

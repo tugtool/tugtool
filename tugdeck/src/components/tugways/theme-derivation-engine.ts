@@ -49,6 +49,15 @@ import {
   resolveHyphenatedHue,
 } from "./palette-engine";
 import { RULES } from "./derivation-rules";
+import {
+  toneToL,
+  CONTRAST_SCALE,
+  POLARITY_FACTOR,
+  CONTRAST_MIN_DELTA,
+  CONTRAST_THRESHOLDS,
+} from "./theme-accessibility";
+import { ELEMENT_SURFACE_PAIRING_MAP } from "./element-surface-pairing-map";
+import type { ElementSurfacePairing } from "./element-surface-pairing-map";
 
 // ---------------------------------------------------------------------------
 // Public interfaces — Spec S01 / S02
@@ -104,7 +113,7 @@ export interface ContrastResult {
   wcagRatio: number;
   contrast: number;
   contrastPass: boolean;
-  role: "body-text" | "large-text" | "ui-component" | "decorative";
+  role: "body-text" | "subdued-text" | "large-text" | "ui-component" | "decorative";
 }
 
 /**
@@ -119,8 +128,27 @@ export interface CVDWarning {
 }
 
 /**
+ * Structured diagnostic entry for a token whose tone was adjusted during
+ * contrast floor enforcement in evaluateRules(). Spec S04.
+ *
+ * Reasons:
+ *   "floor-applied"         — tone was clamped by enforceContrastFloor to meet threshold
+ *   "structurally-fixed"    — token is black/white/transparent/alpha; not adjustable
+ *   "composite-dependent"   — token uses parentSurface compositing; floor not applied
+ */
+export interface ContrastDiagnostic {
+  token: string;
+  reason: "floor-applied" | "structurally-fixed" | "composite-dependent";
+  surfaces: string[];
+  initialTone: number;
+  finalTone: number;
+  threshold: number;
+}
+
+/**
  * Output from deriveTheme(). Spec S02.
  * contrastResults and cvdWarnings are populated in later steps.
+ * diagnostics is populated by enforceContrastFloor in evaluateRules.
  */
 export interface ThemeOutput {
   name: string;
@@ -129,6 +157,7 @@ export interface ThemeOutput {
   resolved: Record<string, ResolvedColor>;
   contrastResults: ContrastResult[];
   cvdWarnings: CVDWarning[];
+  diagnostics: ContrastDiagnostic[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1581,6 +1610,134 @@ export type DerivationRule =
   | InvariantRule;
 
 // ---------------------------------------------------------------------------
+// enforceContrastFloor — binary search in tone space (Spec S03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the contrast between an element at the given tone and a surface
+ * at the given OKLab L, using the same formula as computePerceptualContrast
+ * but operating directly on L values (no hex round-trip).
+ */
+function contrastFromLValues(elementL: number, surfaceL: number): number {
+  const deltaL = surfaceL - elementL;
+  if (Math.abs(deltaL) < CONTRAST_MIN_DELTA) return 0;
+  return deltaL > 0
+    ? deltaL * CONTRAST_SCALE
+    : deltaL * CONTRAST_SCALE * POLARITY_FACTOR;
+}
+
+/**
+ * Binary-search in tone space (0–100) for the minimum element tone that
+ * produces |contrast| >= threshold against a surface at surfaceL.
+ *
+ * The polarity parameter determines search direction:
+ *   "lighter" — element must be lighter than surface (negative polarity pairs).
+ *               Search pushes tone toward 100.
+ *   "darker"  — element must be darker than surface (positive polarity pairs).
+ *               Search pushes tone toward 0.
+ *
+ * The conversion from tone to OKLab L uses toneToL(tone, elementHueName),
+ * which is the same piecewise formula used by resolveOklch(). This avoids
+ * a hex round-trip; the binary search result is a tone value that the
+ * derivation engine can pass directly to setChromatic().
+ *
+ * Returns the adjusted tone if clamping was needed, or elementTone if it
+ * already passes.
+ *
+ * @param elementTone   - Current tone value (0–100)
+ * @param surfaceL      - Surface OKLab L from resolved map
+ * @param threshold     - Required contrast magnitude (e.g. 75 for body-text)
+ * @param polarity      - Direction to search ("lighter" | "darker")
+ * @param elementHueName - Primary hue name for toneToL conversion
+ */
+export function enforceContrastFloor(
+  elementTone: number,
+  surfaceL: number,
+  threshold: number,
+  polarity: "lighter" | "darker",
+  elementHueName: string,
+): number {
+  const currentL = toneToL(elementTone, elementHueName);
+  const currentContrast = contrastFromLValues(currentL, surfaceL);
+  if (Math.abs(currentContrast) >= threshold) return elementTone; // already passing
+
+  // Binary search for the minimum clamped tone that passes the threshold.
+  // We search in the direction that increases contrast magnitude:
+  //   "lighter" polarity: element needs to be lighter (higher tone) than surface
+  //   "darker"  polarity: element needs to be darker  (lower tone) than surface
+  const lo = polarity === "lighter" ? elementTone : 0;
+  const hi = polarity === "lighter" ? 100 : elementTone;
+
+  // Check if the extreme value already fails — if so, return the extreme
+  // (we cannot satisfy the threshold; accept the best achievable tone).
+  const extremeTone = polarity === "lighter" ? 100 : 0;
+  const extremeL = toneToL(extremeTone, elementHueName);
+  const extremeContrast = contrastFromLValues(extremeL, surfaceL);
+  if (Math.abs(extremeContrast) < threshold) {
+    // Threshold unachievable in tone space — return the extreme tone as the
+    // best available option. The reconciliation test will catch this case.
+    return extremeTone;
+  }
+
+  // Binary search over integer tone values.
+  let low = lo;
+  let high = hi;
+  let result = extremeTone;
+
+  // Add a small tone margin to compensate for toneToL approximation vs
+  // hex-path OKLab L (see Spec S03 reconciliation note).
+  const TONE_MARGIN = 2;
+
+  for (let iter = 0; iter < 20; iter++) {
+    const mid = Math.round((low + high) / 2);
+    if (mid === low || mid === high) break;
+
+    const midL = toneToL(mid, elementHueName);
+    const midContrast = contrastFromLValues(midL, surfaceL);
+
+    if (Math.abs(midContrast) >= threshold) {
+      result = mid;
+      // For "lighter" polarity: smallest passing tone is toward `lo` — search left
+      // For "darker"  polarity: largest passing tone is toward `hi` — search right
+      if (polarity === "lighter") {
+        high = mid;
+      } else {
+        low = mid;
+      }
+    } else {
+      if (polarity === "lighter") {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+  }
+
+  // Apply tone margin to avoid rounding-at-hex-quantization misses.
+  if (polarity === "lighter") {
+    return Math.min(100, result + TONE_MARGIN);
+  } else {
+    return Math.max(0, result - TONE_MARGIN);
+  }
+}
+
+/**
+ * Build a lookup map from element token name to its pairing entries.
+ * Used by evaluateRules to quickly look up surface pairings for a token.
+ */
+function buildElementPairingLookup(
+  pairingMap: ElementSurfacePairing[],
+): Map<string, ElementSurfacePairing[]> {
+  const lookup = new Map<string, ElementSurfacePairing[]>();
+  for (const entry of pairingMap) {
+    const existing = lookup.get(entry.element) ?? [];
+    existing.push(entry);
+    lookup.set(entry.element, existing);
+  }
+  return lookup;
+}
+
+// ---------------------------------------------------------------------------
 // evaluateRules — Layer 3: iterate rule table and emit tokens (Spec S01)
 // ---------------------------------------------------------------------------
 
@@ -1599,18 +1756,20 @@ export type DerivationRule =
  *   "__shadow"           → compact black-a token; fills resolved.
  *   "__verboseHighlight" → verbose white form with explicit i:0 t:100; fills resolved.
  *
- * @param rules         Named rule table (token name → DerivationRule)
- * @param resolvedSlots Output of resolveHueSlots()
- * @param formulas      Active DerivationFormulas for this recipe
- * @param knobs         Normalized mood knobs
- * @param computed      Output of computeTones()
- * @param tokens        Output map for CSS token strings (mutated in place)
- * @param resolved      Output map for OKLCH resolved colors (mutated in place)
- * @param makeShadow    Internal helper: build compact black-a string
- * @param makeHighlight Internal helper: build compact white-a string
+ * @param rules            Named rule table (token name → DerivationRule)
+ * @param resolvedSlots    Output of resolveHueSlots()
+ * @param formulas         Active DerivationFormulas for this recipe
+ * @param knobs            Normalized mood knobs
+ * @param computed         Output of computeTones()
+ * @param tokens           Output map for CSS token strings (mutated in place)
+ * @param resolved         Output map for OKLCH resolved colors (mutated in place)
+ * @param makeShadow       Internal helper: build compact black-a string
+ * @param makeHighlight    Internal helper: build compact white-a string
  * @param makeVerboseHighlight Internal helper: build verbose white-i0-t100-a string
- * @param blackResolved Resolved OKLCH for black
- * @param whiteResolved Resolved OKLCH for white
+ * @param blackResolved    Resolved OKLCH for black
+ * @param whiteResolved    Resolved OKLCH for white
+ * @param elementPairingLookup  Map from element token name to its pairing entries (for contrast floors)
+ * @param diagnostics      Output array for ContrastDiagnostic entries (mutated in place)
  */
 export function evaluateRules(
   rules: Record<string, DerivationRule>,
@@ -1634,6 +1793,8 @@ export function evaluateRules(
     a: number,
     hueName: string,
   ) => void,
+  elementPairingLookup: Map<string, ElementSurfacePairing[]> = new Map(),
+  diagnostics: ContrastDiagnostic[] = [],
 ): void {
   const slotKeys = new Set(Object.keys(resolvedSlots));
 
@@ -1681,7 +1842,8 @@ export function evaluateRules(
           effectiveSlot = (formulas[formulasKey] as string) ?? rule.hueSlot;
         }
 
-        // Sentinel check [D07]
+        // Sentinel check [D07]: sentinel tokens are structurally fixed (white/black/alpha)
+        // and are not eligible for contrast floor enforcement.
         if (effectiveSlot === "__white") {
           tokens[tokenName] = "--tug-color(white)";
           resolved[tokenName] = { ...whiteResolved };
@@ -1710,8 +1872,85 @@ export function evaluateRules(
         const slot = resolvedSlots[effectiveSlot as keyof ResolvedHueSlots];
         if (!slot) break; // unknown slot key — skip
         const i = Math.round(rule.intensityExpr(formulas, knobs, computed));
-        const t = Math.round(rule.toneExpr(formulas, knobs, computed));
+        let t = Math.round(rule.toneExpr(formulas, knobs, computed));
         const a = rule.alphaExpr ? Math.round(rule.alphaExpr(formulas, knobs, computed)) : 100;
+
+        // Contrast floor enforcement (Spec S03, D04):
+        // Only apply to fully-opaque chromatic tokens that have pairing entries.
+        // Tokens with alpha < 100 are sentinel-dispatched or composite-dependent —
+        // skip them (their contrast is measured after compositing, not directly).
+        if (a === 100 && elementPairingLookup.has(tokenName)) {
+          const pairings = elementPairingLookup.get(tokenName)!;
+          const initialTone = t;
+          const pairedSurfaces: string[] = [];
+          let mostRestrictiveThreshold = 0;
+          let adjustedTone = t;
+
+          for (const pairing of pairings) {
+            // Skip pairs with parentSurface — compositing changes the effective L
+            if (pairing.parentSurface) continue;
+
+            const surfaceResolved = resolved[pairing.surface];
+            if (!surfaceResolved) continue; // surface not yet evaluated — skip
+
+            // Skip surfaces with alpha < 1 (semi-transparent overlays: highlights,
+            // shadows, bg-hover/active tints). Their raw L does not represent the
+            // actual visual background — contrast is only meaningful after compositing
+            // over the parent surface, which evaluateRules cannot compute inline.
+            if ((surfaceResolved.alpha ?? 1.0) < 1.0) continue;
+
+            const threshold = CONTRAST_THRESHOLDS[pairing.role] ?? 15;
+            const surfaceL = surfaceResolved.L;
+            const elementL = toneToL(t, slot.primaryName);
+
+            // Check if contrast is already sufficient
+            const currentContrast = contrastFromLValues(elementL, surfaceL);
+            if (Math.abs(currentContrast) >= threshold) continue;
+
+            // Determine polarity: which direction does element need to move?
+            // If element is lighter than surface: "lighter" polarity (push higher)
+            // If element is darker than surface: "darker" polarity (push lower)
+            const polarity: "lighter" | "darker" = elementL > surfaceL ? "lighter" : "darker";
+
+            const clampedTone = enforceContrastFloor(
+              adjustedTone,
+              surfaceL,
+              threshold,
+              polarity,
+              slot.primaryName,
+            );
+
+            // Take the most restrictive clamped tone (worst case across all surfaces).
+            // For "lighter" polarity, we want the highest required tone.
+            // For "darker" polarity, we want the lowest required tone.
+            if (polarity === "lighter") {
+              if (clampedTone > adjustedTone) {
+                adjustedTone = clampedTone;
+                mostRestrictiveThreshold = Math.max(mostRestrictiveThreshold, threshold);
+                pairedSurfaces.push(pairing.surface);
+              }
+            } else {
+              if (clampedTone < adjustedTone) {
+                adjustedTone = clampedTone;
+                mostRestrictiveThreshold = Math.max(mostRestrictiveThreshold, threshold);
+                pairedSurfaces.push(pairing.surface);
+              }
+            }
+          }
+
+          if (adjustedTone !== initialTone) {
+            t = adjustedTone;
+            diagnostics.push({
+              token: tokenName,
+              reason: "floor-applied",
+              surfaces: pairedSurfaces,
+              initialTone,
+              finalTone: t,
+              threshold: mostRestrictiveThreshold,
+            });
+          }
+        }
+
         setChromatic(tokenName, slot.ref, slot.angle, i, t, a, slot.primaryName);
         break;
       }
@@ -1935,6 +2174,13 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // =========================================================================
   // 5. Layer 3 — evaluate rule table to produce all tokens
   // =========================================================================
+
+  // Build element pairing lookup for contrast floor enforcement (D04).
+  // Surfaces must be evaluated before foreground tokens — guaranteed by RULES
+  // table ordering (SURFACE_RULES precedes FG_RULES and CONTROL_RULES).
+  const elementPairingLookup = buildElementPairingLookup(ELEMENT_SURFACE_PAIRING_MAP);
+  const diagnostics: ContrastDiagnostic[] = [];
+
   evaluateRules(
     RULES,
     resolvedSlots,
@@ -1960,6 +2206,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
         resolved[name] = resolvedEntryAlpha(hueAngle, i, t, a, hueName);
       }
     },
+    elementPairingLookup,
+    diagnostics,
   );
 
   // =========================================================================
@@ -1972,6 +2220,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     resolved,
     contrastResults: [],
     cvdWarnings: [],
+    diagnostics,
   };
 }
 

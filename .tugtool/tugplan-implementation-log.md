@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-17T18:25:56Z
+---
+
+## step-4: Added enforceContrastFloor with binary search in tone space, ContrastDiagnostic interface, and evaluateRules integration. 10 token tones floor-clamped. All 1840 tests pass with 0 failures.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
 step: step-3
 date: 2025-03-17T17:32:59Z
 ---

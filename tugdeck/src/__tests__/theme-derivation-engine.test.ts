@@ -29,6 +29,7 @@ import {
   resolveHueSlots,
   computeTones,
   evaluateRules,
+  enforceContrastFloor,
   ACHROMATIC_ADJACENT_HUES,
   primaryColorName,
   applyWarmthBias,
@@ -37,6 +38,7 @@ import {
   type ComputedTones,
   type ResolvedHueSlots,
   type ResolvedColor,
+  type ContrastDiagnostic,
 } from "@/components/tugways/theme-derivation-engine";
 import { CORE_VISUAL_RULES, RULES } from "@/components/tugways/derivation-rules";
 
@@ -46,10 +48,69 @@ import {
   autoAdjustContrast,
   CONTRAST_THRESHOLDS,
   CONTRAST_MARGINAL_DELTA,
+  toneToL,
+  computePerceptualContrast,
 } from "@/components/tugways/theme-accessibility";
 
-import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
+import {
+  ELEMENT_SURFACE_PAIRING_MAP,
+  type ElementSurfacePairing,
+} from "@/components/tugways/element-surface-pairing-map";
 
+import {
+  DEFAULT_CANONICAL_L,
+  MAX_CHROMA_FOR_HUE,
+  PEAK_C_SCALE,
+  L_DARK,
+  L_LIGHT,
+} from "@/components/tugways/palette-engine";
+
+// ---------------------------------------------------------------------------
+// Helpers for contrast floor enforcement in test helpers
+// ---------------------------------------------------------------------------
+
+/** Build element-to-pairings lookup (mirrors buildElementPairingLookup in the engine). */
+function buildTestPairingLookup(
+  pairingMap: ElementSurfacePairing[],
+): Map<string, ElementSurfacePairing[]> {
+  const lookup = new Map<string, ElementSurfacePairing[]>();
+  for (const entry of pairingMap) {
+    const existing = lookup.get(entry.element) ?? [];
+    existing.push(entry);
+    lookup.set(entry.element, existing);
+  }
+  return lookup;
+}
+
+/** Cached pairing lookup for tests that need contrast floor behavior. */
+const TEST_PAIRING_LOOKUP = buildTestPairingLookup(ELEMENT_SURFACE_PAIRING_MAP);
+
+/**
+ * Compute a ResolvedColor for a chromatic token given hue angle, intensity (0-100),
+ * tone (0-100), alpha (0-100), and the primary hue name.
+ *
+ * Replicates the private resolveOklch() formula from theme-derivation-engine.ts
+ * so that test setChromatic callbacks can populate ruleResolved, enabling
+ * contrast floor enforcement within evaluateRules() test calls.
+ */
+function testResolveOklch(
+  hueAngle: number,
+  intensity: number,
+  tone: number,
+  alpha: number,
+  hueName: string,
+): ResolvedColor {
+  const primaryName = primaryColorName(hueName);
+  const canonL = DEFAULT_CANONICAL_L[primaryName] ?? 0.77;
+  const maxC = MAX_CHROMA_FOR_HUE[primaryName] ?? 0.135;
+  const peakC = maxC * PEAK_C_SCALE;
+  const L =
+    L_DARK +
+    (Math.min(tone, 50) * (canonL - L_DARK)) / 50 +
+    (Math.max(tone - 50, 0) * (L_LIGHT - canonL)) / 50;
+  const C = (intensity / 100) * peakC;
+  return { L, C, h: hueAngle, alpha: alpha / 100 };
+}
 
 // ---------------------------------------------------------------------------
 // Invariant token values (from tug-base.css)
@@ -399,7 +460,9 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-control-filled-success-icon-hover",
   "--tug-base-control-filled-success-icon-active",
   // C1f — filled-caution: yellow bg with light text has same contrast constraint as other filled roles
-  // (fg-hover is within 5 contrast units of threshold — covered by marginal band; icon-hover/active kept)
+  // fg-hover (contrast ~26.7): caution-bg-hover at t=40 (L=0.75) vs fg at t=100 (L=0.96); structural.
+  // fg-active: also below threshold (same structural constraint at t=50 bg-active).
+  "--tug-base-control-filled-caution-fg-hover",
   "--tug-base-control-filled-caution-fg-active",
   "--tug-base-control-filled-caution-icon-hover",
   "--tug-base-control-filled-caution-icon-active",
@@ -860,7 +923,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-bg-canvas": { L: 0.2076, C: 0.005600000000000001, h: 263.33333333333326 },
   "--tug-base-border-accent": { L: 0.78, C: 0.146, h: 55 },
   "--tug-base-border-danger": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-border-default": { L: 0.49559999999999993, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-border-default": { L: 0.5532, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-border-inverse": { L: 0.9340799999999999, C: 0.0081, h: 250 },
   "--tug-base-border-muted": { L: 0.57624, C: 0.019600000000000003, h: 263.33333333333326 },
   "--tug-base-border-strong": { L: 0.6108, C: 0.019600000000000003, h: 258.33333333333326 },
@@ -968,9 +1031,9 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-control-ghost-danger-bg-hover": { L: 0.659, C: 0.24200000000000002, h: 25 },
   "--tug-base-control-ghost-danger-border-active": { L: 0.659, C: 0.24200000000000002, h: 25 },
   "--tug-base-control-ghost-danger-border-hover": { L: 0.659, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-ghost-danger-fg-active": { L: 0.659, C: 0.33, h: 25 },
-  "--tug-base-control-ghost-danger-fg-hover": { L: 0.659, C: 0.28600000000000003, h: 25 },
-  "--tug-base-control-ghost-danger-fg-rest": { L: 0.659, C: 0.24200000000000002, h: 25 },
+  "--tug-base-control-ghost-danger-fg-active": { L: 0.76736, C: 0.33, h: 25 },
+  "--tug-base-control-ghost-danger-fg-hover": { L: 0.76736, C: 0.28600000000000003, h: 25 },
+  "--tug-base-control-ghost-danger-fg-rest": { L: 0.76736, C: 0.24200000000000002, h: 25 },
   "--tug-base-control-ghost-danger-icon-active": { L: 0.659, C: 0.33, h: 25 },
   "--tug-base-control-ghost-danger-icon-hover": { L: 0.659, C: 0.28600000000000003, h: 25 },
   "--tug-base-control-ghost-danger-icon-rest": { L: 0.659, C: 0.24200000000000002, h: 25 },
@@ -1030,7 +1093,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-fg-default": { L: 0.9340799999999999, C: 0.0081, h: 250 },
   "--tug-base-fg-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
   "--tug-base-fg-inverse": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-fg-link": { L: 0.803, C: 0.134, h: 200 },
+  "--tug-base-fg-link": { L: 0.90348, C: 0.134, h: 200 },
   "--tug-base-fg-link-hover": { L: 0.9129, C: 0.05360000000000001, h: 200 },
   "--tug-base-fg-muted": { L: 0.81312, C: 0.013500000000000002, h: 250 },
   "--tug-base-fg-onAccent": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
@@ -1038,7 +1101,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-fg-onDanger": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
   "--tug-base-fg-onSuccess": { L: 0.23064, C: 0.011200000000000002, h: 263.33333333333326 },
   "--tug-base-fg-placeholder": { L: 0.5064, C: 0.0162, h: 250 },
-  "--tug-base-fg-subtle": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-fg-subtle": { L: 0.6684, C: 0.019600000000000003, h: 256.66666666666663 },
   "--tug-base-field-bg-disabled": { L: 0.21911999999999998, C: 0.014000000000000002, h: 263.33333333333326 },
   "--tug-base-field-bg-focus": { L: 0.23064, C: 0.011200000000000002, h: 263.33333333333326 },
   "--tug-base-field-bg-hover": { L: 0.27276, C: 0.0149, h: 270 },
@@ -1049,7 +1112,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-field-border-disabled": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-field-border-hover": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
   "--tug-base-field-border-readOnly": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
-  "--tug-base-field-border-rest": { L: 0.5064, C: 0.0162, h: 250 },
+  "--tug-base-field-border-rest": { L: 0.54204, C: 0.0162, h: 250 },
   "--tug-base-field-border-success": { L: 0.821, C: 0.22, h: 140 },
   "--tug-base-field-fg": { L: 0.9340799999999999, C: 0.0081, h: 250 },
   "--tug-base-field-fg-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
@@ -1095,17 +1158,17 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-tab-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
-  "--tug-base-tab-fg-active": { L: 0.9168, C: 0.0081, h: 250 },
+  "--tug-base-tab-fg-active": { L: 0.95568, C: 0.0081, h: 250 },
   "--tug-base-tab-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
   "--tug-base-tab-fg-rest": { L: 0.744, C: 0.018900000000000004, h: 250 },
   "--tug-base-toggle-icon-disabled": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-toggle-icon-mixed": { L: 0.81312, C: 0.013500000000000002, h: 250 },
+  "--tug-base-toggle-icon-mixed": { L: 0.89088, C: 0.013500000000000002, h: 250 },
   "--tug-base-toggle-thumb": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
   "--tug-base-toggle-thumb-disabled": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
   "--tug-base-toggle-track-disabled": { L: 0.39552, C: 0.0149, h: 270 },
   "--tug-base-toggle-track-mixed": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
   "--tug-base-toggle-track-mixed-hover": { L: 0.6453599999999999, C: 0.033600000000000005, h: 256.66666666666663 },
-  "--tug-base-toggle-track-off": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-toggle-track-off": { L: 0.5532, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-toggle-track-off-hover": { L: 0.5647199999999999, C: 0.028000000000000004, h: 263.33333333333326 },
   "--tug-base-toggle-track-on": { L: 0.6792, C: 0.146, h: 55 },
   "--tug-base-toggle-track-on-hover": { L: 0.7170000000000001, C: 0.1606, h: 55 },
@@ -1495,6 +1558,22 @@ const LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS = new Set([
 ]);
 
 /**
+ * Known dark-mode body-text pair exceptions for high surfaceContrast recipes.
+ *
+ * At surfaceContrast=80, surface-screen tone rises to ~24 (L≈0.43 for indigo).
+ * fg-default (txt hue at t=100) and fg-inverse at t=100 achieve contrast ~68
+ * against surface-screen — below body-text threshold (75) and outside the
+ * marginal band (≥70). The contrast floor correctly identifies that even t=100
+ * fails, and autoAdjustContrast cannot improve on the maximum tone. This is a
+ * structural constraint for recipes combining a warm/ochre text hue with
+ * high surface contrast; not a regression.
+ */
+const DARK_HIGH_CONTRAST_PAIR_EXCEPTIONS = new Set([
+  "--tug-base-fg-default|--tug-base-surface-screen",
+  "--tug-base-fg-inverse|--tug-base-surface-screen",
+]);
+
+/**
  * Run the derive → validate → auto-fix pipeline for any ThemeRecipe and return
  * the final contrast results plus unfixable list. Accepts a literal recipe
  * object (not restricted to EXAMPLE_RECIPES keys).
@@ -1559,7 +1638,10 @@ describe("derivation-engine convergence stress tests", () => {
     };
 
     const { finalResults } = runPipelineForRecipe(recipe);
-    const failures = unexpectedBodyTextFailures(finalResults);
+    // fg-default|surface-screen and fg-inverse|surface-screen are structurally
+    // constrained at surfaceContrast=80: surface-screen is too bright for fg
+    // at max tone to achieve contrast 75. See DARK_HIGH_CONTRAST_PAIR_EXCEPTIONS.
+    const failures = unexpectedBodyTextFailures(finalResults, DARK_HIGH_CONTRAST_PAIR_EXCEPTIONS);
     const descriptions = failures.map(
       (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
@@ -1977,8 +2059,9 @@ describe("resolveHueSlots — Step 3", () => {
     // fg-default: cobalt i:3 t:94
     expect(output.tokens["--tug-base-fg-default"]).toBe("--tug-color(cobalt, i: 3, t: 94)");
 
-    // fg-subtle: indigo-cobalt i:7 t:37
-    expect(output.tokens["--tug-base-fg-subtle"]).toBe("--tug-color(indigo-cobalt, i: 7, t: 37)");
+    // fg-subtle: indigo-cobalt i:7, tone adjusted by contrast floor from 37 → 45
+    // (subdued-text threshold 45 against surface-default requires higher tone)
+    expect(output.tokens["--tug-base-fg-subtle"]).toBe("--tug-color(indigo-cobalt, i: 7, t: 45)");
 
     // fg-inverse: sapphire-cobalt i:3 t:100
     expect(output.tokens["--tug-base-fg-inverse"]).toBe("--tug-color(sapphire-cobalt, i: 3, t: 100)");
@@ -2191,6 +2274,7 @@ describe("computeTones — Step 4", () => {
 
     const ruleTokens: Record<string, string> = {};
     const ruleResolved: Record<string, ResolvedColor> = {};
+    const ruleDiagnostics: ContrastDiagnostic[] = [];
 
     evaluateRules(
       CORE_VISUAL_RULES,
@@ -2205,16 +2289,22 @@ describe("computeTones — Step 4", () => {
       (alpha) => `--tug-color(white, i: 0, t: 100, a: ${Math.round(alpha)})`,
       { L: 0, C: 0, h: 0, alpha: 1 },
       { L: 1, C: 0, h: 0, alpha: 1 },
-      (name, hueRef, _hueAngle, i, t, a) => {
+      (name, hueRef, hueAngle, i, t, a, hueName) => {
         const ri = Math.round(i), rt = Math.round(t), ra = Math.round(a);
+        // Populate ruleResolved so contrast floor enforcement sees surface L values
+        // when processing foreground tokens. Without this, surfaces are missing and
+        // the floor never fires, causing mismatches against deriveTheme() output.
         if (hueRef === "black") {
           ruleTokens[name] = ra === 100 ? "--tug-color(black)" : `--tug-color(black, a: ${ra})`;
+          ruleResolved[name] = { L: 0, C: 0, h: 0, alpha: ra / 100 };
           return;
         }
         if (hueRef === "white") {
           ruleTokens[name] = ra === 100 ? "--tug-color(white)" : `--tug-color(white, a: ${ra})`;
+          ruleResolved[name] = { L: 1, C: 0, h: 0, alpha: ra / 100 };
           return;
         }
+        ruleResolved[name] = testResolveOklch(hueAngle, ri, rt, ra, hueName ?? hueRef);
         if (ri === 50 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef})`; return; }
         if (ri === 20 && rt === 85 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-light)`; return; }
         if (ri === 50 && rt === 20 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-dark)`; return; }
@@ -2227,6 +2317,8 @@ describe("computeTones — Step 4", () => {
         if (ra !== 100) parts.push(`a: ${ra}`);
         ruleTokens[name] = `--tug-color(${hueRef}, ${parts.join(", ")})`;
       },
+      TEST_PAIRING_LOOKUP,
+      ruleDiagnostics,
     );
 
     const imperative = deriveTheme(recipe);
@@ -2364,6 +2456,7 @@ describe("derivation-engine step-6 rules", () => {
 
     const ruleTokens: Record<string, string> = {};
     const ruleResolved: Record<string, ResolvedColor> = {};
+    const ruleDiagnostics: ContrastDiagnostic[] = [];
 
     evaluateRules(
       RULES,
@@ -2378,16 +2471,22 @@ describe("derivation-engine step-6 rules", () => {
       (alpha) => `--tug-color(white, i: 0, t: 100, a: ${Math.round(alpha)})`,
       { L: 0, C: 0, h: 0, alpha: 1 },
       { L: 1, C: 0, h: 0, alpha: 1 },
-      (name, hueRef, _hueAngle, i, t, a) => {
+      (name, hueRef, hueAngle, i, t, a, hueName) => {
         const ri = Math.round(i), rt = Math.round(t), ra = Math.round(a);
+        // Populate ruleResolved so contrast floor enforcement sees surface L values
+        // when processing foreground tokens. Without this, surfaces are missing and
+        // the floor never fires, causing mismatches against deriveTheme() output.
         if (hueRef === "black") {
           ruleTokens[name] = ra === 100 ? "--tug-color(black)" : `--tug-color(black, a: ${ra})`;
+          ruleResolved[name] = { L: 0, C: 0, h: 0, alpha: ra / 100 };
           return;
         }
         if (hueRef === "white") {
           ruleTokens[name] = ra === 100 ? "--tug-color(white)" : `--tug-color(white, a: ${ra})`;
+          ruleResolved[name] = { L: 1, C: 0, h: 0, alpha: ra / 100 };
           return;
         }
+        ruleResolved[name] = testResolveOklch(hueAngle, ri, rt, ra, hueName ?? hueRef);
         if (ri === 50 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef})`; return; }
         if (ri === 20 && rt === 85 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-light)`; return; }
         if (ri === 50 && rt === 20 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-dark)`; return; }
@@ -2400,6 +2499,8 @@ describe("derivation-engine step-6 rules", () => {
         if (ra !== 100) parts.push(`a: ${ra}`);
         ruleTokens[name] = `--tug-color(${hueRef}, ${parts.join(", ")})`;
       },
+      TEST_PAIRING_LOOKUP,
+      ruleDiagnostics,
     );
 
     const imperative = deriveTheme(recipe);
@@ -2432,3 +2533,152 @@ describe("derivation-engine step-6 rules", () => {
 });
 // T-RULES-LIGHT-MATCH deleted in step 6 (clean break per D06):
 // light-mode rule parity requires BRIO_LIGHT_FORMULAS which is deferred to a later step.
+
+// ---------------------------------------------------------------------------
+// Step 4 tests: enforceContrastFloor, ContrastDiagnostic, zero-failure integration
+// ---------------------------------------------------------------------------
+
+describe("derivation-engine step-4 contrast floor", () => {
+  // -------------------------------------------------------------------------
+  // T-FLOOR-1: enforceContrastFloor returns original tone when already passing
+  // -------------------------------------------------------------------------
+  it("T-FLOOR-1: enforceContrastFloor returns original tone when already passing", () => {
+    // Use cobalt hue. At tone 100 (L near L_LIGHT), contrast vs a very dark surface (L~0.2)
+    // is well above any threshold.
+    const darkSurfaceL = toneToL(5, "cobalt"); // bg-app-like surface
+    const result = enforceContrastFloor(94, darkSurfaceL, 75, "lighter", "cobalt");
+    // tone 94 should already pass contrast 75 against tone-5 surface — return unchanged
+    expect(result).toBe(94);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-FLOOR-2: enforceContrastFloor returns adjusted tone when below threshold
+  // -------------------------------------------------------------------------
+  it("T-FLOOR-2: enforceContrastFloor returns adjusted tone when below threshold", () => {
+    // At tone 50 (mid-gray), contrast against tone-5 (very dark) should be insufficient
+    // for body-text (75). The floor should push tone higher.
+    const darkSurfaceL = toneToL(5, "cobalt");
+    const result = enforceContrastFloor(50, darkSurfaceL, 75, "lighter", "cobalt");
+    // The adjusted tone must be higher than 50
+    expect(result).toBeGreaterThan(50);
+    // And the adjusted tone must produce sufficient contrast
+    const adjustedL = toneToL(result, "cobalt");
+    const deltaL = darkSurfaceL - adjustedL;
+    // negative polarity (lighter element on dark surface)
+    const contrast = Math.abs(deltaL) * 150 * 0.85;
+    expect(contrast).toBeGreaterThanOrEqual(75);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-FLOOR-3: enforceContrastFloor lower bound — "darker" polarity
+  // -------------------------------------------------------------------------
+  it("T-FLOOR-3: enforceContrastFloor adjusts toward darker when polarity is darker", () => {
+    // On a bright surface (tone 95), a mid-tone element (50) should need to move darker
+    const brightSurfaceL = toneToL(95, "cobalt");
+    const result = enforceContrastFloor(50, brightSurfaceL, 75, "darker", "cobalt");
+    expect(result).toBeLessThan(50);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-FLOOR-4: ThemeOutput.diagnostics is populated for clamped tokens
+  // -------------------------------------------------------------------------
+  it("T-FLOOR-4: ThemeOutput.diagnostics is populated for floor-clamped tokens", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    // diagnostics array must be present
+    expect(Array.isArray(output.diagnostics)).toBe(true);
+    // Each diagnostic entry must be well-formed
+    for (const diag of output.diagnostics) {
+      expect(typeof diag.token).toBe("string");
+      expect(diag.token.startsWith("--tug-base-")).toBe(true);
+      expect(["floor-applied", "structurally-fixed", "composite-dependent"]).toContain(diag.reason);
+      expect(Array.isArray(diag.surfaces)).toBe(true);
+      expect(typeof diag.initialTone).toBe("number");
+      expect(typeof diag.finalTone).toBe("number");
+      expect(typeof diag.threshold).toBe("number");
+    }
+    // All floor-applied entries must have finalTone != initialTone
+    const floorApplied = output.diagnostics.filter((d) => d.reason === "floor-applied");
+    for (const diag of floorApplied) {
+      expect(diag.finalTone).not.toBe(diag.initialTone);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T-FLOOR-5: validateThemeContrast on Brio dark reports 0 failures for
+  //            floor-clamped tokens that are NOT structurally constrained
+  // -------------------------------------------------------------------------
+  it("T-FLOOR-5: validateThemeContrast after deriveTheme reports 0 unexpected failures for floor-clamped tokens", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+
+    // Run validateThemeContrast directly on the floor-enforced resolved map
+    const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    // Tokens that were floor-clamped must now pass their thresholds via hex-path validation,
+    // UNLESS they are in the known structural exception set (token cannot reach threshold in
+    // tone space regardless — e.g. ghost-danger-fg tokens on red hue which is a vivid mid-tone).
+    const floorApplied = new Set(
+      output.diagnostics.filter((d) => d.reason === "floor-applied").map((d) => d.token),
+    );
+
+    const floorFailures = results.filter(
+      (r) => !r.contrastPass && floorApplied.has(r.fg) && !KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg),
+    );
+
+    const descriptions = floorFailures.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)} < ${CONTRAST_THRESHOLDS[f.role] ?? 15}`,
+    );
+    expect(descriptions).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-FLOOR-6: Structurally fixed tokens (alpha < 1) are not in diagnostics
+  // -------------------------------------------------------------------------
+  it("T-FLOOR-6: structurally fixed tokens (alpha < 1) are not in floor diagnostics", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const floorApplied = output.diagnostics.filter((d) => d.reason === "floor-applied");
+
+    // For every floor-applied token, check its resolved color has alpha = 1
+    const semiTransparentFloor = floorApplied.filter((d) => {
+      const resolved = output.resolved[d.token];
+      return resolved && (resolved.alpha ?? 1) < 1;
+    });
+    expect(semiTransparentFloor.map((d) => d.token)).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-FLOOR-7: Reconciliation — every floor-applied token passes hex-path validation
+  //
+  // The binary search in enforceContrastFloor uses toneToL (piecewise approximation).
+  // The validateThemeContrast path converts OKLCH → hex → OKLab L (8-bit quantized).
+  // These two paths can diverge slightly. This test verifies that the TONE_MARGIN
+  // in enforceContrastFloor is sufficient to bridge the gap for all clamped tokens
+  // that are not structurally constrained (i.e. threshold is achievable in tone space).
+  // -------------------------------------------------------------------------
+  it("T-FLOOR-7: reconciliation — every floor-applied token passes via hex-path validation", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    const floorApplied = new Map(
+      output.diagnostics
+        .filter((d) => d.reason === "floor-applied")
+        .map((d) => [d.token, d]),
+    );
+
+    // For each floor-applied token that is NOT in the known structural exception set,
+    // verify it passes via hex-path validation. Tokens in KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS
+    // may be floor-applied but still fail because their threshold is unachievable in tone space
+    // (e.g. ghost-danger-fg on vivid red hue — best achievable tone still below contrast 60).
+    const reconciliationFailures: string[] = [];
+    for (const result of results) {
+      const diag = floorApplied.get(result.fg);
+      if (!diag) continue;
+      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(result.fg)) continue;
+      if (!result.contrastPass) {
+        reconciliationFailures.push(
+          `${result.fg} on ${result.bg} [${result.role}]: hex-path contrast ${result.contrast.toFixed(1)} < threshold ${CONTRAST_THRESHOLDS[result.role] ?? 15} (floor set tone to ${diag.finalTone})`,
+        );
+      }
+    }
+    expect(reconciliationFailures).toEqual([]);
+  });
+});
