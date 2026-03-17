@@ -69,6 +69,8 @@ import type { ElementSurfacePairing } from "./element-surface-pairing-map";
  */
 export interface ThemeRecipe {
   name: string;
+  /** Human-readable description of the design intent for this theme. */
+  description: string;
   mode: "dark" | "light";
   cardBg: { hue: string };
   text: { hue: string };
@@ -990,6 +992,7 @@ export const DARK_OVERRIDES: Partial<DerivationFormulas> = {};
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
     name: "brio",
+    description: "Deep, immersive dark theme. Very dark surfaces with subtle layering. Near-white text with wide hierarchy spread. Filled controls are prominent with vivid accent backgrounds and white text. Borders are subtle. Shadows are moderate. Industrial warmth with muted chassis and vivid signals.",
     mode: "dark",
     cardBg: { hue: "indigo-violet" },
     text: { hue: "cobalt" },
@@ -2272,12 +2275,11 @@ export function generateResolvedCssExport(
   const recipeJson = JSON.stringify(recipe);
   const hash = simpleHashForEngine(recipeJson);
   const dateStr = new Date().toISOString().slice(0, 10);
-  const desc = `Generated theme (${recipe.mode} mode, cardBg: ${recipe.cardBg.hue}, text: ${recipe.text.hue})`;
 
   const header = [
     "/**",
     ` * @theme-name ${recipe.name}`,
-    ` * @theme-description ${desc}`,
+    ` * @theme-description ${recipe.description}`,
     ` * @generated ${dateStr}`,
     ` * @recipe-hash ${hash}`,
     " *",

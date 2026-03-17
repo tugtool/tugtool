@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-17T23:28:03Z
+---
+
+## step-1: Added required description: string to ThemeRecipe interface. Populated EXAMPLE_RECIPES.brio description. Updated validateRecipeJson, generateCssExport, generateResolvedCssExport, currentRecipe memo, runDerive callback. Updated all test fixtures across 3 test files. 1845 tests pass, token output byte-identical.
+
+**Files changed:**
+- .tugtool/tugplan-semantic-layer-annotations.md
+
+---
+
+---
 step: step-5
 date: 2025-03-17T22:49:36Z
 ---

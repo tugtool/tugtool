@@ -186,6 +186,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   it("recipe with all optional fields round-trips without data loss", () => {
     const fullRecipe = {
       name: "TestTheme",
+      description: "Test theme with all optional fields.",
       mode: "light" as const,
       cardBg: { hue: "cyan" },
       text: { hue: "blue" },
@@ -329,9 +330,24 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
+  it("validateRecipeJson returns error for missing description", () => {
+    const bad = { name: "X", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    expect(validateRecipeJson(bad)).not.toBeNull();
+  });
+
+  it("validateRecipeJson returns error for empty description string", () => {
+    const bad = { name: "X", description: "", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    expect(validateRecipeJson(bad)).not.toBeNull();
+  });
+
+  it("validateRecipeJson accepts a recipe with a valid description", () => {
+    const good = { name: "X", description: "A valid theme description.", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    expect(validateRecipeJson(good)).toBeNull();
+  });
+
   it("validateRecipeJson accepts both 'dark' and 'light' modes", () => {
-    const dark = { name: "X", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
-    const light = { name: "X", mode: "light", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const dark = { name: "X", description: "Dark test theme.", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const light = { name: "X", description: "Light test theme.", mode: "light", cardBg: { hue: "red" }, text: { hue: "blue" } };
     expect(validateRecipeJson(dark)).toBeNull();
     expect(validateRecipeJson(light)).toBeNull();
   });
@@ -354,6 +370,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     const LEGACY_KEY = "signal" + "Vividity";
     const legacy: Record<string, unknown> = {
       name: "LegacyTheme",
+      description: "Legacy theme for migration testing.",
       mode: "dark",
       cardBg: { hue: "cobalt" },
       text: { hue: "slate" },

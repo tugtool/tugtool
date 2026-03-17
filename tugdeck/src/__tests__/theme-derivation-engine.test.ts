@@ -1616,6 +1616,7 @@ describe("derivation-engine convergence stress tests", () => {
   it("T4.3-stress: warm atmosphere, cool roles, dark mode, high contrast — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.3-stress",
+      description: "Stress test: warm atmosphere, cool roles, dark mode, high contrast.",
       mode: "dark" as const,
       cardBg: { hue: "amber" },
       text: { hue: "sand" },
@@ -1653,6 +1654,7 @@ describe("derivation-engine convergence stress tests", () => {
   it("T4.4-stress: cool atmosphere, warm roles, light mode, low contrast — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.4-stress",
+      description: "Stress test: cool atmosphere, warm roles, light mode, low contrast.",
       mode: "light" as const,
       cardBg: { hue: "slate" },
       text: { hue: "cobalt" },
@@ -1687,6 +1689,7 @@ describe("derivation-engine convergence stress tests", () => {
   it("T4.5-stress: neutral atmosphere, complementary roles, dark mode, default settings — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.5-stress",
+      description: "Stress test: neutral atmosphere, complementary roles, dark mode, default settings.",
       mode: "dark" as const,
       cardBg: { hue: "gray" },
       text: { hue: "slate" },
@@ -1721,6 +1724,7 @@ describe("derivation-engine convergence stress tests", () => {
   it("T4.6-stress: extreme signalIntensity (90), dark mode — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.6-stress",
+      description: "Stress test: extreme signalIntensity (90), dark mode.",
       mode: "dark" as const,
       cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
@@ -1755,6 +1759,7 @@ describe("derivation-engine convergence stress tests", () => {
   it("T4.7-stress: extreme low signalIntensity (10), light mode — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.7-stress",
+      description: "Stress test: extreme low signalIntensity (10), light mode.",
       mode: "light" as const,
       cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
@@ -1910,6 +1915,7 @@ describe("resolveHueSlots — Step 3", () => {
     };
     const lightRecipe = {
       name: "test-light",
+      description: "Test recipe for light mode hue slot resolution.",
       mode: "light" as const,
       cardBg: { hue: "yellow" },
       text: { hue: "cobalt" },
@@ -1966,6 +1972,7 @@ describe("resolveHueSlots — Step 3", () => {
   it("T-WARMTH: resolveHueSlots at warmth extremes shifts cobalt txt angle", () => {
     const baseRecipe = {
       name: "test-warmth",
+      description: "Test recipe for warmth bias angle shifts.",
       mode: "dark" as const,
       cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
@@ -1995,6 +2002,7 @@ describe("resolveHueSlots — Step 3", () => {
   it("T-BARE-BASE: surfBareBase returns violet for indigo-violet atmosphere", () => {
     const recipe = {
       name: "test-bare-base",
+      description: "Test recipe for surfBareBase extraction from hyphenated hue.",
       mode: "dark" as const,
       cardBg: { hue: "indigo-violet" },
       text: { hue: "cobalt" },
@@ -2007,6 +2015,7 @@ describe("resolveHueSlots — Step 3", () => {
   it("T-BARE-BASE: surfBareBase returns bare name for non-hyphenated atmosphere", () => {
     const recipe = {
       name: "test-bare-base-bare",
+      description: "Test recipe for surfBareBase extraction from bare hue name.",
       mode: "dark" as const,
       cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
@@ -2019,6 +2028,7 @@ describe("resolveHueSlots — Step 3", () => {
   it("T-BARE-BASE: borderTintBareBase mirrors surfBareBase logic for borderTint hue", () => {
     const recipe = {
       name: "test-bt-bare",
+      description: "Test recipe for borderTintBareBase extraction from hyphenated hue.",
       mode: "dark" as const,
       cardBg: { hue: "indigo-violet" },
       text: { hue: "cobalt" },
