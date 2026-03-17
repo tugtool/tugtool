@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-17T00:31:34Z
+---
+
+## step-4: Implemented computeTones() with 21 ComputedTones fields, MoodKnobs interface, added isLight to ModePreset. Runs in parallel with existing inline code. 7 new tests, all 1810 pass.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-3
 date: 2025-03-17T00:17:21Z
 ---

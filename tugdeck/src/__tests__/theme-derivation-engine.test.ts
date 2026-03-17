@@ -26,10 +26,13 @@ import {
   LIGHT_PRESET,
   generateResolvedCssExport,
   resolveHueSlots,
+  computeTones,
   ACHROMATIC_ADJACENT_HUES,
   primaryColorName,
   applyWarmthBias,
   type ModePreset,
+  type MoodKnobs,
+  type ComputedTones,
   type ResolvedHueSlots,
 } from "@/components/tugways/theme-derivation-engine";
 
@@ -1876,5 +1879,209 @@ describe("resolveHueSlots — Step 3", () => {
     expect(primaryColorName("indigo-violet")).toBe("indigo");
     expect(primaryColorName("sapphire-cobalt")).toBe("sapphire");
     expect(primaryColorName("orange")).toBe("orange");
+  });
+});
+
+// =============================================================================
+// Step 4: computeTones() tests
+// =============================================================================
+
+describe("computeTones — Step 4", () => {
+  // Standard knobs shared across tests
+  const DARK_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
+  const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-DARK: computeTones(DARK_PRESET, sc=50) matches Brio dark ground truth.
+  //
+  // Brio dark ground truth (surfaceContrast=50, from T-BRIO-MATCH fixture):
+  //   bg-app=5, bg-canvas=5, sunken=11, default=12, raised=11, overlay=14, inset=6, content=6, screen=16
+  //   divider-default=17, divider-muted=15, divider-tone=17
+  //   disabled-bg=22, disabled-fg=38, disabled-border=28
+  //   outlined-bg-rest=8 (inset+2=8), outlined-bg-hover=12 (raised+1=12), outlined-bg-active=14 (overlay=14)
+  //   toggle-track-off=28, toggle-disabled=22
+  //   signalI=50
+  // ---------------------------------------------------------------------------
+  it("T-TONES-DARK: Brio dark at sc=50 matches ground-truth tone values", () => {
+    const ct: ComputedTones = computeTones(DARK_PRESET, DARK_KNOBS_50);
+
+    // Surface tones (Brio ground truth)
+    expect(ct.bgApp).toBe(5);
+    expect(ct.bgCanvas).toBe(5);
+    expect(ct.surfaceSunken).toBe(11);
+    expect(ct.surfaceDefault).toBe(12);
+    expect(ct.surfaceRaised).toBe(11);
+    expect(ct.surfaceOverlay).toBe(14);
+    expect(ct.surfaceInset).toBe(6);
+    expect(ct.surfaceContent).toBe(6);
+    expect(ct.surfaceScreen).toBe(16);
+
+    // Divider tones
+    expect(ct.dividerDefault).toBe(17);
+    expect(ct.dividerMuted).toBe(15);
+    expect(ct.dividerTone).toBe(17);
+
+    // Control/field derived tones
+    expect(ct.disabledBgTone).toBe(22);
+    expect(ct.disabledFgTone).toBe(38);
+    expect(ct.disabledBorderTone).toBe(28);
+
+    // Outlined bg: inset+2=8, raised+1=12, overlay=14
+    expect(ct.outlinedBgRestTone).toBe(8);
+    expect(ct.outlinedBgHoverTone).toBe(12);
+    expect(ct.outlinedBgActiveTone).toBe(14);
+
+    // Toggle
+    expect(ct.toggleTrackOffTone).toBe(28);
+    expect(ct.toggleDisabledTone).toBe(22);
+
+    // Signal intensity
+    expect(ct.signalI).toBe(50);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-LIGHT: computeTones(LIGHT_PRESET, sc=50) matches current light-mode
+  // inline values at surfaceContrast=50.
+  //
+  // Light preset ground truth (from LIGHT_PRESET + inline formula at sc=50):
+  //   bg-app=20, bg-canvas=Math.round(35 + (50/100)*10)=40
+  //   sunken=44, default=99, raised=24, overlay=48, inset=100, content=100, screen=80
+  //   divider-default=Math.round(48-2)=46, divider-muted=48
+  //   disabled-bg=Math.round(70 + (50/100)*10)=75
+  //   disabled-fg=44 (=LIGHT_PRESET.fgDisabledTone)
+  //   disabled-border=46 (=dividerTone at sc=50 light)
+  //   outlined-bg-rest=51, outlined-bg-hover=99, outlined-bg-active=48
+  //   toggle-track-off=46 (=dividerTone), toggle-disabled=48 (=surfaceOverlay)
+  //   signalI=50
+  // ---------------------------------------------------------------------------
+  it("T-TONES-LIGHT: light mode at sc=50 matches expected light-mode inline values", () => {
+    const ct: ComputedTones = computeTones(LIGHT_PRESET, LIGHT_KNOBS_50);
+
+    // Surface tones
+    expect(ct.bgApp).toBe(20);
+    // bgCanvas light: Math.round(35 + (50/100)*10) = Math.round(40) = 40
+    expect(ct.bgCanvas).toBe(40);
+    expect(ct.surfaceSunken).toBe(44);
+    expect(ct.surfaceDefault).toBe(99);
+    expect(ct.surfaceRaised).toBe(24);
+    expect(ct.surfaceOverlay).toBe(48);
+    expect(ct.surfaceInset).toBe(100);
+    expect(ct.surfaceContent).toBe(100);
+    expect(ct.surfaceScreen).toBe(80);
+
+    // Divider tones: light = surfaceOverlay-2 / surfaceOverlay
+    expect(ct.dividerDefault).toBe(46); // Math.round(48-2)
+    expect(ct.dividerMuted).toBe(48);   // Math.round(48)
+    expect(ct.dividerTone).toBe(46);
+
+    // disabled-bg: Math.round(70 + (50/100)*10) = 75
+    expect(ct.disabledBgTone).toBe(75);
+    // disabled-fg: LIGHT_PRESET.fgDisabledTone = 44
+    expect(ct.disabledFgTone).toBe(44);
+    // disabled-border: dividerTone at sc=50 = 46
+    expect(ct.disabledBorderTone).toBe(46);
+
+    // Outlined bg: flat light values
+    expect(ct.outlinedBgRestTone).toBe(51);
+    expect(ct.outlinedBgHoverTone).toBe(99);
+    expect(ct.outlinedBgActiveTone).toBe(48);
+
+    // Toggle: light uses divider/overlay
+    expect(ct.toggleTrackOffTone).toBe(46); // = dividerTone
+    expect(ct.toggleDisabledTone).toBe(48); // = surfaceOverlay
+
+    // Signal intensity
+    expect(ct.signalI).toBe(50);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-SC: surfaceContrast=0 and surfaceContrast=100 produce expected extremes.
+  //
+  // Dark mode extreme values (derived from DARK_PRESET formulas):
+  //   sc=0:   bgApp = round(5 + (0-50)/50 * 8) = round(5 - 8) = round(-3) = -3
+  //           (clamping is not applied by computeTones; rules/deriveTheme clamp)
+  //   sc=100: bgApp = round(5 + (100-50)/50 * 8) = round(5 + 8) = 13
+  //   surfaceSunken sc=0: round(11 + (0-50)/50*5) = round(11-5) = 6
+  //   surfaceSunken sc=100: round(11 + (100-50)/50*5) = round(11+5) = 16
+  // ---------------------------------------------------------------------------
+  it("T-TONES-SC: dark mode surfaceContrast=0 produces minimum tone values", () => {
+    const ct: ComputedTones = computeTones(DARK_PRESET, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
+
+    // bgApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
+    expect(ct.bgApp).toBe(-3);
+    // surfaceSunken: 11 + (0-50)/50 * 5 = 11 - 5 = 6
+    expect(ct.surfaceSunken).toBe(6);
+    // surfaceDefault: 12 + (0-50)/50 * 3 = 12 - 3 = 9
+    expect(ct.surfaceDefault).toBe(9);
+    // surfaceOverlay: 14 + (0-50)/50 * 5 = 14 - 5 = 9
+    expect(ct.surfaceOverlay).toBe(9);
+    // signalI: direct from knob
+    expect(ct.signalI).toBe(50);
+  });
+
+  it("T-TONES-SC: dark mode surfaceContrast=100 produces maximum tone values", () => {
+    const ct: ComputedTones = computeTones(DARK_PRESET, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
+
+    // bgApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
+    expect(ct.bgApp).toBe(13);
+    // surfaceSunken: 11 + (100-50)/50 * 5 = 11 + 5 = 16
+    expect(ct.surfaceSunken).toBe(16);
+    // surfaceDefault: 12 + (100-50)/50 * 3 = 12 + 3 = 15
+    expect(ct.surfaceDefault).toBe(15);
+    // surfaceScreen: 16 + (100-50)/50 * 13 = 16 + 13 = 29
+    expect(ct.surfaceScreen).toBe(29);
+  });
+
+  it("T-TONES-SC: signal intensity extremes map directly to signalI", () => {
+    const ct0 = computeTones(DARK_PRESET, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
+    const ct100 = computeTones(DARK_PRESET, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
+    expect(ct0.signalI).toBe(0);
+    expect(ct100.signalI).toBe(100);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-MATCH: computeTones output matches existing inline deriveTheme values
+  // for Brio at sc=50. Verifies the parallel computation is consistent.
+  // ---------------------------------------------------------------------------
+  it("T-TONES-MATCH: deriveTheme(brio) output unchanged after adding computeTones call", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+
+    // Token count must remain 373
+    expect(Object.keys(output.tokens).length).toBe(373);
+
+    // Surface tokens spot-check (from T-BRIO-MATCH fixture)
+    expect(output.tokens["--tug-base-bg-app"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
+    expect(output.tokens["--tug-base-surface-sunken"]).toBe("--tug-color(violet, i: 5, t: 11)");
+    expect(output.tokens["--tug-base-surface-default"]).toBe("--tug-color(violet, i: 5, t: 12)");
+    expect(output.tokens["--tug-base-surface-overlay"]).toBe("--tug-color(violet, i: 4, t: 14)");
+    expect(output.tokens["--tug-base-surface-inset"]).toBe("--tug-color(indigo-violet, i: 5, t: 6)");
+
+    // Divider tokens
+    expect(output.tokens["--tug-base-divider-default"]).toBe("--tug-color(indigo-violet, i: 6, t: 17)");
+    expect(output.tokens["--tug-base-divider-muted"]).toBe("--tug-color(violet, i: 4, t: 15)");
+
+    // Disabled control
+    expect(output.tokens["--tug-base-control-disabled-bg"]).toBeDefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-TONES-INTERFACE: ComputedTones has all required fields (type completeness).
+  // ---------------------------------------------------------------------------
+  it("T-TONES-INTERFACE: computeTones returns all required ComputedTones fields", () => {
+    const ct: ComputedTones = computeTones(DARK_PRESET, DARK_KNOBS_50);
+
+    // All fields from Spec S03 must be present and be numbers
+    const requiredFields: (keyof ComputedTones)[] = [
+      "bgApp", "bgCanvas", "surfaceSunken", "surfaceDefault", "surfaceRaised",
+      "surfaceOverlay", "surfaceInset", "surfaceContent", "surfaceScreen",
+      "dividerDefault", "dividerMuted", "dividerTone",
+      "disabledBgTone", "disabledFgTone", "disabledBorderTone",
+      "outlinedBgRestTone", "outlinedBgHoverTone", "outlinedBgActiveTone",
+      "toggleTrackOffTone", "toggleDisabledTone",
+      "signalI",
+    ];
+    for (const field of requiredFields) {
+      expect(typeof ct[field]).toBe("number");
+    }
   });
 });

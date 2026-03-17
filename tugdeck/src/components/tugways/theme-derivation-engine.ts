@@ -223,6 +223,12 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
  */
 export interface ModePreset {
   // -------------------------------------------------------------------------
+  // Mode flag — used by computeTones() to branch on mode-specific formulas.
+  // -------------------------------------------------------------------------
+  /** True for light mode, false for dark mode. */
+  isLight: boolean;
+
+  // -------------------------------------------------------------------------
   // Surface tone anchors (absolute tone values at surfaceContrast=50)
   // -------------------------------------------------------------------------
   bgAppTone: number;
@@ -554,6 +560,8 @@ export interface ModePreset {
  * control emphasis fields ([D10]).
  */
 export const DARK_PRESET: ModePreset = {
+  isLight: false,
+
   // Surface tones (Brio ground truth at surfaceContrast=50)
   bgAppTone: 5,
   bgCanvasTone: 5,
@@ -840,6 +848,8 @@ export const DARK_PRESET: ModePreset = {
  * control emphasis fields ([D10]).
  */
 export const LIGHT_PRESET: ModePreset = {
+  isLight: true,
+
   // Surface tones (from Harmony, yellow atmosphere)
   bgAppTone: 20,
   bgCanvasTone: 20,
@@ -1441,6 +1451,206 @@ export function resolveHueSlots(recipe: ThemeRecipe, warmth: number): ResolvedHu
   };
 }
 
+// ---------------------------------------------------------------------------
+// MoodKnobs — normalized mood knob values (Spec S04)
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalized mood knob values passed to computeTones() and rule expressions.
+ * All fields are 0-100 integers matching the ThemeRecipe optional fields.
+ * Spec S04.
+ */
+export interface MoodKnobs {
+  /** Surface contrast knob (0-100, default 50). */
+  surfaceContrast: number;
+  /** Signal intensity knob (0-100, default 50). */
+  signalIntensity: number;
+  /** Warmth knob (0-100, default 50). Included for completeness; warmth bias is
+   *  applied in resolveHueSlots(), not in computeTones(). */
+  warmth: number;
+}
+
+// ---------------------------------------------------------------------------
+// ComputedTones — pre-computed tone values for rule evaluation (Spec S03)
+// ---------------------------------------------------------------------------
+
+/**
+ * All derived tone values, pre-computed from ModePreset + MoodKnobs before
+ * the rule evaluation loop. Rules reference `computed.*` rather than
+ * re-deriving inline, preventing redundant computation and ensuring
+ * consistency across all tokens that share the same derived tone.
+ *
+ * This is Layer 2 output of the three-layer derivation pipeline (Spec S01).
+ * Produced by computeTones(); consumed by the rule evaluator.
+ *
+ * Spec S03.
+ */
+export interface ComputedTones {
+  // Surface tones (derived from preset tone anchors + surfaceContrast)
+  bgApp: number;
+  bgCanvas: number;
+  surfaceSunken: number;
+  surfaceDefault: number;
+  surfaceRaised: number;
+  surfaceOverlay: number;
+  surfaceInset: number;
+  surfaceContent: number;
+  surfaceScreen: number;
+  // Divider tones
+  dividerDefault: number;
+  dividerMuted: number;
+  /** Shared reference tone for disabled/toggle/separator tokens (= dividerDefault). */
+  dividerTone: number;
+  // Control/field derived tones
+  disabledBgTone: number;
+  disabledFgTone: number;
+  disabledBorderTone: number;
+  outlinedBgRestTone: number;
+  outlinedBgHoverTone: number;
+  outlinedBgActiveTone: number;
+  toggleTrackOffTone: number;
+  toggleDisabledTone: number;
+  // Signal intensity (derived from signalIntensity knob)
+  signalI: number;
+}
+
+// ---------------------------------------------------------------------------
+// computeTones — Layer 2: preset + knobs -> ComputedTones (Spec S03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pre-compute all derived tone values from a ModePreset and MoodKnobs.
+ *
+ * This is Layer 2 of the three-layer derivation pipeline (Spec S01).
+ * Called in deriveTheme() in parallel with existing inline tone computations
+ * (Step 4). In later steps, the inline tone computations will be removed
+ * and rules will reference ComputedTones directly.
+ *
+ * All formulas match the inline computations currently in deriveTheme()
+ * exactly, verified by T-TONES-DARK and T-TONES-LIGHT tests.
+ *
+ * Light-mode formula exceptions absorbed by preset fields (Spec S03):
+ *   - bgCanvas: uses preset.bgCanvasToneBase/SCCenter/Scale for unified formula
+ *   - disabledBgTone: uses preset.disabledBgBase/Scale
+ *
+ * @param preset - Mode-specific parameter bundle (DARK_PRESET or LIGHT_PRESET)
+ * @param knobs - Normalized mood knob values
+ */
+export function computeTones(preset: ModePreset, knobs: MoodKnobs): ComputedTones {
+  const sc = knobs.surfaceContrast;
+
+  // ---------------------------------------------------------------------------
+  // Surface tones — each anchored at preset tone at sc=50, scaled around it.
+  // ---------------------------------------------------------------------------
+
+  // bg-app: anchored at preset.bgAppTone at sc=50, ±8 units at extremes
+  const bgApp = preset.bgAppTone + ((sc - 50) / 50) * 8;
+
+  // bg-canvas: unified formula using preset fields (Spec S03 light-mode exception)
+  //   Dark: bgCanvasToneBase=bgAppTone, bgCanvasToneSCCenter=50, bgCanvasToneScale=8
+  //         -> Math.round(bgAppTone + ((sc - 50)/50) * 8) = Math.round(bgApp)
+  //   Light: bgCanvasToneBase=35, bgCanvasToneSCCenter=0, bgCanvasToneScale=10
+  //          -> Math.round(35 + (sc/100) * 10)
+  const bgCanvas = Math.round(
+    preset.bgCanvasToneBase +
+      ((sc - preset.bgCanvasToneSCCenter) /
+        (preset.bgCanvasToneSCCenter === 0 ? 100 : 50)) *
+        preset.bgCanvasToneScale,
+  );
+
+  // surface-sunken: anchored at preset.surfaceSunkenTone at sc=50, ±5 units
+  const surfaceSunken = Math.round(preset.surfaceSunkenTone + ((sc - 50) / 50) * 5);
+
+  // surface-default: anchored at preset.surfaceDefaultTone at sc=50, ±3 units
+  const surfaceDefault = Math.round(preset.surfaceDefaultTone + ((sc - 50) / 50) * 3);
+
+  // surface-raised: anchored at preset.surfaceRaisedTone at sc=50, ±5 units
+  const surfaceRaised = Math.round(preset.surfaceRaisedTone + ((sc - 50) / 50) * 5);
+
+  // surface-overlay: anchored at preset.surfaceOverlayTone at sc=50, ±5 units
+  const surfaceOverlay = Math.round(preset.surfaceOverlayTone + ((sc - 50) / 50) * 5);
+
+  // surface-inset: anchored at preset.surfaceInsetTone at sc=50, ±7 units
+  const surfaceInset = Math.round(preset.surfaceInsetTone + ((sc - 50) / 50) * 7);
+
+  // surface-content: matches inset (code blocks, inline content areas)
+  const surfaceContent = surfaceInset;
+
+  // surface-screen: anchored at preset.surfaceScreenTone at sc=50, ±13 units
+  const surfaceScreen = Math.round(preset.surfaceScreenTone + ((sc - 50) / 50) * 13);
+
+  // ---------------------------------------------------------------------------
+  // Divider tones — derived from surface overlay tone
+  // Dark mode: flat Brio ground-truth values (17, 15)
+  // Light mode: derived from surfaceOverlay (same as inline deriveTheme formula)
+  // ---------------------------------------------------------------------------
+  const dividerDefault = Math.round(
+    !preset.isLight
+      ? 17 // dark mode: flat Brio ground truth
+      : surfaceOverlay - 2, // light mode: derived from overlay
+  );
+  const dividerMuted = Math.round(
+    !preset.isLight
+      ? 15 // dark mode: flat Brio ground truth
+      : surfaceOverlay, // light mode: derived from overlay
+  );
+  const dividerTone = dividerDefault;
+
+  // ---------------------------------------------------------------------------
+  // Control/field derived tones
+  // ---------------------------------------------------------------------------
+
+  // disabled-bg: dark=flat 22; light=70+(sc/100)*10 (Spec S03 exception)
+  const disabledBgTone = Math.round(
+    preset.disabledBgBase + (sc / 100) * preset.disabledBgScale,
+  );
+
+  // disabled-fg: dark=38; light=fgDisabledTone (from preset)
+  const disabledFgTone = !preset.isLight ? 38 : preset.fgDisabledTone;
+
+  // disabled-border: dark=28; light=dividerTone
+  const disabledBorderTone = !preset.isLight ? 28 : Math.round(dividerTone);
+
+  // outlined bg tones (for light-mode chromatic outlined bg hover/active)
+  // Dark: same as surface-inset+2 / surface-raised+1 / surface-overlay
+  // Light: flat preset values (51, 99, 48 from Harmony)
+  const outlinedBgRestTone = !preset.isLight ? Math.round(surfaceInset + 2) : 51;
+  const outlinedBgHoverTone = !preset.isLight ? Math.round(surfaceRaised + 1) : 99;
+  const outlinedBgActiveTone = !preset.isLight ? Math.round(surfaceOverlay) : 48;
+
+  // toggle track off and disabled tones
+  // Dark: flat 28/22; Light: derived from divider/overlay
+  const toggleTrackOffTone = !preset.isLight ? 28 : Math.round(dividerTone);
+  const toggleDisabledTone = !preset.isLight ? 22 : Math.round(surfaceOverlay);
+
+  // Signal intensity: direct mapping from knob (0→0, 50→50, 100→100)
+  const signalI = Math.round(knobs.signalIntensity);
+
+  return {
+    bgApp: Math.round(bgApp),
+    bgCanvas,
+    surfaceSunken,
+    surfaceDefault,
+    surfaceRaised,
+    surfaceOverlay,
+    surfaceInset,
+    surfaceContent,
+    surfaceScreen,
+    dividerDefault,
+    dividerMuted,
+    dividerTone,
+    disabledBgTone,
+    disabledFgTone,
+    disabledBorderTone,
+    outlinedBgRestTone,
+    outlinedBgHoverTone,
+    outlinedBgActiveTone,
+    toggleTrackOffTone,
+    toggleDisabledTone,
+    signalI,
+  };
+}
+
 /**
  * Compute OKLCH from hue angle, intensity (0-100), tone (0-100).
  * Uses the same formula as tugColor() in palette-engine.ts.
@@ -1698,6 +1908,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // Layer 1: resolve all hue slots for this recipe (parallel to existing inline vars).
   // In later steps, inline hue variables will be replaced by resolvedSlots references.
   const resolvedSlots = resolveHueSlots(recipe, warmth);
+
+  // Layer 2: pre-compute all derived tones (parallel to existing inline computations).
+  // In later steps, rules will reference computedTones directly instead of inline vars.
+  const computedTones = computeTones(preset, { surfaceContrast, signalIntensity, warmth });
 
   // Atmosphere angle with warmth bias applied (for neutral/achromatic hues)
   const atmAngleW = applyWarmthBias(atmHue, atmAngle);
