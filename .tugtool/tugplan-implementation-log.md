@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-17T13:36:42Z
+---
+
+## step-9: Deleted ModePreset interface, DARK_PRESET, LIGHT_PRESET (~890 lines). Cleaned up all references. Rewrote T-PRESET-EXPORTS as T-FORMULAS-EXPORTS. ThemeRecipe.formulas is now the sole formula source. 1814 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-formulas-refactor.md
+
+---
+
+---
 step: step-8
 date: 2025-03-17T13:22:04Z
 ---
