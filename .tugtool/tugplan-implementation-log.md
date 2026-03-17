@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-17T16:29:34Z
+---
+
+## step-1: Added hexToOkLabL function implementing OKLab M1 matrix conversion (Spec S02) and calibration test infrastructure for algorithm replacement in Step 2
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
 step: step-10
 date: 2025-03-17T13:43:26Z
 ---

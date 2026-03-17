@@ -90,6 +90,53 @@ export function computeWcagContrast(fgHex: string, bgHex: string): number {
 }
 
 // ---------------------------------------------------------------------------
+// OKLab L conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a #rrggbb hex color to OKLab perceptual lightness (L).
+ *
+ * Follows the OKLab specification by Björn Ottosson (2020):
+ *   https://bottosson.github.io/posts/oklab/
+ *
+ * Steps:
+ *   1. Parse hex to sRGB [0,1] channels
+ *   2. Linearise each channel via srgbChannelToLinear (IEC 61966-2-1)
+ *   3. Apply the OKLab M1 matrix (linear sRGB → linear LMS):
+ *        l = 0.4122214708·R + 0.5363325363·G + 0.0514459929·B
+ *        m = 0.2119034982·R + 0.6806995451·G + 0.1073969566·B
+ *        s = 0.0883024619·R + 0.2817188376·G + 0.6299787005·B
+ *   4. Cube-root each: l_ = cbrt(l), m_ = cbrt(m), s_ = cbrt(s)
+ *   5. Compute L = 0.2104542553·l_ + 0.7936177850·m_ - 0.0040720468·s_
+ *
+ * Returns the OKLab L component in the range [0, 1]:
+ *   black (#000000) → ~0.0
+ *   white (#ffffff) → ~1.0
+ *   mid-gray (#777777) → ~0.53
+ *
+ * @param hex - Color as #rrggbb hex string
+ * @returns OKLab perceptual lightness L ∈ [0, 1]
+ */
+export function hexToOkLabL(hex: string): number {
+  const r = srgbChannelToLinear(parseInt(hex.slice(1, 3), 16) / 255);
+  const g = srgbChannelToLinear(parseInt(hex.slice(3, 5), 16) / 255);
+  const b = srgbChannelToLinear(parseInt(hex.slice(5, 7), 16) / 255);
+
+  // OKLab M1 matrix: linear sRGB → linear LMS (Ottosson 2020)
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+  // Cube-root each LMS channel
+  const l_ = Math.cbrt(l);
+  const m_ = Math.cbrt(m);
+  const s_ = Math.cbrt(s);
+
+  // OKLab M2 matrix: LMS^ → Lab (L component only)
+  return 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+}
+
+// ---------------------------------------------------------------------------
 // Perceptual contrast calculation
 // ---------------------------------------------------------------------------
 

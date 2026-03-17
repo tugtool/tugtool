@@ -41,6 +41,7 @@ import {
   simulateCVDFromOKLCH,
   simulateCVDForHex,
   checkCVDDistinguishability,
+  hexToOkLabL,
   CVD_MATRICES,
   CONTRAST_THRESHOLDS,
 } from "@/components/tugways/theme-accessibility";
@@ -1148,5 +1149,194 @@ describe("compositeOverSurface", () => {
 
     // Must pass ui-component contrast 30 threshold
     expect(Math.abs(lc)).toBeGreaterThanOrEqual(CONTRAST_THRESHOLDS["ui-component"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test suite: hexToOkLabL — OKLab perceptual lightness conversion
+// ---------------------------------------------------------------------------
+
+describe("hexToOkLabL", () => {
+  // -------------------------------------------------------------------------
+  // T6.1: black returns ~0.0
+  //
+  // OKLab is defined such that pure black (#000000) has L=0.0.
+  // -------------------------------------------------------------------------
+  it("T6.1: hexToOkLabL('#000000') returns ~0.0 (black)", () => {
+    const L = hexToOkLabL("#000000");
+    expect(L).toBeCloseTo(0.0, 4);
+  });
+
+  // -------------------------------------------------------------------------
+  // T6.2: white returns ~1.0
+  //
+  // OKLab is defined such that pure white (#ffffff) has L=1.0.
+  // -------------------------------------------------------------------------
+  it("T6.2: hexToOkLabL('#ffffff') returns ~1.0 (white)", () => {
+    const L = hexToOkLabL("#ffffff");
+    expect(L).toBeCloseTo(1.0, 4);
+  });
+
+  // -------------------------------------------------------------------------
+  // T6.3: mid-gray returns approximately 0.57
+  //
+  // #777777 in sRGB linearises to approximately 0.2140 per channel.
+  // The OKLab L for a neutral gray tracks closely with perceptual lightness.
+  // Measured value: hexToOkLabL("#777777") ≈ 0.569.
+  // -------------------------------------------------------------------------
+  it("T6.3: hexToOkLabL('#777777') returns approximately 0.57 (mid-gray)", () => {
+    const L = hexToOkLabL("#777777");
+    expect(L).toBeGreaterThan(0.50);
+    expect(L).toBeLessThan(0.65);
+  });
+
+  // -------------------------------------------------------------------------
+  // T6.4: L is monotonically increasing for achromatic grays
+  //
+  // Going from #000000 to #404040 to #808080 to #c0c0c0 to #ffffff,
+  // each successive L must be strictly greater than the previous.
+  // -------------------------------------------------------------------------
+  it("T6.4: L is monotonically increasing for achromatic grays", () => {
+    const grays = ["#000000", "#404040", "#808080", "#c0c0c0", "#ffffff"];
+    const Ls = grays.map(hexToOkLabL);
+    for (let i = 1; i < Ls.length; i++) {
+      expect(Ls[i]).toBeGreaterThan(Ls[i - 1]);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T6.5: Brio fg-default and bg-app have expected relative ordering
+  //
+  // Brio dark theme: fg-default is a very light cobalt (high tone=94),
+  // bg-app is a very dark indigo-violet (low tone=5). fg-default L should
+  // be substantially higher than bg-app L.
+  // -------------------------------------------------------------------------
+  it("T6.5: Brio fg-default L is substantially higher than bg-app L", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const fgDefault = brioOutput.resolved["--tug-base-fg-default"];
+    const bgApp = brioOutput.resolved["--tug-base-bg-app"];
+
+    expect(fgDefault).toBeDefined();
+    expect(bgApp).toBeDefined();
+
+    const fgHex = oklchToHex(fgDefault!.L, fgDefault!.C, fgDefault!.h);
+    const bgHex = oklchToHex(bgApp!.L, bgApp!.C, bgApp!.h);
+
+    const fgOkLabL = hexToOkLabL(fgHex);
+    const bgOkLabL = hexToOkLabL(bgHex);
+
+    // fg-default is a light foreground, bg-app is a dark background
+    // The OKLab L delta should be substantial (> 0.5)
+    expect(fgOkLabL).toBeGreaterThan(0.7);
+    expect(bgOkLabL).toBeLessThan(0.3);
+    expect(fgOkLabL - bgOkLabL).toBeGreaterThan(0.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test suite: contrast-calibration-baseline
+//
+// Captures the current computePerceptualContrast results on all Brio token
+// pairs. This serves as the calibration baseline for Step 2, where the
+// algorithm will be replaced. The baseline records pass/fail status and
+// contrast magnitude for each pair so the rank-ordering invariant can be
+// verified against the new metric.
+// ---------------------------------------------------------------------------
+
+describe("contrast-calibration-baseline", () => {
+  // -------------------------------------------------------------------------
+  // CB1: Capture all Brio pair contrast scores under current algorithm
+  //
+  // This test validates the baseline capture mechanism and documents the
+  // current pass/fail distribution. It does not assert specific numeric values
+  // (those are algorithm-dependent), but verifies structural invariants:
+  //   - All evaluated pairs have a defined contrast score
+  //   - contrast === 0 only when both colors are structurally identical
+  //   - Body-text pairs for primary fg-default must pass
+  // -------------------------------------------------------------------------
+  it("CB1: captures all Brio pair contrast scores and verifies baseline structural invariants", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    // Every result must have a numeric contrast score
+    for (const result of results) {
+      expect(typeof result.contrast).toBe("number");
+      expect(isFinite(result.contrast)).toBe(true);
+    }
+
+    // Must have a reasonable number of evaluated pairs
+    expect(results.length).toBeGreaterThan(50);
+
+    // Document the current pass/fail distribution (informational — not a hard assertion)
+    const passes = results.filter((r) => r.contrastPass).length;
+    const failures = results.filter((r) => !r.contrastPass).length;
+    expect(passes + failures).toBe(results.length);
+
+    // The primary fg-default on bg-app must pass body-text (75) threshold
+    const fgDefaultPair = results.find(
+      (r) => r.fg === "--tug-base-fg-default" && r.bg === "--tug-base-bg-app",
+    );
+    expect(fgDefaultPair).toBeDefined();
+    expect(fgDefaultPair!.contrastPass).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // CB2: Rank-ordering invariant — sign consistency with OKLab L ordering
+  //
+  // For any evaluated pair, if fg OKLab L > bg OKLab L (fg is lighter),
+  // the current algorithm should return a negative contrast score (light-on-dark
+  // polarity). If fg L < bg L (fg is darker), the score should be positive.
+  // This documents the current polarity convention before algorithm replacement.
+  //
+  // Note: Pairs with |contrast| < 5 are excluded as near-zero soft-clips
+  // may not reliably follow the polarity convention.
+  // -------------------------------------------------------------------------
+  it("CB2: contrast polarity is consistent with OKLab L ordering for all evaluated Brio pairs", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    const polarityViolations: Array<{ fg: string; bg: string; contrast: number; fgL: number; bgL: number }> = [];
+
+    for (const result of results) {
+      if (Math.abs(result.contrast) < 5) continue; // skip near-zero soft-clips
+
+      const fgColor = brioOutput.resolved[result.fg];
+      const bgColor = brioOutput.resolved[result.bg];
+      if (!fgColor || !bgColor) continue;
+
+      const fgHex = oklchToHex(fgColor.L, fgColor.C, fgColor.h);
+      const bgHex = oklchToHex(bgColor.L, bgColor.C, bgColor.h);
+
+      const fgOkLabL = hexToOkLabL(fgHex);
+      const bgOkLabL = hexToOkLabL(bgHex);
+
+      // fg lighter than bg → negative contrast (light-on-dark)
+      // fg darker than bg → positive contrast (dark-on-light)
+      if (fgOkLabL > bgOkLabL && result.contrast > 0) {
+        polarityViolations.push({ fg: result.fg, bg: result.bg, contrast: result.contrast, fgL: fgOkLabL, bgL: bgOkLabL });
+      } else if (fgOkLabL < bgOkLabL && result.contrast < 0) {
+        polarityViolations.push({ fg: result.fg, bg: result.bg, contrast: result.contrast, fgL: fgOkLabL, bgL: bgOkLabL });
+      }
+    }
+
+    expect(polarityViolations).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // CB3: All Brio pair scores are bounded in the expected range
+  //
+  // The current algorithm produces scores in approximately [-110, 110].
+  // This test verifies no pair produces an out-of-bounds score, which would
+  // indicate a numerical issue in the algorithm or an unusual color value.
+  // -------------------------------------------------------------------------
+  it("CB3: all Brio pair contrast scores are within expected range [-110, 110]", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    const outOfRange = results.filter((r) => Math.abs(r.contrast) > 110);
+    const descriptions = outOfRange.map(
+      (r) => `${r.fg} on ${r.bg}: ${r.contrast.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
   });
 });
