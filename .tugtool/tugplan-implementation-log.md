@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-17T02:04:55Z
+---
+
+## step-9: Final verification: 1817 tests pass, T-BRIO-MATCH passes, 373 tokens generated (baseline match), zero isLight in deriveTheme()/evaluateRules(). Cleaned 2 stale step-reference comments in derivation-rules.ts.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-8
 date: 2025-03-17T01:49:53Z
 ---

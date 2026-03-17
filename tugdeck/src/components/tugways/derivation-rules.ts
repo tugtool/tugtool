@@ -450,7 +450,7 @@ const INVARIANT_RULES: Record<string, DerivationRule> = {
 };
 
 // ---------------------------------------------------------------------------
-// CORE_VISUAL_RULES — merged rule table for section A (Step 5)
+// CORE_VISUAL_RULES — merged rule table for section A
 // ---------------------------------------------------------------------------
 
 /**
@@ -1433,7 +1433,7 @@ const BADGE_TINTED_RULES: Record<string, DerivationRule> = {
 };
 
 // ---------------------------------------------------------------------------
-// RULES — complete merged rule table for all 373 tokens (Steps 5 and 6)
+// RULES — complete merged rule table for all 373 tokens
 // ---------------------------------------------------------------------------
 
 /**
