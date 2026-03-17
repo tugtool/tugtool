@@ -18,7 +18,7 @@
  *
  * Mood knobs (`surfaceContrast`, `signalIntensity`, `warmth`) modulate tone
  * spreads, intensity levels, and hue angles. Mode differences (dark vs light)
- * are expressed entirely as data in BRIO_DARK_FORMULAS (and future recipe formulas)
+ * are expressed entirely as data in DARK_FORMULAS (and future recipe formulas)
  * and the RULES table — deriveTheme() itself contains no mode branching.
  *
  * Control tokens use the emphasis x role system (Table T01):
@@ -86,7 +86,7 @@ export interface ThemeRecipe {
   surfaceContrast?: number; // 0-100, default 50
   signalIntensity?: number; // 0-100, default 50
   warmth?: number; // 0-100, default 50
-  /** All formula constants for this recipe. Falls back to BRIO_DARK_FORMULAS when absent. [D02] */
+  /** All formula constants for this recipe. Falls back to DARK_FORMULAS when absent. [D02] */
   formulas?: DerivationFormulas;
 }
 
@@ -228,7 +228,7 @@ export interface ResolvedHueSlots {
  * parameterizations of one recipe. [D01]
  *
  * Lives on `ThemeRecipe.formulas` (optional; `deriveTheme()` falls back to
- * `BRIO_DARK_FORMULAS` when absent). [D02]
+ * `DARK_FORMULAS` when absent). [D02]
  *
  * Field groups:
  *   Surface tone anchors, surface intensities, foreground tone anchors,
@@ -670,18 +670,18 @@ export interface DerivationFormulas {
 }
 
 // ---------------------------------------------------------------------------
-// BRIO_DARK_FORMULAS — Brio dark formula constants [D01] [D02]
+// DARK_FORMULAS — Dark recipe formula constants [D01] [D02]
 // ---------------------------------------------------------------------------
 
 /**
- * All formula constants for the Brio dark recipe.
- * Single source of truth for all Brio dark derivation constants.
+ * All formula constants for the Dark recipe.
+ * Single source of truth for all Dark recipe derivation constants.
  * Exported as the default fallback in `deriveTheme()` via
- * `recipe.formulas ?? BRIO_DARK_FORMULAS`. [D02]
+ * `recipe.formulas ?? DARK_FORMULAS`. [D02]
  *
  * Also referenced by `EXAMPLE_RECIPES.brio.formulas`.
  */
-export const BRIO_DARK_FORMULAS: DerivationFormulas = {
+export const DARK_FORMULAS: DerivationFormulas = {
   // Surface tones (Brio ground truth at surfaceContrast=50)
   bgAppTone: 5,
   bgCanvasTone: 5,
@@ -962,22 +962,22 @@ export const BRIO_DARK_FORMULAS: DerivationFormulas = {
 };
 
 // ---------------------------------------------------------------------------
-// BASE_FORMULAS + BRIO_DARK_OVERRIDES — theme family pattern [D03]
+// BASE_FORMULAS + DARK_OVERRIDES — theme family pattern [D03]
 // ---------------------------------------------------------------------------
 
 /**
  * Default formula values shared across all recipes.
- * `BRIO_DARK_FORMULAS = { ...BASE_FORMULAS, ...BRIO_DARK_OVERRIDES }`.
+ * `DARK_FORMULAS = { ...BASE_FORMULAS, ...DARK_OVERRIDES }`.
  * Future light / stark recipes override only the fields that differ. [D03]
  */
-export const BASE_FORMULAS: DerivationFormulas = BRIO_DARK_FORMULAS;
+export const BASE_FORMULAS: DerivationFormulas = DARK_FORMULAS;
 
 /**
- * Fields that are specific to the Brio dark recipe and differ from BASE_FORMULAS.
- * Currently empty because BASE_FORMULAS IS the Brio dark recipe.
+ * Fields that are specific to the Dark recipe and differ from BASE_FORMULAS.
+ * Currently empty because BASE_FORMULAS IS the Dark recipe.
  * Future theme families will populate this with their diverging values.
  */
-export const BRIO_DARK_OVERRIDES: Partial<DerivationFormulas> = {};
+export const DARK_OVERRIDES: Partial<DerivationFormulas> = {};
 
 // ---------------------------------------------------------------------------
 // EXAMPLE_RECIPES — reference recipe
@@ -997,7 +997,7 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     canvas: "indigo-violet", // bg-canvas, bg-app use same hue as cardBg
     cardFrame: "indigo",     // card title bar, tab bar bg
     borderTint: "indigo-violet", // borders and dividers use same hue as cardBg
-    formulas: { ...BASE_FORMULAS, ...BRIO_DARK_OVERRIDES },
+    formulas: { ...BASE_FORMULAS, ...DARK_OVERRIDES },
   },
 };
 
@@ -1133,12 +1133,12 @@ export function applyWarmthBias(hueName: string, angle: number, warmthBias: numb
  *
  * @param recipe  - The theme recipe
  * @param warmth  - Warmth knob value (0-100, default 50)
- * @param formulas - Formula constants; defaults to recipe.formulas ?? BRIO_DARK_FORMULAS
+ * @param formulas - Formula constants; defaults to recipe.formulas ?? DARK_FORMULAS
  */
 export function resolveHueSlots(
   recipe: ThemeRecipe,
   warmth: number,
-  formulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS,
+  formulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS,
 ): ResolvedHueSlots {
   const warmthBias = ((warmth - 50) / 50) * 12; // ±12° at extremes
 
@@ -2146,10 +2146,10 @@ function resolvedEntryAlpha(
 export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 1. Resolve formula constants [D01]
-  // recipe.formulas when provided, else Brio dark default. [D02]
-  // Silent fallback: the only production recipe is Brio dark.
+  // recipe.formulas when provided, else Dark recipe default. [D02]
+  // Silent fallback: the only production recipe is the Dark recipe.
   // -------------------------------------------------------------------------
-  const formulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
+  const formulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS;
 
   // -------------------------------------------------------------------------
   // 2. Mood knob normalization (0-100, default 50)

@@ -1,3 +1,6 @@
 
 # Tug worktrees (isolated implementation environments)
 .tugtree/
+
+# Golden snapshots for token output identity checks
+styles/*.golden

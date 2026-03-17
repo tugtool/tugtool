@@ -10,6 +10,66 @@ Entries are sorted newest-first.
 
 ---
 step: step-5
+date: 2025-03-17T22:49:36Z
+---
+
+## step-5: Final verification: all 1842 tests pass, token output byte-identical to pre-refactor baseline, zero BRIO_DARK occurrences remain, DARK_FORMULAS and DARK_OVERRIDES properly exported, golden snapshot removed.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
+step: step-4
+date: 2025-03-17T22:44:31Z
+---
+
+## step-4: Mechanical rename of BRIO_DARK_FORMULAS to DARK_FORMULAS and BRIO_DARK_OVERRIDES to DARK_OVERRIDES across theme-derivation-engine.ts, theme-derivation-engine.test.ts, and gallery-theme-generator-content.test.tsx. BASE_FORMULAS alias updated. Zero old-name occurrences remain. Token output byte-identical.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
+step: step-3
+date: 2025-03-17T22:35:04Z
+---
+
+## step-3: Replaced inlined formula expressions in all factory functions and direct rule tables with named builder calls. filledRoleRules, outlinedFgRules, ghostFgRules, ghostDangerRules, semanticToneFamilyRules, badgeTintedRoleRules simplified. SURFACE_RULES, FOREGROUND_RULES, ICON_RULES, BORDER_RULES converted where applicable. File shrank from 1597 to 1430 lines. Token output byte-identical to golden snapshot.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
+step: step-2
+date: 2025-03-17T22:24:45Z
+---
+
+## step-2: Defined 18 named formula builders (surface, filledFg, outlinedFg, borderRamp, filledBg, semanticTone, badgeTinted, signalRamp, signalRampAlpha, outlinedBg, ghostBg, formulaField plus pre-applied instances). Added ComputedTones import and type F alias. No behavioral changes — builders are unused pending Step 3.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
+step: step-1
+date: 2025-03-17T22:17:03Z
+---
+
+## step-1: Captured golden token snapshot (tug-base-generated.css.golden) and added *.golden to .gitignore. Baseline: 373 tokens, 1842 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
+step: step-5
 date: 2025-03-17T18:47:27Z
 ---
 
