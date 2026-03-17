@@ -1,25 +1,36 @@
 /**
  * Theme Derivation Engine — Tugways Theme Generator
  *
- * Derives complete 350-token `--tug-base-*` themes from a compact `ThemeRecipe`.
+ * Derives complete 373-token `--tug-base-*` themes from a compact `ThemeRecipe`.
  * Each call to `deriveTheme()` returns:
- *   - `tokens`: all 349 token values as `--tug-color()` strings (for CSS export)
+ *   - `tokens`: all 373 token values as `--tug-color()` strings (for CSS export)
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
  *
- * The derivation follows ~55 role formulas extracted from the three hand-authored
- * themes (Brio, Bluenote, Harmony). Mood knobs (`surfaceContrast`, `signalIntensity`,
- * `warmth`) modulate tone spreads and intensity levels.
+ * The derivation uses a three-layer declarative pipeline:
+ *   Layer 1 — resolveHueSlots(): recipe + warmth knob → ResolvedHueSlots
+ *             Applies warmth bias to every hue in the recipe and resolves all
+ *             per-tier hue variants (fg-muted, surfBareBase, etc.).
+ *   Layer 2 — computeTones(): ModePreset + MoodKnobs → ComputedTones
+ *             Pre-computes all derived tone values from mood knobs and mode preset.
+ *   Layer 3 — evaluateRules(): RULES table → tokens + resolved maps
+ *             Iterates the declarative rule table in derivation-rules.ts, calling
+ *             the appropriate helper for each token type.
+ *
+ * Mood knobs (`surfaceContrast`, `signalIntensity`, `warmth`) modulate tone
+ * spreads, intensity levels, and hue angles. Mode differences (dark vs light)
+ * are expressed entirely as data in DARK_PRESET / LIGHT_PRESET and the RULES
+ * table — deriveTheme() itself contains no mode branching.
  *
  * Control tokens use the emphasis x role system (Table T01):
  *   13 combinations × 4 properties × 3 states = 156 emphasis-role control tokens
  *   (11 original combinations + 2 new: outlined-option, ghost-option)
  *   Plus 1 surface-control alias = 157 control tokens total
- *   (replaces old 4-variant system: 48 tokens + 3 disabled aliases = 51 tokens)
- *   Net change: +106 tokens (157 - 51)
  *
  * [D01] Export format — tokens map matches tug-base.css override structure
  * [D02] Emphasis x role token naming: --tug-base-control-{emphasis}-{role}-{property}-{state}
  * [D04] ThemeRecipe interface from proposal
+ * [D06] HueSlot resolution — Layer 1 of the pipeline
+ * [D07] __white/__highlight/__shadow/__verboseHighlight sentinels
  * [D08] Scope: --tug-base-* tokens only
  * [D09] Dual output: string tokens + resolved OKLCH map
  *
@@ -203,21 +214,15 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
 
 /**
  * Bundles all mode-dependent formula constants into a named preset.
- * `deriveTheme()` selects a preset by `recipe.mode` and uses its values instead
- * of inline `isLight ? X : Y` ternaries for numeric parameters, hue slot
- * assignments, and sentinel values for structural dispatch.
+ * `deriveTheme()` selects a preset by `recipe.mode`; the RULES table and
+ * computeTones() use preset fields instead of inline mode branches.
  *
- * Step 2 adds hue slot fields (Spec S05), sentinel hue slot fields ([D07]),
- * per-tier intensity/tone overrides, formula parameter fields, and per-state
- * control emphasis fields ([D10]) to absorb all 81 `isLight` branches.
- * The existing `isLight` branches in `deriveTheme()` remain unchanged in
- * this step — they will be eliminated in later steps once resolveHueSlots()
- * and the rule evaluation loop are in place.
- *
- * Sentinel values for hue slot fields ([D07]):
- *   "__white"            → setWhite()
- *   "__highlight"        → setHighlight(alphaExpr)
- *   "__shadow"           → setShadow(alphaExpr)
+ * Hue slot fields hold the slot key that each token should resolve through
+ * (Layer 1 / resolveHueSlots). Sentinel values trigger special token types
+ * without a hue lookup ([D07]):
+ *   "__white"            → white token
+ *   "__highlight"        → highlight (white-based, semi-transparent)
+ *   "__shadow"           → shadow (black-based, semi-transparent)
  *   "__verboseHighlight" → verbose --tug-color(white, i:0, t:100, a:N)
  *
  * Spec S01, Spec S05.
@@ -560,8 +565,8 @@ export interface ModePreset {
  * Dark-mode preset — parameter values reproduce the hand-authored Brio dark-mode
  * CSS exactly (verified by T-BRIO-MATCH). [D03]
  *
- * Extended in Step 2 with hue slot fields (Spec S05), sentinel hue slot fields
- * ([D07]), per-tier intensity/tone overrides, formula parameters, and per-state
+ * Contains hue slot fields (Spec S05), sentinel hue slot fields ([D07]),
+ * per-tier intensity/tone overrides, formula parameters, and per-state
  * control emphasis fields ([D10]).
  */
 export const DARK_PRESET: ModePreset = {
@@ -847,11 +852,10 @@ export const DARK_PRESET: ModePreset = {
 };
 
 /**
- * Light-mode preset — wraps the current light-mode formula values.
- * Formula accuracy against a hand-authored light-mode ground truth is deferred (Q01).
+ * Light-mode preset — wraps the light-mode formula values.
  *
- * Extended in Step 2 with hue slot fields (Spec S05), sentinel hue slot fields
- * ([D07]), per-tier intensity/tone overrides, formula parameters, and per-state
+ * Contains hue slot fields (Spec S05), sentinel hue slot fields ([D07]),
+ * per-tier intensity/tone overrides, formula parameters, and per-state
  * control emphasis fields ([D10]).
  */
 export const LIGHT_PRESET: ModePreset = {
@@ -1259,12 +1263,7 @@ export function applyWarmthBias(hueName: string, angle: number, warmthBias: numb
  *
  * This is Layer 1 of the three-layer derivation pipeline (Spec S01).
  * The output `ResolvedHueSlots` is the canonical source for all hue angles
- * and refs used in token derivation — replacing the ~22 inline hue variables
- * currently scattered through deriveTheme().
- *
- * Called in deriveTheme() in parallel with existing inline variables (Step 3).
- * In later steps, the inline variables will be removed and rules will reference
- * ResolvedHueSlots directly.
+ * and refs used in token derivation.
  *
  * @param recipe - The theme recipe
  * @param warmth - Warmth knob value (0-100, default 50)
@@ -1532,12 +1531,11 @@ export interface ComputedTones {
  * Pre-compute all derived tone values from a ModePreset and MoodKnobs.
  *
  * This is Layer 2 of the three-layer derivation pipeline (Spec S01).
- * Called in deriveTheme() in parallel with existing inline tone computations
- * (Step 4). In later steps, the inline tone computations will be removed
- * and rules will reference ComputedTones directly.
+ * Called by deriveTheme() as Layer 2 of the pipeline. The output ComputedTones
+ * is referenced by rule expressions in the RULES table (Layer 3).
  *
- * All formulas match the inline computations currently in deriveTheme()
- * exactly, verified by T-TONES-DARK and T-TONES-LIGHT tests.
+ * All formulas are verified against Brio dark-mode and Harmony light-mode
+ * ground truth by T-TONES-DARK and T-TONES-LIGHT tests.
  *
  * Light-mode formula exceptions absorbed by preset fields (Spec S03):
  *   - bgCanvas: uses preset.bgCanvasToneBase/SCCenter/Scale for unified formula
@@ -1831,7 +1829,7 @@ export function evaluateRules(
       }
 
       case "chromatic": {
-        // Step 1: resolve the effective slot string via dual path [D09]
+        // Resolve the effective slot string via dual path [D09]
         let effectiveSlot: string;
         if (slotKeys.has(rule.hueSlot)) {
           effectiveSlot = rule.hueSlot; // direct key path
@@ -1841,7 +1839,7 @@ export function evaluateRules(
           effectiveSlot = (preset[presetKey] as string) ?? rule.hueSlot;
         }
 
-        // Step 2: sentinel check [D07]
+        // Sentinel check [D07]
         if (effectiveSlot === "__white") {
           tokens[tokenName] = "--tug-color(white)";
           resolved[tokenName] = { ...whiteResolved };
@@ -1866,7 +1864,7 @@ export function evaluateRules(
           break;
         }
 
-        // Step 3: chromatic resolution
+        // Chromatic resolution
         const slot = resolvedSlots[effectiveSlot as keyof ResolvedHueSlots];
         if (!slot) break; // unknown slot key — skip
         const i = Math.round(rule.intensityExpr(preset, knobs, computed));

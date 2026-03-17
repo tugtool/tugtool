@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-17T01:49:53Z
+---
+
+## step-8: Updated module-level JSDoc to describe three-layer pipeline, fixed token count to 373, cleaned stale step-annotation comments, deleted .tugtool/baseline-tokens.css and .tugtool/islight-audit.md temporary artifacts.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-7
 date: 2025-03-17T01:37:31Z
 ---
