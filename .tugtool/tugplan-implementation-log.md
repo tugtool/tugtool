@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-17T00:17:21Z
+---
+
+## step-3: Implemented resolveHueSlots() with 23 slots, extracted ACHROMATIC_ADJACENT_HUES/primaryColorName/applyWarmthBias to module scope, added tabBgActive/InactiveHueSlot to ModePreset, added T-RESOLVE/T-WARMTH/T-BARE-BASE tests. Runs in parallel with existing code.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-2
 date: 2025-03-16T23:59:32Z
 ---

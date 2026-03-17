@@ -118,6 +118,64 @@ export interface ThemeOutput {
 }
 
 // ---------------------------------------------------------------------------
+// ResolvedHueSlot / ResolvedHueSlots — Layer 1 output (Spec S02)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single resolved hue slot with warmth bias applied.
+ * Produced by resolveHueSlots(). Spec S02.
+ */
+export interface ResolvedHueSlot {
+  /** Hue angle in degrees, warmth-biased. */
+  angle: number;
+  /** Closest hue family name (e.g., "violet", "indigo-cobalt"). */
+  name: string;
+  /** Formatted hue ref for --tug-color() (e.g., "violet", "indigo-cobalt"). */
+  ref: string;
+  /** Primary color name for canonical-L / max-chroma lookup (e.g., "violet"). */
+  primaryName: string;
+}
+
+/**
+ * Complete set of resolved hue slots for a recipe.
+ * Produced by resolveHueSlots(); consumed by the rule evaluator. Spec S02.
+ *
+ * Slots are grouped into:
+ *   - Recipe hues (atm, txt, canvas, cardFrame, borderTint, interactive, active, accent)
+ *   - Semantic hues (destructive, success, caution, agent, data) — no warmth bias
+ *   - Per-tier derived hues (surfBareBase, surfScreen, fgMuted, fgSubtle, fgDisabled,
+ *     fgInverse, fgPlaceholder, selectionInactive, borderTintBareBase, borderStrong)
+ */
+export interface ResolvedHueSlots {
+  // Recipe hues (warmth bias applied to achromatic-adjacent hues)
+  atm: ResolvedHueSlot;         // atmosphere (cardBg hue)
+  txt: ResolvedHueSlot;         // text hue
+  canvas: ResolvedHueSlot;      // canvas hue (bg-app, bg-canvas)
+  cardFrame: ResolvedHueSlot;   // card title bar hue
+  borderTint: ResolvedHueSlot;  // border/divider tint hue
+  interactive: ResolvedHueSlot; // link/selection hue [D05]
+  active: ResolvedHueSlot;      // active state hue
+  accent: ResolvedHueSlot;      // accent hue
+  // Semantic hues (no warmth bias — vivid signal hues)
+  destructive: ResolvedHueSlot;
+  success: ResolvedHueSlot;
+  caution: ResolvedHueSlot;
+  agent: ResolvedHueSlot;
+  data: ResolvedHueSlot;
+  // Per-tier derived hues
+  surfBareBase: ResolvedHueSlot;      // bare base of atm hue (last segment of hyphenated name)
+  surfScreen: ResolvedHueSlot;        // screen surface hue (dark: "indigo"; light: txt)
+  fgMuted: ResolvedHueSlot;           // fg-muted tier hue (dark: bare primary of txt; light: txt)
+  fgSubtle: ResolvedHueSlot;          // fg-subtle tier hue (dark: "indigo-cobalt"; light: txt)
+  fgDisabled: ResolvedHueSlot;        // fg-disabled tier hue (dark: "indigo-cobalt"; light: txt)
+  fgInverse: ResolvedHueSlot;         // fg-inverse tier hue (dark: "sapphire-cobalt"; light: txt)
+  fgPlaceholder: ResolvedHueSlot;     // fg-placeholder tier hue (dark: same as fgMuted; light: atm)
+  selectionInactive: ResolvedHueSlot; // selection-bg-inactive hue (dark: "yellow"; light: atmBaseAngle-20)
+  borderTintBareBase: ResolvedHueSlot; // bare base of borderTint hue (same logic as surfBareBase)
+  borderStrong: ResolvedHueSlot;       // borderTint shifted -5° for contrast distinction
+}
+
+// ---------------------------------------------------------------------------
 // EXAMPLE_RECIPES — reference recipe
 // ---------------------------------------------------------------------------
 
@@ -239,6 +297,10 @@ export interface ModePreset {
   cardFrameActiveTone: number;
   cardFrameInactiveI: number; // inactive title bar (Brio dark: 4)
   cardFrameInactiveTone: number;
+
+  // Hue slot fields — tab title bar (card frame) bg (Spec S05)
+  tabBgActiveHueSlot: string;   // "cardFrame" (dark) | "atm" (light)
+  tabBgInactiveHueSlot: string; // "cardFrame" (dark) | "atm" (light)
 
   // -------------------------------------------------------------------------
   // Shadow / overlay alphas
@@ -554,6 +616,10 @@ export const DARK_PRESET: ModePreset = {
   cardFrameInactiveI: 4,
   cardFrameInactiveTone: 15,
 
+  // Tab bg hue slots (dark: cardFrame; light: atm)
+  tabBgActiveHueSlot: "cardFrame",
+  tabBgInactiveHueSlot: "cardFrame",
+
   // Shadow / overlay alphas (Brio dark)
   shadowXsAlpha: 20,
   shadowMdAlpha: 60,
@@ -835,6 +901,10 @@ export const LIGHT_PRESET: ModePreset = {
   cardFrameActiveTone: 92,
   cardFrameInactiveI: 2,
   cardFrameInactiveTone: 90,
+
+  // Tab bg hue slots (light: atm)
+  tabBgActiveHueSlot: "atm",
+  tabBgInactiveHueSlot: "atm",
 
   // Shadow / overlay alphas (light mode — lower alpha)
   shadowXsAlpha: 8,
@@ -1126,6 +1196,251 @@ function formatHueRef(_namedHue: string, targetAngle: number): string {
   return closestHueName(targetAngle);
 }
 
+// ---------------------------------------------------------------------------
+// Warmth bias helpers — module scope (moved from inside deriveTheme for reuse)
+// ---------------------------------------------------------------------------
+
+/**
+ * Hues that receive warmth bias when the recipe warmth knob is != 50.
+ * Vivid signal hues (red, orange, yellow, green, cyan, etc.) are unaffected.
+ * For hyphenated names, the primary (dominant) hue determines membership.
+ */
+export const ACHROMATIC_ADJACENT_HUES: ReadonlySet<string> = new Set([
+  "violet", "cobalt", "blue", "indigo", "purple", "sky",
+  "sapphire", "iris", "cerulean",
+]);
+
+/**
+ * Extract the primary base color name from a hue expression.
+ * "cobalt" -> "cobalt", "indigo-cobalt" -> "indigo", "indigo-violet" -> "indigo".
+ */
+export function primaryColorName(hueExpr: string): string {
+  const hyphenIdx = hueExpr.indexOf("-");
+  return hyphenIdx > 0 ? hueExpr.slice(0, hyphenIdx) : hueExpr;
+}
+
+/**
+ * Apply warmth bias to a hue angle when the hue is achromatic-adjacent.
+ * warmthBias is (warmth - 50) / 50 * 12 degrees (±12° at extremes).
+ * Non-achromatic hues are returned unchanged.
+ */
+export function applyWarmthBias(hueName: string, angle: number, warmthBias: number): number {
+  const primary = primaryColorName(hueName);
+  if (!ACHROMATIC_ADJACENT_HUES.has(primary)) return angle;
+  return (angle + warmthBias + 360) % 360;
+}
+
+// ---------------------------------------------------------------------------
+// resolveHueSlots — Layer 1: recipe + warmth -> ResolvedHueSlots (Spec S02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve all hue slots for a recipe, applying warmth bias to
+ * achromatic-adjacent hues and deriving all per-tier hues.
+ *
+ * This is Layer 1 of the three-layer derivation pipeline (Spec S01).
+ * The output `ResolvedHueSlots` is the canonical source for all hue angles
+ * and refs used in token derivation — replacing the ~22 inline hue variables
+ * currently scattered through deriveTheme().
+ *
+ * Called in deriveTheme() in parallel with existing inline variables (Step 3).
+ * In later steps, the inline variables will be removed and rules will reference
+ * ResolvedHueSlots directly.
+ *
+ * @param recipe - The theme recipe
+ * @param warmth - Warmth knob value (0-100, default 50)
+ */
+export function resolveHueSlots(recipe: ThemeRecipe, warmth: number): ResolvedHueSlots {
+  const warmthBias = ((warmth - 50) / 50) * 12; // ±12° at extremes
+  const isLight = recipe.mode === "light";
+
+  /** Build a ResolvedHueSlot from a hue name, applying warmth bias. */
+  function resolveSlot(hueName: string): ResolvedHueSlot {
+    const rawAngle = resolveHueAngle(hueName);
+    const angle = applyWarmthBias(hueName, rawAngle, warmthBias);
+    const name = closestHueName(angle);
+    const ref = formatHueRef(name, angle);
+    const pName = primaryColorName(name);
+    return { angle, name, ref, primaryName: pName };
+  }
+
+  /** Build a ResolvedHueSlot for a semantic hue (no warmth bias). */
+  function resolveSemanticSlot(hueName: string): ResolvedHueSlot {
+    const angle = resolveHueAngle(hueName);
+    const name = closestHueName(angle);
+    const ref = formatHueRef(name, angle);
+    const pName = primaryColorName(name);
+    return { angle, name, ref, primaryName: pName };
+  }
+
+  /** Build a ResolvedHueSlot directly from an already-resolved angle. */
+  function slotFromAngle(angle: number): ResolvedHueSlot {
+    const name = closestHueName(angle);
+    const ref = formatHueRef(name, angle);
+    const pName = primaryColorName(name);
+    return { angle, name, ref, primaryName: pName };
+  }
+
+  // -------------------------------------------------------------------------
+  // Recipe hues
+  // -------------------------------------------------------------------------
+  const atmHue = recipe.cardBg.hue;
+  const txtHue = recipe.text.hue;
+  const canvasHue = recipe.canvas ?? atmHue;
+  const cardFrameHue = recipe.cardFrame ?? "indigo";
+  const borderTintHue = recipe.borderTint ?? atmHue;
+  const interactiveHue = recipe.link ?? recipe.active ?? "blue";
+  const activeHue = recipe.active ?? "blue";
+  const accentHue = recipe.accent ?? "orange";
+
+  const atm = resolveSlot(atmHue);
+  const txt = resolveSlot(txtHue);
+  const canvas = resolveSlot(canvasHue);
+  const cardFrame = resolveSlot(cardFrameHue);
+  const borderTint = resolveSlot(borderTintHue);
+  const interactive = resolveSemanticSlot(interactiveHue);
+  const active = resolveSemanticSlot(activeHue);
+  const accent = resolveSemanticSlot(accentHue);
+
+  // Semantic hues — no warmth bias
+  const destructive = resolveSemanticSlot(recipe.destructive ?? "red");
+  const success = resolveSemanticSlot(recipe.success ?? "green");
+  const caution = resolveSemanticSlot(recipe.caution ?? "yellow");
+  const agent = resolveSemanticSlot(recipe.agent ?? "violet");
+  const data = resolveSemanticSlot(recipe.data ?? "teal");
+
+  // -------------------------------------------------------------------------
+  // Per-tier derived hues
+  // -------------------------------------------------------------------------
+
+  // surfBareBase: bare base of atm hue (last segment of hyphenated name).
+  // "indigo-violet" -> "violet"; "cobalt" -> "cobalt"
+  const atmBareBaseName = (() => {
+    const hyphenIdx = atmHue.lastIndexOf("-");
+    if (hyphenIdx > 0) {
+      const lastSeg = atmHue.slice(hyphenIdx + 1);
+      if (lastSeg in HUE_FAMILIES) return lastSeg;
+    }
+    return closestHueName(resolveHueAngle(atmHue));
+  })();
+  const surfBareBaseRawAngle = HUE_FAMILIES[atmBareBaseName] ?? resolveHueAngle(atmHue);
+  const surfBareBaseAngle = applyWarmthBias(atmBareBaseName, surfBareBaseRawAngle, warmthBias);
+  const surfBareBase: ResolvedHueSlot = {
+    angle: surfBareBaseAngle,
+    name: closestHueName(surfBareBaseAngle),
+    ref: atmBareBaseName, // direct named reference (matches existing deriveTheme logic)
+    primaryName: atmBareBaseName,
+  };
+
+  // surfScreen: "indigo" in dark (cobalt+10 → indigo); txt in light.
+  // The slot value is mode-dependent: dark uses fixed "indigo"; light uses the txt slot.
+  // The preset's surfaceScreenHueSlot field ("surfScreen" in dark, "txt" in light) then
+  // routes the rule evaluator to this slot, which already holds the correct value.
+  const surfScreen: ResolvedHueSlot = isLight
+    ? { ...txt }
+    : (() => {
+        const surfScreenHueDark = "indigo";
+        const angle = applyWarmthBias(surfScreenHueDark, resolveHueAngle(surfScreenHueDark), warmthBias);
+        return slotFromAngle(angle);
+      })();
+
+  // fgMuted: dark = bare primary of txtHue (e.g., "cobalt" from "indigo-cobalt").
+  //          light = full txt slot.
+  const fgMutedHueName = isLight ? txtHue : (() => {
+    const primary = primaryColorName(txtHue);
+    return primary in HUE_FAMILIES ? primary : txtHue;
+  })();
+  const fgMutedRawAngle = resolveHueAngle(fgMutedHueName);
+  const fgMutedAngle = applyWarmthBias(fgMutedHueName, fgMutedRawAngle, warmthBias);
+  const fgMutedName = closestHueName(fgMutedAngle);
+  const fgMuted: ResolvedHueSlot = {
+    angle: fgMutedAngle,
+    name: fgMutedName,
+    // ref: use bare name directly when it's a known family (matches existing logic)
+    ref: fgMutedHueName in HUE_FAMILIES ? fgMutedHueName : fgMutedName,
+    primaryName: primaryColorName(fgMutedName),
+  };
+
+  // fgSubtle: dark = "indigo-cobalt"; light = txt.
+  const fgSubtleHueName = isLight ? txtHue : "indigo-cobalt";
+  const fgSubtleAngle = applyWarmthBias(primaryColorName(fgSubtleHueName), resolveHueAngle(fgSubtleHueName), warmthBias);
+  const fgSubtle = slotFromAngle(fgSubtleAngle);
+
+  // fgDisabled: dark = "indigo-cobalt"; light = txt. (same as fgSubtle)
+  const fgDisabledHueName = isLight ? txtHue : "indigo-cobalt";
+  const fgDisabledAngle = applyWarmthBias(primaryColorName(fgDisabledHueName), resolveHueAngle(fgDisabledHueName), warmthBias);
+  const fgDisabled = slotFromAngle(fgDisabledAngle);
+
+  // fgInverse: dark = "sapphire-cobalt"; light = txt.
+  const fgInverseHueName = isLight ? txtHue : "sapphire-cobalt";
+  const fgInverseAngle = applyWarmthBias(primaryColorName(fgInverseHueName), resolveHueAngle(fgInverseHueName), warmthBias);
+  const fgInverse = slotFromAngle(fgInverseAngle);
+
+  // fgPlaceholder: same as fgMuted in both modes.
+  const fgPlaceholder: ResolvedHueSlot = { ...fgMuted };
+
+  // selectionInactive:
+  //   dark = "yellow" (fixed hue, no warmth bias — Brio ground truth)
+  //   light = atmBaseAngle - 20° with warmth bias applied
+  const selectionInactive: ResolvedHueSlot = isLight
+    ? (() => {
+        const atmBaseAngle = resolveHueAngle(atmHue);
+        const selAngle = applyWarmthBias(atmHue, (atmBaseAngle - 20 + 360) % 360, warmthBias);
+        return slotFromAngle(selAngle);
+      })()
+    : resolveSemanticSlot("yellow"); // fixed yellow, no warmth bias in dark
+
+  // borderTintBareBase: same logic as surfBareBase but for borderTint hue.
+  const borderTintBareBaseName = (() => {
+    const hyphenIdx = borderTintHue.lastIndexOf("-");
+    if (hyphenIdx > 0) {
+      const lastSeg = borderTintHue.slice(hyphenIdx + 1);
+      if (lastSeg in HUE_FAMILIES) return lastSeg;
+    }
+    return closestHueName(resolveHueAngle(borderTintHue));
+  })();
+  const borderTintBareRawAngle = HUE_FAMILIES[borderTintBareBaseName] ?? resolveHueAngle(borderTintHue);
+  const borderTintBareAngle = applyWarmthBias(borderTintBareBaseName, borderTintBareRawAngle, warmthBias);
+  const borderTintBareBase: ResolvedHueSlot = {
+    angle: borderTintBareAngle,
+    name: closestHueName(borderTintBareAngle),
+    ref: borderTintBareBaseName,
+    primaryName: borderTintBareBaseName,
+  };
+
+  // borderStrong: borderTint shifted -5° for contrast distinction.
+  const borderTintRawAngle = resolveHueAngle(borderTintHue);
+  const borderStrongRawAngle = (borderTintRawAngle - 5 + 360) % 360;
+  const borderStrongAngle = applyWarmthBias(borderTintHue, borderStrongRawAngle, warmthBias);
+  const borderStrong = slotFromAngle(borderStrongAngle);
+
+  return {
+    atm,
+    txt,
+    canvas,
+    cardFrame,
+    borderTint,
+    interactive,
+    active,
+    accent,
+    destructive,
+    success,
+    caution,
+    agent,
+    data,
+    surfBareBase,
+    surfScreen,
+    fgMuted,
+    fgSubtle,
+    fgDisabled,
+    fgInverse,
+    fgPlaceholder,
+    selectionInactive,
+    borderTintBareBase,
+    borderStrong,
+  };
+}
+
 /**
  * Compute OKLCH from hue angle, intensity (0-100), tone (0-100).
  * Uses the same formula as tugColor() in palette-engine.ts.
@@ -1365,29 +1680,24 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const signalIntensity = recipe.signalIntensity ?? 50;
   const warmth = recipe.warmth ?? 50;
 
-  // Warmth hue bias: at warmth>50, shift neutral/achromatic hues toward warm
-  // (amber/yellow range, positive angle bias); at warmth<50, shift toward cool.
-  // Maximum bias ±12° applied to atmosphere and text hue angles when those hues
-  // are in the achromatic-adjacent range.
-  // Vivid accent/semantic hues (red, orange, yellow, green, cyan) are unaffected.
-  // For hyphenated names, the primary (dominant) hue determines achromatic adjacency.
-  const ACHROMATIC_ADJACENT_HUES = new Set([
-    "violet", "cobalt", "blue", "indigo", "purple", "sky",
-    "sapphire", "iris", "cerulean",
-  ]);
+  // Warmth hue bias: ±12° at extremes applied to achromatic-adjacent hues.
+  // Module-scope ACHROMATIC_ADJACENT_HUES, primaryColorName(), and applyWarmthBias()
+  // are used directly. Local wrappers below maintain the existing 2-arg call signature
+  // used throughout deriveTheme() body (warmthBias is bound from the closure).
   const warmthBias = ((warmth - 50) / 50) * 12; // ±12° at extremes
 
-  // Extract the primary base color name from a hue expression (bare or hyphenated).
-  function primaryColorName(hueExpr: string): string {
-    const hyphenIdx = hueExpr.indexOf("-");
-    return hyphenIdx > 0 ? hueExpr.slice(0, hyphenIdx) : hueExpr;
-  }
-
+  // Local wrapper: 2-arg version with warmthBias bound from closure.
+  // Preserves the calling convention used throughout the deriveTheme() body.
+  // The module-scope applyWarmthBias(hueName, angle, warmthBias) is the canonical form.
   function applyWarmthBias(hueName: string, angle: number): number {
     const primary = primaryColorName(hueName);
     if (!ACHROMATIC_ADJACENT_HUES.has(primary)) return angle;
     return (angle + warmthBias + 360) % 360;
   }
+
+  // Layer 1: resolve all hue slots for this recipe (parallel to existing inline vars).
+  // In later steps, inline hue variables will be replaced by resolvedSlots references.
+  const resolvedSlots = resolveHueSlots(recipe, warmth);
 
   // Atmosphere angle with warmth bias applied (for neutral/achromatic hues)
   const atmAngleW = applyWarmthBias(atmHue, atmAngle);
