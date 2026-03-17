@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-17T13:43:26Z
+---
+
+## step-10: Fixed 2 remaining isLight comment references. Deleted .tugtool/baseline-tokens.txt. Verified: zero isLight/ModePreset/DARK_PRESET/LIGHT_PRESET across all source. 1814 tests pass, tokens byte-identical.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-formulas-refactor.md
+
+---
+
+---
 step: step-9
 date: 2025-03-17T13:36:42Z
 ---

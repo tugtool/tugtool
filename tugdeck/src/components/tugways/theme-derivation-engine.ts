@@ -605,7 +605,7 @@ export interface DerivationFormulas {
   ghostOptionIconHoverI: number;
   ghostOptionIconActiveI: number;
 
-  // Non-control isLight branch replacements [D05] Table T01
+  // Non-control unified fields [D05] Table T01
   /** bg-app intensity. Dark: bgAppI (2). Light: atmI. */
   bgAppSurfaceI: number;
   /** border-strong tone. Dark: fgSubtleTone (37). */
@@ -1062,7 +1062,7 @@ export const BRIO_DARK_FORMULAS: DerivationFormulas = {
   ghostOptionIconHoverI: 2,
   ghostOptionIconActiveI: 2,
 
-  // Non-control isLight branch replacements (dark values) [D05] Table T01
+  // Non-control unified fields — Brio dark values [D05] Table T01
   bgAppSurfaceI: 2,           // dark: bgAppI
   borderStrongToneValue: 37,  // dark: fgSubtleTone
   outlinedBgHoverI: 0,
