@@ -526,6 +526,107 @@ export interface DerivationFormulas {
   outlinedOptionBorderActiveTone: number;
 
   // -------------------------------------------------------------------------
+  // NEW: Unified per-state control emphasis fields [D05] Spec S04 Table T01
+  // These replace the old split dark/light fields in rule expressions.
+  // Dark values match the old dark-mode uniform values; future light recipes
+  // set these to their light-mode per-state values.
+  // -------------------------------------------------------------------------
+
+  // Outlined-action fg — 3 states x (tone + intensity) = 6 fields
+  outlinedActionFgRestTone: number;
+  outlinedActionFgHoverTone: number;
+  outlinedActionFgActiveTone: number;
+  outlinedActionFgRestI: number;
+  outlinedActionFgHoverI: number;
+  outlinedActionFgActiveI: number;
+
+  // Outlined-action icon — 3 states x (tone + intensity) = 6 fields
+  outlinedActionIconRestTone: number;
+  outlinedActionIconHoverTone: number;
+  outlinedActionIconActiveTone: number;
+  outlinedActionIconRestI: number;
+  outlinedActionIconHoverI: number;
+  outlinedActionIconActiveI: number;
+
+  // Outlined-agent fg/icon — same pattern, 12 fields
+  outlinedAgentFgRestTone: number;
+  outlinedAgentFgHoverTone: number;
+  outlinedAgentFgActiveTone: number;
+  outlinedAgentFgRestI: number;
+  outlinedAgentFgHoverI: number;
+  outlinedAgentFgActiveI: number;
+  outlinedAgentIconRestTone: number;
+  outlinedAgentIconHoverTone: number;
+  outlinedAgentIconActiveTone: number;
+  outlinedAgentIconRestI: number;
+  outlinedAgentIconHoverI: number;
+  outlinedAgentIconActiveI: number;
+
+  // Outlined-option fg/icon — same pattern, 12 fields
+  outlinedOptionFgRestTone: number;
+  outlinedOptionFgHoverTone: number;
+  outlinedOptionFgActiveTone: number;
+  outlinedOptionFgRestI: number;
+  outlinedOptionFgHoverI: number;
+  outlinedOptionFgActiveI: number;
+  outlinedOptionIconRestTone: number;
+  outlinedOptionIconHoverTone: number;
+  outlinedOptionIconActiveTone: number;
+  outlinedOptionIconRestI: number;
+  outlinedOptionIconHoverI: number;
+  outlinedOptionIconActiveI: number;
+
+  // Ghost-action fg — 3 states x (tone + intensity) = 6 fields
+  ghostActionFgRestTone: number;
+  ghostActionFgHoverTone: number;
+  ghostActionFgActiveTone: number;
+  ghostActionFgRestI: number;
+  ghostActionFgHoverI: number;
+  ghostActionFgActiveI: number;
+
+  // Ghost-action icon — 3 states x (tone + intensity) = 6 fields
+  ghostActionIconRestTone: number;
+  ghostActionIconHoverTone: number;
+  ghostActionIconActiveTone: number;
+  ghostActionIconRestI: number;
+  ghostActionIconHoverI: number;
+  ghostActionIconActiveI: number;
+
+  // Ghost-option fg/icon — same pattern as ghost-action, 12 fields
+  ghostOptionFgRestTone: number;
+  ghostOptionFgHoverTone: number;
+  ghostOptionFgActiveTone: number;
+  ghostOptionFgRestI: number;
+  ghostOptionFgHoverI: number;
+  ghostOptionFgActiveI: number;
+  ghostOptionIconRestTone: number;
+  ghostOptionIconHoverTone: number;
+  ghostOptionIconActiveTone: number;
+  ghostOptionIconRestI: number;
+  ghostOptionIconHoverI: number;
+  ghostOptionIconActiveI: number;
+
+  // Non-control isLight branch replacements [D05] Table T01
+  /** bg-app intensity. Dark: bgAppI (2). Light: atmI. */
+  bgAppSurfaceI: number;
+  /** border-strong tone. Dark: fgSubtleTone (37). */
+  borderStrongToneValue: number;
+  /** outlined bg-hover intensity. Dark: 0 (highlight sentinel). Light: 4. */
+  outlinedBgHoverI: number;
+  /** outlined bg-hover alpha. Dark: outlinedBgHoverAlpha (10). Light: 100. */
+  outlinedBgHoverAlphaValue: number;
+  /** outlined bg-active intensity. Dark: 0 (highlight sentinel). Light: 6. */
+  outlinedBgActiveI: number;
+  /** outlined bg-active alpha. Dark: outlinedBgActiveAlpha (20). Light: 100. */
+  outlinedBgActiveAlphaValue: number;
+  /** selection-bg-inactive intensity. Dark: 0. Light: 8. */
+  selectionBgInactiveI: number;
+  /** selection-bg-inactive tone. Dark: 30. Light: 24. */
+  selectionBgInactiveTone: number;
+  /** selection-bg-inactive alpha. Dark: 25. Light: 20. */
+  selectionBgInactiveAlpha: number;
+
+  // -------------------------------------------------------------------------
   // NEW: Derived hue-name fields for resolveHueSlots() branch elimination [D03]
   // Spec S02 (#s02-hue-name-fields)
   // -------------------------------------------------------------------------
@@ -1824,6 +1925,86 @@ export const BRIO_DARK_FORMULAS: DerivationFormulas = {
   outlinedOptionBorderRestTone: 50,
   outlinedOptionBorderHoverTone: 55,
   outlinedOptionBorderActiveTone: 60,
+
+  // Unified per-state control emphasis fields [D05] Spec S04 Table T01
+  // Dark: all fg tones = 100 (outlinedFgTone), all fg/icon intensities = 2 (outlinedFgI)
+  outlinedActionFgRestTone: 100,
+  outlinedActionFgHoverTone: 100,
+  outlinedActionFgActiveTone: 100,
+  outlinedActionFgRestI: 2,
+  outlinedActionFgHoverI: 2,
+  outlinedActionFgActiveI: 2,
+
+  outlinedActionIconRestTone: 100,
+  outlinedActionIconHoverTone: 100,
+  outlinedActionIconActiveTone: 100,
+  outlinedActionIconRestI: 2,
+  outlinedActionIconHoverI: 2,
+  outlinedActionIconActiveI: 2,
+
+  outlinedAgentFgRestTone: 100,
+  outlinedAgentFgHoverTone: 100,
+  outlinedAgentFgActiveTone: 100,
+  outlinedAgentFgRestI: 2,
+  outlinedAgentFgHoverI: 2,
+  outlinedAgentFgActiveI: 2,
+  outlinedAgentIconRestTone: 100,
+  outlinedAgentIconHoverTone: 100,
+  outlinedAgentIconActiveTone: 100,
+  outlinedAgentIconRestI: 2,
+  outlinedAgentIconHoverI: 2,
+  outlinedAgentIconActiveI: 2,
+
+  outlinedOptionFgRestTone: 100,
+  outlinedOptionFgHoverTone: 100,
+  outlinedOptionFgActiveTone: 100,
+  outlinedOptionFgRestI: 2,
+  outlinedOptionFgHoverI: 2,
+  outlinedOptionFgActiveI: 2,
+  outlinedOptionIconRestTone: 100,
+  outlinedOptionIconHoverTone: 100,
+  outlinedOptionIconActiveTone: 100,
+  outlinedOptionIconRestI: 2,
+  outlinedOptionIconHoverI: 2,
+  outlinedOptionIconActiveI: 2,
+
+  ghostActionFgRestTone: 100,
+  ghostActionFgHoverTone: 100,
+  ghostActionFgActiveTone: 100,
+  ghostActionFgRestI: 2,
+  ghostActionFgHoverI: 2,
+  ghostActionFgActiveI: 2,
+
+  ghostActionIconRestTone: 100,
+  ghostActionIconHoverTone: 100,
+  ghostActionIconActiveTone: 100,
+  ghostActionIconRestI: 2,
+  ghostActionIconHoverI: 2,
+  ghostActionIconActiveI: 2,
+
+  ghostOptionFgRestTone: 100,
+  ghostOptionFgHoverTone: 100,
+  ghostOptionFgActiveTone: 100,
+  ghostOptionFgRestI: 2,
+  ghostOptionFgHoverI: 2,
+  ghostOptionFgActiveI: 2,
+  ghostOptionIconRestTone: 100,
+  ghostOptionIconHoverTone: 100,
+  ghostOptionIconActiveTone: 100,
+  ghostOptionIconRestI: 2,
+  ghostOptionIconHoverI: 2,
+  ghostOptionIconActiveI: 2,
+
+  // Non-control isLight branch replacements (dark values) [D05] Table T01
+  bgAppSurfaceI: 2,           // dark: bgAppI
+  borderStrongToneValue: 37,  // dark: fgSubtleTone
+  outlinedBgHoverI: 0,
+  outlinedBgHoverAlphaValue: 10,
+  outlinedBgActiveI: 0,
+  outlinedBgActiveAlphaValue: 20,
+  selectionBgInactiveI: 0,
+  selectionBgInactiveTone: 30,
+  selectionBgInactiveAlpha: 25,
 
   // Derived hue-name fields for resolveHueSlots() branch elimination (Spec S02)
   surfScreenHue: "indigo",
