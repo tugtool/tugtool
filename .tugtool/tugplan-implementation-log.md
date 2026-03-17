@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-17T13:22:04Z
+---
+
+## step-8: Changed Expr type, StructuralRule, evaluateRules() from ModePreset to DerivationFormulas. Renamed ~200 preset refs to formulas in derivation-rules.ts. Replaced ~35 isLight branches with unified field reads. Refactored outlinedFgRules factory. Zero isLight and zero preset remain in derivation-rules.ts. 1814 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-formulas-refactor.md
+
+---
+
+---
 step: step-7
 date: 2025-03-17T12:53:20Z
 ---

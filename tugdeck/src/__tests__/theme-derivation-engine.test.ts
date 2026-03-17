@@ -33,6 +33,7 @@ import {
   primaryColorName,
   applyWarmthBias,
   type ModePreset,
+  type DerivationFormulas,
   type MoodKnobs,
   type ComputedTones,
   type ResolvedHueSlots,
@@ -2068,8 +2069,7 @@ describe("computeTones — Step 4", () => {
     const warmth = recipe.warmth ?? 50;
     const surfaceContrast = recipe.surfaceContrast ?? 50;
     const signalIntensity = recipe.signalIntensity ?? 50;
-    const recipeFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
-    const preset = recipe.mode === "light" ? LIGHT_PRESET : DARK_PRESET;
+    const recipeFormulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
     const knobs = { surfaceContrast, signalIntensity, warmth };
     const resolvedSlots = resolveHueSlots(recipe, warmth);
     const computed = computeTones(recipeFormulas, knobs);
@@ -2080,7 +2080,7 @@ describe("computeTones — Step 4", () => {
     evaluateRules(
       CORE_VISUAL_RULES,
       resolvedSlots,
-      preset,
+      recipeFormulas,
       knobs,
       computed,
       ruleTokens,
@@ -2242,8 +2242,7 @@ describe("derivation-engine step-6 rules", () => {
     const warmth = recipe.warmth ?? 50;
     const surfaceContrast = recipe.surfaceContrast ?? 50;
     const signalIntensity = recipe.signalIntensity ?? 50;
-    const recipeFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
-    const preset = recipe.mode === "light" ? LIGHT_PRESET : DARK_PRESET;
+    const recipeFormulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
     const knobs = { surfaceContrast, signalIntensity, warmth };
     const resolvedSlots = resolveHueSlots(recipe, warmth);
     const computed = computeTones(recipeFormulas, knobs);
@@ -2254,7 +2253,7 @@ describe("derivation-engine step-6 rules", () => {
     evaluateRules(
       RULES,
       resolvedSlots,
-      preset,
+      recipeFormulas,
       knobs,
       computed,
       ruleTokens,

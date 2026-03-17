@@ -10,16 +10,16 @@
  *   Layer 1 — resolveHueSlots(): recipe + warmth knob → ResolvedHueSlots
  *             Applies warmth bias to every hue in the recipe and resolves all
  *             per-tier hue variants (fg-muted, surfBareBase, etc.).
- *   Layer 2 — computeTones(): ModePreset + MoodKnobs → ComputedTones
- *             Pre-computes all derived tone values from mood knobs and mode preset.
+ *   Layer 2 — computeTones(): DerivationFormulas + MoodKnobs → ComputedTones
+ *             Pre-computes all derived tone values from mood knobs and formula constants.
  *   Layer 3 — evaluateRules(): RULES table → tokens + resolved maps
  *             Iterates the declarative rule table in derivation-rules.ts, calling
  *             the appropriate helper for each token type.
  *
  * Mood knobs (`surfaceContrast`, `signalIntensity`, `warmth`) modulate tone
  * spreads, intensity levels, and hue angles. Mode differences (dark vs light)
- * are expressed entirely as data in DARK_PRESET / LIGHT_PRESET and the RULES
- * table — deriveTheme() itself contains no mode branching.
+ * are expressed entirely as data in BRIO_DARK_FORMULAS (and future recipe formulas)
+ * and the RULES table — deriveTheme() itself contains no mode branching.
  *
  * Control tokens use the emphasis x role system (Table T01):
  *   13 combinations × 4 properties × 3 states = 156 emphasis-role control tokens
@@ -2584,10 +2584,10 @@ export function computeTones(formulas: DerivationFormulas, knobs: MoodKnobs): Co
 // ---------------------------------------------------------------------------
 
 /**
- * Shared expression type: a function of (preset, knobs, computed) -> number.
- * Used for intensity, tone, and alpha fields in chromatic rules. Spec S04.
+ * Shared expression type: a function of (formulas, knobs, computed) -> number.
+ * Used for intensity, tone, and alpha fields in chromatic rules. Spec S05.
  */
-export type Expr = (preset: ModePreset, knobs: MoodKnobs, computed: ComputedTones) => number;
+export type Expr = (formulas: DerivationFormulas, knobs: MoodKnobs, computed: ComputedTones) => number;
 
 /**
  * Chromatic rule — produces a `--tug-color(hue, i, t [,a])` token.
@@ -2631,13 +2631,13 @@ export interface HighlightRule {
 export interface StructuralRule {
   type: "structural";
   valueExpr: (
-    preset: ModePreset,
+    formulas: DerivationFormulas,
     knobs: MoodKnobs,
     computed: ComputedTones,
     resolvedSlots: ResolvedHueSlots,
   ) => string;
   resolvedExpr?: (
-    preset: ModePreset,
+    formulas: DerivationFormulas,
     knobs: MoodKnobs,
     computed: ComputedTones,
   ) => ResolvedColor;
@@ -2670,7 +2670,7 @@ export type DerivationRule =
  *
  * hueSlot resolution per [D09]:
  *   1. If hueSlot is a key of resolvedSlots → use it directly.
- *   2. Otherwise read preset[hueSlot + "HueSlot"] to get the key.
+ *   2. Otherwise read formulas[hueSlot + "HueSlot"] to get the key (formulas-mediated).
  * Sentinel dispatch per [D07]:
  *   "__white"            → setChromatic-style white; fills resolved.
  *   "__highlight"        → compact white-a token; fills resolved.
@@ -2679,7 +2679,7 @@ export type DerivationRule =
  *
  * @param rules         Named rule table (token name → DerivationRule)
  * @param resolvedSlots Output of resolveHueSlots()
- * @param preset        Active ModePreset (DARK_PRESET or LIGHT_PRESET)
+ * @param formulas      Active DerivationFormulas (replaces ModePreset)
  * @param knobs         Normalized mood knobs
  * @param computed      Output of computeTones()
  * @param tokens        Output map for CSS token strings (mutated in place)
@@ -2693,7 +2693,7 @@ export type DerivationRule =
 export function evaluateRules(
   rules: Record<string, DerivationRule>,
   resolvedSlots: ResolvedHueSlots,
-  preset: ModePreset,
+  formulas: DerivationFormulas,
   knobs: MoodKnobs,
   computed: ComputedTones,
   tokens: Record<string, string>,
@@ -2727,23 +2727,23 @@ export function evaluateRules(
         break;
 
       case "shadow": {
-        const alpha = Math.round(rule.alphaExpr(preset, knobs, computed));
+        const alpha = Math.round(rule.alphaExpr(formulas, knobs, computed));
         tokens[tokenName] = makeShadow(alpha);
         resolved[tokenName] = { ...blackResolved, alpha: alpha / 100 };
         break;
       }
 
       case "highlight": {
-        const alpha = Math.round(rule.alphaExpr(preset, knobs, computed));
+        const alpha = Math.round(rule.alphaExpr(formulas, knobs, computed));
         tokens[tokenName] = makeHighlight(alpha);
         resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
         break;
       }
 
       case "structural": {
-        tokens[tokenName] = rule.valueExpr(preset, knobs, computed, resolvedSlots);
+        tokens[tokenName] = rule.valueExpr(formulas, knobs, computed, resolvedSlots);
         if (rule.resolvedExpr) {
-          resolved[tokenName] = rule.resolvedExpr(preset, knobs, computed);
+          resolved[tokenName] = rule.resolvedExpr(formulas, knobs, computed);
         }
         break;
       }
@@ -2754,9 +2754,9 @@ export function evaluateRules(
         if (slotKeys.has(rule.hueSlot)) {
           effectiveSlot = rule.hueSlot; // direct key path
         } else {
-          // Preset-mediated path: read preset[hueSlot + "HueSlot"]
-          const presetKey = (rule.hueSlot + "HueSlot") as keyof ModePreset;
-          effectiveSlot = (preset[presetKey] as string) ?? rule.hueSlot;
+          // Formulas-mediated path: read formulas[hueSlot + "HueSlot"]
+          const formulasKey = (rule.hueSlot + "HueSlot") as keyof DerivationFormulas;
+          effectiveSlot = (formulas[formulasKey] as string) ?? rule.hueSlot;
         }
 
         // Sentinel check [D07]
@@ -2766,19 +2766,19 @@ export function evaluateRules(
           break;
         }
         if (effectiveSlot === "__highlight") {
-          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(preset, knobs, computed));
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas, knobs, computed));
           tokens[tokenName] = makeHighlight(alpha);
           resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
           break;
         }
         if (effectiveSlot === "__shadow") {
-          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(preset, knobs, computed));
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas, knobs, computed));
           tokens[tokenName] = makeShadow(alpha);
           resolved[tokenName] = { ...blackResolved, alpha: alpha / 100 };
           break;
         }
         if (effectiveSlot === "__verboseHighlight") {
-          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(preset, knobs, computed));
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas, knobs, computed));
           tokens[tokenName] = makeVerboseHighlight(alpha);
           resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
           break;
@@ -2787,9 +2787,9 @@ export function evaluateRules(
         // Chromatic resolution
         const slot = resolvedSlots[effectiveSlot as keyof ResolvedHueSlots];
         if (!slot) break; // unknown slot key — skip
-        const i = Math.round(rule.intensityExpr(preset, knobs, computed));
-        const t = Math.round(rule.toneExpr(preset, knobs, computed));
-        const a = rule.alphaExpr ? Math.round(rule.alphaExpr(preset, knobs, computed)) : 100;
+        const i = Math.round(rule.intensityExpr(formulas, knobs, computed));
+        const t = Math.round(rule.toneExpr(formulas, knobs, computed));
+        const a = rule.alphaExpr ? Math.round(rule.alphaExpr(formulas, knobs, computed)) : 100;
         setChromatic(tokenName, slot.ref, slot.angle, i, t, a, slot.primaryName);
         break;
       }
@@ -2978,18 +2978,16 @@ function resolvedEntryAlpha(
  *   - `contrastResults` / `cvdWarnings`: empty arrays (populated in later steps)
  *
  * Three-layer declarative pipeline (Spec S01):
- *   Layer 1 — resolveHueSlots(): recipe + warmth -> ResolvedHueSlots
- *   Layer 2 — computeTones():    preset + knobs  -> ComputedTones
- *   Layer 3 — evaluateRules():   RULES table     -> tokens + resolved maps
+ *   Layer 1 — resolveHueSlots(): recipe + warmth    -> ResolvedHueSlots
+ *   Layer 2 — computeTones():    formulas + knobs   -> ComputedTones
+ *   Layer 3 — evaluateRules():   RULES table        -> tokens + resolved maps
  */
 export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
-  // 1. Select mode preset [D03]
+  // 1. Resolve formula constants [D01]
+  // recipe.formulas when provided, else Brio dark default. [D02]
+  // Silent fallback: the only production recipe is Brio dark.
   // -------------------------------------------------------------------------
-  const preset = recipe.mode === "light" ? LIGHT_PRESET : DARK_PRESET;
-
-  // Resolve formula constants — recipe.formulas when provided, else Brio dark
-  // default. [D02] Silent fallback: the only production recipe is Brio dark.
   const formulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
 
   // -------------------------------------------------------------------------
@@ -3018,7 +3016,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   evaluateRules(
     RULES,
     resolvedSlots,
-    preset,
+    formulas,
     knobs,
     computedTones,
     tokens,
