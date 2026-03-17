@@ -29,7 +29,7 @@ import {
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
-import { validateThemeContrast, autoAdjustContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
+import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
 
@@ -192,16 +192,14 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
 ]);
 
 /**
- * Run the full derive → validate → auto-adjust pipeline for a given recipe and
- * return the final contrast results plus unfixable list.
+ * Run the derive → validate pipeline for a given recipe and return the
+ * contrast results. Step 5: autoAdjustContrast removed from pipeline.
+ * The engine's enforceContrastFloor produces compliant tokens by construction.
  */
 function runFullPipelineForRecipe(recipe: Parameters<typeof deriveTheme>[0]) {
   const output = deriveTheme(recipe);
-  const initial = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  const failures = initial.filter((r) => !r.contrastPass);
-  const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
-  const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  return { output, finalResults, unfixable: adjusted.unfixable };
+  const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+  return { output, finalResults };
 }
 
 /**
@@ -363,6 +361,19 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     const swatches = grid!.querySelectorAll(".gtg-token-swatch");
     // At least 200 token swatches (264 token set)
     expect(swatches.length).toBeGreaterThan(200);
+  });
+
+  it("renders the contrast diagnostics panel (Step 5: replaces auto-fix button)", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    // The diagnostics panel uses the same container testid as the old auto-fix panel
+    // for structural stability. The old auto-fix button (gtg-autofix-btn) must be absent.
+    expect(container.querySelector("[data-testid='gtg-autofix-panel']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gtg-autofix-btn']")).toBeNull();
+    // Floor diagnostics section must be present
+    expect(container.querySelector("[data-testid='gtg-diag-floor-section']")).not.toBeNull();
   });
 });
 
@@ -548,7 +559,7 @@ describe("T10.3 – novel recipe end-to-end: derive → validate → export → 
     expect(() => validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP)).not.toThrow();
   });
 
-  it("0 unexpected body-text perceptual contrast failures after derive + autoAdjust (T-ACC-1 / T10.3 core assertion)", () => {
+  it("0 unexpected body-text perceptual contrast failures (engine contrast floors enforced by construction; T-ACC-1 / T10.3 core assertion)", () => {
     const { finalResults } = runFullPipelineForRecipe(CHM_NOVEL_RECIPE);
     const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
       (r) => r.role === "body-text",
@@ -669,8 +680,8 @@ describe("T10.3 – gallery card tab 21 and existing-tab regression", () => {
 // T-ACC-1: Novel CHM recipe produces 0 perceptual contrast body-text failures
 // ---------------------------------------------------------------------------
 
-describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contrast failures after auto-adjust", () => {
-  it("dark mode CHM recipe has 0 unexpected body-text failures after autoAdjustContrast", () => {
+describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contrast failures (engine contrast floors)", () => {
+  it("dark mode CHM recipe has 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
     const { finalResults } = runFullPipelineForRecipe(CHM_NOVEL_RECIPE);
     const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
       (r) => r.role === "body-text",
@@ -685,7 +696,7 @@ describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contras
   // light recipes without explicit formulas fall back to BRIO_DARK_FORMULAS and will
   // produce wrong contrast values until BRIO_LIGHT_FORMULAS is introduced in a later step.
 
-  it("all three example recipes produce 0 unexpected body-text failures after autoAdjustContrast (regression guard)", () => {
+  it("all three example recipes produce 0 unexpected body-text failures (engine contrast floors; regression guard)", () => {
     for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES) as [string, Parameters<typeof deriveTheme>[0]][]) {
       const { finalResults } = runFullPipelineForRecipe(recipe);
       const bodyTextUnexpected = unexpectedFailures(finalResults).filter(

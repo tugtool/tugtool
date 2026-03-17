@@ -829,36 +829,14 @@ const FILLED_RULES: Record<string, DerivationRule> = {
  * bg-hover/active: hueSlot "outlinedBgHover"/"outlinedBgActive" (sentinel __highlight dark,
  *   chromatic "atm" light with outlinedBgHover/Active tones)
  *
- * fg/icon mode dispatch (dark: uniform outlinedFgTone/I; light: per-state preset fields):
- *   For "action": outlinedActionFg{state}ToneLight / outlinedActionIcon{state}ToneLight
- *   For "agent":  outlinedAgentFg{state}ToneLight / ...
- *   For "option": outlinedOptionFg{state}ToneLight / ...
+ * fg/icon: emphasis-level fields shared across all roles (Table T01 D02):
+ *   outlinedFg{Rest,Hover,Active}Tone, outlinedFgI (fg)
+ *   outlinedIcon{Rest,Hover,Active}Tone, outlinedIconI (icon)
  *
  * border: roleHueSlot at Math.min(90, signalI+{5,15,25}), t:50
  */
 function outlinedFgRules(role: string, hueSlot: string): Record<string, DerivationRule> {
   const base = `--tug-base-control-outlined-${role}`;
-  const capitalRole = role.charAt(0).toUpperCase() + role.slice(1);
-
-  // fg tones per state: read unified per-state fields from formulas (Table T01 Spec S04).
-  function fgToneExpr(state: "Rest" | "Hover" | "Active"): Expr {
-    const field = (`outlined${capitalRole}Fg${state}Tone`) as keyof DerivationFormulas;
-    return (formulas) => formulas[field] as number;
-  }
-  function fgIExpr(state: "Rest" | "Hover" | "Active"): Expr {
-    const field = (`outlined${capitalRole}Fg${state}I`) as keyof DerivationFormulas;
-    return (formulas) => formulas[field] as number;
-  }
-
-  // icon tones per state: read unified per-state fields from formulas (Table T01 Spec S04).
-  function iconToneExpr(state: "Rest" | "Hover" | "Active"): Expr {
-    const field = (`outlined${capitalRole}Icon${state}Tone`) as keyof DerivationFormulas;
-    return (formulas) => formulas[field] as number;
-  }
-  function iconIExpr(state: "Rest" | "Hover" | "Active"): Expr {
-    const field = (`outlined${capitalRole}Icon${state}I`) as keyof DerivationFormulas;
-    return (formulas) => formulas[field] as number;
-  }
 
   return {
     [`${base}-bg-rest`]: { type: "structural", valueExpr: () => "transparent" },
@@ -866,18 +844,18 @@ function outlinedFgRules(role: string, hueSlot: string): Record<string, Derivati
     [`${base}-bg-hover`]: { type: "chromatic", hueSlot: "outlinedBgHover", intensityExpr: (formulas) => formulas.outlinedBgHoverI, toneExpr: (_f, _k, computed) => computed.outlinedBgHoverTone, alphaExpr: (formulas) => formulas.outlinedBgHoverAlphaValue },
     // bg-active: unified intensity/alpha from formulas (dark: 0/outlinedBgActiveAlpha; light: chromatic 6/100)
     [`${base}-bg-active`]: { type: "chromatic", hueSlot: "outlinedBgActive", intensityExpr: (formulas) => formulas.outlinedBgActiveI, toneExpr: (_f, _k, computed) => computed.outlinedBgActiveTone, alphaExpr: (formulas) => formulas.outlinedBgActiveAlphaValue },
-    // fg
-    [`${base}-fg-rest`]: { type: "chromatic", hueSlot: "txt", intensityExpr: fgIExpr("Rest"), toneExpr: fgToneExpr("Rest") },
-    [`${base}-fg-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: fgIExpr("Hover"), toneExpr: fgToneExpr("Hover") },
-    [`${base}-fg-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: fgIExpr("Active"), toneExpr: fgToneExpr("Active") },
+    // fg — emphasis-level fields (Table T01 D02), same across all outlined roles
+    [`${base}-fg-rest`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.outlinedFgI, toneExpr: (formulas) => formulas.outlinedFgRestTone },
+    [`${base}-fg-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.outlinedFgI, toneExpr: (formulas) => formulas.outlinedFgHoverTone },
+    [`${base}-fg-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.outlinedFgI, toneExpr: (formulas) => formulas.outlinedFgActiveTone },
     // border
     [`${base}-border-rest`]: { type: "chromatic", hueSlot, intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalI + 5), toneExpr: lit(50) },
     [`${base}-border-hover`]: { type: "chromatic", hueSlot, intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalI + 15), toneExpr: lit(50) },
     [`${base}-border-active`]: { type: "chromatic", hueSlot, intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalI + 25), toneExpr: lit(50) },
-    // icon
-    [`${base}-icon-rest`]: { type: "chromatic", hueSlot: "txt", intensityExpr: iconIExpr("Rest"), toneExpr: iconToneExpr("Rest") },
-    [`${base}-icon-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: iconIExpr("Hover"), toneExpr: iconToneExpr("Hover") },
-    [`${base}-icon-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: iconIExpr("Active"), toneExpr: iconToneExpr("Active") },
+    // icon — emphasis-level fields (Table T01 D02), same across all outlined roles
+    [`${base}-icon-rest`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.outlinedIconI, toneExpr: (formulas) => formulas.outlinedIconRestTone },
+    [`${base}-icon-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.outlinedIconI, toneExpr: (formulas) => formulas.outlinedIconHoverTone },
+    [`${base}-icon-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.outlinedIconI, toneExpr: (formulas) => formulas.outlinedIconActiveTone },
   };
 }
 
@@ -920,60 +898,40 @@ const OUTLINED_RULES: Record<string, DerivationRule> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Build ghost-action rules.
+ * Build ghost-{role} rules (action, option).
+ * Unified factory — both roles share emphasis-level fg/icon/border fields (Table T02 D02).
+ * Per-role exceptions: bgHoverHueSlot, bgActiveHueSlot, and the alpha formula fields
+ * remain per-role because the bg sentinel hue slot may differ between roles in light mode.
+ *
  * bg-rest/border-rest: transparent (structural)
- * bg-hover/active: preset-mediated sentinel ("__highlight" dark | "__shadow" light)
- * fg/icon: mode-dependent per-state preset fields
- * border-hover/active: txt hue at ghostActionBorderI, ghostActionBorderTone
+ * bg-hover/active: per-role sentinel hue slot (e.g. "ghostActionBgHover" / "ghostOptionBgHover")
+ * fg/icon: emphasis-level fields ghostFg{Rest,Hover,Active}Tone/I, ghostIcon{Rest,Hover,Active}Tone/I
+ * border-hover/active: txt hue at ghostBorderI, ghostBorderTone (shared)
  */
-function ghostActionRules(): Record<string, DerivationRule> {
-  const base = "--tug-base-control-ghost-action";
+function ghostFgRules(
+  role: "action" | "option",
+  bgHoverHueSlot: string,
+  bgActiveHueSlot: string,
+  bgHoverAlphaExpr: (formulas: DerivationFormulas) => number,
+  bgActiveAlphaExpr: (formulas: DerivationFormulas) => number,
+): Record<string, DerivationRule> {
+  const base = `--tug-base-control-ghost-${role}`;
   return {
     [`${base}-bg-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`${base}-bg-hover`]: { type: "chromatic", hueSlot: "ghostActionBgHover", intensityExpr: lit(0), toneExpr: lit(0), alphaExpr: (formulas) => formulas.ghostActionBgHoverAlpha },
-    [`${base}-bg-active`]: { type: "chromatic", hueSlot: "ghostActionBgActive", intensityExpr: lit(0), toneExpr: lit(0), alphaExpr: (formulas) => formulas.ghostActionBgActiveAlpha },
-    // fg — unified per-state fields (Table T01 Spec S04)
-    [`${base}-fg-rest`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostActionFgRestI,
-      toneExpr: (formulas) => formulas.ghostActionFgRestTone,
-    },
-    [`${base}-fg-hover`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostActionFgHoverI,
-      toneExpr: (formulas) => formulas.ghostActionFgHoverTone,
-    },
-    [`${base}-fg-active`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostActionFgActiveI,
-      toneExpr: (formulas) => formulas.ghostActionFgActiveTone,
-    },
+    [`${base}-bg-hover`]: { type: "chromatic", hueSlot: bgHoverHueSlot, intensityExpr: lit(0), toneExpr: lit(0), alphaExpr: bgHoverAlphaExpr },
+    [`${base}-bg-active`]: { type: "chromatic", hueSlot: bgActiveHueSlot, intensityExpr: lit(0), toneExpr: lit(0), alphaExpr: bgActiveAlphaExpr },
+    // fg — emphasis-level fields (Table T02 D02), shared across ghost action and option
+    [`${base}-fg-rest`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostFgRestI, toneExpr: (formulas) => formulas.ghostFgRestTone },
+    [`${base}-fg-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostFgHoverI, toneExpr: (formulas) => formulas.ghostFgHoverTone },
+    [`${base}-fg-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostFgActiveI, toneExpr: (formulas) => formulas.ghostFgActiveTone },
     // border
     [`${base}-border-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`${base}-border-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostActionBorderI, toneExpr: (formulas) => formulas.ghostActionBorderTone },
-    [`${base}-border-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostActionBorderI, toneExpr: (formulas) => formulas.ghostActionBorderTone },
-    // icon — unified per-state fields (Table T01 Spec S04)
-    [`${base}-icon-rest`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostActionIconRestI,
-      toneExpr: (formulas) => formulas.ghostActionIconRestTone,
-    },
-    [`${base}-icon-hover`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostActionIconHoverI,
-      toneExpr: (formulas) => formulas.ghostActionIconHoverTone,
-    },
-    [`${base}-icon-active`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostActionIconActiveI,
-      toneExpr: (formulas) => formulas.ghostActionIconActiveTone,
-    },
+    [`${base}-border-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostBorderI, toneExpr: (formulas) => formulas.ghostBorderTone },
+    [`${base}-border-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostBorderI, toneExpr: (formulas) => formulas.ghostBorderTone },
+    // icon — emphasis-level fields (Table T02 D02), shared across ghost action and option
+    [`${base}-icon-rest`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostIconRestI, toneExpr: (formulas) => formulas.ghostIconRestTone },
+    [`${base}-icon-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostIconHoverI, toneExpr: (formulas) => formulas.ghostIconHoverTone },
+    [`${base}-icon-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostIconActiveI, toneExpr: (formulas) => formulas.ghostIconActiveTone },
   };
 }
 
@@ -1002,64 +960,22 @@ function ghostDangerRules(): Record<string, DerivationRule> {
   };
 }
 
-/**
- * Build ghost-option rules — same pattern as ghost-action but with separate preset fields.
- */
-function ghostOptionRules(): Record<string, DerivationRule> {
-  const base = "--tug-base-control-ghost-option";
-  return {
-    [`${base}-bg-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`${base}-bg-hover`]: { type: "chromatic", hueSlot: "ghostOptionBgHover", intensityExpr: lit(0), toneExpr: lit(0), alphaExpr: (formulas) => formulas.ghostOptionBgHoverAlpha },
-    [`${base}-bg-active`]: { type: "chromatic", hueSlot: "ghostOptionBgActive", intensityExpr: lit(0), toneExpr: lit(0), alphaExpr: (formulas) => formulas.ghostOptionBgActiveAlpha },
-    // fg — unified per-state fields (Table T01 Spec S04)
-    [`${base}-fg-rest`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostOptionFgRestI,
-      toneExpr: (formulas) => formulas.ghostOptionFgRestTone,
-    },
-    [`${base}-fg-hover`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostOptionFgHoverI,
-      toneExpr: (formulas) => formulas.ghostOptionFgHoverTone,
-    },
-    [`${base}-fg-active`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostOptionFgActiveI,
-      toneExpr: (formulas) => formulas.ghostOptionFgActiveTone,
-    },
-    // border
-    [`${base}-border-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`${base}-border-hover`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostOptionBorderI, toneExpr: (formulas) => formulas.ghostOptionBorderTone },
-    [`${base}-border-active`]: { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.ghostOptionBorderI, toneExpr: (formulas) => formulas.ghostOptionBorderTone },
-    // icon — unified per-state fields (Table T01 Spec S04)
-    [`${base}-icon-rest`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostOptionIconRestI,
-      toneExpr: (formulas) => formulas.ghostOptionIconRestTone,
-    },
-    [`${base}-icon-hover`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostOptionIconHoverI,
-      toneExpr: (formulas) => formulas.ghostOptionIconHoverTone,
-    },
-    [`${base}-icon-active`]: {
-      type: "chromatic",
-      hueSlot: "txt",
-      intensityExpr: (formulas) => formulas.ghostOptionIconActiveI,
-      toneExpr: (formulas) => formulas.ghostOptionIconActiveTone,
-    },
-  };
-}
-
 const GHOST_RULES: Record<string, DerivationRule> = {
-  ...ghostActionRules(),
+  ...ghostFgRules(
+    "action",
+    "ghostActionBgHover",
+    "ghostActionBgActive",
+    (formulas) => formulas.ghostActionBgHoverAlpha,
+    (formulas) => formulas.ghostActionBgActiveAlpha,
+  ),
   ...ghostDangerRules(),
-  ...ghostOptionRules(),
+  ...ghostFgRules(
+    "option",
+    "ghostOptionBgHover",
+    "ghostOptionBgActive",
+    (formulas) => formulas.ghostOptionBgHoverAlpha,
+    (formulas) => formulas.ghostOptionBgActiveAlpha,
+  ),
 };
 
 // ---------------------------------------------------------------------------

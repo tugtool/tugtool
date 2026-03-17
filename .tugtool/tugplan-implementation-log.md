@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-17T18:47:27Z
+---
+
+## step-5: Deprecated autoAdjustContrast, replaced AutoFixPanel with ContrastDiagnosticsPanel showing floor-applied and structurally-fixed diagnostics. Updated 4 test files to remove auto-fix pipeline calls. 1842 tests pass, 0 failures.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
+step: step-4
+date: 2025-03-17T18:25:56Z
+---
+
+## step-4: Added enforceContrastFloor with binary search in tone space, ContrastDiagnostic interface, and evaluateRules integration. 10 token tones floor-clamped. All 1840 tests pass with 0 failures.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
+step: step-3
+date: 2025-03-17T17:32:59Z
+---
+
+## step-3: Consolidated DerivationFormulas from 268 to 198 fields (70-field net reduction). Refactored outlinedFgRules and unified ghostFgRules factories. Established BASE_FORMULAS + BRIO_DARK_OVERRIDES pattern. Token output byte-identical.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
+step: step-2
+date: 2025-03-17T17:12:08Z
+---
+
+## step-2: Replaced computePerceptualContrast with OKLab L-based metric. Removed old constants, added CONTRAST_SCALE=150, POLARITY_FACTOR=0.85, CONTRAST_MIN_DELTA=0.03. Calibrated thresholds against Brio token set. Added CB6 rank-ordering calibration test. 40 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
+step: step-1
+date: 2025-03-17T16:29:34Z
+---
+
+## step-1: Added hexToOkLabL function implementing OKLab M1 matrix conversion (Spec S02) and calibration test infrastructure for algorithm replacement in Step 2
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
 step: step-10
 date: 2025-03-17T13:43:26Z
 ---

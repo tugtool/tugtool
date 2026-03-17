@@ -90,95 +90,140 @@ export function computeWcagContrast(fgHex: string, bgHex: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Perceptual contrast calculation
+// OKLab L conversion
 // ---------------------------------------------------------------------------
 
-// Perceptual contrast constants
-const NORMAL_BG_EXP = 0.56;
-const NORMAL_TXT_EXP = 0.57;
-const REVERSE_BG_EXP = 0.65;
-const REVERSE_TXT_EXP = 0.62;
-const CONTRAST_SCALE = 1.14;
-const LOW_CLIP = 0.1;
-const DELTA_MIN = 0.0005;
-const LUMINANCE_EXPONENT = 2.4;
-
 /**
- * Compute the perceptual gamma for a linearised-sRGB channel.
- * This is the "flare" or "ambient" coefficient used in the perceptual contrast formula.
+ * Convert a #rrggbb hex color to OKLab perceptual lightness (L).
+ *
+ * Follows the OKLab specification by Björn Ottosson (2020):
+ *   https://bottosson.github.io/posts/oklab/
+ *
+ * Steps:
+ *   1. Parse hex to sRGB [0,1] channels
+ *   2. Linearise each channel via srgbChannelToLinear (IEC 61966-2-1)
+ *   3. Apply the OKLab M1 matrix (linear sRGB → linear LMS):
+ *        l = 0.4122214708·R + 0.5363325363·G + 0.0514459929·B
+ *        m = 0.2119034982·R + 0.6806995451·G + 0.1073969566·B
+ *        s = 0.0883024619·R + 0.2817188376·G + 0.6299787005·B
+ *   4. Cube-root each: l_ = cbrt(l), m_ = cbrt(m), s_ = cbrt(s)
+ *   5. Compute L = 0.2104542553·l_ + 0.7936177850·m_ - 0.0040720468·s_
+ *
+ * Returns the OKLab L component in the range [0, 1]:
+ *   black (#000000) → ~0.0
+ *   white (#ffffff) → ~1.0
+ *   mid-gray (#777777) → ~0.57
+ *
+ * @param hex - Color as #rrggbb hex string
+ * @returns OKLab perceptual lightness L ∈ [0, 1]
  */
-function perceptualGamma(y: number): number {
-  return Math.pow(Math.abs(y), LUMINANCE_EXPONENT) * Math.sign(y);
+export function hexToOkLabL(hex: string): number {
+  const r = srgbChannelToLinear(parseInt(hex.slice(1, 3), 16) / 255);
+  const g = srgbChannelToLinear(parseInt(hex.slice(3, 5), 16) / 255);
+  const b = srgbChannelToLinear(parseInt(hex.slice(5, 7), 16) / 255);
+
+  // OKLab M1 matrix: linear sRGB → linear LMS (Ottosson 2020)
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+  // Cube-root each LMS channel
+  const l_ = Math.cbrt(l);
+  const m_ = Math.cbrt(m);
+  const s_ = Math.cbrt(s);
+
+  // OKLab M2 matrix: LMS^ → Lab (L component only)
+  return 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
 }
 
+// ---------------------------------------------------------------------------
+// Perceptual contrast calculation — OKLab L-based metric with polarity correction
+// ---------------------------------------------------------------------------
+
 /**
- * Compute the perceptual luminance (stimulus luminance) for a hex color.
+ * Scale factor converting OKLab ΔL to the contrast score range used by
+ * CONTRAST_THRESHOLDS (body-text=75, large-text=60, ui-component=30, decorative=15).
  *
- * Uses the same linearisation formula as WCAG 2.x but applies
- * an additional power function (exponent = 2.4) to the result.
- * The "flare" constant 0.05 is not added here — it is handled in the
- * soft-clip phase.
+ * Calibrated against the Brio dark token set. The anchor pair fg-default/bg-app
+ * has OKLab ΔL≈0.727 (fgL≈0.935, bgL≈0.208), yielding a score of ≈−92.7 with
+ * POLARITY_FACTOR=0.85 — comfortably above the body-text threshold of 75.
  *
- * Y = 0.2126R^2.4 + 0.7152G^2.4 + 0.0722B^2.4
- * which is equivalent to applying perceptualGamma to each channel then
- * applying the standard luminance coefficients.
+ * Reference: Ottosson 2020 OKLab perceptual lightness model.
  */
-function perceptualLuminance(hex: string): number {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const rLin = srgbChannelToLinear(r);
-  const gLin = srgbChannelToLinear(g);
-  const bLin = srgbChannelToLinear(b);
-  return 0.2126 * perceptualGamma(rLin) + 0.7152 * perceptualGamma(gLin) + 0.0722 * perceptualGamma(bLin);
-}
+export const CONTRAST_SCALE = 150;
+
+/**
+ * Polarity correction factor applied to negative-polarity contrast (light
+ * element on dark surface).
+ *
+ * Vision science literature (Piepenbrock 2013, Whittle 1986) documents that
+ * light-on-dark text requires ~15% more physical contrast to reach the same
+ * perceived readability as dark-on-light text. This factor applies a
+ * corresponding reduction: negative-polarity scores are multiplied by 0.85.
+ *
+ * Starting value: 0.85 (matching the published ~15% disadvantage figure).
+ * Calibrated against Brio dark token set to preserve pass/fail boundaries.
+ *
+ * References:
+ *   Piepenbrock et al. (2013) — "Positive Display Polarity Is Particularly
+ *     Advantageous for Small Character Sizes"
+ *   Whittle (1986) — "Increments and decrements: luminance discrimination"
+ */
+export const POLARITY_FACTOR = 0.85;
+
+/**
+ * Minimum OKLab ΔL below which contrast is reported as zero.
+ *
+ * Pairs whose surface and element L values differ by less than this amount
+ * are perceptually indistinguishable in lightness and produce a score of 0.
+ * This is the OKLab-equivalent of the soft-clip behaviour in the previous
+ * algorithm.
+ */
+export const CONTRAST_MIN_DELTA = 0.03;
 
 /**
  * Compute the perceptual contrast for an element/surface pair.
  *
- * Returns the signed contrast value:
- *   - Positive: dark text on light background (normal polarity)
- *   - Negative: light text on dark background (reverse polarity)
+ * Implements the OKLab L-based metric (Spec S01):
+ *   1. Convert each hex color to OKLab L via hexToOkLabL (Spec S02).
+ *   2. Compute deltaL = surfaceL - elementL.
+ *   3. If |deltaL| < CONTRAST_MIN_DELTA, return 0.
+ *   4. Positive polarity (surface is lighter, dark element on light surface):
+ *        return deltaL * CONTRAST_SCALE
+ *   5. Negative polarity (surface is darker, light element on dark surface):
+ *        return deltaL * CONTRAST_SCALE * POLARITY_FACTOR
+ *
+ * Returns the signed contrast score:
+ *   - Positive: dark element on light surface (positive polarity)
+ *   - Negative: light element on dark surface (negative polarity, after correction)
+ *   - 0: insufficient lightness delta (perceptually indistinguishable)
  *
  * Magnitude is the normative contrast gate per CONTRAST_THRESHOLDS:
- *   >= 75 → body text (normal)
+ *   >= 75 → body text
  *   >= 60 → large / bold text
+ *   >= 45 → subdued text (muted/placeholder/read-only)
  *   >= 30 → UI components / icons
  *   >= 15 → decorative
  *
- * @param fgHex - Element (foreground) color as #rrggbb
- * @param bgHex - Surface (background) color as #rrggbb
- * @returns Signed perceptual contrast value
+ * @param elementHex - Element (foreground) color as #rrggbb
+ * @param surfaceHex - Surface (background) color as #rrggbb
+ * @returns Signed perceptual contrast score
  */
-export function computePerceptualContrast(fgHex: string, bgHex: string): number {
-  const yTxt = perceptualLuminance(fgHex);
-  const yBg = perceptualLuminance(bgHex);
+export function computePerceptualContrast(elementHex: string, surfaceHex: string): number {
+  const elementL = hexToOkLabL(elementHex);
+  const surfaceL = hexToOkLabL(surfaceHex);
 
-  // Polarity: if bg is lighter, normal polarity (dark text on light bg)
-  const isNormal = yBg > yTxt;
+  const deltaL = surfaceL - elementL;
 
-  let sapc: number;
+  if (Math.abs(deltaL) < CONTRAST_MIN_DELTA) return 0;
 
-  if (isNormal) {
-    // Normal polarity: dark text on light background
-    const yBgPow = Math.pow(yBg, NORMAL_BG_EXP);
-    const yTxtPow = Math.pow(yTxt, NORMAL_TXT_EXP);
-    const deltaYc = yBgPow - yTxtPow;
-    // Soft-clip low contrasts
-    if (Math.abs(deltaYc) < DELTA_MIN) return 0;
-    sapc = deltaYc < 0 ? 0 : deltaYc * CONTRAST_SCALE;
-    if (sapc < LOW_CLIP) return 0;
-    return (sapc - 0.027) * 100;
+  if (deltaL > 0) {
+    // Positive polarity: dark element on light surface
+    return deltaL * CONTRAST_SCALE;
   } else {
-    // Reverse polarity: light text on dark background
-    const yBgPow = Math.pow(yBg, REVERSE_BG_EXP);
-    const yTxtPow = Math.pow(yTxt, REVERSE_TXT_EXP);
-    const deltaYc = yBgPow - yTxtPow;
-    // Soft-clip low contrasts
-    if (Math.abs(deltaYc) < DELTA_MIN) return 0;
-    sapc = deltaYc > 0 ? 0 : deltaYc * CONTRAST_SCALE;
-    if (sapc > -LOW_CLIP) return 0;
-    return (sapc + 0.027) * 100;
+    // Negative polarity: light element on dark surface
+    // Apply polarity correction — light-on-dark requires more contrast for same readability
+    return deltaL * CONTRAST_SCALE * POLARITY_FACTOR;
   }
 }
 
@@ -306,8 +351,16 @@ function lToTone(L: number, hueName: string): number {
  *
  * Forward formula matching the derivation engine's resolveOklch():
  *   L = L_DARK + min(tone,50)*(canonL-L_DARK)/50 + max(tone-50,0)*(L_LIGHT-canonL)/50
+ *
+ * Used by enforceContrastFloor in theme-derivation-engine.ts for the binary
+ * search in tone space — avoids a hex round-trip when both element and surface L
+ * values are already known.
+ *
+ * @param tone - Tone value in [0, 100]
+ * @param hueName - Hue name for canonical L lookup (e.g. "cobalt", "violet")
+ * @returns OKLCH lightness value in [L_DARK, L_LIGHT]
  */
-function toneToL(tone: number, hueName: string): number {
+export function toneToL(tone: number, hueName: string): number {
   const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.77;
   return (
     L_DARK +
@@ -450,6 +503,13 @@ function baseHueName(hueRef: string): string {
 
 /**
  * Automatically adjust element token tones to satisfy perceptual contrast thresholds.
+ *
+ * @deprecated Contrast floor enforcement is now performed by `enforceContrastFloor`
+ * inside the derivation engine's `evaluateRules` pass, producing compliant tokens by
+ * construction. Structured diagnostics are available as `ThemeOutput.diagnostics`
+ * (populated with `ContrastDiagnostic` entries). This function is retained for
+ * backward compatibility and unit-test coverage only; it is no longer called by
+ * the derivation pipeline or the gallery UI.
  *
  * Strategy per plan spec (cascade-aware, convergence-based):
  *   1. Group all failing pairs by element token.
@@ -636,14 +696,6 @@ export function autoAdjustContrast(
 // ---------------------------------------------------------------------------
 // Internal helpers re-exported for testing
 // ---------------------------------------------------------------------------
-
-/**
- * Compute L value from tone and hue name (exported for testing).
- * @internal
- */
-export function _toneToL(tone: number, hueName: string): number {
-  return toneToL(tone, hueName);
-}
 
 /**
  * Compute tone from L value and hue name (exported for testing).
