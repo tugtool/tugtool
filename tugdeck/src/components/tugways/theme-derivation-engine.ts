@@ -454,156 +454,66 @@ export interface DerivationFormulas {
   ghostDangerBgActiveAlpha: number;
 
   // -------------------------------------------------------------------------
-  // Per-state control emphasis fields [D10]
+  // Emphasis-level control fields [D02] Table T01 / T02
+  // Outlined fg/icon: shared across action, agent, option roles.
+  // Ghost fg/icon/border: shared across action and option roles.
+  // Ghost bg hue slot and alpha fields remain per-role (Table T02 exceptions).
   // -------------------------------------------------------------------------
-  outlinedFgTone: number;
+
+  // Outlined emphasis-level fg — per-state tone and shared intensity
+  outlinedFgRestTone: number;
+  outlinedFgHoverTone: number;
+  outlinedFgActiveTone: number;
   outlinedFgI: number;
 
-  // Outlined-action fg per-state light tones
-  outlinedActionFgRestToneLight: number;
-  outlinedActionFgHoverToneLight: number;
-  outlinedActionFgActiveToneLight: number;
-  // Outlined-action icon per-state light
-  outlinedActionIconRestToneLight: number;
-  outlinedActionIconHoverToneLight: number;
-  outlinedActionIconActiveToneLight: number;
+  // Outlined emphasis-level icon — per-state tone and shared intensity
+  outlinedIconRestTone: number;
+  outlinedIconHoverTone: number;
+  outlinedIconActiveTone: number;
+  outlinedIconI: number;
 
-  // Outlined-agent fg/icon
-  outlinedAgentFgRestToneLight: number;
-  outlinedAgentFgHoverToneLight: number;
-  outlinedAgentFgActiveToneLight: number;
-  outlinedAgentIconRestToneLight: number;
-  outlinedAgentIconHoverToneLight: number;
-  outlinedAgentIconActiveToneLight: number;
+  // Outlined emphasis-level light-mode tones (per-state, fg and icon)
+  outlinedFgRestToneLight: number;
+  outlinedFgHoverToneLight: number;
+  outlinedFgActiveToneLight: number;
+  outlinedIconRestToneLight: number;
+  outlinedIconHoverToneLight: number;
+  outlinedIconActiveToneLight: number;
 
-  // Outlined-option fg/icon
-  outlinedOptionFgRestToneLight: number;
-  outlinedOptionFgHoverToneLight: number;
-  outlinedOptionFgActiveToneLight: number;
-  outlinedOptionIconRestToneLight: number;
-  outlinedOptionIconHoverToneLight: number;
-  outlinedOptionIconActiveToneLight: number;
-
-  // Ghost-action fg/icon dark (uniform across states)
-  ghostActionFgTone: number;
-  ghostActionFgI: number;
-  // Ghost-action fg per-state light
-  ghostActionFgRestToneLight: number;
-  ghostActionFgHoverToneLight: number;
-  ghostActionFgActiveToneLight: number;
-  ghostActionFgRestILight: number;
-  ghostActionFgHoverILight: number;
-  ghostActionFgActiveILight: number;
-  // Ghost-action icon per-state light
-  ghostActionIconRestToneLight: number;
-  ghostActionIconHoverToneLight: number;
-  ghostActionIconActiveToneLight: number;
-  ghostActionIconActiveILight: number;
-  // Ghost-action border
-  ghostActionBorderI: number;
-  ghostActionBorderTone: number;
-
-  // Ghost-option fg/icon
-  ghostOptionFgTone: number;
-  ghostOptionFgI: number;
-  ghostOptionFgRestToneLight: number;
-  ghostOptionFgHoverToneLight: number;
-  ghostOptionFgActiveToneLight: number;
-  ghostOptionFgRestILight: number;
-  ghostOptionFgHoverILight: number;
-  ghostOptionFgActiveILight: number;
-  ghostOptionIconRestToneLight: number;
-  ghostOptionIconHoverToneLight: number;
-  ghostOptionIconActiveToneLight: number;
-  ghostOptionIconActiveILight: number;
-  ghostOptionBorderI: number;
-  ghostOptionBorderTone: number;
-
-  // Outlined-option border tones
+  // Outlined-option border tones (per-role exception: option uses neutral hue for borders)
   outlinedOptionBorderRestTone: number;
   outlinedOptionBorderHoverTone: number;
   outlinedOptionBorderActiveTone: number;
 
-  // -------------------------------------------------------------------------
-  // NEW: Unified per-state control emphasis fields [D05] Spec S04 Table T01
-  // These replace the old split dark/light fields in rule expressions.
-  // Dark values match the old dark-mode uniform values; future light recipes
-  // set these to their light-mode per-state values.
-  // -------------------------------------------------------------------------
+  // Ghost emphasis-level fg/icon — per-state tone and shared intensity
+  ghostFgRestTone: number;
+  ghostFgHoverTone: number;
+  ghostFgActiveTone: number;
+  ghostFgRestI: number;
+  ghostFgHoverI: number;
+  ghostFgActiveI: number;
+  ghostIconRestTone: number;
+  ghostIconHoverTone: number;
+  ghostIconActiveTone: number;
+  ghostIconRestI: number;
+  ghostIconHoverI: number;
+  ghostIconActiveI: number;
 
-  // Outlined-action fg — 3 states x (tone + intensity) = 6 fields
-  outlinedActionFgRestTone: number;
-  outlinedActionFgHoverTone: number;
-  outlinedActionFgActiveTone: number;
-  outlinedActionFgRestI: number;
-  outlinedActionFgHoverI: number;
-  outlinedActionFgActiveI: number;
+  // Ghost emphasis-level border — shared across action and option
+  ghostBorderI: number;
+  ghostBorderTone: number;
 
-  // Outlined-action icon — 3 states x (tone + intensity) = 6 fields
-  outlinedActionIconRestTone: number;
-  outlinedActionIconHoverTone: number;
-  outlinedActionIconActiveTone: number;
-  outlinedActionIconRestI: number;
-  outlinedActionIconHoverI: number;
-  outlinedActionIconActiveI: number;
-
-  // Outlined-agent fg/icon — same pattern, 12 fields
-  outlinedAgentFgRestTone: number;
-  outlinedAgentFgHoverTone: number;
-  outlinedAgentFgActiveTone: number;
-  outlinedAgentFgRestI: number;
-  outlinedAgentFgHoverI: number;
-  outlinedAgentFgActiveI: number;
-  outlinedAgentIconRestTone: number;
-  outlinedAgentIconHoverTone: number;
-  outlinedAgentIconActiveTone: number;
-  outlinedAgentIconRestI: number;
-  outlinedAgentIconHoverI: number;
-  outlinedAgentIconActiveI: number;
-
-  // Outlined-option fg/icon — same pattern, 12 fields
-  outlinedOptionFgRestTone: number;
-  outlinedOptionFgHoverTone: number;
-  outlinedOptionFgActiveTone: number;
-  outlinedOptionFgRestI: number;
-  outlinedOptionFgHoverI: number;
-  outlinedOptionFgActiveI: number;
-  outlinedOptionIconRestTone: number;
-  outlinedOptionIconHoverTone: number;
-  outlinedOptionIconActiveTone: number;
-  outlinedOptionIconRestI: number;
-  outlinedOptionIconHoverI: number;
-  outlinedOptionIconActiveI: number;
-
-  // Ghost-action fg — 3 states x (tone + intensity) = 6 fields
-  ghostActionFgRestTone: number;
-  ghostActionFgHoverTone: number;
-  ghostActionFgActiveTone: number;
-  ghostActionFgRestI: number;
-  ghostActionFgHoverI: number;
-  ghostActionFgActiveI: number;
-
-  // Ghost-action icon — 3 states x (tone + intensity) = 6 fields
-  ghostActionIconRestTone: number;
-  ghostActionIconHoverTone: number;
-  ghostActionIconActiveTone: number;
-  ghostActionIconRestI: number;
-  ghostActionIconHoverI: number;
-  ghostActionIconActiveI: number;
-
-  // Ghost-option fg/icon — same pattern as ghost-action, 12 fields
-  ghostOptionFgRestTone: number;
-  ghostOptionFgHoverTone: number;
-  ghostOptionFgActiveTone: number;
-  ghostOptionFgRestI: number;
-  ghostOptionFgHoverI: number;
-  ghostOptionFgActiveI: number;
-  ghostOptionIconRestTone: number;
-  ghostOptionIconHoverTone: number;
-  ghostOptionIconActiveTone: number;
-  ghostOptionIconRestI: number;
-  ghostOptionIconHoverI: number;
-  ghostOptionIconActiveI: number;
+  // Ghost emphasis-level light-mode tones (per-state, fg and icon)
+  ghostFgRestToneLight: number;
+  ghostFgHoverToneLight: number;
+  ghostFgActiveToneLight: number;
+  ghostFgRestILight: number;
+  ghostFgHoverILight: number;
+  ghostFgActiveILight: number;
+  ghostIconRestToneLight: number;
+  ghostIconHoverToneLight: number;
+  ghostIconActiveToneLight: number;
+  ghostIconActiveILight: number;
 
   // Non-control unified fields [D05] Table T01
   /** bg-app intensity. Dark: bgAppI (2). Light: atmI. */
@@ -934,133 +844,60 @@ export const BRIO_DARK_FORMULAS: DerivationFormulas = {
   ghostDangerBgHoverAlpha: 10,
   ghostDangerBgActiveAlpha: 20,
 
-  // Per-state control emphasis fields (dark)
-  outlinedFgTone: 100,
+  // Emphasis-level control fields [D02] Table T01 / T02
+  // Outlined: all roles share these fg/icon tone and intensity values.
+  outlinedFgRestTone: 100,
+  outlinedFgHoverTone: 100,
+  outlinedFgActiveTone: 100,
   outlinedFgI: 2,
 
-  outlinedActionFgRestToneLight: 0,
-  outlinedActionFgHoverToneLight: 0,
-  outlinedActionFgActiveToneLight: 0,
-  outlinedActionIconRestToneLight: 0,
-  outlinedActionIconHoverToneLight: 0,
-  outlinedActionIconActiveToneLight: 0,
+  outlinedIconRestTone: 100,
+  outlinedIconHoverTone: 100,
+  outlinedIconActiveTone: 100,
+  outlinedIconI: 2,
 
-  outlinedAgentFgRestToneLight: 0,
-  outlinedAgentFgHoverToneLight: 0,
-  outlinedAgentFgActiveToneLight: 0,
-  outlinedAgentIconRestToneLight: 0,
-  outlinedAgentIconHoverToneLight: 0,
-  outlinedAgentIconActiveToneLight: 0,
+  // Outlined light-mode tones (dark: 0, unused in dark recipes)
+  outlinedFgRestToneLight: 0,
+  outlinedFgHoverToneLight: 0,
+  outlinedFgActiveToneLight: 0,
+  outlinedIconRestToneLight: 0,
+  outlinedIconHoverToneLight: 0,
+  outlinedIconActiveToneLight: 0,
 
-  outlinedOptionFgRestToneLight: 0,
-  outlinedOptionFgHoverToneLight: 0,
-  outlinedOptionFgActiveToneLight: 0,
-  outlinedOptionIconRestToneLight: 0,
-  outlinedOptionIconHoverToneLight: 0,
-  outlinedOptionIconActiveToneLight: 0,
-
-  ghostActionFgTone: 100,
-  ghostActionFgI: 2,
-  ghostActionFgRestToneLight: 0,
-  ghostActionFgHoverToneLight: 0,
-  ghostActionFgActiveToneLight: 0,
-  ghostActionFgRestILight: 0,
-  ghostActionFgHoverILight: 0,
-  ghostActionFgActiveILight: 0,
-  ghostActionIconRestToneLight: 0,
-  ghostActionIconHoverToneLight: 0,
-  ghostActionIconActiveToneLight: 0,
-  ghostActionIconActiveILight: 0,
-  ghostActionBorderI: 20,
-  ghostActionBorderTone: 60,
-
-  ghostOptionFgTone: 100,
-  ghostOptionFgI: 2,
-  ghostOptionFgRestToneLight: 0,
-  ghostOptionFgHoverToneLight: 0,
-  ghostOptionFgActiveToneLight: 0,
-  ghostOptionFgRestILight: 0,
-  ghostOptionFgHoverILight: 0,
-  ghostOptionFgActiveILight: 0,
-  ghostOptionIconRestToneLight: 0,
-  ghostOptionIconHoverToneLight: 0,
-  ghostOptionIconActiveToneLight: 0,
-  ghostOptionIconActiveILight: 0,
-  ghostOptionBorderI: 20,
-  ghostOptionBorderTone: 60,
-
+  // Outlined-option border tones (per-role exception)
   outlinedOptionBorderRestTone: 50,
   outlinedOptionBorderHoverTone: 55,
   outlinedOptionBorderActiveTone: 60,
 
-  // Unified per-state control emphasis fields [D05] Spec S04 Table T01
-  // Dark: all fg tones = 100 (outlinedFgTone), all fg/icon intensities = 2 (outlinedFgI)
-  outlinedActionFgRestTone: 100,
-  outlinedActionFgHoverTone: 100,
-  outlinedActionFgActiveTone: 100,
-  outlinedActionFgRestI: 2,
-  outlinedActionFgHoverI: 2,
-  outlinedActionFgActiveI: 2,
+  // Ghost: action and option roles share these fg/icon/border tone and intensity values.
+  ghostFgRestTone: 100,
+  ghostFgHoverTone: 100,
+  ghostFgActiveTone: 100,
+  ghostFgRestI: 2,
+  ghostFgHoverI: 2,
+  ghostFgActiveI: 2,
 
-  outlinedActionIconRestTone: 100,
-  outlinedActionIconHoverTone: 100,
-  outlinedActionIconActiveTone: 100,
-  outlinedActionIconRestI: 2,
-  outlinedActionIconHoverI: 2,
-  outlinedActionIconActiveI: 2,
+  ghostIconRestTone: 100,
+  ghostIconHoverTone: 100,
+  ghostIconActiveTone: 100,
+  ghostIconRestI: 2,
+  ghostIconHoverI: 2,
+  ghostIconActiveI: 2,
 
-  outlinedAgentFgRestTone: 100,
-  outlinedAgentFgHoverTone: 100,
-  outlinedAgentFgActiveTone: 100,
-  outlinedAgentFgRestI: 2,
-  outlinedAgentFgHoverI: 2,
-  outlinedAgentFgActiveI: 2,
-  outlinedAgentIconRestTone: 100,
-  outlinedAgentIconHoverTone: 100,
-  outlinedAgentIconActiveTone: 100,
-  outlinedAgentIconRestI: 2,
-  outlinedAgentIconHoverI: 2,
-  outlinedAgentIconActiveI: 2,
+  ghostBorderI: 20,
+  ghostBorderTone: 60,
 
-  outlinedOptionFgRestTone: 100,
-  outlinedOptionFgHoverTone: 100,
-  outlinedOptionFgActiveTone: 100,
-  outlinedOptionFgRestI: 2,
-  outlinedOptionFgHoverI: 2,
-  outlinedOptionFgActiveI: 2,
-  outlinedOptionIconRestTone: 100,
-  outlinedOptionIconHoverTone: 100,
-  outlinedOptionIconActiveTone: 100,
-  outlinedOptionIconRestI: 2,
-  outlinedOptionIconHoverI: 2,
-  outlinedOptionIconActiveI: 2,
-
-  ghostActionFgRestTone: 100,
-  ghostActionFgHoverTone: 100,
-  ghostActionFgActiveTone: 100,
-  ghostActionFgRestI: 2,
-  ghostActionFgHoverI: 2,
-  ghostActionFgActiveI: 2,
-
-  ghostActionIconRestTone: 100,
-  ghostActionIconHoverTone: 100,
-  ghostActionIconActiveTone: 100,
-  ghostActionIconRestI: 2,
-  ghostActionIconHoverI: 2,
-  ghostActionIconActiveI: 2,
-
-  ghostOptionFgRestTone: 100,
-  ghostOptionFgHoverTone: 100,
-  ghostOptionFgActiveTone: 100,
-  ghostOptionFgRestI: 2,
-  ghostOptionFgHoverI: 2,
-  ghostOptionFgActiveI: 2,
-  ghostOptionIconRestTone: 100,
-  ghostOptionIconHoverTone: 100,
-  ghostOptionIconActiveTone: 100,
-  ghostOptionIconRestI: 2,
-  ghostOptionIconHoverI: 2,
-  ghostOptionIconActiveI: 2,
+  // Ghost light-mode tones (dark: 0, unused in dark recipes)
+  ghostFgRestToneLight: 0,
+  ghostFgHoverToneLight: 0,
+  ghostFgActiveToneLight: 0,
+  ghostFgRestILight: 0,
+  ghostFgHoverILight: 0,
+  ghostFgActiveILight: 0,
+  ghostIconRestToneLight: 0,
+  ghostIconHoverToneLight: 0,
+  ghostIconActiveToneLight: 0,
+  ghostIconActiveILight: 0,
 
   // Non-control unified fields — Brio dark values [D05] Table T01
   bgAppSurfaceI: 2,           // dark: bgAppI
@@ -1096,6 +933,24 @@ export const BRIO_DARK_FORMULAS: DerivationFormulas = {
 };
 
 // ---------------------------------------------------------------------------
+// BASE_FORMULAS + BRIO_DARK_OVERRIDES — theme family pattern [D03]
+// ---------------------------------------------------------------------------
+
+/**
+ * Default formula values shared across all recipes.
+ * `BRIO_DARK_FORMULAS = { ...BASE_FORMULAS, ...BRIO_DARK_OVERRIDES }`.
+ * Future light / stark recipes override only the fields that differ. [D03]
+ */
+export const BASE_FORMULAS: DerivationFormulas = BRIO_DARK_FORMULAS;
+
+/**
+ * Fields that are specific to the Brio dark recipe and differ from BASE_FORMULAS.
+ * Currently empty because BASE_FORMULAS IS the Brio dark recipe.
+ * Future theme families will populate this with their diverging values.
+ */
+export const BRIO_DARK_OVERRIDES: Partial<DerivationFormulas> = {};
+
+// ---------------------------------------------------------------------------
 // EXAMPLE_RECIPES — reference recipe
 // ---------------------------------------------------------------------------
 
@@ -1113,7 +968,7 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     canvas: "indigo-violet", // bg-canvas, bg-app use same hue as cardBg
     cardFrame: "indigo",     // card title bar, tab bar bg
     borderTint: "indigo-violet", // borders and dividers use same hue as cardBg
-    formulas: BRIO_DARK_FORMULAS,
+    formulas: { ...BASE_FORMULAS, ...BRIO_DARK_OVERRIDES },
   },
 };
 

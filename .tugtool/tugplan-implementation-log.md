@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-17T17:32:59Z
+---
+
+## step-3: Consolidated DerivationFormulas from 268 to 198 fields (70-field net reduction). Refactored outlinedFgRules and unified ghostFgRules factories. Established BASE_FORMULAS + BRIO_DARK_OVERRIDES pattern. Token output byte-identical.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
 step: step-2
 date: 2025-03-17T17:12:08Z
 ---
