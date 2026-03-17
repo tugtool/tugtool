@@ -628,7 +628,7 @@
    Contrast dashboard
    ========================================================================= */
 
-/* Summary bar — "N/M pairs pass Lc contrast" */
+/* Summary bar — "N/M pairs pass contrast" */
 .gtg-dash-summary {
   display: flex;
   align-items: center;

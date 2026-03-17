@@ -8,7 +8,7 @@
  * - T6.4: Mode toggle switches recipe mode between "dark" and "light"
  * - T10.1/T10.2: All prior tests pass (structural — presence of this file)
  * - T10.3: Novel recipe end-to-end: derive -> validate -> 0 body-text failures -> export -> postcss roundtrip
- * - T-ACC-1: Novel CHM recipe produces 0 Lc body-text failures
+ * - T-ACC-1: Novel CHM recipe produces 0 perceptual contrast body-text failures
  * - T-ACC-2: Exported CSS loads in postcss-tug-color without errors
  * - T-ACC-3: CVD strip flags green/red confusion under protanopia
  *
@@ -29,7 +29,7 @@ import {
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
-import { validateThemeContrast, autoAdjustContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, LC_THRESHOLDS, LC_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
+import { validateThemeContrast, autoAdjustContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
 
@@ -53,7 +53,7 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-control-selected-fg",
   "--tug-base-control-highlighted-fg",
   "--tug-base-selection-fg",
-  // Muted / read-only hierarchy (Lc ~61, below Lc 75 body-text threshold)
+  // Muted / read-only hierarchy (contrast ~61, below contrast 75 body-text threshold)
   "--tug-base-fg-muted",
   "--tug-base-field-fg-readOnly",
   // Text / icon on vivid accent or semantic backgrounds
@@ -74,12 +74,12 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-control-filled-agent-fg-active",
   "--tug-base-control-filled-agent-icon-hover",
   "--tug-base-control-filled-agent-icon-active",
-  // Ghost-danger rest/hover/active: danger hue at mid-tone is below Lc 60 large-text
+  // Ghost-danger rest/hover/active: danger hue at mid-tone is below contrast 60 large-text
   "--tug-base-control-ghost-danger-fg-rest",
   "--tug-base-control-ghost-danger-fg-hover",
   "--tug-base-control-ghost-danger-fg-active",
   "--tug-base-control-ghost-danger-icon-active",
-  // Muted / disabled element tokens below Lc thresholds
+  // Muted / disabled element tokens below perceptual contrast thresholds
   "--tug-base-icon-muted",
   "--tug-base-fg-disabled",
   "--tug-base-icon-disabled",
@@ -106,19 +106,19 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-checkmark",
   "--tug-base-radio-dot",
   "--tug-base-range-thumb",
-  // Tab chrome (intentionally below Lc 75 body-text threshold)
+  // Tab chrome (intentionally below contrast 75 body-text threshold)
   "--tug-base-tab-fg-rest",
   "--tug-base-tab-fg-hover",
-  // Field text — light-mode field backgrounds create Lc constraints
+  // Field text — light-mode field backgrounds create contrast constraints
   "--tug-base-field-fg",
-  // Non-text component visibility tokens below Lc 30 by design (Step 3)
+  // Non-text component visibility tokens below contrast 30 by design (Step 3)
   // Toggle track inactive/indeterminate states: intentionally lower-contrast
   // to signal the off/mixed (inactive) state vs. the on state.
   "--tug-base-toggle-track-off",
   "--tug-base-toggle-track-mixed",
   "--tug-base-toggle-track-off-hover",
   "--tug-base-toggle-track-mixed-hover",
-  // toggle-track-on starts below Lc 30 in some configurations; auto-adjust
+  // toggle-track-on starts below contrast 30 in some configurations; auto-adjust
   // brings it to passing. Documented to prevent unexpected regression reports.
   "--tug-base-toggle-track-on",
   // Field border rest/hover: intentionally subtle boundary in dark mode.
@@ -130,7 +130,7 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-border-default",
   "--tug-base-border-muted",
   // Badge tinted border tokens (Step 4): element side (border) has alpha 35%;
-  // compositing over surface-default produces Lc ~19-24, below the Lc 30 ui-component
+  // compositing over surface-default produces contrast ~19-24, below the contrast 30 ui-component
   // threshold. These borders are deliberately subtle tinted accents — their visual
   // presence is reinforced by the filled badge bg and text, not by the border alone.
   "--tug-base-badge-tinted-accent-border",
@@ -181,12 +181,12 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
   // mode are near-identical in lightness. Light-mode formula calibration is deferred
   // per Q01 — this constraint is structural, not a regression.
   "--tug-base-tab-fg-rest|--tug-base-surface-sunken",
-  // Focused-vs-unfocused decorative comparisons (Step 5): SA98G is designed for
+  // Focused-vs-unfocused decorative comparisons (Step 5): perceptual contrast is designed for
   // element-on-area contrast, not border-vs-border comparisons [D05]. The auto-adjuster
-  // bumps accent-cool-default toward control-outlined-action-border-rest (Lc ~9.5,
-  // below the decorative Lc 15 threshold), causing cascade that drives field-border-rest
-  // to Lc 0.0. Both pairs are informational only. All 9 ui-component focus-on-surface
-  // pairs pass Lc 30.
+  // bumps accent-cool-default toward control-outlined-action-border-rest (contrast ~9.5,
+  // below the decorative contrast 15 threshold), causing cascade that drives field-border-rest
+  // to contrast 0.0. Both pairs are informational only. All 9 ui-component focus-on-surface
+  // pairs pass contrast 30.
   "--tug-base-accent-cool-default|--tug-base-field-border-rest",
   "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest",
 ]);
@@ -198,7 +198,7 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
 function runFullPipelineForRecipe(recipe: Parameters<typeof deriveTheme>[0]) {
   const output = deriveTheme(recipe);
   const initial = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  const failures = initial.filter((r) => !r.lcPass);
+  const failures = initial.filter((r) => !r.contrastPass);
   const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
   const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
   return { output, finalResults, unfixable: adjusted.unfixable };
@@ -207,13 +207,13 @@ function runFullPipelineForRecipe(recipe: Parameters<typeof deriveTheme>[0]) {
 /**
  * Filter a list of ContrastResults to only the unexpected failures —
  * those outside the known-token exception set, the known-pair set,
- * and the 5 Lc marginal band (within LC_MARGINAL_DELTA of the role threshold). [D02]
+ * and the 5-unit marginal band (within CONTRAST_MARGINAL_DELTA of the role threshold). [D02]
  */
 function unexpectedFailures(results: ReturnType<typeof validateThemeContrast>) {
   return results.filter((r) => {
-    if (r.lcPass) return false;
-    const margin = (LC_THRESHOLDS[r.role] ?? 15) - LC_MARGINAL_DELTA;
-    if (Math.abs(r.lc) >= margin) return false;
+    if (r.contrastPass) return false;
+    const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
+    if (Math.abs(r.contrast) >= margin) return false;
     if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
     if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
     return true;
@@ -548,13 +548,13 @@ describe("T10.3 – novel recipe end-to-end: derive → validate → export → 
     expect(() => validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP)).not.toThrow();
   });
 
-  it("0 unexpected body-text Lc contrast failures after derive + autoAdjust (T-ACC-1 / T10.3 core assertion)", () => {
+  it("0 unexpected body-text perceptual contrast failures after derive + autoAdjust (T-ACC-1 / T10.3 core assertion)", () => {
     const { finalResults } = runFullPipelineForRecipe(CHM_NOVEL_RECIPE);
     const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
       (r) => r.role === "body-text",
     );
     const descriptions = bodyTextUnexpected.map(
-      (f) => `${f.fg} on ${f.bg}: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
   });
@@ -666,17 +666,17 @@ describe("T10.3 – gallery card tab 21 and existing-tab regression", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T-ACC-1: Novel CHM recipe produces 0 Lc body-text failures
+// T-ACC-1: Novel CHM recipe produces 0 perceptual contrast body-text failures
 // ---------------------------------------------------------------------------
 
-describe("T-ACC-1 – CHM mood recipe: 0 unexpected Lc body-text failures after auto-adjust", () => {
+describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contrast failures after auto-adjust", () => {
   it("dark mode CHM recipe has 0 unexpected body-text failures after autoAdjustContrast", () => {
     const { finalResults } = runFullPipelineForRecipe(CHM_NOVEL_RECIPE);
     const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
       (r) => r.role === "body-text",
     );
     const descriptions = bodyTextUnexpected.map(
-      (f) => `${f.fg} on ${f.bg}: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
   });
@@ -692,7 +692,7 @@ describe("T-ACC-1 – CHM mood recipe: 0 unexpected Lc body-text failures after 
         (r) => r.role === "body-text",
       );
       const descriptions = bodyTextUnexpected.map(
-        (f) => `${f.fg} on ${f.bg}: Lc ${f.lc.toFixed(1)}`,
+        (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
       );
       expect(descriptions, `${name} recipe should have 0 unexpected body-text failures`).toEqual([]);
     }

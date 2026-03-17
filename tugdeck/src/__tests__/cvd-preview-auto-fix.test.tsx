@@ -151,7 +151,7 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
     // Compute actual failure count from logic to know expected button state
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
+    const failures = results.filter((r) => !r.contrastPass && r.role !== "decorative");
 
     if (failures.length === 0) {
       expect(btn.disabled).toBe(true);
@@ -166,7 +166,7 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
     // Check if there are failures — if so, clicking should show a result.
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
+    const failures = results.filter((r) => !r.contrastPass && r.role !== "decorative");
 
     if (failures.length > 0) {
       const btn = container.querySelector("[data-testid='gtg-autofix-btn']") as HTMLButtonElement;
@@ -184,7 +184,7 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
     // independent of UI rendering.
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
+    const failures = results.filter((r) => !r.contrastPass && r.role !== "decorative");
 
     if (failures.length > 0) {
       const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
@@ -207,12 +207,12 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
   it("autoAdjustContrast (unit): re-validating fixed tokens shows improved contrast", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
+    const failures = results.filter((r) => !r.contrastPass && r.role !== "decorative");
 
     if (failures.length > 0) {
       const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
       const fixedResults = validateThemeContrast(fixed.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-      const fixedFailures = fixedResults.filter((r) => !r.lcPass && r.role !== "decorative");
+      const fixedFailures = fixedResults.filter((r) => !r.contrastPass && r.role !== "decorative");
       // After auto-fix, there should be fewer failures than before
       expect(fixedFailures.length).toBeLessThanOrEqual(failures.length);
     }

@@ -86,7 +86,7 @@ describe("contrast-dashboard – T7.1: renders correct number of pairs", () => {
 
 describe("contrast-dashboard – T7.2: Brio body-text pairs pass", () => {
   // The same intentionally-below-threshold set documented in theme-accessibility.test.ts.
-  // These tokens are by design below Lc 75 in the Brio dark theme.
+  // These tokens are by design below contrast 75 in the Brio dark theme.
   const INTENTIONALLY_BELOW_THRESHOLD = new Set([
     "--tug-base-fg-subtle",
     "--tug-base-fg-placeholder",
@@ -95,16 +95,16 @@ describe("contrast-dashboard – T7.2: Brio body-text pairs pass", () => {
     "--tug-base-control-highlighted-fg",
     "--tug-base-selection-fg",
     "--tug-base-fg-link",
-    // Muted / read-only hierarchy (below Lc 75 by design)
+    // Muted / read-only hierarchy (below contrast 75 by design)
     "--tug-base-fg-muted",
     "--tug-base-field-fg-readOnly",
-    // Tab chrome (below Lc 75 by design for visual hierarchy)
+    // Tab chrome (below contrast 75 by design for visual hierarchy)
     "--tug-base-tab-fg-rest",
     "--tug-base-tab-fg-active",
     "--tug-base-tab-fg-hover",
   ]);
 
-  it("all Brio body-text pairs outside the intentional-exception set pass Lc contrast", () => {
+  it("all Brio body-text pairs outside the intentional-exception set pass contrast", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
@@ -112,7 +112,7 @@ describe("contrast-dashboard – T7.2: Brio body-text pairs pass", () => {
     expect(bodyTextResults.length).toBeGreaterThan(0);
 
     const unexpectedFailures = bodyTextResults.filter(
-      (r) => !r.lcPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg),
+      (r) => !r.contrastPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg),
     );
 
     expect(unexpectedFailures).toEqual([]);
@@ -174,10 +174,10 @@ describe("contrast-dashboard – T7.3: summary bar count matches results", () =>
     expect(renderedFailCount).toBe(renderedCheckedCount - renderedPassCount);
   });
 
-  it("summary mentions 'pairs pass Lc contrast'", () => {
+  it("summary mentions 'pairs pass contrast'", () => {
     const container = renderDashboard();
     const summary = container.querySelector("[data-testid='gtg-dash-summary']");
-    expect(summary!.textContent).toContain("pairs pass Lc contrast");
+    expect(summary!.textContent).toContain("pairs pass contrast");
   });
 
   it("badge counts are consistent with summary: pass count equals number of Pass badges", () => {

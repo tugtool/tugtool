@@ -1,6 +1,6 @@
 /**
  * Theme accessibility tests — pairing map completeness, validity,
- * WCAG contrast calculations, APCA Lc, validation, auto-adjustment,
+ * WCAG contrast calculations, perceptual contrast, validation, auto-adjustment,
  * and CVD simulation.
  *
  * Covers:
@@ -9,7 +9,7 @@
  * - T1.3: No duplicate pairs
  * - T3.1: computeWcagContrast("#000000", "#ffffff") returns 21.0
  * - T3.2: computeWcagContrast("#777777", "#ffffff") returns ~4.48
- * - T3.3: computeLcContrast polarity detection
+ * - T3.3: computePerceptualContrast polarity detection
  * - T3.4: autoAdjustContrast fixes a deliberately failing pair
  * - T3.5: validateThemeContrast against Brio — all body-text pairs pass 4.5:1
  * - T3.6: autoAdjustContrast most-restrictive-bg strategy
@@ -33,7 +33,7 @@ import { describe, it, expect } from "bun:test";
 import { ELEMENT_SURFACE_PAIRING_MAP, ContrastRole } from "@/components/tugways/element-surface-pairing-map";
 import {
   computeWcagContrast,
-  computeLcContrast,
+  computePerceptualContrast,
   validateThemeContrast,
   autoAdjustContrast,
   compositeOverSurface,
@@ -42,7 +42,7 @@ import {
   simulateCVDForHex,
   checkCVDDistinguishability,
   CVD_MATRICES,
-  LC_THRESHOLDS,
+  CONTRAST_THRESHOLDS,
 } from "@/components/tugways/theme-accessibility";
 import {
   deriveTheme,
@@ -298,7 +298,7 @@ describe("pairing-map", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test suite: theme-accessibility — WCAG contrast, APCA, validation
+// Test suite: theme-accessibility — WCAG contrast, perceptual contrast, validation
 // ---------------------------------------------------------------------------
 
 describe("theme-accessibility", () => {
@@ -321,15 +321,15 @@ describe("theme-accessibility", () => {
   });
 
   // -------------------------------------------------------------------------
-  // T3.3: computeLcContrast polarity — dark-on-light is positive, light-on-dark negative
+  // T3.3: computePerceptualContrast polarity — dark-on-light is positive, light-on-dark negative
   // -------------------------------------------------------------------------
-  it("T3.3: computeLcContrast returns correct polarity for dark-on-light vs light-on-dark", () => {
-    // Dark text on light background → positive Lc
-    const normalLc = computeLcContrast("#000000", "#ffffff");
+  it("T3.3: computePerceptualContrast returns correct polarity for dark-on-light vs light-on-dark", () => {
+    // Dark text on light background → positive contrast
+    const normalLc = computePerceptualContrast("#000000", "#ffffff");
     expect(normalLc).toBeGreaterThan(0);
 
-    // Light text on dark background → negative Lc
-    const reverseLc = computeLcContrast("#ffffff", "#000000");
+    // Light text on dark background → negative contrast
+    const reverseLc = computePerceptualContrast("#ffffff", "#000000");
     expect(reverseLc).toBeLessThan(0);
 
     // The magnitudes should be similar (both near 100)
@@ -338,28 +338,28 @@ describe("theme-accessibility", () => {
   });
 
   // -------------------------------------------------------------------------
-  // T3.4: autoAdjustContrast fixes a deliberately failing pair — reaches Lc >= 75
+  // T3.4: autoAdjustContrast fixes a deliberately failing pair — reaches contrast >= 75
   //
   // Scenario (dark mode): bg at violet tone=15 (very dark, L≈0.3174), fg starts at
-  // tone=90 (L≈0.9096, Lc≈-71.2 — fails body-text Lc 75 threshold by ~3.8).
+  // tone=90 (L≈0.9096, contrast≈-71.2 — fails body-text contrast 75 threshold by ~3.8).
   //
   // bumpDirection: fgL > bgL → direction=+1 (fg goes lighter each step, TONE_STEP=5).
   // Trace (5-unit tone steps):
-  //   Iter 1: tone 90→95, |Lc|≈81.6 (passes Lc 75!)
+  //   Iter 1: tone 90→95, |contrast|≈81.6 (passes contrast 75!)
   //
   // violet canonL=0.708, L_DARK=0.15, L_LIGHT=0.96:
   //   tone=90: L = 0.708 + 40*(0.96-0.708)/50 = 0.708 + 0.2016 = 0.9096
   //   tone=15: L = 0.15 + 15*(0.708-0.15)/50  = 0.15 + 0.1674  = 0.3174
   //
-  // The test asserts the final |Lc| >= LC_THRESHOLDS["body-text"] (75),
-  // proving the pair was fixed under the normative Lc gate.
+  // The test asserts the final |contrast| >= CONTRAST_THRESHOLDS["body-text"] (75),
+  // proving the pair was fixed under the normative contrast gate.
   // -------------------------------------------------------------------------
-  it("T3.4: autoAdjustContrast fixes a deliberately failing pair and reaches Lc >= 75", () => {
+  it("T3.4: autoAdjustContrast fixes a deliberately failing pair and reaches contrast >= 75", () => {
     const fgToken = "--tug-base-fg-default";
     const bgToken = "--tug-base-bg-app";
 
     // violet canonL=0.708, L_DARK=0.15, L_LIGHT=0.96
-    // fg starts at tone=90 (Lc ~-71.2, just below body-text threshold Lc 75)
+    // fg starts at tone=90 (contrast ~-71.2, just below body-text threshold contrast 75)
     // bg at tone=15 (dark surface)
     const fgL = 0.708 + (40 * (0.96 - 0.708)) / 50; // tone=90 → ~0.9096
     const bgL = 0.15 + (15 * (0.708 - 0.15)) / 50;  // tone=15 → ~0.3174
@@ -380,17 +380,17 @@ describe("theme-accessibility", () => {
 
     const initialFgHex = oklchToHex(fgResolved.L, fgResolved.C, fgResolved.h);
     const initialBgHex = oklchToHex(bgResolved.L, bgResolved.C, bgResolved.h);
-    const initialLc = computeLcContrast(initialFgHex, initialBgHex);
-    // Verify setup: initial |Lc| should be < 75 (failing body-text threshold)
-    expect(Math.abs(initialLc)).toBeLessThan(LC_THRESHOLDS["body-text"]);
+    const initialLc = computePerceptualContrast(initialFgHex, initialBgHex);
+    // Verify setup: initial |contrast| should be < 75 (failing body-text threshold)
+    expect(Math.abs(initialLc)).toBeLessThan(CONTRAST_THRESHOLDS["body-text"]);
 
     const failures = [
       {
         fg: fgToken,
         bg: bgToken,
         wcagRatio: computeWcagContrast(initialFgHex, initialBgHex),
-        lc: initialLc,
-        lcPass: false,
+        contrast: initialLc,
+        contrastPass: false,
         role: "body-text" as const,
       },
     ];
@@ -408,13 +408,13 @@ describe("theme-accessibility", () => {
     // fg should have been bumped toward lighter
     expect(result.resolved[fgToken].L).toBeGreaterThan(fgResolved.L);
 
-    // Final contrast must meet the Lc 75 body-text threshold (normative gate)
+    // Final contrast must meet the contrast 75 body-text threshold (normative gate)
     const newFgResolved = result.resolved[fgToken];
     const newBgResolved = result.resolved[bgToken];
     const fgHex = oklchToHex(newFgResolved.L, newFgResolved.C, newFgResolved.h);
     const bgHex = oklchToHex(newBgResolved.L, newBgResolved.C, newBgResolved.h);
-    const finalLc = computeLcContrast(fgHex, bgHex);
-    expect(Math.abs(finalLc)).toBeGreaterThanOrEqual(LC_THRESHOLDS["body-text"]);
+    const finalLc = computePerceptualContrast(fgHex, bgHex);
+    expect(Math.abs(finalLc)).toBeGreaterThanOrEqual(CONTRAST_THRESHOLDS["body-text"]);
 
     // Unfixable list should be empty (pair was fixed)
     expect(result.unfixable).toEqual([]);
@@ -424,7 +424,7 @@ describe("theme-accessibility", () => {
   // T3.5: validateThemeContrast against Brio defaults — all body-text pairs.
   //
   // The following tokens are classified as "body-text" role in the pairing map
-  // but are intentionally or structurally below Lc 75 in the Brio dark theme:
+  // but are intentionally or structurally below contrast 75 in the Brio dark theme:
   //
   //   --tug-base-fg-subtle         — tertiary text (3rd visual hierarchy level;
   //                                  Brio uses reduced contrast for visual noise)
@@ -439,18 +439,18 @@ describe("theme-accessibility", () => {
   //                                  selection-bg translucent tint; stack passes)
   //   --tug-base-fg-link           — link fg on surface-overlay (overlay surface is
   //                                  translucent; composed contrast passes in practice)
-  //   --tug-base-fg-muted          — secondary text hierarchy (Lc ~42.7); engine is
+  //   --tug-base-fg-muted          — secondary text hierarchy (contrast ~42.7); engine is
   //                                  calibrated for primary text; secondary tiers
   //                                  intentionally trade off contrast for visual
   //                                  hierarchy legibility
-  //   --tug-base-field-fg-readOnly — read-only field text (Lc ~42.7); reduced contrast
+  //   --tug-base-field-fg-readOnly — read-only field text (contrast ~42.7); reduced contrast
   //                                  signals non-interactive/read-only state
-  //   --tug-base-tab-fg-rest       — inactive tab label (Lc ~27.6); intentionally dim
+  //   --tug-base-tab-fg-rest       — inactive tab label (contrast ~27.6); intentionally dim
   //                                  to signal unselected state
-  //   --tug-base-tab-fg-active     — active tab label (Lc ~74.1); near-miss without
+  //   --tug-base-tab-fg-active     — active tab label (contrast ~74.1); near-miss without
   //                                  auto-adjustment; autoAdjustContrast brings it
   //                                  to passing in the full pipeline (see T4.1)
-  //   --tug-base-tab-fg-hover      — hover tab label (Lc ~74.7); same near-miss
+  //   --tug-base-tab-fg-hover      — hover tab label (contrast ~74.7); same near-miss
   //                                  pattern as tab-fg-active; fixed by T4.1 pipeline
   //
   // These exclusions are tracked here explicitly so any new failures outside this
@@ -460,7 +460,7 @@ describe("theme-accessibility", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-    // Tokens intentionally or structurally below Lc 75 in Brio dark theme (see comment above)
+    // Tokens intentionally or structurally below contrast 75 in Brio dark theme (see comment above)
     const INTENTIONALLY_BELOW_THRESHOLD = new Set([
       "--tug-base-fg-subtle",
       "--tug-base-fg-placeholder",
@@ -469,10 +469,10 @@ describe("theme-accessibility", () => {
       "--tug-base-control-highlighted-fg",
       "--tug-base-selection-fg",
       "--tug-base-fg-link",
-      // Muted / read-only hierarchy (below Lc 75 by design for visual hierarchy)
+      // Muted / read-only hierarchy (below contrast 75 by design for visual hierarchy)
       "--tug-base-fg-muted",
       "--tug-base-field-fg-readOnly",
-      // Tab chrome (below Lc 75 before auto-adjustment; near-miss tokens fixed by T4.1)
+      // Tab chrome (below contrast 75 before auto-adjustment; near-miss tokens fixed by T4.1)
       "--tug-base-tab-fg-rest",
       "--tug-base-tab-fg-active",
       "--tug-base-tab-fg-hover",
@@ -481,21 +481,21 @@ describe("theme-accessibility", () => {
     const bodyTextResults = results.filter((r) => r.role === "body-text");
     expect(bodyTextResults.length).toBeGreaterThan(0);
 
-    // All body-text pairings NOT in the known-exception set must pass Lc 75
+    // All body-text pairings NOT in the known-exception set must pass contrast 75
     const unexpectedFailures = bodyTextResults.filter(
-      (r) => !r.lcPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg),
+      (r) => !r.contrastPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg),
     );
     const failureDescriptions = unexpectedFailures.map(
-      (f) => `${f.fg} on ${f.bg}: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(failureDescriptions).toEqual([]);
 
-    // Primary fg-default must explicitly pass Lc 75 (belt-and-suspenders)
+    // Primary fg-default must explicitly pass contrast 75 (belt-and-suspenders)
     const coreResults = bodyTextResults.filter(
       (r) => r.fg === "--tug-base-fg-default",
     );
     expect(coreResults.length).toBeGreaterThan(0);
-    expect(coreResults.every((r) => r.lcPass)).toBe(true);
+    expect(coreResults.every((r) => r.contrastPass)).toBe(true);
   });
 
   // -------------------------------------------------------------------------
@@ -532,9 +532,9 @@ describe("theme-accessibility", () => {
 
     // All 3 pairings fail initially
     const failures = [
-      { fg: fgToken, bg: bgToken1, wcagRatio: 1.5, lc: 10, lcPass: false, role: "body-text" as const },
-      { fg: fgToken, bg: bgToken2, wcagRatio: 1.4, lc: 9, lcPass: false, role: "body-text" as const },
-      { fg: fgToken, bg: bgToken3, wcagRatio: 1.3, lc: 8, lcPass: false, role: "body-text" as const },
+      { fg: fgToken, bg: bgToken1, wcagRatio: 1.5, contrast: 10, contrastPass: false, role: "body-text" as const },
+      { fg: fgToken, bg: bgToken2, wcagRatio: 1.4, contrast: 9, contrastPass: false, role: "body-text" as const },
+      { fg: fgToken, bg: bgToken3, wcagRatio: 1.3, contrast: 8, contrastPass: false, role: "body-text" as const },
     ];
 
     // Test-local pairings array — covers exactly the three surfaces in this test
@@ -566,15 +566,15 @@ describe("theme-accessibility", () => {
   // T3.7: autoAdjustContrast returns unfixable when token cannot reach threshold
   //
   // Scenario: fg starts slightly lighter than bg, both near the L_LIGHT ceiling
-  // (violet tone≈92 for fg, tone=90 for bg). Lc sign: fgL > bgL → Lc is positive
+  // (violet tone≈92 for fg, tone=90 for bg). contrast sign: fgL > bgL → contrast is positive
   // (dark-on-light polarity) → bumpDirection = -1 (bump fg darker, toward bg).
-  // That immediately reduces contrast further, Lc flips sign, direction flips to +1.
+  // That immediately reduces contrast further, contrast flips sign, direction flips to +1.
   // The alternating pattern triggers oscillation detection, freezing the token as
   // unfixable after 3 alternating directions.
   //
   // Probed values (violet, C=0.02, h=264):
-  //   bg=tone90 (L≈0.9096):  fg=tone100 (L=0.96) → |Lc|≈... far below Lc 75
-  //   bg=tone90:              fg=tone92  (L≈0.920) → |Lc|≈... far below Lc 75 (start)
+  //   bg=tone90 (L≈0.9096):  fg=tone100 (L=0.96) → |contrast|≈... far below contrast 75
+  //   bg=tone90:              fg=tone92  (L≈0.920) → |contrast|≈... far below contrast 75 (start)
   // -------------------------------------------------------------------------
   it("T3.7: autoAdjustContrast returns unfixable list when ceiling prevents reaching threshold", () => {
     const fgToken = "--tug-base-fg-special";
@@ -610,8 +610,8 @@ describe("theme-accessibility", () => {
         fg: fgToken,
         bg: bgToken,
         wcagRatio: initialRatio,
-        lc: 3,
-        lcPass: false,
+        contrast: 3,
+        contrastPass: false,
         role: "body-text" as const,
       },
     ];
@@ -683,19 +683,19 @@ describe("theme-accessibility", () => {
       {
         fg: elementToken, bg: darkSurface,
         wcagRatio: computeWcagContrast(elementHex, darkHex),
-        lc: computeLcContrast(elementHex, darkHex),
-        lcPass: false, role: "body-text" as const,
+        contrast: computePerceptualContrast(elementHex, darkHex),
+        contrastPass: false, role: "body-text" as const,
       },
       {
         fg: elementToken, bg: lightSurface,
         wcagRatio: computeWcagContrast(elementHex, lightHex),
-        lc: computeLcContrast(elementHex, lightHex),
-        lcPass: false, role: "body-text" as const,
+        contrast: computePerceptualContrast(elementHex, lightHex),
+        contrastPass: false, role: "body-text" as const,
       },
     ];
 
     // Both pairings should indeed be failing initially
-    expect(failures.every((f) => !f.lcPass)).toBe(true);
+    expect(failures.every((f) => !f.contrastPass)).toBe(true);
 
     const testPairings = [
       { element: elementToken, surface: darkSurface, role: "body-text" as const },
@@ -722,7 +722,7 @@ describe("theme-accessibility", () => {
     const fgToken = "--tug-base-fg-default";
     const bgToken = "--tug-base-bg-app";
 
-    // Start near-passing: tone=90, |Lc|≈71.2 (just below Lc 75)
+    // Start near-passing: tone=90, |contrast|≈71.2 (just below contrast 75)
     const fgL = 0.708 + (40 * (0.96 - 0.708)) / 50; // tone=90 → ~0.9096
     const bgL = 0.15 + (15 * (0.708 - 0.15)) / 50;  // tone=15 → ~0.3174
 
@@ -744,8 +744,8 @@ describe("theme-accessibility", () => {
       {
         fg: fgToken, bg: bgToken,
         wcagRatio: computeWcagContrast(fgHex, bgHex),
-        lc: computeLcContrast(fgHex, bgHex),
-        lcPass: false, role: "body-text" as const,
+        contrast: computePerceptualContrast(fgHex, bgHex),
+        contrastPass: false, role: "body-text" as const,
       },
     ];
 
@@ -755,14 +755,14 @@ describe("theme-accessibility", () => {
 
     const result = autoAdjustContrast(tokens, resolved, failures, testPairings);
 
-    // The pair should be fixed (one iteration of +5 tone → tone=95, |Lc|≈81.6)
+    // The pair should be fixed (one iteration of +5 tone → tone=95, |contrast|≈81.6)
     expect(result.unfixable).toEqual([]);
 
     // Verify the final state actually passes
     const newFgHex = oklchToHex(result.resolved[fgToken].L, 0.02, 264);
     const newBgHex = oklchToHex(result.resolved[bgToken].L, 0.01, 264);
-    const finalLc = computeLcContrast(newFgHex, newBgHex);
-    expect(Math.abs(finalLc)).toBeGreaterThanOrEqual(LC_THRESHOLDS["body-text"]);
+    const finalLc = computePerceptualContrast(newFgHex, newBgHex);
+    expect(Math.abs(finalLc)).toBeGreaterThanOrEqual(CONTRAST_THRESHOLDS["body-text"]);
   });
 
   // -------------------------------------------------------------------------
@@ -782,8 +782,8 @@ describe("theme-accessibility", () => {
     const sharedSurface = "--tug-base-surface-default";
 
     // dark mode: surface is dark, elements should be light
-    // elementA starts at tone=90 (|Lc|≈71.2 — just below Lc 75, failing)
-    // elementB starts at tone=94 (|Lc|≈79.3 — passing Lc 75)
+    // elementA starts at tone=90 (|contrast|≈71.2 — just below contrast 75, failing)
+    // elementB starts at tone=94 (|contrast|≈79.3 — passing contrast 75)
     const surfaceL = 0.15 + (15 * (0.708 - 0.15)) / 50; // ~0.3174 (tone=15 equivalent)
     const elementAL = 0.708 + (40 * (0.96 - 0.708)) / 50; // tone=90 → ~0.9096
     const elementBL = 0.708 + (44 * (0.96 - 0.708)) / 50; // tone=94 → ~0.9298
@@ -805,12 +805,12 @@ describe("theme-accessibility", () => {
 
     const aHex = oklchToHex(elementAL, 0.02, 264);
     const surfHex = oklchToHex(surfaceL, 0.01, 264);
-    const lcA = computeLcContrast(aHex, surfHex);
+    const lcA = computePerceptualContrast(aHex, surfHex);
     const failures = [
       {
         fg: elementA, bg: sharedSurface,
         wcagRatio: computeWcagContrast(aHex, surfHex),
-        lc: lcA, lcPass: false, role: "body-text" as const,
+        contrast: lcA, contrastPass: false, role: "body-text" as const,
       },
     ];
 
@@ -828,8 +828,8 @@ describe("theme-accessibility", () => {
     // elementB must still pass after adjustment (cascade re-validation guards this)
     const newBHex = oklchToHex(result.resolved[elementB].L, 0.02, 264);
     const newSurfHex = oklchToHex(result.resolved[sharedSurface].L, 0.01, 264);
-    const lcB = computeLcContrast(newBHex, newSurfHex);
-    expect(Math.abs(lcB)).toBeGreaterThanOrEqual(LC_THRESHOLDS["body-text"]);
+    const lcB = computePerceptualContrast(newBHex, newSurfHex);
+    expect(Math.abs(lcB)).toBeGreaterThanOrEqual(CONTRAST_THRESHOLDS["body-text"]);
   });
 });
 
@@ -1112,17 +1112,17 @@ describe("compositeOverSurface", () => {
   });
 
   // -------------------------------------------------------------------------
-  // T4.5: badge-tinted-accent-fg on composited badge-tinted-accent-bg passes Lc 30
+  // T4.5: badge-tinted-accent-fg on composited badge-tinted-accent-bg passes contrast 30
   //
   // Integration test: badge-tinted-accent-bg has alpha=0.15 in the Brio theme.
   // After compositing over surface-default, the resulting background should
-  // have sufficient contrast against badge-tinted-accent-fg to pass Lc 30
+  // have sufficient contrast against badge-tinted-accent-fg to pass contrast 30
   // (ui-component role threshold).
   //
   // This validates that the compositing pipeline enables valid contrast
   // measurement for semi-transparent badge backgrounds.
   // -------------------------------------------------------------------------
-  it("T4.5: badge-tinted-accent-fg on composited badge-tinted-accent-bg passes Lc 30 (ui-component)", () => {
+  it("T4.5: badge-tinted-accent-fg on composited badge-tinted-accent-bg passes contrast 30 (ui-component)", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const badgeFg = brioOutput.resolved["--tug-base-badge-tinted-accent-fg"];
     const badgeBg = brioOutput.resolved["--tug-base-badge-tinted-accent-bg"];
@@ -1143,10 +1143,10 @@ describe("compositeOverSurface", () => {
     const compositedBgHex = compositeOverSurface(badgeBg!, surfaceDefault!);
     const fgHex = oklchToHex(badgeFg!.L, badgeFg!.C, badgeFg!.h);
 
-    // Measure Lc between fg and composited bg
-    const lc = computeLcContrast(fgHex, compositedBgHex);
+    // Measure contrast between fg and composited bg
+    const lc = computePerceptualContrast(fgHex, compositedBgHex);
 
-    // Must pass ui-component Lc 30 threshold
-    expect(Math.abs(lc)).toBeGreaterThanOrEqual(LC_THRESHOLDS["ui-component"]);
+    // Must pass ui-component contrast 30 threshold
+    expect(Math.abs(lc)).toBeGreaterThanOrEqual(CONTRAST_THRESHOLDS["ui-component"]);
   });
 });

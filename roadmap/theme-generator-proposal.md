@@ -5,7 +5,7 @@
 A **Theme Generator** card in the Component Gallery that:
 
 1. Takes a small set of seed colors and produces a complete theme
-2. Validates all color combinations for contrast (WCAG 2.x + APCA)
+2. Validates all color combinations for contrast (WCAG 2.x + perceptual contrast)
 3. Simulates color blindness across all types and flags problems
 4. Supports high-contrast and reduced-contrast accessibility modes
 5. Can be guided by aesthetic references — like the CHM mood board
@@ -111,31 +111,31 @@ The three mood parameters encode aesthetic choices:
 
 ## Accessibility Engine
 
-### A. Contrast Validation (WCAG 2.x + APCA)
+### A. Contrast Validation (WCAG 2.x + perceptual contrast)
 
 Every generated theme gets checked automatically.
 
 **WCAG 2.x**: Standard relative luminance contrast ratio `(L1 + 0.05) / (L2 + 0.05)`.
 
-**APCA (Accessible Perceptual Contrast Algorithm)**: The newer polarity-aware algorithm being developed for WCAG 3.0. More accurate for dark themes — WCAG 2.x overstates contrast for dark colors, which is exactly the problem behind `[D06]` overrides in Harmony.
+**Perceptual contrast**: A polarity-aware algorithm more accurate for dark themes — WCAG 2.x overstates contrast for dark colors, which is exactly the problem behind `[D06]` overrides in Harmony.
 
 #### Threshold Matrix
 
-| Token Role | Min WCAG 2.x | Min APCA Lc | Rationale |
+| Token Role | Min WCAG 2.x | Min perceptual contrast | Rationale |
 |---|---|---|---|
-| Body text (14px / 400wt) | 4.5:1 (AA) | Lc 75 | Primary readability |
-| Large text (18px+ / 700wt) | 3:1 (AA) | Lc 45 | Button labels, headings |
-| UI components (icons, borders) | 3:1 (AA) | Lc 30 | Non-text contrast |
-| Decorative / dividers | — | Lc 15 | Structural only |
+| Body text (14px / 400wt) | 4.5:1 (AA) | contrast 75 | Primary readability |
+| Large text (18px+ / 700wt) | 3:1 (AA) | contrast 45 | Button labels, headings |
+| UI components (icons, borders) | 3:1 (AA) | contrast 30 | Non-text contrast |
+| Decorative / dividers | — | contrast 15 | Structural only |
 
-#### APCA Font Size/Weight Lookup (Silver level, selected entries)
+#### Perceptual Contrast Font Size/Weight Lookup (Silver level, selected entries)
 
 | Font Size | Wt 300 | Wt 400 | Wt 500 | Wt 700 |
 |---|---|---|---|---|
-| 14px | — | Lc 100 | — | Lc 80 |
-| 16px | Lc 90 | Lc 70 | — | Lc 60 |
-| 18px | Lc 80 | Lc 65 | — | Lc 55 |
-| 24px | Lc 65 | Lc 55 | — | Lc 45 |
+| 14px | — | contrast 100 | — | contrast 80 |
+| 16px | contrast 90 | contrast 70 | — | contrast 60 |
+| 18px | contrast 80 | contrast 65 | — | contrast 55 |
+| 24px | contrast 65 | contrast 55 | — | contrast 45 |
 
 #### Auto-Adjustment
 
@@ -211,7 +211,7 @@ The card follows the Palette Engine card's interaction pattern, with these secti
 
 1. **Seed Selector** — Pick mode (dark/light toggle), atmosphere hue (click one of 24 hue swatches), text hue. Live preview updates immediately.
 2. **Mood Controls** — Three sliders for `surfaceContrast`, `signalVividity`, `warmth`. Each shows a mini-preview of how that parameter affects the palette.
-3. **Contrast Dashboard** — Grid showing every fg/bg pair with its WCAG ratio and APCA Lc value. Green = pass, yellow = marginal, red = fail. Click any cell to inspect and adjust.
+3. **Contrast Dashboard** — Grid showing every fg/bg pair with its WCAG ratio and perceptual contrast value. Green = pass, yellow = marginal, red = fail. Click any cell to inspect and adjust.
 4. **CVD Preview Strip** — The current theme's key colors rendered through protanopia, deuteranopia, tritanopia, and grayscale. Flags semantic pairs that become indistinguishable.
 5. **Token Preview** — Full token list showing generated `--tug-color()` values. Editable — click any token to override. Overrides tracked separately from generated values.
 6. **Export** — Download as `.css` theme file (ready to drop into `styles/`), or as recipe JSON for regeneration. Import recipe JSON to reload.
@@ -227,7 +227,7 @@ Mostly additive. No existing components or themes change.
 | New content component | `gallery-theme-generator-content.tsx` + `.css` | The card UI |
 | New tab in gallery | `gallery-card.tsx` | Register the card |
 | New derivation engine | `theme-derivation-engine.ts` | Role formulas + generation logic |
-| New accessibility module | `theme-accessibility.ts` | Contrast calc, APCA, CVD simulation |
+| New accessibility module | `theme-accessibility.ts` | Contrast calc, perceptual contrast, CVD simulation |
 | Extend palette-engine | `palette-engine.ts` | Add `oklchToLinearRGB()` if needed for CVD |
 
 ---
@@ -247,7 +247,7 @@ The analytical core — role formulas that map seed colors to complete themes.
 The contrast and color vision engine.
 
 - WCAG 2.x luminance contrast function
-- APCA Lc calculation (full algorithm with polarity detection)
+- Perceptual contrast calculation (full algorithm with polarity detection)
 - CVD simulation matrices (Machado et al. 2009)
 - Pair-checking logic (which tokens check against which backgrounds)
 
@@ -275,4 +275,4 @@ Visual aid simulation and automatic remediation.
 1. **The foundation is ready.** `palette-engine.ts` already has `tugColor()`, `oklchToHex()`, `oklchToLinearSRGB()`, gamut checking — 80% of the math we need.
 2. **The UI pattern exists.** The Palette Engine card demonstrates the exact interaction model (swatches, sliders, grids, export/import).
 3. **The role formulas are derivable.** Three existing themes provide enough data points. The formulas are simple tone/intensity mappings parameterized by hue and mode.
-4. **The accessibility algorithms are well-documented.** APCA constants and CVD matrices are published standards — computation, not invention.
+4. **The accessibility algorithms are well-documented.** Perceptual contrast constants and CVD matrices are published standards — computation, not invention.

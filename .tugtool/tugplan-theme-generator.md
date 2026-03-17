@@ -2,7 +2,7 @@
 
 ## Theme Generator Card with Accessibility Engine {#theme-generator}
 
-**Purpose:** Ship a Theme Generator gallery card that derives complete 264-token themes from seed colors + mood parameters, validates all pairings for WCAG 2.x + APCA contrast, simulates color vision deficiency via Machado et al. 2009 matrices, and supports high-contrast / reduced-contrast accessibility modes.
+**Purpose:** Ship a Theme Generator gallery card that derives complete 264-token themes from seed colors + mood parameters, validates all pairings for WCAG 2.x + perceptual contrast, simulates color vision deficiency via Machado et al. 2009 matrices, and supports high-contrast / reduced-contrast accessibility modes.
 
 ---
 
@@ -28,7 +28,7 @@ The Palette Engine card (`gallery-palette`) already demonstrates the interactive
 #### Strategy {#strategy}
 
 - **Layer 1 first:** Build the derivation engine (`theme-derivation-engine.ts`) that maps a `ThemeRecipe` to all 264 tokens. Validate by regenerating Bluenote and Harmony from recipes and diff-comparing.
-- **Layer 2 second:** Build the accessibility module (`theme-accessibility.ts`) with WCAG 2.x contrast, APCA Lc calculation, and CVD simulation matrices. Wire it to an authoritative pairing map.
+- **Layer 2 second:** Build the accessibility module (`theme-accessibility.ts`) with WCAG 2.x contrast, perceptual contrast calculation, and CVD simulation matrices. Wire it to an authoritative pairing map.
 - **Layer 3 third:** Build the Theme Generator gallery card UI with seed selectors, mood sliders, contrast dashboard, and token preview. Follow existing gallery card patterns.
 - **Layer 4 last:** Add the CVD preview strip and auto-fix loop. This layer depends on Layers 1-3 being stable.
 - **Integration checkpoints** after each layer group verify end-to-end correctness before proceeding.
@@ -46,7 +46,7 @@ The Palette Engine card (`gallery-palette`) already demonstrates the interactive
 #### Scope {#scope}
 
 1. `theme-derivation-engine.ts` — role formula catalog, recipe-to-token derivation for all 264 `--tug-base-*` tokens (base tier only; component-level tokens like `--tug-card-*`, `--tug-tab-*` inherit from base tokens and are out of scope per [D08])
-2. `theme-accessibility.ts` — WCAG 2.x luminance contrast, APCA Lc calculation, CVD simulation (Machado et al. 2009), pairing map, auto-adjustment
+2. `theme-accessibility.ts` — WCAG 2.x luminance contrast, perceptual contrast calculation, CVD simulation (Machado et al. 2009), pairing map, auto-adjustment
 3. `gallery-theme-generator-content.tsx` + `.css` — gallery card UI: seed selector, mood sliders, contrast dashboard, CVD preview strip, token preview, export/import
 4. Gallery registration in `gallery-card.tsx` — new tab entry in `GALLERY_DEFAULT_TABS`, new `registerCard` call
 5. Authoritative `fg-bg-pairing-map.ts` — declares which foreground tokens check against which background tokens
@@ -59,7 +59,7 @@ The Palette Engine card (`gallery-palette`) already demonstrates the interactive
 - Removing `[D06]` overrides from Harmony — that is a follow-on after the engine proves it can produce correct contrast natively
 - Component-level token derivation (`--tug-card-*`, `--tug-tab-*`, `--tug-menu-*`, etc.) — Bluenote overrides ~35 and Harmony overrides ~120 component tokens, but these inherit sensible values from `--tug-base-*` tokens when not overridden; component-token derivation is a follow-on (see [D08])
 - Parameterized accessibility targets on ThemeRecipe (`contrastTarget`, `colorBlindSafe`, `highContrast`) — this phase hardcodes WCAG AA; the three-level conformance modes (Standard/Enhanced/High Contrast) from the proposal ship as a coherent unit in a follow-on
-- WCAG 3.0 / APCA as a normative standard — APCA is included as an informational metric alongside the normative WCAG 2.x checks
+- WCAG 3.0 / perceptual contrast as a normative standard — perceptual contrast is included as an informational metric alongside the normative WCAG 2.x checks
 
 #### Dependencies / Prerequisites {#dependencies}
 
@@ -114,7 +114,7 @@ This plan follows the conventions defined in the tugplan skeleton: explicit `{#a
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | Role formulas don't generalize | high | medium | Diff-validation against existing theme overrides; expose per-token overrides in UI | >5% delta on override subset for Bluenote/Harmony |
-| APCA constants change before WCAG 3.0 finalization | low | low | APCA is informational-only; WCAG 2.x is normative | WCAG 3.0 reaches CR stage |
+| perceptual contrast constants change before WCAG 3.0 finalization | low | low | perceptual contrast is informational-only; WCAG 2.x is normative | WCAG 3.0 reaches CR stage |
 | Performance: 264-token derivation + contrast checking too slow for live preview | medium | low | Profile early; batch contrast checks; debounce slider updates | >100ms derivation time |
 
 **Risk R01: Role Formula Generalization** {#r01-formula-generalization}
@@ -222,17 +222,17 @@ This plan follows the conventions defined in the tugplan skeleton: explicit `{#a
 - New entry in `GALLERY_DEFAULT_TABS` array
 - New `registerCard` call in `registerGalleryCards()`
 
-#### [D07] Contrast thresholds follow WCAG 2.x as normative, APCA as informational (DECIDED) {#d07-contrast-thresholds}
+#### [D07] Contrast thresholds follow WCAG 2.x as normative, perceptual contrast as informational (DECIDED) {#d07-contrast-thresholds}
 
-**Decision:** WCAG 2.x contrast ratios are the normative pass/fail criteria. APCA Lc values are displayed alongside for informational purposes but do not gate pass/fail.
+**Decision:** WCAG 2.x contrast ratios are the normative pass/fail criteria. perceptual contrast values are displayed alongside for informational purposes but do not gate pass/fail.
 
 **Rationale:**
 - WCAG 2.x is the current legal/compliance standard
-- APCA (WCAG 3.0 draft) is more accurate for dark themes but not yet finalized
+- perceptual contrast (WCAG 3.0 draft) is more accurate for dark themes but not yet finalized
 - Showing both helps theme authors understand where WCAG 2.x overstates or understates contrast
 
 **Implications:**
-- The contrast dashboard shows both WCAG ratio and APCA Lc for every pair
+- The contrast dashboard shows both WCAG ratio and perceptual contrast for every pair
 - Auto-adjustment targets WCAG 2.x thresholds (4.5:1 body text, 3:1 large text/UI)
 - Pass/fail badge colors are driven by WCAG 2.x only
 
@@ -374,12 +374,12 @@ interface CVDWarning {
 
 **Table T01: Contrast Threshold Matrix** {#t01-contrast-thresholds}
 
-| Token Role | Min WCAG 2.x | Min APCA Lc | Rationale |
+| Token Role | Min WCAG 2.x | Min perceptual contrast | Rationale |
 |---|---|---|---|
-| Body text (14px / 400wt) | 4.5:1 (AA) | Lc 75 | Primary readability |
-| Large text (18px+ / 700wt) | 3:1 (AA) | Lc 45 | Button labels, headings |
-| UI components (icons, borders) | 3:1 (AA) | Lc 30 | Non-text contrast |
-| Decorative / dividers | no minimum | Lc 15 | Structural only |
+| Body text (14px / 400wt) | 4.5:1 (AA) | contrast 75 | Primary readability |
+| Large text (18px+ / 700wt) | 3:1 (AA) | contrast 45 | Button labels, headings |
+| UI components (icons, borders) | 3:1 (AA) | contrast 30 | Non-text contrast |
+| Decorative / dividers | no minimum | contrast 15 | Structural only |
 
 **Table T02: CVD Simulation Matrices (Machado et al. 2009, severity=1.0)** {#t02-cvd-matrices}
 
@@ -409,7 +409,7 @@ ThemeRecipe
 │  (theme-accessibility.ts)│     │  (fg-bg-pairing-     │
 │                          │     │   map.ts)             │
 │  • WCAG 2.x contrast    │     └──────────────────────┘
-│  • APCA Lc              │
+│  • perceptual contrast              │
 │  • CVD simulation        │  ← consumes resolved map directly [D09]
 │  • Auto-adjustment       │
 └────────┬────────────────┘
@@ -437,7 +437,7 @@ ThemeRecipe
 | File | Purpose |
 |------|---------|
 | `tugdeck/src/components/tugways/theme-derivation-engine.ts` | Role formula catalog; `deriveTheme(recipe) -> { tokens, resolved }` per [D09] |
-| `tugdeck/src/components/tugways/theme-accessibility.ts` | WCAG contrast, APCA Lc, CVD simulation, auto-adjustment |
+| `tugdeck/src/components/tugways/theme-accessibility.ts` | WCAG contrast, perceptual contrast, CVD simulation, auto-adjustment |
 | `tugdeck/src/components/tugways/fg-bg-pairing-map.ts` | Authoritative fg/bg pairing map for contrast validation |
 | `tugdeck/src/components/tugways/cards/gallery-theme-generator-content.tsx` | Theme Generator gallery card UI component |
 | `tugdeck/src/components/tugways/cards/gallery-theme-generator-content.css` | Styles for Theme Generator card |
@@ -458,7 +458,7 @@ ThemeRecipe
 | `ROLE_FORMULAS` | const | `theme-derivation-engine.ts` | Map of token name -> derivation function |
 | `EXAMPLE_RECIPES` | const | `theme-derivation-engine.ts` | brio, bluenote, harmony recipes |
 | `computeWcagContrast` | fn | `theme-accessibility.ts` | WCAG 2.x relative luminance ratio |
-| `computeApcaLc` | fn | `theme-accessibility.ts` | APCA Lc value with polarity |
+| `computeApcaLc` | fn | `theme-accessibility.ts` | perceptual contrast value with polarity |
 | `simulateCVD` | fn | `theme-accessibility.ts` | Apply Machado matrix to linear sRGB |
 | `simulateCVDFromOKLCH` | fn | `theme-accessibility.ts` | Primary CVD entry point: accepts resolved OKLCH per [D09] |
 | `validateThemeContrast` | fn | `theme-accessibility.ts` | Check all pairs against pairing map using resolved OKLCH map per [D09] |
@@ -568,7 +568,7 @@ ThemeRecipe
 
 **Depends on:** #step-1
 
-**Commit:** `feat(theme-gen): add WCAG 2.x and APCA contrast calculations`
+**Commit:** `feat(theme-gen): add WCAG 2.x and perceptual contrast calculations`
 
 **References:** [D07] Contrast thresholds, [D03] Pairing map, [D09] Dual output, Table T01, Spec S02, (#inputs-outputs, #supported-features)
 
@@ -578,7 +578,7 @@ ThemeRecipe
 
 **Tasks:**
 - [ ] Implement `computeWcagContrast(fgHex: string, bgHex: string): number` — standard relative luminance ratio `(L1 + 0.05) / (L2 + 0.05)`
-- [ ] Implement `computeApcaLc(fgHex: string, bgHex: string): number` — full APCA algorithm with polarity detection (text-on-bg vs bg-on-text)
+- [ ] Implement `computePerceptualContrast(fgHex: string, bgHex: string): number` — full perceptual contrast algorithm with polarity detection (text-on-bg vs bg-on-text)
 - [ ] Implement `validateThemeContrast(resolved: Record<string, ResolvedColor>, pairingMap: PairingEntry[]): ContrastResult[]` — converts each resolved OKLCH value to hex via `oklchToHex()` and checks all pairs per [D09]; pairs referencing non-chromatic tokens (absent from `resolved`) are skipped
 - [ ] Implement `autoAdjustContrast(tokens: Record<string, string>, resolved: Record<string, ResolvedColor>, failures: ContrastResult[]): { tokens: Record<string, string>, resolved: Record<string, ResolvedColor>, unfixable: string[] }` — adjusts fg token tone values to meet WCAG thresholds from Table T01; returns updated `tokens` and `resolved` maps per [D09], plus a list of token names that could not be fixed. **Convergence strategy for cascading conflicts:** when a single fg token (e.g., `fg-default`) participates in multiple pairings against different bg tokens, group all pairings by fg token, identify the most restrictive background (darkest bg in dark mode, lightest bg in light mode), and bump tone to satisfy that worst-case pair — which guarantees all other pairings for the same fg token also pass. Apply a maximum of 3 iterations over the full failure set to handle secondary effects. If any pair still fails after 3 iterations, add the fg token to `unfixable` and flag it in the UI rather than looping indefinitely. **Note:** this phase adjusts only fg tokens. Background token adjustment (shifting bg tone to create more headroom) is a future enhancement that requires careful surface-consistency constraints and is deferred.
 
@@ -706,9 +706,9 @@ ThemeRecipe
 
 **Tasks:**
 - [ ] Add contrast dashboard section to `GalleryThemeGeneratorContent` below the token preview
-- [ ] Render a grid of all fg/bg pairs from `FG_BG_PAIRING_MAP` with: fg swatch, bg swatch, WCAG ratio, APCA Lc, pass/fail badge
+- [ ] Render a grid of all fg/bg pairs from `FG_BG_PAIRING_MAP` with: fg swatch, bg swatch, WCAG ratio, perceptual contrast, pass/fail badge
 - [ ] Color-code badges: green = pass both thresholds, yellow = marginal (within 0.5 of threshold), red = fail
-- [ ] Badge pass/fail driven by WCAG 2.x only per [D07]; APCA shown as informational
+- [ ] Badge pass/fail driven by WCAG 2.x only per [D07]; perceptual contrast shown as informational
 - [ ] Add summary bar: "N/M pairs pass WCAG AA" count
 - [ ] Wire to live recipe: when recipe changes, re-run `validateThemeContrast()` and update dashboard
 - [ ] Lazy rendering: only render visible rows (use CSS `content-visibility: auto` for off-screen pairs)
@@ -837,8 +837,8 @@ ThemeRecipe
 - [ ] Component-level token derivation (`--tug-card-*`, `--tug-tab-*`, `--tug-menu-*`, etc.) for full parity with hand-authored themes per [D08]
 - [ ] P3 wide-gamut color output for displays that support it
 - [ ] Persist generated themes to TugBank for cross-session storage
-- [ ] Parameterized accessibility targets on ThemeRecipe: `contrastTarget` (AA/AAA/APCA levels), `colorBlindSafe` (auto hue-shift), `highContrast` (prefers-contrast: more support)
-- [ ] WCAG 3.0 / APCA as normative standard once finalized
+- [ ] Parameterized accessibility targets on ThemeRecipe: `contrastTarget` (AA/AAA/perceptual contrast levels), `colorBlindSafe` (auto hue-shift), `highContrast` (prefers-contrast: more support)
+- [ ] WCAG 3.0 / perceptual contrast as normative standard once finalized
 - [ ] Anomalous trichromacy simulation with configurable severity slider in the CVD strip
 - [ ] CHM mood board as a named preset recipe
 

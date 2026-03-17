@@ -10,11 +10,11 @@
  * Both the derivation engine (auto-adjustment) and the contrast dashboard
  * (display) consume the same map.
  *
- * Role classification follows Table T01 (Lc thresholds normative, WCAG informational):
- *   "body-text"    — Lc 75 / 4.5:1 WCAG AA (14px / 400wt body text)
- *   "subdued-text" — Lc 45 / 3:1 WCAG AA (intentionally reduced hierarchy: muted/placeholder/read-only)
- *   "large-text"   — Lc 60 / 3:1 WCAG AA (18px+ / 700wt headings or button labels)
- *   "ui-component" — Lc 30 / 3:1 WCAG AA (icons, borders, non-text elements)
+ * Role classification follows Table T01 (perceptual contrast thresholds normative, WCAG informational):
+ *   "body-text"    — contrast 75 / 4.5:1 WCAG AA (14px / 400wt body text)
+ *   "subdued-text" — contrast 45 / 3:1 WCAG AA (intentionally reduced hierarchy: muted/placeholder/read-only)
+ *   "large-text"   — contrast 60 / 3:1 WCAG AA (18px+ / 700wt headings or button labels)
+ *   "ui-component" — contrast 30 / 3:1 WCAG AA (icons, borders, non-text elements)
  *   "decorative"   — no minimum (structural dividers, decorative accents)
  *
  * @module components/tugways/element-surface-pairing-map
@@ -39,7 +39,7 @@ export interface ElementSurfacePairing {
  * Authoritative element/surface pairing map.
  *
  * Each entry declares an element token, a surface token, and the contrast role
- * that governs minimum contrast requirements. Lc (SA98G-based) is the normative
+ * that governs minimum contrast requirements. Perceptual contrast is the normative
  * gate; WCAG 2.x ratio is retained as informational secondary data.
  *
  * Pairs are sourced from component CSS files and tug-base.css token usage.
@@ -96,7 +96,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "body-text",
   },
 
-  // Muted text (secondary text, labels) — subdued-text: intentionally below body-text Lc 75
+  // Muted text (secondary text, labels) — subdued-text: intentionally below body-text contrast 75
   {
     element: "--tug-base-fg-muted",
     surface: "--tug-base-surface-default",
@@ -123,7 +123,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "subdued-text",
   },
 
-  // Subtle text (tertiary, metadata) — subdued-text: intentionally below body-text Lc 75
+  // Subtle text (tertiary, metadata) — subdued-text: intentionally below body-text contrast 75
   {
     element: "--tug-base-fg-subtle",
     surface: "--tug-base-surface-default",
@@ -164,7 +164,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "body-text",
   },
 
-  // Placeholder text (form fields) — subdued-text: intentionally below body-text Lc 75
+  // Placeholder text (form fields) — subdued-text: intentionally below body-text contrast 75
   {
     element: "--tug-base-fg-placeholder",
     surface: "--tug-base-field-bg-rest",
@@ -790,7 +790,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
   // Semantic tone — foreground text on tone backgrounds
   // tone-*-bg tokens have alpha 12-15%; parentSurface triggers alpha compositing
-  // before Lc measurement so the measured contrast reflects actual rendering
+  // before contrast measurement so the measured contrast reflects actual rendering
   // (the composited tone-*-bg over surface-default). Spec S02. [D04]
   // =========================================================================
   {
@@ -1086,7 +1086,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // --- Badge Tinted fg on tinted bg ---
   // badge-tinted-*-bg has alpha 15%; parentSurface composites the bg over
-  // surface-default before measuring Lc against the opaque fg element. Spec S02. [D04]
+  // surface-default before measuring contrast against the opaque fg element. Spec S02. [D04]
   {
     element: "--tug-base-badge-tinted-accent-fg",
     surface: "--tug-base-badge-tinted-accent-bg",
@@ -1249,10 +1249,10 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // Input field border visibility — 3×3 cross-product (Step 3)
   // A field can render any border state over any bg state as interactions
   // happen (e.g. focus border over hover bg during the transition). All 9
-  // combinations are tracked so the pipeline catches any that fall below Lc 30.
+  // combinations are tracked so the pipeline catches any that fall below contrast 30.
   // field-border-rest and field-border-hover are intentionally subtle in dark
   // mode (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS); field-border-active uses
-  // a vivid accent color that passes Lc 30 across all bg states.
+  // a vivid accent color that passes contrast 30 across all bg states.
   // =========================================================================
   {
     element: "--tug-base-field-border-rest",
@@ -1302,7 +1302,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // =========================================================================
   // Validation border visibility — border against field-bg-rest (Step 3)
-  // Danger and success validation borders use vivid signal colors that pass Lc 30.
+  // Danger and success validation borders use vivid signal colors that pass contrast 30.
   // =========================================================================
   {
     element: "--tug-base-field-border-danger",
@@ -1318,7 +1318,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
   // Outlined button border visibility (Step 3)
   // bg-rest is transparent (not in resolved map, so validateThemeContrast skips
-  // those pairs); hover and active bg tokens are chromatic and pass Lc 30.
+  // those pairs); hover and active bg tokens are chromatic and pass contrast 30.
   // =========================================================================
   {
     element: "--tug-base-control-outlined-action-border-rest",
@@ -1354,7 +1354,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
   // Separator / divider visibility — border against surface (Step 3)
   // border-default and border-muted are very subtle separators in dark mode;
-  // both are below Lc 30 by design (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS).
+  // both are below contrast 30 by design (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS).
   // =========================================================================
   {
     element: "--tug-base-border-default",
@@ -1382,12 +1382,12 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   //
   // accent-cool-default (cobalt-intense) is the universal focus ring color.
   // All 9 surfaces that can contain focusable elements are covered with
-  // role "ui-component" (Lc 30 threshold). surface-screen is included
+  // role "ui-component" (contrast 30 threshold). surface-screen is included
   // because tooltips (--tug-tooltip-bg: var(--tug-base-surface-screen))
   // can contain focusable elements. [D05]
   //
   // Focused-vs-unfocused state comparison pairs use role "decorative"
-  // because SA98G is designed for element-on-area contrast, not border-vs-border
+  // because perceptual contrast is designed for element-on-area contrast, not border-vs-border
   // comparisons. These pairs are informational only and do not gate the pipeline. [D05]
   // =========================================================================
   {
@@ -1436,7 +1436,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "ui-component",
   },
   // Focused-vs-unfocused comparisons: informational only (decorative role).
-  // SA98G measures element-on-area contrast; border-vs-border results are
+  // Perceptual contrast measures element-on-area contrast; border-vs-border results are
   // unreliable as a gate. These appear in the dashboard for visual review. [D05]
   {
     element: "--tug-base-accent-cool-default",

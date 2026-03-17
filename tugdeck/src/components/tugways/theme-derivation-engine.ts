@@ -95,15 +95,15 @@ export interface ResolvedColor {
  * Contrast result for an element/surface pair. Spec S02.
  * Populated by the accessibility module.
  *
- * Normative gate: `lcPass` (Lc threshold per role, SA98G-based).
+ * Normative gate: `contrastPass` (perceptual contrast threshold per role).
  * Informational: `wcagRatio` retained for display in the contrast dashboard.
  */
 export interface ContrastResult {
   fg: string;
   bg: string;
   wcagRatio: number;
-  lc: number;
-  lcPass: boolean;
+  contrast: number;
+  contrastPass: boolean;
   role: "body-text" | "large-text" | "ui-component" | "decorative";
 }
 

@@ -7,7 +7,7 @@
  * - T2.5: Theme-invariant tokens are correct for Brio
  * - T2.6: Non-override tokens resolve to valid sRGB gamut colors
  * - T4.1: End-to-end Brio dark pipeline — 0 unexpected failures after autoAdjustContrast
- * - T4.2: End-to-end Brio light pipeline — 0 unexpected body-text failures + focus indicator Lc 30
+ * - T4.2: End-to-end Brio light pipeline — 0 unexpected body-text failures + focus indicator contrast 30
  * - T-BRIO-MATCH: Engine output matches Brio ground truth fixture within OKLCH delta-E < 0.02
  *
  * Run with: cd tugdeck && bun test --grep "derivation-engine"
@@ -42,8 +42,8 @@ import { CORE_VISUAL_RULES, RULES } from "@/components/tugways/derivation-rules"
 import {
   validateThemeContrast,
   autoAdjustContrast,
-  LC_THRESHOLDS,
-  LC_MARGINAL_DELTA,
+  CONTRAST_THRESHOLDS,
+  CONTRAST_MARGINAL_DELTA,
 } from "@/components/tugways/theme-accessibility";
 
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
@@ -294,7 +294,7 @@ describe("derivation-engine", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Element tokens that the current derivation engine produces below Lc thresholds
+ * Element tokens that the current derivation engine produces below perceptual contrast thresholds
  * for known structural or design reasons. These are excluded from the T4.x
  * zero-unexpected-failures assertions so the tests track real regressions rather
  * than pre-existing constraints.
@@ -306,21 +306,21 @@ describe("derivation-engine", () => {
  *      control-selected-fg, control-highlighted-fg,
  *      selection-fg
  *
- * A2. Muted / read-only hierarchy — reclassified to subdued-text (Lc 45 threshold).
- *     fg-muted (Lc ~61) and field-fg-readOnly (Lc ~61) now pass under subdued-text
+ * A2. Muted / read-only hierarchy — reclassified to subdued-text (contrast 45 threshold).
+ *     fg-muted (contrast ~61) and field-fg-readOnly (contrast ~61) now pass under subdued-text
  *     and are no longer in this exception set.
  *
  * B. Text/icon on accent or vivid colored backgrounds (design constraint —
  *    accent hues are vivid mid-tone):
- *      fg-onAccent, icon-onAccent, fg-onDanger (danger bg creates Lc ~53 ceiling)
+ *      fg-onAccent, icon-onAccent, fg-onDanger (danger bg creates contrast ~53 ceiling)
  *
  * C. Interactive state tokens on vivid colored filled button backgrounds
  *    (hover/active states are transient; filled button bg hues may be vivid
- *    mid-tones that fg text can't reach Lc 60):
+ *    mid-tones that fg text can't reach contrast 60):
  *      control-filled-{role}-fg-hover/active, control-filled-{role}-icon-hover/active
  *    Also outlined-agent (colored bg reduces default fg contrast in dark mode)
  *    and ghost-danger: rest/hover/active (danger hue at high intensity is mid-tone,
- *    Lc ~40-41 — below Lc 60 large-text threshold).
+ *    contrast ~40-41 — below contrast 60 large-text threshold).
  *
  * D. Semantic tone tokens (status/informational colors — designed for
  *    medium visual weight, not primary body-text contrast):
@@ -332,22 +332,22 @@ describe("derivation-engine", () => {
  * E. UI control indicators (form elements / state indicators):
  *      accent-default, toggle-thumb, toggle-icon-mixed,
  *      checkmark, radio-dot, range-thumb
- *    Also muted icons (Lc ~29, borderline below Lc 30 ui-component threshold)
- *    and disabled elements (decorative role, Lc ~8-9 below Lc 15):
+ *    Also muted icons (contrast ~29, borderline below contrast 30 ui-component threshold)
+ *    and disabled elements (decorative role, contrast ~8-9 below contrast 15):
  *      fg-disabled, icon-disabled, field-fg-disabled
  *
  * F. Badge tinted fg tokens: semi-transparent bg means fg-over-tinted-bg
  *    has inherently low contrast; real readability is fg over the underlying surface.
  *
- * G. Tab chrome — reclassified to subdued-text (Lc 45 threshold).
- *      tab-fg-rest (Lc ~42) passes within the Lc marginal band (>= 40 = 45 - 5)
+ * G. Tab chrome — reclassified to subdued-text (contrast 45 threshold).
+ *      tab-fg-rest (contrast ~42) passes within the contrast marginal band (>= 40 = 45 - 5)
  *      under the subdued-text role and is no longer in this exception set.
  *
- * H. Non-text component visibility tokens below Lc 30 by design (Step 3):
+ * H. Non-text component visibility tokens below contrast 30 by design (Step 3):
  *      toggle-track-off / toggle-track-mixed / toggle-track-off-hover /
  *      toggle-track-mixed-hover — inactive/indeterminate toggle states are
  *      intentionally lower-contrast to signal the off/mixed state.
- *      toggle-track-on — starts below Lc 30 in some configs; auto-adjusted.
+ *      toggle-track-on — starts below contrast 30 in some configs; auto-adjusted.
  *      field-border-rest / field-border-hover — subtle field boundary in dark mode.
  *      border-default / border-muted — structural separators, intentionally subtle.
  *
@@ -361,9 +361,9 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-control-selected-fg",
   "--tug-base-control-highlighted-fg",
   "--tug-base-selection-fg",
-  // A2 — muted / read-only hierarchy reclassified to subdued-text role (Lc 45).
-  // fg-muted (Lc ~61) and field-fg-readOnly (Lc ~61) pass the subdued-text threshold.
-  // fg-subtle (Lc ~27.6) and fg-placeholder remain here as they are still below Lc 45.
+  // A2 — muted / read-only hierarchy reclassified to subdued-text role (contrast 45).
+  // fg-muted (contrast ~61) and field-fg-readOnly (contrast ~61) pass the subdued-text threshold.
+  // fg-subtle (contrast ~27.6) and fg-placeholder remain here as they are still below contrast 45.
   // B — text/icon on vivid accent or semantic bg
   "--tug-base-fg-onAccent",
   "--tug-base-icon-onAccent",
@@ -397,7 +397,7 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-control-filled-success-icon-hover",
   "--tug-base-control-filled-success-icon-active",
   // C1f — filled-caution: yellow bg with light text has same contrast constraint as other filled roles
-  // (fg-hover is within 5 Lc of threshold — covered by marginal band; icon-hover/active kept)
+  // (fg-hover is within 5 contrast units of threshold — covered by marginal band; icon-hover/active kept)
   "--tug-base-control-filled-caution-fg-active",
   "--tug-base-control-filled-caution-icon-hover",
   "--tug-base-control-filled-caution-icon-active",
@@ -413,7 +413,7 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-control-outlined-agent-icon-rest",
   "--tug-base-control-outlined-agent-icon-hover",
   "--tug-base-control-outlined-agent-icon-active",
-  // C3 — ghost-danger rest/hover/active: danger hue at mid-tone is below Lc 60 large-text
+  // C3 — ghost-danger rest/hover/active: danger hue at mid-tone is below contrast 60 large-text
   "--tug-base-control-ghost-danger-fg-rest",
   "--tug-base-control-ghost-danger-fg-hover",
   "--tug-base-control-ghost-danger-fg-active",
@@ -440,13 +440,13 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-checkmark",
   "--tug-base-radio-dot",
   "--tug-base-range-thumb",
-  // E2 — muted / disabled element tokens below Lc thresholds
+  // E2 — muted / disabled element tokens below perceptual contrast thresholds
   "--tug-base-icon-muted",
   "--tug-base-fg-disabled",
   "--tug-base-icon-disabled",
   "--tug-base-field-fg-disabled",
   // F — Badge tinted border tokens (Step 4): element side (border) has alpha 35%;
-  // compositing over surface-default produces Lc ~19-24, below the Lc 30 ui-component
+  // compositing over surface-default produces contrast ~19-24, below the contrast 30 ui-component
   // threshold. These borders are deliberately subtle tinted accents — their visual
   // presence is reinforced by the filled badge bg and text, not by the border alone.
   "--tug-base-badge-tinted-accent-border",
@@ -457,15 +457,15 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-badge-tinted-success-border",
   "--tug-base-badge-tinted-caution-border",
   // G — Tab chrome
-  // tab-fg-rest reclassified to subdued-text; Lc ~42 passes the marginal band (>= Lc 40).
-  // tab-fg-hover: hover state (below Lc 75 body-text in both dark and light)
+  // tab-fg-rest reclassified to subdued-text; contrast ~42 passes the marginal band (>= contrast 40).
+  // tab-fg-hover: hover state (below contrast 75 body-text in both dark and light)
   "--tug-base-tab-fg-hover",
   // G2 — Field text: field-fg is the text inside form fields; in light mode, the
   // field background (field-bg-rest/hover) is derived close in lightness to field-fg,
-  // producing Lc ~27-51 in light mode (below Lc 75 body-text threshold). Light-mode
+  // producing contrast ~27-51 in light mode (below contrast 75 body-text threshold). Light-mode
   // calibration is a known deferred constraint (same as surface derivation).
   "--tug-base-field-fg",
-  // H — Non-text component visibility tokens below Lc 30 by design (Step 3)
+  // H — Non-text component visibility tokens below contrast 30 by design (Step 3)
   // These tokens start below the ui-component threshold and are auto-adjusted
   // by the pipeline. They are documented here so the test tracks regressions
   // rather than pre-existing structural constraints.
@@ -476,7 +476,7 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-toggle-track-mixed",
   "--tug-base-toggle-track-off-hover",
   "--tug-base-toggle-track-mixed-hover",
-  // toggle-track-on starts below Lc 30 in some configurations; auto-adjust
+  // toggle-track-on starts below contrast 30 in some configurations; auto-adjust
   // brings it to passing. Documented here to prevent unexpected regression reports.
   "--tug-base-toggle-track-on",
   // Field border rest/hover: intentionally subtle boundary in dark mode.
@@ -495,12 +495,12 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
  * strings for O(1) lookup.
  *
  * Categories:
- *   - Focus indicator focused-vs-unfocused decorative pairs (Step 5): SA98G is
+ *   - Focus indicator focused-vs-unfocused decorative pairs (Step 5): perceptual contrast is
  *     designed for element-on-area contrast, not border-vs-border comparisons [D05].
  *     The auto-adjuster bumps accent-cool-default trying to satisfy the decorative
- *     threshold for control-outlined-action-border-rest (Lc ~9.5 < 15), causing
- *     cascade that drives field-border-rest to Lc 0.0. Both pairs are informational
- *     only. The 9 ui-component focus-on-surface pairs all pass Lc 30 independently.
+ *     threshold for control-outlined-action-border-rest (contrast ~9.5 < 15), causing
+ *     cascade that drives field-border-rest to contrast 0.0. Both pairs are informational
+ *     only. The 9 ui-component focus-on-surface pairs all pass contrast 30 independently.
  */
 const KNOWN_PAIR_EXCEPTIONS = new Set([
   // Focused-vs-unfocused decorative comparisons (border-vs-border, informational [D05])
@@ -528,10 +528,10 @@ function runFullPipeline(recipeName: string): {
 
   // Step 2: Validate contrast — resolved feeds directly into validateThemeContrast [D09]
   const initialResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  const initialFailureCount = initialResults.filter((r) => !r.lcPass).length;
+  const initialFailureCount = initialResults.filter((r) => !r.contrastPass).length;
 
   // Step 3: Auto-adjust any failures
-  const failures = initialResults.filter((r) => !r.lcPass);
+  const failures = initialResults.filter((r) => !r.contrastPass);
   const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
 
   // Step 4: Re-validate with adjusted resolved map
@@ -577,33 +577,33 @@ describe("derivation-engine integration", () => {
 
     // After adjustment, failures must only come from the documented exception sets:
     // element-level (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS), pair-level (KNOWN_PAIR_EXCEPTIONS),
-    // or marginal band (within LC_MARGINAL_DELTA Lc units of the role threshold). [D02]
+    // or marginal band (within CONTRAST_MARGINAL_DELTA contrast units of the role threshold). [D02]
     const unexpectedFailures = finalResults.filter((r) => {
-      if (r.lcPass) return false;
-      const margin = (LC_THRESHOLDS[r.role] ?? 15) - LC_MARGINAL_DELTA;
-      if (Math.abs(r.lc) >= margin) return false;
+      if (r.contrastPass) return false;
+      const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
+      if (Math.abs(r.contrast) >= margin) return false;
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
       if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
       return true;
     });
     const descriptions = unexpectedFailures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
 
-    // Core readability assertion: fg-default on primary surfaces must pass Lc 75
+    // Core readability assertion: fg-default on primary surfaces must pass contrast 75
     const coreFailures = finalResults.filter(
       (r) =>
         r.fg === "--tug-base-fg-default" &&
         (r.bg === "--tug-base-surface-default" ||
           r.bg === "--tug-base-surface-inset" ||
           r.bg === "--tug-base-surface-content") &&
-        !r.lcPass,
+        !r.contrastPass,
     );
     expect(coreFailures).toEqual([]);
 
     // Focus indicator assertion (Step 5): all 9 ui-component focus-on-surface pairs
-    // must pass Lc 30. This guards against regressions on the accent-cool-default
+    // must pass contrast 30. This guards against regressions on the accent-cool-default
     // ui-component pairs even though two decorative pairs are in KNOWN_PAIR_EXCEPTIONS.
     const focusSurfaces = new Set([
       "--tug-base-bg-app",
@@ -621,9 +621,9 @@ describe("derivation-engine integration", () => {
         r.fg === "--tug-base-accent-cool-default" &&
         r.role === "ui-component" &&
         focusSurfaces.has(r.bg) &&
-        !r.lcPass,
+        !r.contrastPass,
     );
-    expect(focusFailures.map((f) => `${f.bg}: Lc ${f.lc.toFixed(1)}`)).toEqual([]);
+    expect(focusFailures.map((f) => `${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
   });
 
   // -------------------------------------------------------------------------
@@ -644,7 +644,7 @@ describe("derivation-engine integration", () => {
     const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
     const output = deriveTheme(brioLight);
     const initial = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = initial.filter((r) => !r.lcPass);
+    const failures = initial.filter((r) => !r.contrastPass);
     const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
     const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
@@ -662,22 +662,22 @@ describe("derivation-engine integration", () => {
 
     // Check body-text only — mirrors the gallery test's light-mode coverage scope.
     const unexpectedBodyTextFailures = finalResults.filter((r) => {
-      if (r.lcPass) return false;
+      if (r.contrastPass) return false;
       if (r.role !== "body-text") return false;
-      const margin = (LC_THRESHOLDS[r.role] ?? 15) - LC_MARGINAL_DELTA;
-      if (Math.abs(r.lc) >= margin) return false;
+      const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
+      if (Math.abs(r.contrast) >= margin) return false;
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
       if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
       if (LIGHT_MODE_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
       return true;
     });
     const descriptions = unexpectedBodyTextFailures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
 
     // Focus indicator assertion (Step 5): ui-component focus-on-surface pairs
-    // must pass Lc 30. In dark mode all 9 surfaces pass (T4.1). In light mode,
+    // must pass contrast 30. In dark mode all 9 surfaces pass (T4.1). In light mode,
     // 5 surfaces are structurally constrained by the light-mode surface derivation
     // (engine calibrated for dark mode per Q01). These are documented below so the
     // test tracks regressions on the 4 surfaces that do pass, rather than silently
@@ -685,11 +685,11 @@ describe("derivation-engine integration", () => {
     //
     // Light-mode focus exceptions (structural — deferred per Q01):
     //   bg-app (L≈0.39): derives too dark in light mode → accent-cool-default
-    //     mid-lightness (L≈0.51) produces |Lc| ≈ 12.8, below Lc 30.
-    //   surface-raised (L≈0.44): same structural derivation issue → |Lc| ≈ 11.8.
-    //   surface-overlay / surface-sunken / field-bg-rest: APCA soft-clip region —
+    //     mid-lightness (L≈0.51) produces |contrast| ≈ 12.8, below contrast 30.
+    //   surface-raised (L≈0.44): same structural derivation issue → |contrast| ≈ 11.8.
+    //   surface-overlay / surface-sunken / field-bg-rest: perceptual contrast soft-clip region —
     //     these surfaces land in a narrow lightness band near accent-cool-default
-    //     producing deltaYc below the APCA_LOW_CLIP threshold (Lc rounds to 0.0).
+    //     producing deltaYc below the LOW_CLIP threshold (contrast rounds to 0.0).
     const LIGHT_MODE_FOCUS_EXCEPTIONS = new Set([
       "--tug-base-accent-cool-default|--tug-base-bg-app",
       "--tug-base-accent-cool-default|--tug-base-surface-raised",
@@ -697,7 +697,7 @@ describe("derivation-engine integration", () => {
       "--tug-base-accent-cool-default|--tug-base-surface-sunken",
       "--tug-base-accent-cool-default|--tug-base-field-bg-rest",
       // surface-screen uses indigo (260) canonical L (0.572) after 48-hue expansion;
-      // light-mode surface-screen lands darker, producing Lc < 30 with accent-cool-default.
+      // light-mode surface-screen lands darker, producing contrast < 30 with accent-cool-default.
       "--tug-base-accent-cool-default|--tug-base-surface-screen",
     ]);
     const focusSurfaces = new Set([
@@ -716,10 +716,10 @@ describe("derivation-engine integration", () => {
         r.fg === "--tug-base-accent-cool-default" &&
         r.role === "ui-component" &&
         focusSurfaces.has(r.bg) &&
-        !r.lcPass &&
+        !r.contrastPass &&
         !LIGHT_MODE_FOCUS_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
-    expect(focusFailures.map((f) => `${f.bg}: Lc ${f.lc.toFixed(1)}`)).toEqual([]);
+    expect(focusFailures.map((f) => `${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
   });
 
   // -------------------------------------------------------------------------
@@ -746,7 +746,7 @@ describe("derivation-engine integration", () => {
     }
 
     // The results contain both passing and failing pairs (not trivially all-pass)
-    const passingCount = results.filter((r) => r.lcPass).length;
+    const passingCount = results.filter((r) => r.contrastPass).length;
     const totalCount = results.length;
     expect(passingCount).toBeGreaterThan(0);
     expect(totalCount).toBeGreaterThan(passingCount); // some pairs fail → engine is honest
@@ -1332,7 +1332,7 @@ describe("derivation-engine generateResolvedCssExport", () => {
 // Five diverse recipes stress-test the derive → validate → auto-fix pipeline
 // across varied modes, atmospheres, role hues, and slider extremes.
 //
-// Each test asserts 0 unexpected body-text Lc failures after autoAdjustContrast.
+// Each test asserts 0 unexpected body-text perceptual contrast failures after autoAdjustContrast.
 // The exception sets mirror T4.1/T4.2: known structural constraints are excluded
 // so the tests track real regressions rather than documented design choices.
 //
@@ -1347,8 +1347,8 @@ describe("derivation-engine generateResolvedCssExport", () => {
  *
  * The engine is calibrated for dark mode. In light mode, bg-app, bg-canvas,
  * surface-raised, surface-overlay, surface-sunken, and surface-screen are
- * derived at lightness values close to fg-default, producing Lc well below
- * the Lc 75 body-text threshold. These are not regressions — they are
+ * derived at lightness values close to fg-default, producing contrast well below
+ * the contrast 75 body-text threshold. These are not regressions — they are
  * pre-existing structural constraints deferred per Q01.
  *
  * fg-inverse on surface-screen is also structural: fg-inverse is an inverted
@@ -1375,7 +1375,7 @@ function runPipelineForRecipe(recipe: Parameters<typeof deriveTheme>[0]): {
 } {
   const output = deriveTheme(recipe);
   const initialResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  const failures = initialResults.filter((r) => !r.lcPass);
+  const failures = initialResults.filter((r) => !r.contrastPass);
   const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
   const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
   return { finalResults, unfixable: adjusted.unfixable };
@@ -1391,10 +1391,10 @@ function unexpectedBodyTextFailures(
   extraPairExceptions: ReadonlySet<string> = new Set(),
 ): ReturnType<typeof validateThemeContrast> {
   return results.filter((r) => {
-    if (r.lcPass) return false;
+    if (r.contrastPass) return false;
     if (r.role !== "body-text") return false;
-    const margin = (LC_THRESHOLDS[r.role] ?? 15) - LC_MARGINAL_DELTA;
-    if (Math.abs(r.lc) >= margin) return false;
+    const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
+    if (Math.abs(r.contrast) >= margin) return false;
     if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
     if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
     if (extraPairExceptions.has(`${r.fg}|${r.bg}`)) return false;
@@ -1431,7 +1431,7 @@ describe("derivation-engine convergence stress tests", () => {
     const { finalResults } = runPipelineForRecipe(recipe);
     const failures = unexpectedBodyTextFailures(finalResults);
     const descriptions = failures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
   });
@@ -1465,7 +1465,7 @@ describe("derivation-engine convergence stress tests", () => {
     const { finalResults } = runPipelineForRecipe(recipe);
     const failures = unexpectedBodyTextFailures(finalResults, LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS);
     const descriptions = failures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
   });
@@ -1499,7 +1499,7 @@ describe("derivation-engine convergence stress tests", () => {
     const { finalResults } = runPipelineForRecipe(recipe);
     const failures = unexpectedBodyTextFailures(finalResults);
     const descriptions = failures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
   });
@@ -1533,7 +1533,7 @@ describe("derivation-engine convergence stress tests", () => {
     const { finalResults } = runPipelineForRecipe(recipe);
     const failures = unexpectedBodyTextFailures(finalResults);
     const descriptions = failures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
   });
@@ -1567,7 +1567,7 @@ describe("derivation-engine convergence stress tests", () => {
     const { finalResults } = runPipelineForRecipe(recipe);
     const failures = unexpectedBodyTextFailures(finalResults, LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS);
     const descriptions = failures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
   });

@@ -1,14 +1,14 @@
 /**
  * Theme Accessibility Module — Tugways Theme Generator
  *
- * Provides WCAG 2.x contrast ratio calculation, APCA Lc calculation,
+ * Provides WCAG 2.x contrast ratio calculation, perceptual contrast calculation,
  * theme contrast validation against the authoritative pairing map,
  * automatic contrast adjustment via tone-bumping, and CVD simulation
  * using Machado et al. 2009 matrices.
  *
  * References:
  *   [D05] CVD simulation matrices (Machado et al. 2009), Table T02
- *   [D07] Contrast thresholds follow WCAG 2.x as normative, APCA as informational
+ *   [D07] Contrast thresholds follow WCAG 2.x as normative, perceptual contrast as informational
  *   [D03] Authoritative fg/bg pairing map
  *   [D09] Dual output: string tokens + resolved OKLCH map
  *   Table T01: Contrast Threshold Matrix
@@ -90,69 +90,69 @@ export function computeWcagContrast(fgHex: string, bgHex: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// APCA — Advanced Perceptual Contrast Algorithm (Lc value)
+// Perceptual contrast calculation
 // ---------------------------------------------------------------------------
 
-// APCA constants (APCA-W3 0.98G-4g)
-const APCA_NORMAL_BG = 0.56;
-const APCA_NORMAL_TXT = 0.57;
-const APCA_REVERSE_BG = 0.65;
-const APCA_REVERSE_TXT = 0.62;
-const APCA_SCALE = 1.14;
-const APCA_LOW_CLIP = 0.1;
-const APCA_DELTA_YC_MIN = 0.0005;
-const APCA_EXPONENT = 2.4;
+// Perceptual contrast constants
+const NORMAL_BG_EXP = 0.56;
+const NORMAL_TXT_EXP = 0.57;
+const REVERSE_BG_EXP = 0.65;
+const REVERSE_TXT_EXP = 0.62;
+const CONTRAST_SCALE = 1.14;
+const LOW_CLIP = 0.1;
+const DELTA_MIN = 0.0005;
+const LUMINANCE_EXPONENT = 2.4;
 
 /**
- * Compute the APCA SA98G soft-clip gamma for a linearised-sRGB channel.
- * This is the "flare" or "ambient" coefficient used in APCA.
+ * Compute the perceptual gamma for a linearised-sRGB channel.
+ * This is the "flare" or "ambient" coefficient used in the perceptual contrast formula.
  */
-function apcaGamma(y: number): number {
-  return Math.pow(Math.abs(y), APCA_EXPONENT) * Math.sign(y);
+function perceptualGamma(y: number): number {
+  return Math.pow(Math.abs(y), LUMINANCE_EXPONENT) * Math.sign(y);
 }
 
 /**
- * Compute the APCA Y (stimulus luminance) for a hex color.
+ * Compute the perceptual luminance (stimulus luminance) for a hex color.
  *
- * APCA uses the same linearisation formula as WCAG 2.x but applies
- * an additional power function (SA98G exponent = 2.4) to the result.
- * The "flare" constant 0.05 is not added here — APCA handles it in the
+ * Uses the same linearisation formula as WCAG 2.x but applies
+ * an additional power function (exponent = 2.4) to the result.
+ * The "flare" constant 0.05 is not added here — it is handled in the
  * soft-clip phase.
  *
- * Note: APCA uses Y = 0.2126R^2.4 + 0.7152G^2.4 + 0.0722B^2.4
- * which is equivalent to applying apcaGamma to each channel then
+ * Y = 0.2126R^2.4 + 0.7152G^2.4 + 0.0722B^2.4
+ * which is equivalent to applying perceptualGamma to each channel then
  * applying the standard luminance coefficients.
  */
-function apcaY(hex: string): number {
+function perceptualLuminance(hex: string): number {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
   const rLin = srgbChannelToLinear(r);
   const gLin = srgbChannelToLinear(g);
   const bLin = srgbChannelToLinear(b);
-  return 0.2126 * apcaGamma(rLin) + 0.7152 * apcaGamma(gLin) + 0.0722 * apcaGamma(bLin);
+  return 0.2126 * perceptualGamma(rLin) + 0.7152 * perceptualGamma(gLin) + 0.0722 * perceptualGamma(bLin);
 }
 
 /**
- * Compute the perceptual lightness contrast (Lc, SA98G-based) for an element/surface pair.
+ * Compute the perceptual contrast for an element/surface pair.
  *
- * Returns the signed Lc value:
- *   - Positive Lc: dark text on light background (normal polarity)
- *   - Negative Lc: light text on dark background (reverse polarity)
+ * Returns the signed contrast value:
+ *   - Positive: dark text on light background (normal polarity)
+ *   - Negative: light text on dark background (reverse polarity)
  *
- * Magnitude (|Lc|) is the normative contrast gate per LC_THRESHOLDS:
- *   |Lc| >= 75 → body text (normal)
- *   |Lc| >= 60 → large / bold text
- *   |Lc| >= 30 → UI components / icons
- *   |Lc| >= 15 → decorative
+ * Magnitude is the normative contrast gate per CONTRAST_THRESHOLDS:
+ *   >= 75 → body text (normal)
+ *   >= 60 → large / bold text
+ *   >= 30 → UI components / icons
+ *   >= 15 → decorative
  *
  * @param fgHex - Element (foreground) color as #rrggbb
  * @param bgHex - Surface (background) color as #rrggbb
- * @returns Signed Lc value
+ * @returns Signed perceptual contrast value
  */
-export function computeLcContrast(fgHex: string, bgHex: string): number {
-  const yTxt = apcaY(fgHex);
-  const yBg = apcaY(bgHex);
+export function computePerceptualContrast(fgHex: string, bgHex: string): number {
+  const yTxt = perceptualLuminance(fgHex);
+  const yBg = perceptualLuminance(bgHex);
 
   // Polarity: if bg is lighter, normal polarity (dark text on light bg)
   const isNormal = yBg > yTxt;
@@ -161,23 +161,23 @@ export function computeLcContrast(fgHex: string, bgHex: string): number {
 
   if (isNormal) {
     // Normal polarity: dark text on light background
-    const yBgPow = Math.pow(yBg, APCA_NORMAL_BG);
-    const yTxtPow = Math.pow(yTxt, APCA_NORMAL_TXT);
+    const yBgPow = Math.pow(yBg, NORMAL_BG_EXP);
+    const yTxtPow = Math.pow(yTxt, NORMAL_TXT_EXP);
     const deltaYc = yBgPow - yTxtPow;
     // Soft-clip low contrasts
-    if (Math.abs(deltaYc) < APCA_DELTA_YC_MIN) return 0;
-    sapc = deltaYc < 0 ? 0 : deltaYc * APCA_SCALE;
-    if (sapc < APCA_LOW_CLIP) return 0;
+    if (Math.abs(deltaYc) < DELTA_MIN) return 0;
+    sapc = deltaYc < 0 ? 0 : deltaYc * CONTRAST_SCALE;
+    if (sapc < LOW_CLIP) return 0;
     return (sapc - 0.027) * 100;
   } else {
     // Reverse polarity: light text on dark background
-    const yBgPow = Math.pow(yBg, APCA_REVERSE_BG);
-    const yTxtPow = Math.pow(yTxt, APCA_REVERSE_TXT);
+    const yBgPow = Math.pow(yBg, REVERSE_BG_EXP);
+    const yTxtPow = Math.pow(yTxt, REVERSE_TXT_EXP);
     const deltaYc = yBgPow - yTxtPow;
     // Soft-clip low contrasts
-    if (Math.abs(deltaYc) < APCA_DELTA_YC_MIN) return 0;
-    sapc = deltaYc > 0 ? 0 : deltaYc * APCA_SCALE;
-    if (sapc > -APCA_LOW_CLIP) return 0;
+    if (Math.abs(deltaYc) < DELTA_MIN) return 0;
+    sapc = deltaYc > 0 ? 0 : deltaYc * CONTRAST_SCALE;
+    if (sapc > -LOW_CLIP) return 0;
     return (sapc + 0.027) * 100;
   }
 }
@@ -211,8 +211,8 @@ export const WCAG_CONTRAST_THRESHOLDS: Record<string, number> = {
  * Validate all element/surface pairings for a derived theme.
  *
  * Converts each resolved OKLCH color to hex via `oklchToHex()`, then checks
- * WCAG 2.x contrast ratio (informational) and perceptual lightness contrast (Lc,
- * normative) for each entry in the pairing map.
+ * WCAG 2.x contrast ratio (informational) and perceptual contrast
+ * (normative) for each entry in the pairing map.
  *
  * Pairs where either the element or surface token is absent from `resolved` (e.g.,
  * non-chromatic tokens like shadows, disabled-opacity) are skipped [D09].
@@ -261,17 +261,17 @@ export function validateThemeContrast(
     }
 
     const wcagRatio = computeWcagContrast(fgHex, bgHex);
-    const lc = computeLcContrast(fgHex, bgHex);
+    const contrast = computePerceptualContrast(fgHex, bgHex);
 
-    const lcThreshold = LC_THRESHOLDS[pairing.role] ?? 15;
-    const lcPass = Math.abs(lc) >= lcThreshold;
+    const contrastThreshold = CONTRAST_THRESHOLDS[pairing.role] ?? 15;
+    const contrastPass = Math.abs(contrast) >= contrastThreshold;
 
     results.push({
       fg: pairing.element,
       bg: pairing.surface,
       wcagRatio,
-      lc,
-      lcPass,
+      contrast,
+      contrastPass,
       role: pairing.role,
     });
   }
@@ -449,17 +449,17 @@ function baseHueName(hueRef: string): string {
 }
 
 /**
- * Automatically adjust element token tones to satisfy Lc contrast thresholds.
+ * Automatically adjust element token tones to satisfy perceptual contrast thresholds.
  *
  * Strategy per plan spec (cascade-aware, convergence-based):
  *   1. Group all failing pairs by element token.
  *   2. For each element token, find the most restrictive surface (the surface
- *      producing the lowest |Lc|), using Lc sign to determine bump direction:
- *      positive Lc (dark-on-light) → bump darker; negative Lc (light-on-dark) → bump lighter.
+ *      producing the lowest perceptual contrast), using contrast sign to determine bump direction:
+ *      positive contrast (dark-on-light) → bump darker; negative contrast (light-on-dark) → bump lighter.
  *   3. Bump the element tone by TONE_STEP in the computed direction.
  *   4. After each full pass, re-validate ALL pairs via validateThemeContrast so
  *      cascade effects (adjusting token A may break token B) are caught immediately.
- *   5. Convergence: stop if no pairs improved during a pass (lcPass count did not
+ *   5. Convergence: stop if no pairs improved during a pass (contrastPass count did not
  *      increase and no adjustments were applied).
  *   6. Oscillation detection per Spec S03: track per-token direction history.
  *      If a token's last three adjustments strictly alternate directions
@@ -468,12 +468,12 @@ function baseHueName(hueRef: string): string {
  *
  * [D02] Cascade-aware auto-adjust
  * [D03] Any-token-type bumping (element token regardless of fg/bg/border role)
- * [D06] Lc as normative threshold gate
+ * [D06] Perceptual contrast as normative threshold gate
  * Spec S03: Oscillation detection
  *
  * @param tokens - Token string map from deriveTheme() (--tug-color() strings)
  * @param resolved - Resolved OKLCH map from deriveTheme() [D09]
- * @param failures - ContrastResult entries where lcPass is false (initial failures)
+ * @param failures - ContrastResult entries where contrastPass is false (initial failures)
  * @param pairingMap - Full pairing map for cascade-aware re-validation after each pass
  * @returns Updated tokens and resolved maps, plus list of unfixable element token names
  */
@@ -503,7 +503,7 @@ export function autoAdjustContrast(
   // Tokens frozen due to oscillation — excluded from further bumps
   const frozenTokens = new Set<string>();
 
-  let remainingFailures = failures.filter((f) => !f.lcPass);
+  let remainingFailures = failures.filter((f) => !f.contrastPass);
   const unfixable: string[] = [];
 
   // Track the passing count from the previous iteration for convergence detection
@@ -530,40 +530,40 @@ export function autoAdjustContrast(
       const elementColor = updatedResolved[elementToken];
       if (!elementColor) continue;
 
-      // Find the most restrictive surface (the one producing the lowest |Lc|).
-      // "Most restrictive" = worst contrast, i.e. smallest |Lc| among all failing surfaces.
+      // Find the most restrictive surface (the one producing the lowest perceptual contrast).
+      // "Most restrictive" = worst contrast, i.e. smallest magnitude among all failing surfaces.
       let worstSurfaceColor: ResolvedColor | null = null;
-      let worstLc = Infinity;
-      let worstLcSigned = 0;
+      let worstContrast = Infinity;
+      let worstContrastSigned = 0;
       for (const failure of elementFailures) {
         const surfaceColor = updatedResolved[failure.bg];
         if (!surfaceColor) continue;
         const elementHex = oklchToHex(elementColor.L, elementColor.C, elementColor.h);
         const surfaceHex = oklchToHex(surfaceColor.L, surfaceColor.C, surfaceColor.h);
-        const lc = computeLcContrast(elementHex, surfaceHex);
-        if (Math.abs(lc) < worstLc) {
-          worstLc = Math.abs(lc);
-          worstLcSigned = lc;
+        const contrast = computePerceptualContrast(elementHex, surfaceHex);
+        if (Math.abs(contrast) < worstContrast) {
+          worstContrast = Math.abs(contrast);
+          worstContrastSigned = contrast;
           worstSurfaceColor = surfaceColor;
         }
       }
 
       if (!worstSurfaceColor) continue;
 
-      // Determine bump direction using Lc sign (SA98G polarity semantics) [D02]:
-      //   positive Lc = dark element on light surface → bump element darker (tone -1)
-      //   negative Lc = light element on dark surface → bump element lighter (tone +1)
+      // Determine bump direction using contrast sign (polarity semantics) [D02]:
+      //   positive contrast = dark element on light surface → bump element darker (tone -1)
+      //   negative contrast = light element on dark surface → bump element lighter (tone +1)
       //
-      // Special case: when Lc = 0 (soft-clipped because both colors are very dark
+      // Special case: when contrast = 0 (soft-clipped because both colors are very dark
       // or very light), the sign is uninformative. Fall back to comparing OKLCH
       // lightness values directly to determine polarity and bump direction.
       //   elementL > surfaceL → element is lighter → light-on-dark polarity → bump lighter (+1)
       //   elementL <= surfaceL → element is darker → dark-on-light polarity → bump darker (-1)
       let bumpDirection: number;
-      if (worstLcSigned === 0) {
+      if (worstContrastSigned === 0) {
         bumpDirection = elementColor.L > worstSurfaceColor.L ? 1 : -1;
       } else {
-        bumpDirection = worstLcSigned >= 0 ? -1 : 1;
+        bumpDirection = worstContrastSigned >= 0 ? -1 : 1;
       }
 
       // Oscillation detection (Spec S03): record this direction and check for alternation.
@@ -610,10 +610,10 @@ export function autoAdjustContrast(
     // Re-validate ALL pairs via validateThemeContrast to catch cascade effects [D02].
     // This ensures that adjusting one token doesn't silently break another pair.
     const allResults = validateThemeContrast(updatedResolved, pairingMap);
-    remainingFailures = allResults.filter((r) => !r.lcPass);
+    remainingFailures = allResults.filter((r) => !r.contrastPass);
 
     // Convergence detection: stop if no pairs improved and no adjustments were applied.
-    const newPassCount = allResults.filter((r) => r.lcPass).length;
+    const newPassCount = allResults.filter((r) => r.contrastPass).length;
     if (!anyAdjustmentApplied && newPassCount <= prevPassCount) break;
     prevPassCount = newPassCount;
   }
@@ -990,20 +990,20 @@ export { oklchToHex } from "./palette-engine";
 export type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivation-engine";
 
 // ---------------------------------------------------------------------------
-// Lc contrast thresholds (normative) and WCAG ratio thresholds (informational)
+// Perceptual contrast thresholds (normative) and WCAG ratio thresholds (informational)
 // ---------------------------------------------------------------------------
 
 /**
- * Minimum perceptual lightness contrast (|Lc|) per role — normative gate [D06].
+ * Minimum perceptual contrast magnitude per role — normative gate [D06].
  *
- * Per SA98G / APCA guidance, adjusted for design system quality bar:
+ * Adjusted for design system quality bar:
  *   body-text    → 75
  *   subdued-text → 45  (intentionally reduced hierarchy: muted/placeholder/read-only text)
- *   large-text   → 60  (stricter than APCA default 45 — intentional quality bar)
+ *   large-text   → 60  (intentional quality bar)
  *   ui-component → 30
  *   decorative   → 15
  */
-export const LC_THRESHOLDS: Record<string, number> = {
+export const CONTRAST_THRESHOLDS: Record<string, number> = {
   "body-text": 75,
   "subdued-text": 45,
   "large-text": 60,
@@ -1012,8 +1012,8 @@ export const LC_THRESHOLDS: Record<string, number> = {
 };
 
 /**
- * Near-pass band for marginal badge classification (fixed 5 Lc units, per Spec S04).
- * A result with |Lc| >= (LC_THRESHOLDS[role] - LC_MARGINAL_DELTA) is classified as
+ * Near-pass band for marginal badge classification (fixed 5 units, per Spec S04).
+ * A result with magnitude >= (CONTRAST_THRESHOLDS[role] - CONTRAST_MARGINAL_DELTA) is classified as
  * "marginal" rather than "fail".
  */
-export const LC_MARGINAL_DELTA = 5;
+export const CONTRAST_MARGINAL_DELTA = 5;
