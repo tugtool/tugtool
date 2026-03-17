@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-17T03:55:46Z
+---
+
+## step-4: Added 9 computed-tone fields (dividerDefaultToneOverride, dividerMutedToneOverride, disabledFgToneValue, disabledBorderToneOverride, outlinedBgRest/Hover/ActiveToneOverride, toggleTrackOffToneOverride, toggleDisabledToneOverride) to DerivationFormulas and BRIO_DARK_FORMULAS per Spec S03. Purely additive.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-formulas-refactor.md
+
+---
+
+---
 step: step-3
 date: 2025-03-17T03:51:00Z
 ---

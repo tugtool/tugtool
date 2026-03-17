@@ -569,6 +569,65 @@ export interface DerivationFormulas {
    * Dark: true.
    */
   selectionInactiveSemanticMode: boolean;
+
+  // -------------------------------------------------------------------------
+  // NEW: Computed-tone override fields for computeTones() branch elimination [D04]
+  // Spec S03 (#s03-computed-tone-fields)
+  // Convention: number = use this flat value; null = derive from formula.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Flat tone for divider-default. null = Math.round(surfaceOverlay - 2).
+   * Dark: 17.
+   */
+  dividerDefaultToneOverride: number | null;
+
+  /**
+   * Flat tone for divider-muted. null = Math.round(surfaceOverlay).
+   * Dark: 15.
+   */
+  dividerMutedToneOverride: number | null;
+
+  /**
+   * Flat tone for disabled-fg. Always a number (dark: 38; future light uses fgDisabledTone).
+   */
+  disabledFgToneValue: number;
+
+  /**
+   * Flat tone for disabled-border. null = Math.round(dividerTone).
+   * Dark: 28.
+   */
+  disabledBorderToneOverride: number | null;
+
+  /**
+   * Flat tone for outlined-bg-rest. null = Math.round(surfaceInset + 2).
+   * Dark: null (derives from formula).
+   */
+  outlinedBgRestToneOverride: number | null;
+
+  /**
+   * Flat tone for outlined-bg-hover. null = Math.round(surfaceRaised + 1).
+   * Dark: null (derives from formula).
+   */
+  outlinedBgHoverToneOverride: number | null;
+
+  /**
+   * Flat tone for outlined-bg-active. null = Math.round(surfaceOverlay).
+   * Dark: null (derives from formula).
+   */
+  outlinedBgActiveToneOverride: number | null;
+
+  /**
+   * Flat tone for toggle-track-off. null = Math.round(dividerTone).
+   * Dark: 28.
+   */
+  toggleTrackOffToneOverride: number | null;
+
+  /**
+   * Flat tone for toggle-disabled. null = Math.round(surfaceOverlay).
+   * Dark: 22.
+   */
+  toggleDisabledToneOverride: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1775,6 +1834,17 @@ export const BRIO_DARK_FORMULAS: DerivationFormulas = {
   fgPlaceholderSource: "fgMuted",
   selectionInactiveHue: "yellow",
   selectionInactiveSemanticMode: true,
+
+  // Computed-tone override fields (Spec S03)
+  dividerDefaultToneOverride: 17,
+  dividerMutedToneOverride: 15,
+  disabledFgToneValue: 38,
+  disabledBorderToneOverride: 28,
+  outlinedBgRestToneOverride: null,
+  outlinedBgHoverToneOverride: null,
+  outlinedBgActiveToneOverride: null,
+  toggleTrackOffToneOverride: 28,
+  toggleDisabledToneOverride: 22,
 };
 
 // ---------------------------------------------------------------------------
