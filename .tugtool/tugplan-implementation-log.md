@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-17T22:17:03Z
+---
+
+## step-1: Captured golden token snapshot (tug-base-generated.css.golden) and added *.golden to .gitignore. Baseline: 373 tokens, 1842 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
 step: step-5
 date: 2025-03-17T18:47:27Z
 ---
