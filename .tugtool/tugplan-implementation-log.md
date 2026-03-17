@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-17T22:35:04Z
+---
+
+## step-3: Replaced inlined formula expressions in all factory functions and direct rule tables with named builder calls. filledRoleRules, outlinedFgRules, ghostFgRules, ghostDangerRules, semanticToneFamilyRules, badgeTintedRoleRules simplified. SURFACE_RULES, FOREGROUND_RULES, ICON_RULES, BORDER_RULES converted where applicable. File shrank from 1597 to 1430 lines. Token output byte-identical to golden snapshot.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
 step: step-2
 date: 2025-03-17T22:24:45Z
 ---
