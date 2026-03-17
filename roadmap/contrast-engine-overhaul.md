@@ -221,52 +221,189 @@ trademarked and their use is restricted by license. We need zero association.
 
 ### Problem
 
-The `DerivationFormulas` interface has ~60 fields. Currently there is only one recipe
-(`BRIO_DARK_FORMULAS`), but the system is designed for multiple recipes — different
-modes (dark/light), different design profiles (standard/stark), different color
-palettes. The formula system must support theme families where a single color palette
-generates multiple coherent themes.
+The `DerivationFormulas` interface encodes formulas at the wrong level of
+specificity. The interface has fields like:
 
-Three duplication problems:
+```typescript
+outlinedActionFgRestTone: number;   // 100
+outlinedActionFgHoverTone: number;  // 100
+outlinedActionFgActiveTone: number; // 100
+outlinedActionFgRestI: number;      // 2
+outlinedActionFgHoverI: number;     // 2
+outlinedActionFgActiveI: number;    // 2
+outlinedActionIconRestTone: number; // 100
+outlinedActionIconHoverTone: number;// 100
+outlinedActionIconActiveTone: number;// 100
+outlinedActionIconRestI: number;    // 2
+outlinedActionIconHoverI: number;   // 2
+outlinedActionIconActiveI: number;  // 2
 
-1. **Inline constants duplicate formula fields.** Hardcoded values in `deriveTheme()`,
-   `computeTones()`, and `resolveHueSlots()` duplicate what's in `DerivationFormulas`.
-   When a value appears both in the formulas object and as an inline constant, they
-   drift apart silently.
+outlinedAgentFgRestTone: number;    // 100  ← same
+outlinedAgentFgHoverTone: number;   // 100  ← same
+outlinedAgentFgActiveTone: number;  // 100  ← same
+outlinedAgentFgRestI: number;       // 2    ← same
+outlinedAgentFgHoverI: number;      // 2    ← same
+outlinedAgentFgActiveI: number;     // 2    ← same
+outlinedAgentIconRestTone: number;  // 100  ← same
+outlinedAgentIconHoverTone: number; // 100  ← same
+outlinedAgentIconActiveTone: number;// 100  ← same
+outlinedAgentIconRestI: number;     // 2    ← same
+outlinedAgentIconHoverI: number;    // 2    ← same
+outlinedAgentIconActiveI: number;   // 2    ← same
 
-2. **No default mechanism.** Every new recipe must specify all ~60 fields. A dark/stark
-   variant that only changes 5 values from the dark base still needs to declare all 60.
-   There is no "base formula set" that recipes extend with overrides.
+outlinedOptionFgRestTone: number;   // 100  ← same
+// ... 12 more identical fields
+```
 
-3. **Computed values recalculated in multiple places.** Values like "divider tone =
-   surface overlay tone" appear as both a formula field AND inline computation.
+That's **36 fields** to express **one formula**: "outlined fg/icon uses tone 100,
+intensity 2, for all states." The light-mode variants add 18 more fields — all zero.
+The same pattern repeats for ghost emphasis. Every role (action, agent, option) gets
+its own copy of the same numbers.
 
-### Solution: Formula defaults + override pattern
+This is the core duplication: **the formula varies by emphasis (filled, outlined,
+ghost), not by role (action, agent, danger).** Role only determines which hue slot
+to use — the tone/intensity/alpha formula is identical across roles within an
+emphasis. But the interface encodes role × emphasis × state × property as individual
+named fields, producing massive duplication.
+
+The factory functions in `derivation-rules.ts` (`filledRoleRules`,
+`outlinedFgRules`, `badgeTintedRoleRules`) correctly factor out the rule structure —
+they define the pattern once and apply it to each role. But they construct formula
+field names dynamically (`outlined${capitalRole}Fg${state}Tone`), which forces the
+interface to have a separate field for every role even when all roles use the same
+value. The abstraction is in the rules but not in the data.
+
+### The numbers
+
+Current state of `DerivationFormulas`:
+
+| Emphasis | Fields per role | Roles | Total fields | Unique values |
+|----------|----------------:|------:|-------------:|--------------:|
+| Outlined fg/icon tones+I | 12 | 3 | 36 | 4 (tone=100, I=2, toneLt=0, ILt=0) |
+| Outlined fg/icon light | 12 | 3 | 18* | 1 (all zero) |
+| Ghost (similar pattern) | varies | 3 | ~20 | ~4 |
+| Badge tinted | 6 | 1 | 6 | 6 (shared across all 7 roles) |
+| Filled bg tones | 3 | 1 | 3 | 3 (shared across all 7 roles) |
+| Semantic tone | 2 | 1 | 2 | 2 (shared across all 7 roles) |
+
+\* The light-mode outlined fields are a separate set of per-role fields on top of the
+dark-mode ones.
+
+The filled and badge factories already work correctly — they read emphasis-level
+fields (`filledBgDarkTone`, `badgeTintedFgI`) that are shared across all roles. The
+duplication is concentrated in outlined and ghost, where the factory constructs
+role-specific field names.
+
+### Solution: Emphasis-level formulas
+
+The formula interface should define values at the emphasis level, not the role level.
+The factory function takes the role's hue slot but reads shared emphasis fields:
+
+**Before** — 36 fields for 4 unique values:
+
+```typescript
+// DerivationFormulas (current)
+outlinedActionFgRestTone: 100,
+outlinedActionFgHoverTone: 100,
+outlinedActionFgActiveTone: 100,
+outlinedActionFgRestI: 2,
+outlinedActionFgHoverI: 2,
+outlinedActionFgActiveI: 2,
+outlinedAgentFgRestTone: 100,   // ← duplicate
+outlinedAgentFgHoverTone: 100,  // ← duplicate
+// ... 28 more identical fields
+```
+
+**After** — 4 fields for 4 values:
+
+```typescript
+// DerivationFormulas (new)
+outlinedFgRestTone: 100,
+outlinedFgHoverTone: 100,
+outlinedFgActiveTone: 100,
+outlinedFgI: 2,
+```
+
+The factory function changes from:
+
+```typescript
+// Before: constructs role-specific field names
+function outlinedFgRules(role: string, hueSlot: string) {
+  const capitalRole = role.charAt(0).toUpperCase() + role.slice(1);
+  function fgToneExpr(state: "Rest" | "Hover" | "Active"): Expr {
+    const field = `outlined${capitalRole}Fg${state}Tone` as keyof DerivationFormulas;
+    return (formulas) => formulas[field] as number;
+  }
+  // ... 12 tokens, each reading a role-specific field
+}
+```
+
+To:
+
+```typescript
+// After: reads emphasis-level fields, role only provides hue slot
+function outlinedFgRules(role: string, hueSlot: string) {
+  return {
+    [`--tug-base-control-outlined-${role}-fg-rest`]: {
+      type: "chromatic", hueSlot: "txt",
+      intensityExpr: (f) => f.outlinedFgI,
+      toneExpr: (f) => f.outlinedFgRestTone,
+    },
+    // ... same formula for all roles, only the token name and hueSlot vary
+  };
+}
+```
+
+**Field count reduction:**
+
+| Area | Before | After | Reduction |
+|------|-------:|------:|----------:|
+| Outlined fg/icon (dark) | 36 | 8 | -28 |
+| Outlined fg/icon (light) | 18 | 4 | -14 |
+| Ghost fg/icon (similar) | ~20 | ~6 | ~-14 |
+| **Total** | **~74** | **~18** | **~-56** |
+
+The `DerivationFormulas` interface shrinks by roughly half. More importantly: when
+you change the outlined fg tone, it changes for all roles at once. No more updating
+3 identical values and hoping you don't miss one. **Duplicated formulas that fail to
+refer back to a common declaration are bugs** — this eliminates that class of bug.
+
+### Per-role overrides (escape hatch)
+
+If a specific role genuinely needs a different value — say outlined-option borders
+use neutral tones instead of role-colored tones (this already exists) — the formula
+interface can have a targeted override field:
+
+```typescript
+outlinedFgI: 2,                      // default for all outlined roles
+outlinedOptionBorderRestTone: 50,    // override: option borders are neutral
+outlinedOptionBorderHoverTone: 55,
+outlinedOptionBorderActiveTone: 60,
+```
+
+The factory checks for the override first, falls back to the emphasis-level default.
+This is the existing pattern for `outlinedOptionBorderRules()` — it already overrides
+the border formulas for option specifically. The difference is that the override is
+now an explicit exception rather than the default encoding.
+
+### Additional cleanup: defaults + override pattern
+
+Beyond the emphasis-level consolidation, the recipe system needs a base-defaults
+mechanism for theme families:
 
 ```typescript
 /** Base formula defaults — shared across all recipes. */
 const BASE_FORMULAS: DerivationFormulas = {
   bgAppTone: 5,
-  bgCanvasTone: 5,
-  // ... all ~60 fields with sensible defaults
+  outlinedFgI: 2,
+  outlinedFgRestTone: 100,
+  // ... all fields with sensible defaults
 };
 
-/** Brio dark: only the fields that differ from base. */
-const BRIO_DARK_OVERRIDES: Partial<DerivationFormulas> = {
-  bgAppI: 2,
-  bgCanvasI: 2,
-};
-
-/** Brio dark/stark: extends dark with higher contrast values. */
+/** Brio dark/stark: only the fields that differ. */
 const BRIO_DARK_STARK_OVERRIDES: Partial<DerivationFormulas> = {
-  ...BRIO_DARK_OVERRIDES,
-  fgDefaultTone: 98,     // push primary text lighter for more contrast
-  fgSubtleTone: 45,      // raise subtle text floor
-};
-
-export const BRIO_DARK_FORMULAS: DerivationFormulas = {
-  ...BASE_FORMULAS,
-  ...BRIO_DARK_OVERRIDES,
+  fgDefaultTone: 98,
+  fgSubtleTone: 45,
 };
 
 export const BRIO_DARK_STARK_FORMULAS: DerivationFormulas = {
@@ -275,15 +412,9 @@ export const BRIO_DARK_STARK_FORMULAS: DerivationFormulas = {
 };
 ```
 
-New recipes only specify their overrides. The base provides all defaults. When a
-default changes, it changes everywhere.
-
-Additionally: audit all inline constants in `deriveTheme()` and friends. Every numeric
-constant must either:
-- Be in `DerivationFormulas` (if recipe-dependent), or
-- Be a named constant with a JSDoc comment explaining why it's fixed
-
-No magic numbers in the derivation pipeline.
+And: audit all inline constants in `deriveTheme()` and friends. Every numeric
+constant must either be in `DerivationFormulas` (if recipe-dependent) or be a named
+constant with a JSDoc comment. No magic numbers in the derivation pipeline.
 
 ---
 
