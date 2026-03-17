@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-17T01:37:31Z
+---
+
+## step-7: Replaced ~1286 lines of imperative code with 3-layer pipeline: resolveHueSlots + computeTones + evaluateRules(373 rules). Zero isLight branches remain in deriveTheme(). File shrank from 3464 to 2210 lines. All 1817 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-6
 date: 2025-03-17T01:25:52Z
 ---
