@@ -37,6 +37,7 @@ import {
   ADJACENCY_RING,
   resolveHyphenatedHue,
 } from "./palette-engine";
+import { CORE_VISUAL_RULES } from "./derivation-rules";
 
 // ---------------------------------------------------------------------------
 // Public interfaces — Spec S01 / S02
@@ -328,9 +329,13 @@ export interface ModePreset {
   filledBgActiveTone: number;
 
   // -------------------------------------------------------------------------
-  // Icon tone overrides (Spec S05)
+  // Icon tone/intensity overrides (Spec S05)
   // -------------------------------------------------------------------------
   iconActiveTone: number; // 80 (dark) | 22 (light)
+  /** icon-muted intensity: 7=txtISubtle (dark) | 9=atmIBorder (light) */
+  iconMutedI: number;
+  /** icon-muted tone: 37=fgSubtleTone (dark) | 28=fgPlaceholderTone (light) */
+  iconMutedTone: number;
 
   // -------------------------------------------------------------------------
   // Tab tone overrides (Spec S05)
@@ -643,8 +648,10 @@ export const DARK_PRESET: ModePreset = {
   filledBgHoverTone: 40,
   filledBgActiveTone: 50,
 
-  // Icon tone overrides (dark)
+  // Icon tone/intensity overrides (dark)
   iconActiveTone: 80,
+  iconMutedI: 7,   // = txtISubtle
+  iconMutedTone: 37, // = fgSubtleTone
 
   // Tab tone overrides (dark)
   tabFgActiveTone: 90,
@@ -931,8 +938,10 @@ export const LIGHT_PRESET: ModePreset = {
   filledBgHoverTone: 40,
   filledBgActiveTone: 50,
 
-  // Icon tone overrides (light)
+  // Icon tone/intensity overrides (light)
   iconActiveTone: 22,
+  iconMutedI: 9,   // = atmIBorder
+  iconMutedTone: 28, // = fgPlaceholderTone
 
   // Tab tone overrides (light)
   tabFgActiveTone: 13, // = fgDefaultTone
@@ -1386,8 +1395,9 @@ export function resolveHueSlots(recipe: ThemeRecipe, warmth: number): ResolvedHu
   const fgInverseAngle = applyWarmthBias(primaryColorName(fgInverseHueName), resolveHueAngle(fgInverseHueName), warmthBias);
   const fgInverse = slotFromAngle(fgInverseAngle);
 
-  // fgPlaceholder: same as fgMuted in both modes.
-  const fgPlaceholder: ResolvedHueSlot = { ...fgMuted };
+  // fgPlaceholder: dark = same as fgMuted (bare txt hue, e.g. cobalt).
+  //               light = atm hue (atmosphere-colored placeholder per Harmony).
+  const fgPlaceholder: ResolvedHueSlot = isLight ? { ...atm } : { ...fgMuted };
 
   // selectionInactive:
   //   dark = "yellow" (fixed hue, no warmth bias — Brio ground truth)
@@ -1651,6 +1661,224 @@ export function computeTones(preset: ModePreset, knobs: MoodKnobs): ComputedTone
   };
 }
 
+// ---------------------------------------------------------------------------
+// DerivationRule — type union for the rule table (Spec S04)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shared expression type: a function of (preset, knobs, computed) -> number.
+ * Used for intensity, tone, and alpha fields in chromatic rules. Spec S04.
+ */
+export type Expr = (preset: ModePreset, knobs: MoodKnobs, computed: ComputedTones) => number;
+
+/**
+ * Chromatic rule — produces a `--tug-color(hue, i, t [,a])` token.
+ *
+ * hueSlot resolution follows dual-path per [D09]:
+ *   1. Direct key: if hueSlot is a key in ResolvedHueSlots, use it directly.
+ *   2. Preset-mediated: otherwise read preset[hueSlot + "HueSlot"] for the key.
+ * Sentinel values per [D07]: "__white" | "__highlight" | "__shadow" | "__verboseHighlight"
+ * trigger non-chromatic dispatch and bypass intensity/tone expressions.
+ */
+export interface ChromaticRule {
+  type: "chromatic";
+  hueSlot: string;
+  intensityExpr: Expr;
+  toneExpr: Expr;
+  alphaExpr?: Expr;
+}
+
+/** White rule — unconditionally opaque white; no mode branching, no alpha. */
+export interface WhiteRule {
+  type: "white";
+}
+
+/** Shadow rule — black-based semi-transparent token. */
+export interface ShadowRule {
+  type: "shadow";
+  alphaExpr: Expr;
+}
+
+/** Highlight rule — white-based semi-transparent token. */
+export interface HighlightRule {
+  type: "highlight";
+  alphaExpr: Expr;
+}
+
+/**
+ * Structural rule — escape hatch for composite or non-chromatic token values.
+ * resolvedExpr is optional; when present it populates the resolved map entry
+ * (used for tokens like shadow-overlay that need OKLCH for contrast checking).
+ */
+export interface StructuralRule {
+  type: "structural";
+  valueExpr: (
+    preset: ModePreset,
+    knobs: MoodKnobs,
+    computed: ComputedTones,
+    resolvedSlots: ResolvedHueSlots,
+  ) => string;
+  resolvedExpr?: (
+    preset: ModePreset,
+    knobs: MoodKnobs,
+    computed: ComputedTones,
+  ) => ResolvedColor;
+}
+
+/** Invariant rule — static string value that never changes across themes. */
+export interface InvariantRule {
+  type: "invariant";
+  value: string;
+}
+
+/** Union of all rule types. Spec S04. */
+export type DerivationRule =
+  | ChromaticRule
+  | WhiteRule
+  | ShadowRule
+  | HighlightRule
+  | StructuralRule
+  | InvariantRule;
+
+// ---------------------------------------------------------------------------
+// evaluateRules — Layer 3: iterate rule table and emit tokens (Spec S01)
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluate a named rule table, emitting token strings and resolved OKLCH
+ * entries into the provided maps.
+ *
+ * This is Layer 3 of the three-layer derivation pipeline (Spec S01).
+ *
+ * hueSlot resolution per [D09]:
+ *   1. If hueSlot is a key of resolvedSlots → use it directly.
+ *   2. Otherwise read preset[hueSlot + "HueSlot"] to get the key.
+ * Sentinel dispatch per [D07]:
+ *   "__white"            → setChromatic-style white; fills resolved.
+ *   "__highlight"        → compact white-a token; fills resolved.
+ *   "__shadow"           → compact black-a token; fills resolved.
+ *   "__verboseHighlight" → verbose white form with explicit i:0 t:100; fills resolved.
+ *
+ * @param rules         Named rule table (token name → DerivationRule)
+ * @param resolvedSlots Output of resolveHueSlots()
+ * @param preset        Active ModePreset (DARK_PRESET or LIGHT_PRESET)
+ * @param knobs         Normalized mood knobs
+ * @param computed      Output of computeTones()
+ * @param tokens        Output map for CSS token strings (mutated in place)
+ * @param resolved      Output map for OKLCH resolved colors (mutated in place)
+ * @param makeShadow    Internal helper: build compact black-a string
+ * @param makeHighlight Internal helper: build compact white-a string
+ * @param makeVerboseHighlight Internal helper: build verbose white-i0-t100-a string
+ * @param blackResolved Resolved OKLCH for black
+ * @param whiteResolved Resolved OKLCH for white
+ */
+export function evaluateRules(
+  rules: Record<string, DerivationRule>,
+  resolvedSlots: ResolvedHueSlots,
+  preset: ModePreset,
+  knobs: MoodKnobs,
+  computed: ComputedTones,
+  tokens: Record<string, string>,
+  resolved: Record<string, ResolvedColor>,
+  makeShadow: (alpha: number) => string,
+  makeHighlight: (alpha: number) => string,
+  makeVerboseHighlight: (alpha: number) => string,
+  blackResolved: ResolvedColor,
+  whiteResolved: ResolvedColor,
+  setChromatic: (
+    name: string,
+    hueRef: string,
+    hueAngle: number,
+    i: number,
+    t: number,
+    a: number,
+    hueName: string,
+  ) => void,
+): void {
+  const slotKeys = new Set(Object.keys(resolvedSlots));
+
+  for (const [tokenName, rule] of Object.entries(rules)) {
+    switch (rule.type) {
+      case "invariant":
+        tokens[tokenName] = rule.value;
+        break;
+
+      case "white":
+        tokens[tokenName] = "--tug-color(white)";
+        resolved[tokenName] = { ...whiteResolved };
+        break;
+
+      case "shadow": {
+        const alpha = Math.round(rule.alphaExpr(preset, knobs, computed));
+        tokens[tokenName] = makeShadow(alpha);
+        resolved[tokenName] = { ...blackResolved, alpha: alpha / 100 };
+        break;
+      }
+
+      case "highlight": {
+        const alpha = Math.round(rule.alphaExpr(preset, knobs, computed));
+        tokens[tokenName] = makeHighlight(alpha);
+        resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
+        break;
+      }
+
+      case "structural": {
+        tokens[tokenName] = rule.valueExpr(preset, knobs, computed, resolvedSlots);
+        if (rule.resolvedExpr) {
+          resolved[tokenName] = rule.resolvedExpr(preset, knobs, computed);
+        }
+        break;
+      }
+
+      case "chromatic": {
+        // Step 1: resolve the effective slot string via dual path [D09]
+        let effectiveSlot: string;
+        if (slotKeys.has(rule.hueSlot)) {
+          effectiveSlot = rule.hueSlot; // direct key path
+        } else {
+          // Preset-mediated path: read preset[hueSlot + "HueSlot"]
+          const presetKey = (rule.hueSlot + "HueSlot") as keyof ModePreset;
+          effectiveSlot = (preset[presetKey] as string) ?? rule.hueSlot;
+        }
+
+        // Step 2: sentinel check [D07]
+        if (effectiveSlot === "__white") {
+          tokens[tokenName] = "--tug-color(white)";
+          resolved[tokenName] = { ...whiteResolved };
+          break;
+        }
+        if (effectiveSlot === "__highlight") {
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(preset, knobs, computed));
+          tokens[tokenName] = makeHighlight(alpha);
+          resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
+          break;
+        }
+        if (effectiveSlot === "__shadow") {
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(preset, knobs, computed));
+          tokens[tokenName] = makeShadow(alpha);
+          resolved[tokenName] = { ...blackResolved, alpha: alpha / 100 };
+          break;
+        }
+        if (effectiveSlot === "__verboseHighlight") {
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(preset, knobs, computed));
+          tokens[tokenName] = makeVerboseHighlight(alpha);
+          resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
+          break;
+        }
+
+        // Step 3: chromatic resolution
+        const slot = resolvedSlots[effectiveSlot as keyof ResolvedHueSlots];
+        if (!slot) break; // unknown slot key — skip
+        const i = Math.round(rule.intensityExpr(preset, knobs, computed));
+        const t = Math.round(rule.toneExpr(preset, knobs, computed));
+        const a = rule.alphaExpr ? Math.round(rule.alphaExpr(preset, knobs, computed)) : 100;
+        setChromatic(tokenName, slot.ref, slot.angle, i, t, a, slot.primaryName);
+        break;
+      }
+    }
+  }
+}
+
 /**
  * Compute OKLCH from hue angle, intensity (0-100), tone (0-100).
  * Uses the same formula as tugColor() in palette-engine.ts.
@@ -1779,6 +2007,15 @@ function makeShadowToken(alpha: number): string {
  */
 function makeHighlightToken(alpha: number): string {
   return `--tug-color(white, a: ${Math.round(alpha)})`;
+}
+
+/**
+ * Build a verbose white highlight token (i: 0, t: 100 explicit) for tokens
+ * that must match the CSS ground truth verbose form per [D06].
+ * alpha is 0-100.
+ */
+function makeVerboseHighlightToken(alpha: number): string {
+  return `--tug-color(white, i: 0, t: 100, a: ${Math.round(alpha)})`;
 }
 
 /**
@@ -2483,6 +2720,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setInvariant("--tug-base-motion-easing-standard", "cubic-bezier(0.2, 0, 0, 1)");
   setInvariant("--tug-base-motion-easing-enter", "cubic-bezier(0, 0, 0, 1)");
   setInvariant("--tug-base-motion-easing-exit", "cubic-bezier(0.2, 0, 1, 1)");
+
   // =========================================================================
   // B. Accent System
   // =========================================================================
@@ -3165,6 +3403,54 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-badge-tinted-caution-fg", cautionHue, cautionAngle, btFgI, btFgTone, 100, cautionName);
   setChromatic("--tug-base-badge-tinted-caution-bg", cautionHue, cautionAngle, btBgI, btBgTone, btBgAlpha, cautionName);
   setChromatic("--tug-base-badge-tinted-caution-border", cautionHue, cautionAngle, btBorderI, btBorderTone, btBorderAlpha, cautionName);
+
+  // ---------------------------------------------------------------------------
+  // Step 5: evaluate CORE_VISUAL_RULES in parallel with the complete imperative output.
+  // Run after all imperative set* calls so every token is available for comparison.
+  // Assert that every token produced by the rule table matches the imperative output.
+  // In Step 7, the imperative code above will be removed and only evaluateRules() will run.
+  // ---------------------------------------------------------------------------
+  {
+    const ruleTokens: Record<string, string> = {};
+    const ruleResolved: Record<string, ResolvedColor> = {};
+
+    evaluateRules(
+      CORE_VISUAL_RULES,
+      resolvedSlots,
+      preset,
+      { surfaceContrast, signalIntensity, warmth },
+      computedTones,
+      ruleTokens,
+      ruleResolved,
+      makeShadowToken,
+      makeHighlightToken,
+      makeVerboseHighlightToken,
+      BLACK_RESOLVED,
+      WHITE_RESOLVED,
+      (name, hueRef, hueAngle, i, t, a, hueName) => {
+        ruleTokens[name] = makeTugColor(hueRef, i, t, a);
+        if (a === 100) {
+          ruleResolved[name] = resolvedEntry(hueAngle, i, t, hueName);
+        } else if (hueRef === "black" || (i === 0 && t === 0)) {
+          ruleResolved[name] = { ...BLACK_RESOLVED, alpha: a / 100 };
+        } else if (hueRef === "white" || (i === 0 && t === 100)) {
+          ruleResolved[name] = { ...WHITE_RESOLVED, alpha: a / 100 };
+        } else {
+          ruleResolved[name] = resolvedEntryAlpha(hueAngle, i, t, a, hueName);
+        }
+      },
+    );
+
+    // Assert every rule-derived token matches the imperative output exactly.
+    for (const [name, ruleValue] of Object.entries(ruleTokens)) {
+      const imperativeValue = tokens[name];
+      if (imperativeValue !== ruleValue) {
+        throw new Error(
+          `[Step5 drift] Token "${name}" mismatch:\n  rule:       ${ruleValue}\n  imperative: ${imperativeValue}`,
+        );
+      }
+    }
+  }
 
   // =========================================================================
   // Return ThemeOutput

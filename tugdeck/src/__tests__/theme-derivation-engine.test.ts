@@ -27,6 +27,7 @@ import {
   generateResolvedCssExport,
   resolveHueSlots,
   computeTones,
+  evaluateRules,
   ACHROMATIC_ADJACENT_HUES,
   primaryColorName,
   applyWarmthBias,
@@ -34,7 +35,9 @@ import {
   type MoodKnobs,
   type ComputedTones,
   type ResolvedHueSlots,
+  type ResolvedColor,
 } from "@/components/tugways/theme-derivation-engine";
+import { CORE_VISUAL_RULES } from "@/components/tugways/derivation-rules";
 
 
 import {
@@ -1707,12 +1710,13 @@ describe("resolveHueSlots — Step 3", () => {
     };
     const slots: ResolvedHueSlots = resolveHueSlots(lightRecipe, 50);
 
-    // In light mode, fg tiers all collapse to txt hue
+    // In light mode, fg tiers all collapse to txt hue (fgPlaceholder is the exception: uses atm)
     expect(slots.fgMuted.ref).toBe("cobalt");
     expect(slots.fgSubtle.ref).toBe("cobalt");
     expect(slots.fgDisabled.ref).toBe("cobalt");
     expect(slots.fgInverse.ref).toBe("cobalt");
-    expect(slots.fgPlaceholder.ref).toBe("cobalt");
+    // fgPlaceholder in light mode uses atm hue (Harmony pattern), not txt hue
+    expect(slots.fgPlaceholder.ref).toBe("yellow");
 
     // selectionInactive in light: atm angle (yellow ≈ 85°) - 20 = ~65° -> some hue near green/lime
     // Verify it's NOT yellow (the dark mode fixed value)
@@ -2083,5 +2087,177 @@ describe("computeTones — Step 4", () => {
     for (const field of requiredFields) {
       expect(typeof ct[field]).toBe("number");
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Step 5 tests: T-RULES-SURFACES, T-RULES-FG, T-RULES-INVARIANT
+  // These verify that CORE_VISUAL_RULES + evaluateRules() produce the same
+  // output as the imperative deriveTheme() code for section A tokens.
+  // ---------------------------------------------------------------------------
+
+  /** Run evaluateRules for CORE_VISUAL_RULES against the given recipe. */
+  function runCoreRules(recipe: typeof EXAMPLE_RECIPES.brio): {
+    ruleTokens: Record<string, string>;
+    ruleResolved: Record<string, ResolvedColor>;
+    imperative: ReturnType<typeof deriveTheme>;
+  } {
+    const warmth = recipe.warmth ?? 50;
+    const surfaceContrast = recipe.surfaceContrast ?? 50;
+    const signalIntensity = recipe.signalIntensity ?? 50;
+    const isLight = recipe.mode === "light";
+    const preset = isLight ? LIGHT_PRESET : DARK_PRESET;
+    const knobs = { surfaceContrast, signalIntensity, warmth };
+    const resolvedSlots = resolveHueSlots(recipe, warmth);
+    const computed = computeTones(preset, knobs);
+
+    const ruleTokens: Record<string, string> = {};
+    const ruleResolved: Record<string, ResolvedColor> = {};
+
+    evaluateRules(
+      CORE_VISUAL_RULES,
+      resolvedSlots,
+      preset,
+      knobs,
+      computed,
+      ruleTokens,
+      ruleResolved,
+      (alpha) => `--tug-color(black, i: 0, t: 0, a: ${Math.round(alpha)})`,
+      (alpha) => `--tug-color(white, a: ${Math.round(alpha)})`,
+      (alpha) => `--tug-color(white, i: 0, t: 100, a: ${Math.round(alpha)})`,
+      { L: 0, C: 0, h: 0, alpha: 1 },
+      { L: 1, C: 0, h: 0, alpha: 1 },
+      (name, hueRef, _hueAngle, i, t, a) => {
+        const ri = Math.round(i), rt = Math.round(t), ra = Math.round(a);
+        if (hueRef === "black") {
+          ruleTokens[name] = ra === 100 ? "--tug-color(black)" : `--tug-color(black, a: ${ra})`;
+          return;
+        }
+        if (hueRef === "white") {
+          ruleTokens[name] = ra === 100 ? "--tug-color(white)" : `--tug-color(white, a: ${ra})`;
+          return;
+        }
+        if (ri === 50 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef})`; return; }
+        if (ri === 20 && rt === 85 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-light)`; return; }
+        if (ri === 50 && rt === 20 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-dark)`; return; }
+        if (ri === 90 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-intense)`; return; }
+        if (ri === 50 && rt === 42 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-muted)`; return; }
+        const isVerboseAlpha = ra !== 100 && ri === 50 && rt === 50;
+        const parts: string[] = [];
+        if (isVerboseAlpha || ri !== 50) parts.push(`i: ${ri}`);
+        if (isVerboseAlpha || rt !== 50) parts.push(`t: ${rt}`);
+        if (ra !== 100) parts.push(`a: ${ra}`);
+        ruleTokens[name] = `--tug-color(${hueRef}, ${parts.join(", ")})`;
+      },
+    );
+
+    const imperative = deriveTheme(recipe);
+    return { ruleTokens, ruleResolved, imperative };
+  }
+
+  // ---------------------------------------------------------------------------
+  // T-RULES-SURFACES: Rule-derived surface tokens match imperative output (Brio dark)
+  // ---------------------------------------------------------------------------
+  it("T-RULES-SURFACES: rule-derived surface tokens match imperative output for Brio dark", () => {
+    const { ruleTokens, imperative } = runCoreRules(EXAMPLE_RECIPES.brio);
+
+    const SURFACE_TOKENS = [
+      "--tug-base-bg-app",
+      "--tug-base-bg-canvas",
+      "--tug-base-surface-sunken",
+      "--tug-base-surface-default",
+      "--tug-base-surface-raised",
+      "--tug-base-surface-overlay",
+      "--tug-base-surface-inset",
+      "--tug-base-surface-content",
+      "--tug-base-surface-screen",
+    ];
+
+    const mismatches: string[] = [];
+    for (const token of SURFACE_TOKENS) {
+      const rule = ruleTokens[token];
+      const imp = imperative.tokens[token];
+      if (rule !== imp) mismatches.push(`${token}:\n  rule: ${rule}\n  imp:  ${imp}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-RULES-FG: Rule-derived foreground tokens match imperative output (Brio dark)
+  // ---------------------------------------------------------------------------
+  it("T-RULES-FG: rule-derived foreground tokens match imperative output for Brio dark", () => {
+    const { ruleTokens, imperative } = runCoreRules(EXAMPLE_RECIPES.brio);
+
+    const FG_TOKENS = [
+      "--tug-base-fg-default",
+      "--tug-base-fg-muted",
+      "--tug-base-fg-subtle",
+      "--tug-base-fg-disabled",
+      "--tug-base-fg-inverse",
+      "--tug-base-fg-placeholder",
+      "--tug-base-fg-link",
+      "--tug-base-fg-link-hover",
+      "--tug-base-fg-onAccent",
+      "--tug-base-fg-onDanger",
+      "--tug-base-fg-onCaution",
+      "--tug-base-fg-onSuccess",
+    ];
+
+    const mismatches: string[] = [];
+    for (const token of FG_TOKENS) {
+      const rule = ruleTokens[token];
+      const imp = imperative.tokens[token];
+      if (rule !== imp) mismatches.push(`${token}:\n  rule: ${rule}\n  imp:  ${imp}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-RULES-INVARIANT: All invariant tokens are present and correct
+  // ---------------------------------------------------------------------------
+  it("T-RULES-INVARIANT: rule table invariant tokens are present and match expected values", () => {
+    const { ruleTokens } = runCoreRules(EXAMPLE_RECIPES.brio);
+
+    const EXPECTED_INVARIANTS: Record<string, string> = {
+      "--tug-base-font-family-sans": '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+      "--tug-base-font-size-md": "14px",
+      "--tug-base-space-md": "8px",
+      "--tug-base-radius-md": "6px",
+      "--tug-base-chrome-height": "36px",
+      "--tug-base-icon-size-md": "15px",
+      "--tug-base-motion-duration-fast": "calc(100ms * var(--tug-timing))",
+      "--tug-base-motion-easing-standard": "cubic-bezier(0.2, 0, 0, 1)",
+    };
+
+    for (const [token, expected] of Object.entries(EXPECTED_INVARIANTS)) {
+      expect(ruleTokens[token]).toBe(expected);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-RULES-SURFACES-LIGHT: Surface tokens also match for Brio light recipe
+  // ---------------------------------------------------------------------------
+  it("T-RULES-SURFACES-LIGHT: rule-derived surface tokens match imperative output for Brio light", () => {
+    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
+    const { ruleTokens, imperative } = runCoreRules(brioLight);
+
+    const SURFACE_TOKENS = [
+      "--tug-base-bg-app",
+      "--tug-base-bg-canvas",
+      "--tug-base-surface-sunken",
+      "--tug-base-surface-default",
+      "--tug-base-surface-raised",
+      "--tug-base-surface-overlay",
+      "--tug-base-surface-inset",
+      "--tug-base-surface-content",
+      "--tug-base-surface-screen",
+    ];
+
+    const mismatches: string[] = [];
+    for (const token of SURFACE_TOKENS) {
+      const rule = ruleTokens[token];
+      const imp = imperative.tokens[token];
+      if (rule !== imp) mismatches.push(`${token}:\n  rule: ${rule}\n  imp:  ${imp}`);
+    }
+    expect(mismatches).toEqual([]);
   });
 });

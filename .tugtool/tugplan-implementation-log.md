@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-17T01:06:09Z
+---
+
+## step-5: Created derivation-rules.ts with 90 CORE_VISUAL_RULES entries (surfaces, fg, icons, borders, elevation, invariants). Implemented evaluateRules() with dual hueSlot resolution and sentinel dispatch. Runs in parallel with existing imperative code. All 1814 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-4
 date: 2025-03-17T00:31:34Z
 ---
