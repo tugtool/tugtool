@@ -37,7 +37,7 @@ import {
   ADJACENCY_RING,
   resolveHyphenatedHue,
 } from "./palette-engine";
-import { CORE_VISUAL_RULES } from "./derivation-rules";
+import { RULES } from "./derivation-rules";
 
 // ---------------------------------------------------------------------------
 // Public interfaces — Spec S01 / S02
@@ -3405,7 +3405,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-badge-tinted-caution-border", cautionHue, cautionAngle, btBorderI, btBorderTone, btBorderAlpha, cautionName);
 
   // ---------------------------------------------------------------------------
-  // Step 5: evaluate CORE_VISUAL_RULES in parallel with the complete imperative output.
+  // Step 5/6: evaluate RULES in parallel with the complete imperative output.
   // Run after all imperative set* calls so every token is available for comparison.
   // Assert that every token produced by the rule table matches the imperative output.
   // In Step 7, the imperative code above will be removed and only evaluateRules() will run.
@@ -3415,7 +3415,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     const ruleResolved: Record<string, ResolvedColor> = {};
 
     evaluateRules(
-      CORE_VISUAL_RULES,
+      RULES,
       resolvedSlots,
       preset,
       { surfaceContrast, signalIntensity, warmth },

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-17T01:25:52Z
+---
+
+## step-6: Added ~284 rules to derivation-rules.ts covering sections B-F (accent, semantic tones, selection/highlight, tab chrome, controls, badges). RULES table now has 373 entries matching all imperative tokens. Factory functions for filled/outlined/ghost/badge patterns. All 1817 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-5
 date: 2025-03-17T01:06:09Z
 ---

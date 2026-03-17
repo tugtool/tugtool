@@ -37,7 +37,7 @@ import {
   type ResolvedHueSlots,
   type ResolvedColor,
 } from "@/components/tugways/theme-derivation-engine";
-import { CORE_VISUAL_RULES } from "@/components/tugways/derivation-rules";
+import { CORE_VISUAL_RULES, RULES } from "@/components/tugways/derivation-rules";
 
 
 import {
@@ -2257,6 +2257,112 @@ describe("computeTones — Step 4", () => {
       const rule = ruleTokens[token];
       const imp = imperative.tokens[token];
       if (rule !== imp) mismatches.push(`${token}:\n  rule: ${rule}\n  imp:  ${imp}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 6 tests: T-RULES-COMPLETE, T-RULES-DARK-MATCH, T-RULES-LIGHT-MATCH
+// These verify that the full RULES table covers all 373 tokens and that
+// evaluateRules(RULES, ...) matches imperative output for both dark and light modes.
+// ---------------------------------------------------------------------------
+
+describe("derivation-engine step-6 rules", () => {
+  /** Run evaluateRules for RULES (full table) against the given recipe. */
+  function runAllRules(recipe: Parameters<typeof deriveTheme>[0]): {
+    ruleTokens: Record<string, string>;
+    imperative: ReturnType<typeof deriveTheme>;
+  } {
+    const warmth = recipe.warmth ?? 50;
+    const surfaceContrast = recipe.surfaceContrast ?? 50;
+    const signalIntensity = recipe.signalIntensity ?? 50;
+    const isLight = recipe.mode === "light";
+    const preset = isLight ? LIGHT_PRESET : DARK_PRESET;
+    const knobs = { surfaceContrast, signalIntensity, warmth };
+    const resolvedSlots = resolveHueSlots(recipe, warmth);
+    const computed = computeTones(preset, knobs);
+
+    const ruleTokens: Record<string, string> = {};
+    const ruleResolved: Record<string, ResolvedColor> = {};
+
+    evaluateRules(
+      RULES,
+      resolvedSlots,
+      preset,
+      knobs,
+      computed,
+      ruleTokens,
+      ruleResolved,
+      (alpha) => `--tug-color(black, i: 0, t: 0, a: ${Math.round(alpha)})`,
+      (alpha) => `--tug-color(white, a: ${Math.round(alpha)})`,
+      (alpha) => `--tug-color(white, i: 0, t: 100, a: ${Math.round(alpha)})`,
+      { L: 0, C: 0, h: 0, alpha: 1 },
+      { L: 1, C: 0, h: 0, alpha: 1 },
+      (name, hueRef, _hueAngle, i, t, a) => {
+        const ri = Math.round(i), rt = Math.round(t), ra = Math.round(a);
+        if (hueRef === "black") {
+          ruleTokens[name] = ra === 100 ? "--tug-color(black)" : `--tug-color(black, a: ${ra})`;
+          return;
+        }
+        if (hueRef === "white") {
+          ruleTokens[name] = ra === 100 ? "--tug-color(white)" : `--tug-color(white, a: ${ra})`;
+          return;
+        }
+        if (ri === 50 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef})`; return; }
+        if (ri === 20 && rt === 85 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-light)`; return; }
+        if (ri === 50 && rt === 20 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-dark)`; return; }
+        if (ri === 90 && rt === 50 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-intense)`; return; }
+        if (ri === 50 && rt === 42 && ra === 100) { ruleTokens[name] = `--tug-color(${hueRef}-muted)`; return; }
+        const isVerboseAlpha = ra !== 100 && ri === 50 && rt === 50;
+        const parts: string[] = [];
+        if (isVerboseAlpha || ri !== 50) parts.push(`i: ${ri}`);
+        if (isVerboseAlpha || rt !== 50) parts.push(`t: ${rt}`);
+        if (ra !== 100) parts.push(`a: ${ra}`);
+        ruleTokens[name] = `--tug-color(${hueRef}, ${parts.join(", ")})`;
+      },
+    );
+
+    const imperative = deriveTheme(recipe);
+    return { ruleTokens, imperative };
+  }
+
+  // -------------------------------------------------------------------------
+  // T-RULES-COMPLETE: RULES table has exactly 373 entries
+  // -------------------------------------------------------------------------
+  it("T-RULES-COMPLETE: RULES table has exactly 373 entries", () => {
+    expect(Object.keys(RULES).length).toBe(373);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-RULES-DARK-MATCH: All RULES-derived dark tokens match imperative output
+  // -------------------------------------------------------------------------
+  it("T-RULES-DARK-MATCH: all rule-derived dark tokens match imperative output", () => {
+    const { ruleTokens, imperative } = runAllRules(EXAMPLE_RECIPES.brio);
+
+    const mismatches: string[] = [];
+    for (const [token, ruleValue] of Object.entries(ruleTokens)) {
+      const impValue = imperative.tokens[token];
+      if (ruleValue !== impValue) {
+        mismatches.push(`${token}:\n  rule: ${ruleValue}\n  imp:  ${impValue}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-RULES-LIGHT-MATCH: All RULES-derived light tokens match imperative output
+  // -------------------------------------------------------------------------
+  it("T-RULES-LIGHT-MATCH: all rule-derived light tokens match imperative output", () => {
+    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
+    const { ruleTokens, imperative } = runAllRules(brioLight);
+
+    const mismatches: string[] = [];
+    for (const [token, ruleValue] of Object.entries(ruleTokens)) {
+      const impValue = imperative.tokens[token];
+      if (ruleValue !== impValue) {
+        mismatches.push(`${token}:\n  rule: ${ruleValue}\n  imp:  ${impValue}`);
+      }
     }
     expect(mismatches).toEqual([]);
   });
