@@ -524,6 +524,51 @@ export interface DerivationFormulas {
   outlinedOptionBorderRestTone: number;
   outlinedOptionBorderHoverTone: number;
   outlinedOptionBorderActiveTone: number;
+
+  // -------------------------------------------------------------------------
+  // NEW: Derived hue-name fields for resolveHueSlots() branch elimination [D03]
+  // Spec S02 (#s02-hue-name-fields)
+  // -------------------------------------------------------------------------
+
+  /** Hue name for the surfScreen derived slot. Dark: "indigo". */
+  surfScreenHue: string;
+
+  /**
+   * Expression for the fgMuted derived slot hue.
+   * "__bare_primary" = use the bare primary segment of txtHue (e.g. "cobalt" from "indigo-cobalt").
+   * Any other value = treat as a literal hue name.
+   */
+  fgMutedHueExpr: string;
+
+  /** Hue name for the fgSubtle derived slot. Dark: "indigo-cobalt". */
+  fgSubtleHue: string;
+
+  /** Hue name for the fgDisabled derived slot. Dark: "indigo-cobalt". */
+  fgDisabledHue: string;
+
+  /** Hue name for the fgInverse derived slot. Dark: "sapphire-cobalt". */
+  fgInverseHue: string;
+
+  /**
+   * Source for the fgPlaceholder derived slot.
+   * "fgMuted" = copy from fgMuted slot.
+   * "atm"     = copy from atm slot.
+   */
+  fgPlaceholderSource: string;
+
+  /**
+   * Hue name for the selectionInactive derived slot.
+   * Used only when selectionInactiveSemanticMode is true.
+   * Dark: "yellow".
+   */
+  selectionInactiveHue: string;
+
+  /**
+   * When true: use resolveSemanticSlot(selectionInactiveHue) — no warmth bias.
+   * When false: compute atm offset (atmBaseAngle - 20°) with warmth bias.
+   * Dark: true.
+   */
+  selectionInactiveSemanticMode: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1720,6 +1765,16 @@ export const BRIO_DARK_FORMULAS: DerivationFormulas = {
   outlinedOptionBorderRestTone: 50,
   outlinedOptionBorderHoverTone: 55,
   outlinedOptionBorderActiveTone: 60,
+
+  // Derived hue-name fields for resolveHueSlots() branch elimination (Spec S02)
+  surfScreenHue: "indigo",
+  fgMutedHueExpr: "__bare_primary",
+  fgSubtleHue: "indigo-cobalt",
+  fgDisabledHue: "indigo-cobalt",
+  fgInverseHue: "sapphire-cobalt",
+  fgPlaceholderSource: "fgMuted",
+  selectionInactiveHue: "yellow",
+  selectionInactiveSemanticMode: true,
 };
 
 // ---------------------------------------------------------------------------

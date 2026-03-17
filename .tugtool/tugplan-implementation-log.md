@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-17T03:51:00Z
+---
+
+## step-3: Added 8 hue-name fields (surfScreenHue, fgMutedHueExpr, fgSubtleHue, fgDisabledHue, fgInverseHue, fgPlaceholderSource, selectionInactiveHue, selectionInactiveSemanticMode) to DerivationFormulas interface and BRIO_DARK_FORMULAS. Purely additive.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-formulas-refactor.md
+
+---
+
+---
 step: step-2
 date: 2025-03-17T03:44:52Z
 ---
