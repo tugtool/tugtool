@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-17T23:35:47Z
+---
+
+## step-2: Annotated all 198 fields in DerivationFormulas with @semantic JSDoc tags across 23 semantic groups. Each field linked to its decision group (canvas-darkness, surface-layering, text-brightness, text-hierarchy, etc.). Annotation-only change with zero behavioral impact. Token output byte-identical.
+
+**Files changed:**
+- .tugtool/tugplan-semantic-layer-annotations.md
+
+---
+
+---
 step: step-1
 date: 2025-03-17T23:28:03Z
 ---
