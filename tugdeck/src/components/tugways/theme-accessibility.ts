@@ -189,13 +189,15 @@ export function computeLcContrast(fgHex: string, bgHex: string): number {
 /**
  * Minimum WCAG 2.x contrast ratio per contrast role (Table T01).
  *
- *   body-text    → 4.5:1 (WCAG AA for 14px/400wt text)
- *   large-text   → 3.0:1 (WCAG AA for 18px+ / 700wt text)
- *   ui-component → 3.0:1 (WCAG AA non-text contrast)
- *   decorative   → 1.0   (no minimum)
+ *   body-text     → 4.5:1 (WCAG AA for 14px/400wt text)
+ *   subdued-text  → 3.0:1 (intentionally reduced hierarchy: muted/placeholder/read-only)
+ *   large-text    → 3.0:1 (WCAG AA for 18px+ / 700wt text)
+ *   ui-component  → 3.0:1 (WCAG AA non-text contrast)
+ *   decorative    → 1.0   (no minimum)
  */
 export const WCAG_CONTRAST_THRESHOLDS: Record<string, number> = {
   "body-text": 4.5,
+  "subdued-text": 3.0,
   "large-text": 3.0,
   "ui-component": 3.0,
   decorative: 1.0,
@@ -996,12 +998,14 @@ export type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivati
  *
  * Per SA98G / APCA guidance, adjusted for design system quality bar:
  *   body-text    → 75
+ *   subdued-text → 45  (intentionally reduced hierarchy: muted/placeholder/read-only text)
  *   large-text   → 60  (stricter than APCA default 45 — intentional quality bar)
  *   ui-component → 30
  *   decorative   → 15
  */
 export const LC_THRESHOLDS: Record<string, number> = {
   "body-text": 75,
+  "subdued-text": 45,
   "large-text": 60,
   "ui-component": 30,
   decorative: 15,

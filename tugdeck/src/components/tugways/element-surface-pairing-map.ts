@@ -12,6 +12,7 @@
  *
  * Role classification follows Table T01 (Lc thresholds normative, WCAG informational):
  *   "body-text"    — Lc 75 / 4.5:1 WCAG AA (14px / 400wt body text)
+ *   "subdued-text" — Lc 45 / 3:1 WCAG AA (intentionally reduced hierarchy: muted/placeholder/read-only)
  *   "large-text"   — Lc 60 / 3:1 WCAG AA (18px+ / 700wt headings or button labels)
  *   "ui-component" — Lc 30 / 3:1 WCAG AA (icons, borders, non-text elements)
  *   "decorative"   — no minimum (structural dividers, decorative accents)
@@ -21,6 +22,7 @@
 
 export type ContrastRole =
   | "body-text"
+  | "subdued-text"
   | "large-text"
   | "ui-component"
   | "decorative";
@@ -94,53 +96,53 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "body-text",
   },
 
-  // Muted text (secondary text, labels)
+  // Muted text (secondary text, labels) — subdued-text: intentionally below body-text Lc 75
   {
     element: "--tug-base-fg-muted",
     surface: "--tug-base-surface-default",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-muted",
     surface: "--tug-base-surface-raised",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-muted",
     surface: "--tug-base-surface-overlay",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-muted",
     surface: "--tug-base-surface-sunken",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-muted",
     surface: "--tug-base-surface-inset",
-    role: "body-text",
+    role: "subdued-text",
   },
 
-  // Subtle text (tertiary, metadata)
+  // Subtle text (tertiary, metadata) — subdued-text: intentionally below body-text Lc 75
   {
     element: "--tug-base-fg-subtle",
     surface: "--tug-base-surface-default",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-subtle",
     surface: "--tug-base-surface-raised",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-subtle",
     surface: "--tug-base-surface-overlay",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-subtle",
     surface: "--tug-base-surface-sunken",
-    role: "body-text",
+    role: "subdued-text",
   },
 
   // Disabled text — decorative (no minimum requirement)
@@ -162,21 +164,21 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "body-text",
   },
 
-  // Placeholder text (form fields)
+  // Placeholder text (form fields) — subdued-text: intentionally below body-text Lc 75
   {
     element: "--tug-base-fg-placeholder",
     surface: "--tug-base-field-bg-rest",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-placeholder",
     surface: "--tug-base-field-bg-hover",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-fg-placeholder",
     surface: "--tug-base-field-bg-focus",
-    role: "body-text",
+    role: "subdued-text",
   },
 
   // Link text
@@ -778,7 +780,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-field-fg-readOnly",
     surface: "--tug-base-field-bg-readOnly",
-    role: "body-text",
+    role: "subdued-text",
   },
   {
     element: "--tug-base-field-label",
@@ -1057,11 +1059,11 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // --- Tab Chrome ---
-  // tab-fg-rest over tab bar background (surface-sunken)
+  // tab-fg-rest over tab bar background (surface-sunken) — subdued-text: intentional visual hierarchy
   {
     element: "--tug-base-tab-fg-rest",
     surface: "--tug-base-surface-sunken",
-    role: "body-text",
+    role: "subdued-text",
   },
   // tab-fg-active over active tab background
   {

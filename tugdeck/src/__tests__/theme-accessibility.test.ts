@@ -170,6 +170,7 @@ describe("pairing-map", () => {
 
   const VALID_ROLES: Set<ContrastRole> = new Set([
     "body-text",
+    "subdued-text",
     "large-text",
     "ui-component",
     "decorative",

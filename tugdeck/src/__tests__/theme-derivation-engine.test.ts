@@ -306,11 +306,9 @@ describe("derivation-engine", () => {
  *      control-selected-fg, control-highlighted-fg,
  *      selection-fg
  *
- * A2. Muted / read-only hierarchy — below Lc 75 by design (engine calibrated for
- *     primary text; secondary tiers intentionally trade off contrast for visual
- *     hierarchy legibility):
- *      fg-muted (Lc ~61, below Lc 75 body-text threshold),
- *      field-fg-readOnly (Lc ~61, read-only fields use reduced contrast)
+ * A2. Muted / read-only hierarchy — reclassified to subdued-text (Lc 45 threshold).
+ *     fg-muted (Lc ~61) and field-fg-readOnly (Lc ~61) now pass under subdued-text
+ *     and are no longer in this exception set.
  *
  * B. Text/icon on accent or vivid colored backgrounds (design constraint —
  *    accent hues are vivid mid-tone):
@@ -341,9 +339,9 @@ describe("derivation-engine", () => {
  * F. Badge tinted fg tokens: semi-transparent bg means fg-over-tinted-bg
  *    has inherently low contrast; real readability is fg over the underlying surface.
  *
- * G. Tab chrome — structural UI chrome below Lc 75 body-text threshold:
- *      tab-fg-rest (Lc ~42 on surface-sunken; tab chrome uses intentionally
- *      lower contrast for visual hierarchy)
+ * G. Tab chrome — reclassified to subdued-text (Lc 45 threshold).
+ *      tab-fg-rest (Lc ~42) passes within the Lc marginal band (>= 40 = 45 - 5)
+ *      under the subdued-text role and is no longer in this exception set.
  *
  * H. Non-text component visibility tokens below Lc 30 by design (Step 3):
  *      toggle-track-off / toggle-track-mixed / toggle-track-off-hover /
@@ -363,9 +361,9 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-control-selected-fg",
   "--tug-base-control-highlighted-fg",
   "--tug-base-selection-fg",
-  // A2 — muted / read-only hierarchy (Lc ~61, below Lc 75 body-text threshold)
-  "--tug-base-fg-muted",
-  "--tug-base-field-fg-readOnly",
+  // A2 — muted / read-only hierarchy reclassified to subdued-text role (Lc 45).
+  // fg-muted (Lc ~61) and field-fg-readOnly (Lc ~61) pass the subdued-text threshold.
+  // fg-subtle (Lc ~27.6) and fg-placeholder remain here as they are still below Lc 45.
   // B — text/icon on vivid accent or semantic bg
   "--tug-base-fg-onAccent",
   "--tug-base-icon-onAccent",
@@ -458,10 +456,9 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-badge-tinted-danger-border",
   "--tug-base-badge-tinted-success-border",
   "--tug-base-badge-tinted-caution-border",
-  // G — Tab chrome (intentionally below Lc 75 body-text threshold)
-  // tab-fg-rest: inactive tab label (Lc ~27 on surface-sunken in dark; structural in light)
+  // G — Tab chrome
+  // tab-fg-rest reclassified to subdued-text; Lc ~42 passes the marginal band (>= Lc 40).
   // tab-fg-hover: hover state (below Lc 75 body-text in both dark and light)
-  "--tug-base-tab-fg-rest",
   "--tug-base-tab-fg-hover",
   // G2 — Field text: field-fg is the text inside form fields; in light mode, the
   // field background (field-bg-rest/hover) is derived close in lightness to field-fg,
