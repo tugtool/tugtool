@@ -2272,108 +2272,103 @@ export interface ComputedTones {
 // ---------------------------------------------------------------------------
 
 /**
- * Pre-compute all derived tone values from a ModePreset and MoodKnobs.
+ * Pre-compute all derived tone values from a DerivationFormulas and MoodKnobs.
  *
  * This is Layer 2 of the three-layer derivation pipeline (Spec S01).
  * Called by deriveTheme() as Layer 2 of the pipeline. The output ComputedTones
  * is referenced by rule expressions in the RULES table (Layer 3).
  *
- * All formulas are verified against Brio dark-mode and Harmony light-mode
- * ground truth by T-TONES-DARK and T-TONES-LIGHT tests.
+ * All formulas are verified against Brio dark-mode ground truth by T-TONES-DARK.
  *
- * Light-mode formula exceptions absorbed by preset fields (Spec S03):
- *   - bgCanvas: uses preset.bgCanvasToneBase/SCCenter/Scale for unified formula
- *   - disabledBgTone: uses preset.disabledBgBase/Scale
+ * Mode-branching is eliminated: computed-tone override fields on formulas use the
+ * `number | null` convention — a number means "use this flat value", null means
+ * "derive from the formula". [D04] Spec S03.
  *
- * @param preset - Mode-specific parameter bundle (DARK_PRESET or LIGHT_PRESET)
- * @param knobs - Normalized mood knob values
+ * @param formulas - Recipe formula constants (DerivationFormulas)
+ * @param knobs    - Normalized mood knob values
  */
-export function computeTones(preset: ModePreset, knobs: MoodKnobs): ComputedTones {
+export function computeTones(formulas: DerivationFormulas, knobs: MoodKnobs): ComputedTones {
   const sc = knobs.surfaceContrast;
 
   // ---------------------------------------------------------------------------
-  // Surface tones — each anchored at preset tone at sc=50, scaled around it.
+  // Surface tones — each anchored at formulas tone at sc=50, scaled around it.
   // ---------------------------------------------------------------------------
 
-  // bg-app: anchored at preset.bgAppTone at sc=50, ±8 units at extremes
-  const bgApp = preset.bgAppTone + ((sc - 50) / 50) * 8;
+  // bg-app: anchored at formulas.bgAppTone at sc=50, ±8 units at extremes
+  const bgApp = formulas.bgAppTone + ((sc - 50) / 50) * 8;
 
-  // bg-canvas: unified formula using preset fields (Spec S03 light-mode exception)
+  // bg-canvas: unified formula using formulas fields (Spec S03)
   //   Dark: bgCanvasToneBase=bgAppTone, bgCanvasToneSCCenter=50, bgCanvasToneScale=8
   //         -> Math.round(bgAppTone + ((sc - 50)/50) * 8) = Math.round(bgApp)
   //   Light: bgCanvasToneBase=35, bgCanvasToneSCCenter=0, bgCanvasToneScale=10
   //          -> Math.round(35 + (sc/100) * 10)
   const bgCanvas = Math.round(
-    preset.bgCanvasToneBase +
-      ((sc - preset.bgCanvasToneSCCenter) /
-        (preset.bgCanvasToneSCCenter === 0 ? 100 : 50)) *
-        preset.bgCanvasToneScale,
+    formulas.bgCanvasToneBase +
+      ((sc - formulas.bgCanvasToneSCCenter) /
+        (formulas.bgCanvasToneSCCenter === 0 ? 100 : 50)) *
+        formulas.bgCanvasToneScale,
   );
 
-  // surface-sunken: anchored at preset.surfaceSunkenTone at sc=50, ±5 units
-  const surfaceSunken = Math.round(preset.surfaceSunkenTone + ((sc - 50) / 50) * 5);
+  // surface-sunken: anchored at formulas.surfaceSunkenTone at sc=50, ±5 units
+  const surfaceSunken = Math.round(formulas.surfaceSunkenTone + ((sc - 50) / 50) * 5);
 
-  // surface-default: anchored at preset.surfaceDefaultTone at sc=50, ±3 units
-  const surfaceDefault = Math.round(preset.surfaceDefaultTone + ((sc - 50) / 50) * 3);
+  // surface-default: anchored at formulas.surfaceDefaultTone at sc=50, ±3 units
+  const surfaceDefault = Math.round(formulas.surfaceDefaultTone + ((sc - 50) / 50) * 3);
 
-  // surface-raised: anchored at preset.surfaceRaisedTone at sc=50, ±5 units
-  const surfaceRaised = Math.round(preset.surfaceRaisedTone + ((sc - 50) / 50) * 5);
+  // surface-raised: anchored at formulas.surfaceRaisedTone at sc=50, ±5 units
+  const surfaceRaised = Math.round(formulas.surfaceRaisedTone + ((sc - 50) / 50) * 5);
 
-  // surface-overlay: anchored at preset.surfaceOverlayTone at sc=50, ±5 units
-  const surfaceOverlay = Math.round(preset.surfaceOverlayTone + ((sc - 50) / 50) * 5);
+  // surface-overlay: anchored at formulas.surfaceOverlayTone at sc=50, ±5 units
+  const surfaceOverlay = Math.round(formulas.surfaceOverlayTone + ((sc - 50) / 50) * 5);
 
-  // surface-inset: anchored at preset.surfaceInsetTone at sc=50, ±7 units
-  const surfaceInset = Math.round(preset.surfaceInsetTone + ((sc - 50) / 50) * 7);
+  // surface-inset: anchored at formulas.surfaceInsetTone at sc=50, ±7 units
+  const surfaceInset = Math.round(formulas.surfaceInsetTone + ((sc - 50) / 50) * 7);
 
   // surface-content: matches inset (code blocks, inline content areas)
   const surfaceContent = surfaceInset;
 
-  // surface-screen: anchored at preset.surfaceScreenTone at sc=50, ±13 units
-  const surfaceScreen = Math.round(preset.surfaceScreenTone + ((sc - 50) / 50) * 13);
+  // surface-screen: anchored at formulas.surfaceScreenTone at sc=50, ±13 units
+  const surfaceScreen = Math.round(formulas.surfaceScreenTone + ((sc - 50) / 50) * 13);
 
   // ---------------------------------------------------------------------------
-  // Divider tones — derived from surface overlay tone
-  // Dark mode: flat Brio ground-truth values (17, 15)
-  // Light mode: derived from surfaceOverlay (same as inline deriveTheme formula)
+  // Divider tones — override fields per Spec S03 [D04]
+  // number = flat value; null = derive from surfaceOverlay formula.
   // ---------------------------------------------------------------------------
-  const dividerDefault = Math.round(
-    !preset.isLight
-      ? 17 // dark mode: flat Brio ground truth
-      : surfaceOverlay - 2, // light mode: derived from overlay
-  );
-  const dividerMuted = Math.round(
-    !preset.isLight
-      ? 15 // dark mode: flat Brio ground truth
-      : surfaceOverlay, // light mode: derived from overlay
-  );
+  const dividerDefault = formulas.dividerDefaultToneOverride ??
+    Math.round(surfaceOverlay - 2);
+  const dividerMuted = formulas.dividerMutedToneOverride ??
+    Math.round(surfaceOverlay);
   const dividerTone = dividerDefault;
 
   // ---------------------------------------------------------------------------
-  // Control/field derived tones
+  // Control/field derived tones — override fields per Spec S03 [D04]
   // ---------------------------------------------------------------------------
 
-  // disabled-bg: dark=flat 22; light=70+(sc/100)*10 (Spec S03 exception)
+  // disabled-bg: uses formulas fields (unchanged from before)
   const disabledBgTone = Math.round(
-    preset.disabledBgBase + (sc / 100) * preset.disabledBgScale,
+    formulas.disabledBgBase + (sc / 100) * formulas.disabledBgScale,
   );
 
-  // disabled-fg: dark=38; light=fgDisabledTone (from preset)
-  const disabledFgTone = !preset.isLight ? 38 : preset.fgDisabledTone;
+  // disabled-fg: flat value from formulas.disabledFgToneValue [D04]
+  const disabledFgTone = formulas.disabledFgToneValue;
 
-  // disabled-border: dark=28; light=dividerTone
-  const disabledBorderTone = !preset.isLight ? 28 : Math.round(dividerTone);
+  // disabled-border: number = flat; null = Math.round(dividerTone) [D04]
+  const disabledBorderTone = formulas.disabledBorderToneOverride ??
+    Math.round(dividerTone);
 
-  // outlined bg tones (for light-mode chromatic outlined bg hover/active)
-  // Dark: same as surface-inset+2 / surface-raised+1 / surface-overlay
-  // Light: flat preset values (51, 99, 48 from Harmony)
-  const outlinedBgRestTone = !preset.isLight ? Math.round(surfaceInset + 2) : 51;
-  const outlinedBgHoverTone = !preset.isLight ? Math.round(surfaceRaised + 1) : 99;
-  const outlinedBgActiveTone = !preset.isLight ? Math.round(surfaceOverlay) : 48;
+  // outlined bg tones — number = flat; null = derived [D04]
+  const outlinedBgRestTone = formulas.outlinedBgRestToneOverride ??
+    Math.round(surfaceInset + 2);
+  const outlinedBgHoverTone = formulas.outlinedBgHoverToneOverride ??
+    Math.round(surfaceRaised + 1);
+  const outlinedBgActiveTone = formulas.outlinedBgActiveToneOverride ??
+    Math.round(surfaceOverlay);
 
-  // toggle track off and disabled tones
-  // Dark: flat 28/22; Light: derived from divider/overlay
-  const toggleTrackOffTone = !preset.isLight ? 28 : Math.round(dividerTone);
-  const toggleDisabledTone = !preset.isLight ? 22 : Math.round(surfaceOverlay);
+  // toggle track off and disabled tones — number = flat; null = derived [D04]
+  const toggleTrackOffTone = formulas.toggleTrackOffToneOverride ??
+    Math.round(dividerTone);
+  const toggleDisabledTone = formulas.toggleDisabledToneOverride ??
+    Math.round(surfaceOverlay);
 
   // Signal intensity: direct mapping from knob (0→0, 50→50, 100→100)
   const signalI = Math.round(knobs.signalIntensity);
@@ -2814,7 +2809,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   // Resolve formula constants — recipe.formulas when provided, else Brio dark
   // default. [D02] Silent fallback: the only production recipe is Brio dark.
-  const formulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
+  const formulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
 
   // -------------------------------------------------------------------------
   // 2. Mood knob normalization (0-100, default 50)
@@ -2832,7 +2827,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 4. Layer 2 — pre-compute derived tone values (Spec S03)
   // -------------------------------------------------------------------------
-  const computedTones = computeTones(preset, knobs);
+  const computedTones = computeTones(formulas, knobs);
   const tokens: Record<string, string> = {};
   const resolved: Record<string, ResolvedColor> = {};
 
