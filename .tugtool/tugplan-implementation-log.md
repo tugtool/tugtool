@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-17T22:24:45Z
+---
+
+## step-2: Defined 18 named formula builders (surface, filledFg, outlinedFg, borderRamp, filledBg, semanticTone, badgeTinted, signalRamp, signalRampAlpha, outlinedBg, ghostBg, formulaField plus pre-applied instances). Added ComputedTones import and type F alias. No behavioral changes — builders are unused pending Step 3.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
 step: step-1
 date: 2025-03-17T22:17:03Z
 ---

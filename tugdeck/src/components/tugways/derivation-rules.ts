@@ -29,7 +29,12 @@ import type {
   DerivationRule,
   Expr,
   DerivationFormulas,
+  ComputedTones,
+  ChromaticRule,
 } from "./theme-derivation-engine";
+
+// Local type alias for concise builder signatures [D01]
+type F = DerivationFormulas;
 
 // ---------------------------------------------------------------------------
 // Helpers for common intensity/tone patterns
@@ -38,6 +43,215 @@ import type {
 /** Literal number expression: always returns the same value. */
 function lit(n: number): () => number {
   return () => n;
+}
+
+// ---------------------------------------------------------------------------
+// Named formula builders — [D04] defined at module scope above rule tables
+// ---------------------------------------------------------------------------
+
+/**
+ * surface — chromatic rule for a surface token.
+ * hueSlot: formulas-mediated slot name (e.g. "bgApp", "surfaceSunken")
+ * iField: keyof F for the intensity formula field
+ * toneKey: keyof ComputedTones for the computed tone
+ */
+function surface(
+  hueSlot: string,
+  iField: keyof F,
+  toneKey: keyof ComputedTones,
+): ChromaticRule {
+  return {
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: (formulas) => formulas[iField] as number,
+    toneExpr: (_f, _k, computed) => computed[toneKey] as number,
+  };
+}
+
+/**
+ * filledFg — filled control fg/icon rule.
+ * Always: txt hue, intensity = Math.max(1, txtI - 1), tone = 100.
+ */
+function filledFg(): ChromaticRule {
+  return {
+    type: "chromatic",
+    hueSlot: "txt",
+    intensityExpr: (formulas) => Math.max(1, formulas.txtI - 1),
+    toneExpr: lit(100),
+  };
+}
+
+/**
+ * outlinedFg — outlined/ghost control fg or icon rule.
+ * Always: txt hue, intensity from iField, tone from toneField.
+ */
+function outlinedFg(iField: keyof F, toneField: keyof F): ChromaticRule {
+  return {
+    type: "chromatic",
+    hueSlot: "txt",
+    intensityExpr: (formulas) => formulas[iField] as number,
+    toneExpr: (formulas) => formulas[toneField] as number,
+  };
+}
+
+/**
+ * borderRamp — higher-order builder for role-colored signal borders.
+ * Returns a function (hueSlot) => ChromaticRule at signalI+offset, t:50.
+ */
+function borderRamp(offset: number): (hueSlot: string) => ChromaticRule {
+  return (hueSlot: string): ChromaticRule => ({
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalI + offset),
+    toneExpr: lit(50),
+  });
+}
+
+/** borderRest — borderRamp(5): signal border at rest state */
+const borderRest = borderRamp(5);
+/** borderHover — borderRamp(15): signal border at hover state */
+const borderHover = borderRamp(15);
+/** borderActive — borderRamp(25): signal border at active state (for outlined) */
+const borderActive = borderRamp(25);
+
+/**
+ * filledBg — higher-order builder for filled-control background rules.
+ * Returns a function (hueSlot) => ChromaticRule at literal intensity, formula tone.
+ */
+function filledBg(
+  intensity: number,
+  toneField: keyof F,
+): (hueSlot: string) => ChromaticRule {
+  return (hueSlot: string): ChromaticRule => ({
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: lit(intensity),
+    toneExpr: (formulas) => formulas[toneField] as number,
+  });
+}
+
+/** filledBgRest — filledBg(50, "filledBgDarkTone") */
+const filledBgRest = filledBg(50, "filledBgDarkTone");
+/** filledBgHover — filledBg(55, "filledBgHoverTone") */
+const filledBgHover = filledBg(55, "filledBgHoverTone");
+/** filledBgActive — filledBg(90, "filledBgActiveTone") */
+const filledBgActive = filledBg(90, "filledBgActiveTone");
+
+/**
+ * semanticTone — semantic signal rule at signalI, t:50.
+ * alpha?: optional fixed alpha (e.g. 15 for -bg tokens).
+ * Returns a function (hueSlot) => ChromaticRule.
+ */
+function semanticTone(alpha?: number): (hueSlot: string) => ChromaticRule {
+  return (hueSlot: string): ChromaticRule => ({
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: (_f, _k, computed) => computed.signalI,
+    toneExpr: lit(50),
+    ...(alpha !== undefined ? { alphaExpr: lit(alpha) } : {}),
+  });
+}
+
+/**
+ * badgeTinted — badge at role hue with formula-field intensity, tone, and optional alpha.
+ * Returns a function (hueSlot) => ChromaticRule.
+ */
+function badgeTinted(
+  iField: keyof F,
+  toneField: keyof F,
+  alphaField?: keyof F,
+): (hueSlot: string) => ChromaticRule {
+  return (hueSlot: string): ChromaticRule => ({
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: (formulas) => formulas[iField] as number,
+    toneExpr: (formulas) => formulas[toneField] as number,
+    ...(alphaField !== undefined
+      ? { alphaExpr: (formulas: F) => formulas[alphaField] as number }
+      : {}),
+  });
+}
+
+/**
+ * signalRamp — signalI+offset at role hue, t:50 (no alpha).
+ * Returns a function (hueSlot) => ChromaticRule.
+ */
+function signalRamp(offset: number): (hueSlot: string) => ChromaticRule {
+  return (hueSlot: string): ChromaticRule => ({
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalI + offset),
+    toneExpr: lit(50),
+  });
+}
+
+/**
+ * signalRampAlpha — signalI+offset at role hue, t:50, fixed alpha.
+ * Returns a function (hueSlot) => ChromaticRule.
+ */
+function signalRampAlpha(
+  offset: number,
+  alpha: number,
+): (hueSlot: string) => ChromaticRule {
+  return (hueSlot: string): ChromaticRule => ({
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalI + offset),
+    toneExpr: lit(50),
+    alphaExpr: lit(alpha),
+  });
+}
+
+/**
+ * outlinedBg — outlined bg-hover/active rule.
+ * hueSlot is the sentinel (e.g. "outlinedBgHover"/"outlinedBgActive").
+ * iField: formula intensity, toneKey: computed tone, alphaField: formula alpha.
+ * Returns a function (hueSlot) => ChromaticRule.
+ */
+function outlinedBg(
+  iField: keyof F,
+  toneKey: keyof ComputedTones,
+  alphaField: keyof F,
+): (hueSlot: string) => ChromaticRule {
+  return (hueSlot: string): ChromaticRule => ({
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: (formulas) => formulas[iField] as number,
+    toneExpr: (_f, _k, computed) => computed[toneKey] as number,
+    alphaExpr: (formulas) => formulas[alphaField] as number,
+  });
+}
+
+/**
+ * ghostBg — ghost background rule with callback alpha.
+ * Always: zero intensity, zero tone, per-call alphaExpr.
+ * Returns a function (hueSlot) => ChromaticRule.
+ */
+function ghostBg(alphaExpr: Expr): (hueSlot: string) => ChromaticRule {
+  return (hueSlot: string): ChromaticRule => ({
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: lit(0),
+    toneExpr: lit(0),
+    alphaExpr,
+  });
+}
+
+/**
+ * formulaField — generic chromatic rule reading hue slot, intensity, and tone from formula fields.
+ * Takes hueSlot directly (not curried).
+ */
+function formulaField(
+  hueSlot: string,
+  iField: keyof F,
+  toneField: keyof F,
+): ChromaticRule {
+  return {
+    type: "chromatic",
+    hueSlot,
+    intensityExpr: (formulas) => formulas[iField] as number,
+    toneExpr: (formulas) => formulas[toneField] as number,
+  };
 }
 
 // ---------------------------------------------------------------------------
