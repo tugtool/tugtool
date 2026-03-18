@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-18T03:00:54Z
+---
+
+## step-4: Refactored generate-tug-tokens.ts: extracted buildTokenCssLines() shared function. Now generates styles/themes/harmony.css (373 tokens) alongside tug-base-generated.css (brio, unchanged). Both files use identical formatting and group ordering.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
 step: step-3
 date: 2025-03-18T02:56:49Z
 ---
