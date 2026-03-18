@@ -143,7 +143,7 @@ body {
   --tug-base-tone-caution-border: --tug-color(yellow, t: 35);
   --tug-base-tone-caution-fg: --tug-color(yellow, t: 35);
   --tug-base-tone-caution-icon: --tug-color(yellow, t: 35);
-  --tug-base-tone-danger: --tug-color(red, t: 35);
+  --tug-base-tone-danger: --tug-color(red, t: 24);
   --tug-base-tone-danger-bg: --tug-color(red, t: 35, a: 15);
   --tug-base-tone-danger-border: --tug-color(red, t: 35);
   --tug-base-tone-danger-fg: --tug-color(red, t: 35);
@@ -411,7 +411,7 @@ body {
 
   /* Toggle */
   --tug-base-checkmark-fg: --tug-color(sapphire-cobalt, i: 4, t: 94);
-  --tug-base-checkmark-fg-mixed: --tug-color(cobalt, i: 6, t: 34);
+  --tug-base-checkmark-fg-mixed: --tug-color(cobalt, i: 6, t: 25);
   --tug-base-radio-dot: --tug-color(sapphire-cobalt, i: 4, t: 94);
   --tug-base-toggle-icon-disabled: --tug-color(indigo-cobalt, i: 8, t: 55);
   --tug-base-toggle-icon-mixed: --tug-color(cobalt, i: 6, t: 25);

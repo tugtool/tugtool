@@ -143,7 +143,7 @@ body {
   --tug-base-tone-caution-border: --tug-color(yellow);
   --tug-base-tone-caution-fg: --tug-color(yellow);
   --tug-base-tone-caution-icon: --tug-color(yellow);
-  --tug-base-tone-danger: --tug-color(red);
+  --tug-base-tone-danger: --tug-color(red, t: 92);
   --tug-base-tone-danger-bg: --tug-color(red, i: 50, t: 50, a: 15);
   --tug-base-tone-danger-border: --tug-color(red);
   --tug-base-tone-danger-fg: --tug-color(red);

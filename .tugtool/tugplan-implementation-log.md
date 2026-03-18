@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-18T19:07:26Z
+---
+
+## step-8: Final validation: generate:tokens 373 tokens, bun test 1878/1878, cargo nextest 884/884, verify-pairings zero gaps, zero unclassified tokens, 23 CSS files with @tug-pairings blocks. All exit criteria met.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-pairing.md
+
+---
+
+---
 step: step-7
 date: 2025-03-18T18:56:01Z
 ---
