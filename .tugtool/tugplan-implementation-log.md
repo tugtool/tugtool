@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-18T21:59:38Z
+---
+
+## step-8: Final validation: audit:tokens lint zero violations, pairings zero unresolved, verify zero gaps (275 entries, 23/23 files), bun test 1878/1878, cargo nextest 884/884, Rules 16/17/D81 confirmed in design-system-concepts.md.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
 step: step-7
 date: 2025-03-18T21:53:36Z
 ---
