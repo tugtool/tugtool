@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-18T00:46:12Z
+---
+
+## step-2: Reordered all 198 fields in DerivationFormulas interface and DARK_FORMULAS constant into 23 semantic decision groups with banner comments. Updated module JSDoc table per D04 (tabBgHueSlot fields moved to hue-slot-dispatch). Token output byte-identical. 1845 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-restructure-derivation-formulas.md
+
+---
+
+---
 step: step-1
 date: 2025-03-18T00:32:11Z
 ---
