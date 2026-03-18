@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-18T01:37:08Z
+---
+
+## step-8: Final verification: token output byte-identical to pre-annotation baseline, 1845 tests pass, tsc clean, all 198 DARK_FORMULAS fields annotated with design rationale across 23 semantic groups.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-7
 date: 2025-03-18T01:35:07Z
 ---
