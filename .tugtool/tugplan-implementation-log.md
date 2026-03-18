@@ -9,6 +9,42 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-18T00:49:11Z
+---
+
+## step-3: Integration checkpoint: token output byte-identical to pre-reorder baseline, 1845 tests pass, tsc clean, 198 fields verified across 23 semantic groups.
+
+**Files changed:**
+- .tugtool/tugplan-restructure-derivation-formulas.md
+
+---
+
+---
+step: step-2
+date: 2025-03-18T00:46:12Z
+---
+
+## step-2: Reordered all 198 fields in DerivationFormulas interface and DARK_FORMULAS constant into 23 semantic decision groups with banner comments. Updated module JSDoc table per D04 (tabBgHueSlot fields moved to hue-slot-dispatch). Token output byte-identical. 1845 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-restructure-derivation-formulas.md
+
+---
+
+---
+step: step-1
+date: 2025-03-18T00:32:11Z
+---
+
+## step-1: Baseline snapshot: 200 @semantic fields confirmed, tsc clean, 1845 tests pass, token output saved to .tugtool/_tmp_tug-base-baseline.css for post-reorder diffing.
+
+**Files changed:**
+- .tugtool/tugplan-restructure-derivation-formulas.md
+
+---
+
+---
 step: step-4
 date: 2025-03-17T23:44:36Z
 ---
