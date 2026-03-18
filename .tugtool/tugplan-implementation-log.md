@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-18T14:41:24Z
+---
+
+## step-1: Added borderSignalTone and semanticSignalTone to DerivationFormulas (default 50 in DARK_FORMULAS, 40/35 in LIGHT_OVERRIDES). Wired into borderRamp() and semanticTone() replacing hardcoded lit(50). Brio output unchanged, 1846 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
 step: step-6
 date: 2025-03-18T03:11:43Z
 ---
