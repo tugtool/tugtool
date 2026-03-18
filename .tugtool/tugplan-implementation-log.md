@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-18T03:11:43Z
+---
+
+## step-6: Integration checkpoint: all verification passed — tsc clean, 1846 tests pass, both brio and harmony produce 373 tokens, harmony preset in EXAMPLE_RECIPES, set-theme accepts harmony, canvasColorHex('harmony') returns near-white, saved-themes filtering works. The Harmony light theme is fully integrated.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
+step: step-5
+date: 2025-03-18T03:09:47Z
+---
+
+## step-5: Widened ThemeName to 'brio' | 'harmony'. Added registerThemeCSS(). Updated setTheme() to inject harmony CSS and clear dynamic state. Updated revertToBuiltIn() to re-inject active built-in's CSS. Added CANVAS_COLORS.harmony. Pre-fetch harmony.css in main.tsx. Widened action-dispatch validation. Filtered built-in names from saved-themes list. 1846 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
+step: step-4
+date: 2025-03-18T03:00:54Z
+---
+
+## step-4: Refactored generate-tug-tokens.ts: extracted buildTokenCssLines() shared function. Now generates styles/themes/harmony.css (373 tokens) alongside tug-base-generated.css (brio, unchanged). Both files use identical formatting and group ordering.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
+step: step-3
+date: 2025-03-18T02:56:49Z
+---
+
+## step-3: Calibrated LIGHT_OVERRIDES: added outlined/ghost control fg tone overrides (derivation rules use primary fields, not *ToneLight variants). Adjusted filled control, badge, icon, placeholder values. Gallery KNOWN_PAIR_EXCEPTIONS reduced from 18 to 3. Added T4.3 harmony contrast validation test. 1846 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
+step: step-2
+date: 2025-03-18T02:42:19Z
+---
+
+## step-2: Added EXAMPLE_RECIPES.harmony — a light theme using the same cobalt/violet/indigo hue palette as brio with LIGHT_FORMULAS. Both brio and harmony produce 373 tokens. Updated EXAMPLE_RECIPES JSDoc.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
+step: step-1
+date: 2025-03-18T02:39:34Z
+---
+
+## step-1: Defined LIGHT_OVERRIDES (104 fields across 20 semantic groups) and LIGHT_FORMULAS = { ...BASE_FORMULAS, ...LIGHT_OVERRIDES }. All fields annotated with design rationale. deriveTheme produces 373 tokens. Initial best-estimate values — Step 3 will calibrate via contrast validation.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
 step: step-8
 date: 2025-03-18T01:37:08Z
 ---

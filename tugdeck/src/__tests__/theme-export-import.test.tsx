@@ -595,13 +595,17 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
     }
   });
 
-  it("loadSavedThemes returns theme names from /__themes/list response", async () => {
+  it("loadSavedThemes filters built-in theme names and returns only user-saved themes", async () => {
+    // loadSavedThemes filters out built-in theme names ("brio", "harmony") so that
+    // generate-tug-tokens.ts output files (harmony.css) do not appear as user-saved
+    // themes in the Theme Generator dropdown. [D08]
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
-      new Response(JSON.stringify({ themes: ["brio", "my-theme"] }), { status: 200 });
+      new Response(JSON.stringify({ themes: ["brio", "harmony", "my-theme"] }), { status: 200 });
     try {
       const themes = await loadSavedThemes();
-      expect(themes).toContain("brio");
+      expect(themes).not.toContain("brio");
+      expect(themes).not.toContain("harmony");
       expect(themes).toContain("my-theme");
     } finally {
       globalThis.fetch = originalFetch;
