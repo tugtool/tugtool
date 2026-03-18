@@ -43,6 +43,7 @@
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
+/* @tug-renders-on: --tug-base-field-bg-rest */
 .tug-input::placeholder {
   color: var(--tug-base-field-fg-placeholder);
 }
@@ -112,14 +113,17 @@
  * When focused, the focus border takes precedence (user is actively editing).
  */
 
+/* @tug-renders-on: --tug-base-field-bg-rest */
 .tug-input-invalid:not(:focus) {
   border-color: var(--tug-base-field-border-danger);
 }
 
+/* @tug-renders-on: --tug-base-field-bg-rest */
 .tug-input-valid:not(:focus) {
   border-color: var(--tug-base-field-border-success);
 }
 
+/* @tug-renders-on: --tug-base-field-bg-rest */
 .tug-input-warning:not(:focus) {
   border-color: var(--tug-base-field-tone-caution);
 }

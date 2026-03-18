@@ -142,6 +142,7 @@ body {
   color: var(--tug-base-control-outlined-action-fg-active);
   border-color: var(--tug-base-control-outlined-action-border-active);
 }
+/* @tug-renders-on: --tug-base-control-outlined-action-bg-active */
 .tug-button-outlined-action[data-state="open"] svg {
   color: var(--tug-base-control-outlined-action-icon-active);
 }
@@ -152,6 +153,7 @@ body {
   color: var(--tug-base-control-outlined-option-fg-active);
   border-color: var(--tug-base-control-outlined-option-border-active);
 }
+/* @tug-renders-on: --tug-base-control-outlined-option-bg-active */
 .tug-button-outlined-option[data-state="open"] svg {
   color: var(--tug-base-control-outlined-option-icon-active);
 }
@@ -162,6 +164,7 @@ body {
   color: var(--tug-base-control-filled-accent-fg-active);
   border-color: var(--tug-base-control-filled-accent-border-active);
 }
+/* @tug-renders-on: --tug-base-control-filled-accent-bg-active */
 .tug-button-filled-accent[data-state="open"] svg {
   color: var(--tug-base-control-filled-accent-icon-active);
 }
@@ -172,6 +175,7 @@ body {
   color: var(--tug-base-control-ghost-action-fg-active);
   border-color: var(--tug-base-control-ghost-action-border-active);
 }
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-button-ghost-action[data-state="open"] svg {
   color: var(--tug-base-control-ghost-action-icon-active);
 }
@@ -182,6 +186,7 @@ body {
   color: var(--tug-base-control-ghost-option-fg-active);
   border-color: var(--tug-base-control-ghost-option-border-active);
 }
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-button-ghost-option[data-state="open"] svg {
   color: var(--tug-base-control-ghost-option-icon-active);
 }
@@ -192,6 +197,7 @@ body {
   color: var(--tug-base-control-filled-danger-fg-active);
   border-color: var(--tug-base-control-filled-danger-border-active);
 }
+/* @tug-renders-on: --tug-base-control-filled-danger-bg-active */
 .tug-button-filled-danger[data-state="open"] svg {
   color: var(--tug-base-control-filled-danger-icon-active);
 }
@@ -220,6 +226,7 @@ body {
    Dropdown Items
    ============================================================================ */
 
+/* @tug-renders-on: --tug-base-surface-overlay */
 .tug-dropdown-item {
   color: var(--tug-dropdown-fg);
   border-radius: 0.375rem; /* 6px — 0.75 of button/panel radius */

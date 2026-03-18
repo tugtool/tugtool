@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-18T20:47:54Z
+---
+
+## step-2: Added 145 @tug-renders-on annotations across 16 of 23 component CSS files. Each annotation declares the --tug-base-* rendering surface for rules that set color/fill/border without same-rule background-color. One multi-surface annotation for .tugcard-title (tab-bg-inactive, tab-bg-active).
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
 step: step-1
 date: 2025-03-18T20:26:16Z
 ---

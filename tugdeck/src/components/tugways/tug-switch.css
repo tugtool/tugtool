@@ -156,6 +156,7 @@
   cursor: not-allowed;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-switch-label {
   font-family: inherit;
   font-size: 0.8125rem;

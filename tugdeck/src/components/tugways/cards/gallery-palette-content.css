@@ -98,10 +98,12 @@
   box-sizing: border-box;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-achromatic-swatch:hover {
   border-color: var(--tug-base-border-default);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-achromatic-label {
   position: absolute;
   top: 100%;
@@ -130,12 +132,14 @@
   overflow: visible;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-curve-axis-label {
   font-size: 9px;
   font-family: var(--tug-base-font-family-mono);
   fill: var(--tug-base-fg-muted);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-curve-hue-label {
   font-size: 9px;
   font-family: var(--tug-base-font-family-mono);
@@ -143,6 +147,7 @@
   user-select: none;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-curve-hue-label--selected {
   fill: var(--tug-base-accent-default);
   font-weight: 600;
@@ -170,6 +175,7 @@
   flex-shrink: 0;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-vvgrid-header-cell {
   width: 28px;
   flex-shrink: 0;
@@ -180,6 +186,7 @@
   user-select: none;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-vvgrid-row-label {
   width: 28px;
   flex-shrink: 0;
@@ -276,6 +283,7 @@
 }
 
 /* Result swatch */
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-picker-swatch {
   width: 100%;
   height: 40px;
@@ -284,6 +292,7 @@
 }
 
 /* Vib/val readout */
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-picker-readout {
   display: flex;
   gap: 12px;

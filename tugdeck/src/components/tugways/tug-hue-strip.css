@@ -55,6 +55,7 @@
   box-sizing: border-box;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-hue-strip__swatch:hover {
   border-color: var(--tug-base-border-default);
 }
@@ -63,6 +64,7 @@
    Rotated label
    ========================================================================= */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-hue-strip__label {
   position: absolute;
   top: 100%;
@@ -77,6 +79,7 @@
   margin-top: 4px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-hue-strip__item--selected .tug-hue-strip__label {
   color: var(--tug-base-accent-default);
   font-weight: 600;

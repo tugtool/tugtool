@@ -94,6 +94,7 @@ body {
    Tab Buttons
    ============================================================================ */
 
+/* @tug-renders-on: --tug-base-tab-bg-inactive */
 .tug-tab {
   display: inline-flex;
   align-items: center;
@@ -233,6 +234,7 @@ body {
  * Compound selector (specificity 0,2,0) overrides TugButton defaults (0,1,0).
  * border-radius uses !important because TugButton applies it via inline style. [S06]
  */
+/* @tug-renders-on: --tug-base-tab-bg-inactive */
 .tug-tab-bar .tug-tab-add {
   width: var(--tug-base-chrome-height);
   height: 100%;
@@ -266,6 +268,7 @@ body {
  * border-radius uses !important because TugButton applies it via inline style. [S06]
  * Width matches OVERFLOW_BUTTON_WIDTH (40px) for measurement bootstrap.
  */
+/* @tug-renders-on: --tug-base-tab-bg-inactive */
 .tug-tab-bar .tug-tab-overflow-btn {
   height: 100%;
   padding: 0 var(--tug-base-space-sm);

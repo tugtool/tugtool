@@ -25,6 +25,7 @@
    Base Label
    ========================================================================= */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-label {
   display: inline-flex;
   align-items: flex-start;
@@ -114,6 +115,7 @@
    Required Indicator
    ========================================================================= */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-label-required {
   color: var(--tug-base-field-fg-required);
   margin-left: 0.125rem;

@@ -43,6 +43,7 @@
   gap: 16px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-section-title {
   font-size: 11px;
   font-weight: 600;
@@ -73,6 +74,7 @@
   gap: 6px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-control-label {
   font-size: 11px;
   color: var(--tug-base-fg-muted);
@@ -92,6 +94,7 @@
   outline: none;
 }
 
+/* @tug-renders-on: --tug-base-surface-control */
 .cg-control-select:focus {
   border-color: var(--tug-base-accent-cool-default);
 }
@@ -120,6 +123,7 @@
   gap: 8px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-subtype-label {
   font-size: 11px;
   font-weight: 500;
@@ -135,6 +139,7 @@
   flex-wrap: wrap;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-variant-label {
   font-size: 10px;
   color: var(--tug-base-fg-muted);
@@ -228,6 +233,7 @@
 }
 
 /* Shared status line for both demos */
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-demo-status {
   font-size: 11px;
   color: var(--tug-base-fg-muted);
@@ -288,6 +294,7 @@
 }
 
 /* Hue swatch: draggable strip showing a full-spectrum gradient. */
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-hue-swatch {
   width: 200px;
   height: 28px;
@@ -335,6 +342,7 @@
   border-top: 1px solid var(--tug-base-border-default);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-cascade-prop {
   color: var(--tug-base-fg-muted);
   padding: 4px 10px 4px 0;
@@ -342,18 +350,21 @@
   user-select: none;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-cascade-source {
   color: var(--tug-base-accent-default);
   padding: 4px 10px;
   width: 80px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-cascade-value {
   color: var(--tug-base-fg-default);
   padding: 4px 0;
 }
 
 /* Small description text used in demo sections. */
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-description {
   font-size: 11px;
   color: var(--tug-base-fg-muted);
@@ -393,6 +404,7 @@
   accent-color: var(--tug-base-accent-default);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-st-value {
   flex: 0 0 36px;
   font-size: 11px;
@@ -401,6 +413,7 @@
   text-align: right;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-st-note {
   font-size: 10px;
   color: var(--tug-base-fg-muted);
@@ -610,6 +623,7 @@
   gap: 12px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-anim-physics-label {
   font-size: 10px;
   color: var(--tug-base-fg-muted);
@@ -676,6 +690,7 @@
   margin-left: 8px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-anim-token-legend {
   display: flex;
   flex-wrap: wrap;
@@ -691,10 +706,12 @@
   align-items: center;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-anim-token-entry code {
   color: var(--tug-base-fg-default);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-anim-token-entry span {
   color: var(--tug-base-accent-cool-default);
   font-weight: 600;
@@ -746,6 +763,7 @@
 
 /* --- Shared: percentage slider control row --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-anim-pct-row {
   display: flex;
   align-items: center;
@@ -761,6 +779,7 @@
   accent-color: var(--tug-base-accent-default);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-anim-pct-value {
   font-family: var(--tug-base-font-family-mono);
   font-size: 10px;

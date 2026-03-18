@@ -291,6 +291,7 @@
   min-width: 12rem;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-control-group-title {
   font-size: 0.625rem;
   font-weight: 600;
@@ -300,6 +301,7 @@
   margin-bottom: 0.125rem;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-reset,
 .badge-mockup-reset-all {
   background: none;
@@ -312,11 +314,13 @@
   letter-spacing: 0.02em;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-reset:hover,
 .badge-mockup-reset-all:hover {
   color: var(--tug-base-fg-default);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-reset-all {
   font-size: 0.625rem;
   margin-left: 0.5rem;
@@ -329,6 +333,7 @@
   gap: 0.5rem;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-slider-label {
   font-size: 0.625rem;
   color: var(--tug-base-fg-subtle);
@@ -343,6 +348,7 @@
   cursor: pointer;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-slider-value {
   font-size: 0.625rem;
   color: var(--tug-base-fg-muted);
@@ -367,6 +373,7 @@
   gap: 0.5rem;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-group-title {
   font-size: 0.6875rem;
   font-weight: 600;
@@ -382,6 +389,7 @@
   flex-wrap: wrap;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-row-label {
   font-size: 0.6875rem;
   color: var(--tug-base-fg-subtle);
@@ -401,6 +409,7 @@
   gap: 0.75rem;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .badge-mockup-vs-header {
   font-size: 0.625rem;
   font-weight: 600;

@@ -161,6 +161,7 @@ body {
    Title bar title
    ========================================================================= */
 
+/* @tug-renders-on: --tug-base-tab-bg-inactive, --tug-base-tab-bg-active */
 .tugcard-title {
   flex: 1;
   overflow: hidden;
@@ -192,10 +193,12 @@ body {
   height: 100%;
 }
 
+/* @tug-renders-on: --tug-base-tab-bg-active */
 .card-frame[data-focused="true"] .tugcard-icon {
   color: var(--tug-card-title-bar-icon-active);
 }
 
+/* @tug-renders-on: --tug-base-tab-bg-inactive */
 .card-frame[data-focused="false"] .tugcard-icon {
   color: var(--tug-card-title-bar-icon-inactive);
 }
@@ -300,6 +303,7 @@ body {
    Loading placeholder (Phase 5 -- feeds not yet wired)
    ========================================================================= */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tugcard-loading {
   display: flex;
   align-items: center;

@@ -191,6 +191,7 @@
 
 /* --- outlined-accent (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-accent {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -199,6 +200,7 @@
 
 /* --- outlined-danger (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-danger {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -207,6 +209,7 @@
 
 /* --- outlined-data (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-data {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -215,6 +218,7 @@
 
 /* --- ghost-accent (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-accent {
   background-color: transparent;
   color: var(--tug-base-tone-accent-fg);
@@ -223,6 +227,7 @@
 
 /* --- ghost-agent (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-agent {
   background-color: transparent;
   color: var(--tug-base-tone-agent-fg);
@@ -231,6 +236,7 @@
 
 /* --- ghost-data (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-data {
   background-color: transparent;
   color: var(--tug-base-tone-data-fg);
@@ -260,6 +266,7 @@
 
 /* --- outlined-success --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-success {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -268,6 +275,7 @@
 
 /* --- ghost-success --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-success {
   background-color: transparent;
   color: var(--tug-base-tone-success-fg);
@@ -284,6 +292,7 @@
 
 /* --- outlined-caution --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-caution {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -292,6 +301,7 @@
 
 /* --- ghost-caution --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-caution {
   background-color: transparent;
   color: var(--tug-base-tone-caution-fg);
