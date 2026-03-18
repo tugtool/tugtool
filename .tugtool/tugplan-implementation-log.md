@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-18T03:11:43Z
+---
+
+## step-6: Integration checkpoint: all verification passed — tsc clean, 1846 tests pass, both brio and harmony produce 373 tokens, harmony preset in EXAMPLE_RECIPES, set-theme accepts harmony, canvasColorHex('harmony') returns near-white, saved-themes filtering works. The Harmony light theme is fully integrated.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
 step: step-5
 date: 2025-03-18T03:09:47Z
 ---
