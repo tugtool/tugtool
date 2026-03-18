@@ -34,6 +34,9 @@ import {
   deriveTheme,
   EXAMPLE_RECIPES,
   generateResolvedCssExport,
+  DARK_FORMULAS,
+  LIGHT_FORMULAS,
+  type DerivationFormulas,
   type ThemeRecipe,
   type ThemeOutput,
   type ContrastResult,
@@ -1340,6 +1343,23 @@ export function GalleryThemeGeneratorContent() {
   );
   const [warmth, setWarmth] = useState<number>(DEFAULT_RECIPE.warmth ?? 50);
 
+  // Formula state — tracks the active DerivationFormulas for the current recipe.
+  // Defaults to DEFAULT_RECIPE.formulas ?? DARK_FORMULAS (the Brio dark default).
+  // A synchronous ref mirrors the state so runDerive() can read the latest value
+  // without threading formulas through its 18-parameter signature. [D01]
+  const [formulas, setFormulas] = useState<DerivationFormulas>(DEFAULT_RECIPE.formulas ?? DARK_FORMULAS);
+  const formulasRef = useRef<DerivationFormulas>(DEFAULT_RECIPE.formulas ?? DARK_FORMULAS);
+
+  /**
+   * Update both the formulas state and the ref synchronously.
+   * All four mutation sites (loadPreset, handleRecipeImported, Dark onClick,
+   * Light onClick) call this wrapper instead of setFormulas directly. [D01]
+   */
+  function setFormulasAndRef(f: DerivationFormulas): void {
+    setFormulas(f);
+    formulasRef.current = f;
+  }
+
   // Structural hue state — new fields for canvas, cardFrame, borderTint, link. [D04]
   const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.canvas ?? DEFAULT_RECIPE.cardBg.hue);
   const [cardFrameHue, setCardFrameHue] = useState<string>(DEFAULT_RECIPE.cardFrame ?? "indigo");
@@ -1481,6 +1501,7 @@ export function GalleryThemeGeneratorContent() {
         success,
         caution,
         destructive: danger,
+        formulas: formulasRef.current,
       };
       setThemeOutput(deriveTheme(recipe));
     },
@@ -1499,7 +1520,7 @@ export function GalleryThemeGeneratorContent() {
     }
     runDerive(recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, cardBgHue, textHue, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue]);
+  }, [mode, cardBgHue, textHue, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
 
   /**
    * Debounced re-derive for slider changes (150ms delay).
@@ -1566,8 +1587,12 @@ export function GalleryThemeGeneratorContent() {
       setSuccessHue(r.success ?? "green");
       setCautionHue(r.caution ?? "yellow");
       setDangerHue(r.destructive ?? "red");
+      setFormulasAndRef(r.formulas ?? DARK_FORMULAS);
       setThemeOutput(deriveTheme(r));
     },
+    // setFormulasAndRef is a stable plain function defined in component scope —
+    // no dependency needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -1602,8 +1627,9 @@ export function GalleryThemeGeneratorContent() {
       success: successHue,
       caution: cautionHue,
       destructive: dangerHue,
+      formulas,
     }),
-    [recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
+    [recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
   );
 
   /**
@@ -1631,8 +1657,12 @@ export function GalleryThemeGeneratorContent() {
       setSuccessHue(r.success ?? "green");
       setCautionHue(r.caution ?? "yellow");
       setDangerHue(r.destructive ?? "red");
+      setFormulasAndRef(r.formulas ?? DARK_FORMULAS);
       setThemeOutput(deriveTheme(r));
     },
+    // setFormulasAndRef is a stable plain function defined in component scope —
+    // no dependency needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -1720,7 +1750,7 @@ export function GalleryThemeGeneratorContent() {
             emphasis={mode === "dark" ? "filled" : "outlined"}
             role="action"
             size="sm"
-            onClick={() => setMode("dark")}
+            onClick={() => { setMode("dark"); setFormulasAndRef(DARK_FORMULAS); }}
             data-testid="gtg-mode-dark"
           >
             Dark
@@ -1729,7 +1759,7 @@ export function GalleryThemeGeneratorContent() {
             emphasis={mode === "light" ? "filled" : "outlined"}
             role="action"
             size="sm"
-            onClick={() => setMode("light")}
+            onClick={() => { setMode("light"); setFormulasAndRef(LIGHT_FORMULAS); }}
             data-testid="gtg-mode-light"
           >
             Light

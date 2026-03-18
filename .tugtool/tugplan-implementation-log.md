@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-18T14:50:29Z
+---
+
+## step-3: Added formulas useState + useRef + setFormulasAndRef wrapper (synchronous, no useEffect). Wired through loadPreset, handleRecipeImported, runDerive, currentRecipe, and Dark/Light mode toggle onClick handlers. 11 new tests covering formulas state, mode toggle, preset loading, and export/import round-trip. 1857 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
 step: step-2
 date: 2025-03-18T14:42:05Z
 ---

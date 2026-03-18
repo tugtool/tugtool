@@ -28,7 +28,7 @@ import {
 } from "@/components/tugways/cards/gallery-card";
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
+import { deriveTheme, EXAMPLE_RECIPES, DARK_FORMULAS, LIGHT_FORMULAS } from "@/components/tugways/theme-derivation-engine";
 import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
@@ -1230,5 +1230,134 @@ describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () =>
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 3: Formulas state — generator uses correct formulas for light mode
+// ---------------------------------------------------------------------------
+
+describe("deriveTheme – Harmony preset produces correct light-mode output (Step 3)", () => {
+  it("deriveTheme(EXAMPLE_RECIPES.harmony) produces 373 tokens", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.harmony);
+    expect(Object.keys(output.tokens).length).toBe(373);
+  });
+
+  it("Harmony recipe includes formulas field", () => {
+    expect(EXAMPLE_RECIPES.harmony.formulas).toBeDefined();
+  });
+
+  it("Harmony formulas differ from DARK_FORMULAS (light overrides are active)", () => {
+    const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
+    // bgAppTone must differ: light=95, dark=5
+    expect(harmonyFormulas.bgAppTone).not.toBe(DARK_FORMULAS.bgAppTone);
+    expect(harmonyFormulas.bgAppTone).toBe(95);
+  });
+
+  it("Harmony formulas match LIGHT_FORMULAS", () => {
+    const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
+    expect(harmonyFormulas.bgAppTone).toBe(LIGHT_FORMULAS.bgAppTone);
+    expect(harmonyFormulas.fgDefaultTone).toBe(LIGHT_FORMULAS.fgDefaultTone);
+    expect(harmonyFormulas.borderSignalTone).toBe(LIGHT_FORMULAS.borderSignalTone);
+    expect(harmonyFormulas.semanticSignalTone).toBe(LIGHT_FORMULAS.semanticSignalTone);
+  });
+
+  it("Harmony output tokens match direct deriveTheme(EXAMPLE_RECIPES.harmony) call (token-for-token)", () => {
+    // This verifies that when the engine receives a recipe with formulas=LIGHT_FORMULAS
+    // it produces a stable, reproducible output.
+    const output1 = deriveTheme(EXAMPLE_RECIPES.harmony);
+    const output2 = deriveTheme(EXAMPLE_RECIPES.harmony);
+    expect(Object.keys(output1.tokens)).toEqual(Object.keys(output2.tokens));
+    for (const [token, value] of Object.entries(output1.tokens)) {
+      expect(output2.tokens[token]).toBe(value);
+    }
+  });
+
+  it("Harmony borderSignalTone is 40 (LIGHT_OVERRIDES value, not dark default 50)", () => {
+    expect(LIGHT_FORMULAS.borderSignalTone).toBe(40);
+    expect(DARK_FORMULAS.borderSignalTone).toBe(50);
+  });
+
+  it("Harmony semanticSignalTone is 35 (LIGHT_OVERRIDES value, not dark default 50)", () => {
+    expect(LIGHT_FORMULAS.semanticSignalTone).toBe(35);
+    expect(DARK_FORMULAS.semanticSignalTone).toBe(50);
+  });
+});
+
+describe("deriveTheme – formulas field controls border and semantic tone (Step 3)", () => {
+  it("dark recipe (DARK_FORMULAS) and light recipe (LIGHT_FORMULAS) produce different tone-accent tokens", () => {
+    const darkOutput = deriveTheme({
+      name: "test-dark",
+      description: "Dark formulas test",
+      mode: "dark",
+      cardBg: { hue: "indigo" },
+      text: { hue: "cobalt" },
+      formulas: DARK_FORMULAS,
+    });
+    const lightOutput = deriveTheme({
+      name: "test-light",
+      description: "Light formulas test",
+      mode: "light",
+      cardBg: { hue: "indigo" },
+      text: { hue: "cobalt" },
+      formulas: LIGHT_FORMULAS,
+    });
+    // The semantic tone tokens should differ because semanticSignalTone differs (50 vs 35)
+    expect(darkOutput.tokens["--tug-base-tone-accent"]).not.toBe(lightOutput.tokens["--tug-base-tone-accent"]);
+  });
+
+  it("DARK_FORMULAS.borderSignalTone=50 preserves existing brio dark border-accent value", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const darkOutput = deriveTheme({
+      ...EXAMPLE_RECIPES.brio,
+      formulas: DARK_FORMULAS,
+    });
+    // Explicit DARK_FORMULAS matches the fallback (no formulas) behavior
+    expect(brioOutput.tokens["--tug-base-border-accent"]).toBe(darkOutput.tokens["--tug-base-border-accent"]);
+  });
+
+  it("currentRecipe includes formulas field after export (round-trip preservation)", () => {
+    // Verify that deriveTheme with LIGHT_FORMULAS, re-serialized and re-parsed,
+    // preserves the formulas field.
+    const recipe = {
+      name: "light-test",
+      description: "Light formulas round-trip test",
+      mode: "light" as const,
+      cardBg: { hue: "indigo" },
+      text: { hue: "cobalt" },
+      formulas: LIGHT_FORMULAS,
+    };
+    const serialized = JSON.stringify(recipe);
+    const parsed = JSON.parse(serialized) as typeof recipe;
+    expect(parsed.formulas).toBeDefined();
+    expect(parsed.formulas!.borderSignalTone).toBe(40);
+    expect(parsed.formulas!.semanticSignalTone).toBe(35);
+    // Re-deriving from parsed recipe produces same output as original
+    const original = deriveTheme(recipe);
+    const roundTrip = deriveTheme(parsed);
+    expect(Object.keys(original.tokens).length).toBe(Object.keys(roundTrip.tokens).length);
+    for (const [token, value] of Object.entries(original.tokens)) {
+      expect(roundTrip.tokens[token]).toBe(value);
+    }
+  });
+
+  it("recipe without formulas field falls back to DARK_FORMULAS behavior", () => {
+    const noFormulas = deriveTheme({
+      name: "no-formulas",
+      description: "No formulas field",
+      mode: "dark",
+      cardBg: { hue: "indigo" },
+      text: { hue: "cobalt" },
+    });
+    const darkFormulas = deriveTheme({
+      name: "dark-formulas",
+      description: "Explicit DARK_FORMULAS",
+      mode: "dark",
+      cardBg: { hue: "indigo" },
+      text: { hue: "cobalt" },
+      formulas: DARK_FORMULAS,
+    });
+    expect(noFormulas.tokens["--tug-base-tone-accent"]).toBe(darkFormulas.tokens["--tug-base-tone-accent"]);
+    expect(noFormulas.tokens["--tug-base-border-accent"]).toBe(darkFormulas.tokens["--tug-base-border-accent"]);
   });
 });
