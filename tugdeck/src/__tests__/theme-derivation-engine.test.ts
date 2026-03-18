@@ -24,6 +24,8 @@ import {
   deriveTheme,
   EXAMPLE_RECIPES,
   DARK_FORMULAS,
+  LIGHT_FORMULAS,
+  LIGHT_OVERRIDES,
   BASE_FORMULAS,
   DARK_OVERRIDES,
   generateResolvedCssExport,
@@ -2740,5 +2742,131 @@ describe("derivation-engine step-4 contrast floor", () => {
       }
     }
     expect(reconciliationFailures).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 4: Light-mode verification — cardFrameActiveTone, formula field control,
+// contrast baseline comparison (Bug 2 fix and formula tuning confirmation)
+// ---------------------------------------------------------------------------
+
+describe("Step 4 verification — harmony light-mode cardFrameActiveTone and formula fields", () => {
+  // Task 1: Bug 2 fix — cardFrameActiveTone=88 is used in harmony
+  it("LIGHT_OVERRIDES.cardFrameActiveTone is 88 (Bug 2 fix)", () => {
+    expect(LIGHT_OVERRIDES.cardFrameActiveTone).toBe(88);
+  });
+
+  it("EXAMPLE_RECIPES.harmony formulas.cardFrameActiveTone is 88 (LIGHT_OVERRIDES applied)", () => {
+    const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
+    expect(harmonyFormulas.cardFrameActiveTone).toBe(88);
+  });
+
+  it("harmony tab-bg-active resolves to L near 88 (cardFrameActiveTone=88 applied to derivation)", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.harmony);
+    const tabBgActive = output.resolved["--tug-base-tab-bg-active"];
+    expect(tabBgActive).toBeDefined();
+    // tone 88 => approximately L=0.88 in OKLCH; allow ±0.06 for hue/chroma contribution
+    // and canonical L offset
+    const approxTone = tabBgActive!.L * 100;
+    expect(approxTone).toBeGreaterThan(82);
+    expect(approxTone).toBeLessThan(94);
+  });
+
+  // Task 3: borderSignalTone=40 produces darker control borders in harmony vs brio
+  it("LIGHT_FORMULAS.borderSignalTone is 40 (below dark default of 50)", () => {
+    expect(LIGHT_FORMULAS.borderSignalTone).toBe(40);
+    expect(DARK_FORMULAS.borderSignalTone).toBe(50);
+  });
+
+  it("LIGHT_FORMULAS.semanticSignalTone is 35 (below dark default of 50)", () => {
+    expect(LIGHT_FORMULAS.semanticSignalTone).toBe(35);
+    expect(DARK_FORMULAS.semanticSignalTone).toBe(50);
+  });
+
+  it("borderSignalTone=40 produces darker control borders in harmony than borderSignalTone=50 (anti-neon-glow)", () => {
+    // borderRamp() uses borderSignalTone — control outlined borders are the primary consumers
+    const with40 = deriveTheme({ ...EXAMPLE_RECIPES.harmony, formulas: { ...LIGHT_FORMULAS, borderSignalTone: 40 } });
+    const with50 = deriveTheme({ ...EXAMPLE_RECIPES.harmony, formulas: { ...LIGHT_FORMULAS, borderSignalTone: 50 } });
+    const border40 = with40.resolved["--tug-base-control-outlined-action-border-rest"];
+    const border50 = with50.resolved["--tug-base-control-outlined-action-border-rest"];
+    expect(border40).toBeDefined();
+    expect(border50).toBeDefined();
+    // borderSignalTone=40 must produce a darker (lower L) token than tone=50
+    expect(border40!.L).toBeLessThan(border50!.L);
+  });
+
+  it("semanticSignalTone=35 produces darker tone-accent in harmony than semanticSignalTone=50 (anti-neon-glow)", () => {
+    // semanticTone() uses semanticSignalTone — tone-* family tokens are the primary consumers
+    const with35 = deriveTheme({ ...EXAMPLE_RECIPES.harmony, formulas: { ...LIGHT_FORMULAS, semanticSignalTone: 35 } });
+    const with50 = deriveTheme({ ...EXAMPLE_RECIPES.harmony, formulas: { ...LIGHT_FORMULAS, semanticSignalTone: 50 } });
+    const tone35 = with35.resolved["--tug-base-tone-accent"];
+    const tone50 = with50.resolved["--tug-base-tone-accent"];
+    expect(tone35).toBeDefined();
+    expect(tone50).toBeDefined();
+    // semanticSignalTone=35 must produce a darker (lower L) semantic token than tone=50
+    expect(tone35!.L).toBeLessThan(tone50!.L);
+  });
+
+  it("harmony semantic tone tokens are all darker than brio (semanticSignalTone 35 < 50)", () => {
+    const harmonyOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const semanticTokens = [
+      "--tug-base-tone-accent",
+      "--tug-base-tone-active",
+      "--tug-base-tone-success",
+      "--tug-base-tone-caution",
+      "--tug-base-tone-danger",
+    ];
+    for (const token of semanticTokens) {
+      const harmonyL = harmonyOutput.resolved[token]?.L;
+      const brioL = brioOutput.resolved[token]?.L;
+      expect(harmonyL).toBeDefined();
+      expect(brioL).toBeDefined();
+      // harmony uses semanticSignalTone=35 vs brio dark's 50: harmony tokens must be darker
+      expect(harmonyL!).toBeLessThan(brioL!);
+    }
+  });
+
+  // Task 4: no new unexpected failures in harmony vs brio baseline
+  it("harmony has no more unexpected non-decorative failures than brio (contrast baseline preserved)", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const harmonyOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
+    const brioFails = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP)
+      .filter((r) => !r.contrastPass && r.role !== "decorative");
+    const harmonyFails = validateThemeContrast(harmonyOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP)
+      .filter((r) => !r.contrastPass && r.role !== "decorative");
+    const brioFailSet = new Set(brioFails.map((r) => `${r.fg}|${r.bg}`));
+
+    // Collect new harmony failures not covered by the existing exception sets
+    const newUnexpected = harmonyFails.filter((r) => {
+      if (brioFailSet.has(`${r.fg}|${r.bg}`)) return false;
+      // Marginal band: within CONTRAST_MARGINAL_DELTA of threshold is not a hard fail
+      const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
+      if (Math.abs(r.contrast) >= margin) return false;
+      // Known structural element exceptions (same set as gallery tests)
+      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
+      // Known pair exceptions (polarity mismatches)
+      if (r.fg === "--tug-base-fg-inverse" && r.bg === "--tug-base-surface-screen") return false;
+      return true;
+    });
+    const descriptions = newUnexpected.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
+  });
+
+  // Task 6: Brio dark unchanged
+  it("Brio dark output has exactly 373 tokens (unchanged by light formula additions)", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    expect(Object.keys(output.tokens).length).toBe(373);
+  });
+
+  it("DARK_FORMULAS.borderSignalTone=50 preserves brio control border token values", () => {
+    // Explicit DARK_FORMULAS must match the recipe.formulas fallback
+    const fromRecipe = deriveTheme(EXAMPLE_RECIPES.brio);
+    const fromExplicit = deriveTheme({ ...EXAMPLE_RECIPES.brio, formulas: DARK_FORMULAS });
+    // Control border tokens (use borderRamp) must be identical
+    const controlBorderToken = "--tug-base-control-outlined-action-border-rest";
+    expect(fromRecipe.tokens[controlBorderToken]).toBe(fromExplicit.tokens[controlBorderToken]);
   });
 });

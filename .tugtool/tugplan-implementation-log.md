@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-18T15:03:33Z
+---
+
+## step-5: Final integration checkpoint. All exit criteria met: Brio->Light->Dark round-trip correct, Harmony token-for-token match, export/import round-trip preserves formulas, 373 tokens in all states. 10 new integration tests. 1878 total tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
+step: step-4
+date: 2025-03-18T14:59:50Z
+---
+
+## step-4: Verified Bug 2 fix (cardFrameActiveTone=88 correctly applied). borderSignalTone=40 and semanticSignalTone=35 produce correct lower tones. 10 harmony contrast findings all in known-exception categories. Added 11 permanent verification tests. No LIGHT_OVERRIDES tuning needed. 1868 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
+step: step-3
+date: 2025-03-18T14:50:29Z
+---
+
+## step-3: Added formulas useState + useRef + setFormulasAndRef wrapper (synchronous, no useEffect). Wired through loadPreset, handleRecipeImported, runDerive, currentRecipe, and Dark/Light mode toggle onClick handlers. 11 new tests covering formulas state, mode toggle, preset loading, and export/import round-trip. 1857 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
+step: step-2
+date: 2025-03-18T14:42:05Z
+---
+
+## step-2: Step 2 (wire borderSignalTone/semanticSignalTone into derivation rules) was completed as part of Step 1 commit ac47bd85. No additional changes needed.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
+step: step-1
+date: 2025-03-18T14:41:24Z
+---
+
+## step-1: Added borderSignalTone and semanticSignalTone to DerivationFormulas (default 50 in DARK_FORMULAS, 40/35 in LIGHT_OVERRIDES). Wired into borderRamp() and semanticTone() replacing hardcoded lit(50). Brio output unchanged, 1846 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
 step: step-6
 date: 2025-03-18T03:11:43Z
 ---

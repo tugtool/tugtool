@@ -96,14 +96,14 @@ function outlinedFg(iField: keyof F, toneField: keyof F): ChromaticRule {
 
 /**
  * borderRamp — higher-order builder for role-colored signal borders.
- * Returns a function (hueSlot) => ChromaticRule at signalI+offset, t:50.
+ * Returns a function (hueSlot) => ChromaticRule at signalI+offset, borderSignalTone.
  */
 function borderRamp(offset: number): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
     intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalI + offset),
-    toneExpr: lit(50),
+    toneExpr: (f: F) => f.borderSignalTone,
   });
 }
 
@@ -138,7 +138,7 @@ const filledBgHover = filledBg(55, "filledBgHoverTone");
 const filledBgActive = filledBg(90, "filledBgActiveTone");
 
 /**
- * semanticTone — semantic signal rule at signalI, t:50.
+ * semanticTone — semantic signal rule at signalI, semanticSignalTone.
  * alpha?: optional fixed alpha (e.g. 15 for -bg tokens).
  * Returns a function (hueSlot) => ChromaticRule.
  */
@@ -147,7 +147,7 @@ function semanticTone(alpha?: number): (hueSlot: string) => ChromaticRule {
     type: "chromatic",
     hueSlot,
     intensityExpr: (_f, _k, computed) => computed.signalI,
-    toneExpr: lit(50),
+    toneExpr: (f: F) => f.semanticSignalTone,
     ...(alpha !== undefined ? { alphaExpr: lit(alpha) } : {}),
   });
 }

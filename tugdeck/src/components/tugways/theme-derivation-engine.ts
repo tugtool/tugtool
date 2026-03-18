@@ -537,6 +537,10 @@ export interface DerivationFormulas {
   dividerDefaultI: number;
   /** @semantic border-visibility — chroma intensity for muted divider lines */
   dividerMutedI: number;
+  /** @semantic signal-tone — tone for role-colored signal borders (borderRamp). Dark: 50. Light: lower to avoid neon glow. */
+  borderSignalTone: number;
+  /** @semantic signal-tone — tone for semantic tone tokens (semanticTone). Dark: 50. Light: lower to avoid neon glow. */
+  semanticSignalTone: number;
 
   // ===== Card Frame Style =====
   // How card title bars and tab bars present. Dark: dim tones 15-18. Light: bright tones 85-92.
@@ -1057,6 +1061,8 @@ export const DARK_FORMULAS: DerivationFormulas = {
   borderStrongTone: 40, // slightly above muted: strong borders need a touch more lift for contrast
   dividerDefaultI: 6, // matches borderIBase: dividers use the same baseline chroma as borders
   dividerMutedI: 4, // lowest chroma: muted dividers are the most recessive structural element
+  borderSignalTone: 50, // mid-tone: dark backgrounds make mid-tone signals vivid and readable
+  semanticSignalTone: 50, // mid-tone: semantic tokens at 50 are bright enough to pop on dark surfaces
 
   // ===== Card Frame Style =====
   // How card title bars and tab bars present. Dark: dim tones 15-18. Light: bright tones 85-92.
@@ -1364,6 +1370,8 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   borderStrongTone: 52, // mid-tone: strong borders are darker than muted for clear emphasis
   dividerDefaultI: 7, // matches borderIBase: dividers use the same crisp baseline as borders
   dividerMutedI: 5, // lower than default: muted dividers are the most recessive structural element
+  borderSignalTone: 40, // below mid-tone: light backgrounds require darker signal borders to avoid neon glow
+  semanticSignalTone: 35, // darker than border: semantic tokens need more contrast against bright light surfaces
 
   // ===== Card Frame Style =====
   // Light mode: bright tones (vs dark's dim tones 15-18). Frames sit just below canvas.
