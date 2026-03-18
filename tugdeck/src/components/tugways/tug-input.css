@@ -11,6 +11,18 @@
  * [D04] Semantic tokens exclusively
  */
 
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                    | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-rest (field-bg-rest)   | body-text    | Input text on rest background        |
+ * | --tug-base-field-fg-placeholder (field-fg-placeholder) | --tug-base-field-bg-rest (field-bg-rest) | subdued-text | Placeholder text on rest background  |
+ * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-hover (field-bg-hover) | body-text    | Input text on hover background       |
+ * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-focus (field-bg-focus) | body-text    | Input text on focus background       |
+ * | --tug-base-field-fg-disabled (field-fg-disabled) | --tug-base-field-bg-disabled (field-bg-disabled) | body-text | Input text on disabled background   |
+ * | --tug-base-field-fg-readOnly (field-fg-readOnly) | --tug-base-field-bg-readOnly (field-bg-readOnly) | body-text | Input text on read-only background   |
+ */
+
 /* ============================================================================
    Base Input
    ========================================================================= */

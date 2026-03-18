@@ -17,6 +17,23 @@
  * production via process.env.NODE_ENV gating.
  */
 
+/**
+ * @tug-pairings
+ * This file uses hardcoded oklch values exclusively — no --tug-base-* tokens are used.
+ * All pairings are outside the token system and are NOT tracked in element-surface-pairing-map.ts.
+ * These are fixed at authoring time so the overlay remains legible regardless of active theme.
+ *
+ * Logical pairings (hardcoded oklch, not tracked by contrast engine):
+ * | Element (hardcoded)          | Surface (hardcoded)          | Role         | Context                                  |
+ * |------------------------------|------------------------------|--------------|------------------------------------------|
+ * | oklch(0.88 0.01 240)         | oklch(0.14 0.01 240)         | body-text    | Panel main text on dark panel background |
+ * | oklch(0.72 0.18 200)         | oklch(0.14 0.01 240)         | body-text    | Title and property labels on panel bg    |
+ * | oklch(0.72 0.18 200)         | oklch(0.18 0.01 240)         | body-text    | Section title on header background       |
+ * | oklch(0.55 0.02 240)         | oklch(0.14 0.01 240)         | subdued-text | Row label and dim text on panel bg       |
+ * | oklch(0.7 0.12 140)          | oklch(0.14 0.01 240)         | body-text    | Token chain resolved value text          |
+ * | oklch(0.72 0.18 55)          | oklch(0.14 0.01 240)         | body-text    | Terminal/pin badge display (orange tone) |
+ */
+
 /* ---------------------------------------------------------------------------
    Highlight element -- visually marks the inspected element
    --------------------------------------------------------------------------- */

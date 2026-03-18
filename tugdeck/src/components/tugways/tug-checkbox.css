@@ -12,6 +12,15 @@
  * [D04] Semantic tokens exclusively
  */
 
+/**
+ * @tug-pairings
+ * | Element                                               | Surface                                              | Role         | Context                                           |
+ * |-------------------------------------------------------|------------------------------------------------------|--------------|---------------------------------------------------|
+ * | --tug-base-checkmark-fg (checkmark-fg)                | --tug-base-toggle-track-on (toggle-track-on, chromatic) | ui-component | Checkmark icon on checked box background       |
+ * | --tug-base-checkmark-fg-mixed (checkmark-fg-mixed)    | --tug-base-toggle-track-mixed (toggle-track-mixed, chromatic) | ui-component | Indeterminate dash on indeterminate box background |
+ * | --tug-base-field-fg-label (field-fg-label)            | parent surface (ambient, typically surface-default)  | body-text    | Checkbox label text                               |
+ */
+
 /* ============================================================================
    Checkbox Root (the clickable box)
    ========================================================================= */

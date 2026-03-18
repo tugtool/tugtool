@@ -5,6 +5,14 @@
  * on button triggers and menu panels within the gallery demo.
  */
 
+/**
+ * @tug-pairings
+ * | Element                                   | Surface                                              | Role         | Context                                  |
+ * |-------------------------------------------|------------------------------------------------------|--------------|------------------------------------------|
+ * | --tug-base-fg-muted (fg-muted)            | parent ambient (typically surface-default)           | subdued-text | Slider labels and demo labels            |
+ * | --tug-base-fg-subtle (fg-subtle)          | --tug-base-surface-inset (surface-inset)             | subdued-text | Context bar label text on inset bg       |
+ */
+
 /* ============================================================================
    Slider controls
    ========================================================================= */

@@ -7,6 +7,20 @@
  * No CSS rules yet — tokens only.
  */
 
+/**
+ * @tug-pairings
+ * | Element                                       | Surface                                          | Role         | Context                                          |
+ * |-----------------------------------------------|--------------------------------------------------|--------------|--------------------------------------------------|
+ * | --tug-syntax-comment (fg-muted)               | --tug-codeBlock-bg (surface-control)             | body-text    | Code comment text in code block                  |
+ * | --tug-syntax-operator (fg-default)            | --tug-codeBlock-bg (surface-control)             | body-text    | Code operator/punctuation text in code block     |
+ * | --tug-codeBlock-header-fg (fg-subtle)         | --tug-codeBlock-header-bg (surface-sunken)       | subdued-text | Code block header text on sunken header          |
+ * | --tug-chat-attachment-fg (fg-muted)           | --tug-chat-attachment-bg (surface-overlay)       | subdued-text | Chat attachment label on overlay background      |
+ * | --tug-feed-step-fg (fg-muted)                 | --tug-feed-step-bg (surface-sunken)              | subdued-text | Feed step text on sunken background              |
+ * | --tug-terminal-fg (fg-default)                | --tug-terminal-bg (surface-inset)                | body-text    | Terminal text on inset background                |
+ * | --tug-terminal-fg-muted (fg-muted)            | --tug-terminal-bg (surface-inset)                | subdued-text | Terminal muted text on inset background          |
+ * | --tug-tree-row-fg (fg-default)                | parent ambient surface-default                   | body-text    | File tree row text                               |
+ */
+
 body {
   /* --- Syntax ---
      Accent-derived tokens: palette var() references per Phase 5d5e.

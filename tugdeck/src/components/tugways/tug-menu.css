@@ -15,6 +15,21 @@
  * - Spec S04: TugDropdownProps
  */
 
+/**
+ * @tug-pairings
+ * | Element                                                      | Surface                                                         | Role         | Context                                              |
+ * |--------------------------------------------------------------|-----------------------------------------------------------------|--------------|------------------------------------------------------|
+ * | --tug-dropdown-fg (fg-default)                               | --tug-dropdown-bg (surface-overlay)                             | body-text    | Menu item default text on menu panel                 |
+ * | --tug-base-control-filled-action-fg-hover (control-filled-action-fg-hover) | --tug-base-control-filled-action-bg-hover (control-filled-action-bg-hover) | ui-component | Menu item text on hover background    |
+ * | --tug-menu-fg (fg-default)                                   | --tug-menu-item-bg-selected (accent-subtle, chromatic)          | body-text    | Menu item text on selected/checked item background   |
+ * | --tug-menu-item-meta (fg-subtle)                             | --tug-menu-bg (surface-overlay)                                 | subdued-text | Menu item metadata text on menu panel                |
+ * | --tug-menu-item-shortcut (fg-subtle)                         | --tug-menu-bg (surface-overlay)                                 | subdued-text | Menu item shortcut text on menu panel                |
+ * | --tug-menu-item-icon (fg-muted)                              | --tug-menu-bg (surface-overlay)                                 | ui-component | Menu item icon on menu panel                         |
+ * | --tug-menu-item-fg-danger (tone-danger, chromatic)           | --tug-menu-bg (surface-overlay)                                 | body-text    | Danger menu item text on menu panel                  |
+ * | --tug-tooltip-fg (fg-default)                                | --tug-tooltip-bg (surface-screen)                               | body-text    | Tooltip text on tooltip background                   |
+ * | --tug-popover-fg (fg-default)                                | --tug-popover-bg (surface-overlay)                              | body-text    | Popover content text on popover background           |
+ */
+
 /* ============================================================================
    Component Token Definitions
    ========================================================================= */

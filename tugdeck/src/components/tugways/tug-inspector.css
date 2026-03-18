@@ -8,6 +8,14 @@
  * Token definitions only.
  */
 
+/**
+ * @tug-pairings
+ * | Element                                              | Surface                                            | Role         | Context                                           |
+ * |------------------------------------------------------|----------------------------------------------------|--------------|---------------------------------------------------|
+ * | --tug-inspector-emptyState-fg (fg-subtle)            | --tug-inspector-panel-bg (surface-sunken)          | subdued-text | Inspector empty-state text on panel background    |
+ * | --tug-dev-overlay-fg (fg-default)                    | --tug-dev-overlay-bg (hardcoded oklch, dark)       | body-text    | Dev overlay text (bg is hardcoded, not a token)   |
+ */
+
 body {
   --tug-inspector-panel-bg: var(--tug-base-surface-sunken);
   --tug-inspector-panel-border: var(--tug-base-divider-default);

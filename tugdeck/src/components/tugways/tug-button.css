@@ -21,6 +21,60 @@
  * [D04] Semantic tokens exclusively
  */
 
+/**
+ * @tug-pairings
+ * | Element                                                           | Surface                                                            | Role         | Context                                            |
+ * |-------------------------------------------------------------------|--------------------------------------------------------------------|--------------|----------------------------------------------------|
+ * | --tug-base-control-outlined-action-fg-rest (control-outlined-action-fg-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | ui-component | Button label on rest background (outlined-action)  |
+ * | --tug-base-control-outlined-action-fg-hover (control-outlined-action-fg-hover) | --tug-base-control-outlined-action-bg-hover (control-outlined-action-bg-hover) | ui-component | Button label on hover background (outlined-action) |
+ * | --tug-base-control-outlined-action-fg-active (control-outlined-action-fg-active) | --tug-base-control-outlined-action-bg-active (control-outlined-action-bg-active) | ui-component | Button label on active background (outlined-action) |
+ * | --tug-base-control-outlined-action-icon-rest (control-outlined-action-icon-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | ui-component | Button icon on rest background (outlined-action)   |
+ * | --tug-base-control-outlined-action-icon-hover (control-outlined-action-icon-hover) | --tug-base-control-outlined-action-bg-hover (control-outlined-action-bg-hover) | ui-component | Button icon on hover background (outlined-action)  |
+ * | --tug-base-control-outlined-action-icon-active (control-outlined-action-icon-active) | --tug-base-control-outlined-action-bg-active (control-outlined-action-bg-active) | ui-component | Button icon on active background (outlined-action) |
+ * | --tug-base-control-filled-accent-fg-rest (control-filled-accent-fg-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | Button label on rest background (filled-accent)    |
+ * | --tug-base-control-filled-accent-fg-hover (control-filled-accent-fg-hover) | --tug-base-control-filled-accent-bg-hover (control-filled-accent-bg-hover) | ui-component | Button label on hover background (filled-accent)   |
+ * | --tug-base-control-filled-accent-fg-active (control-filled-accent-fg-active) | --tug-base-control-filled-accent-bg-active (control-filled-accent-bg-active) | ui-component | Button label on active background (filled-accent)  |
+ * | --tug-base-control-filled-accent-icon-rest (control-filled-accent-icon-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | Button icon on rest background (filled-accent)     |
+ * | --tug-base-control-filled-accent-icon-hover (control-filled-accent-icon-hover) | --tug-base-control-filled-accent-bg-hover (control-filled-accent-bg-hover) | ui-component | Button icon on hover background (filled-accent)    |
+ * | --tug-base-control-filled-accent-icon-active (control-filled-accent-icon-active) | --tug-base-control-filled-accent-bg-active (control-filled-accent-bg-active) | ui-component | Button icon on active background (filled-accent)   |
+ * | --tug-base-control-filled-action-fg-rest (control-filled-action-fg-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | Button label on rest background (filled-action)    |
+ * | --tug-base-control-filled-action-fg-hover (control-filled-action-fg-hover) | --tug-base-control-filled-action-bg-hover (control-filled-action-bg-hover) | ui-component | Button label on hover background (filled-action)   |
+ * | --tug-base-control-filled-action-fg-active (control-filled-action-fg-active) | --tug-base-control-filled-action-bg-active (control-filled-action-bg-active) | ui-component | Button label on active background (filled-action)  |
+ * | --tug-base-control-filled-action-icon-rest (control-filled-action-icon-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | Button icon on rest background (filled-action)     |
+ * | --tug-base-control-filled-action-icon-hover (control-filled-action-icon-hover) | --tug-base-control-filled-action-bg-hover (control-filled-action-bg-hover) | ui-component | Button icon on hover background (filled-action)    |
+ * | --tug-base-control-filled-action-icon-active (control-filled-action-icon-active) | --tug-base-control-filled-action-bg-active (control-filled-action-bg-active) | ui-component | Button icon on active background (filled-action)   |
+ * | --tug-base-control-filled-danger-fg-rest (control-filled-danger-fg-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | Button label on rest background (filled-danger)    |
+ * | --tug-base-control-filled-danger-fg-hover (control-filled-danger-fg-hover) | --tug-base-control-filled-danger-bg-hover (control-filled-danger-bg-hover) | ui-component | Button label on hover background (filled-danger)   |
+ * | --tug-base-control-filled-danger-fg-active (control-filled-danger-fg-active) | --tug-base-control-filled-danger-bg-active (control-filled-danger-bg-active) | ui-component | Button label on active background (filled-danger)  |
+ * | --tug-base-control-filled-danger-icon-rest (control-filled-danger-icon-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | Button icon on rest background (filled-danger)     |
+ * | --tug-base-control-filled-danger-icon-hover (control-filled-danger-icon-hover) | --tug-base-control-filled-danger-bg-hover (control-filled-danger-bg-hover) | ui-component | Button icon on hover background (filled-danger)    |
+ * | --tug-base-control-filled-danger-icon-active (control-filled-danger-icon-active) | --tug-base-control-filled-danger-bg-active (control-filled-danger-bg-active) | ui-component | Button icon on active background (filled-danger)   |
+ * | --tug-base-control-ghost-action-fg-rest (control-ghost-action-fg-rest) | --tug-base-control-ghost-action-bg-rest (control-ghost-action-bg-rest) | ui-component | Button label on rest background (ghost-action)     |
+ * | --tug-base-control-ghost-action-fg-hover (control-ghost-action-fg-hover) | --tug-base-control-ghost-action-bg-hover (control-ghost-action-bg-hover) | ui-component | Button label on hover background (ghost-action)    |
+ * | --tug-base-control-ghost-action-fg-active (control-ghost-action-fg-active) | --tug-base-control-ghost-action-bg-active (control-ghost-action-bg-active) | ui-component | Button label on active background (ghost-action)   |
+ * | --tug-base-control-ghost-action-icon-rest (control-ghost-action-icon-rest) | --tug-base-control-ghost-action-bg-rest (control-ghost-action-bg-rest) | ui-component | Button icon on rest background (ghost-action)      |
+ * | --tug-base-control-ghost-action-icon-hover (control-ghost-action-icon-hover) | --tug-base-control-ghost-action-bg-hover (control-ghost-action-bg-hover) | ui-component | Button icon on hover background (ghost-action)     |
+ * | --tug-base-control-ghost-action-icon-active (control-ghost-action-icon-active) | --tug-base-control-ghost-action-bg-active (control-ghost-action-bg-active) | ui-component | Button icon on active background (ghost-action)    |
+ * | --tug-base-control-ghost-danger-fg-rest (control-ghost-danger-fg-rest) | --tug-base-control-ghost-danger-bg-rest (control-ghost-danger-bg-rest) | ui-component | Button label on rest background (ghost-danger)     |
+ * | --tug-base-control-ghost-danger-fg-hover (control-ghost-danger-fg-hover) | --tug-base-control-ghost-danger-bg-hover (control-ghost-danger-bg-hover) | ui-component | Button label on hover background (ghost-danger)    |
+ * | --tug-base-control-ghost-danger-fg-active (control-ghost-danger-fg-active) | --tug-base-control-ghost-danger-bg-active (control-ghost-danger-bg-active) | ui-component | Button label on active background (ghost-danger)   |
+ * | --tug-base-control-ghost-danger-icon-rest (control-ghost-danger-icon-rest) | --tug-base-control-ghost-danger-bg-rest (control-ghost-danger-bg-rest) | ui-component | Button icon on rest background (ghost-danger)      |
+ * | --tug-base-control-ghost-danger-icon-hover (control-ghost-danger-icon-hover) | --tug-base-control-ghost-danger-bg-hover (control-ghost-danger-bg-hover) | ui-component | Button icon on hover background (ghost-danger)     |
+ * | --tug-base-control-ghost-danger-icon-active (control-ghost-danger-icon-active) | --tug-base-control-ghost-danger-bg-active (control-ghost-danger-bg-active) | ui-component | Button icon on active background (ghost-danger)    |
+ * | --tug-base-control-outlined-option-fg-rest (control-outlined-option-fg-rest) | --tug-base-control-outlined-option-bg-rest (control-outlined-option-bg-rest) | ui-component | Button label on rest background (outlined-option)  |
+ * | --tug-base-control-outlined-option-fg-hover (control-outlined-option-fg-hover) | --tug-base-control-outlined-option-bg-hover (control-outlined-option-bg-hover) | ui-component | Button label on hover background (outlined-option) |
+ * | --tug-base-control-outlined-option-fg-active (control-outlined-option-fg-active) | --tug-base-control-outlined-option-bg-active (control-outlined-option-bg-active) | ui-component | Button label on active background (outlined-option) |
+ * | --tug-base-control-outlined-option-icon-rest (control-outlined-option-icon-rest) | --tug-base-control-outlined-option-bg-rest (control-outlined-option-bg-rest) | ui-component | Button icon on rest background (outlined-option)   |
+ * | --tug-base-control-outlined-option-icon-hover (control-outlined-option-icon-hover) | --tug-base-control-outlined-option-bg-hover (control-outlined-option-bg-hover) | ui-component | Button icon on hover background (outlined-option)  |
+ * | --tug-base-control-outlined-option-icon-active (control-outlined-option-icon-active) | --tug-base-control-outlined-option-bg-active (control-outlined-option-bg-active) | ui-component | Button icon on active background (outlined-option) |
+ * | --tug-base-control-ghost-option-fg-rest (control-ghost-option-fg-rest) | --tug-base-control-ghost-option-bg-rest (control-ghost-option-bg-rest) | ui-component | Button label on rest background (ghost-option)     |
+ * | --tug-base-control-ghost-option-fg-hover (control-ghost-option-fg-hover) | --tug-base-control-ghost-option-bg-hover (control-ghost-option-bg-hover) | ui-component | Button label on hover background (ghost-option)    |
+ * | --tug-base-control-ghost-option-fg-active (control-ghost-option-fg-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | ui-component | Button label on active background (ghost-option)   |
+ * | --tug-base-control-ghost-option-icon-rest (control-ghost-option-icon-rest) | --tug-base-control-ghost-option-bg-rest (control-ghost-option-bg-rest) | ui-component | Button icon on rest background (ghost-option)      |
+ * | --tug-base-control-ghost-option-icon-hover (control-ghost-option-icon-hover) | --tug-base-control-ghost-option-bg-hover (control-ghost-option-bg-hover) | ui-component | Button icon on hover background (ghost-option)     |
+ * | --tug-base-control-ghost-option-icon-active (control-ghost-option-icon-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | ui-component | Button icon on active background (ghost-option)    |
+ */
+
 /* ============================================================================
    Base Button
    ========================================================================= */

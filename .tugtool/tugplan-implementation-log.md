@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-18T18:40:52Z
+---
+
+## step-6: Added @tug-pairings structured comment blocks to all 23 component CSS files per Spec S02. Each block documents foreground-on-background pairings with Element, Surface, Role, and Context columns using post-rename token names.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-pairing.md
+
+---
+
+---
 step: step-5
 date: 2025-03-18T18:28:11Z
 ---

@@ -13,6 +13,14 @@
  * [D04] Semantic tokens exclusively
  */
 
+/**
+ * @tug-pairings
+ * | Element                                           | Surface                                             | Role         | Context                                       |
+ * |---------------------------------------------------|-----------------------------------------------------|--------------|-----------------------------------------------|
+ * | --tug-base-field-fg-label (field-fg-label)        | parent surface (ambient, typically surface-default) | body-text    | Label text                                    |
+ * | --tug-base-field-fg-required (field-fg-required)  | parent surface (ambient, same as label context)     | ui-component | Required asterisk indicator                   |
+ */
+
 /* ============================================================================
    Base Label
    ========================================================================= */
