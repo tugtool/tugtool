@@ -1068,7 +1068,14 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // --- Tab Chrome ---
-  // tab-fg-rest over tab bar background (surface-sunken) — subdued-text: intentional visual hierarchy
+  // tab-fg-rest over tab bar background.
+  // The tab bar bg token is tab-bg-inactive (an opaque tinted color); surface-sunken
+  // captures the design-intent baseline for detached/collapsed contexts.
+  {
+    element: "--tug-base-tab-fg-rest",
+    surface: "--tug-base-tab-bg-inactive",
+    role: "subdued-text",
+  },
   {
     element: "--tug-base-tab-fg-rest",
     surface: "--tug-base-surface-sunken",
@@ -1080,16 +1087,33 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     surface: "--tug-base-tab-bg-active",
     role: "body-text",
   },
-  // tab-fg-hover over hover highlight (semi-transparent, pair with sunken)
+  // tab-fg-hover over hover highlight (semi-transparent over tab-bg-inactive).
+  // Also paired with surface-sunken for the design-intent baseline.
+  {
+    element: "--tug-base-tab-fg-hover",
+    surface: "--tug-base-tab-bg-inactive",
+    role: "body-text",
+  },
   {
     element: "--tug-base-tab-fg-hover",
     surface: "--tug-base-surface-sunken",
     role: "body-text",
   },
-  // close button hover fg over close bg hover
+  // close button hover fg over close bg hover (semi-transparent over tab-bg-inactive).
+  {
+    element: "--tug-base-tab-close-fg-hover",
+    surface: "--tug-base-tab-bg-inactive",
+    role: "ui-component",
+  },
   {
     element: "--tug-base-tab-close-fg-hover",
     surface: "--tug-base-surface-sunken",
+    role: "ui-component",
+  },
+  // fg-muted over tab bar background (add-tab [+] and overflow trigger text)
+  {
+    element: "--tug-base-fg-muted",
+    surface: "--tug-base-tab-bg-inactive",
     role: "ui-component",
   },
 
@@ -1608,5 +1632,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     surface: "--tug-base-field-bg-focus",
     role: "ui-component",
   },
+
 
 ];

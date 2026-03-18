@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-18T18:56:01Z
+---
+
+## step-7: Created verify-pairings.ts script that parses @tug-pairings from CSS and cross-checks against pairing map. Zero gaps confirmed. Fixed tug-tab.css to use accurate tab-bg-inactive surfaces and added 4 new map entries. Total map entries now 265.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-pairing.md
+
+---
+
+---
 step: step-6
 date: 2025-03-18T18:40:52Z
 ---

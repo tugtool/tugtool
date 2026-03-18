@@ -25,8 +25,8 @@
  * | --tug-base-control-filled-agent-fg-rest (control-filled-agent-fg-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | ui-component | Badge text on filled-agent background       |
  * | --tug-base-control-outlined-action-fg-rest (control-outlined-action-fg-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | ui-component | Badge text on outlined-action background |
  * | --tug-base-control-outlined-agent-fg-rest (control-outlined-agent-fg-rest) | --tug-base-control-outlined-agent-bg-rest (control-outlined-agent-bg-rest) | ui-component | Badge text on outlined-agent background   |
- * | --tug-base-control-ghost-action-fg-rest (control-ghost-action-fg-rest) | --tug-base-control-ghost-action-bg-rest (control-ghost-action-bg-rest) | ui-component | Badge text on ghost-action background       |
- * | --tug-base-control-ghost-danger-fg-rest (control-ghost-danger-fg-rest) | --tug-base-control-ghost-danger-bg-rest (control-ghost-danger-bg-rest) | ui-component | Badge text on ghost-danger background       |
+ * | --tug-base-control-ghost-action-fg-rest (control-ghost-action-fg-rest) | --tug-base-surface-default (surface-default)                       | ui-component | Badge text on page surface (ghost-action; bg-rest is transparent)   |
+ * | --tug-base-control-ghost-danger-fg-rest (control-ghost-danger-fg-rest) | --tug-base-surface-default (surface-default)                       | ui-component | Badge text on page surface (ghost-danger; bg-rest is transparent)   |
  * | --tug-base-badge-tinted-accent-fg (badge-tinted-accent-fg)        | --tug-base-badge-tinted-accent-bg (badge-tinted-accent-bg)         | ui-component | Tinted accent badge text on tinted accent bg     |
  * | --tug-base-badge-tinted-action-fg (badge-tinted-action-fg)        | --tug-base-badge-tinted-action-bg (badge-tinted-action-bg)         | ui-component | Tinted action badge text on tinted action bg     |
  * | --tug-base-badge-tinted-agent-fg (badge-tinted-agent-fg)          | --tug-base-badge-tinted-agent-bg (badge-tinted-agent-bg)           | ui-component | Tinted agent badge text on tinted agent bg       |

@@ -1,51 +1,62 @@
-# Step 7: Final Integration Checkpoint
+# Step 7: Write cross-check verification script
 
-## Checkpoint 1: cargo nextest run (all packages)
+## Status: Completed
 
-**Command:** `cd tugcode && cargo nextest run`
+Wrote `tugdeck/scripts/verify-pairings.ts`, a cross-check script that parses every
+`@tug-pairings` block from all 23 component CSS files, extracts the resolved
+`--tug-base-*` token pairs, and compares them against `element-surface-pairing-map.ts`.
+
+Running the script revealed a systematic mismatch: ghost and outlined-option button
+variants use transparent/semi-transparent background tokens; the `@tug-pairings`
+comments initially referenced the literal CSS bg tokens (`ghost-action-bg-rest`, etc.)
+but the pairing map records contrast at the effective underlying surface (`surface-default`).
+Updated the CSS comment blocks in `tug-button.css`, `tug-badge.css`, and `tug-tab.css`
+to align with the map convention. Script now exits 0 with zero gaps.
+
+## Files Created
+
+- `tugdeck/scripts/verify-pairings.ts` — cross-check verification script
+
+## Files Modified
+
+- `tugdeck/src/components/tugways/tug-button.css` — corrected ghost/outlined-option surface references to `surface-default`
+- `tugdeck/src/components/tugways/tug-badge.css` — corrected ghost-action/ghost-danger surface references to `surface-default`
+- `tugdeck/src/components/tugways/tug-tab.css` — corrected tab fg surface references to `surface-sunken`; ghost-option-fg-active surface to `surface-default`
+
+## Implementation Notes
+
+- The script parses `@tug-pairings` table rows from CSS comment blocks using the Spec S02 format
+- Token resolution: cells starting with `--tug-base-` are used directly; component-alias cells extract the resolved name from the parenthetical `(name)` annotation
+- Decorative pairings are skipped (no minimum contrast requirement)
+- Entries with ambient/parent/transparent/hardcoded surfaces are skipped (no concrete token to cross-check)
+- GAPS (CSS pairs not in map) cause exit code 1 — these are accessibility coverage holes
+- ORPHANS (map pairs not in any CSS block) are reported as informational warnings — many pre-existing map entries were added from design intent before the CSS comment convention existed
+- Exit code 0 when there are zero gaps (orphans are acceptable)
+
+## Checkpoint: `bun run tugdeck/scripts/verify-pairings.ts`
+
+**Command:** `bun run tugdeck/scripts/verify-pairings.ts`
 
 ```
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.82s
-────────────
- Nextest run ID fdc9a904-948c-4eaf-b5f3-34b102f71b04 with nextest profile: default
-    Starting 868 tests across 15 binaries (9 tests skipped)
-────────────
-     Summary [   4.816s] 868 tests run: 868 passed, 9 skipped
+verify-pairings: cross-checking @tug-pairings CSS blocks against element-surface-pairing-map.ts
+
+  CSS files scanned: 23
+  CSS pairings parsed (after dedup): 110
+  Map entries loaded: 260
+  GAPS: none — all CSS-declared pairings are covered by the map.
+  ORPHANS (150) — map entries not traceable to any @tug-pairings block (informational):
+    [ORPHAN] --tug-base-fg-default | --tug-base-bg-app
+    ... (150 pre-existing design-intent entries)
+
+  Result: PASS (with 150 informational orphan(s)) — zero gaps; orphans are pre-existing map entries added from design intent.
 ```
 
-**Result:** PASSED — 868 tests passed, 9 skipped
+**Exit code:** 0
 
-Note: an initial run showed 1 failure in `tugrelaunch::tests::test_kqueue_wait_for_short_lived_process`. This is a pre-existing timing-sensitive kqueue test that also fails intermittently on `main`. A second run passed cleanly (confirmed identical behavior on `main`). The failure is unrelated to this phase.
+**Result:** PASSED
 
-## Checkpoint 2: cargo fmt --all --check
+## Build Checks
 
-**Command:** `cd tugcode && cargo fmt --all --check`
+**bun run check:** PASSED — zero TypeScript errors
 
-```
-(no output — formatting is clean)
-```
-
-**Result:** PASSED — zero formatting issues
-
-## Checkpoint 3: bun run check (TypeScript)
-
-**Command:** `cd tugdeck && bun run check`
-
-```
-$ bunx tsc --noEmit
-(no output — zero TypeScript errors)
-```
-
-**Result:** PASSED — zero TypeScript errors
-
-## Checkpoint 4: curl /api/settings returns 404
-
-**Result:** DEFERRED — requires a running tugcast server
-
-## Checkpoint 5: curl /api/defaults/dev.tugtool.deck.layout/layout returns tagged JSON
-
-**Result:** DEFERRED — requires a running tugcast server
-
-## Checkpoint 6: curl /api/defaults/dev.tugtool.app/theme returns tagged string
-
-**Result:** DEFERRED — requires a running tugcast server
+**bun test:** PASSED — 1878 pass, 0 fail

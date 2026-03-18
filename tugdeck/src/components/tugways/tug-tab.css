@@ -28,12 +28,12 @@
  * @tug-pairings
  * | Element                                                            | Surface                                                      | Role         | Context                                                  |
  * |--------------------------------------------------------------------|--------------------------------------------------------------|--------------|----------------------------------------------------------|
- * | --tug-tab-fg-rest (tab-fg-rest)                                    | --tug-tab-bar-bg (tab-bg-inactive)                           | ui-component | Tab label at rest on tab bar background                  |
- * | --tug-tab-fg-hover (tab-fg-hover)                                  | --tug-tab-bg-hover (tab-bg-hover)                            | ui-component | Tab label on hover background                            |
+ * | --tug-tab-fg-rest (tab-fg-rest)                                    | --tug-base-tab-bg-inactive (tab-bg-inactive)                 | subdued-text | Tab label at rest on tab bar background (tab-bar-bg = tab-bg-inactive) |
+ * | --tug-tab-fg-hover (tab-fg-hover)                                  | --tug-base-tab-bg-inactive (tab-bg-inactive)                 | body-text    | Tab label on hover (tab-bg-hover is semi-transparent over tab-bg-inactive) |
  * | --tug-tab-fg-active (tab-fg-active)                                | --tug-tab-bg-active (tab-bg-active)                          | ui-component | Active tab label on active tab background                |
- * | --tug-tab-close-fg-hover (tab-close-fg-hover)                      | --tug-tab-close-bg-hover (tab-close-bg-hover)                | ui-component | Tab close button on close-hover background               |
- * | --tug-base-fg-muted (fg-muted)                                     | --tug-tab-bar-bg (tab-bg-inactive)                           | ui-component | Add tab [+] and overflow trigger text on tab bar         |
- * | --tug-base-control-ghost-option-fg-active (control-ghost-option-fg-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | ui-component | Tab add/overflow button when menu is open         |
+ * | --tug-tab-close-fg-hover (tab-close-fg-hover)                      | --tug-base-tab-bg-inactive (tab-bg-inactive)                 | ui-component | Tab close button (tab-close-bg-hover semi-transparent over tab-bg-inactive) |
+ * | --tug-base-fg-muted (fg-muted)                                     | --tug-base-tab-bg-inactive (tab-bg-inactive)                 | ui-component | Add tab [+] and overflow trigger text on tab bar         |
+ * | --tug-base-control-ghost-option-fg-active (control-ghost-option-fg-active) | --tug-base-surface-default (surface-default)                 | ui-component | Tab add/overflow button when menu is open (bg-active semi-transparent over surface-default) |
  * | --tug-base-surface-default (surface-default)                       | --tug-tab-badge-bg (accent-default, chromatic)               | ui-component | Overflow count badge text on accent-default background   |
  * | --tug-base-fg-default (fg-default)                                 | --tug-base-surface-control (surface-control)                 | body-text    | Ghost tab drag visual text on surface-control            |
  */
