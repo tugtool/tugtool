@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-18T02:39:34Z
+---
+
+## step-1: Defined LIGHT_OVERRIDES (104 fields across 20 semantic groups) and LIGHT_FORMULAS = { ...BASE_FORMULAS, ...LIGHT_OVERRIDES }. All fields annotated with design rationale. deriveTheme produces 373 tokens. Initial best-estimate values — Step 3 will calibrate via contrast validation.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
 step: step-8
 date: 2025-03-18T01:37:08Z
 ---
