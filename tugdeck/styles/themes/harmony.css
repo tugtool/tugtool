@@ -405,7 +405,7 @@ body {
   --tug-base-field-fg-placeholder: --tug-color(indigo-violet, i: 7, t: 38);
   --tug-base-field-fg-readOnly: --tug-color(cobalt, i: 6, t: 34);
   --tug-base-field-fg-required: --tug-color(red);
-  --tug-base-field-tone-caution: --tug-color(yellow);
+  --tug-base-field-tone-caution: --tug-color(yellow, t: 35);
   --tug-base-field-tone-danger: --tug-color(red);
   --tug-base-field-tone-success: --tug-color(green);
 

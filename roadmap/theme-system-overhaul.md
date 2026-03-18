@@ -187,26 +187,106 @@ the authoritative pairing list. The pairing list feeds the contrast engine
 (Problem 4). Independent recipes (Problem 1) need the working contrast engine to
 validate them. Recipe clarity (Problem 3) depends on the recipes being correct.
 
-### Phase 1: Token audit and pairing extraction
+### Tooling: `audit-tokens.ts`
 
-1. Audit every component CSS file. For each, extract every foreground-on-background
-   token pairing. Produce the authoritative pairing list.
-2. Identify naming inconsistencies. Propose a regularized naming scheme where element
-   vs surface classification is mechanical.
-3. Compare the extracted pairings against the current pairing map. Identify gaps.
-4. Establish rules for future component development: how to declare pairings, how to
-   validate them.
+`tugdeck/scripts/audit-tokens.ts` (`bun run audit:tokens`) is the authoritative tool
+for all token and pairing work. It runs in <100ms and replaces manual grep/bash
+exploration. Every phase must use this tool — hours-long LLM-driven line-by-line
+investigation of CSS files is an anti-pattern.
+
+| Subcommand | What it does | When to use |
+|------------|-------------|-------------|
+| `tokens` | Extract and classify all 373 `--tug-base-*` tokens | Verify classification after any token rename |
+| `pairings` | Parse all 23 CSS files, resolve aliases, extract foreground-on-background pairings | Verify pairing completeness; diagnose unresolved pairings |
+| `rename [--apply]` | Bulk-rename tokens across all files (dry run by default) | Any token rename operation |
+| `inject [--apply]` | Generate `@tug-pairings` comment blocks from CSS analysis | Regenerate CSS documentation after pairing map changes |
+| `verify` | Cross-check `@tug-pairings` blocks against `element-surface-pairing-map.ts` | Confirm CSS blocks and pairing map are in sync |
+| `lint` | Hard-fail (exit 1) on missing annotations, multi-hop aliases, missing blocks, unresolved pairings | CI gate; run after every step that touches CSS or tokens |
+
+**Rules of Tugways enforcement (D81):**
+- **Rule 16:** Every CSS rule that sets `color`/`fill`/`border-color` without
+  `background-color` must include a `/* @tug-renders-on: --tug-base-{surface} */`
+  annotation. `audit-tokens lint` enforces this.
+- **Rule 17:** Component alias tokens resolve to `--tug-base-*` in one hop. No
+  alias-to-alias chains (compat layers exempt via allowlist). `audit-tokens lint`
+  flags violations.
+
+**Implementation workflow for any step that modifies CSS or tokens:**
+1. Make the change
+2. Run `bun run audit:tokens lint` — immediate feedback
+3. Run `bun run audit:tokens pairings` — verify zero unresolved
+4. Run `bun run audit:tokens inject --apply` — regenerate `@tug-pairings` blocks
+5. Run `bun run audit:tokens verify` — confirm map ↔ CSS consistency
+6. Run `bun test` — confirm no test regressions
+
+### Phase 1: Token audit and pairing extraction ✅ COMPLETE
+
+*Completed via `tugplan-token-audit-pairing` (PR #138, merged).*
+
+1. ✅ Audited all 23 component CSS files. Extracted every foreground-on-background
+   token pairing. Produced the authoritative pairing list (275 CSS-declared pairings,
+   339 map entries).
+2. ✅ Regularized token naming: renamed 7 unclassifiable tokens so every `--tug-base-*`
+   color token is mechanically classifiable as element, surface, or chromatic.
+3. ✅ Compared extracted pairings against the pairing map. Identified and closed all
+   gaps including the critical `fg-default` on `tab-bg-active` card title bar gap.
+4. ✅ Established `@tug-pairings` CSS comment convention in all 23 component files.
+5. ✅ Created `verify-pairings.ts` cross-check script.
+
+### Phase 1.5: Make token pairings machine-auditable ✅ COMPLETE
+
+*Completed via `tugplan-token-audit-enforce` (PR #139, merged).*
+
+1. ✅ Added 145 `@tug-renders-on` annotations across 16 component CSS files — every
+   color-setting rule now declares its rendering surface deterministically.
+2. ✅ Flattened alias chains to 1 hop (tug-tab.css cross-component chains).
+3. ✅ Built `audit-tokens.ts` with 6 subcommands: `tokens`, `pairings`, `rename`,
+   `inject`, `verify`, `lint`.
+4. ✅ Replaced heuristic surface resolution (4 strategies) with deterministic
+   annotation-based parsing (2 strategies: same-rule match + annotation lookup).
+5. ✅ Added Rules 16, 17, and D81 to the Rules of Tugways.
+6. ✅ Exit criteria met: `lint` zero violations, `pairings` zero unresolved,
+   `verify` zero gaps, all tests pass.
 
 ### Phase 2: Fix the contrast engine
 
-1. Add all missing pairings from the Phase 1 audit to the pairing map.
-2. Remove the `parentSurface` skip from `enforceContrastFloor` — implement inline
-   compositing so these pairs are floor-enforced during derivation.
-3. Update the test suite to validate every `EXAMPLE_RECIPES` entry, not just brio.
-4. Run the updated contrast validation on Harmony. It will fail — this is expected
-   and necessary. The failures are the ground truth for Phase 3.
+*Addresses Problem 4. Uses `audit-tokens.ts` for all pairing-related verification.*
+
+1. **Remove the `parentSurface` skip from `enforceContrastFloor`.** Currently
+   (line ~2440), pairs with `parentSurface` are excluded from floor enforcement.
+   Implement inline compositing: compute the effective surface color by alpha-blending
+   the semi-transparent token over its `parentSurface`, then enforce contrast against
+   that composite. Use `bun run audit:tokens pairings` to identify all composited
+   pairings and verify none are skipped.
+
+2. **Expand test coverage to validate every recipe.** The T3.5 accessibility test
+   currently runs only `deriveTheme(EXAMPLE_RECIPES.brio)`. Update it to iterate over
+   every entry in `EXAMPLE_RECIPES` — adding a recipe must automatically add it to
+   contrast validation. This means Harmony light will be validated for the first time
+   by the authoritative test.
+
+3. **Run the expanded validation on Harmony and capture failures.** Harmony will fail
+   — this is expected and necessary. The failures are the ground truth for Phase 3.
+   Document each failure: which pairing, what contrast ratio, what threshold, what
+   the recipe formula produces. Use `bun run audit:tokens pairings` to cross-reference
+   failures against the CSS-declared pairings and confirm every failure traces to a
+   real rendering context.
+
+4. **Clean up exception lists.** Phases 1 and 1.5 added `KNOWN_PAIR_EXCEPTIONS` and
+   `STEP5_GAP_PAIR_EXCEPTIONS` to tests as newly-discovered pairings surfaced
+   accessibility gaps. Review each exception: is it a genuine design choice (decorative
+   element, acceptable low contrast) or a bug that Phase 3 must fix? Categorize and
+   document. Use `bun run audit:tokens verify` to confirm the pairing map and CSS
+   blocks remain in sync after any map adjustments.
+
+5. **Verify with tooling after every change:**
+   - `bun run audit:tokens lint` — annotations and aliases still valid
+   - `bun run audit:tokens verify` — map ↔ CSS consistency
+   - `bun test` — all tests pass (with documented exceptions for Harmony failures)
 
 ### Phase 3: Build independent recipes
+
+*Addresses Problem 1. The working contrast engine from Phase 2 validates every change.*
 
 1. Define `DARK_FORMULAS` as a complete, independent recipe — not a "base" that
    others spread from. Annotate every field with design rationale (already done in
@@ -216,10 +296,18 @@ validate them. Recipe clarity (Problem 3) depends on the recipes being correct.
    The annotated dark recipe serves as reference for understanding what each field
    does, but the light values are chosen independently.
 3. Use the working contrast engine from Phase 2 to validate and calibrate both
-   recipes. Iterate until both pass with zero exceptions.
+   recipes. Iterate until both pass with zero exceptions. After each formula change,
+   run `bun run audit:tokens lint` and `bun test` to verify no regressions. Use
+   `bun run audit:tokens pairings` to trace any new contrast failures back to
+   specific CSS rendering contexts.
 4. Remove `BASE_FORMULAS` and `LIGHT_OVERRIDES` — they encode the wrong abstraction.
+5. **Regenerate all CSS documentation:** Run `bun run audit:tokens inject --apply`
+   and `bun run audit:tokens verify` to ensure all `@tug-pairings` blocks and the
+   pairing map remain in sync after recipe changes that affect token derivation.
 
 ### Phase 4: Recipe clarity and generator improvements
+
+*Addresses Problem 3.*
 
 1. Reduce the effective parameter count by completing the formula de-duplication
    from the contrast-engine-overhaul roadmap (emphasis-level fields, not per-role).
@@ -227,6 +315,9 @@ validate them. Recipe clarity (Problem 3) depends on the recipes being correct.
    semantic decisions, not 3 mood sliders that don't map to anything useful.
 3. Document the recipe comparison table: dark vs light across each design decision.
 4. Prepare the architecture for dark/stark and light/stark recipes.
+5. **Maintain audit-tokens invariants:** Any changes to token structure, CSS files,
+   or the pairing map must pass `bun run audit:tokens lint` and
+   `bun run audit:tokens verify`. These are non-negotiable gates per D81.
 
 ---
 
@@ -243,6 +334,15 @@ This document supersedes the relevant parts of:
   de-duplication) is incorporated into Phase 4. Part 4 (contrast-aware derivation)
   was partially implemented but has the structural gaps documented in Problem 4 —
   Phase 2 of this document completes it.
+
+- **tugplan-token-audit-pairing** (Phase 1, PR #138, merged). Audited all 23
+  component CSS files, regularized 7 token names, closed all pairing gaps, added
+  `@tug-pairings` blocks and `verify-pairings.ts`.
+
+- **tugplan-token-audit-enforce** (Phase 1.5, PR #139, merged). Built
+  `audit-tokens.ts` with 6 subcommands, added 145 `@tug-renders-on` annotations,
+  flattened alias chains, replaced heuristic resolution with deterministic parsing,
+  added Rules 16/17 and D81 to the Rules of Tugways.
 
 The work done in Parts 1-4 of the semantic-formula-architecture roadmap (named
 builders, @semantic annotations, interface restructuring, design rationale comments)
