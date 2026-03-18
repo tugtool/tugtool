@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-18T20:26:16Z
+---
+
+## step-1: Created renders-on-survey.md identifying 142 CSS rules across 16 of 23 component files that need @tug-renders-on annotations. Each rule has a proposed --tug-base-* surface token. Used static analysis methodology (not heuristic-based tool output).
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
 step: step-8
 date: 2025-03-18T19:07:26Z
 ---
