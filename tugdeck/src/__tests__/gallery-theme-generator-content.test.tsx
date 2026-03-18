@@ -149,38 +149,21 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
  * theme-derivation-engine.test.ts.
  *
  * Categories:
- *   - Light-mode surface derivation limitation (engine calibrated for dark mode;
- *     bg-app and surface-raised are derived too dark for light-mode recipes,
- *     causing fg-default/fg-muted to fail against them).
- *   - Surface-screen and surface-overlay: fg-inverse is intentionally a dark
- *     foreground used for inverted chips/badges, not body text on these surfaces.
- *   - fg-muted on overlay: overlay surfaces use a semi-transparent bg; muted fg
- *     falls below 4.5:1 against very light overlays by design.
+ *   - fg-inverse on surface-screen: fg-inverse is designed for on-fill text
+ *     (dark background fills); it is not body text on the light screen surface.
+ *     This is a semantic pairing mismatch — the pair exists in the pairing map
+ *     because tooltips can float over surface-screen, but fg-inverse at near-white
+ *     (light mode) or near-white (dark mode) does not need to contrast against
+ *     the same-polarity screen surface. [D04]
+ *   - Focused-vs-unfocused decorative comparisons: perceptual contrast is designed
+ *     for element-on-area contrast, not border-vs-border comparisons. [D05]
  */
 const KNOWN_PAIR_EXCEPTIONS = new Set([
-  // Light-mode surface derivation (bg-app / surface-raised derived too dark)
-  "--tug-base-fg-default|--tug-base-bg-app",
-  "--tug-base-fg-default|--tug-base-bg-canvas",
-  "--tug-base-fg-default|--tug-base-surface-raised",
-  "--tug-base-fg-default|--tug-base-surface-overlay",
-  "--tug-base-fg-default|--tug-base-surface-sunken",
-  "--tug-base-fg-muted|--tug-base-surface-raised",
-  // fg-inverse on screen / screen-adjacent surfaces
+  // fg-inverse on light surface-screen: structural polarity mismatch — fg-inverse
+  // is for on-fill text (dark bg), not body text on the light screen surface.
+  // LIGHT_OVERRIDES calibrates all other light-mode pairs; only this structural
+  // mismatch remains.
   "--tug-base-fg-inverse|--tug-base-surface-screen",
-  // fg-muted / fg-default on overlay and screen surfaces
-  "--tug-base-fg-default|--tug-base-surface-screen",
-  "--tug-base-fg-muted|--tug-base-surface-overlay",
-  // Additional light-mode link + icon exceptions
-  "--tug-base-fg-link|--tug-base-surface-content",
-  "--tug-base-fg-link|--tug-base-surface-overlay",
-  "--tug-base-icon-default|--tug-base-surface-sunken",
-  "--tug-base-icon-default|--tug-base-surface-overlay",
-  "--tug-base-icon-default|--tug-base-surface-raised",
-  "--tug-base-icon-default|--tug-base-surface-default",
-  // Light-mode tab chrome: tab-fg-rest (tone=50) vs surface-sunken (tone=44) in light
-  // mode are near-identical in lightness. Light-mode formula calibration is deferred
-  // per Q01 — this constraint is structural, not a regression.
-  "--tug-base-tab-fg-rest|--tug-base-surface-sunken",
   // Focused-vs-unfocused decorative comparisons (Step 5): perceptual contrast is designed for
   // element-on-area contrast, not border-vs-border comparisons [D05]. The auto-adjuster
   // bumps accent-cool-default toward control-outlined-action-border-rest (contrast ~9.5,
@@ -693,11 +676,10 @@ describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contras
     expect(descriptions).toEqual([]);
   });
 
-  // T-ACC-1 light mode sub-test deleted (clean break per D06):
-  // light recipes without explicit formulas fall back to DARK_FORMULAS and will
-  // produce wrong contrast values until a LIGHT_FORMULAS is introduced in a later step.
+  // Note: EXAMPLE_RECIPES now includes harmony (light mode with LIGHT_FORMULAS).
+  // The test below covers all built-in recipes including the harmony light theme.
 
-  it("all three example recipes produce 0 unexpected body-text failures (engine contrast floors; regression guard)", () => {
+  it("all built-in example recipes produce 0 unexpected body-text failures (engine contrast floors; regression guard)", () => {
     for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES) as [string, Parameters<typeof deriveTheme>[0]][]) {
       const { finalResults } = runFullPipelineForRecipe(recipe);
       const bodyTextUnexpected = unexpectedFailures(finalResults).filter(

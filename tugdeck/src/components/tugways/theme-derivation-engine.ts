@@ -1390,9 +1390,17 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   filledBgActiveTone: 50, // same as dark: press confirms with one more step up
 
   // ===== Outlined Control Style =====
-  // Light mode uses the *Light tone fields for fg/icon.
-  // outlinedFgRestTone/HoverTone/ActiveTone are dark-mode; light reads *ToneLight.
-  // Light-mode fields already set to 0 (black) in DARK_FORMULAS (correct for light).
+  // Light mode: fg/icon use near-dark tones (8) to contrast against light surfaces.
+  // The derivation rules use outlinedFgRestTone (not outlinedFgRestToneLight), so we
+  // override the primary tone fields here for the light recipe.
+  outlinedFgRestTone: 8, // near-black fg at rest: dark text on light outlined button bg
+  outlinedFgHoverTone: 8, // same across states: tone stays constant; state change is bg
+  outlinedFgActiveTone: 8, // same across states
+  outlinedFgI: 4, // slight chroma: fg text carries a hint of hue for warmth on light bg
+  outlinedIconRestTone: 8, // near-black icons at rest: mirrors fg tone for visual consistency
+  outlinedIconHoverTone: 8, // same across states
+  outlinedIconActiveTone: 8, // same across states
+  outlinedIconI: 4, // same as fg chroma: icons match text warmth
   // outlinedBgHoverI / outlinedBgActiveI: light mode uses direct chroma, not sentinel.
   outlinedBgHoverI: 4, // direct chroma: light-mode hover bg is a solid tinted surface, not alpha sentinel
   outlinedBgHoverAlphaValue: 100, // fully opaque: light-mode hover bg is a solid surface (no alpha wash)
@@ -1400,9 +1408,22 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   outlinedBgActiveAlphaValue: 100, // fully opaque: press bg is also solid
 
   // ===== Ghost Control Style =====
-  // Light mode: fg/icon tones use *ToneLight fields (set to 0/black in DARK_FORMULAS — correct for light).
-  // Ghost border needs a higher, darker tone to be visible on light surfaces.
-  ghostBorderI: 20, // same elevated chroma: visible hue-tinted ring without filled bg
+  // Light mode: fg/icon use near-dark tones (8) to contrast against light surfaces.
+  // The derivation rules use ghostFgRestTone (not ghostFgRestToneLight), so we
+  // override the primary tone fields here for the light recipe.
+  ghostFgRestTone: 8, // near-black fg at rest: dark text on light ghost button surfaces
+  ghostFgHoverTone: 8, // same across states: tone stays constant; state change is bg alpha
+  ghostFgActiveTone: 8, // same across states
+  ghostFgRestI: 4, // slight chroma: near-neutral for clean readability
+  ghostFgHoverI: 4, // same across states
+  ghostFgActiveI: 4, // same across states
+  ghostIconRestTone: 8, // near-black icons at rest: mirrors fg tone for visual consistency
+  ghostIconHoverTone: 8, // same across states
+  ghostIconActiveTone: 8, // same across states
+  ghostIconRestI: 4, // same as fg chroma: icons match text warmth
+  ghostIconHoverI: 4, // same across states
+  ghostIconActiveI: 4, // same across states
+  ghostBorderI: 20, // elevated chroma: visible hue-tinted ring without filled bg
   ghostBorderTone: 35, // darker tone: border must be dark enough to show against light surfaces
 
   // ===== Badge Style =====

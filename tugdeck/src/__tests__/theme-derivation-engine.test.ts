@@ -781,6 +781,62 @@ describe("derivation-engine integration", () => {
   });
 
   // -------------------------------------------------------------------------
+  // T4.3: Harmony light recipe — 0 unexpected failures with LIGHT_FORMULAS
+  //
+  // Validates that EXAMPLE_RECIPES.harmony (which uses LIGHT_FORMULAS) produces
+  // zero unexpected contrast failures across all roles. No LIGHT_MODE_PAIR_EXCEPTIONS
+  // set is needed — LIGHT_OVERRIDES provides proper calibration for all semantic
+  // groups. Only the structural exceptions shared with brio (KNOWN_PAIR_EXCEPTIONS
+  // and KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS) apply.
+  //
+  // The one remaining structural constraint is fg-inverse|surface-screen: fg-inverse
+  // is designed for on-fill text (dark backgrounds), not body text on light surfaces.
+  // This is the same structural pattern as brio-light T4.2 and is covered by the
+  // pair exception set, not a new light-mode exceptions list.
+  // -------------------------------------------------------------------------
+  it("T4.3: deriveTheme(EXAMPLE_RECIPES.harmony) -> 0 unexpected failures (LIGHT_FORMULAS calibrated)", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.harmony);
+    const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    // Structural pair exception: fg-inverse is for on-fill text (dark backgrounds);
+    // on surface-screen (light) is not a real usage — same constraint as brio-light T4.2.
+    const HARMONY_PAIR_EXCEPTIONS = new Set([
+      "--tug-base-fg-inverse|--tug-base-surface-screen",
+    ]);
+
+    const unexpectedFailures = finalResults.filter((r) => {
+      if (r.contrastPass) return false;
+      const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
+      if (Math.abs(r.contrast) >= margin) return false;
+      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
+      if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+      if (HARMONY_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+      return true;
+    });
+    const descriptions = unexpectedFailures.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
+
+    // Core readability assertion: fg-default on primary surfaces must pass contrast 75
+    const coreFailures = finalResults.filter(
+      (r) =>
+        r.fg === "--tug-base-fg-default" &&
+        (r.bg === "--tug-base-surface-default" ||
+          r.bg === "--tug-base-surface-inset" ||
+          r.bg === "--tug-base-surface-content") &&
+        !r.contrastPass,
+    );
+    expect(coreFailures).toEqual([]);
+
+    // Token count must be 373 (same as brio)
+    expect(Object.keys(output.tokens).length).toBe(373);
+
+    // Mode must be "light"
+    expect(output.mode).toBe("light");
+  });
+
+  // -------------------------------------------------------------------------
   // Structural verification: resolved map feeds directly into validateThemeContrast
   // with no intermediate parsing or conversion [D09]
   // -------------------------------------------------------------------------

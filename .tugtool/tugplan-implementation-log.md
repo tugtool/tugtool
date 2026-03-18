@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-18T02:56:49Z
+---
+
+## step-3: Calibrated LIGHT_OVERRIDES: added outlined/ghost control fg tone overrides (derivation rules use primary fields, not *ToneLight variants). Adjusted filled control, badge, icon, placeholder values. Gallery KNOWN_PAIR_EXCEPTIONS reduced from 18 to 3. Added T4.3 harmony contrast validation test. 1846 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
 step: step-2
 date: 2025-03-18T02:42:19Z
 ---
