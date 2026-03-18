@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-18T01:30:50Z
+---
+
+## step-6: Added inline design rationale comments to 23 fields across Badge Style (8), Icon Style (3), Tab Style (1), Toggle Style (3), and Field Style (8) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-5
 date: 2025-03-18T01:28:28Z
 ---

@@ -1135,41 +1135,41 @@ export const DARK_FORMULAS: DerivationFormulas = {
 
   // ===== Badge Style =====
   // How tinted badges present. Dark: bright fg on tinted bg. Light: dark fg on tinted bg.
-  badgeTintedFgI: 72,
-  badgeTintedFgTone: 85,
-  badgeTintedBgI: 65,
-  badgeTintedBgTone: 60,
-  badgeTintedBgAlpha: 15,
-  badgeTintedBorderI: 50,
-  badgeTintedBorderTone: 50,
-  badgeTintedBorderAlpha: 35,
+  badgeTintedFgI: 72, // high chroma fg: badge label text is richly tinted to signal semantic category
+  badgeTintedFgTone: 85, // bright fg tone: near-white text on dark tinted bg maintains legibility
+  badgeTintedBgI: 65, // vivid bg chroma: badge background carries strong hue to identify category at a glance
+  badgeTintedBgTone: 60, // mid-bright bg tone: bright enough to carry chroma, dark enough for dark-mode contrast
+  badgeTintedBgAlpha: 15, // low alpha: tinted bg is a translucent wash, not a solid fill
+  badgeTintedBorderI: 50, // high border chroma: crisp hue ring frames the badge without a hard fill
+  badgeTintedBorderTone: 50, // mid-tone border: sits between fg and bg tones for clean delineation
+  badgeTintedBorderAlpha: 35, // moderate border alpha: more opaque than bg to give the ring definition
 
   // ===== Icon Style =====
   // How icons present in non-control contexts. Dark: bright tones. Light: dark tones.
-  iconActiveTone: 80,
-  iconMutedI: 7,
-  iconMutedTone: 37,
+  iconActiveTone: 80, // bright but not pure white: active icons are vivid without blending into fg text
+  iconMutedI: 7, // higher chroma for muted icons: compensates for low tone so the hue still reads
+  iconMutedTone: 37, // dim tone: muted icons recede to signal non-primary status
 
   // ===== Tab Style =====
   // How tabs present. Dark: bright active fg. Light: dark active fg.
-  tabFgActiveTone: 90,
+  tabFgActiveTone: 90, // near-white active tab label: clearly distinguished from muted inactive tabs
 
   // ===== Toggle Style =====
   // How toggles present. Dark: bright thumb. Light: dark track.
-  toggleTrackOnHoverTone: 45,
-  toggleThumbDisabledTone: 40,
-  toggleTrackDisabledI: 5,
+  toggleTrackOnHoverTone: 45, // mid-tone hover track: lifts from rest to signal the toggle is interactive
+  toggleThumbDisabledTone: 40, // dim thumb when disabled: thumb recedes to match the disabled state's low contrast
+  toggleTrackDisabledI: 5, // low chroma disabled track: near-neutral to clearly communicate non-interactivity
 
   // ===== Field Style =====
   // How form fields present. Dark: dark bg tones. Light: light bg tones.
-  fieldBgRestTone: 8,
-  fieldBgHoverTone: 11,
-  fieldBgFocusTone: 7,
-  fieldBgDisabledTone: 6,
-  fieldBgReadOnlyTone: 11,
-  fieldBgRestI: 5,
-  disabledBgI: 5,
-  disabledBorderI: 6,
+  fieldBgRestTone: 8, // slightly above canvas: field bg is distinct from the app bg but not surface-bright
+  fieldBgHoverTone: 11, // matches surfaceDefault: hover lifts the field to the standard surface level
+  fieldBgFocusTone: 7, // below rest: focus darkens slightly to signal an inset, focused editing area
+  fieldBgDisabledTone: 6, // near-canvas: disabled fields recede to near-background to signal inactivity
+  fieldBgReadOnlyTone: 11, // same as hover: read-only shares the raised tone to distinguish from editable rest
+  fieldBgRestI: 5, // moderate chroma: field bg carries enough hue to look intentional, not just dark
+  disabledBgI: 5, // same as rest chroma: disabled bg retains the hue but the low tone signals the state
+  disabledBorderI: 6, // slightly higher chroma border: gives disabled fields a visible edge despite dim tone
 
   // ===== Hue Slot Dispatch =====
   // Which hue slot each surface/fg/icon/border tier reads from. String keys into ResolvedHueSlots.
