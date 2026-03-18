@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-18T01:15:56Z
+---
+
+## step-1: Baseline snapshot: tsc clean, 1845 tests pass, CSS token output saved to /tmp/tug-base-before.css for post-annotation diffing.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-3
 date: 2025-03-18T00:49:11Z
 ---
