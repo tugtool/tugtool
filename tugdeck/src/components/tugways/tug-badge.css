@@ -1,52 +1,65 @@
-/**
- * TugBadge styles — tugways-specific CSS using --tug-base-* tokens.
- *
- * All colors reference canonical tokens exclusively. No hardcoded hex values.
- *
- * Emphasis x role system (Spec S08, S09):
- *   Compound CSS class: .tug-badge-{emphasis}-{role}
- *
- *   Tier 1 — 8 Table T01 combos: use --tug-base-control-{emphasis}-{role}-*-rest tokens
- *   Tier 2 — success, caution: use --tug-base-control-filled-{role}-*-rest tokens
- *   Non-T01 — remaining combos: derive from tone families per Spec S09
- *
- * Badges are display-only (no hover/active states). Only rest-state styling.
- *
- * Spec S06, S07, S08, S09
- */
-
-/**
- * @tug-pairings
- * | Element                                                           | Surface                                                            | Role         | Context                                          |
- * |-------------------------------------------------------------------|--------------------------------------------------------------------|--------------|--------------------------------------------------|
- * | --tug-base-control-filled-accent-fg-rest (control-filled-accent-fg-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | Badge text on filled-accent background     |
- * | --tug-base-control-filled-action-fg-rest (control-filled-action-fg-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | Badge text on filled-action background     |
- * | --tug-base-control-filled-danger-fg-rest (control-filled-danger-fg-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | Badge text on filled-danger background     |
- * | --tug-base-control-filled-agent-fg-rest (control-filled-agent-fg-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | ui-component | Badge text on filled-agent background       |
- * | --tug-base-control-outlined-action-fg-rest (control-outlined-action-fg-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | ui-component | Badge text on outlined-action background |
- * | --tug-base-control-outlined-agent-fg-rest (control-outlined-agent-fg-rest) | --tug-base-control-outlined-agent-bg-rest (control-outlined-agent-bg-rest) | ui-component | Badge text on outlined-agent background   |
- * | --tug-base-control-ghost-action-fg-rest (control-ghost-action-fg-rest) | --tug-base-surface-default (surface-default)                       | ui-component | Badge text on page surface (ghost-action; bg-rest is transparent)   |
- * | --tug-base-control-ghost-danger-fg-rest (control-ghost-danger-fg-rest) | --tug-base-surface-default (surface-default)                       | ui-component | Badge text on page surface (ghost-danger; bg-rest is transparent)   |
- * | --tug-base-badge-tinted-accent-fg (badge-tinted-accent-fg)        | --tug-base-badge-tinted-accent-bg (badge-tinted-accent-bg)         | ui-component | Tinted accent badge text on tinted accent bg     |
- * | --tug-base-badge-tinted-action-fg (badge-tinted-action-fg)        | --tug-base-badge-tinted-action-bg (badge-tinted-action-bg)         | ui-component | Tinted action badge text on tinted action bg     |
- * | --tug-base-badge-tinted-agent-fg (badge-tinted-agent-fg)          | --tug-base-badge-tinted-agent-bg (badge-tinted-agent-bg)           | ui-component | Tinted agent badge text on tinted agent bg       |
- * | --tug-base-badge-tinted-data-fg (badge-tinted-data-fg)            | --tug-base-badge-tinted-data-bg (badge-tinted-data-bg)             | ui-component | Tinted data badge text on tinted data bg         |
- * | --tug-base-badge-tinted-danger-fg (badge-tinted-danger-fg)        | --tug-base-badge-tinted-danger-bg (badge-tinted-danger-bg)         | ui-component | Tinted danger badge text on tinted danger bg     |
- * | --tug-base-badge-tinted-success-fg (badge-tinted-success-fg)      | --tug-base-badge-tinted-success-bg (badge-tinted-success-bg)       | ui-component | Tinted success badge text on tinted success bg   |
- * | --tug-base-badge-tinted-caution-fg (badge-tinted-caution-fg)      | --tug-base-badge-tinted-caution-bg (badge-tinted-caution-bg)       | ui-component | Tinted caution badge text on tinted caution bg   |
- * | --tug-base-control-filled-data-fg-rest (control-filled-data-fg-rest) | --tug-base-control-filled-data-bg-rest (control-filled-data-bg-rest) | ui-component | Badge text on filled-data background           |
- * | --tug-base-control-filled-success-fg-rest (control-filled-success-fg-rest) | --tug-base-control-filled-success-bg-rest (control-filled-success-bg-rest) | ui-component | Badge text on filled-success background  |
- * | --tug-base-control-filled-caution-fg-rest (control-filled-caution-fg-rest) | --tug-base-control-filled-caution-bg-rest (control-filled-caution-bg-rest) | ui-component | Badge text on filled-caution background  |
- * | --tug-base-tone-accent-fg (tone-accent-fg)                        | transparent (ambient surface-default or surface-overlay)           | ui-component | Ghost-accent badge text (transparent bg)         |
- * | --tug-base-tone-agent-fg (tone-agent-fg)                          | transparent (ambient)                                              | ui-component | Ghost-agent badge text (transparent bg)          |
- * | --tug-base-tone-data-fg (tone-data-fg)                            | transparent (ambient)                                              | ui-component | Ghost-data badge text (transparent bg)           |
- * | --tug-base-tone-success-fg (tone-success-fg)                      | transparent (ambient)                                              | ui-component | Ghost-success badge text (transparent bg)        |
- * | --tug-base-tone-caution-fg (tone-caution-fg)                      | transparent (ambient)                                              | ui-component | Ghost-caution badge text (transparent bg)        |
- */
 
 /* ============================================================================
    Base Badge
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-control-filled-accent-fg-rest (control-filled-accent-fg-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | body-text    | .tug-badge-filled-accent (color)     |
+ * | --tug-base-control-filled-accent-border-rest (control-filled-accent-border-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | .tug-badge-filled-accent (border-color) |
+ * | --tug-base-control-filled-action-fg-rest (control-filled-action-fg-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | body-text    | .tug-badge-filled-action (color)     |
+ * | --tug-base-control-filled-action-border-rest (control-filled-action-border-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | .tug-badge-filled-action (border-color) |
+ * | --tug-base-control-filled-danger-fg-rest (control-filled-danger-fg-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | body-text    | .tug-badge-filled-danger (color)     |
+ * | --tug-base-control-filled-danger-border-rest (control-filled-danger-border-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | .tug-badge-filled-danger (border-color) |
+ * | --tug-base-control-filled-agent-fg-rest (control-filled-agent-fg-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | body-text    | .tug-badge-filled-agent (color)      |
+ * | --tug-base-control-filled-agent-border-rest (control-filled-agent-border-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | ui-component | .tug-badge-filled-agent (border-color) |
+ * | --tug-base-control-outlined-action-fg-rest (control-outlined-action-fg-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | body-text    | .tug-badge-outlined-action (color)   |
+ * | --tug-base-control-outlined-action-border-rest (control-outlined-action-border-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | ui-component | .tug-badge-outlined-action (border-color) |
+ * | --tug-base-control-outlined-agent-fg-rest (control-outlined-agent-fg-rest) | --tug-base-control-outlined-agent-bg-rest (control-outlined-agent-bg-rest) | body-text    | .tug-badge-outlined-agent (color)    |
+ * | --tug-base-control-outlined-agent-border-rest (control-outlined-agent-border-rest) | --tug-base-control-outlined-agent-bg-rest (control-outlined-agent-bg-rest) | ui-component | .tug-badge-outlined-agent (border-color) |
+ * | --tug-base-control-ghost-action-fg-rest (control-ghost-action-fg-rest) | --tug-base-control-ghost-action-bg-rest (control-ghost-action-bg-rest) | body-text    | .tug-badge-ghost-action (color)      |
+ * | --tug-base-control-ghost-action-border-rest (control-ghost-action-border-rest) | --tug-base-control-ghost-action-bg-rest (control-ghost-action-bg-rest) | ui-component | .tug-badge-ghost-action (border-color) |
+ * | --tug-base-control-ghost-danger-fg-rest (control-ghost-danger-fg-rest) | --tug-base-control-ghost-danger-bg-rest (control-ghost-danger-bg-rest) | body-text    | .tug-badge-ghost-danger (color)      |
+ * | --tug-base-control-ghost-danger-border-rest (control-ghost-danger-border-rest) | --tug-base-control-ghost-danger-bg-rest (control-ghost-danger-bg-rest) | ui-component | .tug-badge-ghost-danger (border-color) |
+ * | --tug-base-fg-inverse (fg-inverse)               | --tug-base-surface-default (surface-default)     | body-text    | .tug-badge-outlined-accent (color)   |
+ * | --tug-base-tone-accent (tone-accent)             | --tug-base-surface-default (surface-default)     | ui-component | .tug-badge-outlined-accent (border-color) |
+ * | --tug-base-tone-danger (tone-danger)             | --tug-base-surface-default (surface-default)     | ui-component | .tug-badge-outlined-danger (border-color) |
+ * | --tug-base-tone-data (tone-data)                 | --tug-base-surface-default (surface-default)     | ui-component | .tug-badge-outlined-data (border-color) |
+ * | --tug-base-tone-accent-fg (tone-accent-fg)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-badge-ghost-accent (color)      |
+ * | --tug-base-tone-agent-fg (tone-agent-fg)         | --tug-base-surface-default (surface-default)     | body-text    | .tug-badge-ghost-agent (color)       |
+ * | --tug-base-tone-data-fg (tone-data-fg)           | --tug-base-surface-default (surface-default)     | body-text    | .tug-badge-ghost-data (color)        |
+ * | --tug-base-control-filled-data-fg-rest (control-filled-data-fg-rest) | --tug-base-control-filled-data-bg-rest (control-filled-data-bg-rest) | body-text    | .tug-badge-filled-data (color)       |
+ * | --tug-base-control-filled-data-border-rest (control-filled-data-border-rest) | --tug-base-control-filled-data-bg-rest (control-filled-data-bg-rest) | ui-component | .tug-badge-filled-data (border-color) |
+ * | --tug-base-control-filled-success-fg-rest (control-filled-success-fg-rest) | --tug-base-control-filled-success-bg-rest (control-filled-success-bg-rest) | body-text    | .tug-badge-filled-success (color)    |
+ * | --tug-base-control-filled-success-border-rest (control-filled-success-border-rest) | --tug-base-control-filled-success-bg-rest (control-filled-success-bg-rest) | ui-component | .tug-badge-filled-success (border-color) |
+ * | --tug-base-tone-success (tone-success)           | --tug-base-surface-default (surface-default)     | ui-component | .tug-badge-outlined-success (border-color) |
+ * | --tug-base-tone-success-fg (tone-success-fg)     | --tug-base-surface-default (surface-default)     | body-text    | .tug-badge-ghost-success (color)     |
+ * | --tug-base-control-filled-caution-fg-rest (control-filled-caution-fg-rest) | --tug-base-control-filled-caution-bg-rest (control-filled-caution-bg-rest) | body-text    | .tug-badge-filled-caution (color)    |
+ * | --tug-base-control-filled-caution-border-rest (control-filled-caution-border-rest) | --tug-base-control-filled-caution-bg-rest (control-filled-caution-bg-rest) | ui-component | .tug-badge-filled-caution (border-color) |
+ * | --tug-base-tone-caution (tone-caution)           | --tug-base-surface-default (surface-default)     | ui-component | .tug-badge-outlined-caution (border-color) |
+ * | --tug-base-tone-caution-fg (tone-caution-fg)     | --tug-base-surface-default (surface-default)     | body-text    | .tug-badge-ghost-caution (color)     |
+ * | --tug-base-badge-tinted-accent-fg (badge-tinted-accent-fg) | --tug-base-badge-tinted-accent-bg (badge-tinted-accent-bg) | body-text    | .tug-badge-tinted-accent (color)     |
+ * | --tug-base-badge-tinted-accent-border (badge-tinted-accent-border) | --tug-base-badge-tinted-accent-bg (badge-tinted-accent-bg) | ui-component | .tug-badge-tinted-accent (border-color) |
+ * | --tug-base-badge-tinted-action-fg (badge-tinted-action-fg) | --tug-base-badge-tinted-action-bg (badge-tinted-action-bg) | body-text    | .tug-badge-tinted-action (color)     |
+ * | --tug-base-badge-tinted-action-border (badge-tinted-action-border) | --tug-base-badge-tinted-action-bg (badge-tinted-action-bg) | ui-component | .tug-badge-tinted-action (border-color) |
+ * | --tug-base-badge-tinted-agent-fg (badge-tinted-agent-fg) | --tug-base-badge-tinted-agent-bg (badge-tinted-agent-bg) | body-text    | .tug-badge-tinted-agent (color)      |
+ * | --tug-base-badge-tinted-agent-border (badge-tinted-agent-border) | --tug-base-badge-tinted-agent-bg (badge-tinted-agent-bg) | ui-component | .tug-badge-tinted-agent (border-color) |
+ * | --tug-base-badge-tinted-data-fg (badge-tinted-data-fg) | --tug-base-badge-tinted-data-bg (badge-tinted-data-bg) | body-text    | .tug-badge-tinted-data (color)       |
+ * | --tug-base-badge-tinted-data-border (badge-tinted-data-border) | --tug-base-badge-tinted-data-bg (badge-tinted-data-bg) | ui-component | .tug-badge-tinted-data (border-color) |
+ * | --tug-base-badge-tinted-danger-fg (badge-tinted-danger-fg) | --tug-base-badge-tinted-danger-bg (badge-tinted-danger-bg) | body-text    | .tug-badge-tinted-danger (color)     |
+ * | --tug-base-badge-tinted-danger-border (badge-tinted-danger-border) | --tug-base-badge-tinted-danger-bg (badge-tinted-danger-bg) | ui-component | .tug-badge-tinted-danger (border-color) |
+ * | --tug-base-badge-tinted-success-fg (badge-tinted-success-fg) | --tug-base-badge-tinted-success-bg (badge-tinted-success-bg) | body-text    | .tug-badge-tinted-success (color)    |
+ * | --tug-base-badge-tinted-success-border (badge-tinted-success-border) | --tug-base-badge-tinted-success-bg (badge-tinted-success-bg) | ui-component | .tug-badge-tinted-success (border-color) |
+ * | --tug-base-badge-tinted-caution-fg (badge-tinted-caution-fg) | --tug-base-badge-tinted-caution-bg (badge-tinted-caution-bg) | body-text    | .tug-badge-tinted-caution (color)    |
+ * | --tug-base-badge-tinted-caution-border (badge-tinted-caution-border) | --tug-base-badge-tinted-caution-bg (badge-tinted-caution-bg) | ui-component | .tug-badge-tinted-caution (border-color) |
+ */
+
+
+
+
+
 
 .tug-badge {
   display: inline-flex;
@@ -191,6 +204,7 @@
 
 /* --- outlined-accent (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-accent {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -199,6 +213,7 @@
 
 /* --- outlined-danger (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-danger {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -207,6 +222,7 @@
 
 /* --- outlined-data (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-data {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -215,6 +231,7 @@
 
 /* --- ghost-accent (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-accent {
   background-color: transparent;
   color: var(--tug-base-tone-accent-fg);
@@ -223,6 +240,7 @@
 
 /* --- ghost-agent (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-agent {
   background-color: transparent;
   color: var(--tug-base-tone-agent-fg);
@@ -231,6 +249,7 @@
 
 /* --- ghost-data (Spec S09) --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-data {
   background-color: transparent;
   color: var(--tug-base-tone-data-fg);
@@ -260,6 +279,7 @@
 
 /* --- outlined-success --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-success {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -268,6 +288,7 @@
 
 /* --- ghost-success --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-success {
   background-color: transparent;
   color: var(--tug-base-tone-success-fg);
@@ -284,6 +305,7 @@
 
 /* --- outlined-caution --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-outlined-caution {
   background-color: transparent;
   color: var(--tug-base-fg-inverse);
@@ -292,6 +314,7 @@
 
 /* --- ghost-caution --- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-badge-ghost-caution {
   background-color: transparent;
   color: var(--tug-base-tone-caution-fg);

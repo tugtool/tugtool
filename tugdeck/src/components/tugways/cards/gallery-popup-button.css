@@ -1,21 +1,23 @@
-/**
- * Gallery popup button styles — self-contained CSS for the TugPopupButton gallery tab.
- *
- * Uses CSS custom properties (--gpb-*) set by sliders to override border-radius
- * on button triggers and menu panels within the gallery demo.
- */
-
-/**
- * @tug-pairings
- * | Element                                   | Surface                                              | Role         | Context                                  |
- * |-------------------------------------------|------------------------------------------------------|--------------|------------------------------------------|
- * | --tug-base-fg-muted (fg-muted)            | parent ambient (typically surface-default)           | subdued-text | Slider labels and demo labels            |
- * | --tug-base-fg-subtle (fg-subtle)          | --tug-base-surface-inset (surface-inset)             | subdued-text | Context bar label text on inset bg       |
- */
 
 /* ============================================================================
    Slider controls
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .gpb-control-group-title (color)     |
+ * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-default (surface-default)     | subdued-text | .gpb-slider-label (color)            |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-default (surface-default)     | body-text    | .gpb-reset:hover (color)             |
+ * | --tug-base-border-muted (border-muted)           | --tug-base-surface-inset (surface-inset)         | ui-component | .gpb-context-bar (border)            |
+ * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-inset (surface-inset)         | subdued-text | .gpb-context-label (color)           |
+ */
+
+
+
+
+
 
 .gpb-controls {
   display: flex;
@@ -30,6 +32,7 @@
   min-width: 12rem;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gpb-control-group-title {
   font-size: 0.625rem;
   font-weight: 600;
@@ -45,6 +48,7 @@
   gap: 0.5rem;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gpb-slider-label {
   font-size: 0.625rem;
   color: var(--tug-base-fg-subtle);
@@ -59,6 +63,7 @@
   cursor: pointer;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gpb-slider-value {
   font-size: 0.625rem;
   color: var(--tug-base-fg-muted);
@@ -67,6 +72,7 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gpb-reset {
   background: none;
   border: none;
@@ -79,6 +85,7 @@
   letter-spacing: 0.02em;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gpb-reset:hover {
   color: var(--tug-base-fg-default);
 }
@@ -101,18 +108,21 @@
   align-items: flex-start;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gpb-demo-label {
   font-size: 0.625rem;
   color: var(--tug-base-fg-subtle);
   text-transform: lowercase;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gpb-status {
   margin-top: 0.5rem;
   font-size: 0.75rem;
   color: var(--tug-base-fg-muted);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gpb-status code {
   font-family: var(--tug-base-font-mono);
   color: var(--tug-base-fg-default);
@@ -132,6 +142,7 @@
   border: 1px solid var(--tug-base-border-muted);
 }
 
+/* @tug-renders-on: --tug-base-surface-inset */
 .gpb-context-label {
   font-size: 0.75rem;
   color: var(--tug-base-fg-subtle);

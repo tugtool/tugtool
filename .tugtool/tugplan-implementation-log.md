@@ -10,6 +10,102 @@ Entries are sorted newest-first.
 
 ---
 step: step-8
+date: 2025-03-18T21:59:38Z
+---
+
+## step-8: Final validation: audit:tokens lint zero violations, pairings zero unresolved, verify zero gaps (275 entries, 23/23 files), bun test 1878/1878, cargo nextest 884/884, Rules 16/17/D81 confirmed in design-system-concepts.md.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
+step: step-7
+date: 2025-03-18T21:53:36Z
+---
+
+## step-7: Added Rule 16 (every color-setting rule declares its rendering surface via @tug-renders-on), Rule 17 (component alias tokens resolve to --tug-base-* in one hop), and D81 (token pairings are machine-auditable) to roadmap/design-system-concepts.md.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
+step: step-6
+date: 2025-03-18T21:45:55Z
+---
+
+## step-6: Ran inject --apply to regenerate @tug-pairings blocks in 16 CSS files with expanded annotation-derived pairings. Expanded element-surface-pairing-map.ts with ~484 new entries to close verify gaps. Updated test exceptions for newly discovered pairings. All audit:tokens commands pass (lint, verify, pairings). All 1878 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
+step: step-5
+date: 2025-03-18T21:13:05Z
+---
+
+## step-5: Verification-only step. Lint subcommand (implemented in step 4) confirmed passing: zero violations, correct Spec S03 message formats, hard gate exit(1) behavior. All 1878 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
+step: step-4
+date: 2025-03-18T21:09:13Z
+---
+
+## step-4: Major refactor of audit-tokens.ts: added parseRendersOnAnnotations parser, expanded ELEMENT_PROPERTIES with all border variants, replaced heuristic strategies 2-4 with annotation lookup (keep strategy 1 same-rule), removed dead code (extractLeafClass, extractClassNames, buildSurfaceIndex), added COMPAT_ALIAS_ALLOWLIST for 14 dropdown compat aliases, added lint subcommand. Zero unresolved pairings. Also added 8 missing annotations discovered by the new parser.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
+step: step-3
+date: 2025-03-18T20:53:20Z
+---
+
+## step-3: Flattened 2 cross-component alias chains in tug-tab.css body block: --tug-tab-bar-bg and --tug-tab-bg-active now point directly to --tug-base-* tokens instead of through --tug-card-* intermediaries. 14 --tug-dropdown-* compat aliases in tug-menu.css preserved per COMPAT_ALIAS_ALLOWLIST.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
+step: step-2
+date: 2025-03-18T20:47:54Z
+---
+
+## step-2: Added 145 @tug-renders-on annotations across 16 of 23 component CSS files. Each annotation declares the --tug-base-* rendering surface for rules that set color/fill/border without same-rule background-color. One multi-surface annotation for .tugcard-title (tab-bg-inactive, tab-bg-active).
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
+step: step-1
+date: 2025-03-18T20:26:16Z
+---
+
+## step-1: Created renders-on-survey.md identifying 142 CSS rules across 16 of 23 component files that need @tug-renders-on annotations. Each rule has a proposed --tug-base-* surface token. Used static analysis methodology (not heuristic-based tool output).
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
+step: step-8
 date: 2025-03-18T19:07:26Z
 ---
 

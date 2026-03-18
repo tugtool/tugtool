@@ -1,30 +1,22 @@
-/**
- * TugLabel styles -- tugways-specific CSS using --tug-base-field-* tokens.
- *
- * All colors reference canonical tokens exclusively. Theme switches update
- * CSS variables at the DOM level -- TugLabel re-paints without React re-renders.
- *
- * Features:
- *   - Multiline text wrapping up to maxLines
- *   - Ellipsis truncation (start, middle handled in JS; end via -webkit-line-clamp)
- *   - Optional leading icon with configurable color
- *   - Required indicator
- *
- * [D04] Semantic tokens exclusively
- */
-
-/**
- * @tug-pairings
- * | Element                                           | Surface                                             | Role         | Context                                       |
- * |---------------------------------------------------|-----------------------------------------------------|--------------|-----------------------------------------------|
- * | --tug-base-field-fg-label (field-fg-label)        | parent surface (ambient, typically surface-default) | body-text    | Label text                                    |
- * | --tug-base-field-fg-required (field-fg-required)  | parent surface (ambient, same as label context)     | ui-component | Required asterisk indicator                   |
- */
 
 /* ============================================================================
    Base Label
    ========================================================================= */
 
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-field-fg-label (field-fg-label)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-label (color)                   |
+ * | --tug-base-field-fg-required (field-fg-required) | --tug-base-surface-default (surface-default)     | body-text    | .tug-label-required (color)          |
+ */
+
+
+
+
+
+
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-label {
   display: inline-flex;
   align-items: flex-start;
@@ -114,6 +106,7 @@
    Required Indicator
    ========================================================================= */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-label-required {
   color: var(--tug-base-field-fg-required);
   margin-left: 0.125rem;

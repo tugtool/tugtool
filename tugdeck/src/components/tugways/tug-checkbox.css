@@ -1,30 +1,30 @@
-/**
- * TugCheckbox styles -- tugways-specific CSS using --tug-base-* tokens.
- *
- * All colors reference canonical tokens exclusively. Theme switches update
- * CSS variables at the DOM level -- TugCheckbox re-paints without React
- * re-renders.
- *
- * States: unchecked, checked, indeterminate (mixed), disabled.
- * Uses --tug-base-toggle-track-* for the box and --tug-base-checkmark-fg for
- * the indicator.
- *
- * [D04] Semantic tokens exclusively
- */
-
-/**
- * @tug-pairings
- * | Element                                               | Surface                                              | Role         | Context                                           |
- * |-------------------------------------------------------|------------------------------------------------------|--------------|---------------------------------------------------|
- * | --tug-base-checkmark-fg (checkmark-fg)                | --tug-base-toggle-track-on (toggle-track-on, chromatic) | ui-component | Checkmark icon on checked box background       |
- * | --tug-base-checkmark-fg-mixed (checkmark-fg-mixed)    | --tug-base-toggle-track-mixed (toggle-track-mixed, chromatic) | ui-component | Indeterminate dash on indeterminate box background |
- * | --tug-base-field-fg-label (field-fg-label)            | parent surface (ambient, typically surface-default)  | body-text    | Checkbox label text                               |
- */
 
 /* ============================================================================
    Checkbox Root (the clickable box)
    ========================================================================= */
 
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-toggle-track-off (toggle-track-off)   | --tug-base-surface-default (surface-default)     | ui-component | .tug-checkbox (border)               |
+ * | --tug-base-toggle-track-off-hover (toggle-track-off-hover) | --tug-base-surface-default (surface-default)     | ui-component | .tug-checkbox:hover:not(:disabled):not([data-disabled]) (border-color) |
+ * | --tug-toggle-on-color (--tug-toggle-on-color)    | --tug-toggle-on-color (--tug-toggle-on-color)    | ui-component | .tug-checkbox[data-state="checked"] (border-color) |
+ * | --tug-base-toggle-track-on-hover (toggle-track-on-hover) | --tug-base-toggle-track-on-hover (toggle-track-on-hover) | ui-component | .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
+ * | --tug-toggle-on-hover-color (--tug-toggle-on-hover-color) | --tug-toggle-on-hover-color (--tug-toggle-on-hover-color) | ui-component | .tug-checkbox[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) (border-color) |
+ * | --tug-base-toggle-track-mixed-hover (toggle-track-mixed-hover) | --tug-base-toggle-track-mixed-hover (toggle-track-mixed-hover) | ui-component | .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
+ * | --tug-base-toggle-track-disabled (toggle-track-disabled) | --tug-base-toggle-track-disabled (toggle-track-disabled) | ui-component | .tug-checkbox:disabled, .tug-checkbox[data-disabled] (border-color) |
+ * | --tug-base-checkmark-fg (checkmark-fg)           | --tug-base-toggle-track-on (toggle-track-on)     | body-text    | .tug-checkbox-indicator (color)      |
+ * | --tug-base-checkmark-fg-mixed (checkmark-fg-mixed) | --tug-base-toggle-track-mixed (toggle-track-mixed) | body-text    | .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator (color) |
+ * | --tug-base-field-fg-label (field-fg-label)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-checkbox-label (color)          |
+ */
+
+
+
+
+
+
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-checkbox {
   display: inline-flex;
   align-items: center;
@@ -58,6 +58,7 @@
 
 /* ---- Hover (unchecked) ---- */
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-checkbox:hover:not(:disabled):not([data-disabled]) {
   border-color: var(--tug-base-toggle-track-off-hover);
 }
@@ -122,6 +123,7 @@
    Indicator (check / dash icon)
    ========================================================================= */
 
+/* @tug-renders-on: --tug-base-toggle-track-on */
 .tug-checkbox-indicator {
   display: flex;
   align-items: center;
@@ -129,6 +131,7 @@
   color: var(--tug-base-checkmark-fg);
 }
 
+/* @tug-renders-on: --tug-base-toggle-track-mixed */
 .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator {
   color: var(--tug-base-checkmark-fg-mixed);
 }
@@ -168,6 +171,7 @@
   cursor: not-allowed;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .tug-checkbox-label {
   font-family: inherit;
   font-size: 0.8125rem;

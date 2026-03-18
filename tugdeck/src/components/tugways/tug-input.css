@@ -1,31 +1,30 @@
-/**
- * TugInput styles -- tugways-specific CSS using --tug-base-field-* tokens.
- *
- * All colors reference canonical tokens exclusively. No hardcoded hex values.
- * Theme switches update CSS variables at the DOM level -- TugInput re-paints
- * without React re-renders.
- *
- * States: rest → hover → focus, plus disabled, readOnly, and validation
- * (invalid, valid, warning).
- *
- * [D04] Semantic tokens exclusively
- */
-
-/**
- * @tug-pairings
- * | Element                                          | Surface                                    | Role         | Context                              |
- * |--------------------------------------------------|--------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-rest (field-bg-rest)   | body-text    | Input text on rest background        |
- * | --tug-base-field-fg-placeholder (field-fg-placeholder) | --tug-base-field-bg-rest (field-bg-rest) | subdued-text | Placeholder text on rest background  |
- * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-hover (field-bg-hover) | body-text    | Input text on hover background       |
- * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-focus (field-bg-focus) | body-text    | Input text on focus background       |
- * | --tug-base-field-fg-disabled (field-fg-disabled) | --tug-base-field-bg-disabled (field-bg-disabled) | body-text | Input text on disabled background   |
- * | --tug-base-field-fg-readOnly (field-fg-readOnly) | --tug-base-field-bg-readOnly (field-bg-readOnly) | body-text | Input text on read-only background   |
- */
 
 /* ============================================================================
    Base Input
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-rest (field-bg-rest)         | body-text    | .tug-input (color)                   |
+ * | --tug-base-field-border-rest (field-border-rest) | --tug-base-field-bg-rest (field-bg-rest)         | ui-component | .tug-input (border)                  |
+ * | --tug-base-field-fg-placeholder (field-fg-placeholder) | --tug-base-field-bg-rest (field-bg-rest)         | subdued-text | .tug-input::placeholder (color)      |
+ * | --tug-base-field-border-hover (field-border-hover) | --tug-base-field-bg-hover (field-bg-hover)       | ui-component | .tug-input:hover:not(:disabled):not(:read-only):not(:focus) (border-color) |
+ * | --tug-base-field-border-active (field-border-active) | --tug-base-field-bg-focus (field-bg-focus)       | ui-component | .tug-input:focus (border-color)      |
+ * | --tug-base-field-fg-disabled (field-fg-disabled) | --tug-base-field-bg-disabled (field-bg-disabled) | subdued-text | .tug-input:disabled (color)          |
+ * | --tug-base-field-border-disabled (field-border-disabled) | --tug-base-field-bg-disabled (field-bg-disabled) | ui-component | .tug-input:disabled (border-color)   |
+ * | --tug-base-field-fg-readOnly (field-fg-readOnly) | --tug-base-field-bg-readOnly (field-bg-readOnly) | subdued-text | .tug-input:read-only:not(:disabled) (color) |
+ * | --tug-base-field-border-readOnly (field-border-readOnly) | --tug-base-field-bg-readOnly (field-bg-readOnly) | ui-component | .tug-input:read-only:not(:disabled) (border-color) |
+ * | --tug-base-field-border-danger (field-border-danger) | --tug-base-field-bg-rest (field-bg-rest)         | ui-component | .tug-input-invalid:not(:focus) (border-color) |
+ * | --tug-base-field-border-success (field-border-success) | --tug-base-field-bg-rest (field-bg-rest)         | ui-component | .tug-input-valid:not(:focus) (border-color) |
+ * | --tug-base-field-tone-caution (field-tone-caution) | --tug-base-field-bg-rest (field-bg-rest)         | ui-component | .tug-input-warning:not(:focus) (border-color) |
+ */
+
+
+
+
+
 
 .tug-input {
   display: block;
@@ -43,6 +42,7 @@
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
+/* @tug-renders-on: --tug-base-field-bg-rest */
 .tug-input::placeholder {
   color: var(--tug-base-field-fg-placeholder);
 }
@@ -112,14 +112,17 @@
  * When focused, the focus border takes precedence (user is actively editing).
  */
 
+/* @tug-renders-on: --tug-base-field-bg-rest */
 .tug-input-invalid:not(:focus) {
   border-color: var(--tug-base-field-border-danger);
 }
 
+/* @tug-renders-on: --tug-base-field-bg-rest */
 .tug-input-valid:not(:focus) {
   border-color: var(--tug-base-field-border-success);
 }
 
+/* @tug-renders-on: --tug-base-field-bg-rest */
 .tug-input-warning:not(:focus) {
   border-color: var(--tug-base-field-tone-caution);
 }

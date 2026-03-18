@@ -1,24 +1,27 @@
-/**
- * Gallery Palette Content styles — TugColor editor.
- *
- * Styles for the TugColor canonical color tuning editor.
- * Builds on the cg-* class patterns from gallery-card.css.
- * All color tokens use --tug-base-* semantic tokens exclusively.
- */
-
-/**
- * @tug-pairings
- * | Element                                          | Surface                                          | Role         | Context                                         |
- * |--------------------------------------------------|--------------------------------------------------|--------------|-------------------------------------------------|
- * | --tug-base-fg-default (fg-default)               | --tug-base-surface-control (surface-control)     | body-text    | Action button text on surface-control           |
- * | --tug-base-tone-danger-fg (tone-danger-fg)        | --tug-base-tone-danger-bg (tone-danger-bg)       | body-text    | Error message text on danger tint background    |
- * | --tug-base-fg-muted (fg-muted)                   | parent ambient surface-default                   | subdued-text | SVG axis labels, vib/val readout labels         |
- * | --tug-base-fg-default (fg-default)               | --tug-base-surface-inset (surface-inset)         | body-text    | Formula code snippet text on inset background   |
- */
 
 /* ============================================================================
    Content wrapper
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-control (surface-control)     | body-text    | .gp-action-btn (color)               |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-control (surface-control)     | ui-component | .gp-action-btn (border)              |
+ * | --tug-base-tone-danger-fg (tone-danger-fg)       | --tug-base-tone-danger-bg (tone-danger-bg)       | body-text    | .gp-import-error (color)             |
+ * | --tug-base-tone-danger-border (tone-danger-border) | --tug-base-tone-danger-bg (tone-danger-bg)       | ui-component | .gp-import-error (border)            |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-default (surface-default)     | ui-component | .gp-achromatic-swatch:hover (border-color) |
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .gp-achromatic-label (color)         |
+ * | --tug-base-accent-default (accent-default)       | --tug-base-surface-default (surface-default)     | body-text    | .gp-curve-hue-label--selected (fill) |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-inset (surface-inset)         | body-text    | .gp-formula-snippet (color)          |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-inset (surface-inset)         | ui-component | .gp-formula-snippet (border)         |
+ */
+
+
+
+
+
 
 .gp-content {
   /* Inherits .cg-content scroll, padding, flex-column, gap */
@@ -98,10 +101,12 @@
   box-sizing: border-box;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-achromatic-swatch:hover {
   border-color: var(--tug-base-border-default);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-achromatic-label {
   position: absolute;
   top: 100%;
@@ -130,12 +135,14 @@
   overflow: visible;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-curve-axis-label {
   font-size: 9px;
   font-family: var(--tug-base-font-family-mono);
   fill: var(--tug-base-fg-muted);
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-curve-hue-label {
   font-size: 9px;
   font-family: var(--tug-base-font-family-mono);
@@ -143,6 +150,7 @@
   user-select: none;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-curve-hue-label--selected {
   fill: var(--tug-base-accent-default);
   font-weight: 600;
@@ -170,6 +178,7 @@
   flex-shrink: 0;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-vvgrid-header-cell {
   width: 28px;
   flex-shrink: 0;
@@ -180,6 +189,7 @@
   user-select: none;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-vvgrid-row-label {
   width: 28px;
   flex-shrink: 0;
@@ -276,6 +286,7 @@
 }
 
 /* Result swatch */
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-picker-swatch {
   width: 100%;
   height: 40px;
@@ -284,6 +295,7 @@
 }
 
 /* Vib/val readout */
+/* @tug-renders-on: --tug-base-surface-default */
 .gp-picker-readout {
   display: flex;
   gap: 12px;
