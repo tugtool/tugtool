@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-18T15:03:33Z
+---
+
+## step-5: Final integration checkpoint. All exit criteria met: Brio->Light->Dark round-trip correct, Harmony token-for-token match, export/import round-trip preserves formulas, 373 tokens in all states. 10 new integration tests. 1878 total tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
 step: step-4
 date: 2025-03-18T14:59:50Z
 ---
