@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-18T02:42:19Z
+---
+
+## step-2: Added EXAMPLE_RECIPES.harmony — a light theme using the same cobalt/violet/indigo hue palette as brio with LIGHT_FORMULAS. Both brio and harmony produce 373 tokens. Updated EXAMPLE_RECIPES JSDoc.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
 step: step-1
 date: 2025-03-18T02:39:34Z
 ---

@@ -1484,11 +1484,14 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
 export const LIGHT_FORMULAS: DerivationFormulas = { ...BASE_FORMULAS, ...LIGHT_OVERRIDES };
 
 // ---------------------------------------------------------------------------
-// EXAMPLE_RECIPES — reference recipe
+// EXAMPLE_RECIPES — built-in theme recipes
 // ---------------------------------------------------------------------------
 
 /**
- * Reference recipe for Brio (default dark).
+ * Built-in theme recipes. Keys become preset button labels in the Theme
+ * Generator card. The first entry (brio) is the default dark theme;
+ * harmony is the built-in light peer. [D03] [D04]
+ *
  * From roadmap/theme-generator-proposal.md [D04].
  */
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
@@ -1503,6 +1506,18 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     cardFrame: "indigo",     // card title bar, tab bar bg
     borderTint: "indigo-violet", // borders and dividers use same hue as cardBg
     formulas: { ...BASE_FORMULAS, ...DARK_OVERRIDES },
+  },
+  harmony: {
+    name: "harmony",
+    description: "Bright, open canvas with crisp surfaces. Dark text for maximum readability with clear hierarchy. Filled controls use vivid accent backgrounds with white text. Borders are crisp and visible. Shadows are light. Industrial warmth with muted chassis and vivid signals — the same palette as Brio, seen in daylight.",
+    mode: "light",
+    cardBg: { hue: "indigo-violet" },  // same palette as brio
+    text: { hue: "cobalt" },           // same palette as brio
+    link: "cyan",                       // same palette as brio — cyan for links/selection
+    canvas: "indigo-violet",            // same palette as brio — light near-white canvas
+    cardFrame: "indigo",                // same palette as brio — indigo title bars, now bright
+    borderTint: "indigo-violet",        // same palette as brio — crisp indigo-violet borders
+    formulas: { ...BASE_FORMULAS, ...LIGHT_OVERRIDES },
   },
 };
 
