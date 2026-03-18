@@ -29,7 +29,7 @@ body {
   --tug-inspector-emptyState-fg: var(--tug-base-fg-subtle);
   --tug-inspector-emptyState-icon: var(--tug-base-border-default);
   --tug-inspector-swatch-border: var(--tug-base-border-default);
-  --tug-inspector-scrub-track: var(--tug-base-separator);
+  --tug-inspector-scrub-track: var(--tug-base-divider-separator);
   --tug-inspector-scrub-thumb: var(--tug-base-fg-subtle);
   --tug-inspector-scrub-active: var(--tug-base-accent-default);
   --tug-dev-overlay-bg: --tug-color(indigo-violet, i: 4, t: 7, a: 92);

@@ -26,7 +26,7 @@ body {
   --tug-badge-neutral-fg: var(--tug-base-fg-muted);
   --tug-badge-accent-bg: --tug-color(orange, i: 50, t: 50, a: 20);
   --tug-badge-accent-fg: var(--tug-base-accent-default);
-  --tug-progress-track: var(--tug-base-separator);
+  --tug-progress-track: var(--tug-base-divider-separator);
   --tug-progress-fill: var(--tug-base-accent-default);
   --tug-spinner: var(--tug-base-accent-default);
   --tug-skeleton-base: --tug-color(violet, i: 5, t: 20);

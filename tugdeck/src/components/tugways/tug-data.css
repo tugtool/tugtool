@@ -44,7 +44,7 @@ body {
   --tug-chart-threshold-danger: var(--tug-base-tone-danger);
 
   /* --- Gauge --- */
-  --tug-gauge-track: var(--tug-base-separator);
+  --tug-gauge-track: var(--tug-base-divider-separator);
   --tug-gauge-fill: var(--tug-base-accent-default);
   --tug-gauge-needle: var(--tug-base-fg-default);
   --tug-gauge-tick-major: var(--tug-base-fg-subtle);

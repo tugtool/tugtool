@@ -758,17 +758,17 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // Field tokens — text on field backgrounds
   // =========================================================================
   {
-    element: "--tug-base-field-fg",
+    element: "--tug-base-field-fg-default",
     surface: "--tug-base-field-bg-rest",
     role: "body-text",
   },
   {
-    element: "--tug-base-field-fg",
+    element: "--tug-base-field-fg-default",
     surface: "--tug-base-field-bg-hover",
     role: "body-text",
   },
   {
-    element: "--tug-base-field-fg",
+    element: "--tug-base-field-fg-default",
     surface: "--tug-base-field-bg-focus",
     role: "body-text",
   },
@@ -783,9 +783,19 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "subdued-text",
   },
   {
-    element: "--tug-base-field-label",
+    element: "--tug-base-field-fg-label",
     surface: "--tug-base-surface-default",
     role: "body-text",
+  },
+  {
+    element: "--tug-base-field-fg-placeholder",
+    surface: "--tug-base-field-bg-rest",
+    role: "subdued-text",
+  },
+  {
+    element: "--tug-base-field-fg-required",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
   },
   // =========================================================================
   // Semantic tone — foreground text on tone backgrounds
@@ -1033,17 +1043,17 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // Checkmark and radio — over control primary / secondary backgrounds
   // =========================================================================
   {
-    element: "--tug-base-checkmark",
+    element: "--tug-base-checkmark-fg",
     surface: "--tug-base-control-filled-accent-bg-rest",
     role: "ui-component",
   },
   {
-    element: "--tug-base-checkmark",
+    element: "--tug-base-checkmark-fg",
     surface: "--tug-base-accent-default",
     role: "ui-component",
   },
   {
-    element: "--tug-base-checkmark-mixed",
+    element: "--tug-base-checkmark-fg-mixed",
     surface: "--tug-base-control-outlined-action-bg-rest",
     role: "ui-component",
   },

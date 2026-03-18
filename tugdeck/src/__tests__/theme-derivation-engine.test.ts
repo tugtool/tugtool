@@ -504,7 +504,7 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-accent-default",
   "--tug-base-toggle-thumb",
   "--tug-base-toggle-icon-mixed",
-  "--tug-base-checkmark",
+  "--tug-base-checkmark-fg",
   "--tug-base-radio-dot",
   "--tug-base-range-thumb",
   // E2 — muted / disabled element tokens below perceptual contrast thresholds
@@ -527,11 +527,11 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   // tab-fg-rest reclassified to subdued-text; contrast ~42 passes the marginal band (>= contrast 40).
   // tab-fg-hover: hover state (below contrast 75 body-text in both dark and light)
   "--tug-base-tab-fg-hover",
-  // G2 — Field text: field-fg is the text inside form fields; in light mode, the
-  // field background (field-bg-rest/hover) is derived close in lightness to field-fg,
+  // G2 — Field text: field-fg-default is the text inside form fields; in light mode, the
+  // field background (field-bg-rest/hover) is derived close in lightness to field-fg-default,
   // producing contrast ~27-51 in light mode (below contrast 75 body-text threshold). Light-mode
   // calibration is a known deferred constraint (same as surface derivation).
-  "--tug-base-field-fg",
+  "--tug-base-field-fg-default",
   // H — Non-text component visibility tokens below contrast 30 by design (Step 3)
   // These tokens start below the ui-component threshold and are auto-adjusted
   // by the pipeline. They are documented here so the test tracks regressions
@@ -978,8 +978,8 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-border-inverse": { L: 0.9340799999999999, C: 0.0081, h: 250 },
   "--tug-base-border-muted": { L: 0.57624, C: 0.019600000000000003, h: 263.33333333333326 },
   "--tug-base-border-strong": { L: 0.6108, C: 0.019600000000000003, h: 258.33333333333326 },
-  "--tug-base-checkmark": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-checkmark-mixed": { L: 0.81312, C: 0.013500000000000002, h: 250 },
+  "--tug-base-checkmark-fg": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-checkmark-fg-mixed": { L: 0.81312, C: 0.013500000000000002, h: 250 },
   "--tug-base-control-disabled-bg": { L: 0.39552, C: 0.0149, h: 270 },
   "--tug-base-control-disabled-border": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-control-disabled-fg": { L: 0.58776, C: 0.019600000000000003, h: 256.66666666666663 },
@@ -1165,12 +1165,12 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-field-border-readOnly": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-field-border-rest": { L: 0.54204, C: 0.0162, h: 250 },
   "--tug-base-field-border-success": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-field-fg": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-field-fg-default": { L: 0.9340799999999999, C: 0.0081, h: 250 },
   "--tug-base-field-fg-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
   "--tug-base-field-fg-readOnly": { L: 0.81312, C: 0.013500000000000002, h: 250 },
-  "--tug-base-field-label": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-field-placeholder": { L: 0.5064, C: 0.0162, h: 250 },
-  "--tug-base-field-required": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-field-fg-label": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-field-fg-placeholder": { L: 0.6252, C: 0.0162, h: 250 },
+  "--tug-base-field-fg-required": { L: 0.659, C: 0.22, h: 25 },
   "--tug-base-field-tone-caution": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-field-tone-danger": { L: 0.659, C: 0.22, h: 25 },
   "--tug-base-field-tone-success": { L: 0.821, C: 0.22, h: 140 },
@@ -1192,7 +1192,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-selection-bg": { L: 0.803, C: 0.134, h: 200 },
   "--tug-base-selection-bg-inactive": { L: 0.6006, C: 0, h: 90 },
   "--tug-base-selection-fg": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-separator": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-divider-separator": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-shadow-lg": { L: 0, C: 0, h: 0 },
   "--tug-base-shadow-md": { L: 0, C: 0, h: 0 },
   "--tug-base-shadow-overlay": { L: 0, C: 0, h: 0 },

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-18T17:45:45Z
+---
+
+## step-4: Renamed 7 tokens across 17 files: field-fg→field-fg-default, field-placeholder→field-fg-placeholder, field-label→field-fg-label, field-required→field-fg-required, checkmark→checkmark-fg, checkmark-mixed→checkmark-fg-mixed, separator→divider-separator. All 1878 tests pass. Zero unclassified color tokens remain.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-pairing.md
+
+---
+
+---
 step: step-3
 date: 2025-03-18T17:25:32Z
 ---

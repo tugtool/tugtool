@@ -103,14 +103,14 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-accent-default",
   "--tug-base-toggle-thumb",
   "--tug-base-toggle-icon-mixed",
-  "--tug-base-checkmark",
+  "--tug-base-checkmark-fg",
   "--tug-base-radio-dot",
   "--tug-base-range-thumb",
   // Tab chrome (intentionally below contrast 75 body-text threshold)
   "--tug-base-tab-fg-rest",
   "--tug-base-tab-fg-hover",
   // Field text — light-mode field backgrounds create contrast constraints
-  "--tug-base-field-fg",
+  "--tug-base-field-fg-default",
   // Non-text component visibility tokens below contrast 30 by design (Step 3)
   // Toggle track inactive/indeterminate states: intentionally lower-contrast
   // to signal the off/mixed (inactive) state vs. the on state.
