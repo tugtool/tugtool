@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-18T21:13:05Z
+---
+
+## step-5: Verification-only step. Lint subcommand (implemented in step 4) confirmed passing: zero violations, correct Spec S03 message formats, hard gate exit(1) behavior. All 1878 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
 step: step-4
 date: 2025-03-18T21:09:13Z
 ---
