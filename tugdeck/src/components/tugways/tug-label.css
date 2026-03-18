@@ -13,6 +13,14 @@
  * [D04] Semantic tokens exclusively
  */
 
+/**
+ * @tug-pairings
+ * | Element                                           | Surface                                             | Role         | Context                                       |
+ * |---------------------------------------------------|-----------------------------------------------------|--------------|-----------------------------------------------|
+ * | --tug-base-field-fg-label (field-fg-label)        | parent surface (ambient, typically surface-default) | body-text    | Label text                                    |
+ * | --tug-base-field-fg-required (field-fg-required)  | parent surface (ambient, same as label context)     | ui-component | Required asterisk indicator                   |
+ */
+
 /* ============================================================================
    Base Label
    ========================================================================= */
@@ -26,7 +34,7 @@
   font-weight: 500;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-base-field-label);
+  color: var(--tug-base-field-fg-label);
   cursor: default;
 }
 
@@ -107,7 +115,7 @@
    ========================================================================= */
 
 .tug-label-required {
-  color: var(--tug-base-field-required);
+  color: var(--tug-base-field-fg-required);
   margin-left: 0.125rem;
 }
 

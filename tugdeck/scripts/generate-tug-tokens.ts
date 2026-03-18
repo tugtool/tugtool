@@ -119,7 +119,6 @@ function getGroup(name: string): string {
     rest.startsWith("checkmark") ||
     rest.startsWith("radio-")
   ) return "toggle";
-  if (rest.startsWith("separator")) return "separator";
   return "other";
 }
 
@@ -147,7 +146,6 @@ const GROUP_ORDER = [
   "control-surface",
   "field",
   "toggle",
-  "separator",
   "other",
 ];
 
@@ -175,7 +173,6 @@ const GROUP_LABELS: Record<string, string> = {
   "control-surface": "Control \u2014 Surface / Selected / Highlighted",
   field: "Field",
   toggle: "Toggle",
-  separator: "Separator",
   other: "Other",
 };
 

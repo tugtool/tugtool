@@ -105,6 +105,7 @@ body {
   /* Divider */
   --tug-base-divider-default: --tug-color(indigo-violet, i: 7, t: 78);
   --tug-base-divider-muted: --tug-color(violet, i: 5, t: 82);
+  --tug-base-divider-separator: --tug-color(indigo-violet, i: 7, t: 72);
 
   /* Overlay */
   --tug-base-overlay-dim: --tug-color(black, i: 0, t: 0, a: 32);
@@ -142,7 +143,7 @@ body {
   --tug-base-tone-caution-border: --tug-color(yellow, t: 35);
   --tug-base-tone-caution-fg: --tug-color(yellow, t: 35);
   --tug-base-tone-caution-icon: --tug-color(yellow, t: 35);
-  --tug-base-tone-danger: --tug-color(red, t: 35);
+  --tug-base-tone-danger: --tug-color(red, t: 24);
   --tug-base-tone-danger-bg: --tug-color(red, t: 35, a: 15);
   --tug-base-tone-danger-border: --tug-color(red, t: 35);
   --tug-base-tone-danger-fg: --tug-color(red, t: 35);
@@ -398,19 +399,19 @@ body {
   --tug-base-field-border-readOnly: --tug-color(indigo-violet, i: 7, t: 78);
   --tug-base-field-border-rest: --tug-color(indigo-violet, i: 7, t: 47);
   --tug-base-field-border-success: --tug-color(green, t: 40);
-  --tug-base-field-fg: --tug-color(cobalt, i: 4, t: 8);
+  --tug-base-field-fg-default: --tug-color(cobalt, i: 4, t: 8);
   --tug-base-field-fg-disabled: --tug-color(indigo-cobalt, i: 8, t: 68);
+  --tug-base-field-fg-label: --tug-color(cobalt, i: 4, t: 8);
+  --tug-base-field-fg-placeholder: --tug-color(indigo-violet, i: 7, t: 38);
   --tug-base-field-fg-readOnly: --tug-color(cobalt, i: 6, t: 34);
-  --tug-base-field-label: --tug-color(cobalt, i: 4, t: 8);
-  --tug-base-field-placeholder: --tug-color(indigo-violet, i: 7, t: 60);
-  --tug-base-field-required: --tug-color(red);
+  --tug-base-field-fg-required: --tug-color(red);
   --tug-base-field-tone-caution: --tug-color(yellow);
   --tug-base-field-tone-danger: --tug-color(red);
   --tug-base-field-tone-success: --tug-color(green);
 
   /* Toggle */
-  --tug-base-checkmark: --tug-color(sapphire-cobalt, i: 4, t: 94);
-  --tug-base-checkmark-mixed: --tug-color(cobalt, i: 6, t: 34);
+  --tug-base-checkmark-fg: --tug-color(sapphire-cobalt, i: 4, t: 94);
+  --tug-base-checkmark-fg-mixed: --tug-color(cobalt, i: 6, t: 25);
   --tug-base-radio-dot: --tug-color(sapphire-cobalt, i: 4, t: 94);
   --tug-base-toggle-icon-disabled: --tug-color(indigo-cobalt, i: 8, t: 55);
   --tug-base-toggle-icon-mixed: --tug-color(cobalt, i: 6, t: 25);
@@ -423,9 +424,6 @@ body {
   --tug-base-toggle-track-off-hover: --tug-color(indigo-violet, i: 11, t: 46);
   --tug-base-toggle-track-on: --tug-color(orange-muted);
   --tug-base-toggle-track-on-hover: --tug-color(orange, i: 55, t: 35);
-
-  /* Separator */
-  --tug-base-separator: --tug-color(indigo-violet, i: 7, t: 72);
 
   /* Other */
   --tug-base-badge-tinted-accent-bg: --tug-color(orange, i: 65, t: 80, a: 20);

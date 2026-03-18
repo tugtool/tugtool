@@ -9,6 +9,30 @@
  * [D08, D09]
  */
 
+/**
+ * @tug-pairings
+ * | Element                                              | Surface                                              | Role         | Context                                                    |
+ * |------------------------------------------------------|------------------------------------------------------|--------------|------------------------------------------------------------|
+ * | --tug-base-fg-muted (fg-muted)                       | --tug-base-surface-default (surface-default)         | subdued-text | Mode button label at rest on surface-default               |
+ * | --tug-base-fg-default (fg-default)                   | --tug-base-surface-raised (surface-raised)           | body-text    | Mode button text on hover (surface-raised)                 |
+ * | --tug-base-fg-onAccent (fg-onAccent)                 | --tug-base-accent-default (accent-default, chromatic) | ui-component | Active mode button label on accent-default background     |
+ * | --tug-base-fg-default (fg-default)                   | --tug-base-bg-canvas (bg-canvas)                     | body-text    | Preview content text on canvas background                  |
+ * | --tug-base-fg-muted (fg-muted)                       | --tug-base-bg-canvas (bg-canvas)                     | subdued-text | Preview muted text on canvas background                    |
+ * | --tug-base-fg-subtle (fg-subtle)                     | --tug-base-bg-canvas (bg-canvas)                     | subdued-text | Preview subtle text on canvas background                   |
+ * | --tug-base-fg-link (fg-link)                         | --tug-base-bg-canvas (bg-canvas)                     | body-text    | Preview link text on canvas background                     |
+ * | --tug-base-fg-default (fg-default)                   | --tug-base-surface-raised (surface-raised)           | body-text    | Preview inset section text on surface-raised               |
+ * | --tug-base-fg-default (fg-default)                   | --tug-base-surface-default (surface-default)         | body-text    | Compact hue row label, slider label, dash summary text     |
+ * | --tug-base-fg-muted (fg-muted)                       | --tug-base-surface-default (surface-default)         | subdued-text | Token grid names/values, slider values, column headers     |
+ * | --tug-base-fg-default (fg-default)                   | --tug-base-surface-control (surface-control)         | body-text    | Preset buttons, export/autofix button text on surface-control |
+ * | --tug-base-tone-success-fg (tone-success-fg)         | --tug-base-tone-success-bg (tone-success-bg)         | ui-component | Contrast dashboard pass badge text on success tint         |
+ * | --tug-base-tone-caution-fg (tone-caution-fg)         | --tug-base-tone-caution-bg (tone-caution-bg)         | ui-component | Marginal badge and CVD warn badge on caution tint          |
+ * | --tug-base-tone-danger-fg (tone-danger-fg)           | --tug-base-tone-danger-bg (tone-danger-bg)           | ui-component | Contrast dashboard fail badge text on danger tint          |
+ * | --tug-base-fg-muted (fg-muted)                       | --tug-base-surface-raised (surface-raised)           | ui-component | Decorative/neutral badge text on surface-raised            |
+ * | --tug-base-fg-onAccent (fg-onAccent)                 | --tug-base-accent-subtle (accent-subtle, chromatic)  | ui-component | Active preset button text on accent-subtle background      |
+ * | --tug-base-fg-default (fg-default)                   | --tug-base-tone-caution-bg (tone-caution-bg)         | body-text    | Auto-fix suggestion list items on caution tint panel       |
+ * | --tug-base-tone-caution-fg (tone-caution-fg)         | --tug-base-tone-caution-bg (tone-caution-bg)         | body-text    | Auto-fix suggestion title and type label on caution tint   |
+ */
+
 /* ============================================================================
    Content wrapper — tighter layout than default cg-content
    ========================================================================= */

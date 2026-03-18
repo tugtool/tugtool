@@ -6,10 +6,19 @@
  * re-renders.
  *
  * States: unchecked, checked, indeterminate (mixed), disabled.
- * Uses --tug-base-toggle-track-* for the box and --tug-base-checkmark for
+ * Uses --tug-base-toggle-track-* for the box and --tug-base-checkmark-fg for
  * the indicator.
  *
  * [D04] Semantic tokens exclusively
+ */
+
+/**
+ * @tug-pairings
+ * | Element                                               | Surface                                              | Role         | Context                                           |
+ * |-------------------------------------------------------|------------------------------------------------------|--------------|---------------------------------------------------|
+ * | --tug-base-checkmark-fg (checkmark-fg)                | --tug-base-toggle-track-on (toggle-track-on, chromatic) | ui-component | Checkmark icon on checked box background       |
+ * | --tug-base-checkmark-fg-mixed (checkmark-fg-mixed)    | --tug-base-toggle-track-mixed (toggle-track-mixed, chromatic) | ui-component | Indeterminate dash on indeterminate box background |
+ * | --tug-base-field-fg-label (field-fg-label)            | parent surface (ambient, typically surface-default)  | body-text    | Checkbox label text                               |
  */
 
 /* ============================================================================
@@ -117,11 +126,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--tug-base-checkmark);
+  color: var(--tug-base-checkmark-fg);
 }
 
 .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator {
-  color: var(--tug-base-checkmark-mixed);
+  color: var(--tug-base-checkmark-fg-mixed);
 }
 
 .tug-checkbox-indicator svg {
@@ -165,7 +174,7 @@
   font-weight: 400;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-base-field-label);
+  color: var(--tug-base-field-fg-label);
   user-select: none;
 }
 

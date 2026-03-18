@@ -11,6 +11,18 @@
  * [D04] Semantic tokens exclusively
  */
 
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                    | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-rest (field-bg-rest)   | body-text    | Input text on rest background        |
+ * | --tug-base-field-fg-placeholder (field-fg-placeholder) | --tug-base-field-bg-rest (field-bg-rest) | subdued-text | Placeholder text on rest background  |
+ * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-hover (field-bg-hover) | body-text    | Input text on hover background       |
+ * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-focus (field-bg-focus) | body-text    | Input text on focus background       |
+ * | --tug-base-field-fg-disabled (field-fg-disabled) | --tug-base-field-bg-disabled (field-bg-disabled) | body-text | Input text on disabled background   |
+ * | --tug-base-field-fg-readOnly (field-fg-readOnly) | --tug-base-field-bg-readOnly (field-bg-readOnly) | body-text | Input text on read-only background   |
+ */
+
 /* ============================================================================
    Base Input
    ========================================================================= */
@@ -25,14 +37,14 @@
   letter-spacing: 0.01em;
 
   background-color: var(--tug-base-field-bg-rest);
-  color: var(--tug-base-field-fg);
+  color: var(--tug-base-field-fg-default);
   border: 1px solid var(--tug-base-field-border-rest);
   border-radius: 0.375rem; /* 6px — matches tug-button md */
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
 .tug-input::placeholder {
-  color: var(--tug-base-field-placeholder);
+  color: var(--tug-base-field-fg-placeholder);
 }
 
 /* ---- Hover ---- */

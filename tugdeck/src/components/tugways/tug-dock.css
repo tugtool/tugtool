@@ -7,6 +7,14 @@
  * No CSS rules yet — tokens only. Rules live in chrome.css for now.
  */
 
+/**
+ * @tug-pairings
+ * | Element                                            | Surface                                               | Role         | Context                                         |
+ * |----------------------------------------------------|-------------------------------------------------------|--------------|-------------------------------------------------|
+ * | --tug-dock-button-fg (fg-subtle)                   | --tug-dock-bg (field-bg-focus)                        | ui-component | Dock button icon on dock background             |
+ * | --tug-dock-button-badge-fg (fg-inverse)            | --tug-dock-button-badge-bg (tone-danger, chromatic)   | ui-component | Dock button notification badge on danger bg     |
+ */
+
 body {
   /* --- Dock --- */
   --tug-dock-bg: var(--tug-base-field-bg-focus);

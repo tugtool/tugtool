@@ -1111,8 +1111,8 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.fieldBgReadOnlyTone,
   },
 
-  // field-fg: txt hue at txtI, fgDefaultTone
-  "--tug-base-field-fg": {
+  // field-fg-default: txt hue at txtI, fgDefaultTone
+  "--tug-base-field-fg-default": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtI,
@@ -1135,8 +1135,8 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.fgMutedTone,
   },
 
-  // field-placeholder: hueSlot "fieldPlaceholder" -> "fgPlaceholder" dark | "atm" light
-  "--tug-base-field-placeholder": {
+  // field-fg-placeholder: hueSlot "fieldPlaceholder" -> "fgPlaceholder" dark | "atm" light
+  "--tug-base-field-fg-placeholder": {
     type: "chromatic",
     hueSlot: "fieldPlaceholder",
     intensityExpr: (formulas) => formulas.atmIBorder,
@@ -1200,16 +1200,16 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     toneExpr: (_f, _k, computed) => computed.dividerTone,
   },
 
-  // field-label: txt hue at txtI, fgDefaultTone
-  "--tug-base-field-label": {
+  // field-fg-label: txt hue at txtI, fgDefaultTone
+  "--tug-base-field-fg-label": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtI,
     toneExpr: (formulas) => formulas.fgDefaultTone,
   },
 
-  // field-required: destructive hue at signalI, t:50
-  "--tug-base-field-required": {
+  // field-fg-required: destructive hue at signalI, t:50
+  "--tug-base-field-fg-required": {
     type: "chromatic",
     hueSlot: "destructive",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -1334,16 +1334,16 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.fgMutedTone,
   },
 
-  // checkmark: hueSlot "checkmark" -> "fgInverse" dark | "__white" light
-  "--tug-base-checkmark": {
+  // checkmark-fg: hueSlot "checkmark" -> "fgInverse" dark | "__white" light
+  "--tug-base-checkmark-fg": {
     type: "chromatic",
     hueSlot: "checkmark",
     intensityExpr: (formulas) => formulas.txtI,
     toneExpr: (formulas) => formulas.fgInverseTone,
   },
 
-  // checkmark-mixed: fgMuted hue at fgMutedI, fgMutedTone
-  "--tug-base-checkmark-mixed": {
+  // checkmark-fg-mixed: fgMuted hue at fgMutedI, fgMutedTone
+  "--tug-base-checkmark-fg-mixed": {
     type: "chromatic",
     hueSlot: "fgMuted",
     intensityExpr: (formulas) => formulas.fgMutedI,
@@ -1358,8 +1358,8 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.fgInverseTone,
   },
 
-  // separator: atm hue at atmIBorder, toggleTrackOffTone
-  "--tug-base-separator": {
+  // divider-separator: atm hue at atmIBorder, toggleTrackOffTone
+  "--tug-base-divider-separator": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmIBorder,

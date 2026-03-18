@@ -8,6 +8,17 @@
  * No CSS rules yet — tokens only.
  */
 
+/**
+ * @tug-pairings
+ * | Element                                     | Surface                                        | Role         | Context                                         |
+ * |---------------------------------------------|------------------------------------------------|--------------|-------------------------------------------------|
+ * | --tug-dialog-fg (fg-default)                | --tug-dialog-bg (surface-overlay)              | body-text    | Dialog body text on dialog background           |
+ * | --tug-alert-fg (fg-default)                 | --tug-alert-bg (surface-default)               | body-text    | Alert body text on alert background             |
+ * | --tug-toast-info-fg (fg-default)            | --tug-toast-info-bg (surface-default)          | body-text    | Toast info text on toast background             |
+ * | --tug-badge-neutral-fg (fg-muted)           | --tug-badge-neutral-bg (divider-default)       | ui-component | Neutral badge text on divider-default background |
+ * | --tug-kbd-fg (fg-muted)                     | --tug-kbd-bg (surface-default)                 | ui-component | Keyboard shortcut badge text on surface-default |
+ */
+
 body {
   /* --- Dialog / Sheet / Toast / Alert --- */
   --tug-dialog-bg: var(--tug-base-surface-overlay);
@@ -26,7 +37,7 @@ body {
   --tug-badge-neutral-fg: var(--tug-base-fg-muted);
   --tug-badge-accent-bg: --tug-color(orange, i: 50, t: 50, a: 20);
   --tug-badge-accent-fg: var(--tug-base-accent-default);
-  --tug-progress-track: var(--tug-base-separator);
+  --tug-progress-track: var(--tug-base-divider-separator);
   --tug-progress-fill: var(--tug-base-accent-default);
   --tug-spinner: var(--tug-base-accent-default);
   --tug-skeleton-base: --tug-color(violet, i: 5, t: 20);

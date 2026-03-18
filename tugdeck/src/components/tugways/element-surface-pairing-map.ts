@@ -2,9 +2,8 @@
  * Authoritative element/surface pairing map — Theme Generator accessibility engine.
  *
  * Declares which element tokens must be contrast-checked against which
- * surface tokens. Derived from component CSS usage in tug-button.css,
- * tug-card.css, tug-tab.css, tug-menu.css, tug-dialog.css, and the base
- * token definitions in tug-base.css.
+ * surface tokens. Derived from component CSS usage across all 23 component CSS
+ * files in tugways/ and tugways/cards/ per the Step 2 pairing audit.
  *
  * This map is the single source of truth for contrast validation [D03].
  * Both the derivation engine (auto-adjustment) and the contrast dashboard
@@ -758,17 +757,17 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // Field tokens — text on field backgrounds
   // =========================================================================
   {
-    element: "--tug-base-field-fg",
+    element: "--tug-base-field-fg-default",
     surface: "--tug-base-field-bg-rest",
     role: "body-text",
   },
   {
-    element: "--tug-base-field-fg",
+    element: "--tug-base-field-fg-default",
     surface: "--tug-base-field-bg-hover",
     role: "body-text",
   },
   {
-    element: "--tug-base-field-fg",
+    element: "--tug-base-field-fg-default",
     surface: "--tug-base-field-bg-focus",
     role: "body-text",
   },
@@ -783,9 +782,19 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "subdued-text",
   },
   {
-    element: "--tug-base-field-label",
+    element: "--tug-base-field-fg-label",
     surface: "--tug-base-surface-default",
     role: "body-text",
+  },
+  {
+    element: "--tug-base-field-fg-placeholder",
+    surface: "--tug-base-field-bg-rest",
+    role: "subdued-text",
+  },
+  {
+    element: "--tug-base-field-fg-required",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
   },
   // =========================================================================
   // Semantic tone — foreground text on tone backgrounds
@@ -1033,17 +1042,17 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // Checkmark and radio — over control primary / secondary backgrounds
   // =========================================================================
   {
-    element: "--tug-base-checkmark",
+    element: "--tug-base-checkmark-fg",
     surface: "--tug-base-control-filled-accent-bg-rest",
     role: "ui-component",
   },
   {
-    element: "--tug-base-checkmark",
+    element: "--tug-base-checkmark-fg",
     surface: "--tug-base-accent-default",
     role: "ui-component",
   },
   {
-    element: "--tug-base-checkmark-mixed",
+    element: "--tug-base-checkmark-fg-mixed",
     surface: "--tug-base-control-outlined-action-bg-rest",
     role: "ui-component",
   },
@@ -1059,7 +1068,14 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // --- Tab Chrome ---
-  // tab-fg-rest over tab bar background (surface-sunken) — subdued-text: intentional visual hierarchy
+  // tab-fg-rest over tab bar background.
+  // The tab bar bg token is tab-bg-inactive (an opaque tinted color); surface-sunken
+  // captures the design-intent baseline for detached/collapsed contexts.
+  {
+    element: "--tug-base-tab-fg-rest",
+    surface: "--tug-base-tab-bg-inactive",
+    role: "subdued-text",
+  },
   {
     element: "--tug-base-tab-fg-rest",
     surface: "--tug-base-surface-sunken",
@@ -1071,16 +1087,33 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     surface: "--tug-base-tab-bg-active",
     role: "body-text",
   },
-  // tab-fg-hover over hover highlight (semi-transparent, pair with sunken)
+  // tab-fg-hover over hover highlight (semi-transparent over tab-bg-inactive).
+  // Also paired with surface-sunken for the design-intent baseline.
+  {
+    element: "--tug-base-tab-fg-hover",
+    surface: "--tug-base-tab-bg-inactive",
+    role: "body-text",
+  },
   {
     element: "--tug-base-tab-fg-hover",
     surface: "--tug-base-surface-sunken",
     role: "body-text",
   },
-  // close button hover fg over close bg hover
+  // close button hover fg over close bg hover (semi-transparent over tab-bg-inactive).
+  {
+    element: "--tug-base-tab-close-fg-hover",
+    surface: "--tug-base-tab-bg-inactive",
+    role: "ui-component",
+  },
   {
     element: "--tug-base-tab-close-fg-hover",
     surface: "--tug-base-surface-sunken",
+    role: "ui-component",
+  },
+  // fg-muted over tab bar background (add-tab [+] and overflow trigger text)
+  {
+    element: "--tug-base-fg-muted",
+    surface: "--tug-base-tab-bg-inactive",
     role: "ui-component",
   },
 
@@ -1448,5 +1481,157 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     surface: "--tug-base-control-outlined-action-border-rest",
     role: "decorative",
   },
+
+  // =========================================================================
+  // Step 5 additions — pairings discovered in the Step 2 audit that were
+  // absent from the map. Grouped by discovery context.
+  // =========================================================================
+
+  // --- Card title bar / tab chrome (tug-card.css, tug-tab.css) ---
+  // THE primary gap: .tugcard-title (fg-default) renders on .tugcard-title-bar
+  // background (tab-bg-active when card-frame[data-focused="true"]).
+  {
+    element: "--tug-base-fg-default",
+    surface: "--tug-base-tab-bg-active",
+    role: "body-text",
+  },
+  {
+    element: "--tug-base-fg-default",
+    surface: "--tug-base-tab-bg-inactive",
+    role: "body-text",
+  },
+  {
+    element: "--tug-base-icon-active",
+    surface: "--tug-base-tab-bg-active",
+    role: "ui-component",
+  },
+  // fg-subtle used for inactive-state card title-bar icon
+  {
+    element: "--tug-base-fg-subtle",
+    surface: "--tug-base-tab-bg-inactive",
+    role: "ui-component",
+  },
+  // Tab overflow badge: CSS sets color: var(--tug-base-surface-default) directly
+  // over the accent-default badge background (tug-tab.css:283).
+  {
+    element: "--tug-base-surface-default",
+    surface: "--tug-base-accent-default",
+    role: "ui-component",
+  },
+
+  // --- Canvas / preview surfaces (gallery-theme-generator-content.css) ---
+  {
+    element: "--tug-base-fg-muted",
+    surface: "--tug-base-bg-canvas",
+    role: "subdued-text",
+  },
+  {
+    element: "--tug-base-fg-subtle",
+    surface: "--tug-base-bg-canvas",
+    role: "subdued-text",
+  },
+  {
+    element: "--tug-base-fg-link",
+    surface: "--tug-base-bg-canvas",
+    role: "body-text",
+  },
+
+  // --- Surface inset — subtle text (gallery-popup-button.css) ---
+  {
+    element: "--tug-base-fg-subtle",
+    surface: "--tug-base-surface-inset",
+    role: "subdued-text",
+  },
+
+  // --- Surface control — text (gallery-card.css, gallery-palette-content.css,
+  //     tug-tab.css, gallery-theme-generator-content.css) ---
+  {
+    element: "--tug-base-fg-default",
+    surface: "--tug-base-surface-control",
+    role: "body-text",
+  },
+  // fg-muted on surface-control: code comment text in code block
+  // (tug-code.css: --tug-codeBlock-bg = surface-control)
+  {
+    element: "--tug-base-fg-muted",
+    surface: "--tug-base-surface-control",
+    role: "body-text",
+  },
+
+  // --- Accent-subtle as background — active UI states ---
+  // fg-onAccent on accent-subtle: active preset button (gtg-preset-btn--active)
+  // accent-subtle has alpha 15%; parentSurface composites it over surface-default
+  // before contrast measurement. [D04]
+  {
+    element: "--tug-base-fg-onAccent",
+    surface: "--tug-base-accent-subtle",
+    role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
+  },
+  // fg-default on accent-subtle: menu selected/checked item background
+  // accent-subtle has alpha 15%; parentSurface composites over surface-default. [D04]
+  {
+    element: "--tug-base-fg-default",
+    surface: "--tug-base-accent-subtle",
+    role: "body-text",
+    parentSurface: "--tug-base-surface-default",
+  },
+
+  // --- Semantic tone backgrounds as surfaces ---
+  // fg-default on tone-caution-bg: autofix suggestion list items (gallery-theme-generator-content.css)
+  {
+    element: "--tug-base-fg-default",
+    surface: "--tug-base-tone-caution-bg",
+    role: "body-text",
+    parentSurface: "--tug-base-surface-default",
+  },
+  // tone-danger (chromatic) as fg on surface-overlay: danger menu item text (tug-menu.css)
+  // Classified as body-text: the user must read this label to understand the destructive
+  // action; it is readable label text regardless of the chromatic signal intent.
+  {
+    element: "--tug-base-tone-danger",
+    surface: "--tug-base-surface-overlay",
+    role: "body-text",
+  },
+
+  // --- Checkmark / toggle track pairings (tug-checkbox.css) ---
+  // checkmark-fg on toggle-track-on: checkmark icon on checked checkbox background
+  {
+    element: "--tug-base-checkmark-fg",
+    surface: "--tug-base-toggle-track-on",
+    role: "ui-component",
+  },
+  // checkmark-fg-mixed on toggle-track-mixed: indeterminate dash on mixed checkbox background
+  {
+    element: "--tug-base-checkmark-fg-mixed",
+    surface: "--tug-base-toggle-track-mixed",
+    role: "ui-component",
+  },
+
+  // --- Dock button badge (tug-dock.css) ---
+  // fg-inverse on tone-danger (chromatic): dock notification badge text
+  {
+    element: "--tug-base-fg-inverse",
+    surface: "--tug-base-tone-danger",
+    role: "ui-component",
+  },
+
+  // --- Neutral badge: divider-default used as background (tug-dialog.css) ---
+  // divider-default is an element token normally; here it is used as badge-neutral-bg.
+  // fg-muted renders over this dual-use surface.
+  {
+    element: "--tug-base-fg-muted",
+    surface: "--tug-base-divider-default",
+    role: "ui-component",
+  },
+
+  // --- Dock background = field-bg-focus (tug-dock.css) ---
+  // fg-subtle used for dock button icons over the dock background (field-bg-focus)
+  {
+    element: "--tug-base-fg-subtle",
+    surface: "--tug-base-field-bg-focus",
+    role: "ui-component",
+  },
+
 
 ];

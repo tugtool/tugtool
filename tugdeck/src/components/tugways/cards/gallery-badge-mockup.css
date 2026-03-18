@@ -5,6 +5,22 @@
  * the real tug-badge or tug-base token system. Purely exploratory.
  */
 
+/**
+ * @tug-pairings
+ * Only the filled variants (which use real --tug-base-* tokens) are tracked here.
+ * Tinted variants use --tug-color(*-light) expressions — not base tokens and not trackable.
+ *
+ * | Element                                                           | Surface                                                            | Role         | Context                            |
+ * |-------------------------------------------------------------------|--------------------------------------------------------------------|--------------|-------------------------------------|
+ * | --tug-base-control-filled-accent-fg-rest (control-filled-accent-fg-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | Mockup filled-accent badge text |
+ * | --tug-base-control-filled-action-fg-rest (control-filled-action-fg-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | Mockup filled-action badge text |
+ * | --tug-base-control-filled-agent-fg-rest (control-filled-agent-fg-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | ui-component | Mockup filled-agent badge text   |
+ * | --tug-base-control-filled-data-fg-rest (control-filled-data-fg-rest) | --tug-base-control-filled-data-bg-rest (control-filled-data-bg-rest) | ui-component | Mockup filled-data badge text     |
+ * | --tug-base-control-filled-danger-fg-rest (control-filled-danger-fg-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | Mockup filled-danger badge text |
+ * | --tug-base-control-filled-success-fg-rest (control-filled-success-fg-rest) | --tug-base-control-filled-success-bg-rest (control-filled-success-bg-rest) | ui-component | Mockup filled-success badge text |
+ * | --tug-base-control-filled-caution-fg-rest (control-filled-caution-fg-rest) | --tug-base-control-filled-caution-bg-rest (control-filled-caution-bg-rest) | ui-component | Mockup filled-caution badge text |
+ */
+
 /* ============================================================================
    Mockup badge base — shared across all mockup variants
    ========================================================================= */

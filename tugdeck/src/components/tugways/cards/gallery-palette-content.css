@@ -6,6 +6,16 @@
  * All color tokens use --tug-base-* semantic tokens exclusively.
  */
 
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                                         |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|-------------------------------------------------|
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-control (surface-control)     | body-text    | Action button text on surface-control           |
+ * | --tug-base-tone-danger-fg (tone-danger-fg)        | --tug-base-tone-danger-bg (tone-danger-bg)       | body-text    | Error message text on danger tint background    |
+ * | --tug-base-fg-muted (fg-muted)                   | parent ambient surface-default                   | subdued-text | SVG axis labels, vib/val readout labels         |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-inset (surface-inset)         | body-text    | Formula code snippet text on inset background   |
+ */
+
 /* ============================================================================
    Content wrapper
    ========================================================================= */

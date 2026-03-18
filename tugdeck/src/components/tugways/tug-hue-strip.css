@@ -6,6 +6,13 @@
  * All color tokens use --tug-base-* semantic tokens exclusively.
  */
 
+/**
+ * @tug-pairings
+ * | Element                                  | Surface                                    | Role         | Context                    |
+ * |------------------------------------------|--------------------------------------------|--------------|----------------------------|
+ * | --tug-base-fg-muted (fg-muted)           | parent ambient surface-default             | subdued-text | Rotated hue label text     |
+ */
+
 /* ============================================================================
    Strip container
    ========================================================================= */

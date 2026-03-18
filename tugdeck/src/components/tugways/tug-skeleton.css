@@ -17,6 +17,13 @@
  * - Spec S01: TugSkeletonProps, TugSkeletonGroupProps
  */
 
+/**
+ * @tug-pairings
+ * No foreground-on-background text or icon pairings. The skeleton is a purely
+ * decorative animated block. Background cycles between tug-skeleton-base and
+ * tug-skeleton-highlight — no text renders on it.
+ */
+
 /* ============================================================================
    Pulse keyframe
    ============================================================================ */

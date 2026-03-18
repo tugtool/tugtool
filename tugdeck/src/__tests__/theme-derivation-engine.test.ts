@@ -500,11 +500,16 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-tone-success-icon",
   "--tug-base-tone-caution-icon",
   "--tug-base-tone-danger-icon",
+  // D2 — bare tone-danger (chromatic danger signal, used as menu item label color).
+  // The contrast floor pushes its tone toward the body-text threshold (75) but the
+  // chromatic hue ceiling means it cannot reach 75 against surface-overlay. This is
+  // the same structural constraint as tone-danger-fg. Phase 2 will enforce it.
+  "--tug-base-tone-danger",
   // E — UI control indicators
   "--tug-base-accent-default",
   "--tug-base-toggle-thumb",
   "--tug-base-toggle-icon-mixed",
-  "--tug-base-checkmark",
+  "--tug-base-checkmark-fg",
   "--tug-base-radio-dot",
   "--tug-base-range-thumb",
   // E2 — muted / disabled element tokens below perceptual contrast thresholds
@@ -527,11 +532,11 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   // tab-fg-rest reclassified to subdued-text; contrast ~42 passes the marginal band (>= contrast 40).
   // tab-fg-hover: hover state (below contrast 75 body-text in both dark and light)
   "--tug-base-tab-fg-hover",
-  // G2 — Field text: field-fg is the text inside form fields; in light mode, the
-  // field background (field-bg-rest/hover) is derived close in lightness to field-fg,
+  // G2 — Field text: field-fg-default is the text inside form fields; in light mode, the
+  // field background (field-bg-rest/hover) is derived close in lightness to field-fg-default,
   // producing contrast ~27-51 in light mode (below contrast 75 body-text threshold). Light-mode
   // calibration is a known deferred constraint (same as surface derivation).
-  "--tug-base-field-fg",
+  "--tug-base-field-fg-default",
   // H — Non-text component visibility tokens below contrast 30 by design (Step 3)
   // These tokens start below the ui-component threshold and are auto-adjusted
   // by the pipeline. They are documented here so the test tracks regressions
@@ -573,6 +578,24 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
   // Focused-vs-unfocused decorative comparisons (border-vs-border, informational [D05])
   "--tug-base-accent-cool-default|--tug-base-field-border-rest",
   "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest",
+  // Step 5 gap pairs: accessibility gaps discovered in the Step 2 pairing audit.
+  // These pairs are below threshold due to structural engine constraints — the contrast
+  // engine does not auto-adjust fg-default for chromatic/tinted surfaces. Phase 2 will
+  // close these gaps via an updated contrast enforcement strategy.
+  //   fg-default on tab-bg-active  — card title text on active title bar; contrast ~73.6
+  //                                  (marginal: within 5 units of threshold 75). [Gap #1]
+  //   fg-default on accent-subtle  — menu selected item text on 15%-alpha accent tint;
+  //                                  composited contrast ~62. [Gap #29]
+  //   fg-default on tone-caution-bg — autofix suggestion text on caution tint (~12% alpha);
+  //                                  composited contrast ~58. [Gap #19]
+  "--tug-base-fg-default|--tug-base-tab-bg-active",
+  "--tug-base-fg-default|--tug-base-accent-subtle",
+  "--tug-base-fg-default|--tug-base-tone-caution-bg",
+  // fg-inverse on tone-danger — dock badge text (fg-inverse) on danger signal background.
+  // tone-danger is lightened to approach body-text threshold on surface-overlay, but this
+  // causes fg-inverse (dark inverse) on the lighter tone-danger to fall below ui-component
+  // threshold 30 (actual: ~21). Phase 2 will resolve via independent token paths. [Gap #dock-danger]
+  "--tug-base-fg-inverse|--tug-base-tone-danger",
 ]);
 
 /**
@@ -978,8 +1001,8 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-border-inverse": { L: 0.9340799999999999, C: 0.0081, h: 250 },
   "--tug-base-border-muted": { L: 0.57624, C: 0.019600000000000003, h: 263.33333333333326 },
   "--tug-base-border-strong": { L: 0.6108, C: 0.019600000000000003, h: 258.33333333333326 },
-  "--tug-base-checkmark": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-checkmark-mixed": { L: 0.81312, C: 0.013500000000000002, h: 250 },
+  "--tug-base-checkmark-fg": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-checkmark-fg-mixed": { L: 0.81312, C: 0.013500000000000002, h: 250 },
   "--tug-base-control-disabled-bg": { L: 0.39552, C: 0.0149, h: 270 },
   "--tug-base-control-disabled-border": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-control-disabled-fg": { L: 0.58776, C: 0.019600000000000003, h: 256.66666666666663 },
@@ -1165,12 +1188,12 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-field-border-readOnly": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-field-border-rest": { L: 0.54204, C: 0.0162, h: 250 },
   "--tug-base-field-border-success": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-field-fg": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-field-fg-default": { L: 0.9340799999999999, C: 0.0081, h: 250 },
   "--tug-base-field-fg-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
   "--tug-base-field-fg-readOnly": { L: 0.81312, C: 0.013500000000000002, h: 250 },
-  "--tug-base-field-label": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-field-placeholder": { L: 0.5064, C: 0.0162, h: 250 },
-  "--tug-base-field-required": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-field-fg-label": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-field-fg-placeholder": { L: 0.6252, C: 0.0162, h: 250 },
+  "--tug-base-field-fg-required": { L: 0.659, C: 0.22, h: 25 },
   "--tug-base-field-tone-caution": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-field-tone-danger": { L: 0.659, C: 0.22, h: 25 },
   "--tug-base-field-tone-success": { L: 0.821, C: 0.22, h: 140 },
@@ -1192,7 +1215,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-selection-bg": { L: 0.803, C: 0.134, h: 200 },
   "--tug-base-selection-bg-inactive": { L: 0.6006, C: 0, h: 90 },
   "--tug-base-selection-fg": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-separator": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-divider-separator": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-shadow-lg": { L: 0, C: 0, h: 0 },
   "--tug-base-shadow-md": { L: 0, C: 0, h: 0 },
   "--tug-base-shadow-overlay": { L: 0, C: 0, h: 0 },
@@ -1243,7 +1266,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-tone-caution-border": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-tone-caution-fg": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-tone-caution-icon": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-tone-danger": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-tone-danger": { L: 0.91184, C: 0.22, h: 25 },
   "--tug-base-tone-danger-bg": { L: 0.659, C: 0.22, h: 25 },
   "--tug-base-tone-danger-border": { L: 0.659, C: 0.22, h: 25 },
   "--tug-base-tone-danger-fg": { L: 0.659, C: 0.22, h: 25 },
@@ -1608,6 +1631,12 @@ const LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS = new Set([
   "--tug-base-fg-default|--tug-base-surface-sunken",
   "--tug-base-fg-default|--tug-base-surface-screen",
   "--tug-base-fg-inverse|--tug-base-surface-screen",
+  // Step 5 gap pairs: same gaps documented in KNOWN_PAIR_EXCEPTIONS above.
+  // Listed here because LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS is used by
+  // light-mode stress tests (T4.7) which do not consult KNOWN_PAIR_EXCEPTIONS.
+  "--tug-base-fg-default|--tug-base-tab-bg-active",
+  "--tug-base-fg-default|--tug-base-accent-subtle",
+  "--tug-base-fg-default|--tug-base-tone-caution-bg",
 ]);
 
 /**

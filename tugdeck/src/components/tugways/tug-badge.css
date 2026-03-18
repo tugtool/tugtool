@@ -15,6 +15,35 @@
  * Spec S06, S07, S08, S09
  */
 
+/**
+ * @tug-pairings
+ * | Element                                                           | Surface                                                            | Role         | Context                                          |
+ * |-------------------------------------------------------------------|--------------------------------------------------------------------|--------------|--------------------------------------------------|
+ * | --tug-base-control-filled-accent-fg-rest (control-filled-accent-fg-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | Badge text on filled-accent background     |
+ * | --tug-base-control-filled-action-fg-rest (control-filled-action-fg-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | Badge text on filled-action background     |
+ * | --tug-base-control-filled-danger-fg-rest (control-filled-danger-fg-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | Badge text on filled-danger background     |
+ * | --tug-base-control-filled-agent-fg-rest (control-filled-agent-fg-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | ui-component | Badge text on filled-agent background       |
+ * | --tug-base-control-outlined-action-fg-rest (control-outlined-action-fg-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | ui-component | Badge text on outlined-action background |
+ * | --tug-base-control-outlined-agent-fg-rest (control-outlined-agent-fg-rest) | --tug-base-control-outlined-agent-bg-rest (control-outlined-agent-bg-rest) | ui-component | Badge text on outlined-agent background   |
+ * | --tug-base-control-ghost-action-fg-rest (control-ghost-action-fg-rest) | --tug-base-surface-default (surface-default)                       | ui-component | Badge text on page surface (ghost-action; bg-rest is transparent)   |
+ * | --tug-base-control-ghost-danger-fg-rest (control-ghost-danger-fg-rest) | --tug-base-surface-default (surface-default)                       | ui-component | Badge text on page surface (ghost-danger; bg-rest is transparent)   |
+ * | --tug-base-badge-tinted-accent-fg (badge-tinted-accent-fg)        | --tug-base-badge-tinted-accent-bg (badge-tinted-accent-bg)         | ui-component | Tinted accent badge text on tinted accent bg     |
+ * | --tug-base-badge-tinted-action-fg (badge-tinted-action-fg)        | --tug-base-badge-tinted-action-bg (badge-tinted-action-bg)         | ui-component | Tinted action badge text on tinted action bg     |
+ * | --tug-base-badge-tinted-agent-fg (badge-tinted-agent-fg)          | --tug-base-badge-tinted-agent-bg (badge-tinted-agent-bg)           | ui-component | Tinted agent badge text on tinted agent bg       |
+ * | --tug-base-badge-tinted-data-fg (badge-tinted-data-fg)            | --tug-base-badge-tinted-data-bg (badge-tinted-data-bg)             | ui-component | Tinted data badge text on tinted data bg         |
+ * | --tug-base-badge-tinted-danger-fg (badge-tinted-danger-fg)        | --tug-base-badge-tinted-danger-bg (badge-tinted-danger-bg)         | ui-component | Tinted danger badge text on tinted danger bg     |
+ * | --tug-base-badge-tinted-success-fg (badge-tinted-success-fg)      | --tug-base-badge-tinted-success-bg (badge-tinted-success-bg)       | ui-component | Tinted success badge text on tinted success bg   |
+ * | --tug-base-badge-tinted-caution-fg (badge-tinted-caution-fg)      | --tug-base-badge-tinted-caution-bg (badge-tinted-caution-bg)       | ui-component | Tinted caution badge text on tinted caution bg   |
+ * | --tug-base-control-filled-data-fg-rest (control-filled-data-fg-rest) | --tug-base-control-filled-data-bg-rest (control-filled-data-bg-rest) | ui-component | Badge text on filled-data background           |
+ * | --tug-base-control-filled-success-fg-rest (control-filled-success-fg-rest) | --tug-base-control-filled-success-bg-rest (control-filled-success-bg-rest) | ui-component | Badge text on filled-success background  |
+ * | --tug-base-control-filled-caution-fg-rest (control-filled-caution-fg-rest) | --tug-base-control-filled-caution-bg-rest (control-filled-caution-bg-rest) | ui-component | Badge text on filled-caution background  |
+ * | --tug-base-tone-accent-fg (tone-accent-fg)                        | transparent (ambient surface-default or surface-overlay)           | ui-component | Ghost-accent badge text (transparent bg)         |
+ * | --tug-base-tone-agent-fg (tone-agent-fg)                          | transparent (ambient)                                              | ui-component | Ghost-agent badge text (transparent bg)          |
+ * | --tug-base-tone-data-fg (tone-data-fg)                            | transparent (ambient)                                              | ui-component | Ghost-data badge text (transparent bg)           |
+ * | --tug-base-tone-success-fg (tone-success-fg)                      | transparent (ambient)                                              | ui-component | Ghost-success badge text (transparent bg)        |
+ * | --tug-base-tone-caution-fg (tone-caution-fg)                      | transparent (ambient)                                              | ui-component | Ghost-caution badge text (transparent bg)        |
+ */
+
 /* ============================================================================
    Base Badge
    ========================================================================= */

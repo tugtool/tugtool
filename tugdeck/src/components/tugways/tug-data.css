@@ -6,6 +6,15 @@
  * No CSS rules yet — tokens only.
  */
 
+/**
+ * @tug-pairings
+ * | Element                                      | Surface                                           | Role         | Context                                             |
+ * |----------------------------------------------|---------------------------------------------------|--------------|-----------------------------------------------------|
+ * | --tug-table-header-fg (fg-muted)             | --tug-table-header-bg (surface-sunken)            | subdued-text | Table header cell text on sunken header background  |
+ * | --tug-stat-value (fg-default)                | parent surface (ambient surface-default/raised)   | body-text    | Stat value text                                     |
+ * | --tug-stat-label (fg-subtle)                 | parent surface (ambient surface-default/raised)   | subdued-text | Stat label text                                     |
+ */
+
 body {
   /* --- Table / List --- */
   --tug-table-header-bg: var(--tug-base-surface-sunken);
@@ -44,7 +53,7 @@ body {
   --tug-chart-threshold-danger: var(--tug-base-tone-danger);
 
   /* --- Gauge --- */
-  --tug-gauge-track: var(--tug-base-separator);
+  --tug-gauge-track: var(--tug-base-divider-separator);
   --tug-gauge-fill: var(--tug-base-accent-default);
   --tug-gauge-needle: var(--tug-base-fg-default);
   --tug-gauge-tick-major: var(--tug-base-fg-subtle);

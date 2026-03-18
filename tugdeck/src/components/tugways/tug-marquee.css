@@ -16,6 +16,13 @@
  * [D04] Semantic tokens exclusively
  */
 
+/**
+ * @tug-pairings
+ * | Element                                        | Surface                                             | Role      | Context            |
+ * |------------------------------------------------|-----------------------------------------------------|-----------|--------------------|
+ * | --tug-base-field-fg-label (field-fg-label)     | parent surface (ambient)                            | body-text | Marquee label text |
+ */
+
 /* ============================================================================
    Base Marquee
    ========================================================================= */
@@ -29,7 +36,7 @@
   font-weight: 500;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-base-field-label);
+  color: var(--tug-base-field-fg-label);
   min-width: 0;
 }
 

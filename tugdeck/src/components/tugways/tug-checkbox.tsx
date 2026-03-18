@@ -2,7 +2,7 @@
  * TugCheckbox -- tugways public API for checkboxes.
  *
  * Wraps Radix Checkbox for accessible checked/unchecked/indeterminate state.
- * All visual states driven by --tug-base-toggle-track-* and --tug-base-checkmark
+ * All visual states driven by --tug-base-toggle-track-* and --tug-base-checkmark-fg
  * tokens — theme switches update CSS variables with no React re-renders.
  *
  * Features:
@@ -14,7 +14,7 @@
  *
  * [D03] Role color via inline CSS custom property injection
  * [D04] Token-driven control state model
- * [D05] Component token naming: --tug-base-toggle-*, --tug-base-checkmark
+ * [D05] Component token naming: --tug-base-toggle-*, --tug-base-checkmark-fg
  */
 
 import React from "react";

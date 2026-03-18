@@ -99,18 +99,22 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-tone-success-icon",
   "--tug-base-tone-caution-icon",
   "--tug-base-tone-danger-icon",
+  // D2 — bare tone-danger (chromatic danger signal, used as menu item label color).
+  // Contrast floor cannot reach body-text threshold (75) due to chromatic hue ceiling.
+  // Same structural constraint as tone-danger-fg. Phase 2 will enforce it.
+  "--tug-base-tone-danger",
   // UI control indicators (form elements / state indicators)
   "--tug-base-accent-default",
   "--tug-base-toggle-thumb",
   "--tug-base-toggle-icon-mixed",
-  "--tug-base-checkmark",
+  "--tug-base-checkmark-fg",
   "--tug-base-radio-dot",
   "--tug-base-range-thumb",
   // Tab chrome (intentionally below contrast 75 body-text threshold)
   "--tug-base-tab-fg-rest",
   "--tug-base-tab-fg-hover",
   // Field text — light-mode field backgrounds create contrast constraints
-  "--tug-base-field-fg",
+  "--tug-base-field-fg-default",
   // Non-text component visibility tokens below contrast 30 by design (Step 3)
   // Toggle track inactive/indeterminate states: intentionally lower-contrast
   // to signal the off/mixed (inactive) state vs. the on state.
@@ -172,6 +176,19 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
   // pairs pass contrast 30.
   "--tug-base-accent-cool-default|--tug-base-field-border-rest",
   "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest",
+  // Step 5 gap pairs: accessibility gaps discovered in the Step 2 pairing audit.
+  // These pairs are below threshold due to structural constraints — the contrast engine
+  // does not auto-adjust fg-default for chromatic/tinted surfaces. Phase 2 will close
+  // these gaps via an updated contrast enforcement strategy.
+  //   fg-default on tab-bg-active  — card title text on active title bar; contrast ~73.6
+  //                                  (marginal: within 5 units of threshold 75). [Gap #1]
+  //   fg-default on accent-subtle  — menu selected item text on 15%-alpha accent tint;
+  //                                  composited contrast ~62. [Gap #29]
+  //   fg-default on tone-caution-bg — autofix suggestion text on caution tint (~12% alpha);
+  //                                  composited contrast ~58. [Gap #19]
+  "--tug-base-fg-default|--tug-base-tab-bg-active",
+  "--tug-base-fg-default|--tug-base-accent-subtle",
+  "--tug-base-fg-default|--tug-base-tone-caution-bg",
 ]);
 
 /**

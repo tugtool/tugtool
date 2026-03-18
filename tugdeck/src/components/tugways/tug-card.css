@@ -13,6 +13,19 @@
  * [D07] Window-shade collapse
  */
 
+/**
+ * @tug-pairings
+ * | Element                                                 | Surface                                                          | Role         | Context                                              |
+ * |---------------------------------------------------------|------------------------------------------------------------------|--------------|------------------------------------------------------|
+ * | --tug-card-title-bar-fg (fg-default)                    | --tug-card-title-bar-bg-active (tab-bg-active)                   | body-text    | Card title text on active title bar [THE GAP]        |
+ * | --tug-card-title-bar-fg (fg-default)                    | --tug-card-title-bar-bg-inactive (tab-bg-inactive)               | body-text    | Card title text on inactive title bar                |
+ * | --tug-card-title-bar-icon-active (icon-active)          | --tug-card-title-bar-bg-active (tab-bg-active)                   | ui-component | Card icon on active title bar                        |
+ * | --tug-card-title-bar-icon-inactive (fg-subtle)          | --tug-card-title-bar-bg-inactive (tab-bg-inactive)               | ui-component | Card icon on inactive title bar                      |
+ * | --tug-base-fg-default (fg-default)                      | --tug-base-surface-default (surface-default)                     | body-text    | Card content area text                               |
+ * | --tug-base-fg-muted (fg-muted)                          | --tug-base-surface-default (surface-default)                     | subdued-text | Loading placeholder text                             |
+ * | --tug-base-selection-fg (selection-fg)                  | --tug-base-selection-bg (selection-bg)                           | body-text    | Selected text (CSS Custom Highlight API)             |
+ */
+
 /* ============================================================================
    Component Token Definitions
    ========================================================================= */
