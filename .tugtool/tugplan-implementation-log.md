@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-18T00:32:11Z
+---
+
+## step-1: Baseline snapshot: 200 @semantic fields confirmed, tsc clean, 1845 tests pass, token output saved to .tugtool/_tmp_tug-base-baseline.css for post-reorder diffing.
+
+**Files changed:**
+- .tugtool/tugplan-restructure-derivation-formulas.md
+
+---
+
+---
 step: step-4
 date: 2025-03-17T23:44:36Z
 ---
