@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-18T01:22:55Z
+---
+
+## step-3: Added inline design rationale comments to 13 fields across Text Brightness (2), Text Hierarchy (4), and Text Coloring (7) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-2
 date: 2025-03-18T01:19:51Z
 ---

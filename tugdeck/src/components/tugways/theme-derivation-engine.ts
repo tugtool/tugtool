@@ -1028,25 +1028,25 @@ export const DARK_FORMULAS: DerivationFormulas = {
 
   // ===== Text Brightness =====
   // How bright primary and inverse text is. Dark: near 100. Light: near 0.
-  fgDefaultTone: 94,
-  fgInverseTone: 100,
+  fgDefaultTone: 94, // off-white: slightly softened from pure white to reduce eye strain on dark bg
+  fgInverseTone: 100, // pure white: inverse text sits on filled controls and must be fully bright
 
   // ===== Text Hierarchy =====
   // How much secondary/tertiary text dims from primary. Dark: descending from 94. Light: ascending from 8.
-  fgMutedTone: 66,
-  fgSubtleTone: 37,
-  fgDisabledTone: 23,
-  fgPlaceholderTone: 30,
+  fgMutedTone: 66, // secondary text: large drop from 94 creates clear primary/secondary distinction
+  fgSubtleTone: 37, // tertiary text: drops deep to signal low-priority labels and captions
+  fgDisabledTone: 23, // near-invisible: disabled content barely readable, signaling non-interactivity
+  fgPlaceholderTone: 30, // between disabled and subtle: placeholder is inactive but still scannable
 
   // ===== Text Coloring =====
   // How much chroma text carries. Dark: I 2-7. Light: I 3-8.
-  txtI: 3,
-  txtISubtle: 7,
-  fgMutedI: 5,
-  atmIBorder: 6,
-  fgInverseI: 3,
-  fgOnCautionI: 4,
-  fgOnSuccessI: 4,
+  txtI: 3, // near-neutral: primary text carries minimal chroma so it reads as near-white, not tinted
+  txtISubtle: 7, // higher chroma for subtle tiers: tinted labels use more hue to signal semantic meaning
+  fgMutedI: 5, // moderate chroma: muted text picks up more hue than primary to compensate for low tone
+  atmIBorder: 6, // atmosphere-hued borders use mid-range chroma to stay visible without overpowering
+  fgInverseI: 3, // near-neutral: inverse text on filled controls mirrors primary text's low chroma
+  fgOnCautionI: 4, // caution surfaces are already vivid; text chroma is moderate to avoid clash
+  fgOnSuccessI: 4, // same as caution: success surfaces are vivid, text stays moderate
 
   // ===== Border Visibility =====
   // How visible borders and dividers are. Dark: subtle I 4-7. Light: crisp I 6-10.
