@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-18T01:25:41Z
+---
+
+## step-4: Added inline design rationale comments to 19 fields across Border Visibility (7), Card Frame Style (4), and Shadow Depth (8) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-3
 date: 2025-03-18T01:22:55Z
 ---

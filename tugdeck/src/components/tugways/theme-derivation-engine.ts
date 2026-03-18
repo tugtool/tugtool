@@ -1050,31 +1050,31 @@ export const DARK_FORMULAS: DerivationFormulas = {
 
   // ===== Border Visibility =====
   // How visible borders and dividers are. Dark: subtle I 4-7. Light: crisp I 6-10.
-  borderIBase: 6,
-  borderIStrong: 7,
-  borderMutedTone: 37,
-  borderMutedI: 7,
-  borderStrongTone: 40,
-  dividerDefaultI: 6,
-  dividerMutedI: 4,
+  borderIBase: 6, // mid-range chroma: default borders are present but never stark against dark surfaces
+  borderIStrong: 7, // one step higher: strong/emphasis borders need a bit more pop to register
+  borderMutedTone: 37, // mid-dark tone: muted borders are dim enough to recede in the hierarchy
+  borderMutedI: 7, // higher chroma compensates for low tone so muted borders remain legible
+  borderStrongTone: 40, // slightly above muted: strong borders need a touch more lift for contrast
+  dividerDefaultI: 6, // matches borderIBase: dividers use the same baseline chroma as borders
+  dividerMutedI: 4, // lowest chroma: muted dividers are the most recessive structural element
 
   // ===== Card Frame Style =====
   // How card title bars and tab bars present. Dark: dim tones 15-18. Light: bright tones 85-92.
-  cardFrameActiveI: 12,
-  cardFrameActiveTone: 18,
-  cardFrameInactiveI: 4,
-  cardFrameInactiveTone: 15,
+  cardFrameActiveI: 12, // elevated chroma: active title bar uses rich hue to signal focus
+  cardFrameActiveTone: 18, // above surfaceScreen: active frame floats above the screen background
+  cardFrameInactiveI: 4, // near-neutral: inactive frames recede to avoid competing with active card
+  cardFrameInactiveTone: 15, // slightly below active: inactive frames are visibly dimmer but still distinct
 
   // ===== Shadow Depth =====
   // How pronounced shadows and overlay tints are. Dark: 20-80% alpha. Light: 10-40% alpha.
-  shadowXsAlpha: 20,
-  shadowMdAlpha: 60,
-  shadowLgAlpha: 70,
-  shadowXlAlpha: 80,
-  shadowOverlayAlpha: 60,
-  overlayDimAlpha: 48,
-  overlayScrimAlpha: 64,
-  overlayHighlightAlpha: 6,
+  shadowXsAlpha: 20, // subtle lift: extra-small shadows add just enough depth without visual noise
+  shadowMdAlpha: 60, // mid-depth: medium shadows clearly separate floating panels from the surface
+  shadowLgAlpha: 70, // deep: large shadows for prominent floats like menus and popovers
+  shadowXlAlpha: 80, // heaviest shadow: extra-large conveys maximum elevation for dialogs
+  shadowOverlayAlpha: 60, // matches medium: floating overlay panels use the same depth as md shadows
+  overlayDimAlpha: 48, // near-half opacity: dim overlay tints content without fully obscuring it
+  overlayScrimAlpha: 64, // above dim: modal scrims block the background more assertively
+  overlayHighlightAlpha: 6, // near-invisible: highlight tints are barely perceptible, just a suggestion
 
   // ===== Filled Control Prominence =====
   // How bold filled buttons are. Dark: mid-tone bg. Light: same (filled stays vivid).
