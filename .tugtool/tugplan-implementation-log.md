@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-18T20:53:20Z
+---
+
+## step-3: Flattened 2 cross-component alias chains in tug-tab.css body block: --tug-tab-bar-bg and --tug-tab-bg-active now point directly to --tug-base-* tokens instead of through --tug-card-* intermediaries. 14 --tug-dropdown-* compat aliases in tug-menu.css preserved per COMPAT_ALIAS_ALLOWLIST.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
 step: step-2
 date: 2025-03-18T20:47:54Z
 ---

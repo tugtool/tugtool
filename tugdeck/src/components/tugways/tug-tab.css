@@ -43,10 +43,10 @@
    ========================================================================= */
 
 body {
-  --tug-tab-bar-bg: var(--tug-card-title-bar-bg-inactive);
+  --tug-tab-bar-bg: var(--tug-base-tab-bg-inactive);
   --tug-tab-bg-rest: transparent;
   --tug-tab-bg-hover: var(--tug-base-tab-bg-hover);
-  --tug-tab-bg-active: var(--tug-card-title-bar-bg-active);
+  --tug-tab-bg-active: var(--tug-base-tab-bg-active);
   --tug-tab-bg-compact: --tug-color(white, i: 0, t: 100, a: 4);
   --tug-tab-fg-rest: var(--tug-base-tab-fg-rest);
   --tug-tab-fg-hover: var(--tug-base-tab-fg-hover);
