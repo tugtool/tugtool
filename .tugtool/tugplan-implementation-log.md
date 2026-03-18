@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-18T00:49:11Z
+---
+
+## step-3: Integration checkpoint: token output byte-identical to pre-reorder baseline, 1845 tests pass, tsc clean, 198 fields verified across 23 semantic groups.
+
+**Files changed:**
+- .tugtool/tugplan-restructure-derivation-formulas.md
+
+---
+
+---
 step: step-2
 date: 2025-03-18T00:46:12Z
 ---
