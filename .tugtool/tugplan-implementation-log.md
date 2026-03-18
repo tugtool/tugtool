@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-18T03:09:47Z
+---
+
+## step-5: Widened ThemeName to 'brio' | 'harmony'. Added registerThemeCSS(). Updated setTheme() to inject harmony CSS and clear dynamic state. Updated revertToBuiltIn() to re-inject active built-in's CSS. Added CANVAS_COLORS.harmony. Pre-fetch harmony.css in main.tsx. Widened action-dispatch validation. Filtered built-in names from saved-themes list. 1846 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-harmony-light-theme.md
+
+---
+
+---
 step: step-4
 date: 2025-03-18T03:00:54Z
 ---

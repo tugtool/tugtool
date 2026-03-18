@@ -9,6 +9,7 @@ import { fetchLayoutWithRetry, fetchThemeWithRetry, fetchTabStatesWithRetry, fet
 import {
   applyInitialTheme,
   sendCanvasColor,
+  registerThemeCSS,
   type ThemeName,
 } from "./contexts/theme-provider";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
@@ -41,12 +42,19 @@ if (!container) {
 //            Tab state fetch depends on tab IDs from the deserialized layout,
 //            so it cannot be parallelized with the layout fetch itself.
 (async () => {
-  // Phase 1: parallel fetch of layout, theme, and focused card ID.
-  const [layout, theme, focusedCardId] = await Promise.all([
+  // Phase 1: parallel fetch of layout, theme, focused card ID, and harmony CSS.
+  // Harmony CSS is pre-fetched here so setTheme("harmony") and applyInitialTheme("harmony")
+  // remain synchronous — they read from the already-populated themeCSSMap. [D07]
+  const [layout, theme, focusedCardId, harmonyCSS] = await Promise.all([
     fetchLayoutWithRetry(),
     fetchThemeWithRetry(),
     fetchDeckStateWithRetry(),
+    fetch("/styles/themes/harmony.css").then((r) => (r.ok ? r.text() : null)).catch(() => null),
   ]);
+
+  // Register harmony CSS before applyInitialTheme so the pre-fetched string is
+  // available synchronously when applyInitialTheme reads themeCSSMap. [D07]
+  if (harmonyCSS) registerThemeCSS("harmony", harmonyCSS);
 
   // Apply the initial theme via stylesheet injection before DeckManager construction
   // so the correct colors are visible before React renders.

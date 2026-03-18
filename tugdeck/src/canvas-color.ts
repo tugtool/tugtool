@@ -1,13 +1,17 @@
 /**
- * canvas-color.ts — Compute the canvas background hex for Brio.
+ * canvas-color.ts — Compute the canvas background hex for built-in themes.
  *
  * Uses the palette engine (same source of truth as PostCSS and tug-palette.css)
- * to convert Brio's --tug-base-bg-canvas TugColor value to a hex string.
+ * to convert each theme's --tug-base-bg-canvas TugColor value to a hex string.
  * This feeds the Swift bridge so the native window background matches the
  * web content on cold start.
  *
- * When the canvas color changes in tug-base.css, update the TugColor params
- * here to match.
+ * Built-in theme canvas colors:
+ *   brio    — indigo-violet I:2 T:5  (near-black dark canvas)   [D05]
+ *   harmony — indigo-violet I:3 T:95 (near-white light canvas)  [D05]
+ *
+ * When the canvas color changes in tug-base.css or harmony.css, update the
+ * TugColor params here to match.
  */
 
 import {
@@ -27,14 +31,18 @@ import type { ThemeName } from "./contexts/theme-provider";
 // ---------------------------------------------------------------------------
 // Canvas background TugColor params
 //
-// Mirrors the --tug-base-bg-canvas value in tug-base.css:
-//   brio (tug-base.css): --tug-color(indigo-violet, i: 2, t: 5)  [263.3°]
+// Mirrors the --tug-base-bg-canvas value in tug-base.css (brio) and
+// harmony.css (harmony):
+//   brio    (tug-base.css): --tug-color(indigo-violet, i: 2, t: 5)   [263.3°]
+//   harmony (harmony.css):  --tug-color(indigo-violet, i: 3, t: 95)  [263.3°]
+// [D05] Harmony canvas color is indigo-violet I:3 T:95
 // ---------------------------------------------------------------------------
 
 type TugColorParams = { hue: string; intensity: number; tone: number };
 
 const CANVAS_COLORS: Record<ThemeName, TugColorParams> = {
-  brio: { hue: "indigo-violet", intensity: 2, tone: 5 },
+  brio:    { hue: "indigo-violet", intensity: 2, tone: 5 },
+  harmony: { hue: "indigo-violet", intensity: 3, tone: 95 },
 };
 
 /**

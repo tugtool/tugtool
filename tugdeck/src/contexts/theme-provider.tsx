@@ -3,11 +3,16 @@
  *
  * Architecture: stylesheet injection (not body classes).
  *
- * Brio is the sole theme; its palette is defined as body {} defaults in
- * tug-base.css. The theme provider maintains context for future extensibility.
+ * Built-in themes:
+ *   - brio    (default dark)  — palette defined as body {} defaults in tug-base.css.
+ *                               themeCSSMap entry is null; no override stylesheet needed.
+ *   - harmony (built-in light) — full 373-token override file at /styles/themes/harmony.css.
+ *                               Pre-fetched in main.tsx before React mounts via
+ *                               registerThemeCSS(). [D07]
  *
  * Spec S02 (#s02-injection-contract), Spec S03 (#s03-theme-provider),
- * [D03] Stylesheet injection, [D08] TugThemeProvider
+ * [D02] First-class static ThemeName, [D03] Stylesheet injection,
+ * [D07] Pre-fetch harmony CSS, [D08] TugThemeProvider
  */
 
 import React, {
@@ -26,7 +31,8 @@ import { canvasColorHex } from "../canvas-color";
 // Types
 // ---------------------------------------------------------------------------
 
-export type ThemeName = "brio";
+/** Built-in theme names. Widened as new permanent themes are added. [D02] */
+export type ThemeName = "brio" | "harmony";
 
 interface ThemeContextValue {
   theme: ThemeName;
@@ -40,10 +46,26 @@ interface ThemeContextValue {
 // Theme CSS map
 // ---------------------------------------------------------------------------
 
-/** CSS string for each non-Brio theme. Brio uses tug-base.css defaults. */
+/**
+ * Pre-fetched CSS string for each built-in theme.
+ * - brio:    null — uses tug-base.css body {} defaults; no override needed.
+ * - harmony: null until populated by registerThemeCSS() in main.tsx before mount. [D07]
+ */
 const themeCSSMap: Record<ThemeName, string | null> = {
   brio: null,
+  harmony: null,
 };
+
+/**
+ * Populate a built-in theme's CSS before applyInitialTheme() is called.
+ *
+ * Called from main.tsx's async IIFE after the harmony CSS fetch resolves.
+ * Must be called before applyInitialTheme() and before React mounts so that
+ * the initial theme injection is synchronous. [D07]
+ */
+export function registerThemeCSS(name: ThemeName, css: string): void {
+  themeCSSMap[name] = css;
+}
 
 // ---------------------------------------------------------------------------
 // Stylesheet injection helpers
@@ -106,8 +128,8 @@ export function sendCanvasColor(theme: ThemeName): void {
 /**
  * Apply the initial theme via stylesheet injection before React mounts.
  *
- * For Brio (the only theme), this is a no-op (tug-base.css defaults are
- * already active).
+ * For brio (the default), this is a no-op — tug-base.css defaults are already active.
+ * For harmony, injects the pre-fetched CSS from themeCSSMap when non-null. [D07]
  */
 export function applyInitialTheme(themeName: ThemeName): void {
   const cssText = themeCSSMap[themeName];
@@ -127,15 +149,27 @@ const DYNAMIC_THEME_KEY = "td-dynamic-theme";
 // ---------------------------------------------------------------------------
 
 /**
+ * Built-in theme names to exclude from the saved-themes list. [D08]
+ * generate-tug-tokens.ts writes harmony.css to styles/themes/, the same
+ * directory that handleThemesList reads for user-saved themes. Filtering
+ * these names prevents harmony from appearing as both a built-in preset
+ * and a user-saved theme in the Theme Generator dropdown.
+ */
+const BUILT_IN_THEME_NAMES: ReadonlySet<string> = new Set<ThemeName>(["brio", "harmony"]);
+
+/**
  * Fetch the list of saved dynamic themes from the Vite dev middleware.
  * Returns an empty array if the endpoint is unavailable (e.g. in production).
+ * Filters out built-in theme names so harmony.css does not appear as both
+ * a built-in preset and a user-saved theme. [D08]
  */
 export async function loadSavedThemes(): Promise<string[]> {
   try {
     const res = await fetch("/__themes/list");
     if (!res.ok) return [];
     const data = (await res.json()) as { themes?: string[] };
-    return Array.isArray(data.themes) ? data.themes : [];
+    const themes = Array.isArray(data.themes) ? data.themes : [];
+    return themes.filter((name) => !BUILT_IN_THEME_NAMES.has(name));
   } catch {
     return [];
   }
@@ -178,12 +212,22 @@ export function TugThemeProvider({
   const setThemeRef = useRef<(t: ThemeName) => void>(() => {});
 
   const setTheme = (newTheme: ThemeName): void => {
+    // Inject or remove the override stylesheet synchronously. [D07]
     const cssText = themeCSSMap[newTheme];
     if (cssText) {
       injectThemeCSS(newTheme, cssText);
     } else {
-      // Brio: remove override so tug-base.css defaults take over
+      // brio: remove override so tug-base.css defaults take over
       removeThemeCSS();
+    }
+    // Clear any stale dynamic theme so it cannot override the user's built-in
+    // selection on next page load (mount-time check reads td-dynamic-theme first).
+    // React 19 batches these state updates automatically. [D02]
+    setDynamicThemeName(null);
+    try {
+      localStorage.removeItem(DYNAMIC_THEME_KEY);
+    } catch {
+      // localStorage may be unavailable
     }
     setThemeState(newTheme);
     try {
@@ -220,18 +264,31 @@ export function TugThemeProvider({
   }, []);
 
   /**
-   * Revert to the built-in theme by removing the dynamic theme override.
-   * Removes the injected stylesheet and clears the localStorage entry.
+   * Revert to the active built-in theme by removing the dynamic theme override.
+   *
+   * - For brio: remove the override stylesheet so tug-base.css defaults take over.
+   * - For harmony: remove the dynamic override and re-inject harmony's CSS from
+   *   themeCSSMap so the built-in light theme is restored correctly. [D02]
+   *
+   * React 19 batches the setDynamicThemeName(null) state update with any parent
+   * re-renders, so no intermediate flash occurs.
    */
   const revertToBuiltIn = useCallback((): void => {
-    removeThemeCSS();
+    const cssText = themeCSSMap[theme];
+    if (cssText) {
+      // Non-brio built-in (e.g. harmony): re-inject its CSS after clearing dynamic override.
+      injectThemeCSS(theme, cssText);
+    } else {
+      // Brio: removing the override lets tug-base.css defaults take over.
+      removeThemeCSS();
+    }
     setDynamicThemeName(null);
     try {
       localStorage.removeItem(DYNAMIC_THEME_KEY);
     } catch {
       // localStorage may be unavailable
     }
-  }, []);
+  }, [theme]);
 
   // Keep ref current on every render so the stable wrapper always calls the latest setter.
   useEffect(() => {

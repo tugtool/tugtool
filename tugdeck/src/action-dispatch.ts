@@ -167,10 +167,13 @@ export function initActionDispatch(
     }
   });
 
-  // set-theme: Switch the active theme via TugThemeProvider
+  // set-theme: Switch the active theme via TugThemeProvider.
+  // Accepts all built-in theme names: "brio" and "harmony".
+  // The Swift AppDelegate sends this action from the Theme submenu (AppDelegate.swift
+  // line 311 for harmony). [D02]
   registerAction("set-theme", (payload) => {
     const theme = payload.theme;
-    if (typeof theme !== "string" || !["brio"].includes(theme)) {
+    if (typeof theme !== "string" || !["brio", "harmony"].includes(theme)) {
       console.warn("set-theme: invalid theme", payload);
       return;
     }
