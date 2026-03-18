@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-18T14:59:50Z
+---
+
+## step-4: Verified Bug 2 fix (cardFrameActiveTone=88 correctly applied). borderSignalTone=40 and semanticSignalTone=35 produce correct lower tones. 10 harmony contrast findings all in known-exception categories. Added 11 permanent verification tests. No LIGHT_OVERRIDES tuning needed. 1868 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
 step: step-3
 date: 2025-03-18T14:50:29Z
 ---
