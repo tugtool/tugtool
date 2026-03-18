@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-18T14:42:05Z
+---
+
+## step-2: Step 2 (wire borderSignalTone/semanticSignalTone into derivation rules) was completed as part of Step 1 commit ac47bd85. No additional changes needed.
+
+**Files changed:**
+- .tugtool/tugplan-generator-light-theme-bugs.md
+
+---
+
+---
 step: step-1
 date: 2025-03-18T14:41:24Z
 ---
