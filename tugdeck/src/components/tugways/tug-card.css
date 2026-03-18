@@ -1,34 +1,25 @@
-/**
- * TugCard + CardTitleBar styles — component token definitions and rules.
- *
- * Token prefix: --tug-card-* (drops the "base" segment per CSS reorganization).
- * Token values reference --tug-base-* primitives where applicable.
- *
- * All colors use --tug-card-* semantic tokens or --tug-base-* base tokens.
- * No hardcoded hex values, no raw Tailwind color classes.
- *
- * Merged from: tugcard.css + card-title-bar.css
- *
- * [D04] Semantic tokens exclusively
- * [D07] Window-shade collapse
- */
-
-/**
- * @tug-pairings
- * | Element                                                 | Surface                                                          | Role         | Context                                              |
- * |---------------------------------------------------------|------------------------------------------------------------------|--------------|------------------------------------------------------|
- * | --tug-card-title-bar-fg (fg-default)                    | --tug-card-title-bar-bg-active (tab-bg-active)                   | body-text    | Card title text on active title bar [THE GAP]        |
- * | --tug-card-title-bar-fg (fg-default)                    | --tug-card-title-bar-bg-inactive (tab-bg-inactive)               | body-text    | Card title text on inactive title bar                |
- * | --tug-card-title-bar-icon-active (icon-active)          | --tug-card-title-bar-bg-active (tab-bg-active)                   | ui-component | Card icon on active title bar                        |
- * | --tug-card-title-bar-icon-inactive (fg-subtle)          | --tug-card-title-bar-bg-inactive (tab-bg-inactive)               | ui-component | Card icon on inactive title bar                      |
- * | --tug-base-fg-default (fg-default)                      | --tug-base-surface-default (surface-default)                     | body-text    | Card content area text                               |
- * | --tug-base-fg-muted (fg-muted)                          | --tug-base-surface-default (surface-default)                     | subdued-text | Loading placeholder text                             |
- * | --tug-base-selection-fg (selection-fg)                  | --tug-base-selection-bg (selection-bg)                           | body-text    | Selected text (CSS Custom Highlight API)             |
- */
 
 /* ============================================================================
    Component Token Definitions
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-card-border (border-default)               | --tug-base-surface-default (surface-default)     | ui-component | .tugcard (border)                    |
+ * | --tug-card-title-bar-fg (fg-default)             | --tug-base-tab-bg-inactive (tab-bg-inactive)     | body-text    | .tugcard-title (color)               |
+ * | --tug-card-title-bar-fg (fg-default)             | --tug-base-tab-bg-active (tab-bg-active)         | body-text    | .tugcard-title (color)               |
+ * | --tug-card-title-bar-icon-active (icon-active)   | --tug-base-tab-bg-active (tab-bg-active)         | ui-component | .card-frame[data-focused="true"] .tugcard-icon (color) |
+ * | --tug-card-title-bar-icon-inactive (fg-subtle)   | --tug-base-tab-bg-inactive (tab-bg-inactive)     | subdued-text | .card-frame[data-focused="false"] .tugcard-icon (color) |
+ * | --tug-base-selection-fg (selection-fg)           | --tug-base-selection-bg (selection-bg)           | body-text    | ::highlight(card-selection) (color)  |
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .tugcard-loading (color)             |
+ */
+
+
+
+
+
 
 body {
   /* --- Card --- */

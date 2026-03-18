@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-18T21:45:55Z
+---
+
+## step-6: Ran inject --apply to regenerate @tug-pairings blocks in 16 CSS files with expanded annotation-derived pairings. Expanded element-surface-pairing-map.ts with ~484 new entries to close verify gaps. Updated test exceptions for newly discovered pairings. All audit:tokens commands pass (lint, verify, pairings). All 1878 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
 step: step-5
 date: 2025-03-18T21:13:05Z
 ---

@@ -1,41 +1,46 @@
-/**
- * Gallery Theme Generator Content styles.
- *
- * Styles for the Theme Generator gallery card UI: seed selectors, mood sliders,
- * token preview grid. Builds on the cg-* class patterns from gallery-card.css.
- * All color tokens use --tug-base-* semantic tokens exclusively.
- *
- * Rules of Tugways: appearance through CSS custom properties, not React state.
- * [D08, D09]
- */
-
-/**
- * @tug-pairings
- * | Element                                              | Surface                                              | Role         | Context                                                    |
- * |------------------------------------------------------|------------------------------------------------------|--------------|------------------------------------------------------------|
- * | --tug-base-fg-muted (fg-muted)                       | --tug-base-surface-default (surface-default)         | subdued-text | Mode button label at rest on surface-default               |
- * | --tug-base-fg-default (fg-default)                   | --tug-base-surface-raised (surface-raised)           | body-text    | Mode button text on hover (surface-raised)                 |
- * | --tug-base-fg-onAccent (fg-onAccent)                 | --tug-base-accent-default (accent-default, chromatic) | ui-component | Active mode button label on accent-default background     |
- * | --tug-base-fg-default (fg-default)                   | --tug-base-bg-canvas (bg-canvas)                     | body-text    | Preview content text on canvas background                  |
- * | --tug-base-fg-muted (fg-muted)                       | --tug-base-bg-canvas (bg-canvas)                     | subdued-text | Preview muted text on canvas background                    |
- * | --tug-base-fg-subtle (fg-subtle)                     | --tug-base-bg-canvas (bg-canvas)                     | subdued-text | Preview subtle text on canvas background                   |
- * | --tug-base-fg-link (fg-link)                         | --tug-base-bg-canvas (bg-canvas)                     | body-text    | Preview link text on canvas background                     |
- * | --tug-base-fg-default (fg-default)                   | --tug-base-surface-raised (surface-raised)           | body-text    | Preview inset section text on surface-raised               |
- * | --tug-base-fg-default (fg-default)                   | --tug-base-surface-default (surface-default)         | body-text    | Compact hue row label, slider label, dash summary text     |
- * | --tug-base-fg-muted (fg-muted)                       | --tug-base-surface-default (surface-default)         | subdued-text | Token grid names/values, slider values, column headers     |
- * | --tug-base-fg-default (fg-default)                   | --tug-base-surface-control (surface-control)         | body-text    | Preset buttons, export/autofix button text on surface-control |
- * | --tug-base-tone-success-fg (tone-success-fg)         | --tug-base-tone-success-bg (tone-success-bg)         | ui-component | Contrast dashboard pass badge text on success tint         |
- * | --tug-base-tone-caution-fg (tone-caution-fg)         | --tug-base-tone-caution-bg (tone-caution-bg)         | ui-component | Marginal badge and CVD warn badge on caution tint          |
- * | --tug-base-tone-danger-fg (tone-danger-fg)           | --tug-base-tone-danger-bg (tone-danger-bg)           | ui-component | Contrast dashboard fail badge text on danger tint          |
- * | --tug-base-fg-muted (fg-muted)                       | --tug-base-surface-raised (surface-raised)           | ui-component | Decorative/neutral badge text on surface-raised            |
- * | --tug-base-fg-onAccent (fg-onAccent)                 | --tug-base-accent-subtle (accent-subtle, chromatic)  | ui-component | Active preset button text on accent-subtle background      |
- * | --tug-base-fg-default (fg-default)                   | --tug-base-tone-caution-bg (tone-caution-bg)         | body-text    | Auto-fix suggestion list items on caution tint panel       |
- * | --tug-base-tone-caution-fg (tone-caution-fg)         | --tug-base-tone-caution-bg (tone-caution-bg)         | body-text    | Auto-fix suggestion title and type label on caution tint   |
- */
 
 /* ============================================================================
    Content wrapper — tighter layout than default cg-content
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .gtg-hue-column-title (color)        |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-raised (surface-raised)       | body-text    | .gtg-mode-btn:hover (color)          |
+ * | --tug-base-fg-onAccent (fg-onAccent)             | --tug-base-accent-default (accent-default)       | body-text    | .gtg-mode-btn--active (color)        |
+ * | --tug-base-border-default (border-default)       | --tug-base-bg-canvas (bg-canvas)                 | ui-component | .gtg-preview-canvas (border)         |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-bg-canvas (bg-canvas)                 | body-text    | .gtg-preview-title (color)           |
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-bg-canvas (bg-canvas)                 | subdued-text | .gtg-preview-muted (color)           |
+ * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-bg-canvas (bg-canvas)                 | subdued-text | .gtg-preview-subtle (color)          |
+ * | --tug-base-border-muted (border-muted)           | --tug-base-surface-raised (surface-raised)       | ui-component | .gtg-preview-inset (border)          |
+ * | --tug-base-fg-link (fg-link)                     | --tug-base-bg-canvas (bg-canvas)                 | body-text    | .gtg-preview-link (color)            |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-default (surface-default)     | ui-component | .gtg-compact-hue-row (border)        |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-default (surface-default)     | body-text    | .gtg-compact-hue-label (color)       |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-raised (surface-raised)       | ui-component | .gtg-compact-hue-popover (border)    |
+ * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-default (surface-default)     | subdued-text | .gtg-token-value (color)             |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-control (surface-control)     | body-text    | .gtg-preset-btn (color)              |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-control (surface-control)     | ui-component | .gtg-preset-btn (border)             |
+ * | --tug-base-accent-default (accent-default)       | --tug-base-accent-subtle (accent-subtle)         | ui-component | .gtg-preset-btn--active (border-color) |
+ * | --tug-base-fg-onAccent (fg-onAccent)             | --tug-base-accent-subtle (accent-subtle)         | body-text    | .gtg-preset-btn--active (color)      |
+ * | --tug-base-tone-success-fg (tone-success-fg)     | --tug-base-surface-default (surface-default)     | body-text    | .gtg-dash-summary-count--all-pass (color) |
+ * | --tug-base-tone-caution-fg (tone-caution-fg)     | --tug-base-surface-default (surface-default)     | body-text    | .gtg-dash-summary-count--partial (color) |
+ * | --tug-base-tone-danger-fg (tone-danger-fg)       | --tug-base-surface-default (surface-default)     | body-text    | .gtg-dash-summary-count--fail (color) |
+ * | --tug-base-tone-success-fg (tone-success-fg)     | --tug-base-tone-success-bg (tone-success-bg)     | body-text    | .gtg-dash-badge--pass (color)        |
+ * | --tug-base-tone-success-border (tone-success-border) | --tug-base-tone-success-bg (tone-success-bg)     | ui-component | .gtg-dash-badge--pass (border)       |
+ * | --tug-base-tone-caution-fg (tone-caution-fg)     | --tug-base-tone-caution-bg (tone-caution-bg)     | body-text    | .gtg-dash-badge--marginal (color)    |
+ * | --tug-base-tone-caution-border (tone-caution-border) | --tug-base-tone-caution-bg (tone-caution-bg)     | ui-component | .gtg-dash-badge--marginal (border)   |
+ * | --tug-base-tone-danger-fg (tone-danger-fg)       | --tug-base-tone-danger-bg (tone-danger-bg)       | body-text    | .gtg-dash-badge--fail (color)        |
+ * | --tug-base-tone-danger-border (tone-danger-border) | --tug-base-tone-danger-bg (tone-danger-bg)       | ui-component | .gtg-dash-badge--fail (border)       |
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-raised (surface-raised)       | subdued-text | .gtg-dash-badge--decorative (color)  |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-tone-caution-bg (tone-caution-bg)     | body-text    | .gtg-autofix-suggestion-item (color) |
+ */
+
+
+
+
+
 
 .gtg-content {
   gap: 10px;

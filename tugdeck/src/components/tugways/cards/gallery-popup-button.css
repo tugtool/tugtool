@@ -1,21 +1,23 @@
-/**
- * Gallery popup button styles — self-contained CSS for the TugPopupButton gallery tab.
- *
- * Uses CSS custom properties (--gpb-*) set by sliders to override border-radius
- * on button triggers and menu panels within the gallery demo.
- */
-
-/**
- * @tug-pairings
- * | Element                                   | Surface                                              | Role         | Context                                  |
- * |-------------------------------------------|------------------------------------------------------|--------------|------------------------------------------|
- * | --tug-base-fg-muted (fg-muted)            | parent ambient (typically surface-default)           | subdued-text | Slider labels and demo labels            |
- * | --tug-base-fg-subtle (fg-subtle)          | --tug-base-surface-inset (surface-inset)             | subdued-text | Context bar label text on inset bg       |
- */
 
 /* ============================================================================
    Slider controls
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .gpb-control-group-title (color)     |
+ * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-default (surface-default)     | subdued-text | .gpb-slider-label (color)            |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-default (surface-default)     | body-text    | .gpb-reset:hover (color)             |
+ * | --tug-base-border-muted (border-muted)           | --tug-base-surface-inset (surface-inset)         | ui-component | .gpb-context-bar (border)            |
+ * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-inset (surface-inset)         | subdued-text | .gpb-context-label (color)           |
+ */
+
+
+
+
+
 
 .gpb-controls {
   display: flex;

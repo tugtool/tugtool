@@ -1,31 +1,19 @@
-/**
- * TugMarquee styles -- single-line scrolling label using --tug-base-field-* tokens.
- *
- * Seamless loop: two copies of the text sit end-to-end in a strip. The strip
- * translates left by exactly (textWidth + gap). Because copy 2 is positioned
- * one full cycle ahead, the end of the scroll looks identical to the start —
- * no snap, no jump.
- *
- * Both copies are always present in the DOM. The strip layout never changes
- * (always inline-flex). Only the truncation on copy 1 toggles between paused
- * and scrolling states. Copy 2 is always truncated at the track width.
- *
- * Animation is CSS-lane (Rule 13 — continuous, infinite). JS measures the
- * text and sets CSS custom properties; the motion is pure CSS transition.
- *
- * [D04] Semantic tokens exclusively
- */
-
-/**
- * @tug-pairings
- * | Element                                        | Surface                                             | Role      | Context            |
- * |------------------------------------------------|-----------------------------------------------------|-----------|--------------------|
- * | --tug-base-field-fg-label (field-fg-label)     | parent surface (ambient)                            | body-text | Marquee label text |
- */
 
 /* ============================================================================
    Base Marquee
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-field-fg-label (field-fg-label)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-marquee (color)                 |
+ */
+
+
+
+
+
 
 /* @tug-renders-on: --tug-base-surface-default */
 .tug-marquee {

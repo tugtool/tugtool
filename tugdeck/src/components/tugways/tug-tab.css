@@ -1,46 +1,29 @@
-/**
- * TugTabBar styles — component token definitions and rules.
- *
- * Token prefix: --tug-tab-* (drops the "base" segment per CSS reorganization).
- * Token values reference --tug-base-* primitives where applicable.
- *
- * All colors reference canonical tokens exclusively. No hardcoded
- * hex values, no raw Tailwind color classes. Theme switches update CSS
- * variables at the DOM level -- TugTabBar re-paints without React re-renders.
- *
- * Active tab state is driven by the `data-active` attribute set on each
- * tab button, following Rule 4 (appearance changes go through CSS/DOM).
- *
- * Overflow state is driven by the `data-overflow` attribute on each tab:
- *   data-overflow="collapsed" -- tab shown as icon-only (Stage 1, [D02])
- *   data-overflow="hidden"    -- tab hidden, in overflow dropdown (Stage 2, [D02])
- *
- * **Authoritative references:**
- * - [D02] Overflow state split across appearance and structural zones
- * - [D03] Tab bar uses the Tugcard accessory slot
- * - [D04] Replace overflow-x: auto with overflow-x: hidden
- * - Table T01: Tab visual states
- * - Spec S03: DOM data attributes for overflow state
- * - Spec S04: Overflow button markup
- */
-
-/**
- * @tug-pairings
- * | Element                                                            | Surface                                                      | Role         | Context                                                  |
- * |--------------------------------------------------------------------|--------------------------------------------------------------|--------------|----------------------------------------------------------|
- * | --tug-tab-fg-rest (tab-fg-rest)                                    | --tug-base-tab-bg-inactive (tab-bg-inactive)                 | subdued-text | Tab label at rest on tab bar background (tab-bar-bg = tab-bg-inactive) |
- * | --tug-tab-fg-hover (tab-fg-hover)                                  | --tug-base-tab-bg-inactive (tab-bg-inactive)                 | body-text    | Tab label on hover (tab-bg-hover is semi-transparent over tab-bg-inactive) |
- * | --tug-tab-fg-active (tab-fg-active)                                | --tug-tab-bg-active (tab-bg-active)                          | ui-component | Active tab label on active tab background                |
- * | --tug-tab-close-fg-hover (tab-close-fg-hover)                      | --tug-base-tab-bg-inactive (tab-bg-inactive)                 | ui-component | Tab close button (tab-close-bg-hover semi-transparent over tab-bg-inactive) |
- * | --tug-base-fg-muted (fg-muted)                                     | --tug-base-tab-bg-inactive (tab-bg-inactive)                 | ui-component | Add tab [+] and overflow trigger text on tab bar         |
- * | --tug-base-control-ghost-option-fg-active (control-ghost-option-fg-active) | --tug-base-surface-default (surface-default)                 | ui-component | Tab add/overflow button when menu is open (bg-active semi-transparent over surface-default) |
- * | --tug-base-surface-default (surface-default)                       | --tug-tab-badge-bg (accent-default, chromatic)               | ui-component | Overflow count badge text on accent-default background   |
- * | --tug-base-fg-default (fg-default)                                 | --tug-base-surface-control (surface-control)                 | body-text    | Ghost tab drag visual text on surface-control            |
- */
 
 /* ============================================================================
    Component Token Definitions
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-border-default (border-default)       | --tug-tab-bar-bg (tab-bg-inactive)               | body-text    | .tug-tab-bar (border-bottom)         |
+ * | --tug-tab-fg-rest (tab-fg-rest)                  | --tug-base-tab-bg-inactive (tab-bg-inactive)     | body-text    | .tug-tab (color)                     |
+ * | --tug-tab-fg-active (tab-fg-active)              | --tug-tab-bg-active (tab-bg-active)              | body-text    | .tug-tab[data-active="true"] (color) |
+ * | --tug-tab-fg-hover (tab-fg-hover)                | --tug-tab-bg-hover (tab-bg-hover)                | body-text    | .tug-tab:not([data-active="true"]):hover (color) |
+ * | --tug-tab-close-fg-hover (tab-close-fg-hover)    | --tug-tab-close-bg-hover (tab-close-bg-hover)    | body-text    | .tug-tab-close:hover (color)         |
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-tab-bg-inactive (tab-bg-inactive)     | subdued-text | .tug-tab-bar .tug-tab-add (color)    |
+ * | --tug-base-control-ghost-option-fg-active (control-ghost-option-fg-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | body-text    | .tug-tab-bar .tug-tab-add[data-state="open"] (color) |
+ * | --tug-base-surface-default (surface-default)     | --tug-tab-badge-bg (accent-default)              | body-text    | .tug-tab-overflow-badge (color)      |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-control (surface-control)     | ui-component | .tug-tab-ghost (border)              |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-control (surface-control)     | body-text    | .tug-tab-ghost (color)               |
+ * | --tug-base-accent-default (accent-default)       | --tug-base-surface-control (surface-control)     | body-text    | .tug-tab-bar[data-drop-target="true"] (border-bottom-color) |
+ */
+
+
+
+
+
 
 body {
   --tug-tab-bar-bg: var(--tug-base-tab-bg-inactive);

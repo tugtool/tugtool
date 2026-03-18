@@ -1,29 +1,26 @@
-/**
- * Gallery card content styles -- migrated from component-gallery.css.
- *
- * Includes all .cg-* classes EXCEPT .cg-panel, .cg-titlebar, and .cg-title,
- * which belonged to the old floating panel chrome (now removed).
- *
- * Each gallery content component renders inside a Tugcard content area,
- * so panel positioning and titlebar styles are no longer needed here.
- *
- * All colors use --tug-base-* semantic tokens exclusively.
- */
-
-/**
- * @tug-pairings
- * | Element                                        | Surface                                        | Role         | Context                                             |
- * |------------------------------------------------|------------------------------------------------|--------------|-----------------------------------------------------|
- * | --tug-base-fg-muted (fg-muted)                 | --tug-base-surface-default (surface-default)   | subdued-text | Gallery section title, control label, demo status   |
- * | --tug-base-fg-default (fg-default)             | --tug-base-surface-default (surface-default)   | body-text    | Demo status code text, cascade table, readout value |
- * | --tug-base-fg-default (fg-default)             | --tug-base-surface-control (surface-control)   | body-text    | Gallery select control, demo trigger button text    |
- * | --tug-base-accent-default (accent-default, chromatic) | --tug-base-surface-default (surface-default) | ui-component | Cascade source column text on surface-default     |
- * | --tug-base-accent-cool-default (accent-cool-default, chromatic) | --tug-base-surface-default (surface-default) | ui-component | Scale/timing readout in accent-cool color       |
- */
 
 /* ============================================================================
    Scrollable Content Area
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .cg-section-title (color)            |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-default (surface-default)     | ui-component | .cg-controls (border)                |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-control (surface-control)     | body-text    | .cg-control-select (color)           |
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-control (surface-control)     | ui-component | .cg-control-select (border)          |
+ * | --tug-base-accent-cool-default (accent-cool-default) | --tug-base-surface-control (surface-control)     | ui-component | .cg-control-select:focus (border-color) |
+ * | --tug-base-accent-cool-default (accent-cool-default) | --tug-base-surface-default (surface-default)     | ui-component | .cg-mutation-box (border)            |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-default (surface-default)     | body-text    | .cg-demo-status code (color)         |
+ * | --tug-base-accent-default (accent-default)       | --tug-base-surface-default (surface-default)     | body-text    | .cg-cascade-source (color)           |
+ */
+
+
+
+
+
 
 .cg-content {
   padding: 20px;

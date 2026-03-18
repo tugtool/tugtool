@@ -1,29 +1,43 @@
-/**
- * Badge mockup styles — self-contained CSS for exploring badge redesign.
- *
- * These styles are scoped under .badge-mockup-* classes and do NOT touch
- * the real tug-badge or tug-base token system. Purely exploratory.
- */
-
-/**
- * @tug-pairings
- * Only the filled variants (which use real --tug-base-* tokens) are tracked here.
- * Tinted variants use --tug-color(*-light) expressions — not base tokens and not trackable.
- *
- * | Element                                                           | Surface                                                            | Role         | Context                            |
- * |-------------------------------------------------------------------|--------------------------------------------------------------------|--------------|-------------------------------------|
- * | --tug-base-control-filled-accent-fg-rest (control-filled-accent-fg-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | Mockup filled-accent badge text |
- * | --tug-base-control-filled-action-fg-rest (control-filled-action-fg-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | Mockup filled-action badge text |
- * | --tug-base-control-filled-agent-fg-rest (control-filled-agent-fg-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | ui-component | Mockup filled-agent badge text   |
- * | --tug-base-control-filled-data-fg-rest (control-filled-data-fg-rest) | --tug-base-control-filled-data-bg-rest (control-filled-data-bg-rest) | ui-component | Mockup filled-data badge text     |
- * | --tug-base-control-filled-danger-fg-rest (control-filled-danger-fg-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | Mockup filled-danger badge text |
- * | --tug-base-control-filled-success-fg-rest (control-filled-success-fg-rest) | --tug-base-control-filled-success-bg-rest (control-filled-success-bg-rest) | ui-component | Mockup filled-success badge text |
- * | --tug-base-control-filled-caution-fg-rest (control-filled-caution-fg-rest) | --tug-base-control-filled-caution-bg-rest (control-filled-caution-bg-rest) | ui-component | Mockup filled-caution badge text |
- */
 
 /* ============================================================================
    Mockup badge base — shared across all mockup variants
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-tone-accent-border (tone-accent-border) | --tug-base-tone-accent-bg (tone-accent-bg)       | ui-component | .badge-mockup-tinted-border-accent (border-color) |
+ * | --tug-base-tone-active-border (tone-active-border) | --tug-base-tone-active-bg (tone-active-bg)       | ui-component | .badge-mockup-tinted-border-action (border-color) |
+ * | --tug-base-tone-agent-border (tone-agent-border) | --tug-base-tone-agent-bg (tone-agent-bg)         | ui-component | .badge-mockup-tinted-border-agent (border-color) |
+ * | --tug-base-tone-data-border (tone-data-border)   | --tug-base-tone-data-bg (tone-data-bg)           | ui-component | .badge-mockup-tinted-border-data (border-color) |
+ * | --tug-base-tone-danger-border (tone-danger-border) | --tug-base-tone-danger-bg (tone-danger-bg)       | ui-component | .badge-mockup-tinted-border-danger (border-color) |
+ * | --tug-base-tone-success-border (tone-success-border) | --tug-base-tone-success-bg (tone-success-bg)     | ui-component | .badge-mockup-tinted-border-success (border-color) |
+ * | --tug-base-tone-caution-border (tone-caution-border) | --tug-base-tone-caution-bg (tone-caution-bg)     | ui-component | .badge-mockup-tinted-border-caution (border-color) |
+ * | --tug-base-control-filled-accent-fg-rest (control-filled-accent-fg-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | body-text    | .badge-mockup-filled-accent (color)  |
+ * | --tug-base-control-filled-accent-border-rest (control-filled-accent-border-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | .badge-mockup-filled-accent (border-color) |
+ * | --tug-base-control-filled-action-fg-rest (control-filled-action-fg-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | body-text    | .badge-mockup-filled-action (color)  |
+ * | --tug-base-control-filled-action-border-rest (control-filled-action-border-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | .badge-mockup-filled-action (border-color) |
+ * | --tug-base-control-filled-agent-fg-rest (control-filled-agent-fg-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | body-text    | .badge-mockup-filled-agent (color)   |
+ * | --tug-base-control-filled-agent-border-rest (control-filled-agent-border-rest) | --tug-base-control-filled-agent-bg-rest (control-filled-agent-bg-rest) | ui-component | .badge-mockup-filled-agent (border-color) |
+ * | --tug-base-control-filled-data-fg-rest (control-filled-data-fg-rest) | --tug-base-control-filled-data-bg-rest (control-filled-data-bg-rest) | body-text    | .badge-mockup-filled-data (color)    |
+ * | --tug-base-control-filled-data-border-rest (control-filled-data-border-rest) | --tug-base-control-filled-data-bg-rest (control-filled-data-bg-rest) | ui-component | .badge-mockup-filled-data (border-color) |
+ * | --tug-base-control-filled-danger-fg-rest (control-filled-danger-fg-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | body-text    | .badge-mockup-filled-danger (color)  |
+ * | --tug-base-control-filled-danger-border-rest (control-filled-danger-border-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | .badge-mockup-filled-danger (border-color) |
+ * | --tug-base-control-filled-success-fg-rest (control-filled-success-fg-rest) | --tug-base-control-filled-success-bg-rest (control-filled-success-bg-rest) | body-text    | .badge-mockup-filled-success (color) |
+ * | --tug-base-control-filled-success-border-rest (control-filled-success-border-rest) | --tug-base-control-filled-success-bg-rest (control-filled-success-bg-rest) | ui-component | .badge-mockup-filled-success (border-color) |
+ * | --tug-base-control-filled-caution-fg-rest (control-filled-caution-fg-rest) | --tug-base-control-filled-caution-bg-rest (control-filled-caution-bg-rest) | body-text    | .badge-mockup-filled-caution (color) |
+ * | --tug-base-control-filled-caution-border-rest (control-filled-caution-border-rest) | --tug-base-control-filled-caution-bg-rest (control-filled-caution-bg-rest) | ui-component | .badge-mockup-filled-caution (border-color) |
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .badge-mockup-control-group-title (color) |
+ * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-default (surface-default)     | subdued-text | .badge-mockup-reset, .badge-mockup-reset-all (color) |
+ * | --tug-base-fg-default (fg-default)               | --tug-base-surface-default (surface-default)     | body-text    | .badge-mockup-reset:hover, .badge-mockup-reset-all:hover (color) |
+ * | --tug-base-border-muted (border-muted)           | --tug-base-surface-default (surface-default)     | subdued-text | .badge-mockup-vs-header (border-bottom) |
+ */
+
+
+
+
+
 
 .badge-mockup {
   display: inline-flex;

@@ -1111,9 +1111,17 @@ function cmdVerify(): void {
       /\|\s*[\w-]+[^|]*\(([\w-]+)\)\s*\|\s*[\w-]+[^|]*\(([\w-]+)\)\s*\|/g;
     let m: RegExpExecArray | null;
     while ((m = rowRe.exec(tableContent)) !== null) {
+      const elShort = m[1];
+      const sfShort = m[2];
+      // Skip rows where the short name is not a valid token short-name.
+      // Valid short names do not start with "--" (those are raw CSS custom
+      // properties captured from the full name, not from inside the parens)
+      // and are not reserved words like "hardcoded" used in documentation rows.
+      if (elShort.startsWith("-") || sfShort.startsWith("-")) continue;
+      if (elShort === "hardcoded" || sfShort === "hardcoded") continue;
       cssPairings.push({
-        element: `--tug-base-${m[1]}`,
-        surface: `--tug-base-${m[2]}`,
+        element: `--tug-base-${elShort}`,
+        surface: `--tug-base-${sfShort}`,
         file: basename,
       });
     }

@@ -1,38 +1,39 @@
-/**
- * TugMenu + TugDropdown styles — component token definitions and rules.
- *
- * Token prefix: --tug-menu-*, --tug-popover-*, --tug-tooltip-*
- * Drops the "base" segment per CSS reorganization.
- *
- * The --tug-dropdown-* aliases map to --tug-menu-* tokens (formerly --tug-base-menu-*).
- *
- * All colors reference canonical tokens exclusively. No hardcoded
- * hex values, no raw Tailwind color classes. Theme switches update CSS
- * variables at the DOM level -- TugDropdown re-paints without React re-renders.
- *
- * **Authoritative references:**
- * - [D01] Radix-direct wrapping replaces shadcn
- * - Spec S04: TugDropdownProps
- */
-
-/**
- * @tug-pairings
- * | Element                                                      | Surface                                                         | Role         | Context                                              |
- * |--------------------------------------------------------------|-----------------------------------------------------------------|--------------|------------------------------------------------------|
- * | --tug-dropdown-fg (fg-default)                               | --tug-dropdown-bg (surface-overlay)                             | body-text    | Menu item default text on menu panel                 |
- * | --tug-base-control-filled-action-fg-hover (control-filled-action-fg-hover) | --tug-base-control-filled-action-bg-hover (control-filled-action-bg-hover) | ui-component | Menu item text on hover background    |
- * | --tug-menu-fg (fg-default)                                   | --tug-menu-item-bg-selected (accent-subtle, chromatic)          | body-text    | Menu item text on selected/checked item background   |
- * | --tug-menu-item-meta (fg-subtle)                             | --tug-menu-bg (surface-overlay)                                 | subdued-text | Menu item metadata text on menu panel                |
- * | --tug-menu-item-shortcut (fg-subtle)                         | --tug-menu-bg (surface-overlay)                                 | subdued-text | Menu item shortcut text on menu panel                |
- * | --tug-menu-item-icon (fg-muted)                              | --tug-menu-bg (surface-overlay)                                 | ui-component | Menu item icon on menu panel                         |
- * | --tug-menu-item-fg-danger (tone-danger, chromatic)           | --tug-menu-bg (surface-overlay)                                 | body-text    | Danger menu item text on menu panel                  |
- * | --tug-tooltip-fg (fg-default)                                | --tug-tooltip-bg (surface-screen)                               | body-text    | Tooltip text on tooltip background                   |
- * | --tug-popover-fg (fg-default)                                | --tug-popover-bg (surface-overlay)                              | body-text    | Popover content text on popover background           |
- */
 
 /* ============================================================================
    Component Token Definitions
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-control-outlined-action-fg-active (control-outlined-action-fg-active) | --tug-base-control-outlined-action-bg-active (control-outlined-action-bg-active) | body-text    | .tug-button-outlined-action[data-state="open"] (color) |
+ * | --tug-base-control-outlined-action-border-active (control-outlined-action-border-active) | --tug-base-control-outlined-action-bg-active (control-outlined-action-bg-active) | ui-component | .tug-button-outlined-action[data-state="open"] (border-color) |
+ * | --tug-base-control-outlined-action-icon-active (control-outlined-action-icon-active) | --tug-base-control-outlined-action-bg-active (control-outlined-action-bg-active) | ui-component | .tug-button-outlined-action[data-state="open"] svg (color) |
+ * | --tug-base-control-outlined-option-fg-active (control-outlined-option-fg-active) | --tug-base-control-outlined-option-bg-active (control-outlined-option-bg-active) | body-text    | .tug-button-outlined-option[data-state="open"] (color) |
+ * | --tug-base-control-outlined-option-border-active (control-outlined-option-border-active) | --tug-base-control-outlined-option-bg-active (control-outlined-option-bg-active) | ui-component | .tug-button-outlined-option[data-state="open"] (border-color) |
+ * | --tug-base-control-outlined-option-icon-active (control-outlined-option-icon-active) | --tug-base-control-outlined-option-bg-active (control-outlined-option-bg-active) | ui-component | .tug-button-outlined-option[data-state="open"] svg (color) |
+ * | --tug-base-control-filled-accent-fg-active (control-filled-accent-fg-active) | --tug-base-control-filled-accent-bg-active (control-filled-accent-bg-active) | body-text    | .tug-button-filled-accent[data-state="open"] (color) |
+ * | --tug-base-control-filled-accent-border-active (control-filled-accent-border-active) | --tug-base-control-filled-accent-bg-active (control-filled-accent-bg-active) | ui-component | .tug-button-filled-accent[data-state="open"] (border-color) |
+ * | --tug-base-control-filled-accent-icon-active (control-filled-accent-icon-active) | --tug-base-control-filled-accent-bg-active (control-filled-accent-bg-active) | ui-component | .tug-button-filled-accent[data-state="open"] svg (color) |
+ * | --tug-base-control-ghost-action-fg-active (control-ghost-action-fg-active) | --tug-base-control-ghost-action-bg-active (control-ghost-action-bg-active) | body-text    | .tug-button-ghost-action[data-state="open"] (color) |
+ * | --tug-base-control-ghost-action-border-active (control-ghost-action-border-active) | --tug-base-control-ghost-action-bg-active (control-ghost-action-bg-active) | ui-component | .tug-button-ghost-action[data-state="open"] (border-color) |
+ * | --tug-base-control-ghost-action-icon-active (control-ghost-action-icon-active) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-action[data-state="open"] svg (color) |
+ * | --tug-base-control-ghost-option-fg-active (control-ghost-option-fg-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | body-text    | .tug-button-ghost-option[data-state="open"] (color) |
+ * | --tug-base-control-ghost-option-border-active (control-ghost-option-border-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | ui-component | .tug-button-ghost-option[data-state="open"] (border-color) |
+ * | --tug-base-control-ghost-option-icon-active (control-ghost-option-icon-active) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-option[data-state="open"] svg (color) |
+ * | --tug-base-control-filled-danger-fg-active (control-filled-danger-fg-active) | --tug-base-control-filled-danger-bg-active (control-filled-danger-bg-active) | body-text    | .tug-button-filled-danger[data-state="open"] (color) |
+ * | --tug-base-control-filled-danger-border-active (control-filled-danger-border-active) | --tug-base-control-filled-danger-bg-active (control-filled-danger-bg-active) | ui-component | .tug-button-filled-danger[data-state="open"] (border-color) |
+ * | --tug-base-control-filled-danger-icon-active (control-filled-danger-icon-active) | --tug-base-control-filled-danger-bg-active (control-filled-danger-bg-active) | ui-component | .tug-button-filled-danger[data-state="open"] svg (color) |
+ * | --tug-dropdown-border (border-default)           | --tug-dropdown-bg (surface-overlay)              | ui-component | .tug-dropdown-content (border)       |
+ * | --tug-dropdown-fg (fg-default)                   | --tug-dropdown-bg (surface-overlay)              | body-text    | .tug-dropdown-content (color)        |
+ * | --tug-base-control-filled-action-fg-hover (control-filled-action-fg-hover) | --tug-base-control-filled-action-bg-hover (control-filled-action-bg-hover) | body-text    | .tug-dropdown-item:hover:not([data-disabled]), .tug-dropdown-item[data-highlighted]:not([data-disabled]) (color) |
+ */
+
+
+
+
+
 
 body {
   /* --- Menu / Popover / Tooltip --- */

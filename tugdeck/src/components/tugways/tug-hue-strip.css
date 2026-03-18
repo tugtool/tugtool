@@ -1,21 +1,21 @@
-/**
- * TugHueStrip styles — shared color swatch strip with rotated labels.
- *
- * Used by both the Palette Engine and Theme Generator gallery cards
- * to render a row of 48 hue swatches in ADJACENCY_RING order.
- * All color tokens use --tug-base-* semantic tokens exclusively.
- */
-
-/**
- * @tug-pairings
- * | Element                                  | Surface                                    | Role         | Context                    |
- * |------------------------------------------|--------------------------------------------|--------------|----------------------------|
- * | --tug-base-fg-muted (fg-muted)           | parent ambient surface-default             | subdued-text | Rotated hue label text     |
- */
 
 /* ============================================================================
    Strip container
    ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-border-default (border-default)       | --tug-base-surface-default (surface-default)     | ui-component | .tug-hue-strip__swatch:hover (border-color) |
+ * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .tug-hue-strip__label (color)        |
+ * | --tug-base-accent-default (accent-default)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-hue-strip__item--selected .tug-hue-strip__label (color) |
+ */
+
+
+
+
+
 
 .tug-hue-strip {
   display: flex;
