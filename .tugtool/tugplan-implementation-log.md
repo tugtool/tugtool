@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-18T21:53:36Z
+---
+
+## step-7: Added Rule 16 (every color-setting rule declares its rendering surface via @tug-renders-on), Rule 17 (component alias tokens resolve to --tug-base-* in one hop), and D81 (token pairings are machine-auditable) to roadmap/design-system-concepts.md.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
 step: step-6
 date: 2025-03-18T21:45:55Z
 ---
