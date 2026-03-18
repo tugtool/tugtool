@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-18T18:28:11Z
+---
+
+## step-5: Added 20 missing pairings to element-surface-pairing-map.ts from CSS audit. Critical gap closed: fg-default on tab-bg-active (card title bar). Total map entries now 261. Updated test exception sets for newly surfaced accessibility gaps.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-pairing.md
+
+---
+
+---
 step: step-4
 date: 2025-03-18T17:45:45Z
 ---

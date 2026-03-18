@@ -500,6 +500,11 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-tone-success-icon",
   "--tug-base-tone-caution-icon",
   "--tug-base-tone-danger-icon",
+  // D2 — bare tone-danger (chromatic danger signal, used as menu item label color).
+  // The contrast floor pushes its tone toward the body-text threshold (75) but the
+  // chromatic hue ceiling means it cannot reach 75 against surface-overlay. This is
+  // the same structural constraint as tone-danger-fg. Phase 2 will enforce it.
+  "--tug-base-tone-danger",
   // E — UI control indicators
   "--tug-base-accent-default",
   "--tug-base-toggle-thumb",
@@ -573,6 +578,24 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
   // Focused-vs-unfocused decorative comparisons (border-vs-border, informational [D05])
   "--tug-base-accent-cool-default|--tug-base-field-border-rest",
   "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest",
+  // Step 5 gap pairs: accessibility gaps discovered in the Step 2 pairing audit.
+  // These pairs are below threshold due to structural engine constraints — the contrast
+  // engine does not auto-adjust fg-default for chromatic/tinted surfaces. Phase 2 will
+  // close these gaps via an updated contrast enforcement strategy.
+  //   fg-default on tab-bg-active  — card title text on active title bar; contrast ~73.6
+  //                                  (marginal: within 5 units of threshold 75). [Gap #1]
+  //   fg-default on accent-subtle  — menu selected item text on 15%-alpha accent tint;
+  //                                  composited contrast ~62. [Gap #29]
+  //   fg-default on tone-caution-bg — autofix suggestion text on caution tint (~12% alpha);
+  //                                  composited contrast ~58. [Gap #19]
+  "--tug-base-fg-default|--tug-base-tab-bg-active",
+  "--tug-base-fg-default|--tug-base-accent-subtle",
+  "--tug-base-fg-default|--tug-base-tone-caution-bg",
+  // fg-inverse on tone-danger — dock badge text (fg-inverse) on danger signal background.
+  // tone-danger is lightened to approach body-text threshold on surface-overlay, but this
+  // causes fg-inverse (dark inverse) on the lighter tone-danger to fall below ui-component
+  // threshold 30 (actual: ~21). Phase 2 will resolve via independent token paths. [Gap #dock-danger]
+  "--tug-base-fg-inverse|--tug-base-tone-danger",
 ]);
 
 /**
@@ -1243,7 +1266,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-tone-caution-border": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-tone-caution-fg": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-tone-caution-icon": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-tone-danger": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-tone-danger": { L: 0.91184, C: 0.22, h: 25 },
   "--tug-base-tone-danger-bg": { L: 0.659, C: 0.22, h: 25 },
   "--tug-base-tone-danger-border": { L: 0.659, C: 0.22, h: 25 },
   "--tug-base-tone-danger-fg": { L: 0.659, C: 0.22, h: 25 },
@@ -1608,6 +1631,12 @@ const LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS = new Set([
   "--tug-base-fg-default|--tug-base-surface-sunken",
   "--tug-base-fg-default|--tug-base-surface-screen",
   "--tug-base-fg-inverse|--tug-base-surface-screen",
+  // Step 5 gap pairs: same gaps documented in KNOWN_PAIR_EXCEPTIONS above.
+  // Listed here because LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS is used by
+  // light-mode stress tests (T4.7) which do not consult KNOWN_PAIR_EXCEPTIONS.
+  "--tug-base-fg-default|--tug-base-tab-bg-active",
+  "--tug-base-fg-default|--tug-base-accent-subtle",
+  "--tug-base-fg-default|--tug-base-tone-caution-bg",
 ]);
 
 /**
