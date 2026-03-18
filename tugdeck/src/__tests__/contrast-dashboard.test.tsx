@@ -19,6 +19,10 @@ import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surfac
 import { validateThemeContrast } from "@/components/tugways/theme-accessibility";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
 import { _resetForTest } from "@/card-registry";
+import {
+  INTENTIONALLY_BELOW_THRESHOLD,
+  KNOWN_PAIR_EXCEPTIONS as SHARED_KNOWN_PAIR_EXCEPTIONS,
+} from "./contrast-exceptions";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,38 +89,9 @@ describe("contrast-dashboard – T7.1: renders correct number of pairs", () => {
 // ---------------------------------------------------------------------------
 
 describe("contrast-dashboard – T7.2: Brio body-text pairs pass", () => {
-  // The same intentionally-below-threshold set documented in theme-accessibility.test.ts.
-  // These tokens are by design below contrast 75 in the Brio dark theme.
-  const INTENTIONALLY_BELOW_THRESHOLD = new Set([
-    "--tug-base-fg-subtle",
-    "--tug-base-fg-placeholder",
-    "--tug-base-fg-link-hover",
-    "--tug-base-control-selected-fg",
-    "--tug-base-control-highlighted-fg",
-    "--tug-base-selection-fg",
-    "--tug-base-fg-link",
-    // Muted / read-only hierarchy (below contrast 75 by design)
-    "--tug-base-fg-muted",
-    "--tug-base-field-fg-readOnly",
-    // Tab chrome (below contrast 75 by design for visual hierarchy)
-    "--tug-base-tab-fg-rest",
-    "--tug-base-tab-fg-active",
-    "--tug-base-tab-fg-hover",
-  ]);
-
-  // Step 5 gap pairs: newly-added pairings discovered in the Step 2 audit that are below
-  // contrast 75 due to structural engine constraints. These are accessibility gaps that
-  // Phase 2 of the theme-system-overhaul will close. NOT intentional design choices.
-  const STEP5_GAP_PAIR_EXCEPTIONS = new Set([
-    "--tug-base-fg-default|--tug-base-tab-bg-active",
-    "--tug-base-fg-default|--tug-base-accent-subtle",
-    "--tug-base-fg-default|--tug-base-tone-caution-bg",
-    // tone-danger on surface-overlay — danger menu item label text.
-    // tone-danger is a chromatic signal token; the hue ceiling prevents it from
-    // reaching contrast 75 against surface-overlay. Classified body-text so the
-    // engine tracks it as a gap to fix in Phase 2. [Gap #menu-danger]
-    "--tug-base-tone-danger|--tug-base-surface-overlay",
-  ]);
+  // Exception sets imported from contrast-exceptions.ts:
+  //   INTENTIONALLY_BELOW_THRESHOLD — tokens by design below contrast 75 in Brio dark
+  //   SHARED_KNOWN_PAIR_EXCEPTIONS — includes Step 5 gap pairs (tab-bg-active, accent-subtle, etc.)
 
   it("all Brio body-text pairs outside the intentional-exception set pass contrast", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
@@ -126,7 +101,7 @@ describe("contrast-dashboard – T7.2: Brio body-text pairs pass", () => {
     expect(bodyTextResults.length).toBeGreaterThan(0);
 
     const unexpectedFailures = bodyTextResults.filter(
-      (r) => !r.contrastPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg) && !STEP5_GAP_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
+      (r) => !r.contrastPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg) && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
 
     expect(unexpectedFailures).toEqual([]);

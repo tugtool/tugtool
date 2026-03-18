@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-18T23:52:39Z
+---
+
+## step-1: Created tugdeck/src/__tests__/contrast-exceptions.ts consolidating all exception sets from 4 test files. Added [design-choice] and [phase-3-bug] inline comments on every entry. Updated all test files to import from shared module.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
 step: step-8
 date: 2025-03-18T21:59:38Z
 ---

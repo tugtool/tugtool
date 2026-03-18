@@ -67,6 +67,14 @@ import {
   L_LIGHT,
 } from "@/components/tugways/palette-engine";
 
+import {
+  KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS,
+  KNOWN_PAIR_EXCEPTIONS,
+  RECIPE_PAIR_EXCEPTIONS,
+  LIGHT_MODE_PAIR_EXCEPTIONS,
+  LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS,
+} from "./contrast-exceptions";
+
 // ---------------------------------------------------------------------------
 // Helpers for contrast floor enforcement in test helpers
 // ---------------------------------------------------------------------------
@@ -357,285 +365,8 @@ describe("derivation-engine", () => {
 // ---------------------------------------------------------------------------
 // Integration helpers shared by T4.1–T4.3
 // ---------------------------------------------------------------------------
-
-/**
- * Element tokens that the current derivation engine produces below perceptual contrast thresholds
- * for known structural or design reasons. These are excluded from the T4.x
- * zero-unexpected-failures assertions so the tests track real regressions rather
- * than pre-existing constraints.
- *
- * Categories:
- *
- * A. Secondary/tertiary text hierarchy (intentionally reduced contrast):
- *      fg-subtle, fg-placeholder, fg-link-hover, fg-link,
- *      control-selected-fg, control-highlighted-fg,
- *      selection-fg
- *
- * A2. Muted / read-only hierarchy — reclassified to subdued-text (contrast 45 threshold).
- *     fg-muted (contrast ~61) and field-fg-readOnly (contrast ~61) now pass under subdued-text
- *     and are no longer in this exception set.
- *
- * B. Text/icon on accent or vivid colored backgrounds (design constraint —
- *    accent hues are vivid mid-tone):
- *      fg-onAccent, icon-onAccent, fg-onDanger (danger bg creates contrast ~53 ceiling)
- *
- * C. Interactive state tokens on vivid colored filled button backgrounds
- *    (hover/active states are transient; filled button bg hues may be vivid
- *    mid-tones that fg text can't reach contrast 60):
- *      control-filled-{role}-fg-hover/active, control-filled-{role}-icon-hover/active
- *    Also outlined-agent (colored bg reduces default fg contrast in dark mode)
- *    and ghost-danger: rest/hover/active (danger hue at high intensity is mid-tone,
- *    contrast ~40-41 — below contrast 60 large-text threshold).
- *
- * D. Semantic tone tokens (status/informational colors — designed for
- *    medium visual weight, not primary body-text contrast):
- *      tone-accent-fg, tone-active-fg, tone-agent-fg, tone-data-fg,
- *      tone-success-fg, tone-caution-fg, tone-danger-fg,
- *      tone-accent-icon, tone-active-icon, tone-agent-icon, tone-data-icon,
- *      tone-success-icon, tone-caution-icon, tone-danger-icon
- *
- * E. UI control indicators (form elements / state indicators):
- *      accent-default, toggle-thumb, toggle-icon-mixed,
- *      checkmark, radio-dot, range-thumb
- *    Also muted icons (contrast ~29, borderline below contrast 30 ui-component threshold)
- *    and disabled elements (decorative role, contrast ~8-9 below contrast 15):
- *      fg-disabled, icon-disabled, field-fg-disabled
- *
- * F. Badge tinted fg tokens: semi-transparent bg means fg-over-tinted-bg
- *    has inherently low contrast; real readability is fg over the underlying surface.
- *
- * G. Tab chrome — reclassified to subdued-text (contrast 45 threshold).
- *      tab-fg-rest (contrast ~42) passes within the contrast marginal band (>= 40 = 45 - 5)
- *      under the subdued-text role and is no longer in this exception set.
- *
- * H. Non-text component visibility tokens below contrast 30 by design (Step 3):
- *      toggle-track-off / toggle-track-mixed / toggle-track-off-hover /
- *      toggle-track-mixed-hover — inactive/indeterminate toggle states are
- *      intentionally lower-contrast to signal the off/mixed state.
- *      toggle-track-on — starts below contrast 30 in some configs; auto-adjusted.
- *      field-border-rest / field-border-hover — subtle field boundary in dark mode.
- *      border-default / border-muted — structural separators, intentionally subtle.
- *
- */
-const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
-  // A — secondary / tertiary text
-  "--tug-base-fg-subtle",
-  "--tug-base-fg-placeholder",
-  "--tug-base-fg-link-hover",
-  "--tug-base-fg-link",
-  "--tug-base-control-selected-fg",
-  "--tug-base-control-highlighted-fg",
-  "--tug-base-selection-fg",
-  // A2 — muted / read-only hierarchy reclassified to subdued-text role (contrast 45).
-  // fg-muted (contrast ~61) and field-fg-readOnly (contrast ~61) pass the subdued-text threshold.
-  // fg-subtle (contrast ~27.6) and fg-placeholder remain here as they are still below contrast 45.
-  // B — text/icon on vivid accent or semantic bg
-  "--tug-base-fg-onAccent",
-  "--tug-base-icon-onAccent",
-  "--tug-base-fg-onDanger",
-  // C — interactive state tokens on vivid colored filled buttons
-  // (hover/active states are transient; filled button bg hues may be vivid mid-tones)
-  "--tug-base-control-filled-accent-fg-hover",
-  "--tug-base-control-filled-accent-fg-active",
-  "--tug-base-control-filled-accent-icon-hover",
-  "--tug-base-control-filled-accent-icon-active",
-  "--tug-base-control-filled-action-fg-hover",
-  "--tug-base-control-filled-action-fg-active",
-  "--tug-base-control-filled-action-icon-hover",
-  "--tug-base-control-filled-action-icon-active",
-  "--tug-base-control-filled-danger-fg-hover",
-  "--tug-base-control-filled-danger-fg-active",
-  "--tug-base-control-filled-danger-icon-hover",
-  "--tug-base-control-filled-danger-icon-active",
-  "--tug-base-control-filled-agent-fg-hover",
-  "--tug-base-control-filled-agent-fg-active",
-  "--tug-base-control-filled-agent-icon-hover",
-  "--tug-base-control-filled-agent-icon-active",
-  // C1d — filled-data: teal bg with light text has same contrast constraint as other filled roles
-  "--tug-base-control-filled-data-fg-hover",
-  "--tug-base-control-filled-data-fg-active",
-  "--tug-base-control-filled-data-icon-hover",
-  "--tug-base-control-filled-data-icon-active",
-  // C1e — filled-success: green bg with light text has same contrast constraint as other filled roles
-  "--tug-base-control-filled-success-fg-hover",
-  "--tug-base-control-filled-success-fg-active",
-  "--tug-base-control-filled-success-icon-hover",
-  "--tug-base-control-filled-success-icon-active",
-  // C1f — filled-caution: yellow bg with light text has same contrast constraint as other filled roles
-  // fg-hover (contrast ~26.7): caution-bg-hover at t=40 (L=0.75) vs fg at t=100 (L=0.96); structural.
-  // fg-active: also below threshold (same structural constraint at t=50 bg-active).
-  "--tug-base-control-filled-caution-fg-hover",
-  "--tug-base-control-filled-caution-fg-active",
-  "--tug-base-control-filled-caution-icon-hover",
-  "--tug-base-control-filled-caution-icon-active",
-  // C2 — outlined-action/agent: transparent bg means fg/icon contrast is against parent surface,
-  // not the semi-transparent hover/active tint
-  "--tug-base-control-outlined-action-fg-hover",
-  "--tug-base-control-outlined-action-fg-active",
-  "--tug-base-control-outlined-action-icon-hover",
-  "--tug-base-control-outlined-action-icon-active",
-  "--tug-base-control-outlined-agent-fg-rest",
-  "--tug-base-control-outlined-agent-fg-hover",
-  "--tug-base-control-outlined-agent-fg-active",
-  "--tug-base-control-outlined-agent-icon-rest",
-  "--tug-base-control-outlined-agent-icon-hover",
-  "--tug-base-control-outlined-agent-icon-active",
-  // C3 — ghost-danger rest/hover/active: danger hue at mid-tone is below contrast 60 large-text
-  "--tug-base-control-ghost-danger-fg-rest",
-  "--tug-base-control-ghost-danger-fg-hover",
-  "--tug-base-control-ghost-danger-fg-active",
-  "--tug-base-control-ghost-danger-icon-active",
-  // D — semantic tone tokens (all 7 families)
-  "--tug-base-tone-accent-fg",
-  "--tug-base-tone-active-fg",
-  "--tug-base-tone-agent-fg",
-  "--tug-base-tone-data-fg",
-  "--tug-base-tone-success-fg",
-  "--tug-base-tone-caution-fg",
-  "--tug-base-tone-danger-fg",
-  "--tug-base-tone-accent-icon",
-  "--tug-base-tone-active-icon",
-  "--tug-base-tone-agent-icon",
-  "--tug-base-tone-data-icon",
-  "--tug-base-tone-success-icon",
-  "--tug-base-tone-caution-icon",
-  "--tug-base-tone-danger-icon",
-  // D2 — bare tone-danger (chromatic danger signal, used as menu item label color).
-  // The contrast floor pushes its tone toward the body-text threshold (75) but the
-  // chromatic hue ceiling means it cannot reach 75 against surface-overlay. This is
-  // the same structural constraint as tone-danger-fg. Phase 2 will enforce it.
-  "--tug-base-tone-danger",
-  // E — UI control indicators
-  "--tug-base-accent-default",
-  "--tug-base-toggle-thumb",
-  "--tug-base-toggle-icon-mixed",
-  "--tug-base-checkmark-fg",
-  "--tug-base-radio-dot",
-  "--tug-base-range-thumb",
-  // E2 — muted / disabled element tokens below perceptual contrast thresholds
-  "--tug-base-icon-muted",
-  "--tug-base-fg-disabled",
-  "--tug-base-icon-disabled",
-  "--tug-base-field-fg-disabled",
-  // F — Badge tinted border tokens (Step 4): element side (border) has alpha 35%;
-  // compositing over surface-default produces contrast ~19-24, below the contrast 30 ui-component
-  // threshold. These borders are deliberately subtle tinted accents — their visual
-  // presence is reinforced by the filled badge bg and text, not by the border alone.
-  "--tug-base-badge-tinted-accent-border",
-  "--tug-base-badge-tinted-action-border",
-  "--tug-base-badge-tinted-agent-border",
-  "--tug-base-badge-tinted-data-border",
-  "--tug-base-badge-tinted-danger-border",
-  "--tug-base-badge-tinted-success-border",
-  "--tug-base-badge-tinted-caution-border",
-  // G — Tab chrome
-  // tab-fg-rest reclassified to subdued-text; contrast ~42 passes the marginal band (>= contrast 40).
-  // tab-fg-hover: hover state (below contrast 75 body-text in both dark and light)
-  "--tug-base-tab-fg-hover",
-  // G2 — Field text: field-fg-default is the text inside form fields; in light mode, the
-  // field background (field-bg-rest/hover) is derived close in lightness to field-fg-default,
-  // producing contrast ~27-51 in light mode (below contrast 75 body-text threshold). Light-mode
-  // calibration is a known deferred constraint (same as surface derivation).
-  "--tug-base-field-fg-default",
-  // H — Non-text component visibility tokens below contrast 30 by design (Step 3)
-  // These tokens start below the ui-component threshold and are auto-adjusted
-  // by the pipeline. They are documented here so the test tracks regressions
-  // rather than pre-existing structural constraints.
-  //
-  // Toggle track inactive/indeterminate states: intentionally lower-contrast
-  // to signal the off/mixed (inactive) state vs. the on state.
-  "--tug-base-toggle-track-off",
-  "--tug-base-toggle-track-mixed",
-  "--tug-base-toggle-track-off-hover",
-  "--tug-base-toggle-track-mixed-hover",
-  // toggle-track-on starts below contrast 30 in some configurations; auto-adjust
-  // brings it to passing. Documented here to prevent unexpected regression reports.
-  "--tug-base-toggle-track-on",
-  // Field border rest/hover: intentionally subtle boundary in dark mode.
-  // The active (focus) border uses a vivid accent color and passes without adjustment.
-  "--tug-base-field-border-rest",
-  "--tug-base-field-border-hover",
-  // Field border disabled/readOnly: same structural constraint as rest/hover above.
-  // Non-interactive state borders are intentionally low-contrast (decorative role).
-  "--tug-base-field-border-disabled",
-  "--tug-base-field-border-readOnly",
-  // Separator tokens: structural dividers intentionally low-contrast in dark mode.
-  // border-default and border-muted create visual hierarchy via subtle separation.
-  "--tug-base-border-default",
-  "--tug-base-border-muted",
-]);
-
-/**
- * Specific (element, surface) pairs below threshold due to structural constraints
- * that cannot be resolved by tone-bumping alone. Keyed as "elementToken|surfaceToken"
- * strings for O(1) lookup.
- *
- * Categories:
- *   - Focus indicator focused-vs-unfocused decorative pairs (Step 5): perceptual contrast is
- *     designed for element-on-area contrast, not border-vs-border comparisons [D05].
- *     The auto-adjuster bumps accent-cool-default trying to satisfy the decorative
- *     threshold for control-outlined-action-border-rest (contrast ~9.5 < 15), causing
- *     cascade that drives field-border-rest to contrast 0.0. Both pairs are informational
- *     only. The 9 ui-component focus-on-surface pairs all pass contrast 30 independently.
- */
-const KNOWN_PAIR_EXCEPTIONS = new Set([
-  // Focused-vs-unfocused decorative comparisons (border-vs-border, informational [D05])
-  "--tug-base-accent-cool-default|--tug-base-field-border-rest",
-  "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest",
-  // Step 5 gap pairs: accessibility gaps discovered in the Step 2 pairing audit.
-  // These pairs are below threshold due to structural engine constraints — the contrast
-  // engine does not auto-adjust fg-default for chromatic/tinted surfaces. Phase 2 will
-  // close these gaps via an updated contrast enforcement strategy.
-  //   fg-default on tab-bg-active  — card title text on active title bar; contrast ~73.6
-  //                                  (marginal: within 5 units of threshold 75). [Gap #1]
-  //   fg-default on accent-subtle  — menu selected item text on 15%-alpha accent tint;
-  //                                  composited contrast ~62. [Gap #29]
-  //   fg-default on tone-caution-bg — autofix suggestion text on caution tint (~12% alpha);
-  //                                  composited contrast ~58. [Gap #19]
-  "--tug-base-fg-default|--tug-base-tab-bg-active",
-  "--tug-base-fg-default|--tug-base-accent-subtle",
-  "--tug-base-fg-default|--tug-base-tone-caution-bg",
-  // fg-inverse on tone-danger — dock badge text (fg-inverse) on danger signal background.
-  // tone-danger is lightened to approach body-text threshold on surface-overlay, but this
-  // causes fg-inverse (dark inverse) on the lighter tone-danger to fall below ui-component
-  // threshold 30 (actual: ~21). Phase 2 will resolve via independent token paths. [Gap #dock-danger]
-  "--tug-base-fg-inverse|--tug-base-tone-danger",
-  // fg-inverse on surface-default — badge ghost/outlined variant: fg-inverse sits on
-  // surface-default when the badge has no fill. In dark mode, fg-inverse is a dark token
-  // (the inverse of fg-default which is light), so it reads as dark-on-dark giving negative
-  // contrast (-6.5). Phase 2 will resolve via independent token paths. [Gap #badge-inverse]
-  "--tug-base-fg-inverse|--tug-base-surface-default",
-  // Filled button border-hover/-active on matching hover/active bg: these border tokens
-  // are the same chromatic hue as their hover/active bg. After compositing both over
-  // surface-default (parentSurface), they produce near-zero contrast by design — the
-  // border is a subtle same-hue outline, not a contrast-critical boundary. Decorative. [Step 6]
-  "--tug-base-control-filled-accent-border-hover|--tug-base-control-filled-accent-bg-hover",
-  "--tug-base-control-filled-accent-border-active|--tug-base-control-filled-accent-bg-active",
-  "--tug-base-control-filled-action-border-hover|--tug-base-control-filled-action-bg-hover",
-  "--tug-base-control-filled-action-border-active|--tug-base-control-filled-action-bg-active",
-  "--tug-base-control-filled-danger-border-hover|--tug-base-control-filled-danger-bg-hover",
-  "--tug-base-control-filled-danger-border-active|--tug-base-control-filled-danger-bg-active",
-  // Ghost/outlined button border-hover/-active on matching hover/active bg: same rationale
-  // as filled buttons above — same-hue border on semi-transparent hover tint. [Step 6]
-  "--tug-base-control-ghost-danger-border-hover|--tug-base-control-ghost-danger-bg-hover",
-  "--tug-base-control-ghost-danger-border-active|--tug-base-control-ghost-danger-bg-active",
-  // Ghost/outlined button fg-hover/-active on matching semi-transparent hover/active bg:
-  // the bg is a 10-20% alpha tint of the fg hue. Raw contrast (without compositing over
-  // the parent surface) is low by design — the interaction highlight is informational,
-  // not a contrast-critical foreground-on-background text/icon pair. Decorative. [Step 6]
-  "--tug-base-control-ghost-action-fg-hover|--tug-base-control-ghost-action-bg-hover",
-  "--tug-base-control-ghost-action-fg-active|--tug-base-control-ghost-action-bg-active",
-  "--tug-base-control-ghost-option-fg-hover|--tug-base-control-ghost-option-bg-hover",
-  "--tug-base-control-ghost-option-fg-active|--tug-base-control-ghost-option-bg-active",
-  "--tug-base-control-outlined-option-fg-hover|--tug-base-control-outlined-option-bg-hover",
-  "--tug-base-control-outlined-option-fg-active|--tug-base-control-outlined-option-bg-active",
-  "--tug-base-control-outlined-option-icon-active|--tug-base-control-outlined-option-bg-active",
-  // Toggle-track self-pairings: tug-checkbox.css rules where a chromatic toggle-track token
-  // is used as BOTH background-color and border-color in the same rule. The border is a
-  // stylistic same-hue outline; element == surface means contrast is always 0.0. Decorative. [Step 6]
-  "--tug-base-toggle-track-on-hover|--tug-base-toggle-track-on-hover",
-  "--tug-base-toggle-track-disabled|--tug-base-toggle-track-disabled",
-]);
+// KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS and KNOWN_PAIR_EXCEPTIONS are imported
+// from contrast-exceptions.ts (see import at top of file).
 
 /**
  * Run the full derivation → contrast-validation pipeline for a given recipe.
@@ -770,17 +501,8 @@ describe("derivation-engine integration", () => {
     // No autoAdjustContrast post-processing is needed or performed.
     const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-    // Known light-mode surface-derivation constraints (engine calibrated for dark mode;
-    // these pairs are structurally constrained in light mode, not regressions).
-    const LIGHT_MODE_PAIR_EXCEPTIONS = new Set([
-      "--tug-base-fg-default|--tug-base-bg-app",
-      "--tug-base-fg-default|--tug-base-bg-canvas",
-      "--tug-base-fg-default|--tug-base-surface-raised",
-      "--tug-base-fg-default|--tug-base-surface-overlay",
-      "--tug-base-fg-default|--tug-base-surface-sunken",
-      "--tug-base-fg-default|--tug-base-surface-screen",
-      "--tug-base-fg-inverse|--tug-base-surface-screen",
-    ]);
+    // Known light-mode surface-derivation constraints — imported from contrast-exceptions.ts.
+    // (LIGHT_MODE_PAIR_EXCEPTIONS imported at top of file)
 
     // Check body-text only — mirrors the gallery test's light-mode coverage scope.
     const unexpectedBodyTextFailures = finalResults.filter((r) => {
@@ -862,11 +584,9 @@ describe("derivation-engine integration", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.harmony);
     const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-    // Structural pair exception: fg-inverse is for on-fill text (dark backgrounds);
-    // on surface-screen (light) is not a real usage — same constraint as brio-light T4.2.
-    const HARMONY_PAIR_EXCEPTIONS = new Set([
-      "--tug-base-fg-inverse|--tug-base-surface-screen",
-    ]);
+    // Structural pair exception: RECIPE_PAIR_EXCEPTIONS["harmony"] imported from contrast-exceptions.ts.
+    // fg-inverse on surface-screen: structural polarity mismatch (for on-fill text, not light surfaces).
+    const harmonyPairExceptions = RECIPE_PAIR_EXCEPTIONS["harmony"] ?? new Set<string>();
 
     const unexpectedFailures = finalResults.filter((r) => {
       if (r.contrastPass) return false;
@@ -874,7 +594,7 @@ describe("derivation-engine integration", () => {
       if (Math.abs(r.contrast) >= margin) return false;
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
       if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
-      if (HARMONY_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+      if (harmonyPairExceptions.has(`${r.fg}|${r.bg}`)) return false;
       return true;
     });
     const descriptions = unexpectedFailures.map(
@@ -1650,33 +1370,7 @@ describe("derivation-engine generateResolvedCssExport", () => {
 // / surface-screen are known structural constraints.
 // ---------------------------------------------------------------------------
 
-/**
- * Known light-mode body-text pair exceptions (structural — same as T4.2).
- *
- * The engine is calibrated for dark mode. In light mode, bg-app, bg-canvas,
- * surface-raised, surface-overlay, surface-sunken, and surface-screen are
- * derived at lightness values close to fg-default, producing contrast well below
- * the contrast 75 body-text threshold. These are not regressions — they are
- * pre-existing structural constraints deferred per Q01.
- *
- * fg-inverse on surface-screen is also structural: fg-inverse is an inverted
- * foreground designed for chips/badges, not body text on surface-screen.
- */
-const LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS = new Set([
-  "--tug-base-fg-default|--tug-base-bg-app",
-  "--tug-base-fg-default|--tug-base-bg-canvas",
-  "--tug-base-fg-default|--tug-base-surface-raised",
-  "--tug-base-fg-default|--tug-base-surface-overlay",
-  "--tug-base-fg-default|--tug-base-surface-sunken",
-  "--tug-base-fg-default|--tug-base-surface-screen",
-  "--tug-base-fg-inverse|--tug-base-surface-screen",
-  // Step 5 gap pairs: same gaps documented in KNOWN_PAIR_EXCEPTIONS above.
-  // Listed here because LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS is used by
-  // light-mode stress tests (T4.7) which do not consult KNOWN_PAIR_EXCEPTIONS.
-  "--tug-base-fg-default|--tug-base-tab-bg-active",
-  "--tug-base-fg-default|--tug-base-accent-subtle",
-  "--tug-base-fg-default|--tug-base-tone-caution-bg",
-]);
+// LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS is imported from contrast-exceptions.ts.
 
 /**
  * Known dark-mode body-text pair exceptions for high surfaceContrast recipes.
