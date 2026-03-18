@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-18T01:35:07Z
+---
+
+## step-7: Added inline design rationale comments to 76 fields across Hue Slot Dispatch (30), Sentinel Hue Dispatch (9), Sentinel Alpha (11), Computed Tone Override (15), Hue Name Dispatch (7), and Selection Mode (4) groups in DARK_FORMULAS. All 198 fields now annotated.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-6
 date: 2025-03-18T01:30:50Z
 ---

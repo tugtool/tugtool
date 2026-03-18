@@ -1173,97 +1173,97 @@ export const DARK_FORMULAS: DerivationFormulas = {
 
   // ===== Hue Slot Dispatch =====
   // Which hue slot each surface/fg/icon/border tier reads from. String keys into ResolvedHueSlots.
-  bgAppHueSlot: "canvas",
-  bgCanvasHueSlot: "canvas",
-  surfaceSunkenHueSlot: "surfBareBase",
-  surfaceDefaultHueSlot: "surfBareBase",
-  surfaceRaisedHueSlot: "atm",
-  surfaceOverlayHueSlot: "surfBareBase",
-  surfaceInsetHueSlot: "atm",
-  surfaceContentHueSlot: "atm",
-  surfaceScreenHueSlot: "surfScreen",
-  fgMutedHueSlot: "fgMuted",
-  fgSubtleHueSlot: "fgSubtle",
-  fgDisabledHueSlot: "fgDisabled",
-  fgPlaceholderHueSlot: "fgPlaceholder",
-  fgInverseHueSlot: "fgInverse",
-  fgOnAccentHueSlot: "fgInverse",
-  iconMutedHueSlot: "fgSubtle",
-  iconOnAccentHueSlot: "fgInverse",
-  dividerMutedHueSlot: "borderTintBareBase",
-  disabledBgHueSlot: "surfBareBase",
-  fieldBgHoverHueSlot: "surfBareBase",
-  fieldBgReadOnlyHueSlot: "surfBareBase",
-  fieldPlaceholderHueSlot: "fgPlaceholder",
-  fieldBorderRestHueSlot: "fgPlaceholder",
-  fieldBorderHoverHueSlot: "fgSubtle",
-  toggleTrackDisabledHueSlot: "surfBareBase",
-  toggleThumbHueSlot: "fgInverse",
-  checkmarkHueSlot: "fgInverse",
-  radioDotHueSlot: "fgInverse",
-  tabBgActiveHueSlot: "cardFrame",
-  tabBgInactiveHueSlot: "cardFrame",
+  bgAppHueSlot: "canvas", // app bg uses canvas hue: the app background is the canvas itself
+  bgCanvasHueSlot: "canvas", // canvas bg uses canvas hue: page-level bg reads from the same root slot
+  surfaceSunkenHueSlot: "surfBareBase", // sunken uses bare-base: recessed wells use the neutral surface hue
+  surfaceDefaultHueSlot: "surfBareBase", // default surface uses bare-base: standard cards stay close to neutral
+  surfaceRaisedHueSlot: "atm", // raised uses atmosphere hue: popovers pick up the atmosphere tint for warmth
+  surfaceOverlayHueSlot: "surfBareBase", // overlays use bare-base: modals stay neutral to not distract
+  surfaceInsetHueSlot: "atm", // inset uses atmosphere hue: nested content areas warm up with the atm hue
+  surfaceContentHueSlot: "atm", // content uses atmosphere hue: text-area regions share the inset warmth
+  surfaceScreenHueSlot: "surfScreen", // screen uses its own slot: full-bleed bg uses a dedicated screen hue
+  fgMutedHueSlot: "fgMuted", // muted fg uses dedicated slot: secondary text has its own hue resolution path
+  fgSubtleHueSlot: "fgSubtle", // subtle fg uses dedicated slot: tertiary text gets its own hue tuning
+  fgDisabledHueSlot: "fgDisabled", // disabled fg uses dedicated slot: disabled text resolves independently
+  fgPlaceholderHueSlot: "fgPlaceholder", // placeholder uses dedicated slot: placeholder has its own hue path
+  fgInverseHueSlot: "fgInverse", // inverse fg uses fgInverse slot: on-filled text resolves from its own slot
+  fgOnAccentHueSlot: "fgInverse", // on-accent fg shares fgInverse: accent surfaces use the same on-filled path
+  iconMutedHueSlot: "fgSubtle", // muted icons share fgSubtle: muted icons align with subtle text hue
+  iconOnAccentHueSlot: "fgInverse", // on-accent icons share fgInverse: icons on fills use the same slot as text
+  dividerMutedHueSlot: "borderTintBareBase", // muted dividers use border tint: dividers pull from the border hue family
+  disabledBgHueSlot: "surfBareBase", // disabled bg uses bare-base: disabled surfaces stay neutral
+  fieldBgHoverHueSlot: "surfBareBase", // field hover uses bare-base: fields stay neutral on hover
+  fieldBgReadOnlyHueSlot: "surfBareBase", // read-only uses bare-base: read-only fields match the neutral surface
+  fieldPlaceholderHueSlot: "fgPlaceholder", // field placeholder shares fgPlaceholder: consistent with text placeholder
+  fieldBorderRestHueSlot: "fgPlaceholder", // rest border shares fgPlaceholder: border and placeholder are tonally paired
+  fieldBorderHoverHueSlot: "fgSubtle", // hover border shifts to fgSubtle: border lifts to a more visible hue slot on focus
+  toggleTrackDisabledHueSlot: "surfBareBase", // disabled track uses bare-base: neutral track signals off/disabled
+  toggleThumbHueSlot: "fgInverse", // thumb uses fgInverse: thumb sits on the track like text on a filled surface
+  checkmarkHueSlot: "fgInverse", // checkmark uses fgInverse: check icon is on a filled bg, same as on-filled text
+  radioDotHueSlot: "fgInverse", // radio dot uses fgInverse: same rationale as checkmark — on-filled context
+  tabBgActiveHueSlot: "cardFrame", // active tab bg uses cardFrame: active tab shares the card frame hue slot
+  tabBgInactiveHueSlot: "cardFrame", // inactive tab bg uses cardFrame: both states read from the same frame slot
 
   // ===== Sentinel Hue Dispatch =====
   // Which sentinel hue slot hover/active backgrounds use. String keys (__highlight, __verboseHighlight, etc.).
-  outlinedBgHoverHueSlot: "__highlight",
-  outlinedBgActiveHueSlot: "__highlight",
-  ghostActionBgHoverHueSlot: "__highlight",
-  ghostActionBgActiveHueSlot: "__highlight",
-  ghostOptionBgHoverHueSlot: "__highlight",
-  ghostOptionBgActiveHueSlot: "__highlight",
-  tabBgHoverHueSlot: "__highlight",
-  tabCloseBgHoverHueSlot: "__highlight",
-  highlightHoverHueSlot: "__verboseHighlight",
+  outlinedBgHoverHueSlot: "__highlight", // outlined hover uses __highlight sentinel: triggers alpha-based hover wash
+  outlinedBgActiveHueSlot: "__highlight", // outlined active uses __highlight sentinel: same path, higher alpha
+  ghostActionBgHoverHueSlot: "__highlight", // ghost action hover uses __highlight: same sentinel as outlined hover
+  ghostActionBgActiveHueSlot: "__highlight", // ghost action active uses __highlight: same sentinel, higher alpha
+  ghostOptionBgHoverHueSlot: "__highlight", // ghost option hover uses __highlight: options share action sentinel
+  ghostOptionBgActiveHueSlot: "__highlight", // ghost option active uses __highlight: same sentinel path
+  tabBgHoverHueSlot: "__highlight", // tab hover uses __highlight: tabs use the same interactive sentinel
+  tabCloseBgHoverHueSlot: "__highlight", // tab close hover uses __highlight: close button shares the tab sentinel
+  highlightHoverHueSlot: "__verboseHighlight", // highlight hover uses __verboseHighlight: verbose path for selection highlights
 
   // ===== Sentinel Alpha =====
   // Alpha values for sentinel-dispatched hover/active tokens. Percentage values 5-20.
-  tabBgHoverAlpha: 8,
-  tabCloseBgHoverAlpha: 12,
-  outlinedBgHoverAlpha: 10,
-  outlinedBgActiveAlpha: 20,
-  ghostActionBgHoverAlpha: 10,
-  ghostActionBgActiveAlpha: 20,
-  ghostOptionBgHoverAlpha: 10,
-  ghostOptionBgActiveAlpha: 20,
-  highlightHoverAlpha: 5,
-  ghostDangerBgHoverAlpha: 10,
-  ghostDangerBgActiveAlpha: 20,
+  tabBgHoverAlpha: 8, // slightly below outlined hover: tabs are less prominent interactive targets
+  tabCloseBgHoverAlpha: 12, // above tab hover: close button needs a stronger signal to feel safe to tap
+  outlinedBgHoverAlpha: 10, // standard hover wash: 10% opacity is the baseline for interactive hover states
+  outlinedBgActiveAlpha: 20, // double hover on press: 20% confirms the click with a clear visual step
+  ghostActionBgHoverAlpha: 10, // same as outlined hover: ghost actions share the baseline hover alpha
+  ghostActionBgActiveAlpha: 20, // same as outlined active: ghost actions share the baseline press alpha
+  ghostOptionBgHoverAlpha: 10, // same across ghost types: option hover matches action hover
+  ghostOptionBgActiveAlpha: 20, // same across ghost types: option press matches action press
+  highlightHoverAlpha: 5, // half of standard hover: selection highlights are very subtle by design
+  ghostDangerBgHoverAlpha: 10, // same as standard hover: danger ghost uses the baseline hover wash
+  ghostDangerBgActiveAlpha: 20, // same as standard active: danger ghost uses the baseline press alpha
 
   // ===== Computed Tone Override =====
   // Flat-value overrides for computed tones and formula parameters. number or null.
-  dividerDefaultToneOverride: 17,
-  dividerMutedToneOverride: 15,
-  disabledFgToneValue: 38,
-  disabledBorderToneOverride: 28,
-  outlinedBgRestToneOverride: null,
-  outlinedBgHoverToneOverride: null,
-  outlinedBgActiveToneOverride: null,
-  toggleTrackOffToneOverride: 28,
-  toggleDisabledToneOverride: 22,
-  bgCanvasToneBase: 5,
-  bgCanvasToneSCCenter: 50,
-  bgCanvasToneScale: 8,
-  disabledBgBase: 22,
-  disabledBgScale: 0,
-  borderStrongToneValue: 37,
+  dividerDefaultToneOverride: 17, // just above surfaceScreen: dividers sit slightly brighter than screen bg
+  dividerMutedToneOverride: 15, // below default divider: muted dividers recede further toward the background
+  disabledFgToneValue: 38, // above fgDisabled (23): disabled interactive text is slightly more legible than disabled labels
+  disabledBorderToneOverride: 28, // between disabled fg and canvas: disabled borders are dim but still structural
+  outlinedBgRestToneOverride: null, // null: let formula derive rest bg from surfaceInset; avoids hardcoding a tone that must stay in sync
+  outlinedBgHoverToneOverride: null, // null: hover bg tone is governed by sentinel alpha path, not a fixed tone
+  outlinedBgActiveToneOverride: null, // null: press bg tone is governed by sentinel alpha path, not a fixed tone
+  toggleTrackOffToneOverride: 28, // dim track when off: off-state track is clearly below the on-state brightness
+  toggleDisabledToneOverride: 22, // near-disabled fg tone: disabled toggle is visually equivalent to disabled text
+  bgCanvasToneBase: 5, // matches bgCanvasTone: base canvas tone before surfaceContrast modulation
+  bgCanvasToneSCCenter: 50, // center of surfaceContrast range: no shift at knob midpoint
+  bgCanvasToneScale: 8, // ±8 tone units at extremes: surfaceContrast modulates canvas tone across an 8-step range
+  disabledBgBase: 22, // above canvas, below active surfaces: disabled bg is distinct but recessive
+  disabledBgScale: 0, // zero scale: disabled bg does not modulate with surfaceContrast knob
+  borderStrongToneValue: 37, // just below fgSubtle (37): strong borders align with the subtle text tier for visual harmony
 
   // ===== Hue Name Dispatch =====
   // Named hue values for resolveHueSlots() branch elimination. String hue names.
-  surfScreenHue: "indigo",
-  fgMutedHueExpr: "__bare_primary",
-  fgSubtleHue: "indigo-cobalt",
-  fgDisabledHue: "indigo-cobalt",
-  fgInverseHue: "sapphire-cobalt",
-  fgPlaceholderSource: "fgMuted",
-  selectionInactiveHue: "yellow",
+  surfScreenHue: "indigo", // indigo screen bg: cool blue-violet depth behind cards in the dark theme
+  fgMutedHueExpr: "__bare_primary", // bare-primary sentinel: muted fg derives hue from the recipe's primary color
+  fgSubtleHue: "indigo-cobalt", // indigo-cobalt subtle text: cool blue adds depth to tertiary labels
+  fgDisabledHue: "indigo-cobalt", // same as subtle: disabled text uses the same cool hue family, just dimmer
+  fgInverseHue: "sapphire-cobalt", // sapphire-cobalt inverse: on-filled text uses a slightly warmer blue to complement fills
+  fgPlaceholderSource: "fgMuted", // placeholder derives from fgMuted: placeholder hue tracks secondary text rather than a fixed name
+  selectionInactiveHue: "yellow", // yellow inactive selection: warm yellow makes inactive selections visible without competing with blue focus
 
   // ===== Selection Mode =====
   // Selection behavior mode flags and parameters. Mode-specific boolean + numeric.
-  selectionInactiveSemanticMode: true,
-  selectionBgInactiveI: 0,
-  selectionBgInactiveTone: 30,
-  selectionBgInactiveAlpha: 25,
+  selectionInactiveSemanticMode: true, // semantic mode on: inactive selection uses the named hue, not a sentinel path
+  selectionBgInactiveI: 0, // zero chroma: inactive selection bg uses alpha alone — the yellow hue provides identity
+  selectionBgInactiveTone: 30, // dim tone: inactive selection bg is dark enough to not overpower content
+  selectionBgInactiveAlpha: 25, // low-moderate alpha: inactive selection is clearly visible but doesn't obscure text
 };
 
 // ---------------------------------------------------------------------------
