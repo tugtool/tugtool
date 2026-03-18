@@ -10,6 +10,8 @@
  *   rename     Bulk-rename tokens across all files (dry-run by default).
  *   inject     Generate and insert @tug-pairings comment blocks into CSS files.
  *   verify     Cross-check @tug-pairings blocks against element-surface-pairing-map.ts.
+ *   lint       Hard-fail on annotation completeness, alias chain depth,
+ *              missing @tug-pairings blocks, and unresolved pairings.
  *
  * Usage:
  *   bun run scripts/token-audit.ts tokens
@@ -17,6 +19,7 @@
  *   bun run scripts/token-audit.ts rename [--apply]
  *   bun run scripts/token-audit.ts inject [--apply]
  *   bun run scripts/token-audit.ts verify
+ *   bun run scripts/token-audit.ts lint
  */
 
 import fs from "fs";
@@ -293,12 +296,16 @@ function extractAliases(css: string): AliasMap {
 /** Extract the content of all body {} blocks from CSS text. */
 function extractBodyBlocks(css: string): string[] {
   const blocks: string[] = [];
-  // Simple brace-matching for body blocks
-  const bodyRe = /\bbody\s*\{/g;
+  // Match only standalone body {} selectors — not class names ending in "body"
+  // (e.g., .gtg-preview-body). The body selector must be preceded by whitespace or
+  // start-of-string, not by a word character or hyphen.
+  const bodyRe = /(?:^|\s)body\s*\{/gm;
   let m: RegExpExecArray | null;
   while ((m = bodyRe.exec(css)) !== null) {
     let depth = 1;
-    let i = m.index + m[0].length;
+    // m[0] ends with `{` — start the block content just after that brace
+    const bracePos = m.index + m[0].lastIndexOf("{");
+    let i = bracePos + 1;
     const start = i;
     while (i < css.length && depth > 0) {
       if (css[i] === "{") depth++;
@@ -338,10 +345,47 @@ const ELEMENT_PROPERTIES = new Set([
   "fill",
   "border-color",
   "-webkit-text-fill-color",
+  // Border shorthand (border: 1px solid var(--tug-*))
+  "border",
+  // Directional border shorthands
+  "border-top",
+  "border-right",
+  "border-bottom",
+  "border-left",
+  // Directional border-color longhands
+  "border-top-color",
+  "border-right-color",
+  "border-bottom-color",
+  "border-left-color",
 ]);
 
 /** Properties that carry background (surface) color. */
 const SURFACE_PROPERTIES = new Set(["background-color", "background"]);
+
+/**
+ * Explicit allowlist of compat alias chains exempt from the 1-hop alias rule.
+ * Each entry is the alias token (source) that is allowed to point to an intermediate
+ * component alias rather than directly to a --tug-base-* token.
+ *
+ * Currently: --tug-dropdown-* -> --tug-menu-* compat layer (14 entries).
+ * [D02] Alias chain flattening.
+ */
+const COMPAT_ALIAS_ALLOWLIST = new Set([
+  "--tug-dropdown-bg",
+  "--tug-dropdown-fg",
+  "--tug-dropdown-border",
+  "--tug-dropdown-shadow",
+  "--tug-dropdown-item-bg-hover",
+  "--tug-dropdown-item-bg-selected",
+  "--tug-dropdown-item-fg",
+  "--tug-dropdown-item-fg-disabled",
+  "--tug-dropdown-item-fg-danger",
+  "--tug-dropdown-item-meta",
+  "--tug-dropdown-item-shortcut",
+  "--tug-dropdown-item-icon",
+  "--tug-dropdown-item-icon-danger",
+  "--tug-dropdown-item-chevron",
+]);
 
 interface CssRule {
   selector: string;
@@ -360,8 +404,10 @@ function parseRules(css: string): CssRule[] {
   // Remove comments
   const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
 
-  // Remove body {} blocks (alias declarations)
-  const noBody = stripped.replace(/\bbody\s*\{[^}]*\}/g, "");
+  // Remove body {} blocks (alias declarations).
+  // Use (?<![.#\w-]) to avoid matching class names that end in "body" (e.g., .gtg-preview-body).
+  // The body selector must be at the start of a line or preceded only by whitespace.
+  const noBody = stripped.replace(/(?:^|\n)\s*body\s*\{[^}]*\}/gm, "");
 
   // Remove @keyframes blocks
   const noKeyframes = noBody.replace(/@keyframes\s+[\w-]+\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}/g, "");
@@ -370,7 +416,9 @@ function parseRules(css: string): CssRule[] {
   const ruleRe = /([^{}]+?)\s*\{([^}]*)\}/g;
   let m: RegExpExecArray | null;
   while ((m = ruleRe.exec(noKeyframes)) !== null) {
-    const selector = m[1].trim();
+    // Normalize selector: trim and collapse internal whitespace (newlines, tabs,
+    // multiple spaces) to single spaces so selectors match annotation-parsed keys.
+    const selector = m[1].trim().replace(/\s+/g, " ");
     // Skip @-rules
     if (selector.startsWith("@")) continue;
 
@@ -386,65 +434,82 @@ function parseRules(css: string): CssRule[] {
   return rules;
 }
 
-/** Extract the leaf class/element from a CSS selector (the last simple selector). */
-function extractLeafClass(selector: string): string | null {
-  const parts = selector.split(/\s+/);
-  const leaf = parts[parts.length - 1];
-  // Strip pseudo-classes/elements/attribute selectors to get the base class
-  const base = leaf.replace(/::?[\w-]+(\([^)]*\))*/g, "").replace(/\[[^\]]*\]/g, "");
-  return base || null;
-}
+/**
+ * Parse @tug-renders-on annotations from raw CSS text (before comment stripping).
+ *
+ * Annotation format (Spec S01):
+ *   /* @tug-renders-on: --tug-base-surface-default *\/
+ *   .selector { ... }
+ *
+ * Multi-surface variant:
+ *   /* @tug-renders-on: --tug-base-tab-bg-active, --tug-base-tab-bg-inactive *\/
+ *
+ * Rules:
+ * - The annotation comment must be immediately followed by whitespace-only lines
+ *   and then the CSS rule selector (no intervening comments allowed).
+ * - Selectors are normalized (trimmed, internal whitespace collapsed to single space)
+ *   to match the output of parseRules.
+ *
+ * Returns a Map<normalizedSelector, string[]> of surface token arrays.
+ */
+function parseRendersOnAnnotations(css: string): Map<string, string[]> {
+  const result = new Map<string, string[]>();
 
-/** Extract all class names (.foo) from a selector string. */
-function extractClassNames(selector: string): string[] {
-  const matches = selector.match(/\.([\w-]+)/g) ?? [];
-  return matches.map((m) => m.slice(1)); // remove leading dot
-}
+  // Match each @tug-renders-on comment and capture the surface list
+  const annotationRe = /\/\*\s*@tug-renders-on:\s*([^*]+?)\s*\*\//g;
+  let m: RegExpExecArray | null;
 
-/** Build an index of rules that set background-color, keyed by the classes in their selectors. */
-function buildSurfaceIndex(rules: CssRule[]): Map<string, { token: string; selector: string; specificity: number }[]> {
-  const index = new Map<string, { token: string; selector: string; specificity: number }[]>();
-  for (const rule of rules) {
-    for (const prop of SURFACE_PROPERTIES) {
-      const val = rule.properties.get(prop);
-      if (!val) continue;
-      const token = extractVarRef(val);
-      if (!token) continue;
-      const classes = extractClassNames(rule.selector);
-      const specificity = classes.length; // rough proxy
-      for (const cls of classes) {
-        const list = index.get(cls) ?? [];
-        list.push({ token, selector: rule.selector, specificity });
-        index.set(cls, list);
-      }
-      // Also index by full selector
-      const list = index.get(rule.selector) ?? [];
-      list.push({ token, selector: rule.selector, specificity });
-      index.set(rule.selector, list);
+  while ((m = annotationRe.exec(css)) !== null) {
+    const annotationEnd = m.index + m[0].length;
+    // Parse comma-separated surface tokens from the annotation value
+    const surfaces = m[1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.startsWith("--tug-base-"));
+
+    if (surfaces.length === 0) continue;
+
+    // Scan forward past whitespace-only content to find the next selector + {
+    // If we encounter another comment (/*) before a selector, skip this annotation.
+    const remaining = css.slice(annotationEnd);
+
+    // Find the next { to identify the rule's selector
+    const braceIdx = remaining.indexOf("{");
+    if (braceIdx === -1) continue;
+
+    const between = remaining.slice(0, braceIdx);
+
+    // If there's another comment between the annotation and the brace, skip
+    if (between.includes("/*")) {
+      console.warn(`@tug-renders-on at offset ${m.index}: intervening comment before selector — skipping`);
+      continue;
     }
+
+    // Extract the selector: trim the text before the brace, normalize whitespace
+    const rawSelector = between.trim().replace(/\s+/g, " ");
+    if (!rawSelector) continue;
+
+    result.set(rawSelector, surfaces);
   }
-  return index;
+
+  return result;
 }
 
 /**
  * Determine the "rendering context" surface for a given selector.
- * This is the heuristic core: for a rule that sets `color`, what `background-color`
- * is it rendered on?
  *
- * Strategy:
- * 1. If the same rule also sets background-color, use that.
- * 2. Check if a rule with a more specific compound selector (same element + ancestor context)
- *    sets background-color (e.g., `.card-frame[data-focused="true"] .tugcard-title-bar`
- *    provides the bg for `.tugcard-title` which is a child of `.tugcard-title-bar`).
- * 3. Use naming conventions: if element class is `.foo-bar-baz`, check `.foo-bar` as a
- *    likely parent container that might set background-color.
- * 4. Check all ancestor selector prefixes.
- * 5. Fall back to null.
+ * Two-strategy approach (heuristics 2-4 replaced by @tug-renders-on annotations):
+ * 1. Same-rule match: if the rule itself sets background-color, use that.
+ * 2. Annotation lookup: check the @tug-renders-on annotation map for this selector.
+ *    Returns the first listed surface (primary surface). Multi-surface annotations
+ *    produce multiple pairings at the call sites.
+ *
+ * Returns null if neither strategy resolves the surface.
  */
 function findSurfaceForSelector(
   selector: string,
   rules: CssRule[],
-  surfaceIndex?: Map<string, { token: string; selector: string; specificity: number }[]>,
+  annotationMap: Map<string, string[]>,
 ): { surfaceToken: string; surfaceSelector: string } | null {
   // Strategy 1: Same rule sets background-color
   for (const rule of rules) {
@@ -459,88 +524,45 @@ function findSurfaceForSelector(
     }
   }
 
-  const idx = surfaceIndex ?? buildSurfaceIndex(rules);
-
-  // Strategy 2: Compound ancestor selector containing the same leaf class
-  // E.g., element selector ".tug-button:hover svg" → look for rules targeting
-  // ".tug-button:hover" that set background-color
-  const selectorParts = selector.split(/\s+/).filter((s) => s !== ">" && s !== "+" && s !== "~");
-  // Walk from innermost ancestor outward
-  for (let i = selectorParts.length - 2; i >= 0; i--) {
-    const ancestorPart = selectorParts[i];
-    const ancestorClasses = extractClassNames(ancestorPart);
-    for (const cls of ancestorClasses) {
-      const entries = idx.get(cls);
-      if (!entries) continue;
-      // Prefer the most specific match (longest selector containing our ancestor context)
-      const contextPrefix = selectorParts.slice(0, i + 1).join(" ");
-      // First try: exact prefix match
-      for (const e of entries) {
-        if (e.selector === contextPrefix || e.selector.endsWith(ancestorPart)) {
-          return { surfaceToken: e.token, surfaceSelector: e.selector };
-        }
-      }
-      // Second try: any rule that targets this class
-      if (entries.length > 0) {
-        // Sort by specificity descending, prefer rules with more context
-        const sorted = [...entries].sort((a, b) => b.specificity - a.specificity);
-        return { surfaceToken: sorted[0].token, surfaceSelector: sorted[0].selector };
-      }
-    }
-  }
-
-  // Strategy 3: Naming convention — look for parent classes that EXTEND the leaf
-  // class name. E.g., ".tugcard-title" → parent could be ".tugcard-title-bar"
-  // which sets background-color. This is more specific than truncation, so try first.
-  const leafClass = extractLeafClass(selector);
-  if (leafClass) {
-    const leafClasses = extractClassNames(leafClass);
-    for (const cls of leafClasses) {
-      for (const [indexCls, entries] of idx) {
-        if (indexCls.startsWith(cls + "-") && indexCls !== cls) {
-          // Found a parent container (e.g., "tugcard-title-bar" for "tugcard-title")
-          const contextParts = selectorParts.slice(0, -1);
-          if (contextParts.length > 0) {
-            const contextStr = contextParts.join(" ");
-            for (const e of entries) {
-              if (e.selector.includes(contextStr)) {
-                return { surfaceToken: e.token, surfaceSelector: e.selector };
-              }
-            }
-          }
-          const sorted = [...entries].sort((a, b) => b.specificity - a.specificity);
-          return { surfaceToken: sorted[0].token, surfaceSelector: sorted[0].selector };
-        }
-      }
-    }
-  }
-
-  // Strategy 4: Naming convention — truncate the leaf class to find ancestor containers.
-  // E.g., ".tugcard-title" → try ".tugcard" which sets background-color.
-  if (leafClass) {
-    const leafClasses = extractClassNames(leafClass);
-    for (const cls of leafClasses) {
-      const segments = cls.split("-");
-      for (let len = segments.length - 1; len >= 2; len--) {
-        const parentCls = segments.slice(0, len).join("-");
-        const entries = idx.get(parentCls);
-        if (!entries) continue;
-        const contextParts = selectorParts.slice(0, -1);
-        if (contextParts.length > 0) {
-          const contextStr = contextParts.join(" ");
-          for (const e of entries) {
-            if (e.selector.includes(contextStr)) {
-              return { surfaceToken: e.token, surfaceSelector: e.selector };
-            }
-          }
-        }
-        const sorted = [...entries].sort((a, b) => b.specificity - a.specificity);
-        return { surfaceToken: sorted[0].token, surfaceSelector: sorted[0].selector };
-      }
-    }
+  // Strategy 2: @tug-renders-on annotation lookup
+  const annotatedSurfaces = annotationMap.get(selector);
+  if (annotatedSurfaces && annotatedSurfaces.length > 0) {
+    return { surfaceToken: annotatedSurfaces[0], surfaceSelector: selector };
   }
 
   return null;
+}
+
+/**
+ * Like findSurfaceForSelector but returns ALL surfaces (for multi-surface annotations).
+ * Strategy 1 (same-rule bg) returns a single-element array.
+ * Strategy 2 (annotation) returns all listed surfaces.
+ */
+function findAllSurfacesForSelector(
+  selector: string,
+  rules: CssRule[],
+  annotationMap: Map<string, string[]>,
+): { surfaceToken: string; surfaceSelector: string }[] {
+  // Strategy 1: Same rule sets background-color
+  for (const rule of rules) {
+    if (rule.selector === selector) {
+      for (const prop of SURFACE_PROPERTIES) {
+        const val = rule.properties.get(prop);
+        if (val) {
+          const token = extractVarRef(val);
+          if (token) return [{ surfaceToken: token, surfaceSelector: selector }];
+        }
+      }
+    }
+  }
+
+  // Strategy 2: @tug-renders-on annotation lookup (all surfaces)
+  const annotatedSurfaces = annotationMap.get(selector);
+  if (annotatedSurfaces && annotatedSurfaces.length > 0) {
+    return annotatedSurfaces.map((s) => ({ surfaceToken: s, surfaceSelector: selector }));
+  }
+
+  return [];
 }
 
 /** Build a global alias map from all component CSS files. */
@@ -567,9 +589,9 @@ function cmdPairings(): void {
     const css = fs.readFileSync(file, "utf-8");
     const basename = path.relative(TUGWAYS, file);
 
-    // Parse rules
+    // Parse rules and annotations
     const rules = parseRules(css);
-    const surfaceIdx = buildSurfaceIndex(rules);
+    const annotationMap = parseRendersOnAnnotations(css);
 
     // For each rule, find element properties and pair with surface
     for (const rule of rules) {
@@ -578,9 +600,9 @@ function cmdPairings(): void {
         const elementToken = extractVarRef(val);
         if (!elementToken) continue;
 
-        // Find the surface this element renders on
-        const surface = findSurfaceForSelector(rule.selector, rules, surfaceIdx);
-        if (!surface) {
+        // Find all surfaces this element renders on (handles multi-surface annotations)
+        const surfaces = findAllSurfacesForSelector(rule.selector, rules, annotationMap);
+        if (surfaces.length === 0) {
           allPairings.push({
             file: basename,
             selector: rule.selector,
@@ -593,33 +615,15 @@ function cmdPairings(): void {
           continue;
         }
 
-        allPairings.push({
-          file: basename,
-          selector: rule.selector,
-          elementRaw: elementToken,
-          surfaceRaw: surface.surfaceToken,
-          elementResolved: resolveToken(elementToken, globalAliases),
-          surfaceResolved: resolveToken(surface.surfaceToken, globalAliases),
-          elementProperty: prop,
-        });
-      }
-
-      // Also check for border shorthand (border: 1px solid var(--tug-*))
-      const borderVal = rule.properties.get("border");
-      if (borderVal) {
-        const token = extractVarRef(borderVal);
-        if (token) {
-          const surface = findSurfaceForSelector(rule.selector, rules, surfaceIdx);
+        for (const surface of surfaces) {
           allPairings.push({
             file: basename,
             selector: rule.selector,
-            elementRaw: token,
-            surfaceRaw: surface?.surfaceToken ?? "(inherited)",
-            elementResolved: resolveToken(token, globalAliases),
-            surfaceResolved: surface
-              ? resolveToken(surface.surfaceToken, globalAliases)
-              : "(unknown)",
-            elementProperty: "border",
+            elementRaw: elementToken,
+            surfaceRaw: surface.surfaceToken,
+            elementResolved: resolveToken(elementToken, globalAliases),
+            surfaceResolved: resolveToken(surface.surfaceToken, globalAliases),
+            elementProperty: prop,
           });
         }
       }
@@ -930,7 +934,7 @@ function cmdInject(apply: boolean): void {
     const css = fs.readFileSync(file, "utf-8");
     const basename = path.relative(TUGWAYS, file);
     const rules = parseRules(css);
-    const surfaceIdx = buildSurfaceIndex(rules);
+    const annotationMap = parseRendersOnAnnotations(css);
     const pairings: CssPairing[] = [];
 
     for (const rule of rules) {
@@ -939,37 +943,19 @@ function cmdInject(apply: boolean): void {
         const elementToken = extractVarRef(val);
         if (!elementToken) continue;
 
-        const surface = findSurfaceForSelector(rule.selector, rules, surfaceIdx);
-        if (!surface) continue; // skip unresolvable
+        const surfaces = findAllSurfacesForSelector(rule.selector, rules, annotationMap);
+        if (surfaces.length === 0) continue; // skip unresolvable
 
-        pairings.push({
-          file: basename,
-          selector: rule.selector,
-          elementRaw: elementToken,
-          surfaceRaw: surface.surfaceToken,
-          elementResolved: resolveToken(elementToken, globalAliases),
-          surfaceResolved: resolveToken(surface.surfaceToken, globalAliases),
-          elementProperty: prop,
-        });
-      }
-
-      // Border shorthand
-      const borderVal = rule.properties.get("border");
-      if (borderVal) {
-        const token = extractVarRef(borderVal);
-        if (token) {
-          const surface = findSurfaceForSelector(rule.selector, rules, surfaceIdx);
-          if (surface) {
-            pairings.push({
-              file: basename,
-              selector: rule.selector,
-              elementRaw: token,
-              surfaceRaw: surface.surfaceToken,
-              elementResolved: resolveToken(token, globalAliases),
-              surfaceResolved: resolveToken(surface.surfaceToken, globalAliases),
-              elementProperty: "border",
-            });
-          }
+        for (const surface of surfaces) {
+          pairings.push({
+            file: basename,
+            selector: rule.selector,
+            elementRaw: elementToken,
+            surfaceRaw: surface.surfaceToken,
+            elementResolved: resolveToken(elementToken, globalAliases),
+            surfaceResolved: resolveToken(surface.surfaceToken, globalAliases),
+            elementProperty: prop,
+          });
         }
       }
     }
@@ -1191,6 +1177,222 @@ function cmdVerify(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Subcommand: lint
+// ---------------------------------------------------------------------------
+
+/** Violation record for a single lint failure. */
+interface LintViolation {
+  type: "MISSING_ANNOTATION" | "MULTI_HOP_ALIAS" | "MISSING_PAIRINGS_BLOCK" | "UNRESOLVED_PAIRING";
+  message: string;
+}
+
+/**
+ * Lint check 1: annotation completeness.
+ *
+ * Every CSS rule that sets an element property (from ELEMENT_PROPERTIES) without
+ * setting background-color in the same rule must have a @tug-renders-on annotation.
+ * Violation: MISSING_ANNOTATION: {file}:{selector} sets {property} without background-color and has no @tug-renders-on
+ */
+function checkAnnotationCompleteness(
+  file: string,
+  css: string,
+  rules: CssRule[],
+  annotationMap: Map<string, string[]>,
+): LintViolation[] {
+  const violations: LintViolation[] = [];
+  const basename = path.relative(TUGWAYS, file);
+
+  for (const rule of rules) {
+    // Check if the rule sets a background surface in the same rule
+    let hasSameBg = false;
+    for (const prop of SURFACE_PROPERTIES) {
+      const val = rule.properties.get(prop);
+      if (val) {
+        const token = extractVarRef(val);
+        if (token) {
+          hasSameBg = true;
+          break;
+        }
+      }
+    }
+    if (hasSameBg) continue;
+
+    // Check for element properties without annotation
+    for (const [prop] of rule.properties) {
+      if (!ELEMENT_PROPERTIES.has(prop)) continue;
+      const val = rule.properties.get(prop)!;
+      const token = extractVarRef(val);
+      if (!token) continue;
+
+      // Rule has an element property referencing a tug token — needs annotation
+      if (!annotationMap.has(rule.selector)) {
+        violations.push({
+          type: "MISSING_ANNOTATION",
+          message: `MISSING_ANNOTATION: ${basename}:${rule.selector} sets ${prop} without background-color and has no @tug-renders-on`,
+        });
+        // Only report once per selector (not once per property)
+        break;
+      }
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Lint check 2: alias chain depth.
+ *
+ * Every alias in body {} blocks must resolve to --tug-base-* in exactly 1 hop,
+ * unless the alias is in COMPAT_ALIAS_ALLOWLIST.
+ * Violation: MULTI_HOP_ALIAS: {file}: {alias} resolves through {count} hops (max 1)
+ */
+function checkAliasChainDepth(
+  file: string,
+  css: string,
+): LintViolation[] {
+  const violations: LintViolation[] = [];
+  const basename = path.relative(TUGWAYS, file);
+
+  // Extract local aliases from this file's body blocks
+  const localAliases = extractAliases(css);
+
+  for (const [alias, target] of Object.entries(localAliases)) {
+    // Skip compat allowlist entries
+    if (COMPAT_ALIAS_ALLOWLIST.has(alias)) continue;
+
+    // Target must be a --tug-base-* token (1-hop rule)
+    if (!target.startsWith("--tug-base-")) {
+      // Count hops: follow the chain to find total depth
+      const globalAliases = buildGlobalAliases();
+      let hops = 0;
+      let current = alias;
+      const visited = new Set<string>();
+      while (!current.startsWith("--tug-base-") && !visited.has(current)) {
+        visited.add(current);
+        const next = globalAliases[current];
+        if (!next) break;
+        current = next;
+        hops++;
+      }
+      violations.push({
+        type: "MULTI_HOP_ALIAS",
+        message: `MULTI_HOP_ALIAS: ${basename}: ${alias} resolves through ${hops} hops (max 1)`,
+      });
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Lint check 3: @tug-pairings block presence.
+ *
+ * Every CSS file in COMPONENT_CSS_FILES must contain a @tug-pairings comment block.
+ * Violation: MISSING_PAIRINGS_BLOCK: {file}
+ */
+function checkPairingsBlockPresence(
+  file: string,
+  css: string,
+): LintViolation[] {
+  const basename = path.relative(TUGWAYS, file);
+  if (!css.includes("@tug-pairings")) {
+    return [{
+      type: "MISSING_PAIRINGS_BLOCK",
+      message: `MISSING_PAIRINGS_BLOCK: ${basename}`,
+    }];
+  }
+  return [];
+}
+
+/**
+ * Lint check 4: zero unresolved pairings.
+ *
+ * After annotation parsing, no rule with an element property may lack a
+ * deterministic surface.
+ * Violation: UNRESOLVED_PAIRING: {file}:{selector} — {element_token} has no deterministic surface
+ */
+function checkZeroUnresolved(
+  file: string,
+  css: string,
+  rules: CssRule[],
+  annotationMap: Map<string, string[]>,
+): LintViolation[] {
+  const violations: LintViolation[] = [];
+  const basename = path.relative(TUGWAYS, file);
+
+  for (const rule of rules) {
+    for (const [prop, val] of rule.properties) {
+      if (!ELEMENT_PROPERTIES.has(prop)) continue;
+      const elementToken = extractVarRef(val);
+      if (!elementToken) continue;
+
+      const surfaces = findAllSurfacesForSelector(rule.selector, rules, annotationMap);
+      if (surfaces.length === 0) {
+        violations.push({
+          type: "UNRESOLVED_PAIRING",
+          message: `UNRESOLVED_PAIRING: ${basename}:${rule.selector} — ${elementToken} has no deterministic surface`,
+        });
+        // Only report once per selector
+        break;
+      }
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Lint subcommand: hard-fail on annotation completeness, alias chain depth,
+ * missing @tug-pairings blocks, and unresolved pairings.
+ *
+ * Exit code: 0 if zero violations; 1 if any violation found.
+ * All violations are printed before exit. [D03] Lint hard gate, Spec S03.
+ */
+function cmdLint(): void {
+  console.log(`\n=== Lint Token Annotations ===\n`);
+
+  const allViolations: LintViolation[] = [];
+
+  for (const file of COMPONENT_CSS_FILES) {
+    if (!fs.existsSync(file)) {
+      console.warn(`⚠ File not found: ${path.relative(TUGWAYS, file)}`);
+      continue;
+    }
+    const css = fs.readFileSync(file, "utf-8");
+    const rules = parseRules(css);
+    const annotationMap = parseRendersOnAnnotations(css);
+
+    allViolations.push(...checkPairingsBlockPresence(file, css));
+    allViolations.push(...checkAnnotationCompleteness(file, css, rules, annotationMap));
+    allViolations.push(...checkAliasChainDepth(file, css));
+    allViolations.push(...checkZeroUnresolved(file, css, rules, annotationMap));
+  }
+
+  if (allViolations.length === 0) {
+    console.log(`✓ Zero violations. All annotation, alias, and pairing checks pass.`);
+    return;
+  }
+
+  // Group violations by type for readability
+  const byType = new Map<string, LintViolation[]>();
+  for (const v of allViolations) {
+    const list = byType.get(v.type) ?? [];
+    list.push(v);
+    byType.set(v.type, list);
+  }
+
+  for (const [type, violations] of byType) {
+    console.log(`\n--- ${type} (${violations.length}) ---`);
+    for (const v of violations) {
+      console.log(`  ${v.message}`);
+    }
+  }
+
+  console.log(`\nTotal violations: ${allViolations.length}`);
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1214,6 +1416,9 @@ switch (command) {
   case "verify":
     cmdVerify();
     break;
+  case "lint":
+    cmdLint();
+    break;
   default:
     console.log(`Usage: bun run scripts/token-audit.ts <command> [flags]
 
@@ -1223,6 +1428,8 @@ Commands:
   rename [--apply]    Bulk-rename tokens (dry run by default)
   inject [--apply]    Generate @tug-pairings comment blocks (dry run by default)
   verify              Cross-check @tug-pairings blocks against pairing map
+  lint                Hard-fail on missing annotations, multi-hop aliases, missing
+                      @tug-pairings blocks, and unresolved pairings
 `);
     break;
 }

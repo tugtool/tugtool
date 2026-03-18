@@ -338,6 +338,7 @@
   max-width: 420px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-cascade-table tr + tr td {
   border-top: 1px solid var(--tug-base-border-default);
 }
@@ -444,12 +445,14 @@
   gap: 16px;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-st-readout-fn {
   color: var(--tug-base-fg-muted);
   width: 200px;
   flex-shrink: 0;
 }
 
+/* @tug-renders-on: --tug-base-surface-default */
 .cg-st-readout-value {
   color: var(--tug-base-accent-cool-default);
   font-weight: 600;

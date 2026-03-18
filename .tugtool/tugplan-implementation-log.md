@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-18T21:09:13Z
+---
+
+## step-4: Major refactor of audit-tokens.ts: added parseRendersOnAnnotations parser, expanded ELEMENT_PROPERTIES with all border variants, replaced heuristic strategies 2-4 with annotation lookup (keep strategy 1 same-rule), removed dead code (extractLeafClass, extractClassNames, buildSurfaceIndex), added COMPAT_ALIAS_ALLOWLIST for 14 dropdown compat aliases, added lint subcommand. Zero unresolved pairings. Also added 8 missing annotations discovered by the new parser.
+
+**Files changed:**
+- .tugtool/tugplan-token-audit-enforce.md
+
+---
+
+---
 step: step-3
 date: 2025-03-18T20:53:20Z
 ---
