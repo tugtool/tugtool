@@ -526,6 +526,7 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
  */
 const CHM_NOVEL_RECIPE = {
   name: "CHM Mood",
+  description: "CHM acceptance test recipe — industrial warmth with amber atmosphere.",
   mode: "dark" as const,
   cardBg: { hue: "amber" },
   text: { hue: "sand" },
@@ -756,6 +757,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
     // because green and yellow both lose red-channel differentiation.
     const greenRedRecipe = {
       name: "GreenRed",
+      description: "CVD test recipe with explicit green/red pairing.",
       mode: "dark" as const,
       cardBg: { hue: "slate" },
       text: { hue: "slate" },
@@ -821,6 +823,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     // Verify by deriving with explicit defaults and comparing to unset (implicit) output.
     const explicit = deriveTheme({
       name: "brio",
+      description: "Explicit default role hues test recipe.",
       mode: "dark",
       cardBg: { hue: "indigo-violet" },
       text: { hue: "cobalt" },
@@ -852,6 +855,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     // Derive with default danger=red, then with danger=pink — tone-danger token must differ.
     const withRed = deriveTheme({
       name: "test",
+      description: "Test recipe with red destructive hue.",
       mode: "dark",
       cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
@@ -859,6 +863,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     });
     const withPink = deriveTheme({
       name: "test",
+      description: "Test recipe with pink destructive hue.",
       mode: "dark",
       cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
@@ -1060,12 +1065,12 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
     // This is a unit-level assertion on deriveTheme() since the live preview update
     // is a CSS cascade effect invisible to JSDOM.
     const withRed = deriveTheme({
-      name: "test", mode: "dark",
+      name: "test", description: "Test recipe with red destructive hue.", mode: "dark",
       cardBg: { hue: "violet" }, text: { hue: "cobalt" },
       destructive: "red",
     });
     const withPink = deriveTheme({
-      name: "test", mode: "dark",
+      name: "test", description: "Test recipe with pink destructive hue.", mode: "dark",
       cardBg: { hue: "violet" }, text: { hue: "cobalt" },
       destructive: "pink",
     });

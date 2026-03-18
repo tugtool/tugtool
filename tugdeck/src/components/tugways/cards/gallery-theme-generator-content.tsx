@@ -765,12 +765,11 @@ export function generateCssExport(
   const recipeJson = JSON.stringify(recipe);
   const hash = simpleHash(recipeJson);
   const dateStr = new Date().toISOString().slice(0, 10);
-  const desc = `Generated theme (${recipe.mode} mode, cardBg: ${recipe.cardBg.hue}, text: ${recipe.text.hue})`;
 
   const header = [
     "/**",
     ` * @theme-name ${recipe.name}`,
-    ` * @theme-description ${desc}`,
+    ` * @theme-description ${recipe.description}`,
     ` * @generated ${dateStr}`,
     ` * @recipe-hash ${hash}`,
     " *",
@@ -801,6 +800,9 @@ export function validateRecipeJson(value: unknown): string | null {
   const obj = value as Record<string, unknown>;
   if (typeof obj["name"] !== "string" || obj["name"].trim() === "") {
     return "Missing or invalid 'name' field (string required)";
+  }
+  if (typeof obj["description"] !== "string" || obj["description"].trim() === "") {
+    return "Missing or invalid 'description' field (non-empty string required)";
   }
   if (obj["mode"] !== "dark" && obj["mode"] !== "light") {
     return "Invalid 'mode' field (must be 'dark' or 'light')";
@@ -1461,6 +1463,7 @@ export function GalleryThemeGeneratorContent() {
     ) => {
       const recipe: ThemeRecipe = {
         name: n,
+        description: `Generated theme (${m} mode, cardBg: ${cardBg}, text: ${txt})`,
         mode: m,
         cardBg: { hue: cardBg },
         text: { hue: txt },
@@ -1581,6 +1584,7 @@ export function GalleryThemeGeneratorContent() {
   const currentRecipe = useMemo<ThemeRecipe>(
     () => ({
       name: recipeName,
+      description: `Generated theme (${mode} mode, cardBg: ${cardBgHue}, text: ${textHue})`,
       mode,
       cardBg: { hue: cardBgHue },
       text: { hue: textHue },

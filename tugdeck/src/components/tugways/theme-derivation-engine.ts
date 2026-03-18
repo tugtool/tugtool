@@ -34,6 +34,203 @@
  * [D08] Scope: --tug-base-* tokens only
  * [D09] Dual output: string tokens + resolved OKLCH map
  *
+ * ---------------------------------------------------------------------------
+ * Semantic Decision Groups
+ * ---------------------------------------------------------------------------
+ *
+ * A theme recipe is a set of positions on ~23 semantic decisions. Each field
+ * in `DerivationFormulas` is tagged with `@semantic <group>` to link it to
+ * its decision group. A recipe author — human or LLM — can locate all the
+ * parameters for a given design intent by searching for `@semantic <group>`.
+ *
+ * Group                    What it controls
+ * ----------------------   -------------------------------------------------------
+ * canvas-darkness          How dark/light the app background is.
+ *                          Fields: bgAppTone, bgCanvasTone
+ *
+ * surface-layering         How surfaces stack visually above the canvas. The tone
+ *                          values set the absolute lightness of each surface tier
+ *                          at surfaceContrast=50.
+ *                          Fields: surfaceSunkenTone, surfaceDefaultTone,
+ *                                  surfaceRaisedTone, surfaceOverlayTone,
+ *                                  surfaceInsetTone, surfaceContentTone,
+ *                                  surfaceScreenTone
+ *
+ * surface-coloring         How much chroma surfaces carry. Controls the intensity
+ *                          (saturation) applied to atmosphere and canvas hues for
+ *                          every surface tier.
+ *                          Fields: atmI, bgAppI, bgCanvasI, surfaceDefaultI,
+ *                                  surfaceRaisedI, surfaceOverlayI, surfaceScreenI,
+ *                                  surfaceInsetI, surfaceContentI, bgAppSurfaceI
+ *
+ * text-brightness          How bright primary and inverse text is.
+ *                          Fields: fgDefaultTone, fgInverseTone
+ *
+ * text-hierarchy           How much secondary/tertiary text dims from primary. The
+ *                          tone spread across muted, subtle, disabled, and
+ *                          placeholder tiers.
+ *                          Fields: fgMutedTone, fgSubtleTone, fgDisabledTone,
+ *                                  fgPlaceholderTone
+ *
+ * text-coloring            How much chroma text carries. Controls saturation for
+ *                          primary, subtle, muted, inverse, and on-surface text.
+ *                          Fields: txtI, txtISubtle, fgMutedI, atmIBorder,
+ *                                  fgInverseI, fgOnCautionI, fgOnSuccessI
+ *
+ * border-visibility        How visible borders and dividers are. Controls tone and
+ *                          intensity for default, muted, strong borders and dividers.
+ *                          Fields: borderIBase, borderIStrong, borderMutedTone,
+ *                                  borderMutedI, borderStrongTone, dividerDefaultI,
+ *                                  dividerMutedI
+ *
+ * card-frame-style         How card title bars and tab bars present. Controls the
+ *                          tone and intensity of active and inactive card frames.
+ *                          Fields: cardFrameActiveI, cardFrameActiveTone,
+ *                                  cardFrameInactiveI, cardFrameInactiveTone
+ *
+ * shadow-depth             How pronounced shadows and overlay tints are. Controls
+ *                          alpha values for all shadow sizes and overlay layers.
+ *                          Fields: shadowXsAlpha, shadowMdAlpha, shadowLgAlpha,
+ *                                  shadowXlAlpha, shadowOverlayAlpha, overlayDimAlpha,
+ *                                  overlayScrimAlpha, overlayHighlightAlpha
+ *
+ * filled-control-prominence How bold filled buttons are. Controls the tone of the
+ *                          filled button background at rest, hover, and press.
+ *                          Fields: filledBgDarkTone, filledBgHoverTone,
+ *                                  filledBgActiveTone
+ *
+ * outlined-control-style   How outlined buttons present across states and modes.
+ *                          Controls fg/icon tone and intensity, option border tones,
+ *                          hover/active background intensity and alpha.
+ *                          Fields: outlinedFgRestTone, outlinedFgHoverTone,
+ *                                  outlinedFgActiveTone, outlinedFgI,
+ *                                  outlinedIconRestTone, outlinedIconHoverTone,
+ *                                  outlinedIconActiveTone, outlinedIconI,
+ *                                  outlinedFgRestToneLight, outlinedFgHoverToneLight,
+ *                                  outlinedFgActiveToneLight,
+ *                                  outlinedIconRestToneLight,
+ *                                  outlinedIconHoverToneLight,
+ *                                  outlinedIconActiveToneLight,
+ *                                  outlinedOptionBorderRestTone,
+ *                                  outlinedOptionBorderHoverTone,
+ *                                  outlinedOptionBorderActiveTone,
+ *                                  outlinedBgHoverI, outlinedBgHoverAlphaValue,
+ *                                  outlinedBgActiveI, outlinedBgActiveAlphaValue
+ *
+ * ghost-control-style      How ghost buttons present across states and modes.
+ *                          Controls fg/icon/border tone and intensity for action
+ *                          and option roles.
+ *                          Fields: ghostFgRestTone, ghostFgHoverTone,
+ *                                  ghostFgActiveTone, ghostFgRestI, ghostFgHoverI,
+ *                                  ghostFgActiveI, ghostIconRestTone,
+ *                                  ghostIconHoverTone, ghostIconActiveTone,
+ *                                  ghostIconRestI, ghostIconHoverI, ghostIconActiveI,
+ *                                  ghostBorderI, ghostBorderTone,
+ *                                  ghostFgRestToneLight, ghostFgHoverToneLight,
+ *                                  ghostFgActiveToneLight, ghostFgRestILight,
+ *                                  ghostFgHoverILight, ghostFgActiveILight,
+ *                                  ghostIconRestToneLight, ghostIconHoverToneLight,
+ *                                  ghostIconActiveToneLight, ghostIconActiveILight
+ *
+ * badge-style              How tinted badges present. Controls fg/bg/border tone,
+ *                          intensity, and alpha for the tinted badge variant.
+ *                          Fields: badgeTintedFgI, badgeTintedFgTone,
+ *                                  badgeTintedBgI, badgeTintedBgTone,
+ *                                  badgeTintedBgAlpha, badgeTintedBorderI,
+ *                                  badgeTintedBorderTone, badgeTintedBorderAlpha
+ *
+ * icon-style               How icons present in non-control contexts. Controls
+ *                          tone and intensity for active and muted icon tiers.
+ *                          Fields: iconActiveTone, iconMutedI, iconMutedTone
+ *
+ * tab-style                How tabs present. Controls the active tab foreground
+ *                          tone and the hue slots for tab backgrounds.
+ *                          Fields: tabFgActiveTone, tabBgActiveHueSlot,
+ *                                  tabBgInactiveHueSlot
+ *
+ * toggle-style             How toggles present. Controls hover/disabled tones and
+ *                          intensity for the toggle track and thumb.
+ *                          Fields: toggleTrackOnHoverTone, toggleThumbDisabledTone,
+ *                                  toggleTrackDisabledI
+ *
+ * field-style              How form fields present. Controls tone anchors and
+ *                          intensity for field backgrounds and borders across all
+ *                          states, plus disabled control parameters.
+ *                          Fields: fieldBgRestTone, fieldBgHoverTone,
+ *                                  fieldBgFocusTone, fieldBgDisabledTone,
+ *                                  fieldBgReadOnlyTone, fieldBgRestI,
+ *                                  disabledBgI, disabledBorderI
+ *
+ * hue-slot-dispatch        Which hue slot each surface, foreground, icon, border,
+ *                          disabled, field, and toggle tier reads from. These are
+ *                          string keys into ResolvedHueSlots that determine what
+ *                          hue family each token uses.
+ *                          Fields: bgAppHueSlot, bgCanvasHueSlot,
+ *                                  surfaceSunkenHueSlot, surfaceDefaultHueSlot,
+ *                                  surfaceRaisedHueSlot, surfaceOverlayHueSlot,
+ *                                  surfaceInsetHueSlot, surfaceContentHueSlot,
+ *                                  surfaceScreenHueSlot, fgMutedHueSlot,
+ *                                  fgSubtleHueSlot, fgDisabledHueSlot,
+ *                                  fgPlaceholderHueSlot, fgInverseHueSlot,
+ *                                  fgOnAccentHueSlot, iconMutedHueSlot,
+ *                                  iconOnAccentHueSlot, dividerMutedHueSlot,
+ *                                  disabledBgHueSlot, fieldBgHoverHueSlot,
+ *                                  fieldBgReadOnlyHueSlot, fieldPlaceholderHueSlot,
+ *                                  fieldBorderRestHueSlot, fieldBorderHoverHueSlot,
+ *                                  toggleTrackDisabledHueSlot, toggleThumbHueSlot,
+ *                                  checkmarkHueSlot, radioDotHueSlot
+ *
+ * sentinel-hue-dispatch    Which sentinel hue slot hover/active interactive
+ *                          backgrounds use (__highlight, __verboseHighlight, etc.).
+ *                          Fields: outlinedBgHoverHueSlot, outlinedBgActiveHueSlot,
+ *                                  ghostActionBgHoverHueSlot,
+ *                                  ghostActionBgActiveHueSlot,
+ *                                  ghostOptionBgHoverHueSlot,
+ *                                  ghostOptionBgActiveHueSlot,
+ *                                  tabBgHoverHueSlot, tabCloseBgHoverHueSlot,
+ *                                  highlightHoverHueSlot
+ *
+ * sentinel-alpha           Alpha values for sentinel-dispatched hover/active
+ *                          interactive tokens. Determines how opaque the tinted
+ *                          hover/press overlay appears.
+ *                          Fields: tabBgHoverAlpha, tabCloseBgHoverAlpha,
+ *                                  outlinedBgHoverAlpha, outlinedBgActiveAlpha,
+ *                                  ghostActionBgHoverAlpha,
+ *                                  ghostActionBgActiveAlpha,
+ *                                  ghostOptionBgHoverAlpha,
+ *                                  ghostOptionBgActiveAlpha, highlightHoverAlpha,
+ *                                  ghostDangerBgHoverAlpha, ghostDangerBgActiveAlpha
+ *
+ * computed-tone-override   Flat-value overrides for tones that otherwise derive
+ *                          from formulas, plus formula parameters for canvas and
+ *                          disabled-bg tone computations.
+ *                          Fields: dividerDefaultToneOverride,
+ *                                  dividerMutedToneOverride, disabledFgToneValue,
+ *                                  disabledBorderToneOverride,
+ *                                  outlinedBgRestToneOverride,
+ *                                  outlinedBgHoverToneOverride,
+ *                                  outlinedBgActiveToneOverride,
+ *                                  toggleTrackOffToneOverride,
+ *                                  toggleDisabledToneOverride,
+ *                                  bgCanvasToneBase, bgCanvasToneSCCenter,
+ *                                  bgCanvasToneScale, disabledBgBase,
+ *                                  disabledBgScale, borderStrongToneValue
+ *
+ * hue-name-dispatch        Named hue values used in resolveHueSlots() to eliminate
+ *                          runtime mode branches. These string fields directly name
+ *                          the hue family for derived slots (surfScreen, fgMuted,
+ *                          fgSubtle, etc.).
+ *                          Fields: surfScreenHue, fgMutedHueExpr, fgSubtleHue,
+ *                                  fgDisabledHue, fgInverseHue, fgPlaceholderSource,
+ *                                  selectionInactiveHue
+ *
+ * selection-mode           Selection behavior mode flags and parameters. Controls
+ *                          how the inactive selection background is resolved and
+ *                          how prominent it appears.
+ *                          Fields: selectionInactiveSemanticMode,
+ *                                  selectionBgInactiveI, selectionBgInactiveTone,
+ *                                  selectionBgInactiveAlpha
+ *
  * @module components/tugways/theme-derivation-engine
  */
 
@@ -69,6 +266,8 @@ import type { ElementSurfacePairing } from "./element-surface-pairing-map";
  */
 export interface ThemeRecipe {
   name: string;
+  /** Human-readable description of the design intent for this theme. */
+  description: string;
   mode: "dark" | "light";
   cardBg: { hue: string };
   text: { hue: string };
@@ -243,243 +442,372 @@ export interface DerivationFormulas {
   // -------------------------------------------------------------------------
   // Surface tone anchors (absolute tone values at surfaceContrast=50)
   // -------------------------------------------------------------------------
+  /** @semantic canvas-darkness — tone of the app background surface */
   bgAppTone: number;
+  /** @semantic canvas-darkness — tone of the canvas (page-level) background */
   bgCanvasTone: number;
+  /** @semantic surface-layering — tone of sunken surfaces (inset wells, recessed areas) */
   surfaceSunkenTone: number;
+  /** @semantic surface-layering — tone of the default card/panel surface */
   surfaceDefaultTone: number;
+  /** @semantic surface-layering — tone of raised surfaces (popovers, dropdowns) */
   surfaceRaisedTone: number;
+  /** @semantic surface-layering — tone of overlay surfaces (modals, sheets) */
   surfaceOverlayTone: number;
+  /** @semantic surface-layering — tone of inset surfaces (nested content areas) */
   surfaceInsetTone: number;
+  /** @semantic surface-layering — tone of content surfaces (text-area-like regions) */
   surfaceContentTone: number;
+  /** @semantic surface-layering — tone of screen surfaces (full-bleed backgrounds behind cards) */
   surfaceScreenTone: number;
 
   // -------------------------------------------------------------------------
   // Surface intensity — independent per-tier values.
   // -------------------------------------------------------------------------
+  /** @semantic surface-coloring — base chroma intensity for atmosphere-hued surfaces */
   atmI: number;
+  /** @semantic surface-coloring — chroma intensity for overlay surfaces */
   surfaceOverlayI: number;
+  /** @semantic surface-coloring — chroma intensity for screen surfaces */
   surfaceScreenI: number;
 
   // Per-tier surface intensity overrides (Spec S05).
+  /** @semantic surface-coloring — chroma intensity for the app background surface */
   bgAppI: number;
+  /** @semantic surface-coloring — chroma intensity for the canvas background */
   bgCanvasI: number;
+  /** @semantic surface-coloring — chroma intensity for the default card surface */
   surfaceDefaultI: number;
+  /** @semantic surface-coloring — chroma intensity for raised surfaces */
   surfaceRaisedI: number;
+  /** @semantic surface-coloring — chroma intensity for inset surfaces */
   surfaceInsetI: number;
+  /** @semantic surface-coloring — chroma intensity for content surfaces */
   surfaceContentI: number;
 
   // -------------------------------------------------------------------------
   // Foreground tone anchors
   // -------------------------------------------------------------------------
+  /** @semantic text-brightness — tone of primary body text */
   fgDefaultTone: number;
+  /** @semantic text-hierarchy — tone of muted (secondary) text */
   fgMutedTone: number;
+  /** @semantic text-hierarchy — tone of subtle (tertiary) text */
   fgSubtleTone: number;
+  /** @semantic text-hierarchy — tone of disabled text */
   fgDisabledTone: number;
+  /** @semantic text-hierarchy — tone of placeholder text */
   fgPlaceholderTone: number;
+  /** @semantic text-brightness — tone of inverse (on-filled) text */
   fgInverseTone: number;
 
   // -------------------------------------------------------------------------
   // Text intensity levels
   // -------------------------------------------------------------------------
+  /** @semantic text-coloring — chroma intensity for primary text */
   txtI: number;
+  /** @semantic text-coloring — chroma intensity for subtle text tiers */
   txtISubtle: number;
+  /** @semantic text-coloring — chroma intensity for muted text */
   fgMutedI: number;
+  /** @semantic text-coloring — chroma intensity for atmosphere-hued border tiers */
   atmIBorder: number;
 
   // Foreground intensity overrides (Spec S05)
+  /** @semantic text-coloring — chroma intensity for inverse (on-filled) text */
   fgInverseI: number;
+  /** @semantic text-coloring — chroma intensity for text on caution surfaces */
   fgOnCautionI: number;
+  /** @semantic text-coloring — chroma intensity for text on success surfaces */
   fgOnSuccessI: number;
 
   // -------------------------------------------------------------------------
   // Border parameters
   // -------------------------------------------------------------------------
+  /** @semantic border-visibility — base chroma intensity for default borders */
   borderIBase: number;
+  /** @semantic border-visibility — chroma intensity for strong/emphasis borders */
   borderIStrong: number;
 
   // Border/divider mode-dependent tones and intensities (Spec S05)
+  /** @semantic border-visibility — tone of muted (de-emphasized) borders */
   borderMutedTone: number;
+  /** @semantic border-visibility — chroma intensity for muted borders */
   borderMutedI: number;
+  /** @semantic border-visibility — tone of strong (high-contrast) borders */
   borderStrongTone: number;
 
   // Divider intensity overrides (Spec S05)
+  /** @semantic border-visibility — chroma intensity for default divider lines */
   dividerDefaultI: number;
+  /** @semantic border-visibility — chroma intensity for muted divider lines */
   dividerMutedI: number;
 
   // -------------------------------------------------------------------------
   // Card frame intensity (title bar / tab bar bg)
   // -------------------------------------------------------------------------
+  /** @semantic card-frame-style — chroma intensity for the active card title bar */
   cardFrameActiveI: number;
+  /** @semantic card-frame-style — tone of the active card title bar */
   cardFrameActiveTone: number;
+  /** @semantic card-frame-style — chroma intensity for inactive card title bars */
   cardFrameInactiveI: number;
+  /** @semantic card-frame-style — tone of inactive card title bars */
   cardFrameInactiveTone: number;
 
   // Hue slot fields — tab title bar (card frame) bg (Spec S05)
+  /** @semantic hue-slot-dispatch — hue slot for the active tab bar background */
   tabBgActiveHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for inactive tab bar backgrounds */
   tabBgInactiveHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Shadow / overlay alphas
   // -------------------------------------------------------------------------
+  /** @semantic shadow-depth — alpha for extra-small drop shadows */
   shadowXsAlpha: number;
+  /** @semantic shadow-depth — alpha for medium drop shadows */
   shadowMdAlpha: number;
+  /** @semantic shadow-depth — alpha for large drop shadows */
   shadowLgAlpha: number;
+  /** @semantic shadow-depth — alpha for extra-large drop shadows */
   shadowXlAlpha: number;
+  /** @semantic shadow-depth — alpha for overlay drop shadows (floating panels) */
   shadowOverlayAlpha: number;
+  /** @semantic shadow-depth — alpha for dim overlay backgrounds */
   overlayDimAlpha: number;
+  /** @semantic shadow-depth — alpha for scrim backgrounds (modal blocking layer) */
   overlayScrimAlpha: number;
+  /** @semantic shadow-depth — alpha for highlight overlay tints */
   overlayHighlightAlpha: number;
 
   // -------------------------------------------------------------------------
   // Control emphasis parameters
   // -------------------------------------------------------------------------
+  /** @semantic filled-control-prominence — tone of the dark (resting) filled button background */
   filledBgDarkTone: number;
+  /** @semantic filled-control-prominence — tone of the filled button background on hover */
   filledBgHoverTone: number;
+  /** @semantic filled-control-prominence — tone of the filled button background on press */
   filledBgActiveTone: number;
 
   // -------------------------------------------------------------------------
   // Icon tone/intensity overrides (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic icon-style — tone of active/interactive icons */
   iconActiveTone: number;
-  /** icon-muted intensity */
+  /** @semantic icon-style — chroma intensity for muted icons */
   iconMutedI: number;
-  /** icon-muted tone */
+  /** @semantic icon-style — tone of muted icons */
   iconMutedTone: number;
 
   // -------------------------------------------------------------------------
   // Tab tone overrides (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic tab-style — tone of foreground text/icons on the active tab */
   tabFgActiveTone: number;
 
   // -------------------------------------------------------------------------
   // Toggle tone
   // -------------------------------------------------------------------------
+  /** @semantic toggle-style — tone of the toggle track background on hover (on-state) */
   toggleTrackOnHoverTone: number;
+  /** @semantic toggle-style — tone of the toggle thumb when disabled */
   toggleThumbDisabledTone: number;
+  /** @semantic toggle-style — chroma intensity for the disabled toggle track */
   toggleTrackDisabledI: number;
 
   // -------------------------------------------------------------------------
   // Field tone anchors
   // -------------------------------------------------------------------------
+  /** @semantic field-style — tone of the field background at rest */
   fieldBgRestTone: number;
+  /** @semantic field-style — tone of the field background on hover */
   fieldBgHoverTone: number;
+  /** @semantic field-style — tone of the field background when focused */
   fieldBgFocusTone: number;
+  /** @semantic field-style — tone of the field background when disabled */
   fieldBgDisabledTone: number;
+  /** @semantic field-style — tone of the field background in read-only state */
   fieldBgReadOnlyTone: number;
 
   // Field intensity overrides (Spec S05)
+  /** @semantic field-style — chroma intensity for the resting field background */
   fieldBgRestI: number;
 
   // -------------------------------------------------------------------------
   // Control disabled parameters (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic field-style — chroma intensity for disabled control backgrounds */
   disabledBgI: number;
+  /** @semantic field-style — chroma intensity for disabled control borders */
   disabledBorderI: number;
 
   // -------------------------------------------------------------------------
   // Formula parameter fields for non-standard tone computations (Spec S03)
   // -------------------------------------------------------------------------
+  /** @semantic computed-tone-override — base tone for canvas surface formula (surfaceContrast-scaled) */
   bgCanvasToneBase: number;
+  /** @semantic computed-tone-override — surfaceContrast midpoint for canvas tone formula */
   bgCanvasToneSCCenter: number;
+  /** @semantic computed-tone-override — scale factor for canvas tone formula */
   bgCanvasToneScale: number;
 
+  /** @semantic computed-tone-override — base tone for disabled-bg formula */
   disabledBgBase: number;
+  /** @semantic computed-tone-override — scale factor for disabled-bg formula */
   disabledBgScale: number;
 
   // -------------------------------------------------------------------------
   // Badge tinted emphasis formula parameters
   // -------------------------------------------------------------------------
+  /** @semantic badge-style — chroma intensity for tinted badge foreground text */
   badgeTintedFgI: number;
+  /** @semantic badge-style — tone of tinted badge foreground text */
   badgeTintedFgTone: number;
+  /** @semantic badge-style — chroma intensity for tinted badge background */
   badgeTintedBgI: number;
+  /** @semantic badge-style — tone of tinted badge background */
   badgeTintedBgTone: number;
+  /** @semantic badge-style — alpha of tinted badge background */
   badgeTintedBgAlpha: number;
+  /** @semantic badge-style — chroma intensity for tinted badge border */
   badgeTintedBorderI: number;
+  /** @semantic badge-style — tone of tinted badge border */
   badgeTintedBorderTone: number;
+  /** @semantic badge-style — alpha of tinted badge border */
   badgeTintedBorderAlpha: number;
 
   // -------------------------------------------------------------------------
   // Hue slot fields — surface tiers (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic hue-slot-dispatch — hue slot for the app background surface */
   bgAppHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for the canvas background */
   bgCanvasHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for sunken surfaces */
   surfaceSunkenHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for the default card surface */
   surfaceDefaultHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for raised surfaces */
   surfaceRaisedHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for overlay surfaces */
   surfaceOverlayHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for inset surfaces */
   surfaceInsetHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for content surfaces */
   surfaceContentHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for screen surfaces */
   surfaceScreenHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Hue slot fields — foreground tiers (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic hue-slot-dispatch — hue slot for muted (secondary) foreground text */
   fgMutedHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for subtle (tertiary) foreground text */
   fgSubtleHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for disabled foreground text */
   fgDisabledHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for placeholder foreground text */
   fgPlaceholderHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for inverse (on-filled) foreground text */
   fgInverseHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for foreground text on accent-filled surfaces */
   fgOnAccentHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Hue slot fields — icon tiers (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic hue-slot-dispatch — hue slot for muted icons */
   iconMutedHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for icons on accent-filled surfaces */
   iconOnAccentHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Hue slot fields — border/divider tiers (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic hue-slot-dispatch — hue slot for muted divider lines */
   dividerMutedHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Hue slot fields — control disabled (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic hue-slot-dispatch — hue slot for disabled control backgrounds */
   disabledBgHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Hue slot fields — field (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic hue-slot-dispatch — hue slot for the field background on hover */
   fieldBgHoverHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for read-only field backgrounds */
   fieldBgReadOnlyHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for field placeholder text */
   fieldPlaceholderHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for the field border at rest */
   fieldBorderRestHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for the field border on hover */
   fieldBorderHoverHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Hue slot fields — toggle (Spec S05)
   // -------------------------------------------------------------------------
+  /** @semantic hue-slot-dispatch — hue slot for the disabled toggle track */
   toggleTrackDisabledHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for the toggle thumb */
   toggleThumbHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for checkbox checkmarks */
   checkmarkHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for radio button dots */
   radioDotHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Sentinel hue slot fields — structural dispatch per mode [D07]
   // -------------------------------------------------------------------------
+  /** @semantic sentinel-hue-dispatch — hue slot for outlined control hover background */
   outlinedBgHoverHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for outlined control active background */
   outlinedBgActiveHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for ghost action button hover background */
   ghostActionBgHoverHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for ghost action button active background */
   ghostActionBgActiveHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for ghost option button hover background */
   ghostOptionBgHoverHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for ghost option button active background */
   ghostOptionBgActiveHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for tab hover background */
   tabBgHoverHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for tab close button hover background */
   tabCloseBgHoverHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for inline highlight hover tint */
   highlightHoverHueSlot: string;
 
   // -------------------------------------------------------------------------
   // Alpha values for sentinel-dispatched tokens [D07]
   // -------------------------------------------------------------------------
+  /** @semantic sentinel-alpha — alpha for tab background on hover */
   tabBgHoverAlpha: number;
+  /** @semantic sentinel-alpha — alpha for tab close button background on hover */
   tabCloseBgHoverAlpha: number;
+  /** @semantic sentinel-alpha — alpha for outlined control hover background */
   outlinedBgHoverAlpha: number;
+  /** @semantic sentinel-alpha — alpha for outlined control active background */
   outlinedBgActiveAlpha: number;
+  /** @semantic sentinel-alpha — alpha for ghost action button hover background */
   ghostActionBgHoverAlpha: number;
+  /** @semantic sentinel-alpha — alpha for ghost action button active background */
   ghostActionBgActiveAlpha: number;
+  /** @semantic sentinel-alpha — alpha for ghost option button hover background */
   ghostOptionBgHoverAlpha: number;
+  /** @semantic sentinel-alpha — alpha for ghost option button active background */
   ghostOptionBgActiveAlpha: number;
+  /** @semantic sentinel-alpha — alpha for inline highlight hover tint */
   highlightHoverAlpha: number;
+  /** @semantic sentinel-alpha — alpha for ghost danger button hover background */
   ghostDangerBgHoverAlpha: number;
+  /** @semantic sentinel-alpha — alpha for ghost danger button active background */
   ghostDangerBgActiveAlpha: number;
 
   // -------------------------------------------------------------------------
@@ -490,78 +818,146 @@ export interface DerivationFormulas {
   // -------------------------------------------------------------------------
 
   // Outlined emphasis-level fg — per-state tone and shared intensity
+  /** @semantic outlined-control-style — tone of outlined button foreground text at rest */
   outlinedFgRestTone: number;
+  /** @semantic outlined-control-style — tone of outlined button foreground text on hover */
   outlinedFgHoverTone: number;
+  /** @semantic outlined-control-style — tone of outlined button foreground text on press */
   outlinedFgActiveTone: number;
+  /** @semantic outlined-control-style — chroma intensity for outlined button foreground text */
   outlinedFgI: number;
 
   // Outlined emphasis-level icon — per-state tone and shared intensity
+  /** @semantic outlined-control-style — tone of outlined button icons at rest */
   outlinedIconRestTone: number;
+  /** @semantic outlined-control-style — tone of outlined button icons on hover */
   outlinedIconHoverTone: number;
+  /** @semantic outlined-control-style — tone of outlined button icons on press */
   outlinedIconActiveTone: number;
+  /** @semantic outlined-control-style — chroma intensity for outlined button icons */
   outlinedIconI: number;
 
   // Outlined emphasis-level light-mode tones (per-state, fg and icon)
+  /** @semantic outlined-control-style — light-mode tone of outlined button foreground text at rest */
   outlinedFgRestToneLight: number;
+  /** @semantic outlined-control-style — light-mode tone of outlined button foreground text on hover */
   outlinedFgHoverToneLight: number;
+  /** @semantic outlined-control-style — light-mode tone of outlined button foreground text on press */
   outlinedFgActiveToneLight: number;
+  /** @semantic outlined-control-style — light-mode tone of outlined button icons at rest */
   outlinedIconRestToneLight: number;
+  /** @semantic outlined-control-style — light-mode tone of outlined button icons on hover */
   outlinedIconHoverToneLight: number;
+  /** @semantic outlined-control-style — light-mode tone of outlined button icons on press */
   outlinedIconActiveToneLight: number;
 
   // Outlined-option border tones (per-role exception: option uses neutral hue for borders)
+  /** @semantic outlined-control-style — tone of outlined option border at rest */
   outlinedOptionBorderRestTone: number;
+  /** @semantic outlined-control-style — tone of outlined option border on hover */
   outlinedOptionBorderHoverTone: number;
+  /** @semantic outlined-control-style — tone of outlined option border on press */
   outlinedOptionBorderActiveTone: number;
 
   // Ghost emphasis-level fg/icon — per-state tone and shared intensity
+  /** @semantic ghost-control-style — tone of ghost button foreground text at rest */
   ghostFgRestTone: number;
+  /** @semantic ghost-control-style — tone of ghost button foreground text on hover */
   ghostFgHoverTone: number;
+  /** @semantic ghost-control-style — tone of ghost button foreground text on press */
   ghostFgActiveTone: number;
+  /** @semantic ghost-control-style — chroma intensity for ghost button foreground text at rest */
   ghostFgRestI: number;
+  /** @semantic ghost-control-style — chroma intensity for ghost button foreground text on hover */
   ghostFgHoverI: number;
+  /** @semantic ghost-control-style — chroma intensity for ghost button foreground text on press */
   ghostFgActiveI: number;
+  /** @semantic ghost-control-style — tone of ghost button icons at rest */
   ghostIconRestTone: number;
+  /** @semantic ghost-control-style — tone of ghost button icons on hover */
   ghostIconHoverTone: number;
+  /** @semantic ghost-control-style — tone of ghost button icons on press */
   ghostIconActiveTone: number;
+  /** @semantic ghost-control-style — chroma intensity for ghost button icons at rest */
   ghostIconRestI: number;
+  /** @semantic ghost-control-style — chroma intensity for ghost button icons on hover */
   ghostIconHoverI: number;
+  /** @semantic ghost-control-style — chroma intensity for ghost button icons on press */
   ghostIconActiveI: number;
 
   // Ghost emphasis-level border — shared across action and option
+  /** @semantic ghost-control-style — chroma intensity for ghost button borders */
   ghostBorderI: number;
+  /** @semantic ghost-control-style — tone of ghost button borders */
   ghostBorderTone: number;
 
   // Ghost emphasis-level light-mode tones (per-state, fg and icon)
+  /** @semantic ghost-control-style — light-mode tone of ghost button foreground text at rest */
   ghostFgRestToneLight: number;
+  /** @semantic ghost-control-style — light-mode tone of ghost button foreground text on hover */
   ghostFgHoverToneLight: number;
+  /** @semantic ghost-control-style — light-mode tone of ghost button foreground text on press */
   ghostFgActiveToneLight: number;
+  /** @semantic ghost-control-style — light-mode chroma intensity for ghost button foreground text at rest */
   ghostFgRestILight: number;
+  /** @semantic ghost-control-style — light-mode chroma intensity for ghost button foreground text on hover */
   ghostFgHoverILight: number;
+  /** @semantic ghost-control-style — light-mode chroma intensity for ghost button foreground text on press */
   ghostFgActiveILight: number;
+  /** @semantic ghost-control-style — light-mode tone of ghost button icons at rest */
   ghostIconRestToneLight: number;
+  /** @semantic ghost-control-style — light-mode tone of ghost button icons on hover */
   ghostIconHoverToneLight: number;
+  /** @semantic ghost-control-style — light-mode tone of ghost button icons on press */
   ghostIconActiveToneLight: number;
+  /** @semantic ghost-control-style — light-mode chroma intensity for ghost button icons on press */
   ghostIconActiveILight: number;
 
   // Non-control unified fields [D05] Table T01
-  /** bg-app intensity. Dark: bgAppI (2). Light: atmI. */
+  /**
+   * @semantic surface-coloring — bg-app intensity unified field.
+   * Dark: bgAppI (2). Light: atmI.
+   */
   bgAppSurfaceI: number;
-  /** border-strong tone. Dark: fgSubtleTone (37). */
+  /**
+   * @semantic computed-tone-override — border-strong tone unified field.
+   * Dark: fgSubtleTone (37).
+   */
   borderStrongToneValue: number;
-  /** outlined bg-hover intensity. Dark: 0 (highlight sentinel). Light: 4. */
+  /**
+   * @semantic outlined-control-style — outlined bg-hover intensity unified field.
+   * Dark: 0 (highlight sentinel). Light: 4.
+   */
   outlinedBgHoverI: number;
-  /** outlined bg-hover alpha. Dark: outlinedBgHoverAlpha (10). Light: 100. */
+  /**
+   * @semantic outlined-control-style — outlined bg-hover alpha unified field.
+   * Dark: outlinedBgHoverAlpha (10). Light: 100.
+   */
   outlinedBgHoverAlphaValue: number;
-  /** outlined bg-active intensity. Dark: 0 (highlight sentinel). Light: 6. */
+  /**
+   * @semantic outlined-control-style — outlined bg-active intensity unified field.
+   * Dark: 0 (highlight sentinel). Light: 6.
+   */
   outlinedBgActiveI: number;
-  /** outlined bg-active alpha. Dark: outlinedBgActiveAlpha (20). Light: 100. */
+  /**
+   * @semantic outlined-control-style — outlined bg-active alpha unified field.
+   * Dark: outlinedBgActiveAlpha (20). Light: 100.
+   */
   outlinedBgActiveAlphaValue: number;
-  /** selection-bg-inactive intensity. Dark: 0. Light: 8. */
+  /**
+   * @semantic selection-mode — selection-bg-inactive chroma intensity.
+   * Dark: 0. Light: 8.
+   */
   selectionBgInactiveI: number;
-  /** selection-bg-inactive tone. Dark: 30. Light: 24. */
+  /**
+   * @semantic selection-mode — selection-bg-inactive tone.
+   * Dark: 30. Light: 24.
+   */
   selectionBgInactiveTone: number;
-  /** selection-bg-inactive alpha. Dark: 25. Light: 20. */
+  /**
+   * @semantic selection-mode — selection-bg-inactive alpha.
+   * Dark: 25. Light: 20.
+   */
   selectionBgInactiveAlpha: number;
 
   // -------------------------------------------------------------------------
@@ -569,40 +965,53 @@ export interface DerivationFormulas {
   // Spec S02 (#s02-hue-name-fields)
   // -------------------------------------------------------------------------
 
-  /** Hue name for the surfScreen derived slot. Dark: "indigo". */
+  /**
+   * @semantic hue-name-dispatch — hue name for the surfScreen derived slot.
+   * Dark: "indigo".
+   */
   surfScreenHue: string;
 
   /**
-   * Expression for the fgMuted derived slot hue.
+   * @semantic hue-name-dispatch — expression for the fgMuted derived slot hue.
    * "__bare_primary" = use the bare primary segment of txtHue (e.g. "cobalt" from "indigo-cobalt").
    * Any other value = treat as a literal hue name.
    */
   fgMutedHueExpr: string;
 
-  /** Hue name for the fgSubtle derived slot. Dark: "indigo-cobalt". */
+  /**
+   * @semantic hue-name-dispatch — hue name for the fgSubtle derived slot.
+   * Dark: "indigo-cobalt".
+   */
   fgSubtleHue: string;
 
-  /** Hue name for the fgDisabled derived slot. Dark: "indigo-cobalt". */
+  /**
+   * @semantic hue-name-dispatch — hue name for the fgDisabled derived slot.
+   * Dark: "indigo-cobalt".
+   */
   fgDisabledHue: string;
 
-  /** Hue name for the fgInverse derived slot. Dark: "sapphire-cobalt". */
+  /**
+   * @semantic hue-name-dispatch — hue name for the fgInverse derived slot.
+   * Dark: "sapphire-cobalt".
+   */
   fgInverseHue: string;
 
   /**
-   * Source for the fgPlaceholder derived slot.
+   * @semantic hue-name-dispatch — source for the fgPlaceholder derived slot.
    * "fgMuted" = copy from fgMuted slot.
    * "atm"     = copy from atm slot.
    */
   fgPlaceholderSource: string;
 
   /**
-   * Hue name for the selectionInactive derived slot.
+   * @semantic hue-name-dispatch — hue name for the selectionInactive derived slot.
    * Used only when selectionInactiveSemanticMode is true.
    * Dark: "yellow".
    */
   selectionInactiveHue: string;
 
   /**
+   * @semantic selection-mode — selectionInactive resolution mode flag.
    * When true: use resolveSemanticSlot(selectionInactiveHue) — no warmth bias.
    * When false: compute atm offset (atmBaseAngle - 20°) with warmth bias.
    * Dark: true.
@@ -616,55 +1025,56 @@ export interface DerivationFormulas {
   // -------------------------------------------------------------------------
 
   /**
-   * Flat tone for divider-default. null = Math.round(surfaceOverlay - 2).
-   * Dark: 17.
+   * @semantic computed-tone-override — flat tone for divider-default.
+   * null = Math.round(surfaceOverlay - 2). Dark: 17.
    */
   dividerDefaultToneOverride: number | null;
 
   /**
-   * Flat tone for divider-muted. null = Math.round(surfaceOverlay).
-   * Dark: 15.
+   * @semantic computed-tone-override — flat tone for divider-muted.
+   * null = Math.round(surfaceOverlay). Dark: 15.
    */
   dividerMutedToneOverride: number | null;
 
   /**
-   * Flat tone for disabled-fg. Always a number (dark: 38; future light uses fgDisabledTone).
+   * @semantic computed-tone-override — flat tone for disabled-fg.
+   * Always a number (dark: 38; future light uses fgDisabledTone).
    */
   disabledFgToneValue: number;
 
   /**
-   * Flat tone for disabled-border. null = Math.round(dividerTone).
-   * Dark: 28.
+   * @semantic computed-tone-override — flat tone for disabled-border.
+   * null = Math.round(dividerTone). Dark: 28.
    */
   disabledBorderToneOverride: number | null;
 
   /**
-   * Flat tone for outlined-bg-rest. null = Math.round(surfaceInset + 2).
-   * Dark: null (derives from formula).
+   * @semantic computed-tone-override — flat tone for outlined-bg-rest.
+   * null = Math.round(surfaceInset + 2). Dark: null (derives from formula).
    */
   outlinedBgRestToneOverride: number | null;
 
   /**
-   * Flat tone for outlined-bg-hover. null = Math.round(surfaceRaised + 1).
-   * Dark: null (derives from formula).
+   * @semantic computed-tone-override — flat tone for outlined-bg-hover.
+   * null = Math.round(surfaceRaised + 1). Dark: null (derives from formula).
    */
   outlinedBgHoverToneOverride: number | null;
 
   /**
-   * Flat tone for outlined-bg-active. null = Math.round(surfaceOverlay).
-   * Dark: null (derives from formula).
+   * @semantic computed-tone-override — flat tone for outlined-bg-active.
+   * null = Math.round(surfaceOverlay). Dark: null (derives from formula).
    */
   outlinedBgActiveToneOverride: number | null;
 
   /**
-   * Flat tone for toggle-track-off. null = Math.round(dividerTone).
-   * Dark: 28.
+   * @semantic computed-tone-override — flat tone for toggle-track-off.
+   * null = Math.round(dividerTone). Dark: 28.
    */
   toggleTrackOffToneOverride: number | null;
 
   /**
-   * Flat tone for toggle-disabled. null = Math.round(surfaceOverlay).
-   * Dark: 22.
+   * @semantic computed-tone-override — flat tone for toggle-disabled.
+   * null = Math.round(surfaceOverlay). Dark: 22.
    */
   toggleDisabledToneOverride: number | null;
 }
@@ -990,6 +1400,7 @@ export const DARK_OVERRIDES: Partial<DerivationFormulas> = {};
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
     name: "brio",
+    description: "Deep, immersive dark theme. Very dark surfaces with subtle layering. Near-white text with wide hierarchy spread. Filled controls are prominent with vivid accent backgrounds and white text. Borders are subtle. Shadows are moderate. Industrial warmth with muted chassis and vivid signals.",
     mode: "dark",
     cardBg: { hue: "indigo-violet" },
     text: { hue: "cobalt" },
@@ -2272,12 +2683,11 @@ export function generateResolvedCssExport(
   const recipeJson = JSON.stringify(recipe);
   const hash = simpleHashForEngine(recipeJson);
   const dateStr = new Date().toISOString().slice(0, 10);
-  const desc = `Generated theme (${recipe.mode} mode, cardBg: ${recipe.cardBg.hue}, text: ${recipe.text.hue})`;
 
   const header = [
     "/**",
     ` * @theme-name ${recipe.name}`,
-    ` * @theme-description ${desc}`,
+    ` * @theme-description ${recipe.description}`,
     ` * @generated ${dateStr}`,
     ` * @recipe-hash ${hash}`,
     " *",
