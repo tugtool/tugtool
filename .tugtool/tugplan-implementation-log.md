@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-18T01:37:08Z
+---
+
+## step-8: Final verification: token output byte-identical to pre-annotation baseline, 1845 tests pass, tsc clean, all 198 DARK_FORMULAS fields annotated with design rationale across 23 semantic groups.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
+step: step-7
+date: 2025-03-18T01:35:07Z
+---
+
+## step-7: Added inline design rationale comments to 76 fields across Hue Slot Dispatch (30), Sentinel Hue Dispatch (9), Sentinel Alpha (11), Computed Tone Override (15), Hue Name Dispatch (7), and Selection Mode (4) groups in DARK_FORMULAS. All 198 fields now annotated.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
+step: step-6
+date: 2025-03-18T01:30:50Z
+---
+
+## step-6: Added inline design rationale comments to 23 fields across Badge Style (8), Icon Style (3), Tab Style (1), Toggle Style (3), and Field Style (8) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
+step: step-5
+date: 2025-03-18T01:28:28Z
+---
+
+## step-5: Added inline design rationale comments to 48 fields across Filled Control Prominence (3), Outlined Control Style (21), and Ghost Control Style (24) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
+step: step-4
+date: 2025-03-18T01:25:41Z
+---
+
+## step-4: Added inline design rationale comments to 19 fields across Border Visibility (7), Card Frame Style (4), and Shadow Depth (8) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
+step: step-3
+date: 2025-03-18T01:22:55Z
+---
+
+## step-3: Added inline design rationale comments to 13 fields across Text Brightness (2), Text Hierarchy (4), and Text Coloring (7) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
+step: step-2
+date: 2025-03-18T01:19:51Z
+---
+
+## step-2: Added inline design rationale comments to 19 fields across Canvas Darkness (2), Surface Layering (7), and Surface Coloring (10) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
+step: step-1
+date: 2025-03-18T01:15:56Z
+---
+
+## step-1: Baseline snapshot: tsc clean, 1845 tests pass, CSS token output saved to /tmp/tug-base-before.css for post-annotation diffing.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-3
 date: 2025-03-18T00:49:11Z
 ---

@@ -1000,270 +1000,270 @@ export interface DerivationFormulas {
 export const DARK_FORMULAS: DerivationFormulas = {
   // ===== Canvas Darkness =====
   // How dark/light the app background is. Dark: tones 5-10. Light: tones 90-95.
-  bgAppTone: 5,
-  bgCanvasTone: 5,
+  bgAppTone: 5, // near-black: deep immersive app background anchors the dark theme
+  bgCanvasTone: 5, // same as bgAppTone: canvas and app share the same base darkness level
 
   // ===== Surface Layering =====
   // How surfaces stack visually above the canvas. Dark: ascending from ~6. Light: descending from ~95.
-  surfaceSunkenTone: 11,
-  surfaceDefaultTone: 12,
-  surfaceRaisedTone: 11,
-  surfaceOverlayTone: 14,
-  surfaceInsetTone: 6,
-  surfaceContentTone: 6,
-  surfaceScreenTone: 16,
+  surfaceSunkenTone: 11, // slightly above canvas: just enough lift to distinguish recessed wells
+  surfaceDefaultTone: 12, // one step above sunken: the primary card/panel surface
+  surfaceRaisedTone: 11, // matches sunken: popovers feel elevated via shadow, not tone contrast
+  surfaceOverlayTone: 14, // above default: modals and sheets float clearly above the base layer
+  surfaceInsetTone: 6, // near canvas: nested content areas recede toward the background
+  surfaceContentTone: 6, // same as inset: text-area-like regions share the deep inset tone
+  surfaceScreenTone: 16, // highest tone: full-bleed screen bg pushes cards forward visually
 
   // ===== Surface Coloring =====
   // How much chroma surfaces carry. Dark: I 2-7. Light: I 3-8.
-  atmI: 5,
-  bgAppI: 2,
-  bgCanvasI: 2,
-  surfaceDefaultI: 5,
-  surfaceRaisedI: 5,
-  surfaceOverlayI: 4,
-  surfaceScreenI: 7,
-  surfaceInsetI: 5,
-  surfaceContentI: 5,
-  bgAppSurfaceI: 2,
+  atmI: 5, // mid-range chroma: atmosphere hue is present but never saturated on dark bg
+  bgAppI: 2, // near-neutral: app bg chroma is barely perceptible, preserving the dark anchor
+  bgCanvasI: 2, // same as bgAppI: canvas matches the app-level near-neutral chroma
+  surfaceDefaultI: 5, // moderate chroma: cards carry enough hue to feel warm, not sterile
+  surfaceRaisedI: 5, // same as default: raised surfaces match default chroma for visual parity
+  surfaceOverlayI: 4, // slightly lower: overlays desaturate slightly to recede behind content
+  surfaceScreenI: 7, // highest surface chroma: screen bg uses more hue to create depth behind cards
+  surfaceInsetI: 5, // matches default: inset wells share the moderate chroma of card surfaces
+  surfaceContentI: 5, // same as inset: content areas are consistent with the inset tier
+  bgAppSurfaceI: 2, // unified field for bg-app intensity: dark mode uses bgAppI (near-neutral)
 
   // ===== Text Brightness =====
   // How bright primary and inverse text is. Dark: near 100. Light: near 0.
-  fgDefaultTone: 94,
-  fgInverseTone: 100,
+  fgDefaultTone: 94, // off-white: slightly softened from pure white to reduce eye strain on dark bg
+  fgInverseTone: 100, // pure white: inverse text sits on filled controls and must be fully bright
 
   // ===== Text Hierarchy =====
   // How much secondary/tertiary text dims from primary. Dark: descending from 94. Light: ascending from 8.
-  fgMutedTone: 66,
-  fgSubtleTone: 37,
-  fgDisabledTone: 23,
-  fgPlaceholderTone: 30,
+  fgMutedTone: 66, // secondary text: large drop from 94 creates clear primary/secondary distinction
+  fgSubtleTone: 37, // tertiary text: drops deep to signal low-priority labels and captions
+  fgDisabledTone: 23, // near-invisible: disabled content barely readable, signaling non-interactivity
+  fgPlaceholderTone: 30, // between disabled and subtle: placeholder is inactive but still scannable
 
   // ===== Text Coloring =====
   // How much chroma text carries. Dark: I 2-7. Light: I 3-8.
-  txtI: 3,
-  txtISubtle: 7,
-  fgMutedI: 5,
-  atmIBorder: 6,
-  fgInverseI: 3,
-  fgOnCautionI: 4,
-  fgOnSuccessI: 4,
+  txtI: 3, // near-neutral: primary text carries minimal chroma so it reads as near-white, not tinted
+  txtISubtle: 7, // higher chroma for subtle tiers: tinted labels use more hue to signal semantic meaning
+  fgMutedI: 5, // moderate chroma: muted text picks up more hue than primary to compensate for low tone
+  atmIBorder: 6, // atmosphere-hued borders use mid-range chroma to stay visible without overpowering
+  fgInverseI: 3, // near-neutral: inverse text on filled controls mirrors primary text's low chroma
+  fgOnCautionI: 4, // caution surfaces are already vivid; text chroma is moderate to avoid clash
+  fgOnSuccessI: 4, // same as caution: success surfaces are vivid, text stays moderate
 
   // ===== Border Visibility =====
   // How visible borders and dividers are. Dark: subtle I 4-7. Light: crisp I 6-10.
-  borderIBase: 6,
-  borderIStrong: 7,
-  borderMutedTone: 37,
-  borderMutedI: 7,
-  borderStrongTone: 40,
-  dividerDefaultI: 6,
-  dividerMutedI: 4,
+  borderIBase: 6, // mid-range chroma: default borders are present but never stark against dark surfaces
+  borderIStrong: 7, // one step higher: strong/emphasis borders need a bit more pop to register
+  borderMutedTone: 37, // mid-dark tone: muted borders are dim enough to recede in the hierarchy
+  borderMutedI: 7, // higher chroma compensates for low tone so muted borders remain legible
+  borderStrongTone: 40, // slightly above muted: strong borders need a touch more lift for contrast
+  dividerDefaultI: 6, // matches borderIBase: dividers use the same baseline chroma as borders
+  dividerMutedI: 4, // lowest chroma: muted dividers are the most recessive structural element
 
   // ===== Card Frame Style =====
   // How card title bars and tab bars present. Dark: dim tones 15-18. Light: bright tones 85-92.
-  cardFrameActiveI: 12,
-  cardFrameActiveTone: 18,
-  cardFrameInactiveI: 4,
-  cardFrameInactiveTone: 15,
+  cardFrameActiveI: 12, // elevated chroma: active title bar uses rich hue to signal focus
+  cardFrameActiveTone: 18, // above surfaceScreen: active frame floats above the screen background
+  cardFrameInactiveI: 4, // near-neutral: inactive frames recede to avoid competing with active card
+  cardFrameInactiveTone: 15, // slightly below active: inactive frames are visibly dimmer but still distinct
 
   // ===== Shadow Depth =====
   // How pronounced shadows and overlay tints are. Dark: 20-80% alpha. Light: 10-40% alpha.
-  shadowXsAlpha: 20,
-  shadowMdAlpha: 60,
-  shadowLgAlpha: 70,
-  shadowXlAlpha: 80,
-  shadowOverlayAlpha: 60,
-  overlayDimAlpha: 48,
-  overlayScrimAlpha: 64,
-  overlayHighlightAlpha: 6,
+  shadowXsAlpha: 20, // subtle lift: extra-small shadows add just enough depth without visual noise
+  shadowMdAlpha: 60, // mid-depth: medium shadows clearly separate floating panels from the surface
+  shadowLgAlpha: 70, // deep: large shadows for prominent floats like menus and popovers
+  shadowXlAlpha: 80, // heaviest shadow: extra-large conveys maximum elevation for dialogs
+  shadowOverlayAlpha: 60, // matches medium: floating overlay panels use the same depth as md shadows
+  overlayDimAlpha: 48, // near-half opacity: dim overlay tints content without fully obscuring it
+  overlayScrimAlpha: 64, // above dim: modal scrims block the background more assertively
+  overlayHighlightAlpha: 6, // near-invisible: highlight tints are barely perceptible, just a suggestion
 
   // ===== Filled Control Prominence =====
   // How bold filled buttons are. Dark: mid-tone bg. Light: same (filled stays vivid).
-  filledBgDarkTone: 20,
-  filledBgHoverTone: 40,
-  filledBgActiveTone: 50,
+  filledBgDarkTone: 20, // dark rest state: dim enough to anchor the hue without washing the button
+  filledBgHoverTone: 40, // mid-tone hover: lifts dramatically from rest to signal interactivity
+  filledBgActiveTone: 50, // mid-tone press: one more step up from hover to confirm the click
 
   // ===== Outlined Control Style =====
   // How outlined buttons present across states/modes. Dark: white fg. Light: dark fg.
-  outlinedFgRestTone: 100,
-  outlinedFgHoverTone: 100,
-  outlinedFgActiveTone: 100,
-  outlinedFgI: 2,
-  outlinedIconRestTone: 100,
-  outlinedIconHoverTone: 100,
-  outlinedIconActiveTone: 100,
-  outlinedIconI: 2,
-  outlinedFgRestToneLight: 0,
-  outlinedFgHoverToneLight: 0,
-  outlinedFgActiveToneLight: 0,
-  outlinedIconRestToneLight: 0,
-  outlinedIconHoverToneLight: 0,
-  outlinedIconActiveToneLight: 0,
-  outlinedOptionBorderRestTone: 50,
-  outlinedOptionBorderHoverTone: 55,
-  outlinedOptionBorderActiveTone: 60,
-  outlinedBgHoverI: 0,
-  outlinedBgHoverAlphaValue: 10,
-  outlinedBgActiveI: 0,
-  outlinedBgActiveAlphaValue: 20,
+  outlinedFgRestTone: 100, // pure white fg at rest: outlined buttons use full-brightness text on dark bg
+  outlinedFgHoverTone: 100, // same across states: fg tone stays constant; state change is bg alpha
+  outlinedFgActiveTone: 100, // same across states
+  outlinedFgI: 2, // near-neutral chroma: fg text is nearly achromatic so it reads cleanly over any hue
+  outlinedIconRestTone: 100, // pure white icons at rest: mirrors fg tone for visual consistency
+  outlinedIconHoverTone: 100, // same across states
+  outlinedIconActiveTone: 100, // same across states
+  outlinedIconI: 2, // same as fg chroma: icons match text neutrality
+  outlinedFgRestToneLight: 0, // light-mode counterpart: inverted polarity — pure black fg on light bg
+  outlinedFgHoverToneLight: 0, // same across states (light)
+  outlinedFgActiveToneLight: 0, // same across states (light)
+  outlinedIconRestToneLight: 0, // light-mode counterpart: black icons mirror black text
+  outlinedIconHoverToneLight: 0, // same across states (light)
+  outlinedIconActiveToneLight: 0, // same across states (light)
+  outlinedOptionBorderRestTone: 50, // mid-tone rest border: visible against both dark and light surfaces
+  outlinedOptionBorderHoverTone: 55, // slightly higher on hover: border brightens subtly to indicate focus
+  outlinedOptionBorderActiveTone: 60, // highest on press: border lifts to confirm the active state
+  outlinedBgHoverI: 0, // sentinel value (0): hover bg uses a hue-slot sentinel path, not direct chroma
+  outlinedBgHoverAlphaValue: 10, // low alpha hover tint: 10% opacity wash over the button on hover
+  outlinedBgActiveI: 0, // sentinel value (0): press bg also uses sentinel path
+  outlinedBgActiveAlphaValue: 20, // double hover alpha on press: 20% opacity confirms the click
 
   // ===== Ghost Control Style =====
   // How ghost buttons present across states/modes. Dark: white fg. Light: dark fg.
-  ghostFgRestTone: 100,
-  ghostFgHoverTone: 100,
-  ghostFgActiveTone: 100,
-  ghostFgRestI: 2,
-  ghostFgHoverI: 2,
-  ghostFgActiveI: 2,
-  ghostIconRestTone: 100,
-  ghostIconHoverTone: 100,
-  ghostIconActiveTone: 100,
-  ghostIconRestI: 2,
-  ghostIconHoverI: 2,
-  ghostIconActiveI: 2,
-  ghostBorderI: 20,
-  ghostBorderTone: 60,
-  ghostFgRestToneLight: 0,
-  ghostFgHoverToneLight: 0,
-  ghostFgActiveToneLight: 0,
-  ghostFgRestILight: 0,
-  ghostFgHoverILight: 0,
-  ghostFgActiveILight: 0,
-  ghostIconRestToneLight: 0,
-  ghostIconHoverToneLight: 0,
-  ghostIconActiveToneLight: 0,
-  ghostIconActiveILight: 0,
+  ghostFgRestTone: 100, // pure white fg at rest: ghost buttons use full-brightness text on dark bg
+  ghostFgHoverTone: 100, // same across states: tone stays constant; state change is bg alpha
+  ghostFgActiveTone: 100, // same across states
+  ghostFgRestI: 2, // near-neutral chroma: ghost fg text is nearly achromatic, matching outlined style
+  ghostFgHoverI: 2, // same across states
+  ghostFgActiveI: 2, // same across states
+  ghostIconRestTone: 100, // pure white icons at rest: mirrors fg tone for visual consistency
+  ghostIconHoverTone: 100, // same across states
+  ghostIconActiveTone: 100, // same across states
+  ghostIconRestI: 2, // near-neutral chroma: ghost icons match text neutrality
+  ghostIconHoverI: 2, // same across states
+  ghostIconActiveI: 2, // same across states
+  ghostBorderI: 20, // elevated chroma for ghost border: provides hue-tinted ring without filled bg
+  ghostBorderTone: 60, // mid-bright tone: border is light enough to be visible on dark surfaces
+  ghostFgRestToneLight: 0, // light-mode counterpart: inverted polarity — pure black fg on light bg
+  ghostFgHoverToneLight: 0, // same across states (light)
+  ghostFgActiveToneLight: 0, // same across states (light)
+  ghostFgRestILight: 0, // light-mode counterpart: zero chroma — black is achromatic by definition
+  ghostFgHoverILight: 0, // same across states (light)
+  ghostFgActiveILight: 0, // same across states (light)
+  ghostIconRestToneLight: 0, // light-mode counterpart: black icons mirror black text
+  ghostIconHoverToneLight: 0, // same across states (light)
+  ghostIconActiveToneLight: 0, // same across states (light)
+  ghostIconActiveILight: 0, // light-mode counterpart: zero chroma for black icons
 
   // ===== Badge Style =====
   // How tinted badges present. Dark: bright fg on tinted bg. Light: dark fg on tinted bg.
-  badgeTintedFgI: 72,
-  badgeTintedFgTone: 85,
-  badgeTintedBgI: 65,
-  badgeTintedBgTone: 60,
-  badgeTintedBgAlpha: 15,
-  badgeTintedBorderI: 50,
-  badgeTintedBorderTone: 50,
-  badgeTintedBorderAlpha: 35,
+  badgeTintedFgI: 72, // high chroma fg: badge label text is richly tinted to signal semantic category
+  badgeTintedFgTone: 85, // bright fg tone: near-white text on dark tinted bg maintains legibility
+  badgeTintedBgI: 65, // vivid bg chroma: badge background carries strong hue to identify category at a glance
+  badgeTintedBgTone: 60, // mid-bright bg tone: bright enough to carry chroma, dark enough for dark-mode contrast
+  badgeTintedBgAlpha: 15, // low alpha: tinted bg is a translucent wash, not a solid fill
+  badgeTintedBorderI: 50, // high border chroma: crisp hue ring frames the badge without a hard fill
+  badgeTintedBorderTone: 50, // mid-tone border: sits between fg and bg tones for clean delineation
+  badgeTintedBorderAlpha: 35, // moderate border alpha: more opaque than bg to give the ring definition
 
   // ===== Icon Style =====
   // How icons present in non-control contexts. Dark: bright tones. Light: dark tones.
-  iconActiveTone: 80,
-  iconMutedI: 7,
-  iconMutedTone: 37,
+  iconActiveTone: 80, // bright but not pure white: active icons are vivid without blending into fg text
+  iconMutedI: 7, // higher chroma for muted icons: compensates for low tone so the hue still reads
+  iconMutedTone: 37, // dim tone: muted icons recede to signal non-primary status
 
   // ===== Tab Style =====
   // How tabs present. Dark: bright active fg. Light: dark active fg.
-  tabFgActiveTone: 90,
+  tabFgActiveTone: 90, // near-white active tab label: clearly distinguished from muted inactive tabs
 
   // ===== Toggle Style =====
   // How toggles present. Dark: bright thumb. Light: dark track.
-  toggleTrackOnHoverTone: 45,
-  toggleThumbDisabledTone: 40,
-  toggleTrackDisabledI: 5,
+  toggleTrackOnHoverTone: 45, // mid-tone hover track: lifts from rest to signal the toggle is interactive
+  toggleThumbDisabledTone: 40, // dim thumb when disabled: thumb recedes to match the disabled state's low contrast
+  toggleTrackDisabledI: 5, // low chroma disabled track: near-neutral to clearly communicate non-interactivity
 
   // ===== Field Style =====
   // How form fields present. Dark: dark bg tones. Light: light bg tones.
-  fieldBgRestTone: 8,
-  fieldBgHoverTone: 11,
-  fieldBgFocusTone: 7,
-  fieldBgDisabledTone: 6,
-  fieldBgReadOnlyTone: 11,
-  fieldBgRestI: 5,
-  disabledBgI: 5,
-  disabledBorderI: 6,
+  fieldBgRestTone: 8, // slightly above canvas: field bg is distinct from the app bg but not surface-bright
+  fieldBgHoverTone: 11, // matches surfaceDefault: hover lifts the field to the standard surface level
+  fieldBgFocusTone: 7, // below rest: focus darkens slightly to signal an inset, focused editing area
+  fieldBgDisabledTone: 6, // near-canvas: disabled fields recede to near-background to signal inactivity
+  fieldBgReadOnlyTone: 11, // same as hover: read-only shares the raised tone to distinguish from editable rest
+  fieldBgRestI: 5, // moderate chroma: field bg carries enough hue to look intentional, not just dark
+  disabledBgI: 5, // same as rest chroma: disabled bg retains the hue but the low tone signals the state
+  disabledBorderI: 6, // slightly higher chroma border: gives disabled fields a visible edge despite dim tone
 
   // ===== Hue Slot Dispatch =====
   // Which hue slot each surface/fg/icon/border tier reads from. String keys into ResolvedHueSlots.
-  bgAppHueSlot: "canvas",
-  bgCanvasHueSlot: "canvas",
-  surfaceSunkenHueSlot: "surfBareBase",
-  surfaceDefaultHueSlot: "surfBareBase",
-  surfaceRaisedHueSlot: "atm",
-  surfaceOverlayHueSlot: "surfBareBase",
-  surfaceInsetHueSlot: "atm",
-  surfaceContentHueSlot: "atm",
-  surfaceScreenHueSlot: "surfScreen",
-  fgMutedHueSlot: "fgMuted",
-  fgSubtleHueSlot: "fgSubtle",
-  fgDisabledHueSlot: "fgDisabled",
-  fgPlaceholderHueSlot: "fgPlaceholder",
-  fgInverseHueSlot: "fgInverse",
-  fgOnAccentHueSlot: "fgInverse",
-  iconMutedHueSlot: "fgSubtle",
-  iconOnAccentHueSlot: "fgInverse",
-  dividerMutedHueSlot: "borderTintBareBase",
-  disabledBgHueSlot: "surfBareBase",
-  fieldBgHoverHueSlot: "surfBareBase",
-  fieldBgReadOnlyHueSlot: "surfBareBase",
-  fieldPlaceholderHueSlot: "fgPlaceholder",
-  fieldBorderRestHueSlot: "fgPlaceholder",
-  fieldBorderHoverHueSlot: "fgSubtle",
-  toggleTrackDisabledHueSlot: "surfBareBase",
-  toggleThumbHueSlot: "fgInverse",
-  checkmarkHueSlot: "fgInverse",
-  radioDotHueSlot: "fgInverse",
-  tabBgActiveHueSlot: "cardFrame",
-  tabBgInactiveHueSlot: "cardFrame",
+  bgAppHueSlot: "canvas", // app bg uses canvas hue: the app background is the canvas itself
+  bgCanvasHueSlot: "canvas", // canvas bg uses canvas hue: page-level bg reads from the same root slot
+  surfaceSunkenHueSlot: "surfBareBase", // sunken uses bare-base: recessed wells use the neutral surface hue
+  surfaceDefaultHueSlot: "surfBareBase", // default surface uses bare-base: standard cards stay close to neutral
+  surfaceRaisedHueSlot: "atm", // raised uses atmosphere hue: popovers pick up the atmosphere tint for warmth
+  surfaceOverlayHueSlot: "surfBareBase", // overlays use bare-base: modals stay neutral to not distract
+  surfaceInsetHueSlot: "atm", // inset uses atmosphere hue: nested content areas warm up with the atm hue
+  surfaceContentHueSlot: "atm", // content uses atmosphere hue: text-area regions share the inset warmth
+  surfaceScreenHueSlot: "surfScreen", // screen uses its own slot: full-bleed bg uses a dedicated screen hue
+  fgMutedHueSlot: "fgMuted", // muted fg uses dedicated slot: secondary text has its own hue resolution path
+  fgSubtleHueSlot: "fgSubtle", // subtle fg uses dedicated slot: tertiary text gets its own hue tuning
+  fgDisabledHueSlot: "fgDisabled", // disabled fg uses dedicated slot: disabled text resolves independently
+  fgPlaceholderHueSlot: "fgPlaceholder", // placeholder uses dedicated slot: placeholder has its own hue path
+  fgInverseHueSlot: "fgInverse", // inverse fg uses fgInverse slot: on-filled text resolves from its own slot
+  fgOnAccentHueSlot: "fgInverse", // on-accent fg shares fgInverse: accent surfaces use the same on-filled path
+  iconMutedHueSlot: "fgSubtle", // muted icons share fgSubtle: muted icons align with subtle text hue
+  iconOnAccentHueSlot: "fgInverse", // on-accent icons share fgInverse: icons on fills use the same slot as text
+  dividerMutedHueSlot: "borderTintBareBase", // muted dividers use border tint: dividers pull from the border hue family
+  disabledBgHueSlot: "surfBareBase", // disabled bg uses bare-base: disabled surfaces stay neutral
+  fieldBgHoverHueSlot: "surfBareBase", // field hover uses bare-base: fields stay neutral on hover
+  fieldBgReadOnlyHueSlot: "surfBareBase", // read-only uses bare-base: read-only fields match the neutral surface
+  fieldPlaceholderHueSlot: "fgPlaceholder", // field placeholder shares fgPlaceholder: consistent with text placeholder
+  fieldBorderRestHueSlot: "fgPlaceholder", // rest border shares fgPlaceholder: border and placeholder are tonally paired
+  fieldBorderHoverHueSlot: "fgSubtle", // hover border shifts to fgSubtle: border lifts to a more visible hue slot on focus
+  toggleTrackDisabledHueSlot: "surfBareBase", // disabled track uses bare-base: neutral track signals off/disabled
+  toggleThumbHueSlot: "fgInverse", // thumb uses fgInverse: thumb sits on the track like text on a filled surface
+  checkmarkHueSlot: "fgInverse", // checkmark uses fgInverse: check icon is on a filled bg, same as on-filled text
+  radioDotHueSlot: "fgInverse", // radio dot uses fgInverse: same rationale as checkmark — on-filled context
+  tabBgActiveHueSlot: "cardFrame", // active tab bg uses cardFrame: active tab shares the card frame hue slot
+  tabBgInactiveHueSlot: "cardFrame", // inactive tab bg uses cardFrame: both states read from the same frame slot
 
   // ===== Sentinel Hue Dispatch =====
   // Which sentinel hue slot hover/active backgrounds use. String keys (__highlight, __verboseHighlight, etc.).
-  outlinedBgHoverHueSlot: "__highlight",
-  outlinedBgActiveHueSlot: "__highlight",
-  ghostActionBgHoverHueSlot: "__highlight",
-  ghostActionBgActiveHueSlot: "__highlight",
-  ghostOptionBgHoverHueSlot: "__highlight",
-  ghostOptionBgActiveHueSlot: "__highlight",
-  tabBgHoverHueSlot: "__highlight",
-  tabCloseBgHoverHueSlot: "__highlight",
-  highlightHoverHueSlot: "__verboseHighlight",
+  outlinedBgHoverHueSlot: "__highlight", // outlined hover uses __highlight sentinel: triggers alpha-based hover wash
+  outlinedBgActiveHueSlot: "__highlight", // outlined active uses __highlight sentinel: same path, higher alpha
+  ghostActionBgHoverHueSlot: "__highlight", // ghost action hover uses __highlight: same sentinel as outlined hover
+  ghostActionBgActiveHueSlot: "__highlight", // ghost action active uses __highlight: same sentinel, higher alpha
+  ghostOptionBgHoverHueSlot: "__highlight", // ghost option hover uses __highlight: options share action sentinel
+  ghostOptionBgActiveHueSlot: "__highlight", // ghost option active uses __highlight: same sentinel path
+  tabBgHoverHueSlot: "__highlight", // tab hover uses __highlight: tabs use the same interactive sentinel
+  tabCloseBgHoverHueSlot: "__highlight", // tab close hover uses __highlight: close button shares the tab sentinel
+  highlightHoverHueSlot: "__verboseHighlight", // highlight hover uses __verboseHighlight: verbose path for selection highlights
 
   // ===== Sentinel Alpha =====
   // Alpha values for sentinel-dispatched hover/active tokens. Percentage values 5-20.
-  tabBgHoverAlpha: 8,
-  tabCloseBgHoverAlpha: 12,
-  outlinedBgHoverAlpha: 10,
-  outlinedBgActiveAlpha: 20,
-  ghostActionBgHoverAlpha: 10,
-  ghostActionBgActiveAlpha: 20,
-  ghostOptionBgHoverAlpha: 10,
-  ghostOptionBgActiveAlpha: 20,
-  highlightHoverAlpha: 5,
-  ghostDangerBgHoverAlpha: 10,
-  ghostDangerBgActiveAlpha: 20,
+  tabBgHoverAlpha: 8, // slightly below outlined hover: tabs are less prominent interactive targets
+  tabCloseBgHoverAlpha: 12, // above tab hover: close button needs a stronger signal to feel safe to tap
+  outlinedBgHoverAlpha: 10, // standard hover wash: 10% opacity is the baseline for interactive hover states
+  outlinedBgActiveAlpha: 20, // double hover on press: 20% confirms the click with a clear visual step
+  ghostActionBgHoverAlpha: 10, // same as outlined hover: ghost actions share the baseline hover alpha
+  ghostActionBgActiveAlpha: 20, // same as outlined active: ghost actions share the baseline press alpha
+  ghostOptionBgHoverAlpha: 10, // same across ghost types: option hover matches action hover
+  ghostOptionBgActiveAlpha: 20, // same across ghost types: option press matches action press
+  highlightHoverAlpha: 5, // half of standard hover: selection highlights are very subtle by design
+  ghostDangerBgHoverAlpha: 10, // same as standard hover: danger ghost uses the baseline hover wash
+  ghostDangerBgActiveAlpha: 20, // same as standard active: danger ghost uses the baseline press alpha
 
   // ===== Computed Tone Override =====
   // Flat-value overrides for computed tones and formula parameters. number or null.
-  dividerDefaultToneOverride: 17,
-  dividerMutedToneOverride: 15,
-  disabledFgToneValue: 38,
-  disabledBorderToneOverride: 28,
-  outlinedBgRestToneOverride: null,
-  outlinedBgHoverToneOverride: null,
-  outlinedBgActiveToneOverride: null,
-  toggleTrackOffToneOverride: 28,
-  toggleDisabledToneOverride: 22,
-  bgCanvasToneBase: 5,
-  bgCanvasToneSCCenter: 50,
-  bgCanvasToneScale: 8,
-  disabledBgBase: 22,
-  disabledBgScale: 0,
-  borderStrongToneValue: 37,
+  dividerDefaultToneOverride: 17, // just above surfaceScreen: dividers sit slightly brighter than screen bg
+  dividerMutedToneOverride: 15, // below default divider: muted dividers recede further toward the background
+  disabledFgToneValue: 38, // above fgDisabled (23): disabled interactive text is slightly more legible than disabled labels
+  disabledBorderToneOverride: 28, // between disabled fg and canvas: disabled borders are dim but still structural
+  outlinedBgRestToneOverride: null, // null: let formula derive rest bg from surfaceInset; avoids hardcoding a tone that must stay in sync
+  outlinedBgHoverToneOverride: null, // null: hover bg tone is governed by sentinel alpha path, not a fixed tone
+  outlinedBgActiveToneOverride: null, // null: press bg tone is governed by sentinel alpha path, not a fixed tone
+  toggleTrackOffToneOverride: 28, // dim track when off: off-state track is clearly below the on-state brightness
+  toggleDisabledToneOverride: 22, // near-disabled fg tone: disabled toggle is visually equivalent to disabled text
+  bgCanvasToneBase: 5, // matches bgCanvasTone: base canvas tone before surfaceContrast modulation
+  bgCanvasToneSCCenter: 50, // center of surfaceContrast range: no shift at knob midpoint
+  bgCanvasToneScale: 8, // ±8 tone units at extremes: surfaceContrast modulates canvas tone across an 8-step range
+  disabledBgBase: 22, // above canvas, below active surfaces: disabled bg is distinct but recessive
+  disabledBgScale: 0, // zero scale: disabled bg does not modulate with surfaceContrast knob
+  borderStrongToneValue: 37, // just below fgSubtle (37): strong borders align with the subtle text tier for visual harmony
 
   // ===== Hue Name Dispatch =====
   // Named hue values for resolveHueSlots() branch elimination. String hue names.
-  surfScreenHue: "indigo",
-  fgMutedHueExpr: "__bare_primary",
-  fgSubtleHue: "indigo-cobalt",
-  fgDisabledHue: "indigo-cobalt",
-  fgInverseHue: "sapphire-cobalt",
-  fgPlaceholderSource: "fgMuted",
-  selectionInactiveHue: "yellow",
+  surfScreenHue: "indigo", // indigo screen bg: cool blue-violet depth behind cards in the dark theme
+  fgMutedHueExpr: "__bare_primary", // bare-primary sentinel: muted fg derives hue from the recipe's primary color
+  fgSubtleHue: "indigo-cobalt", // indigo-cobalt subtle text: cool blue adds depth to tertiary labels
+  fgDisabledHue: "indigo-cobalt", // same as subtle: disabled text uses the same cool hue family, just dimmer
+  fgInverseHue: "sapphire-cobalt", // sapphire-cobalt inverse: on-filled text uses a slightly warmer blue to complement fills
+  fgPlaceholderSource: "fgMuted", // placeholder derives from fgMuted: placeholder hue tracks secondary text rather than a fixed name
+  selectionInactiveHue: "yellow", // yellow inactive selection: warm yellow makes inactive selections visible without competing with blue focus
 
   // ===== Selection Mode =====
   // Selection behavior mode flags and parameters. Mode-specific boolean + numeric.
-  selectionInactiveSemanticMode: true,
-  selectionBgInactiveI: 0,
-  selectionBgInactiveTone: 30,
-  selectionBgInactiveAlpha: 25,
+  selectionInactiveSemanticMode: true, // semantic mode on: inactive selection uses the named hue, not a sentinel path
+  selectionBgInactiveI: 0, // zero chroma: inactive selection bg uses alpha alone — the yellow hue provides identity
+  selectionBgInactiveTone: 30, // dim tone: inactive selection bg is dark enough to not overpower content
+  selectionBgInactiveAlpha: 25, // low-moderate alpha: inactive selection is clearly visible but doesn't obscure text
 };
 
 // ---------------------------------------------------------------------------
