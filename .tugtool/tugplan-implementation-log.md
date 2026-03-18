@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-18T01:19:51Z
+---
+
+## step-2: Added inline design rationale comments to 19 fields across Canvas Darkness (2), Surface Layering (7), and Surface Coloring (10) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-1
 date: 2025-03-18T01:15:56Z
 ---

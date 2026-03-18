@@ -1000,31 +1000,31 @@ export interface DerivationFormulas {
 export const DARK_FORMULAS: DerivationFormulas = {
   // ===== Canvas Darkness =====
   // How dark/light the app background is. Dark: tones 5-10. Light: tones 90-95.
-  bgAppTone: 5,
-  bgCanvasTone: 5,
+  bgAppTone: 5, // near-black: deep immersive app background anchors the dark theme
+  bgCanvasTone: 5, // same as bgAppTone: canvas and app share the same base darkness level
 
   // ===== Surface Layering =====
   // How surfaces stack visually above the canvas. Dark: ascending from ~6. Light: descending from ~95.
-  surfaceSunkenTone: 11,
-  surfaceDefaultTone: 12,
-  surfaceRaisedTone: 11,
-  surfaceOverlayTone: 14,
-  surfaceInsetTone: 6,
-  surfaceContentTone: 6,
-  surfaceScreenTone: 16,
+  surfaceSunkenTone: 11, // slightly above canvas: just enough lift to distinguish recessed wells
+  surfaceDefaultTone: 12, // one step above sunken: the primary card/panel surface
+  surfaceRaisedTone: 11, // matches sunken: popovers feel elevated via shadow, not tone contrast
+  surfaceOverlayTone: 14, // above default: modals and sheets float clearly above the base layer
+  surfaceInsetTone: 6, // near canvas: nested content areas recede toward the background
+  surfaceContentTone: 6, // same as inset: text-area-like regions share the deep inset tone
+  surfaceScreenTone: 16, // highest tone: full-bleed screen bg pushes cards forward visually
 
   // ===== Surface Coloring =====
   // How much chroma surfaces carry. Dark: I 2-7. Light: I 3-8.
-  atmI: 5,
-  bgAppI: 2,
-  bgCanvasI: 2,
-  surfaceDefaultI: 5,
-  surfaceRaisedI: 5,
-  surfaceOverlayI: 4,
-  surfaceScreenI: 7,
-  surfaceInsetI: 5,
-  surfaceContentI: 5,
-  bgAppSurfaceI: 2,
+  atmI: 5, // mid-range chroma: atmosphere hue is present but never saturated on dark bg
+  bgAppI: 2, // near-neutral: app bg chroma is barely perceptible, preserving the dark anchor
+  bgCanvasI: 2, // same as bgAppI: canvas matches the app-level near-neutral chroma
+  surfaceDefaultI: 5, // moderate chroma: cards carry enough hue to feel warm, not sterile
+  surfaceRaisedI: 5, // same as default: raised surfaces match default chroma for visual parity
+  surfaceOverlayI: 4, // slightly lower: overlays desaturate slightly to recede behind content
+  surfaceScreenI: 7, // highest surface chroma: screen bg uses more hue to create depth behind cards
+  surfaceInsetI: 5, // matches default: inset wells share the moderate chroma of card surfaces
+  surfaceContentI: 5, // same as inset: content areas are consistent with the inset tier
+  bgAppSurfaceI: 2, // unified field for bg-app intensity: dark mode uses bgAppI (near-neutral)
 
   // ===== Text Brightness =====
   // How bright primary and inverse text is. Dark: near 100. Light: near 0.
