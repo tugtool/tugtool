@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-18T01:28:28Z
+---
+
+## step-5: Added inline design rationale comments to 48 fields across Filled Control Prominence (3), Outlined Control Style (21), and Ghost Control Style (24) groups in DARK_FORMULAS.
+
+**Files changed:**
+- .tugtool/tugplan-annotate-dark-recipe.md
+
+---
+
+---
 step: step-4
 date: 2025-03-18T01:25:41Z
 ---

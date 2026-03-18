@@ -1078,60 +1078,60 @@ export const DARK_FORMULAS: DerivationFormulas = {
 
   // ===== Filled Control Prominence =====
   // How bold filled buttons are. Dark: mid-tone bg. Light: same (filled stays vivid).
-  filledBgDarkTone: 20,
-  filledBgHoverTone: 40,
-  filledBgActiveTone: 50,
+  filledBgDarkTone: 20, // dark rest state: dim enough to anchor the hue without washing the button
+  filledBgHoverTone: 40, // mid-tone hover: lifts dramatically from rest to signal interactivity
+  filledBgActiveTone: 50, // mid-tone press: one more step up from hover to confirm the click
 
   // ===== Outlined Control Style =====
   // How outlined buttons present across states/modes. Dark: white fg. Light: dark fg.
-  outlinedFgRestTone: 100,
-  outlinedFgHoverTone: 100,
-  outlinedFgActiveTone: 100,
-  outlinedFgI: 2,
-  outlinedIconRestTone: 100,
-  outlinedIconHoverTone: 100,
-  outlinedIconActiveTone: 100,
-  outlinedIconI: 2,
-  outlinedFgRestToneLight: 0,
-  outlinedFgHoverToneLight: 0,
-  outlinedFgActiveToneLight: 0,
-  outlinedIconRestToneLight: 0,
-  outlinedIconHoverToneLight: 0,
-  outlinedIconActiveToneLight: 0,
-  outlinedOptionBorderRestTone: 50,
-  outlinedOptionBorderHoverTone: 55,
-  outlinedOptionBorderActiveTone: 60,
-  outlinedBgHoverI: 0,
-  outlinedBgHoverAlphaValue: 10,
-  outlinedBgActiveI: 0,
-  outlinedBgActiveAlphaValue: 20,
+  outlinedFgRestTone: 100, // pure white fg at rest: outlined buttons use full-brightness text on dark bg
+  outlinedFgHoverTone: 100, // same across states: fg tone stays constant; state change is bg alpha
+  outlinedFgActiveTone: 100, // same across states
+  outlinedFgI: 2, // near-neutral chroma: fg text is nearly achromatic so it reads cleanly over any hue
+  outlinedIconRestTone: 100, // pure white icons at rest: mirrors fg tone for visual consistency
+  outlinedIconHoverTone: 100, // same across states
+  outlinedIconActiveTone: 100, // same across states
+  outlinedIconI: 2, // same as fg chroma: icons match text neutrality
+  outlinedFgRestToneLight: 0, // light-mode counterpart: inverted polarity — pure black fg on light bg
+  outlinedFgHoverToneLight: 0, // same across states (light)
+  outlinedFgActiveToneLight: 0, // same across states (light)
+  outlinedIconRestToneLight: 0, // light-mode counterpart: black icons mirror black text
+  outlinedIconHoverToneLight: 0, // same across states (light)
+  outlinedIconActiveToneLight: 0, // same across states (light)
+  outlinedOptionBorderRestTone: 50, // mid-tone rest border: visible against both dark and light surfaces
+  outlinedOptionBorderHoverTone: 55, // slightly higher on hover: border brightens subtly to indicate focus
+  outlinedOptionBorderActiveTone: 60, // highest on press: border lifts to confirm the active state
+  outlinedBgHoverI: 0, // sentinel value (0): hover bg uses a hue-slot sentinel path, not direct chroma
+  outlinedBgHoverAlphaValue: 10, // low alpha hover tint: 10% opacity wash over the button on hover
+  outlinedBgActiveI: 0, // sentinel value (0): press bg also uses sentinel path
+  outlinedBgActiveAlphaValue: 20, // double hover alpha on press: 20% opacity confirms the click
 
   // ===== Ghost Control Style =====
   // How ghost buttons present across states/modes. Dark: white fg. Light: dark fg.
-  ghostFgRestTone: 100,
-  ghostFgHoverTone: 100,
-  ghostFgActiveTone: 100,
-  ghostFgRestI: 2,
-  ghostFgHoverI: 2,
-  ghostFgActiveI: 2,
-  ghostIconRestTone: 100,
-  ghostIconHoverTone: 100,
-  ghostIconActiveTone: 100,
-  ghostIconRestI: 2,
-  ghostIconHoverI: 2,
-  ghostIconActiveI: 2,
-  ghostBorderI: 20,
-  ghostBorderTone: 60,
-  ghostFgRestToneLight: 0,
-  ghostFgHoverToneLight: 0,
-  ghostFgActiveToneLight: 0,
-  ghostFgRestILight: 0,
-  ghostFgHoverILight: 0,
-  ghostFgActiveILight: 0,
-  ghostIconRestToneLight: 0,
-  ghostIconHoverToneLight: 0,
-  ghostIconActiveToneLight: 0,
-  ghostIconActiveILight: 0,
+  ghostFgRestTone: 100, // pure white fg at rest: ghost buttons use full-brightness text on dark bg
+  ghostFgHoverTone: 100, // same across states: tone stays constant; state change is bg alpha
+  ghostFgActiveTone: 100, // same across states
+  ghostFgRestI: 2, // near-neutral chroma: ghost fg text is nearly achromatic, matching outlined style
+  ghostFgHoverI: 2, // same across states
+  ghostFgActiveI: 2, // same across states
+  ghostIconRestTone: 100, // pure white icons at rest: mirrors fg tone for visual consistency
+  ghostIconHoverTone: 100, // same across states
+  ghostIconActiveTone: 100, // same across states
+  ghostIconRestI: 2, // near-neutral chroma: ghost icons match text neutrality
+  ghostIconHoverI: 2, // same across states
+  ghostIconActiveI: 2, // same across states
+  ghostBorderI: 20, // elevated chroma for ghost border: provides hue-tinted ring without filled bg
+  ghostBorderTone: 60, // mid-bright tone: border is light enough to be visible on dark surfaces
+  ghostFgRestToneLight: 0, // light-mode counterpart: inverted polarity — pure black fg on light bg
+  ghostFgHoverToneLight: 0, // same across states (light)
+  ghostFgActiveToneLight: 0, // same across states (light)
+  ghostFgRestILight: 0, // light-mode counterpart: zero chroma — black is achromatic by definition
+  ghostFgHoverILight: 0, // same across states (light)
+  ghostFgActiveILight: 0, // same across states (light)
+  ghostIconRestToneLight: 0, // light-mode counterpart: black icons mirror black text
+  ghostIconHoverToneLight: 0, // same across states (light)
+  ghostIconActiveToneLight: 0, // same across states (light)
+  ghostIconActiveILight: 0, // light-mode counterpart: zero chroma for black icons
 
   // ===== Badge Style =====
   // How tinted badges present. Dark: bright fg on tinted bg. Light: dark fg on tinted bg.
