@@ -397,25 +397,36 @@ semantic decision groups.
 
 ---
 
-## Part 5: Create a Light Recipe from a Prompt
+## Part 5: Create the Harmony Light Theme
 
 ### Goal
 
-Demonstrate the semantic formula architecture by creating a light theme recipe. The
-input is a design intent description — the same kind of description that appears in
-the iOS word game theme picker:
+Demonstrate the semantic formula architecture by creating a complete light theme that
+is a peer of Brio — not a replacement, not a bolt-on, but a first-class theme that
+lives alongside Brio and can be hot-swapped by the user from Tug.app.
 
-> "Colors based on the structural palette with more filled-in shapes on a light
-> background. Bright, open canvas. Dark text for maximum readability. Filled controls
-> use vivid accent backgrounds with white text. Borders are crisp and visible."
+**Key distinction: recipe vs. theme.** `LIGHT_FORMULAS` / `LIGHT_OVERRIDES` are the
+*recipe* — the set of formula choices that define how a light theme behaves. "Harmony"
+is the *theme* — the specific combination of the Light recipe with the same
+cobalt/violet/indigo hue palette that Brio uses. This proves the architecture: same
+palette, different recipe, completely different visual result.
 
-### Process
+### The Harmony theme
+
+> "Bright, open canvas with crisp surfaces. Dark text for maximum readability with
+> clear hierarchy. Filled controls use vivid accent backgrounds with white text.
+> Borders are crisp and visible. Shadows are light. Industrial warmth with muted
+> chassis and vivid signals — the same palette as Brio, seen in daylight."
+
+### Recipe construction
 
 1. Start from `BASE_FORMULAS` (which holds Dark recipe defaults).
-2. For each semantic decision, determine what the light theme description implies:
+2. For each of the ~23 semantic decisions, determine what the light theme description
+   implies. The annotated `DARK_FORMULAS` from Part 4 serves as the reference — read
+   each field's design rationale and make the analogous inverted choice:
 
-| Decision | Dark recipe | Light recipe |
-|----------|-------------|-------------|
+| Decision | Dark recipe (Brio) | Light recipe (Harmony) |
+|----------|-------------------|----------------------|
 | Canvas darkness | tone 5 (near-black) | tone 95 (near-white) |
 | Surface layering | 6-16 (dark steps) | 85-95 (light steps, inverted order) |
 | Text brightness | tone 94 (near-white) | tone 8 (near-black) |
@@ -426,13 +437,59 @@ the iOS word game theme picker:
 | Outlined control style | transparent bg, white fg | transparent bg, dark fg |
 | Ghost control style | invisible bg, white fg | invisible bg, dark fg |
 | Border visibility | subtle (I=6-7) | crisp (I=8-10, slightly higher on light bg) |
-| Shadow depth | moderate | lighter (light themes need less shadow) |
+| Shadow depth | moderate (20-80% alpha) | lighter (10-40% alpha) |
 | Badge style | tinted bg, colored text | same pattern, adjusted for light bg |
+| Hue slot dispatch | (same — routing is palette-dependent, not mode-dependent) |
+| Sentinel dispatch | (same — sentinel routing is mode-independent) |
+| Computed tone overrides | dark-calibrated | light-calibrated where derivation formula needs it |
 
-3. Produce `LIGHT_FORMULAS` as `{ ...BASE_FORMULAS, ...LIGHT_OVERRIDES }`.
-4. Add `EXAMPLE_RECIPES.light` with the description and formulas.
-5. Verify: `deriveTheme(EXAMPLE_RECIPES.light)` produces 373 tokens, all contrast
-   pairings pass, token generation succeeds.
+3. Produce `LIGHT_OVERRIDES: Partial<DerivationFormulas>` containing only fields that
+   differ from `BASE_FORMULAS`.
+4. Produce `LIGHT_FORMULAS = { ...BASE_FORMULAS, ...LIGHT_OVERRIDES }`.
+
+### Theme integration
+
+Harmony is a peer of Brio. It must be fully integrated into the existing theme
+infrastructure:
+
+**`EXAMPLE_RECIPES.harmony`** — the theme instance, structured identically to
+`EXAMPLE_RECIPES.brio`:
+
+```typescript
+harmony: {
+  name: "harmony",
+  mode: "light",
+  description: "Bright, open canvas with crisp surfaces. Dark text for maximum "
+    + "readability with clear hierarchy. ...",
+  formulas: { ...BASE_FORMULAS, ...LIGHT_OVERRIDES },
+  // same hue inputs as brio — cobalt, violet, indigo, cyan, etc.
+}
+```
+
+**Theme Generator card** — the preset button row in `gallery-theme-generator-content.tsx`
+already renders from `Object.keys(EXAMPLE_RECIPES)`, so adding `harmony` to
+`EXAMPLE_RECIPES` automatically creates a "harmony" preset button. The `loadPreset()`
+callback extracts mode, hues, and mood knobs from the recipe and re-derives. No
+special-casing needed — the architecture handles it.
+
+**Theme provider** — `ThemeName` in `theme-provider.tsx` must be widened from
+`"brio"` to `"brio" | "harmony"`, and `themeCSSMap` must include the harmony entry.
+The CSS injection and hot-swap mechanism already supports multiple themes via the
+dynamic theme system (`setDynamicTheme` / `removeThemeCSS`).
+
+**Token generation** — `generate-tug-tokens.ts` currently hard-codes
+`EXAMPLE_RECIPES.brio`. It must be updated to generate tokens for all example
+recipes (or at minimum, both brio and harmony). Each recipe gets its own output file
+(e.g., `tug-base-brio.css`, `tug-base-harmony.css`), or the script generates a
+combined file with recipe-scoped selectors.
+
+### Contrast requirements
+
+All 373 tokens produced by `deriveTheme(EXAMPLE_RECIPES.harmony)` must pass contrast
+validation with zero exceptions. The existing `KNOWN_PAIR_EXCEPTIONS` in the test
+suite document failures from the old approach of toggling `mode: "light"` without
+light-specific formulas. The whole point of `LIGHT_OVERRIDES` is to eliminate those
+failures — every semantic decision is calibrated for light surfaces.
 
 ### The prompt-to-recipe flow
 
@@ -448,27 +505,34 @@ recipes is clear:
    validates contrast, and presents the result.
 
 The semantic layer makes this feasible because the LLM doesn't need to know about
-373 tokens or 158 rule entries. It makes ~13 semantic decisions, each with clear
+373 tokens or 158 rule entries. It makes ~23 semantic decisions, each with clear
 documentation of what the values mean and how dark/light polarity affects them.
 
 ### Deliverable
 
-A working `EXAMPLE_RECIPES.light` with description, formulas, and passing tests.
-The light recipe is the proof that the semantic formula architecture works — that a
-design intent description can be translated into formula overrides that produce a
-complete, contrast-compliant theme.
+A working Harmony theme (`EXAMPLE_RECIPES.harmony`) that is a full peer of Brio:
+- `LIGHT_FORMULAS` / `LIGHT_OVERRIDES` defined with annotated design rationale
+- 373 tokens produced, all contrast pairings pass with zero exceptions
+- Appears as a preset in the Theme Generator card
+- Hot-swappable from the theme menu in Tug.app
+- Token generation updated to produce harmony tokens alongside brio
+- The proof that the semantic formula architecture works — that a design intent
+  description can be translated into formula overrides that produce a complete,
+  contrast-compliant, fully integrated theme
 
 ---
 
 ## Execution order
 
 1. **Part 1** (named formula builders) — mechanical refactor, no behavioral change,
-   token output must be identical
+   token output must be identical ✅
 2. **Part 2** (semantic layer) — annotation and documentation, no code changes beyond
-   JSDoc and the `description` field on `ThemeRecipe`
+   JSDoc and the `description` field on `ThemeRecipe` ✅
 3. **Part 3** (restructure interface) — reorder fields within `DerivationFormulas`,
-   no fields added or removed
-4. **Part 4** (annotate Dark recipe) — add comments to `DARK_FORMULAS`
-5. **Part 5** (light recipe) — the payoff: create and validate a light theme recipe
+   no fields added or removed ✅
+4. **Part 4** (annotate Dark recipe) — add comments to `DARK_FORMULAS` ✅
+5. **Part 5** (Harmony light theme) — the payoff: create a fully integrated light
+   theme that is a peer of Brio, with its own recipe, token generation, contrast
+   validation, and theme generator integration
 
 Parts 1-4 are preparation. Part 5 is the proof.
