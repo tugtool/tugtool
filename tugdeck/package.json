@@ -10,6 +10,7 @@
     "generate:tokens": "bun run scripts/generate-tug-tokens.ts",
     "generate:control-tokens": "bun run scripts/generate-tug-tokens.ts",
     "generate:palette": "bun run scripts/generate-tug-palette.ts",
+    "audit:tokens": "bun run scripts/audit-tokens.ts",
     "test": "bun test"
   },
   "dependencies": {
