@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-19T00:51:51Z
+---
+
+## step-5: Verification-only step. Confirmed all 339 pairings processed (pass 1 + pass 2 composited), parameterized recipe loop covers all EXAMPLE_RECIPES, no inline exception definitions remain, all harmony exceptions categorized, all audit tooling green, 1886 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
+step: step-4
+date: 2025-03-19T00:45:11Z
+---
+
+## step-4: Captured and categorized harmony-specific contrast failures in RECIPE_PAIR_EXCEPTIONS['harmony']. 2 entries documented with [design-choice] tags, contrast values, thresholds, and CSS context. Removed duplicate already in KNOWN_PAIR_EXCEPTIONS.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
+step: step-3
+date: 2025-03-19T00:29:05Z
+---
+
+## step-3: Replaced T4.1 and T4.3 with parameterized describe block iterating Object.entries(EXAMPLE_RECIPES). Retained T4.2 brio-light. Each recipe case uses shared exceptions, marginal delta filter, core readability assertions, and brio-gated focus indicator check.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
+step: step-2
+date: 2025-03-19T00:17:46Z
+---
+
+## step-2: Replaced parentSurface skip in evaluateRules with deferred collection and pass-2 enforcement. Composites via compositeOverSurface+hexToOkLabL, enforces contrast floor, re-emits via setChromatic. Added floor-applied-composited diagnostic reason and unit tests T-COMP-1 through T-COMP-8.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
+step: step-1
+date: 2025-03-18T23:52:39Z
+---
+
+## step-1: Created tugdeck/src/__tests__/contrast-exceptions.ts consolidating all exception sets from 4 test files. Added [design-choice] and [phase-3-bug] inline comments on every entry. Updated all test files to import from shared module.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
 step: step-8
 date: 2025-03-18T21:59:38Z
 ---

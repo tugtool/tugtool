@@ -56,6 +56,11 @@ import {
 } from "@/components/tugways/theme-derivation-engine";
 import { oklchToHex, oklchToLinearSRGB } from "@/components/tugways/palette-engine";
 
+import {
+  INTENTIONALLY_BELOW_THRESHOLD,
+  KNOWN_PAIR_EXCEPTIONS as SHARED_KNOWN_PAIR_EXCEPTIONS,
+} from "./contrast-exceptions";
+
 // ---------------------------------------------------------------------------
 // CSS parsing helpers
 // ---------------------------------------------------------------------------
@@ -542,36 +547,20 @@ describe("theme-accessibility", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-    // Tokens intentionally or structurally below contrast 75 in Brio dark theme (see comment above)
-    const INTENTIONALLY_BELOW_THRESHOLD = new Set([
-      "--tug-base-fg-link",
-      "--tug-base-control-selected-fg",
-      "--tug-base-control-highlighted-fg",
-      "--tug-base-selection-fg",
-      "--tug-base-tab-fg-active",
-    ]);
+    // Tokens intentionally or structurally below contrast 75 — imported from contrast-exceptions.ts.
+    // (INTENTIONALLY_BELOW_THRESHOLD imported at top of file)
 
-    // Step 5 gap pairs: newly-added pairings that are below contrast 75 by structural
-    // constraint. These are NOT by design — they are accessibility gaps discovered in
-    // the Step 2 audit that Phase 2 will close. Tracked as pair exceptions (not token
-    // exceptions) so fg-default failures on other surfaces are still caught.
-    const STEP5_GAP_PAIR_EXCEPTIONS = new Set([
-      "--tug-base-fg-default|--tug-base-tab-bg-active",
-      "--tug-base-fg-default|--tug-base-accent-subtle",
-      "--tug-base-fg-default|--tug-base-tone-caution-bg",
-      // tone-danger on surface-overlay — danger menu item label text.
-      // tone-danger is a chromatic signal token; the hue ceiling prevents it from
-      // reaching contrast 75 against surface-overlay. Classified body-text so the
-      // engine tracks it as a gap to fix in Phase 2. [Gap #menu-danger]
-      "--tug-base-tone-danger|--tug-base-surface-overlay",
-    ]);
+    // Step 5 gap pairs: use SHARED_KNOWN_PAIR_EXCEPTIONS from contrast-exceptions.ts.
+    // These include fg-default on tab-bg-active, accent-subtle, tone-caution-bg, and
+    // tone-danger on surface-overlay. Tracked as pair exceptions (not token exceptions)
+    // so fg-default failures on other surfaces are still caught.
 
     const bodyTextResults = results.filter((r) => r.role === "body-text");
     expect(bodyTextResults.length).toBeGreaterThan(0);
 
     // All body-text pairings NOT in the known-exception sets must pass contrast 75
     const unexpectedFailures = bodyTextResults.filter(
-      (r) => !r.contrastPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg) && !STEP5_GAP_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
+      (r) => !r.contrastPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg) && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
     const failureDescriptions = unexpectedFailures.map(
       (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
@@ -579,10 +568,9 @@ describe("theme-accessibility", () => {
     expect(failureDescriptions).toEqual([]);
 
     // Primary fg-default must pass contrast 75 on its canonical surfaces (belt-and-suspenders).
-    // Excludes the three Step 5 gap pairs which are acknowledged accessibility gaps pending
-    // Phase 2 resolution.
+    // Excludes the Step 5 gap pairs which are acknowledged accessibility gaps pending Phase 2 resolution.
     const coreResults = bodyTextResults.filter(
-      (r) => r.fg === "--tug-base-fg-default" && !STEP5_GAP_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
+      (r) => r.fg === "--tug-base-fg-default" && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
     expect(coreResults.length).toBeGreaterThan(0);
     expect(coreResults.every((r) => r.contrastPass)).toBe(true);
@@ -1584,15 +1572,10 @@ describe("contrast-calibration-baseline", () => {
     expect(internalInconsistencies).toEqual([]);
 
     // (2) fg-default passes body-text on all its canonical surfaces.
-    // Three Step 5 gap pairs (tab-bg-active, accent-subtle, tone-caution-bg) are
-    // acknowledged accessibility gaps pending Phase 2 resolution and are excluded.
-    const STEP5_GAP_PAIRS = new Set([
-      "--tug-base-fg-default|--tug-base-tab-bg-active",
-      "--tug-base-fg-default|--tug-base-accent-subtle",
-      "--tug-base-fg-default|--tug-base-tone-caution-bg",
-    ]);
+    // Step 5 gap pairs (tab-bg-active, accent-subtle, tone-caution-bg) are acknowledged
+    // accessibility gaps pending Phase 2 resolution and are excluded via SHARED_KNOWN_PAIR_EXCEPTIONS.
     const fgDefaultResults = results.filter(
-      (r) => r.fg === "--tug-base-fg-default" && r.role === "body-text" && !STEP5_GAP_PAIRS.has(`${r.fg}|${r.bg}`),
+      (r) => r.fg === "--tug-base-fg-default" && r.role === "body-text" && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
     expect(fgDefaultResults.length).toBeGreaterThan(0);
     const fgDefaultFailures = fgDefaultResults.filter((r) => !r.contrastPass);

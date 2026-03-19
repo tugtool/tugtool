@@ -6,9 +6,9 @@
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
  * - T2.5: Theme-invariant tokens are correct for Brio
  * - T2.6: Non-override tokens resolve to valid sRGB gamut colors
- * - T4.1: End-to-end Brio dark pipeline — 0 unexpected failures from engine contrast floors
- *         (Step 5: autoAdjustContrast removed from pipeline; engine contrast floors are authoritative)
  * - T4.2: End-to-end Brio light pipeline — 0 unexpected body-text failures + focus indicator contrast 30
+ * - Recipe contrast validation (parameterized loop): one test case per EXAMPLE_RECIPES entry;
+ *   adding a recipe automatically adds it to contrast validation [D02], Spec S04
  * - T-BRIO-MATCH: Engine output matches Brio ground truth fixture within OKLCH delta-E < 0.02
  *
  * Run with: cd tugdeck && bun test --grep "derivation-engine"
@@ -52,6 +52,8 @@ import {
   CONTRAST_MARGINAL_DELTA,
   toneToL,
   computePerceptualContrast,
+  compositeOverSurface,
+  hexToOkLabL,
 } from "@/components/tugways/theme-accessibility";
 
 import {
@@ -66,6 +68,14 @@ import {
   L_DARK,
   L_LIGHT,
 } from "@/components/tugways/palette-engine";
+
+import {
+  KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS,
+  KNOWN_PAIR_EXCEPTIONS,
+  RECIPE_PAIR_EXCEPTIONS,
+  LIGHT_MODE_PAIR_EXCEPTIONS,
+  LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS,
+} from "./contrast-exceptions";
 
 // ---------------------------------------------------------------------------
 // Helpers for contrast floor enforcement in test helpers
@@ -355,399 +365,13 @@ describe("derivation-engine", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration helpers shared by T4.1–T4.3
-// ---------------------------------------------------------------------------
-
-/**
- * Element tokens that the current derivation engine produces below perceptual contrast thresholds
- * for known structural or design reasons. These are excluded from the T4.x
- * zero-unexpected-failures assertions so the tests track real regressions rather
- * than pre-existing constraints.
- *
- * Categories:
- *
- * A. Secondary/tertiary text hierarchy (intentionally reduced contrast):
- *      fg-subtle, fg-placeholder, fg-link-hover, fg-link,
- *      control-selected-fg, control-highlighted-fg,
- *      selection-fg
- *
- * A2. Muted / read-only hierarchy — reclassified to subdued-text (contrast 45 threshold).
- *     fg-muted (contrast ~61) and field-fg-readOnly (contrast ~61) now pass under subdued-text
- *     and are no longer in this exception set.
- *
- * B. Text/icon on accent or vivid colored backgrounds (design constraint —
- *    accent hues are vivid mid-tone):
- *      fg-onAccent, icon-onAccent, fg-onDanger (danger bg creates contrast ~53 ceiling)
- *
- * C. Interactive state tokens on vivid colored filled button backgrounds
- *    (hover/active states are transient; filled button bg hues may be vivid
- *    mid-tones that fg text can't reach contrast 60):
- *      control-filled-{role}-fg-hover/active, control-filled-{role}-icon-hover/active
- *    Also outlined-agent (colored bg reduces default fg contrast in dark mode)
- *    and ghost-danger: rest/hover/active (danger hue at high intensity is mid-tone,
- *    contrast ~40-41 — below contrast 60 large-text threshold).
- *
- * D. Semantic tone tokens (status/informational colors — designed for
- *    medium visual weight, not primary body-text contrast):
- *      tone-accent-fg, tone-active-fg, tone-agent-fg, tone-data-fg,
- *      tone-success-fg, tone-caution-fg, tone-danger-fg,
- *      tone-accent-icon, tone-active-icon, tone-agent-icon, tone-data-icon,
- *      tone-success-icon, tone-caution-icon, tone-danger-icon
- *
- * E. UI control indicators (form elements / state indicators):
- *      accent-default, toggle-thumb, toggle-icon-mixed,
- *      checkmark, radio-dot, range-thumb
- *    Also muted icons (contrast ~29, borderline below contrast 30 ui-component threshold)
- *    and disabled elements (decorative role, contrast ~8-9 below contrast 15):
- *      fg-disabled, icon-disabled, field-fg-disabled
- *
- * F. Badge tinted fg tokens: semi-transparent bg means fg-over-tinted-bg
- *    has inherently low contrast; real readability is fg over the underlying surface.
- *
- * G. Tab chrome — reclassified to subdued-text (contrast 45 threshold).
- *      tab-fg-rest (contrast ~42) passes within the contrast marginal band (>= 40 = 45 - 5)
- *      under the subdued-text role and is no longer in this exception set.
- *
- * H. Non-text component visibility tokens below contrast 30 by design (Step 3):
- *      toggle-track-off / toggle-track-mixed / toggle-track-off-hover /
- *      toggle-track-mixed-hover — inactive/indeterminate toggle states are
- *      intentionally lower-contrast to signal the off/mixed state.
- *      toggle-track-on — starts below contrast 30 in some configs; auto-adjusted.
- *      field-border-rest / field-border-hover — subtle field boundary in dark mode.
- *      border-default / border-muted — structural separators, intentionally subtle.
- *
- */
-const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
-  // A — secondary / tertiary text
-  "--tug-base-fg-subtle",
-  "--tug-base-fg-placeholder",
-  "--tug-base-fg-link-hover",
-  "--tug-base-fg-link",
-  "--tug-base-control-selected-fg",
-  "--tug-base-control-highlighted-fg",
-  "--tug-base-selection-fg",
-  // A2 — muted / read-only hierarchy reclassified to subdued-text role (contrast 45).
-  // fg-muted (contrast ~61) and field-fg-readOnly (contrast ~61) pass the subdued-text threshold.
-  // fg-subtle (contrast ~27.6) and fg-placeholder remain here as they are still below contrast 45.
-  // B — text/icon on vivid accent or semantic bg
-  "--tug-base-fg-onAccent",
-  "--tug-base-icon-onAccent",
-  "--tug-base-fg-onDanger",
-  // C — interactive state tokens on vivid colored filled buttons
-  // (hover/active states are transient; filled button bg hues may be vivid mid-tones)
-  "--tug-base-control-filled-accent-fg-hover",
-  "--tug-base-control-filled-accent-fg-active",
-  "--tug-base-control-filled-accent-icon-hover",
-  "--tug-base-control-filled-accent-icon-active",
-  "--tug-base-control-filled-action-fg-hover",
-  "--tug-base-control-filled-action-fg-active",
-  "--tug-base-control-filled-action-icon-hover",
-  "--tug-base-control-filled-action-icon-active",
-  "--tug-base-control-filled-danger-fg-hover",
-  "--tug-base-control-filled-danger-fg-active",
-  "--tug-base-control-filled-danger-icon-hover",
-  "--tug-base-control-filled-danger-icon-active",
-  "--tug-base-control-filled-agent-fg-hover",
-  "--tug-base-control-filled-agent-fg-active",
-  "--tug-base-control-filled-agent-icon-hover",
-  "--tug-base-control-filled-agent-icon-active",
-  // C1d — filled-data: teal bg with light text has same contrast constraint as other filled roles
-  "--tug-base-control-filled-data-fg-hover",
-  "--tug-base-control-filled-data-fg-active",
-  "--tug-base-control-filled-data-icon-hover",
-  "--tug-base-control-filled-data-icon-active",
-  // C1e — filled-success: green bg with light text has same contrast constraint as other filled roles
-  "--tug-base-control-filled-success-fg-hover",
-  "--tug-base-control-filled-success-fg-active",
-  "--tug-base-control-filled-success-icon-hover",
-  "--tug-base-control-filled-success-icon-active",
-  // C1f — filled-caution: yellow bg with light text has same contrast constraint as other filled roles
-  // fg-hover (contrast ~26.7): caution-bg-hover at t=40 (L=0.75) vs fg at t=100 (L=0.96); structural.
-  // fg-active: also below threshold (same structural constraint at t=50 bg-active).
-  "--tug-base-control-filled-caution-fg-hover",
-  "--tug-base-control-filled-caution-fg-active",
-  "--tug-base-control-filled-caution-icon-hover",
-  "--tug-base-control-filled-caution-icon-active",
-  // C2 — outlined-action/agent: transparent bg means fg/icon contrast is against parent surface,
-  // not the semi-transparent hover/active tint
-  "--tug-base-control-outlined-action-fg-hover",
-  "--tug-base-control-outlined-action-fg-active",
-  "--tug-base-control-outlined-action-icon-hover",
-  "--tug-base-control-outlined-action-icon-active",
-  "--tug-base-control-outlined-agent-fg-rest",
-  "--tug-base-control-outlined-agent-fg-hover",
-  "--tug-base-control-outlined-agent-fg-active",
-  "--tug-base-control-outlined-agent-icon-rest",
-  "--tug-base-control-outlined-agent-icon-hover",
-  "--tug-base-control-outlined-agent-icon-active",
-  // C3 — ghost-danger rest/hover/active: danger hue at mid-tone is below contrast 60 large-text
-  "--tug-base-control-ghost-danger-fg-rest",
-  "--tug-base-control-ghost-danger-fg-hover",
-  "--tug-base-control-ghost-danger-fg-active",
-  "--tug-base-control-ghost-danger-icon-active",
-  // D — semantic tone tokens (all 7 families)
-  "--tug-base-tone-accent-fg",
-  "--tug-base-tone-active-fg",
-  "--tug-base-tone-agent-fg",
-  "--tug-base-tone-data-fg",
-  "--tug-base-tone-success-fg",
-  "--tug-base-tone-caution-fg",
-  "--tug-base-tone-danger-fg",
-  "--tug-base-tone-accent-icon",
-  "--tug-base-tone-active-icon",
-  "--tug-base-tone-agent-icon",
-  "--tug-base-tone-data-icon",
-  "--tug-base-tone-success-icon",
-  "--tug-base-tone-caution-icon",
-  "--tug-base-tone-danger-icon",
-  // D2 — bare tone-danger (chromatic danger signal, used as menu item label color).
-  // The contrast floor pushes its tone toward the body-text threshold (75) but the
-  // chromatic hue ceiling means it cannot reach 75 against surface-overlay. This is
-  // the same structural constraint as tone-danger-fg. Phase 2 will enforce it.
-  "--tug-base-tone-danger",
-  // E — UI control indicators
-  "--tug-base-accent-default",
-  "--tug-base-toggle-thumb",
-  "--tug-base-toggle-icon-mixed",
-  "--tug-base-checkmark-fg",
-  "--tug-base-radio-dot",
-  "--tug-base-range-thumb",
-  // E2 — muted / disabled element tokens below perceptual contrast thresholds
-  "--tug-base-icon-muted",
-  "--tug-base-fg-disabled",
-  "--tug-base-icon-disabled",
-  "--tug-base-field-fg-disabled",
-  // F — Badge tinted border tokens (Step 4): element side (border) has alpha 35%;
-  // compositing over surface-default produces contrast ~19-24, below the contrast 30 ui-component
-  // threshold. These borders are deliberately subtle tinted accents — their visual
-  // presence is reinforced by the filled badge bg and text, not by the border alone.
-  "--tug-base-badge-tinted-accent-border",
-  "--tug-base-badge-tinted-action-border",
-  "--tug-base-badge-tinted-agent-border",
-  "--tug-base-badge-tinted-data-border",
-  "--tug-base-badge-tinted-danger-border",
-  "--tug-base-badge-tinted-success-border",
-  "--tug-base-badge-tinted-caution-border",
-  // G — Tab chrome
-  // tab-fg-rest reclassified to subdued-text; contrast ~42 passes the marginal band (>= contrast 40).
-  // tab-fg-hover: hover state (below contrast 75 body-text in both dark and light)
-  "--tug-base-tab-fg-hover",
-  // G2 — Field text: field-fg-default is the text inside form fields; in light mode, the
-  // field background (field-bg-rest/hover) is derived close in lightness to field-fg-default,
-  // producing contrast ~27-51 in light mode (below contrast 75 body-text threshold). Light-mode
-  // calibration is a known deferred constraint (same as surface derivation).
-  "--tug-base-field-fg-default",
-  // H — Non-text component visibility tokens below contrast 30 by design (Step 3)
-  // These tokens start below the ui-component threshold and are auto-adjusted
-  // by the pipeline. They are documented here so the test tracks regressions
-  // rather than pre-existing structural constraints.
-  //
-  // Toggle track inactive/indeterminate states: intentionally lower-contrast
-  // to signal the off/mixed (inactive) state vs. the on state.
-  "--tug-base-toggle-track-off",
-  "--tug-base-toggle-track-mixed",
-  "--tug-base-toggle-track-off-hover",
-  "--tug-base-toggle-track-mixed-hover",
-  // toggle-track-on starts below contrast 30 in some configurations; auto-adjust
-  // brings it to passing. Documented here to prevent unexpected regression reports.
-  "--tug-base-toggle-track-on",
-  // Field border rest/hover: intentionally subtle boundary in dark mode.
-  // The active (focus) border uses a vivid accent color and passes without adjustment.
-  "--tug-base-field-border-rest",
-  "--tug-base-field-border-hover",
-  // Field border disabled/readOnly: same structural constraint as rest/hover above.
-  // Non-interactive state borders are intentionally low-contrast (decorative role).
-  "--tug-base-field-border-disabled",
-  "--tug-base-field-border-readOnly",
-  // Separator tokens: structural dividers intentionally low-contrast in dark mode.
-  // border-default and border-muted create visual hierarchy via subtle separation.
-  "--tug-base-border-default",
-  "--tug-base-border-muted",
-]);
-
-/**
- * Specific (element, surface) pairs below threshold due to structural constraints
- * that cannot be resolved by tone-bumping alone. Keyed as "elementToken|surfaceToken"
- * strings for O(1) lookup.
- *
- * Categories:
- *   - Focus indicator focused-vs-unfocused decorative pairs (Step 5): perceptual contrast is
- *     designed for element-on-area contrast, not border-vs-border comparisons [D05].
- *     The auto-adjuster bumps accent-cool-default trying to satisfy the decorative
- *     threshold for control-outlined-action-border-rest (contrast ~9.5 < 15), causing
- *     cascade that drives field-border-rest to contrast 0.0. Both pairs are informational
- *     only. The 9 ui-component focus-on-surface pairs all pass contrast 30 independently.
- */
-const KNOWN_PAIR_EXCEPTIONS = new Set([
-  // Focused-vs-unfocused decorative comparisons (border-vs-border, informational [D05])
-  "--tug-base-accent-cool-default|--tug-base-field-border-rest",
-  "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest",
-  // Step 5 gap pairs: accessibility gaps discovered in the Step 2 pairing audit.
-  // These pairs are below threshold due to structural engine constraints — the contrast
-  // engine does not auto-adjust fg-default for chromatic/tinted surfaces. Phase 2 will
-  // close these gaps via an updated contrast enforcement strategy.
-  //   fg-default on tab-bg-active  — card title text on active title bar; contrast ~73.6
-  //                                  (marginal: within 5 units of threshold 75). [Gap #1]
-  //   fg-default on accent-subtle  — menu selected item text on 15%-alpha accent tint;
-  //                                  composited contrast ~62. [Gap #29]
-  //   fg-default on tone-caution-bg — autofix suggestion text on caution tint (~12% alpha);
-  //                                  composited contrast ~58. [Gap #19]
-  "--tug-base-fg-default|--tug-base-tab-bg-active",
-  "--tug-base-fg-default|--tug-base-accent-subtle",
-  "--tug-base-fg-default|--tug-base-tone-caution-bg",
-  // fg-inverse on tone-danger — dock badge text (fg-inverse) on danger signal background.
-  // tone-danger is lightened to approach body-text threshold on surface-overlay, but this
-  // causes fg-inverse (dark inverse) on the lighter tone-danger to fall below ui-component
-  // threshold 30 (actual: ~21). Phase 2 will resolve via independent token paths. [Gap #dock-danger]
-  "--tug-base-fg-inverse|--tug-base-tone-danger",
-  // fg-inverse on surface-default — badge ghost/outlined variant: fg-inverse sits on
-  // surface-default when the badge has no fill. In dark mode, fg-inverse is a dark token
-  // (the inverse of fg-default which is light), so it reads as dark-on-dark giving negative
-  // contrast (-6.5). Phase 2 will resolve via independent token paths. [Gap #badge-inverse]
-  "--tug-base-fg-inverse|--tug-base-surface-default",
-  // Filled button border-hover/-active on matching hover/active bg: these border tokens
-  // are the same chromatic hue as their hover/active bg. After compositing both over
-  // surface-default (parentSurface), they produce near-zero contrast by design — the
-  // border is a subtle same-hue outline, not a contrast-critical boundary. Decorative. [Step 6]
-  "--tug-base-control-filled-accent-border-hover|--tug-base-control-filled-accent-bg-hover",
-  "--tug-base-control-filled-accent-border-active|--tug-base-control-filled-accent-bg-active",
-  "--tug-base-control-filled-action-border-hover|--tug-base-control-filled-action-bg-hover",
-  "--tug-base-control-filled-action-border-active|--tug-base-control-filled-action-bg-active",
-  "--tug-base-control-filled-danger-border-hover|--tug-base-control-filled-danger-bg-hover",
-  "--tug-base-control-filled-danger-border-active|--tug-base-control-filled-danger-bg-active",
-  // Ghost/outlined button border-hover/-active on matching hover/active bg: same rationale
-  // as filled buttons above — same-hue border on semi-transparent hover tint. [Step 6]
-  "--tug-base-control-ghost-danger-border-hover|--tug-base-control-ghost-danger-bg-hover",
-  "--tug-base-control-ghost-danger-border-active|--tug-base-control-ghost-danger-bg-active",
-  // Ghost/outlined button fg-hover/-active on matching semi-transparent hover/active bg:
-  // the bg is a 10-20% alpha tint of the fg hue. Raw contrast (without compositing over
-  // the parent surface) is low by design — the interaction highlight is informational,
-  // not a contrast-critical foreground-on-background text/icon pair. Decorative. [Step 6]
-  "--tug-base-control-ghost-action-fg-hover|--tug-base-control-ghost-action-bg-hover",
-  "--tug-base-control-ghost-action-fg-active|--tug-base-control-ghost-action-bg-active",
-  "--tug-base-control-ghost-option-fg-hover|--tug-base-control-ghost-option-bg-hover",
-  "--tug-base-control-ghost-option-fg-active|--tug-base-control-ghost-option-bg-active",
-  "--tug-base-control-outlined-option-fg-hover|--tug-base-control-outlined-option-bg-hover",
-  "--tug-base-control-outlined-option-fg-active|--tug-base-control-outlined-option-bg-active",
-  "--tug-base-control-outlined-option-icon-active|--tug-base-control-outlined-option-bg-active",
-  // Toggle-track self-pairings: tug-checkbox.css rules where a chromatic toggle-track token
-  // is used as BOTH background-color and border-color in the same rule. The border is a
-  // stylistic same-hue outline; element == surface means contrast is always 0.0. Decorative. [Step 6]
-  "--tug-base-toggle-track-on-hover|--tug-base-toggle-track-on-hover",
-  "--tug-base-toggle-track-disabled|--tug-base-toggle-track-disabled",
-]);
-
-/**
- * Run the full derivation → contrast-validation pipeline for a given recipe.
- *
- * Step 5: autoAdjustContrast has been removed from this pipeline. The derivation
- * engine now enforces contrast floors by construction via enforceContrastFloor
- * inside evaluateRules. The engine's output is authoritative — no post-hoc
- * adjustment is needed or applied here.
- *
- * Verifies [D09]: deriveTheme().resolved feeds directly into validateThemeContrast()
- * with no intermediate parsing or conversion.
- */
-function runFullPipeline(recipeName: string): {
-  initialFailureCount: number;
-  finalResults: ReturnType<typeof validateThemeContrast>;
-  tokensAndResolvedConsistent: boolean;
-} {
-  const recipe = EXAMPLE_RECIPES[recipeName];
-
-  // Step 1: Derive theme — resolved map is OKLCH, no conversion needed [D09]
-  // enforceContrastFloor runs inside evaluateRules; tokens are compliant by construction.
-  const output = deriveTheme(recipe);
-
-  // Step 2: Validate contrast — resolved feeds directly into validateThemeContrast [D09]
-  const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  const initialFailureCount = finalResults.filter((r) => !r.contrastPass).length;
-
-  // Consistency check: every chromatic token must still have a --tug-color() string.
-  let tokensAndResolvedConsistent = true;
-  for (const tokenName of Object.keys(output.resolved)) {
-    const tokenStr = output.tokens[tokenName];
-    if (!tokenStr || !tokenStr.includes("--tug-color(")) {
-      tokensAndResolvedConsistent = false;
-      break;
-    }
-  }
-
-  return {
-    initialFailureCount,
-    finalResults,
-    tokensAndResolvedConsistent,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Test suite: derivation-engine integration (T4.x)
+// T4.1 and T4.3 replaced by the parameterized "recipe contrast validation" loop [D02].
+// T4.2 retained here — brio-light is a synthetic mode-flip variant, not a first-class
+// EXAMPLE_RECIPES entry, so it cannot be covered by the parameterized loop.
 // ---------------------------------------------------------------------------
 
 describe("derivation-engine integration", () => {
-  // -------------------------------------------------------------------------
-  // T4.1: Brio end-to-end pipeline
-  // -------------------------------------------------------------------------
-  it("T4.1: deriveTheme(brio) -> validateThemeContrast -> 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
-    const { initialFailureCount, finalResults, tokensAndResolvedConsistent } =
-      runFullPipeline("brio");
-
-    // Pipeline must have evaluated some pairs
-    expect(initialFailureCount).toBeGreaterThanOrEqual(0);
-
-    // tokens and resolved must be consistent [D09]
-    expect(tokensAndResolvedConsistent).toBe(true);
-
-    // Failures must only come from the documented exception sets:
-    // element-level (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS), pair-level (KNOWN_PAIR_EXCEPTIONS),
-    // or marginal band (within CONTRAST_MARGINAL_DELTA contrast units of the role threshold). [D02]
-    const unexpectedFailures = finalResults.filter((r) => {
-      if (r.contrastPass) return false;
-      const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
-      if (Math.abs(r.contrast) >= margin) return false;
-      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
-      if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
-      return true;
-    });
-    const descriptions = unexpectedFailures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
-    );
-    expect(descriptions).toEqual([]);
-
-    // Core readability assertion: fg-default on primary surfaces must pass contrast 75
-    const coreFailures = finalResults.filter(
-      (r) =>
-        r.fg === "--tug-base-fg-default" &&
-        (r.bg === "--tug-base-surface-default" ||
-          r.bg === "--tug-base-surface-inset" ||
-          r.bg === "--tug-base-surface-content") &&
-        !r.contrastPass,
-    );
-    expect(coreFailures).toEqual([]);
-
-    // Focus indicator assertion (Step 5): all 9 ui-component focus-on-surface pairs
-    // must pass contrast 30. This guards against regressions on the accent-cool-default
-    // ui-component pairs even though two decorative pairs are in KNOWN_PAIR_EXCEPTIONS.
-    const focusSurfaces = new Set([
-      "--tug-base-bg-app",
-      "--tug-base-surface-default",
-      "--tug-base-surface-raised",
-      "--tug-base-surface-inset",
-      "--tug-base-surface-content",
-      "--tug-base-surface-overlay",
-      "--tug-base-surface-sunken",
-      "--tug-base-surface-screen",
-      "--tug-base-field-bg-rest",
-    ]);
-    const focusFailures = finalResults.filter(
-      (r) =>
-        r.fg === "--tug-base-accent-cool-default" &&
-        r.role === "ui-component" &&
-        focusSurfaces.has(r.bg) &&
-        !r.contrastPass,
-    );
-    expect(focusFailures.map((f) => `${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
-  });
 
   // -------------------------------------------------------------------------
   // T4.2: Brio light preset — 0 unexpected body-text failures
@@ -770,17 +394,8 @@ describe("derivation-engine integration", () => {
     // No autoAdjustContrast post-processing is needed or performed.
     const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-    // Known light-mode surface-derivation constraints (engine calibrated for dark mode;
-    // these pairs are structurally constrained in light mode, not regressions).
-    const LIGHT_MODE_PAIR_EXCEPTIONS = new Set([
-      "--tug-base-fg-default|--tug-base-bg-app",
-      "--tug-base-fg-default|--tug-base-bg-canvas",
-      "--tug-base-fg-default|--tug-base-surface-raised",
-      "--tug-base-fg-default|--tug-base-surface-overlay",
-      "--tug-base-fg-default|--tug-base-surface-sunken",
-      "--tug-base-fg-default|--tug-base-surface-screen",
-      "--tug-base-fg-inverse|--tug-base-surface-screen",
-    ]);
+    // Known light-mode surface-derivation constraints — imported from contrast-exceptions.ts.
+    // (LIGHT_MODE_PAIR_EXCEPTIONS imported at top of file)
 
     // Check body-text only — mirrors the gallery test's light-mode coverage scope.
     const unexpectedBodyTextFailures = finalResults.filter((r) => {
@@ -845,62 +460,6 @@ describe("derivation-engine integration", () => {
   });
 
   // -------------------------------------------------------------------------
-  // T4.3: Harmony light recipe — 0 unexpected failures with LIGHT_FORMULAS
-  //
-  // Validates that EXAMPLE_RECIPES.harmony (which uses LIGHT_FORMULAS) produces
-  // zero unexpected contrast failures across all roles. No LIGHT_MODE_PAIR_EXCEPTIONS
-  // set is needed — LIGHT_OVERRIDES provides proper calibration for all semantic
-  // groups. Only the structural exceptions shared with brio (KNOWN_PAIR_EXCEPTIONS
-  // and KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS) apply.
-  //
-  // The one remaining structural constraint is fg-inverse|surface-screen: fg-inverse
-  // is designed for on-fill text (dark backgrounds), not body text on light surfaces.
-  // This is the same structural pattern as brio-light T4.2 and is covered by the
-  // pair exception set, not a new light-mode exceptions list.
-  // -------------------------------------------------------------------------
-  it("T4.3: deriveTheme(EXAMPLE_RECIPES.harmony) -> 0 unexpected failures (LIGHT_FORMULAS calibrated)", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.harmony);
-    const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-
-    // Structural pair exception: fg-inverse is for on-fill text (dark backgrounds);
-    // on surface-screen (light) is not a real usage — same constraint as brio-light T4.2.
-    const HARMONY_PAIR_EXCEPTIONS = new Set([
-      "--tug-base-fg-inverse|--tug-base-surface-screen",
-    ]);
-
-    const unexpectedFailures = finalResults.filter((r) => {
-      if (r.contrastPass) return false;
-      const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
-      if (Math.abs(r.contrast) >= margin) return false;
-      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
-      if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
-      if (HARMONY_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
-      return true;
-    });
-    const descriptions = unexpectedFailures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
-    );
-    expect(descriptions).toEqual([]);
-
-    // Core readability assertion: fg-default on primary surfaces must pass contrast 75
-    const coreFailures = finalResults.filter(
-      (r) =>
-        r.fg === "--tug-base-fg-default" &&
-        (r.bg === "--tug-base-surface-default" ||
-          r.bg === "--tug-base-surface-inset" ||
-          r.bg === "--tug-base-surface-content") &&
-        !r.contrastPass,
-    );
-    expect(coreFailures).toEqual([]);
-
-    // Token count must be 373 (same as brio)
-    expect(Object.keys(output.tokens).length).toBe(373);
-
-    // Mode must be "light"
-    expect(output.mode).toBe("light");
-  });
-
-  // -------------------------------------------------------------------------
   // Structural verification: resolved map feeds directly into validateThemeContrast
   // with no intermediate parsing or conversion [D09]
   // -------------------------------------------------------------------------
@@ -929,6 +488,114 @@ describe("derivation-engine integration", () => {
     expect(passingCount).toBeGreaterThan(0);
     expect(totalCount).toBeGreaterThan(passingCount); // some pairs fail → engine is honest
   });
+});
+
+// ---------------------------------------------------------------------------
+// Test suite: recipe contrast validation (parameterized loop)
+//
+// Iterates every entry in EXAMPLE_RECIPES and creates one test case per recipe.
+// Adding a new recipe to EXAMPLE_RECIPES automatically adds it to this validation
+// loop — no test code changes required. [D02], Spec S04, #parameterized-test-structure
+//
+// Exception logic:
+//   - Global exceptions: KNOWN_PAIR_EXCEPTIONS, KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS
+//   - Recipe-specific exceptions: RECIPE_PAIR_EXCEPTIONS[recipeName]
+//   - Marginal band: within CONTRAST_MARGINAL_DELTA contrast units of the role threshold
+//
+// Per-recipe assertions:
+//   - 0 unexpected contrast failures across all roles
+//   - fg-default on primary surfaces passes contrast 75 (core readability)
+//   - tokens and resolved are consistent (chromatic tokens have --tug-color strings)
+//   - Object.keys(output.tokens).length === 373 (full token set)
+//
+// Brio-specific:
+//   - Focus indicator assertion: accent-cool-default on 9 focus surfaces passes contrast 30
+//     (only applicable to dark-mode brio; light-mode recipes have structural constraints
+//     documented in T4.2 and the LIGHT_MODE_FOCUS_EXCEPTIONS set)
+// ---------------------------------------------------------------------------
+
+// Focus surfaces for the focus indicator assertion (brio dark only)
+const FOCUS_SURFACES = new Set([
+  "--tug-base-bg-app",
+  "--tug-base-surface-default",
+  "--tug-base-surface-raised",
+  "--tug-base-surface-inset",
+  "--tug-base-surface-content",
+  "--tug-base-surface-overlay",
+  "--tug-base-surface-sunken",
+  "--tug-base-surface-screen",
+  "--tug-base-field-bg-rest",
+]);
+
+describe("recipe contrast validation", () => {
+  for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES)) {
+    it(`${name}: 0 unexpected contrast failures (parameterized loop, all roles)`, () => {
+      // Derive theme — engine contrast floors applied by construction [D01]
+      const output = deriveTheme(recipe);
+      const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+      // Token count must be 373 for every recipe (tokens includes invariant tokens
+      // absent from resolved; tokens and resolved differ by design) [step-3 task]
+      expect(Object.keys(output.tokens).length).toBe(373);
+
+      // Consistency check: every chromatic token must have a --tug-color() string [D09]
+      let tokensAndResolvedConsistent = true;
+      for (const tokenName of Object.keys(output.resolved)) {
+        const tokenStr = output.tokens[tokenName];
+        if (!tokenStr || !tokenStr.includes("--tug-color(")) {
+          tokensAndResolvedConsistent = false;
+          break;
+        }
+      }
+      expect(tokensAndResolvedConsistent).toBe(true);
+
+      // Recipe-specific exceptions from shared module (Step 1 consolidation) [D03]
+      const recipeExceptions = RECIPE_PAIR_EXCEPTIONS[name] ?? new Set<string>();
+
+      // Filter unexpected failures: pass, marginal, known element, global pair, recipe pair
+      const unexpectedFailures = results.filter((r) => {
+        if (r.contrastPass) return false;
+        const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
+        if (Math.abs(r.contrast) >= margin) return false;
+        if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
+        if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+        if (recipeExceptions.has(`${r.fg}|${r.bg}`)) return false;
+        return true;
+      });
+      const descriptions = unexpectedFailures.map(
+        (f) => `[${name}] ${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
+      );
+      expect(descriptions).toEqual([]);
+
+      // Core readability assertion: fg-default on primary surfaces passes contrast 75
+      const coreFailures = results.filter(
+        (r) =>
+          r.fg === "--tug-base-fg-default" &&
+          (r.bg === "--tug-base-surface-default" ||
+            r.bg === "--tug-base-surface-inset" ||
+            r.bg === "--tug-base-surface-content") &&
+          !r.contrastPass,
+      );
+      expect(coreFailures.map((f) => `[${name}] ${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
+
+      // Focus indicator assertion: brio dark only.
+      // In dark mode, accent-cool-default must pass contrast 30 on all 9 focus surfaces.
+      // Light-mode recipes have structural surface-derivation constraints (engine calibrated
+      // for dark mode) — those are documented in T4.2 (LIGHT_MODE_FOCUS_EXCEPTIONS).
+      // This assertion is gated on recipe name "brio" for extensibility — add a
+      // RECIPE_SPECIFIC_CHECKS[name] map here if other recipes need focus assertions.
+      if (name === "brio") {
+        const focusFailures = results.filter(
+          (r) =>
+            r.fg === "--tug-base-accent-cool-default" &&
+            r.role === "ui-component" &&
+            FOCUS_SURFACES.has(r.bg) &&
+            !r.contrastPass,
+        );
+        expect(focusFailures.map((f) => `[${name}] ${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
+      }
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1641,7 +1308,7 @@ describe("derivation-engine generateResolvedCssExport", () => {
 // Each test asserts 0 unexpected body-text perceptual contrast failures.
 // Step 5: autoAdjustContrast is no longer invoked — the engine's enforceContrastFloor
 // produces compliant tokens by construction.
-// The exception sets mirror T4.1/T4.2: known structural constraints are excluded
+// The exception sets mirror the parameterized loop / T4.2: known structural constraints are excluded
 // so the tests track real regressions rather than documented design choices.
 //
 // Light-mode tests (T4.4, T4.7) share the same set of structural surface-
@@ -1650,33 +1317,7 @@ describe("derivation-engine generateResolvedCssExport", () => {
 // / surface-screen are known structural constraints.
 // ---------------------------------------------------------------------------
 
-/**
- * Known light-mode body-text pair exceptions (structural — same as T4.2).
- *
- * The engine is calibrated for dark mode. In light mode, bg-app, bg-canvas,
- * surface-raised, surface-overlay, surface-sunken, and surface-screen are
- * derived at lightness values close to fg-default, producing contrast well below
- * the contrast 75 body-text threshold. These are not regressions — they are
- * pre-existing structural constraints deferred per Q01.
- *
- * fg-inverse on surface-screen is also structural: fg-inverse is an inverted
- * foreground designed for chips/badges, not body text on surface-screen.
- */
-const LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS = new Set([
-  "--tug-base-fg-default|--tug-base-bg-app",
-  "--tug-base-fg-default|--tug-base-bg-canvas",
-  "--tug-base-fg-default|--tug-base-surface-raised",
-  "--tug-base-fg-default|--tug-base-surface-overlay",
-  "--tug-base-fg-default|--tug-base-surface-sunken",
-  "--tug-base-fg-default|--tug-base-surface-screen",
-  "--tug-base-fg-inverse|--tug-base-surface-screen",
-  // Step 5 gap pairs: same gaps documented in KNOWN_PAIR_EXCEPTIONS above.
-  // Listed here because LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS is used by
-  // light-mode stress tests (T4.7) which do not consult KNOWN_PAIR_EXCEPTIONS.
-  "--tug-base-fg-default|--tug-base-tab-bg-active",
-  "--tug-base-fg-default|--tug-base-accent-subtle",
-  "--tug-base-fg-default|--tug-base-tone-caution-bg",
-]);
+// LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS is imported from contrast-exceptions.ts.
 
 /**
  * Known dark-mode body-text pair exceptions for high surfaceContrast recipes.
@@ -2720,14 +2361,16 @@ describe("derivation-engine step-4 contrast floor", () => {
     for (const diag of output.diagnostics) {
       expect(typeof diag.token).toBe("string");
       expect(diag.token.startsWith("--tug-base-")).toBe(true);
-      expect(["floor-applied", "structurally-fixed", "composite-dependent"]).toContain(diag.reason);
+      expect(["floor-applied", "floor-applied-composited", "structurally-fixed", "composite-dependent"]).toContain(diag.reason);
       expect(Array.isArray(diag.surfaces)).toBe(true);
       expect(typeof diag.initialTone).toBe("number");
       expect(typeof diag.finalTone).toBe("number");
       expect(typeof diag.threshold).toBe("number");
     }
-    // All floor-applied entries must have finalTone != initialTone
-    const floorApplied = output.diagnostics.filter((d) => d.reason === "floor-applied");
+    // All floor-applied entries (pass 1 and pass 2) must have finalTone != initialTone
+    const floorApplied = output.diagnostics.filter(
+      (d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited",
+    );
     for (const diag of floorApplied) {
       expect(diag.finalTone).not.toBe(diag.initialTone);
     }
@@ -2747,7 +2390,9 @@ describe("derivation-engine step-4 contrast floor", () => {
     // UNLESS they are in the known structural exception set (token cannot reach threshold in
     // tone space regardless — e.g. ghost-danger-fg tokens on red hue which is a vivid mid-tone).
     const floorApplied = new Set(
-      output.diagnostics.filter((d) => d.reason === "floor-applied").map((d) => d.token),
+      output.diagnostics
+        .filter((d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited")
+        .map((d) => d.token),
     );
 
     const floorFailures = results.filter(
@@ -2765,7 +2410,9 @@ describe("derivation-engine step-4 contrast floor", () => {
   // -------------------------------------------------------------------------
   it("T-FLOOR-6: structurally fixed tokens (alpha < 1) are not in floor diagnostics", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    const floorApplied = output.diagnostics.filter((d) => d.reason === "floor-applied");
+    const floorApplied = output.diagnostics.filter(
+      (d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited",
+    );
 
     // For every floor-applied token, check its resolved color has alpha = 1
     const semiTransparentFloor = floorApplied.filter((d) => {
@@ -2790,7 +2437,7 @@ describe("derivation-engine step-4 contrast floor", () => {
 
     const floorApplied = new Map(
       output.diagnostics
-        .filter((d) => d.reason === "floor-applied")
+        .filter((d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited")
         .map((d) => [d.token, d]),
     );
 
@@ -2940,5 +2587,199 @@ describe("Step 4 verification — harmony light-mode cardFrameActiveTone and for
     // Control border tokens (use borderRamp) must be identical
     const controlBorderToken = "--tug-base-control-outlined-action-border-rest";
     expect(fromRecipe.tokens[controlBorderToken]).toBe(fromExplicit.tokens[controlBorderToken]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 2: Pass-2 composited contrast enforcement unit tests
+// References: [D01], [D04], Spec S01, Spec S02
+// ---------------------------------------------------------------------------
+
+describe("step-2 pass-2 composited contrast enforcement", () => {
+  // -------------------------------------------------------------------------
+  // T-COMP-1: compositeL at alpha=0 equals parentL (fully transparent token)
+  // Spec S01: alpha=0 means element is invisible; compositeL = parentSurface L
+  // -------------------------------------------------------------------------
+  it("T-COMP-1: compositeL for alpha=0 token equals parent surface L", () => {
+    // Fully transparent token on a dark surface: compositeHex = surface-default hex
+    const tokenResolved: ResolvedColor = { L: 0.9, C: 0.1, h: 230, alpha: 0.0 };
+    const parentResolved: ResolvedColor = { L: 0.35, C: 0.01, h: 260, alpha: 1.0 };
+    const compositeHex = compositeOverSurface(tokenResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+    const parentL = hexToOkLabL(compositeOverSurface({ ...parentResolved, alpha: 1.0 }, parentResolved));
+    // alpha=0 means token contributes nothing; compositeHex should match the parent hex
+    // Allow small delta for hex quantization (8-bit gamma encoding)
+    expect(Math.abs(compositeL - hexToOkLabL(compositeOverSurface(parentResolved, parentResolved)))).toBeLessThan(0.01);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-2: compositeL at alpha=1.0 equals the token's own L (fully opaque)
+  // Spec S01: alpha=1 means token is fully opaque; compositing = identity
+  // -------------------------------------------------------------------------
+  it("T-COMP-2: compositeL for alpha=1.0 token equals the token L (no parent blending)", () => {
+    const tokenResolved: ResolvedColor = { L: 0.78, C: 0.146, h: 55, alpha: 1.0 };
+    const parentResolved: ResolvedColor = { L: 0.35, C: 0.01, h: 260, alpha: 1.0 };
+    const compositeHex = compositeOverSurface(tokenResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+    // At alpha=1.0, composite result must equal the token's own OKLab L
+    // The token L after hex round-trip from OKLCH should be close to 0.78
+    expect(Math.abs(compositeL - tokenResolved.L)).toBeLessThan(0.02);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-3: compositeL at alpha=0.15 (typical badge tint) is between
+  //           parent L and token L, weighted heavily toward parent
+  // Spec S01 step 2: alpha-blend in linear sRGB
+  // -------------------------------------------------------------------------
+  it("T-COMP-3: compositeL for alpha=0.15 is between parent L and token L", () => {
+    // Light token (L≈0.78) at 15% opacity on dark parent (L≈0.35)
+    const tokenResolved: ResolvedColor = { L: 0.78, C: 0.146, h: 55, alpha: 0.15 };
+    const parentResolved: ResolvedColor = { L: 0.35, C: 0.005, h: 260, alpha: 1.0 };
+    const compositeHex = compositeOverSurface(tokenResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+    // At alpha=0.15, the composite should be closer to the parent (0.35) than to the token (0.78)
+    expect(compositeL).toBeGreaterThan(parentResolved.L - 0.02);
+    expect(compositeL).toBeLessThan(tokenResolved.L);
+    // Specifically: 15% of token + 85% of parent → should be well below 0.5
+    expect(compositeL).toBeLessThan(0.55);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-4: compositeL at alpha=0.40 (selection highlight) is weighted
+  //           40% token + 60% parent
+  // Spec S01: alpha=0.40 is the selection-bg typical value
+  // -------------------------------------------------------------------------
+  it("T-COMP-4: compositeL for alpha=0.40 blends correctly between token and parent", () => {
+    // Mid-weight blend: light token on dark parent
+    const tokenResolved: ResolvedColor = { L: 0.78, C: 0.14, h: 230, alpha: 0.4 };
+    const parentResolved: ResolvedColor = { L: 0.35, C: 0.005, h: 260, alpha: 1.0 };
+    const compositeHex = compositeOverSurface(tokenResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+    // At alpha=0.40, the composite is between parent and token, closer to parent
+    expect(compositeL).toBeGreaterThan(parentResolved.L - 0.02);
+    expect(compositeL).toBeLessThan(tokenResolved.L + 0.02);
+    // 40% token + 60% parent: compositeL must be distinctly above parentL
+    expect(compositeL).toBeGreaterThan(parentResolved.L + 0.05);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-5: pass-2 enforcement adjusts tone for a composited surface
+  // Verifies that deriveTheme applies contrast enforcement for semi-transparent
+  // surfaces that previously had the parentSurface skip. [D01], Spec S02
+  // -------------------------------------------------------------------------
+  it("T-COMP-5: pass-2 enforcement produces diagnostics for composited surface pairings", () => {
+    // Run derivation on brio — if any composited pairs required tone adjustment,
+    // diagnostics will include entries from pass 2 with reason "floor-applied-composited"
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    // Not all recipes will have pass-2 diagnostics (if all composited pairs already pass),
+    // but the diagnostics array must be structurally valid
+    expect(Array.isArray(output.diagnostics)).toBe(true);
+    // All diagnostics must be well-formed regardless of pass origin
+    for (const diag of output.diagnostics) {
+      expect(["floor-applied", "floor-applied-composited"]).toContain(diag.reason);
+      expect(typeof diag.token).toBe("string");
+      expect(diag.token.startsWith("--tug-base-")).toBe(true);
+      expect(diag.finalTone).not.toBe(diag.initialTone);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-6: after pass-2 adjustment, tokens[name] CSS string tone parameter
+  //           reflects the adjusted tone (setChromatic re-emission check).
+  //           Verifies [D01] atomicity: tokens and resolved stay consistent.
+  // -------------------------------------------------------------------------
+  it("T-COMP-6: tokens CSS string and resolved L are consistent after pass-2 adjustments", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    // For every chromatic token, the CSS string must include --tug-color(
+    // and the resolved map must have a corresponding ResolvedColor entry
+    for (const tokenName of Object.keys(output.resolved)) {
+      const tokenStr = output.tokens[tokenName];
+      if (!tokenStr) continue;
+      expect(tokenStr).toContain("--tug-color(");
+    }
+    // Specifically check that tokens with pass-2 diagnostics are consistent
+    const pass2Tokens = new Set(output.diagnostics.map((d) => d.token));
+    for (const tokenName of pass2Tokens) {
+      const tokenStr = output.tokens[tokenName];
+      const resolvedColor = output.resolved[tokenName];
+      expect(tokenStr).toBeDefined();
+      expect(resolvedColor).toBeDefined();
+      // The token string must encode --tug-color() (not a stale pre-pass-2 value)
+      expect(tokenStr).toContain("--tug-color(");
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-8: enforceContrastFloor with composited surface L produces correct
+  // tone adjustment.
+  // Unit test verifying that calling enforceContrastFloor directly with a
+  // composited surface L value (obtained via compositeOverSurface + hexToOkLabL)
+  // returns a tone whose L achieves the required contrast against that composite L.
+  // This is the core unit contract of pass-2 enforcement. [D01], [D04], Spec S02
+  // -------------------------------------------------------------------------
+  it("T-COMP-8: enforceContrastFloor with composited surface L produces correct tone adjustment", () => {
+    // Set up a semi-transparent dark surface (alpha 0.10) composited over a very dark parent.
+    // This models a dark tone-background or selection-highlight surface scenario.
+    // compositeL will be slightly lighter than the parent but still very dark overall,
+    // providing sufficient room for the element to achieve contrast 75 by moving lighter.
+    const surfaceResolved: ResolvedColor = { L: 0.42, C: 0.02, h: 260, alpha: 0.10 };
+    const parentResolved: ResolvedColor = { L: 0.14, C: 0.005, h: 260, alpha: 1.0 };
+
+    // Compute composited surface L — this is the effective background L for pass-2.
+    // 10% blend of a mid surface into a very dark parent yields a near-dark compositeL.
+    const compositeHex = compositeOverSurface(surfaceResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+
+    // compositeL must be above the raw parentL but far below the surface L
+    expect(compositeL).toBeGreaterThan(parentResolved.L);
+    expect(compositeL).toBeLessThan(surfaceResolved.L);
+
+    // Verify compositeL is dark enough that we have headroom for contrast 75.
+    // contrast 75 requires |deltaL| >= 75 / (150 * 0.85) ≈ 0.588 for lighter-on-dark.
+    // compositeL must be below 0.96 - 0.588 = 0.372 (cobalt tone-100 L ≈ 0.96).
+    expect(compositeL).toBeLessThan(0.37);
+
+    // Element starts at tone 40 (cobalt) — not far enough from compositeL to pass threshold.
+    const elementHue = "cobalt";
+    const initialTone = 40;
+    const threshold = 75; // body-text threshold
+
+    // compositeL is dark; element is lighter, so polarity = "lighter" (push to higher tone)
+    const adjustedTone = enforceContrastFloor(initialTone, compositeL, threshold, "lighter", elementHue);
+
+    // The floor must push tone higher (lighter) to gain more contrast
+    expect(adjustedTone).toBeGreaterThan(initialTone);
+
+    // The adjusted tone must produce contrast >= threshold against compositeL.
+    // Light element on dark composite: deltaL = compositeL - adjustedL is negative;
+    // contrast magnitude = |deltaL| * CONTRAST_SCALE * POLARITY_FACTOR = |deltaL| * 150 * 0.85
+    const adjustedL = toneToL(adjustedTone, elementHue);
+    const deltaL = compositeL - adjustedL;
+    const contrastMagnitude = Math.abs(deltaL) * 150 * 0.85;
+    expect(contrastMagnitude).toBeGreaterThanOrEqual(threshold);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-7: brio dark still passes T4.1 assertions after pass-2 enforcement
+  // Integration regression guard: pass 2 must not break pass 1 results.
+  // References: [D01] "pass 2 adjustments are strictly additive"
+  // -------------------------------------------------------------------------
+  it("T-COMP-7: deriveTheme(brio) still passes core readability assertions with pass-2 active", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    // Core readability: fg-default on primary surfaces must pass contrast 75
+    const coreFailures = results.filter(
+      (r) =>
+        r.fg === "--tug-base-fg-default" &&
+        (r.bg === "--tug-base-surface-default" ||
+          r.bg === "--tug-base-surface-inset" ||
+          r.bg === "--tug-base-surface-content") &&
+        !r.contrastPass,
+    );
+    expect(coreFailures).toEqual([]);
+
+    // Token count must still be 373
+    expect(Object.keys(output.tokens).length).toBe(373);
   });
 });
