@@ -105,8 +105,11 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
   "--tug-base-tone-caution-icon", // [design-choice] semantic signal icon; mid-tone hue
   "--tug-base-tone-danger-icon", // [design-choice] semantic signal icon; mid-tone hue
 
-  // D2 — bare tone-danger: chromatic danger signal; hue ceiling prevents reaching contrast 75
-  "--tug-base-tone-danger", // [phase-3-bug] contrast floor pushes toward threshold but chromatic hue ceiling blocks it; Phase 3 will enforce via independent token path
+  // D2 — bare tone-danger: chromatic danger signal; gamut ceiling prevents reaching contrast 75
+  // The red hue at high intensity clips in sRGB at high tones, reducing the effective OKLab-L
+  // below what the contrast floor targets. An independent gamut-mapping derivation path is
+  // required to fix this; that is engine-level work deferred to Phase 4.
+  "--tug-base-tone-danger", // [phase-4-engine] gamut ceiling: vivid red at high tone clips in sRGB, reducing effective OKLab-L; resolving requires gamut-mapping-aware derivation path (Phase 4)
 
   // E — UI control indicators (form elements / state indicators)
   "--tug-base-accent-default", // [design-choice] accent-default is a UI indicator not primary text; mid-tone by design
@@ -133,9 +136,6 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
 
   // G — Tab chrome
   "--tug-base-tab-fg-hover", // [design-choice] tab hover state: below contrast 75 body-text in both dark and light
-
-  // G2 — Field text: field-fg-default below contrast 75 in light mode due to field-bg lightness proximity
-  "--tug-base-field-fg-default", // [phase-3-bug] light-mode field bg creates contrast constraint ~27-51; deferred calibration
 
   // H — Non-text component visibility tokens below contrast 30 by design
   "--tug-base-toggle-track-off", // [design-choice] inactive toggle track: intentionally lower-contrast to signal off state
@@ -196,14 +196,19 @@ export const KNOWN_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set([
   "--tug-base-accent-cool-default|--tug-base-field-border-rest", // [design-choice] border-vs-border decorative comparison; not element-on-area
   "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest", // [design-choice] border-vs-border decorative comparison; not element-on-area
 
-  // Step 5 gap pairs: accessibility gaps from the Step 2 pairing audit
-  "--tug-base-fg-default|--tug-base-tab-bg-active", // [phase-3-bug] card title text on active title bar; contrast ~73.6 (marginal); Phase 3 will enforce
-  "--tug-base-fg-default|--tug-base-accent-subtle", // [phase-3-bug] menu selected item text on 15%-alpha accent tint; composited contrast ~62; Phase 3 will enforce
-  "--tug-base-fg-default|--tug-base-tone-caution-bg", // [phase-3-bug] autofix suggestion text on caution tint (~12% alpha); composited contrast ~58; Phase 3 will enforce
-
   // fg-inverse placement issues
-  "--tug-base-fg-inverse|--tug-base-tone-danger", // [phase-3-bug] dock badge text on danger signal bg; tone-danger lightened causes fg-inverse below ui-component threshold 30; Phase 3 will resolve
-  "--tug-base-fg-inverse|--tug-base-surface-default", // [phase-3-bug] badge ghost/outlined: fg-inverse (dark) on dark surface produces dark-on-dark; Phase 3 will resolve
+  // B06: fg-inverse on tone-danger (dock badge text): both tokens are near-white in dark mode,
+  // producing white-on-white contrast ~21. This requires a mode-aware fg-inverse derivation
+  // path — engine work deferred to Phase 4. fg-inverse is "on-fill" text; tone-danger is used
+  // as a badge bg. The pair structurally cannot pass without mode-aware token selection.
+  "--tug-base-fg-inverse|--tug-base-tone-danger", // [phase-4-engine] dock badge text: fg-inverse and tone-danger are both near-white in dark mode; resolving requires mode-aware on-fill token selection (Phase 4)
+  // B07: fg-inverse on surface-default (ghost/outlined badge in light mode): fg-inverse is
+  // near-white (L~0.94) in both modes; light-mode surface-default is also near-white.
+  // This is a structural polarity mismatch — the same exception is in RECIPE_PAIR_EXCEPTIONS.harmony.
+  // No engine change can make fg-inverse both near-white (for dark fills) and near-black
+  // (for light surfaces) without a mode-aware derivation path.
+  // Removed from global KNOWN_PAIR_EXCEPTIONS (this only fails in harmony light mode, not brio).
+  // RECIPE_PAIR_EXCEPTIONS.harmony carries the [design-choice] entry for the harmony recipe.
   "--tug-base-fg-inverse|--tug-base-surface-screen", // [design-choice] fg-inverse is for on-fill text (dark bg fills); structural polarity mismatch on light surface-screen
 
   // Filled button border-hover/-active on matching hover/active bg: same-hue outline by design
@@ -232,8 +237,11 @@ export const KNOWN_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set([
   "--tug-base-toggle-track-on-hover|--tug-base-toggle-track-on-hover", // [design-choice] same token as element and surface; contrast always 0 by definition; decorative
   "--tug-base-toggle-track-disabled|--tug-base-toggle-track-disabled", // [design-choice] same token as element and surface; contrast always 0 by definition; decorative
 
-  // tone-danger on surface-overlay: danger menu item label text
-  "--tug-base-tone-danger|--tug-base-surface-overlay", // [phase-3-bug] tone-danger chromatic hue ceiling prevents reaching contrast 75 against surface-overlay; Phase 3 will enforce
+  // B08: tone-danger on surface-overlay (danger menu item label text): vivid red clips in sRGB
+  // at high tones, reducing effective OKLab-L and preventing contrast 75 in dark mode.
+  // The gamut ceiling is the same structural constraint as B01 (tone-danger as element token).
+  // Resolving requires gamut-mapping-aware derivation — engine work deferred to Phase 4.
+  "--tug-base-tone-danger|--tug-base-surface-overlay", // [phase-4-engine] danger menu item text: vivid red gamut ceiling prevents reaching contrast 75; resolving requires gamut-mapping-aware derivation (Phase 4)
 ]);
 
 // ---------------------------------------------------------------------------

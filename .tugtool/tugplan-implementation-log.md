@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-19T03:41:49Z
+---
+
+## step-7: Resolved B01-B08 [phase-3-bug] entries. B03: cardFrameActiveTone 18→16 for fg-default|tab-bg-active contrast. B04: added accentSubtleTone=30 for fg-default|accent-subtle. B05: added cautionBgTone=30 for fg-default|tone-caution-bg. B02: resolved via LIGHT_FORMULAS values. B01/B06/B08: deferred [phase-4-engine] (gamut ceiling, mode-aware tokens). B07: documented [design-choice] in harmony. Zero [phase-3-bug] entries remain.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-6
 date: 2025-03-19T03:09:53Z
 ---

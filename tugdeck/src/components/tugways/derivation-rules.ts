@@ -552,13 +552,16 @@ const ACCENT_RULES: Record<string, DerivationRule> = {
     toneExpr: lit(50),
   },
 
-  // accent-subtle: accent hue at signalI, t:50, a:15
+  // accent-subtle: accent hue at signalI, accentSubtleTone, a:10
+  // tone driven by formula field: dark=30 (darker orange so composited surface over dark parent
+  // gives fg-default contrast ≥75), light=50 (standard mid-tone, easily passes on bright bg).
+  // alpha kept at 10 (reduced from 15) as an additional contribution. [phase-3-bug B04]
   "--tug-base-accent-subtle": {
     type: "chromatic",
     hueSlot: "accent",
     intensityExpr: (_p, _k, computed) => computed.signalI,
-    toneExpr: lit(50),
-    alphaExpr: lit(15),
+    toneExpr: (f: F) => f.accentSubtleTone,
+    alphaExpr: lit(10),
   },
 
   // accent-cool-default: txt hue at i:90, t:50 (cobalt-intense)
@@ -603,7 +606,18 @@ const SEMANTIC_TONE_RULES: Record<string, DerivationRule> = {
   ...semanticToneFamilyRules("agent", "agent", 15),
   ...semanticToneFamilyRules("data", "data", 15),
   ...semanticToneFamilyRules("success", "success", 15),
-  ...semanticToneFamilyRules("caution", "caution", 12),
+  ...semanticToneFamilyRules("caution", "caution", 8),
+  // tone-caution-bg uses formula field cautionBgTone instead of semanticSignalTone.
+  // Dark: cautionBgTone=30 (darker yellow so fg-default achieves contrast ≥75 composited over
+  // dark parent surface at low alpha). Light: cautionBgTone=35 (matches semanticSignalTone).
+  // Override spreads the family first, then overrides only the bg rule. [phase-3-bug B05]
+  "--tug-base-tone-caution-bg": {
+    type: "chromatic",
+    hueSlot: "caution",
+    intensityExpr: (_f: F, _k, computed) => computed.signalI,
+    toneExpr: (f: F) => f.cautionBgTone,
+    alphaExpr: lit(8),
+  },
   ...semanticToneFamilyRules("danger", "destructive", 15),
 };
 

@@ -653,7 +653,7 @@ const BRIO_STRUCTURAL_TOKENS: Record<string, string> = {
 export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number }> = {
   "--tug-base-accent-cool-default": { L: 0.744, C: 0.24300000000000002, h: 250 },
   "--tug-base-accent-default": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-accent-subtle": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-accent-subtle": { L: 0.528, C: 0.146, h: 55 },
   "--tug-base-badge-tinted-accent-bg": { L: 0.8160000000000001, C: 0.1898, h: 55 },
   "--tug-base-badge-tinted-accent-border": { L: 0.78, C: 0.146, h: 55 },
   "--tug-base-badge-tinted-accent-fg": { L: 0.906, C: 0.21023999999999998, h: 55 },
@@ -910,11 +910,11 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-surface-raised": { L: 0.27671999999999997, C: 0.014000000000000002, h: 263.33333333333326 },
   "--tug-base-surface-screen": { L: 0.33431999999999995, C: 0.019600000000000003, h: 260 },
   "--tug-base-surface-sunken": { L: 0.27276, C: 0.0149, h: 270 },
-  "--tug-base-tab-bg-active": { L: 0.35735999999999996, C: 0.033600000000000005, h: 260 },
+  "--tug-base-tab-bg-active": { L: 0.33432, C: 0.033600000000000005, h: 260 },
   "--tug-base-tab-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
-  "--tug-base-tab-fg-active": { L: 0.95568, C: 0.0081, h: 250 },
+  "--tug-base-tab-fg-active": { L: 0.93408, C: 0.0081, h: 250 },
   "--tug-base-tab-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
   "--tug-base-tab-fg-rest": { L: 0.744, C: 0.018900000000000004, h: 250 },
   "--tug-base-toggle-icon-disabled": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
@@ -944,7 +944,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-tone-agent-fg": { L: 0.708, C: 0.149, h: 270 },
   "--tug-base-tone-agent-icon": { L: 0.708, C: 0.149, h: 270 },
   "--tug-base-tone-caution": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-tone-caution-bg": { L: 0.9009999999999999, C: 0.125, h: 90 },
+  "--tug-base-tone-caution-bg": { L: 0.6006, C: 0.125, h: 90 },
   "--tug-base-tone-caution-border": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-tone-caution-fg": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-tone-caution-icon": { L: 0.9009999999999999, C: 0.125, h: 90 },
@@ -2771,9 +2771,9 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
 // ---------------------------------------------------------------------------
 
 describe("phase-3-step-2 standalone LIGHT_FORMULAS equality", () => {
-  it("LIGHT_FORMULAS has exactly 200 fields (same as DARK_FORMULAS)", () => {
-    expect(Object.keys(LIGHT_FORMULAS).length).toBe(200);
-    expect(Object.keys(DARK_FORMULAS).length).toBe(200);
+  it("LIGHT_FORMULAS has exactly 202 fields (same as DARK_FORMULAS; +2 for accentSubtleTone/cautionBgTone added in step-7)", () => {
+    expect(Object.keys(LIGHT_FORMULAS).length).toBe(202);
+    expect(Object.keys(DARK_FORMULAS).length).toBe(202);
   });
 
   it("LIGHT_FORMULAS deep-equals LIGHT_FORMULAS_LEGACY (all 200 fields identical)", () => {
@@ -2792,7 +2792,7 @@ describe("phase-3-step-2 standalone LIGHT_FORMULAS equality", () => {
     // Verify the object is its own complete definition — no prototype chain entries
     // that would indicate inheritance from another object via spread composition
     const keys = Object.keys(LIGHT_FORMULAS);
-    expect(keys.length).toBe(200);
+    expect(keys.length).toBe(202); // 200 original + 2 added in step-7 (accentSubtleTone, cautionBgTone)
     // Spot-check key fields from each semantic group to confirm they are own properties
     expect(Object.hasOwn(LIGHT_FORMULAS, "bgAppTone")).toBe(true);
     expect(Object.hasOwn(LIGHT_FORMULAS, "surfaceDefaultTone")).toBe(true);

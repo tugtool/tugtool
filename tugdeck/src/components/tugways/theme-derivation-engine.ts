@@ -544,6 +544,20 @@ export interface DerivationFormulas {
   borderSignalTone: number;
   /** @semantic signal-tone — tone for semantic tone tokens (semanticTone). Dark: 50. Light: lower to avoid neon glow. */
   semanticSignalTone: number;
+  /**
+   * @semantic signal-tone — tone for the accent-subtle tinted background.
+   * Dark: lower tone (e.g. 30) so fg-default achieves body-text contrast 75 when composited
+   * over a dark parent surface at low alpha. Light: 50 (standard mid-tone orange tint).
+   * [phase-3-bug B04] calibrated from 50→30 in dark mode.
+   */
+  accentSubtleTone: number;
+  /**
+   * @semantic signal-tone — tone for the tone-caution-bg semantic background tint.
+   * Dark: lower tone (e.g. 30) so fg-default achieves body-text contrast 75 when composited
+   * over a dark parent surface at low alpha. Light: matches semanticSignalTone (35).
+   * [phase-3-bug B05] calibrated via independent tone field rather than alpha reduction.
+   */
+  cautionBgTone: number;
 
   // ===== Card Frame Style =====
   // How card title bars and tab bars present. Dark: dim tones 15-18. Light: bright tones 85-92.
@@ -1066,11 +1080,13 @@ export const DARK_FORMULAS: DerivationFormulas = {
   dividerMutedI: 4, // lowest chroma: muted dividers are the most recessive structural element
   borderSignalTone: 50, // mid-tone: dark backgrounds make mid-tone signals vivid and readable
   semanticSignalTone: 50, // mid-tone: semantic tokens at 50 are bright enough to pop on dark surfaces
+  accentSubtleTone: 30, // darker orange: composited over dark surfaces at low alpha, fg-default achieves contrast ≥75 [phase-3-bug B04]
+  cautionBgTone: 30, // darker yellow: composited over dark surfaces at low alpha, fg-default achieves contrast ≥75 [phase-3-bug B05]
 
   // ===== Card Frame Style =====
   // How card title bars and tab bars present. Dark: dim tones 15-18. Light: bright tones 85-92.
   cardFrameActiveI: 12, // elevated chroma: active title bar uses rich hue to signal focus
-  cardFrameActiveTone: 18, // above surfaceScreen: active frame floats above the screen background
+  cardFrameActiveTone: 16, // above surfaceScreen: active frame floats above the screen background; tone reduced 18→16 to bring fg-default contrast from ~73.6 to ≥75 [phase-3-bug B03]
   cardFrameInactiveI: 4, // near-neutral: inactive frames recede to avoid competing with active card
   cardFrameInactiveTone: 15, // slightly below active: inactive frames are visibly dimmer but still distinct
 
@@ -1375,6 +1391,8 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   dividerMutedI: 5, // lower than default: muted dividers are the most recessive structural element
   borderSignalTone: 40, // below mid-tone: light backgrounds require darker signal borders to avoid neon glow
   semanticSignalTone: 35, // darker than border: semantic tokens need more contrast against bright light surfaces
+  accentSubtleTone: 50, // standard mid-tone: on bright light surfaces at low alpha, fg-default easily achieves contrast ≥75; no calibration needed
+  cautionBgTone: 35, // matches semanticSignalTone: caution bg uses same tone as other semantic tones in light mode; composited over bright surfaces fg-default passes contrast ≥75
 
   // ===== Card Frame Style =====
   // Light mode: bright tones (vs dark's dim tones 15-18). Frames sit just below canvas.
@@ -1620,6 +1638,8 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
   dividerMutedI: 5, // lower than default: muted dividers are the most recessive structural element
   borderSignalTone: 40, // below mid-tone: light backgrounds require darker signal borders to avoid neon glow
   semanticSignalTone: 35, // darker than border: semantic tokens need more contrast against bright light surfaces
+  accentSubtleTone: 50, // standard mid-tone: on bright light surfaces at low alpha, fg-default easily achieves contrast ≥75; no calibration needed
+  cautionBgTone: 35, // matches semanticSignalTone: caution bg uses same tone as other semantic tones in light mode; composited over bright surfaces fg-default passes contrast ≥75
 
   // ===== Card Frame Style =====
   // Light mode: bright tones (vs dark's dim tones 15-18). Frames sit just below canvas.
