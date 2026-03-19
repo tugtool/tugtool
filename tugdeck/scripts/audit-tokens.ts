@@ -1,25 +1,29 @@
 #!/usr/bin/env bun
 /**
- * token-audit.ts — Mechanical token audit tooling for the tugways design system.
+ * audit-tokens.ts — Mechanical token audit tooling for the tugways design system.
  *
  * Subcommands:
- *   tokens     Extract all --tug-base-* tokens from tug-base-generated.css and
- *              classify each as element / surface / chromatic / non-color.
- *   pairings   Parse all component CSS files and extract every
- *              foreground-on-background pairing (color/fill on background-color).
- *   rename     Bulk-rename tokens across all files (dry-run by default).
- *   inject     Generate and insert @tug-pairings comment blocks into CSS files.
- *   verify     Cross-check @tug-pairings blocks against element-surface-pairing-map.ts.
- *   lint       Hard-fail on annotation completeness, alias chain depth,
- *              missing @tug-pairings blocks, and unresolved pairings.
+ *   tokens      Extract all --tug-base-* tokens from tug-base-generated.css and
+ *               classify each as element / surface / chromatic / non-color.
+ *   pairings    Parse all component CSS files and extract every
+ *               foreground-on-background pairing (color/fill on background-color).
+ *   rename      Bulk-rename tokens across all auto-discovered files (dry-run by default).
+ *               Flags: --apply, --map <path>, --verify, --stats
+ *   rename-map  Generate the complete old->new rename map for all 373 tokens.
+ *               Flags: --json (machine-readable JSON vs. human-readable report)
+ *   inject      Generate and insert @tug-pairings comment blocks into CSS files.
+ *   verify      Cross-check @tug-pairings blocks against element-surface-pairing-map.ts.
+ *   lint        Hard-fail on annotation completeness, alias chain depth,
+ *               missing @tug-pairings blocks, and unresolved pairings.
  *
  * Usage:
- *   bun run scripts/token-audit.ts tokens
- *   bun run scripts/token-audit.ts pairings
- *   bun run scripts/token-audit.ts rename [--apply]
- *   bun run scripts/token-audit.ts inject [--apply]
- *   bun run scripts/token-audit.ts verify
- *   bun run scripts/token-audit.ts lint
+ *   bun run scripts/audit-tokens.ts tokens
+ *   bun run scripts/audit-tokens.ts pairings
+ *   bun run scripts/audit-tokens.ts rename [--apply] [--map <path>] [--verify] [--stats]
+ *   bun run scripts/audit-tokens.ts rename-map [--json]
+ *   bun run scripts/audit-tokens.ts inject [--apply]
+ *   bun run scripts/audit-tokens.ts verify
+ *   bun run scripts/audit-tokens.ts lint
  */
 
 import fs from "fs";
@@ -1815,17 +1819,29 @@ switch (command) {
     cmdLint();
     break;
   default:
-    console.log(`Usage: bun run scripts/token-audit.ts <command> [flags]
+    console.log(`Usage: bun run audit:tokens <command> [flags]
 
 Commands:
-  tokens                   Extract and classify all --tug-base-* tokens
-  pairings                 Audit component CSS files for foreground-on-background pairings
-  rename [--apply]         Bulk-rename tokens (dry run by default)
-  rename-map [--json]      Generate the complete old->new rename map (human-readable by default)
-  inject [--apply]         Generate @tug-pairings comment blocks (dry run by default)
-  verify                   Cross-check @tug-pairings blocks against pairing map
-  lint                     Hard-fail on missing annotations, multi-hop aliases, missing
-                           @tug-pairings blocks, and unresolved pairings
+  tokens                              Extract and classify all --tug-base-* tokens
+  pairings                            Audit component CSS files for foreground-on-background pairings
+  rename [flags]                      Bulk-rename tokens across auto-discovered files (dry run by default)
+    --apply                             Write changes to disk (default: dry run)
+    --map <path>                        Load rename map from a JSON file (default: built-in 7-entry map)
+    --verify                            Scan for stale old-name references after rename (requires --map)
+    --stats                             Print blast radius summary: token count, file count, per-file replacements (requires --map)
+  rename-map [--json]                 Generate the complete old->new rename map for all tokens
+    --json                              Output flat JSON object suitable for --map flag (default: human-readable report)
+  inject [--apply]                    Generate @tug-pairings comment blocks (dry run by default)
+  verify                              Cross-check @tug-pairings blocks against pairing map
+  lint                                Hard-fail on missing annotations, multi-hop aliases, missing
+                                      @tug-pairings blocks, and unresolved pairings
+
+Examples:
+  bun run audit:tokens rename-map --json > token-rename-map.json
+  bun run audit:tokens rename --map token-rename-map.json --stats
+  bun run audit:tokens rename --map token-rename-map.json
+  bun run audit:tokens rename --map token-rename-map.json --apply
+  bun run audit:tokens rename --verify --map token-rename-map.json
 `);
     break;
 }

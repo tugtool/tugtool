@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-19T17:48:05Z
+---
+
+## step-6: Updated help text and JSDoc to document rename-map subcommand and --map, --verify, --stats flags. Verified COMPONENT_CSS_FILES count (23) matches comment.
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
 step: step-5
 date: 2025-03-19T17:39:40Z
 ---
