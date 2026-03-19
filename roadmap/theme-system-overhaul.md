@@ -291,10 +291,100 @@ investigation of CSS files is an anti-pattern.
    Removed `LIGHT_MODE_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`
    entirely.
 
+### Phase 3.5-tooling: Enhance audit-tokens for bulk rename
+
+*Upgrades the `audit-tokens` rename infrastructure to handle the Phase 3.5A rename
+(320+ tokens across 40+ files) safely and mechanically.*
+
+#### The problem
+
+The current `audit-tokens rename` subcommand has a hardcoded 7-entry rename map
+from Phase 1. Phase 3.5A requires renaming every structured token in the system
+(~320+ tokens) across every file that references them (~40+ files). The current
+tooling cannot:
+
+- Generate the rename map programmatically from the naming convention rules
+- Load a rename map from an external file
+- Handle component alias tokens (`--tug-card-*`, `--tug-tab-*`)
+- Handle `@tug-renders-on` annotations
+- Scan all files that reference tokens (missing ~15 files)
+- Verify that no old names remain after rename
+
+#### What must change
+
+1. **`audit-tokens rename-map` subcommand (new).** Generates the complete old→new
+   rename map by:
+   - Reading the current token inventory from `audit-tokens tokens`
+   - Parsing each token name to extract component, emphasis, role, channel, state
+   - Applying the Phase 3.5A six-slot naming convention to produce the new name
+   - Outputting a JSON file (`token-rename-map.json`) with `{ "old-short": "new-short" }` entries
+   - Validating: no collisions, all tokens covered, all new names well-formed
+   - Flagging chromatic tokens that need manual naming decisions
+
+   The map generator encodes the naming rules as code, so the naming convention
+   can be iterated — regenerate, preview, adjust — before touching any source files.
+
+2. **`audit-tokens rename` enhancements:**
+
+   a. **Load map from JSON.** Instead of only using the hardcoded `RENAME_MAP`,
+      accept `--map token-rename-map.json` to load an external map. The hardcoded
+      map becomes the fallback when no `--map` is specified.
+
+   b. **Expanded file targets.** Add all files that reference tokens:
+      - `src/__tests__/contrast-exceptions.ts`
+      - `src/__tests__/theme-accessibility.test.ts`
+      - `src/__tests__/debug-contrast.test.ts`
+      - `src/__tests__/tug-checkbox-role.test.tsx`
+      - `src/__tests__/tug-switch-role.test.tsx`
+      - `src/__tests__/theme-export-import.test.tsx`
+      - `src/components/tugways/theme-accessibility.ts`
+      - `src/canvas-color.ts`
+      - `src/globals.css`
+      - `styles/tug-base.css`
+      - `src/components/tugways/tug-checkbox.tsx`
+      - `src/components/tugways/tug-switch.tsx`
+      - `src/components/tugways/style-inspector-overlay.ts`
+      - `scripts/audit-tokens.ts` (the script itself references token names)
+      - Any other `.ts`, `.tsx`, or `.css` file under `tugdeck/src/` and
+        `tugdeck/styles/` that contains `--tug-base-`
+      Auto-discover target files by scanning for `--tug-base-` references rather
+      than maintaining a hardcoded list.
+
+   c. **Component alias handling.** Detect `var(--tug-base-*)` references inside
+      component alias definitions (`--tug-card-*`, `--tug-tab-*`, etc. defined in
+      `tug-card.css`, `tug-tab.css`, etc.) and update them when the base token
+      they reference is renamed.
+
+   d. **`@tug-renders-on` annotation handling.** These annotations reference token
+      names as `/* @tug-renders-on: --tug-base-{name} */`. Update them when the
+      referenced token is renamed.
+
+3. **`audit-tokens rename --verify` mode (new).** After a rename is applied, scan
+   all files for any remaining references to old token names. Reports every stale
+   reference with file, line number, and the old name found. Exit code 1 if any
+   remain. This is the safety net — run it after `--apply` to confirm nothing was
+   missed.
+
+4. **`audit-tokens rename --stats` mode (new).** Before applying, show a summary:
+   total tokens to rename, files to modify, estimated replacements per file. Helps
+   gauge the blast radius before committing.
+
+#### Verification
+
+- `bun run audit:tokens rename-map` produces a valid JSON map with no collisions
+- `bun run audit:tokens rename --map token-rename-map.json` (dry run) shows all
+  expected replacements
+- `bun run audit:tokens rename --map token-rename-map.json --apply` applies cleanly
+- `bun run audit:tokens rename --verify --map token-rename-map.json` reports zero
+  stale references
+- `bun run audit:tokens lint` — zero violations after rename
+- `bun test` — all tests pass after rename
+
 ### Phase 3.5A: Standardize element/surface terminology and token naming convention
 
 *Addresses the terminology fragmentation and inconsistent token naming across the
-codebase. This is a comprehensive rename — no old names remain.*
+codebase. This is a comprehensive rename — no old names remain. Uses the tooling
+from Phase 3.5-tooling for mechanical execution.*
 
 #### The problem
 
@@ -514,54 +604,90 @@ convention decision — either they adopt the six-slot structure with appropriat
 values, or they are explicitly categorized as `chromatic-*` tokens outside the
 element/surface system. This decision is deferred to the planning phase.
 
+#### Execution strategy
+
+This is a complete rename. No old names remain. The Phase 3.5-tooling upgrades
+make this mechanical rather than manual.
+
+**Step 1: Generate the rename map.**
+
+```bash
+bun run audit:tokens rename-map > token-rename-map.json
+```
+
+Review the generated map. Resolve any chromatic tokens flagged for manual naming
+decisions. Iterate the naming convention if any names look wrong — regenerate,
+review, adjust — until the map is correct. This is the design phase.
+
+**Step 2: Preview the rename.**
+
+```bash
+bun run audit:tokens rename --map token-rename-map.json --stats
+bun run audit:tokens rename --map token-rename-map.json
+```
+
+The stats mode shows the blast radius. The dry run shows every replacement that
+will be made. Review for surprises.
+
+**Step 3: Apply the rename.**
+
+```bash
+bun run audit:tokens rename --map token-rename-map.json --apply
+```
+
+This is the single mechanical step that renames all token references across all
+files — CSS custom properties, `var()` references, `@tug-renders-on` annotations,
+component alias definitions, TypeScript string keys, test assertions, contrast
+exception strings, gallery/preview components.
+
+**Step 4: Regenerate derived files.**
+
+```bash
+bun run audit:tokens inject --apply    # regenerate @tug-pairings blocks
+bun run generate:tokens                # regenerate tug-base-generated.css + harmony.css
+```
+
+**Step 5: Verify nothing was missed.**
+
+```bash
+bun run audit:tokens rename --verify --map token-rename-map.json
+```
+
+Exit code 0 means zero stale references to old names remain anywhere in the
+project.
+
+**Step 6: Full verification gates.**
+
+```bash
+bun run audit:tokens lint       # zero violations
+bun run audit:tokens pairings   # zero unresolved
+bun run audit:tokens verify     # map ↔ CSS consistency
+bun test                        # all tests pass
+```
+
+**Step 7: Update documentation.** All references to old token names in docs,
+roadmaps, and design-system-concepts.md updated to new names. All
+"foreground/background" language in design docs updated to "element/surface."
+Add a rule to the Rules of Tugways establishing element/surface as the canonical
+vocabulary for contrast and pairing discussions.
+
 #### Scope of changes
 
-This is a complete rename. No old names remain. No backward compatibility. Every
-reference in every file is updated:
+Every file that references a `--tug-base-*` token is updated by the rename tool.
+The auto-discovery in Phase 3.5-tooling ensures no files are missed. The major
+categories:
 
-1. **CSS custom property names** (`--tug-base-*`): All 373 tokens renamed per the
-   map above. Uses `audit-tokens rename --apply` for mechanical execution.
-
-2. **Component CSS files** (23 files): All `var(--tug-base-*)` references updated.
-   All `@tug-renders-on` annotations updated. All `@tug-pairings` blocks
-   regenerated via `audit-tokens inject --apply`.
-
-3. **Component alias tokens** (`--tug-card-*`, `--tug-tab-*`, etc.): Updated to
-   reference new `--tug-base-*` names.
-
-4. **TypeScript derivation rules** (`derivation-rules.ts`): All token name strings
-   updated.
-
-5. **Element-surface pairing map** (`element-surface-pairing-map.ts`): All token
-   name keys and values updated.
-
-6. **Theme derivation engine** (`theme-derivation-engine.ts`): All token references
-   in formula evaluation updated.
-
-7. **Test files**: All token name assertions, exception sets, and test descriptions
-   updated.
-
-8. **Contrast exceptions** (`contrast-exceptions.ts`): All token pair strings
-   updated.
-
-9. **Generated CSS** (`tug-base-generated.css`, `themes/harmony.css`): Regenerated
-   via `bun run generate:tokens`.
-
-10. **Documentation and comments**: All references to old names updated. All
-    "foreground/background" language in design docs updated to "element/surface."
-
-11. **audit-tokens.ts**: Token classification logic updated if needed. All
-    subcommands verified against new names.
-
-12. **Gallery/preview components**: All hardcoded token references in TSX files
-    updated.
-
-**Verification gates (after every step):**
-- `bun run audit:tokens lint` — zero violations
-- `bun run audit:tokens pairings` — zero unresolved
-- `bun run audit:tokens inject --apply` — regenerate all blocks
-- `bun run audit:tokens verify` — map ↔ CSS consistency
-- `bun test` — all tests pass
+1. **CSS custom property names** — all 373 `--tug-base-*` tokens renamed
+2. **Component CSS files** (23 files) — `var()` references, `@tug-renders-on`
+   annotations, component alias definitions
+3. **Component alias tokens** (`--tug-card-*`, `--tug-tab-*`, etc.) — updated
+   to reference new `--tug-base-*` names
+4. **TypeScript source** — derivation rules, pairing map, theme engine, theme
+   accessibility, canvas color, gallery/preview components
+5. **Test files** — assertions, exception sets, descriptions
+6. **Generated CSS** — regenerated via `generate:tokens`
+7. **Documentation** — roadmaps, design docs, code comments
+8. **audit-tokens.ts** — internal token references updated
 
 ### Phase 3.5B: Design vocabulary — semantic text types, contrast roles, recipe inputs
 
