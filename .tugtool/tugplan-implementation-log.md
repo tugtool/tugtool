@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-19T17:29:02Z
+---
+
+## step-3: Added loadExternalMap(), refactored cmdRename() to accept options object with --map, --apply, --verify, --stats flags
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
 step: step-2
 date: 2025-03-19T17:15:51Z
 ---

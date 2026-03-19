@@ -849,7 +849,173 @@ function discoverTokenFiles(): string[] {
   return results;
 }
 
-function cmdRename(apply: boolean): void {
+interface RenameOptions {
+  apply: boolean;
+  mapPath?: string;
+  verify: boolean;
+  stats: boolean;
+}
+
+/**
+ * Load and parse an external JSON rename map file.
+ * The file must contain a JSON object mapping old short names to new short names.
+ * Throws on parse errors or invalid format; exits with code 1 on error.
+ */
+function loadExternalMap(mapPath: string): Record<string, string> {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(mapPath, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`ERROR: Could not read map file "${mapPath}": ${msg}`);
+    process.exit(1);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`ERROR: Could not parse JSON from "${mapPath}": ${msg}`);
+    process.exit(1);
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    console.error(`ERROR: Map file "${mapPath}" must contain a JSON object, not an array or primitive.`);
+    process.exit(1);
+  }
+
+  const map: Record<string, string> = {};
+  for (const [key, val] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof val !== "string") {
+      console.error(`ERROR: Map file "${mapPath}": value for key "${key}" must be a string, got ${typeof val}.`);
+      process.exit(1);
+    }
+    map[key] = val;
+  }
+
+  return map;
+}
+
+function cmdRename(opts: RenameOptions): void {
+  const { apply, mapPath, verify, stats } = opts;
+
+  // Load the rename map: external file if --map was given, else hardcoded fallback
+  const activeMap: Record<string, string> = mapPath
+    ? loadExternalMap(mapPath)
+    : RENAME_MAP;
+
+  if (verify) {
+    // --verify mode: scan for stale references using the same patterns as rename
+    console.log(`\n=== Token Rename --verify (checking for stale references) ===\n`);
+
+    const files = discoverTokenFiles();
+    let staleCount = 0;
+
+    for (const filePath of files) {
+      if (!fs.existsSync(filePath)) continue;
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+      const lines = content.split("\n");
+      const relativePath = path.relative(TUGDECK, filePath);
+
+      for (const [oldShort, newShort] of Object.entries(activeMap)) {
+        // Skip identity mappings
+        if (oldShort === newShort) continue;
+
+        const oldFull = `--tug-base-${oldShort}`;
+        const escapedOld = oldFull.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const cssRegex = new RegExp(`${escapedOld}(?=[^\\w-]|$)`, "g");
+
+        const escapedOldShort = oldShort.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const bareRegex = new RegExp(`"${escapedOldShort}"(?=\\s*:)`, "g");
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (cssRegex.test(line)) {
+            console.log(`  ${relativePath}:${i + 1}: stale CSS reference "${oldFull}"`);
+            staleCount++;
+          }
+          cssRegex.lastIndex = 0;
+          if (bareRegex.test(line)) {
+            console.log(`  ${relativePath}:${i + 1}: stale bare reference "${oldShort}"`);
+            staleCount++;
+          }
+          bareRegex.lastIndex = 0;
+        }
+      }
+    }
+
+    if (staleCount === 0) {
+      console.log(`✓ Zero stale references found.`);
+    } else {
+      console.log(`\nTotal stale references: ${staleCount}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (stats) {
+    // --stats mode: count tokens to rename, files to modify, replacements per file
+    console.log(`\n=== Token Rename --stats (blast radius preview) ===\n`);
+
+    // Count non-identity entries
+    const renameEntries = Object.entries(activeMap).filter(([old, newName]) => old !== newName);
+    console.log(`Non-identity rename entries: ${renameEntries.length}`);
+
+    const files = discoverTokenFiles();
+    const fileStats: { file: string; count: number }[] = [];
+
+    for (const filePath of files) {
+      if (!fs.existsSync(filePath)) continue;
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+      let count = 0;
+
+      for (const [oldShort] of renameEntries) {
+        const oldFull = `--tug-base-${oldShort}`;
+        const escapedOld = oldFull.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const cssRegex = new RegExp(`${escapedOld}(?=[^\\w-]|$)`, "g");
+        const cssMatches = content.match(cssRegex);
+        if (cssMatches) count += cssMatches.length;
+
+        const escapedOldShort = oldShort.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const bareRegex = new RegExp(`"${escapedOldShort}"(?=\\s*:)`, "g");
+        const bareMatches = content.match(bareRegex);
+        if (bareMatches) count += bareMatches.length;
+      }
+
+      if (count > 0) {
+        fileStats.push({ file: path.relative(TUGDECK, filePath), count });
+      }
+    }
+
+    // Sort by count descending
+    fileStats.sort((a, b) => b.count - a.count);
+
+    const totalFiles = fileStats.length;
+    const totalReplacements = fileStats.reduce((sum, f) => sum + f.count, 0);
+
+    console.log(`Files to modify: ${totalFiles}`);
+    console.log(`Total replacements: ${totalReplacements}\n`);
+
+    if (fileStats.length > 0) {
+      console.log(`Per-file replacement counts (sorted by count):`);
+      for (const { file, count } of fileStats) {
+        console.log(`  ${count.toString().padStart(4)}  ${file}`);
+      }
+    }
+    return;
+  }
+
   console.log(`\n=== Token Rename ${apply ? "(APPLYING)" : "(DRY RUN)"} ===\n`);
 
   const files = discoverTokenFiles();
@@ -862,7 +1028,7 @@ function cmdRename(apply: boolean): void {
     const replacements: string[] = [];
     let count = 0;
 
-    for (const [oldShort, newShort] of Object.entries(RENAME_MAP)) {
+    for (const [oldShort, newShort] of Object.entries(activeMap)) {
       // Replace in CSS custom property names: --tug-base-{old}
       const oldFull = `--tug-base-${oldShort}`;
       const newFull = `--tug-base-${newShort}`;
@@ -1606,6 +1772,18 @@ const args = process.argv.slice(2);
 const command = args[0];
 const flags = new Set(args.slice(1));
 
+// Index-based extraction of --map <path> flag value (Set-based parsing loses positional info)
+function extractFlagValue(rawArgs: string[], flag: string): string | undefined {
+  const idx = rawArgs.indexOf(flag);
+  if (idx === -1) return undefined;
+  const value = rawArgs[idx + 1];
+  if (value === undefined || value.startsWith("--")) {
+    console.error(`ERROR: ${flag} requires a path argument.`);
+    process.exit(1);
+  }
+  return value;
+}
+
 switch (command) {
   case "tokens":
     cmdTokens();
@@ -1613,9 +1791,17 @@ switch (command) {
   case "pairings":
     cmdPairings();
     break;
-  case "rename":
-    cmdRename(flags.has("--apply"));
+  case "rename": {
+    const subArgs = args.slice(1);
+    const mapPath = extractFlagValue(subArgs, "--map");
+    cmdRename({
+      apply: flags.has("--apply"),
+      mapPath,
+      verify: flags.has("--verify"),
+      stats: flags.has("--stats"),
+    });
     break;
+  }
   case "rename-map":
     cmdRenameMap(flags.has("--json"));
     break;
