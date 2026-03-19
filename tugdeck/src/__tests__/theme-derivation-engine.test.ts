@@ -6,9 +6,9 @@
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
  * - T2.5: Theme-invariant tokens are correct for Brio
  * - T2.6: Non-override tokens resolve to valid sRGB gamut colors
- * - T4.1: End-to-end Brio dark pipeline — 0 unexpected failures from engine contrast floors
- *         (Step 5: autoAdjustContrast removed from pipeline; engine contrast floors are authoritative)
  * - T4.2: End-to-end Brio light pipeline — 0 unexpected body-text failures + focus indicator contrast 30
+ * - Recipe contrast validation (parameterized loop): one test case per EXAMPLE_RECIPES entry;
+ *   adding a recipe automatically adds it to contrast validation [D02], Spec S04
  * - T-BRIO-MATCH: Engine output matches Brio ground truth fixture within OKLCH delta-E < 0.02
  *
  * Run with: cd tugdeck && bun test --grep "derivation-engine"
@@ -365,122 +365,13 @@ describe("derivation-engine", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration helpers shared by T4.1–T4.3
-// ---------------------------------------------------------------------------
-// KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS and KNOWN_PAIR_EXCEPTIONS are imported
-// from contrast-exceptions.ts (see import at top of file).
-
-/**
- * Run the full derivation → contrast-validation pipeline for a given recipe.
- *
- * Step 5: autoAdjustContrast has been removed from this pipeline. The derivation
- * engine now enforces contrast floors by construction via enforceContrastFloor
- * inside evaluateRules. The engine's output is authoritative — no post-hoc
- * adjustment is needed or applied here.
- *
- * Verifies [D09]: deriveTheme().resolved feeds directly into validateThemeContrast()
- * with no intermediate parsing or conversion.
- */
-function runFullPipeline(recipeName: string): {
-  initialFailureCount: number;
-  finalResults: ReturnType<typeof validateThemeContrast>;
-  tokensAndResolvedConsistent: boolean;
-} {
-  const recipe = EXAMPLE_RECIPES[recipeName];
-
-  // Step 1: Derive theme — resolved map is OKLCH, no conversion needed [D09]
-  // enforceContrastFloor runs inside evaluateRules; tokens are compliant by construction.
-  const output = deriveTheme(recipe);
-
-  // Step 2: Validate contrast — resolved feeds directly into validateThemeContrast [D09]
-  const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  const initialFailureCount = finalResults.filter((r) => !r.contrastPass).length;
-
-  // Consistency check: every chromatic token must still have a --tug-color() string.
-  let tokensAndResolvedConsistent = true;
-  for (const tokenName of Object.keys(output.resolved)) {
-    const tokenStr = output.tokens[tokenName];
-    if (!tokenStr || !tokenStr.includes("--tug-color(")) {
-      tokensAndResolvedConsistent = false;
-      break;
-    }
-  }
-
-  return {
-    initialFailureCount,
-    finalResults,
-    tokensAndResolvedConsistent,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Test suite: derivation-engine integration (T4.x)
+// T4.1 and T4.3 replaced by the parameterized "recipe contrast validation" loop [D02].
+// T4.2 retained here — brio-light is a synthetic mode-flip variant, not a first-class
+// EXAMPLE_RECIPES entry, so it cannot be covered by the parameterized loop.
 // ---------------------------------------------------------------------------
 
 describe("derivation-engine integration", () => {
-  // -------------------------------------------------------------------------
-  // T4.1: Brio end-to-end pipeline
-  // -------------------------------------------------------------------------
-  it("T4.1: deriveTheme(brio) -> validateThemeContrast -> 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
-    const { initialFailureCount, finalResults, tokensAndResolvedConsistent } =
-      runFullPipeline("brio");
-
-    // Pipeline must have evaluated some pairs
-    expect(initialFailureCount).toBeGreaterThanOrEqual(0);
-
-    // tokens and resolved must be consistent [D09]
-    expect(tokensAndResolvedConsistent).toBe(true);
-
-    // Failures must only come from the documented exception sets:
-    // element-level (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS), pair-level (KNOWN_PAIR_EXCEPTIONS),
-    // or marginal band (within CONTRAST_MARGINAL_DELTA contrast units of the role threshold). [D02]
-    const unexpectedFailures = finalResults.filter((r) => {
-      if (r.contrastPass) return false;
-      const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
-      if (Math.abs(r.contrast) >= margin) return false;
-      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
-      if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
-      return true;
-    });
-    const descriptions = unexpectedFailures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
-    );
-    expect(descriptions).toEqual([]);
-
-    // Core readability assertion: fg-default on primary surfaces must pass contrast 75
-    const coreFailures = finalResults.filter(
-      (r) =>
-        r.fg === "--tug-base-fg-default" &&
-        (r.bg === "--tug-base-surface-default" ||
-          r.bg === "--tug-base-surface-inset" ||
-          r.bg === "--tug-base-surface-content") &&
-        !r.contrastPass,
-    );
-    expect(coreFailures).toEqual([]);
-
-    // Focus indicator assertion (Step 5): all 9 ui-component focus-on-surface pairs
-    // must pass contrast 30. This guards against regressions on the accent-cool-default
-    // ui-component pairs even though two decorative pairs are in KNOWN_PAIR_EXCEPTIONS.
-    const focusSurfaces = new Set([
-      "--tug-base-bg-app",
-      "--tug-base-surface-default",
-      "--tug-base-surface-raised",
-      "--tug-base-surface-inset",
-      "--tug-base-surface-content",
-      "--tug-base-surface-overlay",
-      "--tug-base-surface-sunken",
-      "--tug-base-surface-screen",
-      "--tug-base-field-bg-rest",
-    ]);
-    const focusFailures = finalResults.filter(
-      (r) =>
-        r.fg === "--tug-base-accent-cool-default" &&
-        r.role === "ui-component" &&
-        focusSurfaces.has(r.bg) &&
-        !r.contrastPass,
-    );
-    expect(focusFailures.map((f) => `${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
-  });
 
   // -------------------------------------------------------------------------
   // T4.2: Brio light preset — 0 unexpected body-text failures
@@ -569,60 +460,6 @@ describe("derivation-engine integration", () => {
   });
 
   // -------------------------------------------------------------------------
-  // T4.3: Harmony light recipe — 0 unexpected failures with LIGHT_FORMULAS
-  //
-  // Validates that EXAMPLE_RECIPES.harmony (which uses LIGHT_FORMULAS) produces
-  // zero unexpected contrast failures across all roles. No LIGHT_MODE_PAIR_EXCEPTIONS
-  // set is needed — LIGHT_OVERRIDES provides proper calibration for all semantic
-  // groups. Only the structural exceptions shared with brio (KNOWN_PAIR_EXCEPTIONS
-  // and KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS) apply.
-  //
-  // The one remaining structural constraint is fg-inverse|surface-screen: fg-inverse
-  // is designed for on-fill text (dark backgrounds), not body text on light surfaces.
-  // This is the same structural pattern as brio-light T4.2 and is covered by the
-  // pair exception set, not a new light-mode exceptions list.
-  // -------------------------------------------------------------------------
-  it("T4.3: deriveTheme(EXAMPLE_RECIPES.harmony) -> 0 unexpected failures (LIGHT_FORMULAS calibrated)", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.harmony);
-    const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-
-    // Structural pair exception: RECIPE_PAIR_EXCEPTIONS["harmony"] imported from contrast-exceptions.ts.
-    // fg-inverse on surface-screen: structural polarity mismatch (for on-fill text, not light surfaces).
-    const harmonyPairExceptions = RECIPE_PAIR_EXCEPTIONS["harmony"] ?? new Set<string>();
-
-    const unexpectedFailures = finalResults.filter((r) => {
-      if (r.contrastPass) return false;
-      const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
-      if (Math.abs(r.contrast) >= margin) return false;
-      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
-      if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
-      if (harmonyPairExceptions.has(`${r.fg}|${r.bg}`)) return false;
-      return true;
-    });
-    const descriptions = unexpectedFailures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
-    );
-    expect(descriptions).toEqual([]);
-
-    // Core readability assertion: fg-default on primary surfaces must pass contrast 75
-    const coreFailures = finalResults.filter(
-      (r) =>
-        r.fg === "--tug-base-fg-default" &&
-        (r.bg === "--tug-base-surface-default" ||
-          r.bg === "--tug-base-surface-inset" ||
-          r.bg === "--tug-base-surface-content") &&
-        !r.contrastPass,
-    );
-    expect(coreFailures).toEqual([]);
-
-    // Token count must be 373 (same as brio)
-    expect(Object.keys(output.tokens).length).toBe(373);
-
-    // Mode must be "light"
-    expect(output.mode).toBe("light");
-  });
-
-  // -------------------------------------------------------------------------
   // Structural verification: resolved map feeds directly into validateThemeContrast
   // with no intermediate parsing or conversion [D09]
   // -------------------------------------------------------------------------
@@ -651,6 +488,114 @@ describe("derivation-engine integration", () => {
     expect(passingCount).toBeGreaterThan(0);
     expect(totalCount).toBeGreaterThan(passingCount); // some pairs fail → engine is honest
   });
+});
+
+// ---------------------------------------------------------------------------
+// Test suite: recipe contrast validation (parameterized loop)
+//
+// Iterates every entry in EXAMPLE_RECIPES and creates one test case per recipe.
+// Adding a new recipe to EXAMPLE_RECIPES automatically adds it to this validation
+// loop — no test code changes required. [D02], Spec S04, #parameterized-test-structure
+//
+// Exception logic:
+//   - Global exceptions: KNOWN_PAIR_EXCEPTIONS, KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS
+//   - Recipe-specific exceptions: RECIPE_PAIR_EXCEPTIONS[recipeName]
+//   - Marginal band: within CONTRAST_MARGINAL_DELTA contrast units of the role threshold
+//
+// Per-recipe assertions:
+//   - 0 unexpected contrast failures across all roles
+//   - fg-default on primary surfaces passes contrast 75 (core readability)
+//   - tokens and resolved are consistent (chromatic tokens have --tug-color strings)
+//   - Object.keys(output.tokens).length === 373 (full token set)
+//
+// Brio-specific:
+//   - Focus indicator assertion: accent-cool-default on 9 focus surfaces passes contrast 30
+//     (only applicable to dark-mode brio; light-mode recipes have structural constraints
+//     documented in T4.2 and the LIGHT_MODE_FOCUS_EXCEPTIONS set)
+// ---------------------------------------------------------------------------
+
+// Focus surfaces for the focus indicator assertion (brio dark only)
+const FOCUS_SURFACES = new Set([
+  "--tug-base-bg-app",
+  "--tug-base-surface-default",
+  "--tug-base-surface-raised",
+  "--tug-base-surface-inset",
+  "--tug-base-surface-content",
+  "--tug-base-surface-overlay",
+  "--tug-base-surface-sunken",
+  "--tug-base-surface-screen",
+  "--tug-base-field-bg-rest",
+]);
+
+describe("recipe contrast validation", () => {
+  for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES)) {
+    it(`${name}: 0 unexpected contrast failures (parameterized loop, all roles)`, () => {
+      // Derive theme — engine contrast floors applied by construction [D01]
+      const output = deriveTheme(recipe);
+      const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+      // Token count must be 373 for every recipe (tokens includes invariant tokens
+      // absent from resolved; tokens and resolved differ by design) [step-3 task]
+      expect(Object.keys(output.tokens).length).toBe(373);
+
+      // Consistency check: every chromatic token must have a --tug-color() string [D09]
+      let tokensAndResolvedConsistent = true;
+      for (const tokenName of Object.keys(output.resolved)) {
+        const tokenStr = output.tokens[tokenName];
+        if (!tokenStr || !tokenStr.includes("--tug-color(")) {
+          tokensAndResolvedConsistent = false;
+          break;
+        }
+      }
+      expect(tokensAndResolvedConsistent).toBe(true);
+
+      // Recipe-specific exceptions from shared module (Step 1 consolidation) [D03]
+      const recipeExceptions = RECIPE_PAIR_EXCEPTIONS[name] ?? new Set<string>();
+
+      // Filter unexpected failures: pass, marginal, known element, global pair, recipe pair
+      const unexpectedFailures = results.filter((r) => {
+        if (r.contrastPass) return false;
+        const margin = (CONTRAST_THRESHOLDS[r.role] ?? 15) - CONTRAST_MARGINAL_DELTA;
+        if (Math.abs(r.contrast) >= margin) return false;
+        if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
+        if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+        if (recipeExceptions.has(`${r.fg}|${r.bg}`)) return false;
+        return true;
+      });
+      const descriptions = unexpectedFailures.map(
+        (f) => `[${name}] ${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
+      );
+      expect(descriptions).toEqual([]);
+
+      // Core readability assertion: fg-default on primary surfaces passes contrast 75
+      const coreFailures = results.filter(
+        (r) =>
+          r.fg === "--tug-base-fg-default" &&
+          (r.bg === "--tug-base-surface-default" ||
+            r.bg === "--tug-base-surface-inset" ||
+            r.bg === "--tug-base-surface-content") &&
+          !r.contrastPass,
+      );
+      expect(coreFailures.map((f) => `[${name}] ${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
+
+      // Focus indicator assertion: brio dark only.
+      // In dark mode, accent-cool-default must pass contrast 30 on all 9 focus surfaces.
+      // Light-mode recipes have structural surface-derivation constraints (engine calibrated
+      // for dark mode) — those are documented in T4.2 (LIGHT_MODE_FOCUS_EXCEPTIONS).
+      // This assertion is gated on recipe name "brio" for extensibility — add a
+      // RECIPE_SPECIFIC_CHECKS[name] map here if other recipes need focus assertions.
+      if (name === "brio") {
+        const focusFailures = results.filter(
+          (r) =>
+            r.fg === "--tug-base-accent-cool-default" &&
+            r.role === "ui-component" &&
+            FOCUS_SURFACES.has(r.bg) &&
+            !r.contrastPass,
+        );
+        expect(focusFailures.map((f) => `[${name}] ${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
+      }
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1363,7 +1308,7 @@ describe("derivation-engine generateResolvedCssExport", () => {
 // Each test asserts 0 unexpected body-text perceptual contrast failures.
 // Step 5: autoAdjustContrast is no longer invoked — the engine's enforceContrastFloor
 // produces compliant tokens by construction.
-// The exception sets mirror T4.1/T4.2: known structural constraints are excluded
+// The exception sets mirror the parameterized loop / T4.2: known structural constraints are excluded
 // so the tests track real regressions rather than documented design choices.
 //
 // Light-mode tests (T4.4, T4.7) share the same set of structural surface-

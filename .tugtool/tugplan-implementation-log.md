@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-19T00:29:05Z
+---
+
+## step-3: Replaced T4.1 and T4.3 with parameterized describe block iterating Object.entries(EXAMPLE_RECIPES). Retained T4.2 brio-light. Each recipe case uses shared exceptions, marginal delta filter, core readability assertions, and brio-gated focus indicator check.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
 step: step-2
 date: 2025-03-19T00:17:46Z
 ---
