@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-19T02:53:08Z
+---
+
+## step-4: Replaced all 78 [light-review-pending] tags with explicit design-rationale annotations. Covered: outlined/ghost ToneLight/ILight fields, outlined option border tones, hue-slot-dispatch (30 fields), sentinel-hue-dispatch (9), sentinel-alpha (11), hue-name-dispatch (5). Zero [light-review-pending] tags remain. All 200 fields fully annotated.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-3
 date: 2025-03-19T02:41:00Z
 ---

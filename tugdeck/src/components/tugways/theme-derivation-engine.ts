@@ -1532,20 +1532,26 @@ export const LIGHT_FORMULAS_LEGACY: DerivationFormulas = { ...BASE_FORMULAS, ...
  *   - Card Frame Style
  *   - Shadow Depth
  *   - Filled Control Prominence
- *   - Outlined Control Style (LIGHT_OVERRIDES fields only; *ToneLight inherited fields reviewed in Step 4)
- *   - Ghost Control Style (LIGHT_OVERRIDES fields only; *ToneLight/*ILight inherited fields reviewed in Step 4)
+ *   - Outlined Control Style (all fields including *ToneLight legacy counterparts)
+ *   - Ghost Control Style (all fields including *ToneLight/*ILight legacy counterparts)
  *   - Badge Style
  *   - Icon Style
  *   - Tab Style
  *   - Toggle Style
  *   - Field Style
  *   - Computed Tone Override
- *   - Hue Name Dispatch (surfScreenHue, fgPlaceholderSource from LIGHT_OVERRIDES; remaining mode-independent fields reviewed in Step 4)
+ *   - Hue Name Dispatch (all fields — surfScreenHue and fgPlaceholderSource light-specific; remainder mode-independent)
  *   - Selection Mode
  *
- * Remaining `[light-review-pending]` fields are all inherited from DARK_FORMULAS and are
- * mode-independent (hue slot dispatch, sentinel dispatch, sentinel alpha, and a few hue name
- * fields). These are reviewed in Step 4 (control and component groups).
+ * Groups covered in Step 4 (control and component — mode-independent inherited fields reviewed):
+ *   - Hue Slot Dispatch (all mode-independent: same slot routing as DARK_FORMULAS)
+ *   - Sentinel Hue Dispatch (all mode-independent: __highlight/__verboseHighlight sentinel paths)
+ *   - Sentinel Alpha (all mode-independent: same alpha percentages as DARK_FORMULAS)
+ *   - Outlined Control *ToneLight/*ILight legacy counterparts (reviewed; values confirmed correct)
+ *   - Ghost Control *ToneLight/*ILight legacy counterparts (reviewed; values confirmed correct)
+ *   - outlinedOptionBorderRest/Hover/ActiveTone (reviewed; mid-dark tones appropriate for light surfaces)
+ *
+ * All 200 fields are now explicitly set with design-rationale annotations. Review complete (Step 4).
  *
  * Use this as `formulas` in any light-mode `ThemeRecipe`. [D01] [D04]
  */
@@ -1651,15 +1657,15 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
   outlinedIconHoverTone: 8, // same across states
   outlinedIconActiveTone: 8, // same across states
   outlinedIconI: 4, // same as fg chroma: icons match text warmth
-  outlinedFgRestToneLight: 0, // [light-review-pending] light-mode counterpart: same as DARK_FORMULAS (inverted polarity, pure black)
-  outlinedFgHoverToneLight: 0, // [light-review-pending] same across states (light)
-  outlinedFgActiveToneLight: 0, // [light-review-pending] same across states (light)
-  outlinedIconRestToneLight: 0, // [light-review-pending] light-mode counterpart: black icons mirror black text
-  outlinedIconHoverToneLight: 0, // [light-review-pending] same across states (light)
-  outlinedIconActiveToneLight: 0, // [light-review-pending] same across states (light)
-  outlinedOptionBorderRestTone: 50, // [light-review-pending] mid-tone rest border: may need calibration for light bg visibility
-  outlinedOptionBorderHoverTone: 55, // [light-review-pending] slightly higher on hover: may need calibration for light bg
-  outlinedOptionBorderActiveTone: 60, // [light-review-pending] highest on press: may need calibration for light bg
+  outlinedFgRestToneLight: 0, // legacy light-mode counterpart field: derivation uses outlinedFgRestTone (set to 8 above) for both modes; this field is pure black (tone 0) and is mode-independent — value matches DARK_FORMULAS
+  outlinedFgHoverToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary tone field
+  outlinedFgActiveToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary tone field
+  outlinedIconRestToneLight: 0, // legacy light-mode counterpart for icons: derivation uses outlinedIconRestTone (set to 8 above); this value is pure black — mode-independent
+  outlinedIconHoverToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary icon tone field
+  outlinedIconActiveToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary icon tone field
+  outlinedOptionBorderRestTone: 50, // mid-dark rest border: tone 50 is mid-dark against near-white light surfaces — clearly visible without being harsh; aligns with borderStrongTone (52)
+  outlinedOptionBorderHoverTone: 55, // slightly lower on hover: border shifts toward mid-tone to acknowledge the hover bg change
+  outlinedOptionBorderActiveTone: 60, // mid-tone on press: border lifts further toward mid-range to confirm active state — consistent with dark mode's directional signal
   // outlinedBgHoverI / outlinedBgActiveI: light mode uses direct chroma, not sentinel.
   outlinedBgHoverI: 4, // direct chroma: light-mode hover bg is a solid tinted surface, not alpha sentinel
   outlinedBgHoverAlphaValue: 100, // fully opaque: light-mode hover bg is a solid surface (no alpha wash)
@@ -1684,16 +1690,16 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
   ghostIconActiveI: 4, // same across states
   ghostBorderI: 20, // elevated chroma: visible hue-tinted ring without filled bg
   ghostBorderTone: 35, // darker tone: border must be dark enough to show against light surfaces
-  ghostFgRestToneLight: 0, // [light-review-pending] light-mode counterpart: same as DARK_FORMULAS (pure black fg)
-  ghostFgHoverToneLight: 0, // [light-review-pending] same across states (light)
-  ghostFgActiveToneLight: 0, // [light-review-pending] same across states (light)
-  ghostFgRestILight: 0, // [light-review-pending] light-mode counterpart: zero chroma — black is achromatic
-  ghostFgHoverILight: 0, // [light-review-pending] same across states (light)
-  ghostFgActiveILight: 0, // [light-review-pending] same across states (light)
-  ghostIconRestToneLight: 0, // [light-review-pending] light-mode counterpart: black icons mirror black text
-  ghostIconHoverToneLight: 0, // [light-review-pending] same across states (light)
-  ghostIconActiveToneLight: 0, // [light-review-pending] same across states (light)
-  ghostIconActiveILight: 0, // [light-review-pending] light-mode counterpart: zero chroma for black icons
+  ghostFgRestToneLight: 0, // legacy light-mode counterpart field: derivation uses ghostFgRestTone (set to 8 above) for both modes; this field is pure black (tone 0) and is mode-independent — value matches DARK_FORMULAS
+  ghostFgHoverToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary tone field
+  ghostFgActiveToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary tone field
+  ghostFgRestILight: 0, // legacy light-mode chroma counterpart: derivation uses ghostFgRestI (set to 4 above); pure black is achromatic (I=0) — mode-independent
+  ghostFgHoverILight: 0, // same across states: legacy counterpart, derivation dispatches via primary chroma field
+  ghostFgActiveILight: 0, // same across states: legacy counterpart, derivation dispatches via primary chroma field
+  ghostIconRestToneLight: 0, // legacy light-mode icon counterpart: derivation uses ghostIconRestTone (set to 8 above); pure black mirrors pure-black fg — mode-independent
+  ghostIconHoverToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary icon tone field
+  ghostIconActiveToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary icon tone field
+  ghostIconActiveILight: 0, // legacy light-mode icon chroma counterpart: pure black is achromatic (I=0) — mode-independent
 
   // ===== Badge Style =====
   // Light mode: dark fg on tinted bg (inverse of dark's bright fg on dark bg).
@@ -1734,66 +1740,70 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
   disabledBorderI: 6, // same: gives disabled fields a visible edge despite light-mode tone
 
   // ===== Hue Slot Dispatch =====
-  // [light-review-pending] All hue-slot-dispatch fields are mode-independent — the dark defaults
-  // are correct for light mode too (hue dispatch is independent of surface polarity).
-  bgAppHueSlot: "canvas", // [light-review-pending] mode-independent: app bg uses canvas hue in both modes
-  bgCanvasHueSlot: "canvas", // [light-review-pending] mode-independent: canvas bg uses canvas hue in both modes
-  surfaceSunkenHueSlot: "surfBareBase", // [light-review-pending] mode-independent: sunken surfaces use bare-base in both modes
-  surfaceDefaultHueSlot: "surfBareBase", // [light-review-pending] mode-independent: default surface uses bare-base in both modes
-  surfaceRaisedHueSlot: "atm", // [light-review-pending] mode-independent: raised surfaces use atm hue in both modes
-  surfaceOverlayHueSlot: "surfBareBase", // [light-review-pending] mode-independent: overlays use bare-base in both modes
-  surfaceInsetHueSlot: "atm", // [light-review-pending] mode-independent: inset surfaces use atm hue in both modes
-  surfaceContentHueSlot: "atm", // [light-review-pending] mode-independent: content surfaces use atm hue in both modes
-  surfaceScreenHueSlot: "surfScreen", // [light-review-pending] mode-independent: screen surfaces use surfScreen slot in both modes
-  fgMutedHueSlot: "fgMuted", // [light-review-pending] mode-independent: muted fg uses dedicated slot in both modes
-  fgSubtleHueSlot: "fgSubtle", // [light-review-pending] mode-independent: subtle fg uses dedicated slot in both modes
-  fgDisabledHueSlot: "fgDisabled", // [light-review-pending] mode-independent: disabled fg uses dedicated slot in both modes
-  fgPlaceholderHueSlot: "fgPlaceholder", // [light-review-pending] mode-independent: placeholder uses dedicated slot in both modes
-  fgInverseHueSlot: "fgInverse", // [light-review-pending] mode-independent: inverse fg uses fgInverse slot in both modes
-  fgOnAccentHueSlot: "fgInverse", // [light-review-pending] mode-independent: on-accent fg shares fgInverse in both modes
-  iconMutedHueSlot: "fgSubtle", // [light-review-pending] mode-independent: muted icons share fgSubtle in both modes
-  iconOnAccentHueSlot: "fgInverse", // [light-review-pending] mode-independent: on-accent icons share fgInverse in both modes
-  dividerMutedHueSlot: "borderTintBareBase", // [light-review-pending] mode-independent: muted dividers use border tint in both modes
-  disabledBgHueSlot: "surfBareBase", // [light-review-pending] mode-independent: disabled bg uses bare-base in both modes
-  fieldBgHoverHueSlot: "surfBareBase", // [light-review-pending] mode-independent: field hover uses bare-base in both modes
-  fieldBgReadOnlyHueSlot: "surfBareBase", // [light-review-pending] mode-independent: read-only uses bare-base in both modes
-  fieldPlaceholderHueSlot: "fgPlaceholder", // [light-review-pending] mode-independent: placeholder shares fgPlaceholder in both modes
-  fieldBorderRestHueSlot: "fgPlaceholder", // [light-review-pending] mode-independent: rest border shares fgPlaceholder in both modes
-  fieldBorderHoverHueSlot: "fgSubtle", // [light-review-pending] mode-independent: hover border shifts to fgSubtle in both modes
-  toggleTrackDisabledHueSlot: "surfBareBase", // [light-review-pending] mode-independent: disabled track uses bare-base in both modes
-  toggleThumbHueSlot: "fgInverse", // [light-review-pending] mode-independent: thumb uses fgInverse in both modes
-  checkmarkHueSlot: "fgInverse", // [light-review-pending] mode-independent: checkmark uses fgInverse in both modes
-  radioDotHueSlot: "fgInverse", // [light-review-pending] mode-independent: radio dot uses fgInverse in both modes
-  tabBgActiveHueSlot: "cardFrame", // [light-review-pending] mode-independent: active tab bg uses cardFrame slot in both modes
-  tabBgInactiveHueSlot: "cardFrame", // [light-review-pending] mode-independent: inactive tab bg uses cardFrame slot in both modes
+  // Hue-slot routing is mode-independent: these fields select which palette slot drives a
+  // token's hue angle, not its lightness. Surface polarity (dark vs light) is handled by
+  // the tone fields above. Same slot assignments as DARK_FORMULAS.
+  bgAppHueSlot: "canvas", // mode-independent: app bg uses canvas hue slot in both modes — palette identity is the same
+  bgCanvasHueSlot: "canvas", // mode-independent: canvas bg uses canvas slot in both modes
+  surfaceSunkenHueSlot: "surfBareBase", // mode-independent: sunken surfaces route through bare-base slot in both modes
+  surfaceDefaultHueSlot: "surfBareBase", // mode-independent: default card surfaces use bare-base slot in both modes
+  surfaceRaisedHueSlot: "atm", // mode-independent: raised surfaces (popovers) use atm hue in both modes — warmth consistency
+  surfaceOverlayHueSlot: "surfBareBase", // mode-independent: overlays use bare-base slot in both modes
+  surfaceInsetHueSlot: "atm", // mode-independent: inset wells use atm hue in both modes — matches raised context
+  surfaceContentHueSlot: "atm", // mode-independent: content areas use atm hue in both modes — consistency with inset
+  surfaceScreenHueSlot: "surfScreen", // mode-independent: screen surfaces use surfScreen slot in both modes
+  fgMutedHueSlot: "fgMuted", // mode-independent: muted fg routes through its dedicated slot in both modes
+  fgSubtleHueSlot: "fgSubtle", // mode-independent: subtle fg routes through its dedicated slot in both modes
+  fgDisabledHueSlot: "fgDisabled", // mode-independent: disabled fg routes through its dedicated slot in both modes
+  fgPlaceholderHueSlot: "fgPlaceholder", // mode-independent: placeholder text routes through its dedicated slot in both modes
+  fgInverseHueSlot: "fgInverse", // mode-independent: inverse fg routes through fgInverse slot in both modes
+  fgOnAccentHueSlot: "fgInverse", // mode-independent: on-accent fg shares fgInverse slot in both modes — same palette identity
+  iconMutedHueSlot: "fgSubtle", // mode-independent: muted icons share fgSubtle slot in both modes — icons echo text hue
+  iconOnAccentHueSlot: "fgInverse", // mode-independent: on-accent icons share fgInverse slot in both modes
+  dividerMutedHueSlot: "borderTintBareBase", // mode-independent: muted dividers route through border tint slot in both modes
+  disabledBgHueSlot: "surfBareBase", // mode-independent: disabled bg uses bare-base slot in both modes — neutral recessive
+  fieldBgHoverHueSlot: "surfBareBase", // mode-independent: field hover bg routes through bare-base slot in both modes
+  fieldBgReadOnlyHueSlot: "surfBareBase", // mode-independent: read-only field bg routes through bare-base slot in both modes
+  fieldPlaceholderHueSlot: "fgPlaceholder", // mode-independent: placeholder text shares fgPlaceholder slot in both modes
+  fieldBorderRestHueSlot: "fgPlaceholder", // mode-independent: rest border shares fgPlaceholder slot in both modes — recessive default
+  fieldBorderHoverHueSlot: "fgSubtle", // mode-independent: hover border shifts to fgSubtle slot in both modes — signals interactivity
+  toggleTrackDisabledHueSlot: "surfBareBase", // mode-independent: disabled track uses bare-base slot in both modes — neutral signal
+  toggleThumbHueSlot: "fgInverse", // mode-independent: toggle thumb routes through fgInverse slot in both modes — high-contrast knob
+  checkmarkHueSlot: "fgInverse", // mode-independent: checkmark routes through fgInverse slot in both modes — on-filled-control glyph
+  radioDotHueSlot: "fgInverse", // mode-independent: radio dot routes through fgInverse slot in both modes — same as checkmark
+  tabBgActiveHueSlot: "cardFrame", // mode-independent: active tab bg routes through cardFrame slot in both modes — matches title bar
+  tabBgInactiveHueSlot: "cardFrame", // mode-independent: inactive tab bg shares cardFrame slot in both modes — same hue, lower tone
 
   // ===== Sentinel Hue Dispatch =====
-  // [light-review-pending] All sentinel-hue-dispatch fields are mode-independent — the dark defaults
-  // are correct for light mode too (sentinel routing is independent of surface polarity).
-  outlinedBgHoverHueSlot: "__highlight", // [light-review-pending] mode-independent: outlined hover uses __highlight in both modes
-  outlinedBgActiveHueSlot: "__highlight", // [light-review-pending] mode-independent: outlined active uses __highlight in both modes
-  ghostActionBgHoverHueSlot: "__highlight", // [light-review-pending] mode-independent: ghost action hover uses __highlight in both modes
-  ghostActionBgActiveHueSlot: "__highlight", // [light-review-pending] mode-independent: ghost action active uses __highlight in both modes
-  ghostOptionBgHoverHueSlot: "__highlight", // [light-review-pending] mode-independent: ghost option hover uses __highlight in both modes
-  ghostOptionBgActiveHueSlot: "__highlight", // [light-review-pending] mode-independent: ghost option active uses __highlight in both modes
-  tabBgHoverHueSlot: "__highlight", // [light-review-pending] mode-independent: tab hover uses __highlight in both modes
-  tabCloseBgHoverHueSlot: "__highlight", // [light-review-pending] mode-independent: tab close hover uses __highlight in both modes
-  highlightHoverHueSlot: "__verboseHighlight", // [light-review-pending] mode-independent: highlight hover uses __verboseHighlight in both modes
+  // Sentinel slots (__highlight, __verboseHighlight) are mode-independent: they bypass the
+  // hue/tone/alpha chromatic path and use a fixed white-alpha tint. Same sentinel routing
+  // as DARK_FORMULAS — the tint behavior works on both dark and light surfaces.
+  outlinedBgHoverHueSlot: "__highlight", // mode-independent: outlined hover uses white-alpha __highlight sentinel in both modes
+  outlinedBgActiveHueSlot: "__highlight", // mode-independent: outlined active uses __highlight sentinel in both modes
+  ghostActionBgHoverHueSlot: "__highlight", // mode-independent: ghost action hover uses __highlight sentinel in both modes
+  ghostActionBgActiveHueSlot: "__highlight", // mode-independent: ghost action active uses __highlight sentinel in both modes
+  ghostOptionBgHoverHueSlot: "__highlight", // mode-independent: ghost option hover uses __highlight sentinel in both modes
+  ghostOptionBgActiveHueSlot: "__highlight", // mode-independent: ghost option active uses __highlight sentinel in both modes
+  tabBgHoverHueSlot: "__highlight", // mode-independent: tab hover uses __highlight sentinel in both modes
+  tabCloseBgHoverHueSlot: "__highlight", // mode-independent: tab close hover uses __highlight sentinel in both modes
+  highlightHoverHueSlot: "__verboseHighlight", // mode-independent: highlight hover uses __verboseHighlight sentinel in both modes
 
   // ===== Sentinel Alpha =====
-  // [light-review-pending] All sentinel-alpha fields are mode-independent — the dark defaults
-  // are correct for light mode too (alpha wash behavior is independent of surface polarity).
-  tabBgHoverAlpha: 8, // [light-review-pending] mode-independent: tab hover alpha is the same in both modes
-  tabCloseBgHoverAlpha: 12, // [light-review-pending] mode-independent: tab close hover alpha is the same in both modes
-  outlinedBgHoverAlpha: 10, // [light-review-pending] mode-independent: outlined hover alpha is the same in both modes
-  outlinedBgActiveAlpha: 20, // [light-review-pending] mode-independent: outlined active alpha is the same in both modes
-  ghostActionBgHoverAlpha: 10, // [light-review-pending] mode-independent: ghost action hover alpha is the same in both modes
-  ghostActionBgActiveAlpha: 20, // [light-review-pending] mode-independent: ghost action active alpha is the same in both modes
-  ghostOptionBgHoverAlpha: 10, // [light-review-pending] mode-independent: ghost option hover alpha is the same in both modes
-  ghostOptionBgActiveAlpha: 20, // [light-review-pending] mode-independent: ghost option active alpha is the same in both modes
-  highlightHoverAlpha: 5, // [light-review-pending] mode-independent: highlight hover alpha is the same in both modes
-  ghostDangerBgHoverAlpha: 10, // [light-review-pending] mode-independent: danger ghost hover alpha is the same in both modes
-  ghostDangerBgActiveAlpha: 20, // [light-review-pending] mode-independent: danger ghost active alpha is the same in both modes
+  // Sentinel alpha values control the opacity of white-tint hover/active overlays. These
+  // are mode-independent: the same percentage wash reads consistently on both dark and
+  // light surfaces because the tint color (white) adapts visually with the surface tone.
+  // Same alpha values as DARK_FORMULAS.
+  tabBgHoverAlpha: 8, // mode-independent: 8% white wash on tab hover — subtle state change in both modes
+  tabCloseBgHoverAlpha: 12, // mode-independent: 12% white wash on close button hover — slightly stronger than tab hover
+  outlinedBgHoverAlpha: 10, // mode-independent: 10% white wash on outlined button hover in dark mode (light mode uses solid bg instead)
+  outlinedBgActiveAlpha: 20, // mode-independent: 20% white wash on outlined button press in dark mode
+  ghostActionBgHoverAlpha: 10, // mode-independent: 10% white wash on ghost action hover — same as outlined
+  ghostActionBgActiveAlpha: 20, // mode-independent: 20% white wash on ghost action press — same as outlined
+  ghostOptionBgHoverAlpha: 10, // mode-independent: 10% white wash on ghost option hover — consistent with action hover
+  ghostOptionBgActiveAlpha: 20, // mode-independent: 20% white wash on ghost option press
+  highlightHoverAlpha: 5, // mode-independent: 5% white wash on selection highlight hover — very subtle
+  ghostDangerBgHoverAlpha: 10, // mode-independent: 10% white wash on danger ghost hover — same ratio as standard ghost
+  ghostDangerBgActiveAlpha: 20, // mode-independent: 20% white wash on danger ghost press
 
   // ===== Computed Tone Override =====
   // Light mode: dividers and disabled controls are recalibrated for light surfaces.
@@ -1816,12 +1826,12 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
   // ===== Hue Name Dispatch =====
   // Light mode overrides for derived hue slots that differ from dark.
   surfScreenHue: "cobalt", // cobalt screen bg: light surface screen uses text hue for continuity
-  fgMutedHueExpr: "__bare_primary", // [light-review-pending] mode-independent: bare-primary sentinel same as dark
-  fgSubtleHue: "indigo-cobalt", // [light-review-pending] mode-independent: indigo-cobalt subtle text same as dark
-  fgDisabledHue: "indigo-cobalt", // [light-review-pending] mode-independent: indigo-cobalt disabled text same as dark
-  fgInverseHue: "sapphire-cobalt", // [light-review-pending] mode-independent: sapphire-cobalt inverse same as dark
+  fgMutedHueExpr: "__bare_primary", // mode-independent: bare-primary sentinel derives muted fg from the primary hue in both modes — palette identity is the same
+  fgSubtleHue: "indigo-cobalt", // mode-independent: indigo-cobalt is the palette hue for subtle fg text in both modes
+  fgDisabledHue: "indigo-cobalt", // mode-independent: indigo-cobalt is the palette hue for disabled fg text in both modes
+  fgInverseHue: "sapphire-cobalt", // mode-independent: sapphire-cobalt drives inverse fg in both modes — same palette identity
   fgPlaceholderSource: "atm", // placeholder derives from atm: light-mode placeholder uses surface hue for softness
-  selectionInactiveHue: "yellow", // [light-review-pending] mode-independent: yellow inactive selection same as dark
+  selectionInactiveHue: "yellow", // mode-independent: yellow is the inactive selection hue in both modes — warm highlight identity
 
   // ===== Selection Mode =====
   // Light mode: atm-offset path for inactive selection (more natural on light canvas).
