@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-19T20:21:41Z
+---
+
+## step-2: Reordered constituent from slot 5 to slot 3 in all ~340 non-identity seed map entries. Added -rest to all stateless entries. Applied semantic fixes (disabled-as-state, link-hover decomposition, shadow sizes as roles, field text roles) and converted all 32 formerly-chromatic tokens to six-slot convention. 373 tokens, zero collisions, all tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-1
 date: 2025-03-19T19:31:28Z
 ---
