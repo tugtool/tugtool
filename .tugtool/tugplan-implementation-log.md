@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-19T20:38:59Z
+---
+
+## step-5: Integration checkpoint passed. All 373 tokens mapped with zero collisions, rename --verify finds 3695 stale refs (expected before rename), lint zero violations, 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-4
 date: 2025-03-19T20:32:17Z
 ---
