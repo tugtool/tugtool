@@ -787,22 +787,30 @@ External research suggests a useful combined model:
 - Spectrum contributes the explicit distinction between aliases and component
   tokens.
 
-### Recommended Grammar
+### Finalized Grammar (Phase 3.5A)
 
-For canonical semantic tokens:
+All structured tokens use the six-slot format:
 
-`--tug-base-<domain>-<role>[-<emphasis>][-<state>]`
+`--tug-base-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>`
 
-Examples:
+Where:
+- **plane**: `element` (visible marks: text, icons, borders) or `surface` (backgrounds)
+- **component**: `global`, `control`, `tab`, `tone`, `field`, `badge`, `toggle`, `radio`, etc.
+- **constituent**: `text`, `icon`, `border`, `shadow`, `divider`, `fill`, `thumb`, `dot` (elements); `primary`, `track` (surfaces)
+- **emphasis**: `normal`, `filled`, `outlined`, `ghost`, `tinted`
+- **role**: `plain`, `default`, `accent`, `action`, `danger`, `success`, `caution`, `muted`, `subtle`, etc.
+- **state**: `rest`, `hover`, `active`, `focus`, `disabled`, `readOnly`, `mixed`, `inactive`
 
-- `--tug-base-fg-default`
-- `--tug-base-fg-muted`
-- `--tug-base-border-default`
-- `--tug-base-border-accent-hover`
-- `--tug-base-surface-control-active`
-- `--tug-base-tab-underline-active`
-- `--tug-base-focus-ring-default`
-- `--tug-base-banner-warning-bg`
+Examples (finalized names):
+
+- `--tug-base-element-global-text-normal-default-rest`
+- `--tug-base-element-global-text-normal-muted-rest`
+- `--tug-base-element-global-border-normal-default-rest`
+- `--tug-base-element-global-border-normal-accent-hover`
+- `--tug-base-surface-control-primary-filled-action-rest`
+- `--tug-base-element-tab-text-normal-active-rest`
+
+> *Note: The grammar shown above (`--tug-base-<domain>-<role>[-<emphasis>][-<state>]`) was a draft convention. The finalized convention above supersedes it.*
 
 For component or pattern tokens:
 
@@ -927,50 +935,48 @@ Rules:
 
 ---
 
-## Revised `--tug-base-*` Semantic Taxonomy
+## `--tug-base-*` Semantic Taxonomy (Phase 3.5A finalized names)
 
-This is the part the earlier draft undershot. The taxonomy below is
-intentionally large because the roadmap is large.
+> *This section was originally a draft taxonomy using legacy `fg-` / `bg-` naming. Updated to Phase 3.5A six-slot finalized names.*
+
+All structured tokens follow `<plane>-<component>-<constituent>-<emphasis>-<role>-<state>`.
 
 ### A. Foundation Domains
 
-#### Surfaces
+#### Surfaces (global)
 
-- `--tug-base-bg-app`
-- `--tug-base-bg-canvas`
-- `--tug-base-surface-sunken`
-- `--tug-base-surface-default`
-- `--tug-base-surface-raised`
-- `--tug-base-surface-overlay`
-- `--tug-base-surface-inset`
-- `--tug-base-surface-control`
-- `--tug-base-surface-control-hover`
-- `--tug-base-surface-control-active`
-- `--tug-base-surface-content`
-- `--tug-base-surface-screen`
+- `--tug-base-surface-global-primary-normal-app-rest`
+- `--tug-base-surface-global-primary-normal-canvas-rest`
+- `--tug-base-surface-global-primary-normal-sunken-rest`
+- `--tug-base-surface-global-primary-normal-default-rest`
+- `--tug-base-surface-global-primary-normal-raised-rest`
+- `--tug-base-surface-global-primary-normal-overlay-rest`
+- `--tug-base-surface-global-primary-normal-inset-rest`
+- `--tug-base-surface-global-primary-normal-control-rest`
+- `--tug-base-surface-global-primary-normal-content-rest`
+- `--tug-base-surface-global-primary-normal-screen-rest`
 
-#### Foreground / Text
+#### Element — Text (global)
 
-- `--tug-base-fg-default`
-- `--tug-base-fg-muted`
-- `--tug-base-fg-subtle`
-- `--tug-base-fg-disabled`
-- `--tug-base-fg-inverse`
-- `--tug-base-fg-placeholder`
-- `--tug-base-fg-link`
-- `--tug-base-fg-link-hover`
-- `--tug-base-fg-onAccent`
-- `--tug-base-fg-onDanger`
-- `--tug-base-fg-onWarning`
-- `--tug-base-fg-onSuccess`
+- `--tug-base-element-global-text-normal-default-rest`
+- `--tug-base-element-global-text-normal-muted-rest`
+- `--tug-base-element-global-text-normal-subtle-rest`
+- `--tug-base-element-global-text-normal-plain-disabled`
+- `--tug-base-element-global-text-normal-inverse-rest`
+- `--tug-base-element-global-text-normal-placeholder-rest`
+- `--tug-base-element-global-text-normal-link-rest`
+- `--tug-base-element-global-text-normal-link-hover`
+- `--tug-base-element-global-text-normal-onAccent-rest`
+- `--tug-base-element-global-text-normal-onDanger-rest`
+- `--tug-base-element-global-text-normal-onSuccess-rest`
 
-#### Icon
+#### Element — Icon (global)
 
-- `--tug-base-icon-default`
-- `--tug-base-icon-muted`
-- `--tug-base-icon-disabled`
-- `--tug-base-icon-active`
-- `--tug-base-icon-onAccent`
+- `--tug-base-element-global-icon-normal-default-rest`
+- `--tug-base-element-global-icon-normal-muted-rest`
+- `--tug-base-element-global-icon-normal-plain-disabled`
+- `--tug-base-element-global-icon-normal-active-rest`
+- `--tug-base-element-global-icon-normal-onAccent-rest`
 
 #### Borders / Dividers / Focus
 

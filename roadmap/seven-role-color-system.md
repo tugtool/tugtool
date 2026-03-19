@@ -330,7 +330,7 @@ Only 2 references total (`tug-code.css`: file-status-renamed, feed-handoff). All
 
 **Undefined token referenced:**
 
-`--tug-base-accent-fg` is used 3 times in `gallery-theme-generator-content.css` but never defined. All 3 uses mean "text color on an accent background" — that's `--tug-base-fg-onAccent` which already exists. Fix by replacing the 3 references, not by adding a new token.
+`--tug-base-accent-fg` is used 3 times in `gallery-theme-generator-content.css` but never defined. All 3 uses mean "text color on an accent background" — that's `--tug-base-element-global-text-normal-onAccent-rest` which already exists. Fix by replacing the 3 references, not by adding a new token.
 
 **Field tokens partially unused (8 of 27):**
 
@@ -385,7 +385,7 @@ This plan combines the 7-role tone family work with a comprehensive cleanup of `
 - Remove 9 unused accent interaction tokens (keep `accent-default`, `accent-cool-default`, `accent-subtle`)
 - Remove all unused subsystem tokens: avatar (3), range/scroll (15), focus ring (3), selected/highlighted (8), motion patterns (9), stroke widths (4)
 - Remove 8 unused field tokens (helper, meta, counter, limit, dirty, readOnly variants)
-- Fix `--tug-base-accent-fg` → replace 3 references with `--tug-base-fg-onAccent`
+- Fix `--tug-base-accent-fg` → replace 3 references with `--tug-base-element-global-text-normal-onAccent-rest`
 - Audit component CSS for hardcoded pixel values; replace with typography/spacing token references where appropriate
 
 **Infrastructure updates:**

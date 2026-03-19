@@ -294,17 +294,17 @@ degree knowledge required.
 #### Syntax comparison
 
 ```css
-/* Before: offset arithmetic */
---tug-base-fg-subtle:    --tug-color(cobalt+7, i: 7, t: 37);
---tug-base-fg-disabled:  --tug-color(cobalt+8, i: 7, t: 23);
---tug-base-fg-inverse:   --tug-color(cobalt-8, i: 3, t: 100);
---tug-base-surface-screen: --tug-color(cobalt+10, i: 7, t: 16);
+/* Before: offset arithmetic (pre-Phase-3.5A names) */
+--tug-base-element-global-text-normal-subtle-rest:   --tug-color(cobalt+7, i: 7, t: 37);
+--tug-base-element-global-text-normal-plain-disabled: --tug-color(cobalt+8, i: 7, t: 23);
+--tug-base-element-global-text-normal-inverse-rest:  --tug-color(cobalt-8, i: 3, t: 100);
+--tug-base-surface-global-primary-normal-screen-rest: --tug-color(cobalt+10, i: 7, t: 16);
 
-/* After: named adjacency */
---tug-base-fg-subtle:    --tug-color(indigo-cobalt, i: 7, t: 37);
---tug-base-fg-disabled:  --tug-color(indigo-cobalt, i: 7, t: 23);
---tug-base-fg-inverse:   --tug-color(sapphire-cobalt, i: 3, t: 100);
---tug-base-surface-screen: --tug-color(indigo, i: 7, t: 16);
+/* After: named adjacency (pre-Phase-3.5A names) */
+--tug-base-element-global-text-normal-subtle-rest:   --tug-color(indigo-cobalt, i: 7, t: 37);
+--tug-base-element-global-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 7, t: 23);
+--tug-base-element-global-text-normal-inverse-rest:  --tug-color(sapphire-cobalt, i: 3, t: 100);
+--tug-base-surface-global-primary-normal-screen-rest: --tug-color(indigo, i: 7, t: 16);
 ```
 
 ### Palette engine changes

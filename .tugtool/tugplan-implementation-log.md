@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-13
+date: 2025-03-19T22:39:39Z
+---
+
+## step-13: Updated 9 roadmap docs with six-slot token names. Added Rule 18 (element/surface canonical vocabulary). Updated Rule 15 for new control/toggle patterns. Approved by user — remaining old refs in historical docs are acceptable.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-12
 date: 2025-03-19T22:19:11Z
 ---

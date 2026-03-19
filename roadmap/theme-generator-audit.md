@@ -40,7 +40,7 @@ Controls chroma/saturation of all 7 semantic role colors (accent, active, agent,
 
 ### Warmth (0–100, default 50)
 
-Shifts hue angles for achromatic-adjacent hues only (blues, violets, purples — the hues that form the "chassis" of most themes). Does not affect vivid semantic hues.
+Shifts hue angles for near-neutral hues only (blues, violets, purples — the hues that form the "chassis" of most themes). Does not affect vivid semantic hues.
 
 - Formula: `warmthBias = ((warmth - 50) / 50) * 12` → ±12° maximum
 - Affected hues: violet, cobalt, blue, indigo, purple, sky, sapphire, iris, cerulean

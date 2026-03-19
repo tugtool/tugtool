@@ -789,11 +789,11 @@ Changes required to `seed-rename-map.ts`:
      `element-toggle-icon-normal-plain-mixed`
 
 5. **Convert all 32 formerly-chromatic tokens to six-slot names.** Replace
-   the `chromatic-*` three-slot entries in the seed map with proper six-slot
-   names. Toggle tracks → surfaces with `on`/`off`/`mixed` as roles.
-   Toggle thumbs/radio dots → elements. Overlays and highlights → surfaces.
-   Tone/accent/field-tone fills → elements with `fill` constituent. See the
-   token rename tables above for the complete mapping.
+   the three-slot entries in the seed map (previously using an escape-hatch
+   convention) with proper six-slot names. Toggle tracks → surfaces with
+   `on`/`off`/`mixed` as roles. Toggle thumbs/radio dots → elements. Overlays
+   and highlights → surfaces. Tone/accent/field-tone fills → elements with
+   `fill` constituent. See the token rename tables above for the complete mapping.
 
 Verification after Step 0:
 ```bash
