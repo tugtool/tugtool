@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-19T20:32:17Z
+---
+
+## step-4: Verification-only step. All 32 formerly-chromatic tokens confirmed using correct six-slot names (applied in step-2). Toggle tracks → surfaces, thumbs/dots → elements, overlays/highlights → surfaces, tone/accent/field fills → elements with fill constituent. Zero chromatic-* entries remain.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-3
 date: 2025-03-19T20:27:05Z
 ---
