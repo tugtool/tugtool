@@ -11,8 +11,8 @@
  * @tug-pairings
  * | Element                                            | Surface                                               | Role         | Context                                         |
  * |----------------------------------------------------|-------------------------------------------------------|--------------|-------------------------------------------------|
- * | --tug-dock-button-fg (fg-subtle)                   | --tug-dock-bg (field-bg-focus)                        | ui-component | Dock button icon on dock background             |
- * | --tug-dock-button-badge-fg (fg-inverse)            | --tug-dock-button-badge-bg (tone-danger, chromatic)   | ui-component | Dock button notification badge on danger bg     |
+ * | --tug-dock-button-fg (element-global-text-normal-subtle-rest)                   | --tug-dock-bg (surface-field-primary-normal-plain-focus)                        | ui-component | Dock button icon on dock background             |
+ * | --tug-dock-button-badge-fg (element-global-text-normal-inverse-rest)            | --tug-dock-button-badge-bg (element-tone-fill-normal-danger-rest)   | ui-component | Dock button notification badge on danger bg     |
  */
 
 body {

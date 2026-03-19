@@ -7,35 +7,39 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-global-text-normal-muted-rest (fg-muted)                   | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | subdued-text | .gtg-hue-column-title (color)        |
- * | --tug-base-element-global-text-normal-default-rest (fg-default)               | --tug-base-surface-global-primary-normal-raised-rest (surface-raised)       | body-text    | .gtg-mode-btn:hover (color)          |
- * | --tug-base-element-global-text-normal-onAccent-rest (fg-onAccent)             | --tug-base-element-global-fill-normal-accent-rest (accent-default)       | body-text    | .gtg-mode-btn--active (color)        |
- * | --tug-base-element-global-border-normal-default-rest (border-default)       | --tug-base-surface-global-primary-normal-canvas-rest (bg-canvas)                 | ui-component | .gtg-preview-canvas (border)         |
- * | --tug-base-element-global-text-normal-default-rest (fg-default)               | --tug-base-surface-global-primary-normal-canvas-rest (bg-canvas)                 | body-text    | .gtg-preview-title (color)           |
- * | --tug-base-element-global-text-normal-muted-rest (fg-muted)                   | --tug-base-surface-global-primary-normal-canvas-rest (bg-canvas)                 | subdued-text | .gtg-preview-muted (color)           |
- * | --tug-base-element-global-text-normal-subtle-rest (fg-subtle)                 | --tug-base-surface-global-primary-normal-canvas-rest (bg-canvas)                 | subdued-text | .gtg-preview-subtle (color)          |
- * | --tug-base-element-global-border-normal-muted-rest (border-muted)           | --tug-base-surface-global-primary-normal-raised-rest (surface-raised)       | ui-component | .gtg-preview-inset (border)          |
- * | --tug-base-element-global-text-normal-link-rest (fg-link)                     | --tug-base-surface-global-primary-normal-canvas-rest (bg-canvas)                 | body-text    | .gtg-preview-link (color)            |
- * | --tug-base-element-global-border-normal-default-rest (border-default)       | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .gtg-compact-hue-row (border)        |
- * | --tug-base-element-global-text-normal-default-rest (fg-default)               | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | body-text    | .gtg-compact-hue-label (color)       |
- * | --tug-base-element-global-border-normal-default-rest (border-default)       | --tug-base-surface-global-primary-normal-raised-rest (surface-raised)       | ui-component | .gtg-compact-hue-popover (border)    |
- * | --tug-base-element-global-text-normal-subtle-rest (fg-subtle)                 | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | subdued-text | .gtg-token-value (color)             |
- * | --tug-base-element-global-text-normal-default-rest (fg-default)               | --tug-base-surface-global-primary-normal-control-rest (surface-control)     | body-text    | .gtg-preset-btn (color)              |
- * | --tug-base-element-global-border-normal-default-rest (border-default)       | --tug-base-surface-global-primary-normal-control-rest (surface-control)     | ui-component | .gtg-preset-btn (border)             |
- * | --tug-base-element-global-fill-normal-accent-rest (accent-default)       | --tug-base-element-global-fill-normal-accentSubtle-rest (accent-subtle)         | ui-component | .gtg-preset-btn--active (border-color) |
- * | --tug-base-element-global-text-normal-onAccent-rest (fg-onAccent)             | --tug-base-element-global-fill-normal-accentSubtle-rest (accent-subtle)         | body-text    | .gtg-preset-btn--active (color)      |
- * | --tug-base-element-tone-text-normal-success-rest (tone-success-fg)     | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | body-text    | .gtg-dash-summary-count--all-pass (color) |
- * | --tug-base-element-tone-text-normal-caution-rest (tone-caution-fg)     | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | body-text    | .gtg-dash-summary-count--partial (color) |
- * | --tug-base-element-tone-text-normal-danger-rest (tone-danger-fg)       | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | body-text    | .gtg-dash-summary-count--fail (color) |
- * | --tug-base-element-tone-text-normal-success-rest (tone-success-fg)     | --tug-base-surface-tone-primary-normal-success-rest (tone-success-bg)     | body-text    | .gtg-dash-badge--pass (color)        |
- * | --tug-base-element-tone-border-normal-success-rest (tone-success-border) | --tug-base-surface-tone-primary-normal-success-rest (tone-success-bg)     | ui-component | .gtg-dash-badge--pass (border)       |
- * | --tug-base-element-tone-text-normal-caution-rest (tone-caution-fg)     | --tug-base-surface-tone-primary-normal-caution-rest (tone-caution-bg)     | body-text    | .gtg-dash-badge--marginal (color)    |
- * | --tug-base-element-tone-border-normal-caution-rest (tone-caution-border) | --tug-base-surface-tone-primary-normal-caution-rest (tone-caution-bg)     | ui-component | .gtg-dash-badge--marginal (border)   |
- * | --tug-base-element-tone-text-normal-danger-rest (tone-danger-fg)       | --tug-base-surface-tone-primary-normal-danger-rest (tone-danger-bg)       | body-text    | .gtg-dash-badge--fail (color)        |
- * | --tug-base-element-tone-border-normal-danger-rest (tone-danger-border) | --tug-base-surface-tone-primary-normal-danger-rest (tone-danger-bg)       | ui-component | .gtg-dash-badge--fail (border)       |
- * | --tug-base-element-global-text-normal-muted-rest (fg-muted)                   | --tug-base-surface-global-primary-normal-raised-rest (surface-raised)       | subdued-text | .gtg-dash-badge--decorative (color)  |
- * | --tug-base-element-global-text-normal-default-rest (fg-default)               | --tug-base-surface-tone-primary-normal-caution-rest (tone-caution-bg)     | body-text    | .gtg-autofix-suggestion-item (color) |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gtg-hue-column-title (color)        |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | body-text    | .gtg-mode-btn:hover (color)          |
+ * | --tug-base-element-global-text-normal-onAccent-rest (element-global-text-normal-onAccent-rest) | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | body-text    | .gtg-mode-btn--active (color)        |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | ui-component | .gtg-preview-canvas (border)         |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | body-text    | .gtg-preview-title (color)           |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | subdued-text | .gtg-preview-muted (color)           |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | subdued-text | .gtg-preview-subtle (color)          |
+ * | --tug-base-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | ui-component | .gtg-preview-inset (border)          |
+ * | --tug-base-element-global-text-normal-link-rest (element-global-text-normal-link-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | body-text    | .gtg-preview-link (color)            |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | ui-component | .gtg-compact-hue-row (border)        |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gtg-compact-hue-label (color)       |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | ui-component | .gtg-compact-hue-popover (border)    |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gtg-token-value (color)             |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | body-text    | .gtg-preset-btn (color)              |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | ui-component | .gtg-preset-btn (border)             |
+ * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-element-global-fill-normal-accentSubtle-rest (element-global-fill-normal-accentSubtle-rest) | ui-component | .gtg-preset-btn--active (border-color) |
+ * | --tug-base-element-global-text-normal-onAccent-rest (element-global-text-normal-onAccent-rest) | --tug-base-element-global-fill-normal-accentSubtle-rest (element-global-fill-normal-accentSubtle-rest) | body-text    | .gtg-preset-btn--active (color)      |
+ * | --tug-base-element-tone-text-normal-success-rest (element-tone-text-normal-success-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gtg-dash-summary-count--all-pass (color) |
+ * | --tug-base-element-tone-text-normal-caution-rest (element-tone-text-normal-caution-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gtg-dash-summary-count--partial (color) |
+ * | --tug-base-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gtg-dash-summary-count--fail (color) |
+ * | --tug-base-element-tone-text-normal-success-rest (element-tone-text-normal-success-rest) | --tug-base-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | body-text    | .gtg-dash-badge--pass (color)        |
+ * | --tug-base-element-tone-border-normal-success-rest (element-tone-border-normal-success-rest) | --tug-base-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | ui-component | .gtg-dash-badge--pass (border)       |
+ * | --tug-base-element-tone-text-normal-caution-rest (element-tone-text-normal-caution-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | body-text    | .gtg-dash-badge--marginal (color)    |
+ * | --tug-base-element-tone-border-normal-caution-rest (element-tone-border-normal-caution-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | ui-component | .gtg-dash-badge--marginal (border)   |
+ * | --tug-base-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | body-text    | .gtg-dash-badge--fail (color)        |
+ * | --tug-base-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | ui-component | .gtg-dash-badge--fail (border)       |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | subdued-text | .gtg-dash-badge--decorative (color)  |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | body-text    | .gtg-autofix-suggestion-item (color) |
  */
+
+
+
+
 
 
 

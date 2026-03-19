@@ -7,19 +7,23 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-field-text-normal-plain-rest (field-fg-default)   | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | body-text    | .tug-input (color)                   |
- * | --tug-base-element-field-border-normal-plain-rest (field-border-rest) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | ui-component | .tug-input (border)                  |
- * | --tug-base-element-field-text-normal-placeholder-rest (field-fg-placeholder) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | subdued-text | .tug-input::placeholder (color)      |
- * | --tug-base-element-field-border-normal-plain-hover (field-border-hover) | --tug-base-surface-field-primary-normal-plain-hover (field-bg-hover)       | ui-component | .tug-input:hover:not(:disabled):not(:read-only):not(:focus) (border-color) |
- * | --tug-base-element-field-border-normal-plain-active (field-border-active) | --tug-base-surface-field-primary-normal-plain-focus (field-bg-focus)       | ui-component | .tug-input:focus (border-color)      |
- * | --tug-base-element-field-text-normal-plain-disabled (field-fg-disabled) | --tug-base-surface-field-primary-normal-plain-disabled (field-bg-disabled) | subdued-text | .tug-input:disabled (color)          |
- * | --tug-base-element-field-border-normal-plain-disabled (field-border-disabled) | --tug-base-surface-field-primary-normal-plain-disabled (field-bg-disabled) | ui-component | .tug-input:disabled (border-color)   |
- * | --tug-base-element-field-text-normal-plain-readOnly (field-fg-readOnly) | --tug-base-surface-field-primary-normal-plain-readOnly (field-bg-readOnly) | subdued-text | .tug-input:read-only:not(:disabled) (color) |
- * | --tug-base-element-field-border-normal-plain-readOnly (field-border-readOnly) | --tug-base-surface-field-primary-normal-plain-readOnly (field-bg-readOnly) | ui-component | .tug-input:read-only:not(:disabled) (border-color) |
- * | --tug-base-element-field-border-normal-danger-rest (field-border-danger) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | ui-component | .tug-input-invalid:not(:focus) (border-color) |
- * | --tug-base-element-field-border-normal-success-rest (field-border-success) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | ui-component | .tug-input-valid:not(:focus) (border-color) |
- * | --tug-base-element-field-fill-normal-caution-rest (field-tone-caution) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | ui-component | .tug-input-warning:not(:focus) (border-color) |
+ * | --tug-base-element-field-text-normal-plain-rest (element-field-text-normal-plain-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | body-text    | .tug-input (color)                   |
+ * | --tug-base-element-field-border-normal-plain-rest (element-field-border-normal-plain-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | ui-component | .tug-input (border)                  |
+ * | --tug-base-element-field-text-normal-placeholder-rest (element-field-text-normal-placeholder-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | subdued-text | .tug-input::placeholder (color)      |
+ * | --tug-base-element-field-border-normal-plain-hover (element-field-border-normal-plain-hover) | --tug-base-surface-field-primary-normal-plain-hover (surface-field-primary-normal-plain-hover) | ui-component | .tug-input:hover:not(:disabled):not(:read-only):not(:focus) (border-color) |
+ * | --tug-base-element-field-border-normal-plain-active (element-field-border-normal-plain-active) | --tug-base-surface-field-primary-normal-plain-focus (surface-field-primary-normal-plain-focus) | ui-component | .tug-input:focus (border-color)      |
+ * | --tug-base-element-field-text-normal-plain-disabled (element-field-text-normal-plain-disabled) | --tug-base-surface-field-primary-normal-plain-disabled (surface-field-primary-normal-plain-disabled) | subdued-text | .tug-input:disabled (color)          |
+ * | --tug-base-element-field-border-normal-plain-disabled (element-field-border-normal-plain-disabled) | --tug-base-surface-field-primary-normal-plain-disabled (surface-field-primary-normal-plain-disabled) | ui-component | .tug-input:disabled (border-color)   |
+ * | --tug-base-element-field-text-normal-plain-readOnly (element-field-text-normal-plain-readOnly) | --tug-base-surface-field-primary-normal-plain-readOnly (surface-field-primary-normal-plain-readOnly) | subdued-text | .tug-input:read-only:not(:disabled) (color) |
+ * | --tug-base-element-field-border-normal-plain-readOnly (element-field-border-normal-plain-readOnly) | --tug-base-surface-field-primary-normal-plain-readOnly (surface-field-primary-normal-plain-readOnly) | ui-component | .tug-input:read-only:not(:disabled) (border-color) |
+ * | --tug-base-element-field-border-normal-danger-rest (element-field-border-normal-danger-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | ui-component | .tug-input-invalid:not(:focus) (border-color) |
+ * | --tug-base-element-field-border-normal-success-rest (element-field-border-normal-success-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | ui-component | .tug-input-valid:not(:focus) (border-color) |
+ * | --tug-base-element-field-fill-normal-caution-rest (element-field-fill-normal-caution-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | ui-component | .tug-input-warning:not(:focus) (border-color) |
  */
+
+
+
+
 
 
 

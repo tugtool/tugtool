@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-03-19T22:14:06Z
+---
+
+## step-11: Regenerated @tug-pairings blocks in 21 component CSS files via inject --apply. Regenerated tug-base-generated.css and harmony.css via generate:tokens. All verification gates pass: verify, lint, 1891 tests.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-10
 date: 2025-03-19T22:03:23Z
 ---

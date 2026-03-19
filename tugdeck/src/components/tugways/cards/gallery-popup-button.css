@@ -7,12 +7,16 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-global-text-normal-muted-rest (fg-muted)                   | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | subdued-text | .gpb-control-group-title (color)     |
- * | --tug-base-element-global-text-normal-subtle-rest (fg-subtle)                 | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | subdued-text | .gpb-slider-label (color)            |
- * | --tug-base-element-global-text-normal-default-rest (fg-default)               | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | body-text    | .gpb-reset:hover (color)             |
- * | --tug-base-element-global-border-normal-muted-rest (border-muted)           | --tug-base-surface-global-primary-normal-inset-rest (surface-inset)         | ui-component | .gpb-context-bar (border)            |
- * | --tug-base-element-global-text-normal-subtle-rest (fg-subtle)                 | --tug-base-surface-global-primary-normal-inset-rest (surface-inset)         | subdued-text | .gpb-context-label (color)           |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gpb-control-group-title (color)     |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gpb-slider-label (color)            |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gpb-reset:hover (color)             |
+ * | --tug-base-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug-base-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | ui-component | .gpb-context-bar (border)            |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | subdued-text | .gpb-context-label (color)           |
  */
+
+
+
+
 
 
 
