@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-19T21:37:36Z
+---
+
+## step-8: Rewrote getGroup(), parseControlToken(), EMPHASIS_ROLE_PATTERN, GROUP_ORDER, GROUP_LABELS for new six-slot naming. Added badge routing. Zero tokens in Other. Regenerated tug-base-generated.css and harmony.css. 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-7
 date: 2025-03-19T21:26:29Z
 ---

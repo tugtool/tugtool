@@ -30,28 +30,34 @@ import {
 } from "../src/components/tugways/theme-derivation-engine";
 
 // ---------------------------------------------------------------------------
-// Token grouping — ordered by prefix per spec
+// Token grouping — ordered by prefix per six-slot convention
+// <plane>-<component>-<constituent>-<emphasis>-<role>-<state>
 // ---------------------------------------------------------------------------
 
 const EMPHASIS_ORDER = ["filled", "outlined", "ghost"];
 const ROLE_ORDER = ["accent", "action", "option", "danger", "agent", "data", "success", "caution"];
-const PROPERTY_ORDER = ["bg", "fg", "border", "icon"];
+const CONSTITUENT_ORDER = ["primary", "text", "icon", "border", "shadow"];
 const STATE_ORDER = ["rest", "hover", "active"];
+// Plane order: surface bg tokens before element fg/border/icon tokens
+const PLANE_ORDER = ["surface", "element"];
 
+// Matches control tokens with emphasis (filled|outlined|ghost) in the new six-slot format:
+// --tug-base-(element|surface)-control-<constituent>-(filled|outlined|ghost)-<role>-<state>
 const EMPHASIS_ROLE_PATTERN =
-  /^--tug-base-control-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-/;
+  /^--tug-base-(element|surface)-control-\w+-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-/;
 
 function parseControlToken(name: string): {
+  plane: string;
+  constituent: string;
   emphasis: string;
   role: string;
-  property: string;
   state: string;
 } | null {
   const m = name.match(
-    /^--tug-base-control-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(bg|fg|border|icon)-(rest|hover|active)$/,
+    /^--tug-base-(element|surface)-control-(\w+)-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/,
   );
   if (!m) return null;
-  return { emphasis: m[1], role: m[2], property: m[3], state: m[4] };
+  return { plane: m[1], constituent: m[2], emphasis: m[3], role: m[4], state: m[5] };
 }
 
 function controlTokenSort([a]: [string, string], [b]: [string, string]): number {
@@ -67,11 +73,15 @@ function controlTokenSort([a]: [string, string], [b]: [string, string]): number 
   const ri = ROLE_ORDER.indexOf(pa.role) - ROLE_ORDER.indexOf(pb.role);
   if (ri !== 0) return ri;
 
-  // Tertiary: property
-  const pi = PROPERTY_ORDER.indexOf(pa.property) - PROPERTY_ORDER.indexOf(pb.property);
-  if (pi !== 0) return pi;
+  // Tertiary: plane (surface before element)
+  const pli = PLANE_ORDER.indexOf(pa.plane) - PLANE_ORDER.indexOf(pb.plane);
+  if (pli !== 0) return pli;
 
-  // Quaternary: state
+  // Quaternary: constituent
+  const ci = CONSTITUENT_ORDER.indexOf(pa.constituent) - CONSTITUENT_ORDER.indexOf(pb.constituent);
+  if (ci !== 0) return ci;
+
+  // Quinary: state
   return STATE_ORDER.indexOf(pa.state) - STATE_ORDER.indexOf(pb.state);
 }
 
@@ -87,38 +97,69 @@ type TokenEntry = [string, string];
 
 function getGroup(name: string): string {
   const rest = name.replace("--tug-base-", "");
+
+  // Non-color structural tokens — unaffected by the rename
   if (rest.startsWith("motion-")) return "motion";
   if (rest.startsWith("space-")) return "space";
   if (rest.startsWith("radius-")) return "radius";
   if (rest.startsWith("chrome-")) return "chrome";
   if (rest.startsWith("icon-size-")) return "icon-size";
   if (rest.startsWith("font-") || rest.startsWith("line-height-")) return "font";
-  if (rest.startsWith("bg-")) return "bg";
-  if (rest.startsWith("surface-") && !rest.startsWith("surface-control")) return "surface";
-  if (rest.startsWith("fg-")) return "fg";
-  if (rest.startsWith("icon-")) return "icon";
-  if (rest.startsWith("border-")) return "border";
-  if (rest.startsWith("divider-")) return "divider";
-  if (rest.startsWith("shadow-") || rest.startsWith("overlay-")) return "overlay";
-  if (rest.startsWith("accent-")) return "accent";
-  if (rest.startsWith("tone-")) return "tone";
-  if (rest.startsWith("selection-")) return "selection";
-  if (rest.startsWith("highlight-")) return "highlight";
-  if (rest.startsWith("tab-")) return "tab";
+
+  // Legacy non-color structural token with identity mapping (not renamed)
   if (rest.startsWith("control-disabled-")) return "control-disabled";
+
+  // Six-slot tokens: route by plane + component (slots 1-2 after stripping --tug-base-)
+  // element-global-* sub-routing by constituent (slot 3)
+  if (rest.startsWith("element-global-text-")) return "fg";
+  if (rest.startsWith("element-global-icon-")) return "icon";
+  if (rest.startsWith("element-global-border-")) return "border";
+  if (rest.startsWith("element-global-divider-")) return "divider";
+  if (rest.startsWith("element-global-shadow-")) return "shadow";
+  if (rest.startsWith("element-global-fill-")) return "accent";
+
+  // element-tone-* and surface-tone-* -> tone group
+  if (rest.startsWith("element-tone-") || rest.startsWith("surface-tone-")) return "tone";
+
+  // Control tokens: emphasis-role variants (filled|outlined|ghost) go to the sortable group
   if (EMPHASIS_ROLE_PATTERN.test(name)) return "control-emphasis-role";
+  // Control tokens: normal emphasis (selected, highlighted, disabled) go to control-surface group
+  if (rest.startsWith("element-control-") || rest.startsWith("surface-control-")) return "control-surface";
+
+  // surface-global-* -> surface (background) group
+  if (rest.startsWith("surface-global-")) return "surface";
+
+  // element-field-* and surface-field-* -> field group
+  if (rest.startsWith("element-field-") || rest.startsWith("surface-field-")) return "field";
+
+  // element-tab-*, element-tabClose-*, surface-tab-*, surface-tabClose-* -> tab group
   if (
-    rest.startsWith("control-surface") ||
-    rest.startsWith("control-selected") ||
-    rest.startsWith("control-highlighted") ||
-    rest === "surface-control"
-  ) return "control-surface";
-  if (rest.startsWith("field-")) return "field";
+    rest.startsWith("element-tab-") ||
+    rest.startsWith("element-tabClose-") ||
+    rest.startsWith("surface-tab-") ||
+    rest.startsWith("surface-tabClose-")
+  ) return "tab";
+
+  // element-toggle-*, element-checkmark-*, element-radio-*, surface-toggle-* -> toggle group
   if (
-    rest.startsWith("toggle-") ||
-    rest.startsWith("checkmark") ||
-    rest.startsWith("radio-")
+    rest.startsWith("element-toggle-") ||
+    rest.startsWith("element-checkmark-") ||
+    rest.startsWith("element-radio-") ||
+    rest.startsWith("surface-toggle-")
   ) return "toggle";
+
+  // element-selection-* and surface-selection-* -> selection group
+  if (rest.startsWith("element-selection-") || rest.startsWith("surface-selection-")) return "selection";
+
+  // surface-highlight-* -> highlight group
+  if (rest.startsWith("surface-highlight-")) return "highlight";
+
+  // surface-overlay-* -> overlay group
+  if (rest.startsWith("surface-overlay-")) return "overlay";
+
+  // element-badge-* and surface-badge-* -> badge group
+  if (rest.startsWith("element-badge-") || rest.startsWith("surface-badge-")) return "badge";
+
   return "other";
 }
 
@@ -129,12 +170,12 @@ const GROUP_ORDER = [
   "chrome",
   "icon-size",
   "font",
-  "bg",
   "surface",
   "fg",
   "icon",
   "border",
   "divider",
+  "shadow",
   "overlay",
   "accent",
   "tone",
@@ -146,6 +187,7 @@ const GROUP_ORDER = [
   "control-surface",
   "field",
   "toggle",
+  "badge",
   "other",
 ];
 
@@ -156,23 +198,24 @@ const GROUP_LABELS: Record<string, string> = {
   chrome: "Chrome",
   "icon-size": "Icon Size",
   font: "Font",
-  bg: "Background",
-  surface: "Surface",
-  fg: "Foreground",
-  icon: "Icon",
-  border: "Border",
-  divider: "Divider",
-  overlay: "Overlay",
-  accent: "Accent",
+  surface: "Surface \u2014 Global",
+  fg: "Element \u2014 Text",
+  icon: "Element \u2014 Icon",
+  border: "Element \u2014 Border",
+  divider: "Element \u2014 Divider",
+  shadow: "Element \u2014 Shadow",
+  overlay: "Surface \u2014 Overlay",
+  accent: "Element \u2014 Fill (Accent)",
   tone: "Tone",
   selection: "Selection",
-  highlight: "Highlight",
+  highlight: "Surface \u2014 Highlight",
   tab: "Tab",
   "control-disabled": "Control \u2014 Disabled",
   "control-emphasis-role": "Control \u2014 Emphasis\u00d7Role",
   "control-surface": "Control \u2014 Surface / Selected / Highlighted",
   field: "Field",
   toggle: "Toggle",
+  badge: "Badge",
   other: "Other",
 };
 
