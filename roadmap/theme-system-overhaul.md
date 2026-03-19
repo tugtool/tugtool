@@ -315,7 +315,7 @@ tooling cannot:
 1. **`audit-tokens rename-map` subcommand (new).** Generates the complete old→new
    rename map by:
    - Reading the current token inventory from `audit-tokens tokens`
-   - Parsing each token name to extract component, emphasis, role, channel, state
+   - Parsing each token name to extract component, constituent, emphasis, role, state
    - Applying the Phase 3.5A six-slot naming convention to produce the new name
    - Outputting a JSON file (`token-rename-map.json`) with `{ "old-short": "new-short" }` entries
    - Validating: no collisions, all tokens covered, all new names well-formed
@@ -410,162 +410,215 @@ check is between a visual mark and its adjacent color context.
 Every structured token follows a six-slot naming convention:
 
 ```
-<plane>-<component>-<emphasis>-<role>-<channel>-<state>
+<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
 ```
 
 | Slot | What it answers | Values |
 |------|----------------|--------|
 | **plane** | Which side of the contrast pair? | `element`, `surface` |
 | **component** | What UI piece? | `global`, `control`, `field`, `tab`, `tone`, `badge`, `selection`, ... |
+| **constituent** | What part of the component? | Element: `text`, `icon`, `border`, `shadow`, `divider`. Surface: `primary`, `secondary`, `tertiary` |
 | **emphasis** | How visually prominent? | `normal`, `filled`, `outlined`, `ghost`, `tinted` |
-| **role** | What does it signify? | `default`, `muted`, `subtle`, `accent`, `action`, `danger`, `success`, `caution`, `agent`, `data`, `active`, `plain`, ... |
-| **channel** | What visual property? | Element: `text`, `icon`, `border`, `shadow`, `divider`. Surface: `primary`, `secondary`, `tertiary` |
-| **state** | What interaction state? | `rest`, `hover`, `active`, `focus`, `disabled`, `readOnly`, ... Omitted for stateless tokens |
+| **role** | What does it signify? | `default`, `muted`, `subtle`, `accent`, `action`, `danger`, `success`, `caution`, `agent`, `data`, `active`, `plain`, `selected`, `highlighted`, ... |
+| **state** | What interaction state? | `rest`, `hover`, `active`, `focus`, `disabled`, `readOnly`, `mixed`, ... |
 
 **Rules:**
-- All six slots are always present. No shortcuts, no omissions.
+- All six slots are always present. No shortcuts, no omissions, no exceptions.
+- `rest` is the state for non-interactive tokens and for interactive tokens in
+  their default state. Every token has a state.
 - `normal` is the default emphasis (no special visual weight).
 - `plain` is the default role (no semantic signal).
-- `primary` is the default surface channel.
-- State may be omitted for tokens that have no interaction states (global text,
-  global surfaces, tone signals). This is the only permitted omission.
+- `primary` is the default surface constituent.
 - CamelCase within a slot is allowed when a slot value is compound
-  (e.g., `linkHover` as a role, `dropTarget` as a state).
+  (e.g., `onAccent` as a role, `dropTarget` as a state).
+- `selected` and `highlighted` are roles (persistent visual treatments), not
+  states. This allows clean combination with interaction states:
+  `surface-control-primary-normal-selected-hover`.
+- `disabled` is a state. Disabled tokens use role=`plain` because disabled
+  appearance is uniform regardless of the token's semantic role.
 
 #### Token rename map
 
-**Global element tokens (text, icon, border, divider, shadow):**
+**Global element tokens — text:**
 
 | Current | Proposed |
 |---------|----------|
-| `fg-default` | `element-global-normal-default-text` |
-| `fg-muted` | `element-global-normal-muted-text` |
-| `fg-subtle` | `element-global-normal-subtle-text` |
-| `fg-disabled` | `element-global-normal-disabled-text` |
-| `fg-inverse` | `element-global-normal-inverse-text` |
-| `fg-placeholder` | `element-global-normal-placeholder-text` |
-| `fg-link` | `element-global-normal-link-text` |
-| `fg-link-hover` | `element-global-normal-linkHover-text` |
-| `fg-onAccent` | `element-global-normal-onAccent-text` |
-| `fg-onDanger` | `element-global-normal-onDanger-text` |
-| `fg-onSuccess` | `element-global-normal-onSuccess-text` |
-| `fg-onCaution` | `element-global-normal-onCaution-text` |
-| `icon-active` | `element-global-normal-active-icon` |
-| `icon-default` | `element-global-normal-default-icon` |
-| `icon-disabled` | `element-global-normal-disabled-icon` |
-| `icon-muted` | `element-global-normal-muted-icon` |
-| `icon-onAccent` | `element-global-normal-onAccent-icon` |
-| `border-default` | `element-global-normal-default-border` |
-| `border-muted` | `element-global-normal-muted-border` |
-| `border-strong` | `element-global-normal-strong-border` |
-| `border-inverse` | `element-global-normal-inverse-border` |
-| `border-accent` | `element-global-normal-accent-border` |
-| `border-danger` | `element-global-normal-danger-border` |
-| `divider-default` | `element-global-normal-default-divider` |
-| `divider-muted` | `element-global-normal-muted-divider` |
-| `divider-separator` | `element-global-normal-separator-divider` |
-| `shadow-xs` | `element-global-normal-plain-shadow-xs` |
-| `shadow-md` | `element-global-normal-plain-shadow-md` |
-| `shadow-lg` | `element-global-normal-plain-shadow-lg` |
-| `shadow-xl` | `element-global-normal-plain-shadow-xl` |
-| `shadow-overlay` | `element-global-normal-overlay-shadow` |
+| `fg-default` | `element-global-text-normal-default-rest` |
+| `fg-muted` | `element-global-text-normal-muted-rest` |
+| `fg-subtle` | `element-global-text-normal-subtle-rest` |
+| `fg-disabled` | `element-global-text-normal-plain-disabled` |
+| `fg-inverse` | `element-global-text-normal-inverse-rest` |
+| `fg-placeholder` | `element-global-text-normal-placeholder-rest` |
+| `fg-link` | `element-global-text-normal-link-rest` |
+| `fg-link-hover` | `element-global-text-normal-link-hover` |
+| `fg-onAccent` | `element-global-text-normal-onAccent-rest` |
+| `fg-onDanger` | `element-global-text-normal-onDanger-rest` |
+| `fg-onSuccess` | `element-global-text-normal-onSuccess-rest` |
+| `fg-onCaution` | `element-global-text-normal-onCaution-rest` |
+
+**Global element tokens — icon:**
+
+| Current | Proposed |
+|---------|----------|
+| `icon-active` | `element-global-icon-normal-active-rest` |
+| `icon-default` | `element-global-icon-normal-default-rest` |
+| `icon-disabled` | `element-global-icon-normal-plain-disabled` |
+| `icon-muted` | `element-global-icon-normal-muted-rest` |
+| `icon-onAccent` | `element-global-icon-normal-onAccent-rest` |
+
+**Global element tokens — border:**
+
+| Current | Proposed |
+|---------|----------|
+| `border-default` | `element-global-border-normal-default-rest` |
+| `border-muted` | `element-global-border-normal-muted-rest` |
+| `border-strong` | `element-global-border-normal-strong-rest` |
+| `border-inverse` | `element-global-border-normal-inverse-rest` |
+| `border-accent` | `element-global-border-normal-accent-rest` |
+| `border-danger` | `element-global-border-normal-danger-rest` |
+
+**Global element tokens — divider:**
+
+| Current | Proposed |
+|---------|----------|
+| `divider-default` | `element-global-divider-normal-default-rest` |
+| `divider-muted` | `element-global-divider-normal-muted-rest` |
+| `divider-separator` | `element-global-divider-normal-separator-rest` |
+
+**Global element tokens — shadow:**
+
+| Current | Proposed |
+|---------|----------|
+| `shadow-xs` | `element-global-shadow-normal-xs-rest` |
+| `shadow-md` | `element-global-shadow-normal-md-rest` |
+| `shadow-lg` | `element-global-shadow-normal-lg-rest` |
+| `shadow-xl` | `element-global-shadow-normal-xl-rest` |
+| `shadow-overlay` | `element-global-shadow-normal-overlay-rest` |
 
 **Global surface tokens:**
 
 | Current | Proposed |
 |---------|----------|
-| `bg-app` | `surface-global-normal-app-primary` |
-| `bg-canvas` | `surface-global-normal-canvas-primary` |
-| `surface-default` | `surface-global-normal-default-primary` |
-| `surface-raised` | `surface-global-normal-raised-primary` |
-| `surface-overlay` | `surface-global-normal-overlay-primary` |
-| `surface-sunken` | `surface-global-normal-sunken-primary` |
-| `surface-inset` | `surface-global-normal-inset-primary` |
-| `surface-content` | `surface-global-normal-content-primary` |
-| `surface-screen` | `surface-global-normal-screen-primary` |
-| `surface-control` | `surface-global-normal-control-primary` |
+| `bg-app` | `surface-global-primary-normal-app-rest` |
+| `bg-canvas` | `surface-global-primary-normal-canvas-rest` |
+| `surface-default` | `surface-global-primary-normal-default-rest` |
+| `surface-raised` | `surface-global-primary-normal-raised-rest` |
+| `surface-overlay` | `surface-global-primary-normal-overlay-rest` |
+| `surface-sunken` | `surface-global-primary-normal-sunken-rest` |
+| `surface-inset` | `surface-global-primary-normal-inset-rest` |
+| `surface-content` | `surface-global-primary-normal-content-rest` |
+| `surface-screen` | `surface-global-primary-normal-screen-rest` |
+| `surface-control` | `surface-global-primary-normal-control-rest` |
 
-**Control tokens (filled/outlined/ghost × role × channel × state):**
+**Control tokens — filled emphasis (accent example):**
 
 | Current | Proposed |
 |---------|----------|
-| `control-filled-accent-fg-rest` | `element-control-filled-accent-text-rest` |
-| `control-filled-accent-bg-rest` | `surface-control-filled-accent-primary-rest` |
-| `control-filled-accent-icon-rest` | `element-control-filled-accent-icon-rest` |
-| `control-filled-accent-border-rest` | `element-control-filled-accent-border-rest` |
-| `control-filled-accent-fg-hover` | `element-control-filled-accent-text-hover` |
-| `control-filled-accent-bg-hover` | `surface-control-filled-accent-primary-hover` |
-| `control-filled-accent-icon-hover` | `element-control-filled-accent-icon-hover` |
-| `control-filled-accent-border-hover` | `element-control-filled-accent-border-hover` |
-| `control-filled-accent-fg-active` | `element-control-filled-accent-text-active` |
-| `control-filled-accent-bg-active` | `surface-control-filled-accent-primary-active` |
-| `control-filled-accent-icon-active` | `element-control-filled-accent-icon-active` |
-| `control-filled-accent-border-active` | `element-control-filled-accent-border-active` |
-| `control-disabled-fg` | `element-control-normal-disabled-text` |
-| `control-disabled-bg` | `surface-control-normal-disabled-primary` |
-| `control-disabled-icon` | `element-control-normal-disabled-icon` |
-| `control-disabled-border` | `element-control-normal-disabled-border` |
-| `control-disabled-shadow` | `element-control-normal-disabled-shadow` |
-| `control-highlighted-fg` | `element-control-normal-highlighted-text` |
-| `control-highlighted-bg` | `surface-control-normal-highlighted-primary` |
-| `control-highlighted-border` | `element-control-normal-highlighted-border` |
-| `control-selected-fg` | `element-control-normal-selected-text` |
-| `control-selected-bg` | `surface-control-normal-selected-primary` |
-| `control-selected-bg-hover` | `surface-control-normal-selected-primary-hover` |
-| `control-selected-border` | `element-control-normal-selected-border` |
-| `control-selected-disabled-bg` | `surface-control-normal-selectedDisabled-primary` |
+| `control-filled-accent-fg-rest` | `element-control-text-filled-accent-rest` |
+| `control-filled-accent-bg-rest` | `surface-control-primary-filled-accent-rest` |
+| `control-filled-accent-icon-rest` | `element-control-icon-filled-accent-rest` |
+| `control-filled-accent-border-rest` | `element-control-border-filled-accent-rest` |
+| `control-filled-accent-fg-hover` | `element-control-text-filled-accent-hover` |
+| `control-filled-accent-bg-hover` | `surface-control-primary-filled-accent-hover` |
+| `control-filled-accent-icon-hover` | `element-control-icon-filled-accent-hover` |
+| `control-filled-accent-border-hover` | `element-control-border-filled-accent-hover` |
+| `control-filled-accent-fg-active` | `element-control-text-filled-accent-active` |
+| `control-filled-accent-bg-active` | `surface-control-primary-filled-accent-active` |
+| `control-filled-accent-icon-active` | `element-control-icon-filled-accent-active` |
+| `control-filled-accent-border-active` | `element-control-border-filled-accent-active` |
 
 (Same pattern repeats for action, danger, agent, data, success, caution roles
 across filled/outlined/ghost emphasis levels — ~120 control tokens total.)
+
+**Control tokens — disabled, highlighted, selected:**
+
+Disabled tokens use role=`plain` and state=`disabled` because disabled appearance
+is uniform regardless of the token's original semantic role. Selected and
+highlighted are roles (persistent visual treatments), allowing clean combination
+with interaction states.
+
+| Current | Proposed |
+|---------|----------|
+| `control-disabled-fg` | `element-control-text-normal-plain-disabled` |
+| `control-disabled-bg` | `surface-control-primary-normal-plain-disabled` |
+| `control-disabled-icon` | `element-control-icon-normal-plain-disabled` |
+| `control-disabled-border` | `element-control-border-normal-plain-disabled` |
+| `control-disabled-shadow` | `element-control-shadow-normal-plain-disabled` |
+| `control-highlighted-fg` | `element-control-text-normal-highlighted-rest` |
+| `control-highlighted-bg` | `surface-control-primary-normal-highlighted-rest` |
+| `control-highlighted-border` | `element-control-border-normal-highlighted-rest` |
+| `control-selected-fg` | `element-control-text-normal-selected-rest` |
+| `control-selected-bg` | `surface-control-primary-normal-selected-rest` |
+| `control-selected-bg-hover` | `surface-control-primary-normal-selected-hover` |
+| `control-selected-border` | `element-control-border-normal-selected-rest` |
+| `control-selected-disabled-bg` | `surface-control-primary-normal-selected-disabled` |
 
 **Tab tokens:**
 
 | Current | Proposed |
 |---------|----------|
-| `tab-fg-rest` | `element-tab-normal-plain-text-rest` |
-| `tab-fg-hover` | `element-tab-normal-plain-text-hover` |
-| `tab-fg-active` | `element-tab-normal-plain-text-active` |
-| `tab-bg-active` | `surface-tab-normal-plain-primary-active` |
-| `tab-bg-hover` | `surface-tab-normal-plain-primary-hover` |
-| `tab-bg-inactive` | `surface-tab-normal-plain-primary-inactive` |
-| `tab-bg-collapsed` | `surface-tab-normal-plain-primary-collapsed` |
-| `tab-close-fg-hover` | `element-tabClose-normal-plain-text-hover` |
-| `tab-close-bg-hover` | `surface-tabClose-normal-plain-primary-hover` |
+| `tab-fg-rest` | `element-tab-text-normal-plain-rest` |
+| `tab-fg-hover` | `element-tab-text-normal-plain-hover` |
+| `tab-fg-active` | `element-tab-text-normal-plain-active` |
+| `tab-bg-active` | `surface-tab-primary-normal-plain-active` |
+| `tab-bg-hover` | `surface-tab-primary-normal-plain-hover` |
+| `tab-bg-inactive` | `surface-tab-primary-normal-plain-inactive` |
+| `tab-bg-collapsed` | `surface-tab-primary-normal-plain-collapsed` |
+| `tab-close-fg-hover` | `element-tabClose-text-normal-plain-hover` |
+| `tab-close-bg-hover` | `surface-tabClose-primary-normal-plain-hover` |
 
 **Tone tokens (semantic signals):**
 
 | Current | Proposed |
 |---------|----------|
-| `tone-accent-fg` | `element-tone-normal-accent-text` |
-| `tone-accent-bg` | `surface-tone-normal-accent-primary` |
-| `tone-accent-icon` | `element-tone-normal-accent-icon` |
-| `tone-accent-border` | `element-tone-normal-accent-border` |
+| `tone-accent-fg` | `element-tone-text-normal-accent-rest` |
+| `tone-accent-bg` | `surface-tone-primary-normal-accent-rest` |
+| `tone-accent-icon` | `element-tone-icon-normal-accent-rest` |
+| `tone-accent-border` | `element-tone-border-normal-accent-rest` |
 | `tone-accent` | *(chromatic — see below)* |
 
 (Same pattern for active, agent, caution, danger, data, success.)
 
-**Field tokens:**
+**Field tokens — text:**
+
+`label`, `placeholder`, and `required` are roles (what kind of text within the
+field), not states. `disabled` and `readOnly` are states.
 
 | Current | Proposed |
 |---------|----------|
-| `field-fg-default` | `element-field-normal-plain-text-default` |
-| `field-fg-disabled` | `element-field-normal-plain-text-disabled` |
-| `field-fg-label` | `element-field-normal-plain-text-label` |
-| `field-fg-placeholder` | `element-field-normal-plain-text-placeholder` |
-| `field-fg-readOnly` | `element-field-normal-plain-text-readOnly` |
-| `field-fg-required` | `element-field-normal-plain-text-required` |
-| `field-bg-rest` | `surface-field-normal-plain-primary-rest` |
-| `field-bg-hover` | `surface-field-normal-plain-primary-hover` |
-| `field-bg-focus` | `surface-field-normal-plain-primary-focus` |
-| `field-bg-disabled` | `surface-field-normal-plain-primary-disabled` |
-| `field-bg-readOnly` | `surface-field-normal-plain-primary-readOnly` |
-| `field-border-rest` | `element-field-normal-plain-border-rest` |
-| `field-border-hover` | `element-field-normal-plain-border-hover` |
-| `field-border-active` | `element-field-normal-plain-border-active` |
-| `field-border-disabled` | `element-field-normal-plain-border-disabled` |
-| `field-border-readOnly` | `element-field-normal-plain-border-readOnly` |
-| `field-border-danger` | `element-field-normal-danger-border` |
-| `field-border-success` | `element-field-normal-success-border` |
+| `field-fg-default` | `element-field-text-normal-plain-rest` |
+| `field-fg-disabled` | `element-field-text-normal-plain-disabled` |
+| `field-fg-label` | `element-field-text-normal-label-rest` |
+| `field-fg-placeholder` | `element-field-text-normal-placeholder-rest` |
+| `field-fg-readOnly` | `element-field-text-normal-plain-readOnly` |
+| `field-fg-required` | `element-field-text-normal-required-rest` |
+
+**Field tokens — surface:**
+
+| Current | Proposed |
+|---------|----------|
+| `field-bg-rest` | `surface-field-primary-normal-plain-rest` |
+| `field-bg-hover` | `surface-field-primary-normal-plain-hover` |
+| `field-bg-focus` | `surface-field-primary-normal-plain-focus` |
+| `field-bg-disabled` | `surface-field-primary-normal-plain-disabled` |
+| `field-bg-readOnly` | `surface-field-primary-normal-plain-readOnly` |
+
+**Field tokens — border:**
+
+| Current | Proposed |
+|---------|----------|
+| `field-border-rest` | `element-field-border-normal-plain-rest` |
+| `field-border-hover` | `element-field-border-normal-plain-hover` |
+| `field-border-active` | `element-field-border-normal-plain-active` |
+| `field-border-disabled` | `element-field-border-normal-plain-disabled` |
+| `field-border-readOnly` | `element-field-border-normal-plain-readOnly` |
+| `field-border-danger` | `element-field-border-normal-danger-rest` |
+| `field-border-success` | `element-field-border-normal-success-rest` |
+
+**Field tokens — chromatic:**
+
+| Current | Proposed |
+|---------|----------|
 | `field-tone-caution` | *(chromatic — see below)* |
 | `field-tone-danger` | *(chromatic — see below)* |
 | `field-tone-success` | *(chromatic — see below)* |
@@ -574,9 +627,9 @@ across filled/outlined/ghost emphasis levels — ~120 control tokens total.)
 
 | Current | Proposed |
 |---------|----------|
-| `badge-tinted-accent-fg` | `element-badge-tinted-accent-text` |
-| `badge-tinted-accent-bg` | `surface-badge-tinted-accent-primary` |
-| `badge-tinted-accent-border` | `element-badge-tinted-accent-border` |
+| `badge-tinted-accent-fg` | `element-badge-text-tinted-accent-rest` |
+| `badge-tinted-accent-bg` | `surface-badge-primary-tinted-accent-rest` |
+| `badge-tinted-accent-border` | `element-badge-border-tinted-accent-rest` |
 
 (Same pattern for action, agent, caution, danger, data, success.)
 
@@ -584,18 +637,18 @@ across filled/outlined/ghost emphasis levels — ~120 control tokens total.)
 
 | Current | Proposed |
 |---------|----------|
-| `selection-fg` | `element-selection-normal-plain-text` |
-| `selection-bg` | `surface-selection-normal-plain-primary` |
-| `selection-bg-inactive` | `surface-selection-normal-plain-primary-inactive` |
+| `selection-fg` | `element-selection-text-normal-plain-rest` |
+| `selection-bg` | `surface-selection-primary-normal-plain-rest` |
+| `selection-bg-inactive` | `surface-selection-primary-normal-plain-inactive` |
 
 **Checkmark/toggle tokens:**
 
 | Current | Proposed |
 |---------|----------|
-| `checkmark-fg` | `element-checkmark-normal-plain-text` |
-| `checkmark-fg-mixed` | `element-checkmark-normal-mixed-text` |
-| `toggle-icon-disabled` | `element-toggle-normal-disabled-icon` |
-| `toggle-icon-mixed` | `element-toggle-normal-mixed-icon` |
+| `checkmark-fg` | `element-checkmark-text-normal-plain-rest` |
+| `checkmark-fg-mixed` | `element-checkmark-text-normal-plain-mixed` |
+| `toggle-icon-disabled` | `element-toggle-icon-normal-plain-disabled` |
+| `toggle-icon-mixed` | `element-toggle-icon-normal-plain-mixed` |
 
 **Chromatic tokens (32):** These tokens do not participate in element/surface
 pairings in the standard way. They are standalone chromatic values (overlays,
@@ -731,7 +784,7 @@ where contrast is not a legibility concern.
 #### Card title token
 
 The card title currently uses the global default text token. It needs its own token
-(`element-cardTitle-normal-plain-text` per the Phase 3.5A convention) with its own
+(`element-cardTitle-text-normal-plain-rest` per the Phase 3.5A convention) with its own
 derivation rule and formula fields. This gives the card title independent control
 over hue, tone, and intensity — and allows the pairing map to assign it the
 `display` contrast role instead of `content`.
@@ -839,7 +892,7 @@ export interface ThemeRecipe {
    `ui-component`, `subdued-text`) with the four-role system (`content`, `control`,
    `display`, `informational`) in the contrast engine's `CONTRAST_THRESHOLDS` map.
 
-3. **Add a card title text token.** Create `element-cardTitle-normal-plain-text`
+3. **Add a card title text token.** Create `element-cardTitle-text-normal-plain-rest`
    with its own derivation rule and formula fields. Update `tug-card.css` to use
    this token for `.tugcard-title`. The token uses the `display` element hue.
 
