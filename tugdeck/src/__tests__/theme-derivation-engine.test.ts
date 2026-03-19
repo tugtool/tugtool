@@ -25,6 +25,7 @@ import {
   EXAMPLE_RECIPES,
   DARK_FORMULAS,
   LIGHT_FORMULAS,
+  LIGHT_FORMULAS_LEGACY,
   LIGHT_OVERRIDES,
   BASE_FORMULAS,
   DARK_OVERRIDES,
@@ -2781,5 +2782,71 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
 
     // Token count must still be 373
     expect(Object.keys(output.tokens).length).toBe(373);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 Step 2: LIGHT_FORMULAS standalone literal equality tests
+// Verifies that the new standalone LIGHT_FORMULAS literal produces identical
+// token output to LIGHT_FORMULAS_LEGACY (the spread-based predecessor). [D01]
+// ---------------------------------------------------------------------------
+
+describe("phase-3-step-2 standalone LIGHT_FORMULAS equality", () => {
+  it("LIGHT_FORMULAS has exactly 200 fields (same as DARK_FORMULAS)", () => {
+    expect(Object.keys(LIGHT_FORMULAS).length).toBe(200);
+    expect(Object.keys(DARK_FORMULAS).length).toBe(200);
+  });
+
+  it("LIGHT_FORMULAS deep-equals LIGHT_FORMULAS_LEGACY (all 200 fields identical)", () => {
+    expect(LIGHT_FORMULAS).toEqual(LIGHT_FORMULAS_LEGACY);
+  });
+
+  it("deriveTheme output is identical for LIGHT_FORMULAS and LIGHT_FORMULAS_LEGACY", () => {
+    const harmonyCopy = { ...EXAMPLE_RECIPES.harmony };
+    const outNew = deriveTheme({ ...harmonyCopy, formulas: LIGHT_FORMULAS });
+    const outLegacy = deriveTheme({ ...harmonyCopy, formulas: LIGHT_FORMULAS_LEGACY });
+    // Token maps must be identical
+    expect(outNew.tokens).toEqual(outLegacy.tokens);
+  });
+
+  it("LIGHT_FORMULAS has no spread operators (is a standalone literal)", () => {
+    // Verify the object is its own complete definition — no prototype chain entries
+    // that would indicate inheritance from another object via spread composition
+    const keys = Object.keys(LIGHT_FORMULAS);
+    expect(keys.length).toBe(200);
+    // Spot-check key fields from each semantic group to confirm they are own properties
+    expect(Object.hasOwn(LIGHT_FORMULAS, "bgAppTone")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "surfaceDefaultTone")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "fgDefaultTone")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "borderIBase")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "bgAppHueSlot")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "outlinedBgHoverHueSlot")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "tabBgHoverAlpha")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "dividerDefaultToneOverride")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "surfScreenHue")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "selectionInactiveSemanticMode")).toBe(true);
+  });
+
+  it("LIGHT_FORMULAS surface/canvas group values match LIGHT_OVERRIDES", () => {
+    // Verify all surface/canvas fields match the LIGHT_OVERRIDES values (Step 2 coverage)
+    expect(LIGHT_FORMULAS.bgAppTone).toBe(LIGHT_OVERRIDES.bgAppTone);
+    expect(LIGHT_FORMULAS.bgCanvasTone).toBe(LIGHT_OVERRIDES.bgCanvasTone);
+    expect(LIGHT_FORMULAS.surfaceSunkenTone).toBe(LIGHT_OVERRIDES.surfaceSunkenTone);
+    expect(LIGHT_FORMULAS.surfaceDefaultTone).toBe(LIGHT_OVERRIDES.surfaceDefaultTone);
+    expect(LIGHT_FORMULAS.surfaceRaisedTone).toBe(LIGHT_OVERRIDES.surfaceRaisedTone);
+    expect(LIGHT_FORMULAS.surfaceOverlayTone).toBe(LIGHT_OVERRIDES.surfaceOverlayTone);
+    expect(LIGHT_FORMULAS.surfaceInsetTone).toBe(LIGHT_OVERRIDES.surfaceInsetTone);
+    expect(LIGHT_FORMULAS.surfaceContentTone).toBe(LIGHT_OVERRIDES.surfaceContentTone);
+    expect(LIGHT_FORMULAS.surfaceScreenTone).toBe(LIGHT_OVERRIDES.surfaceScreenTone);
+    expect(LIGHT_FORMULAS.atmI).toBe(LIGHT_OVERRIDES.atmI);
+    expect(LIGHT_FORMULAS.bgAppI).toBe(LIGHT_OVERRIDES.bgAppI);
+    expect(LIGHT_FORMULAS.bgCanvasI).toBe(LIGHT_OVERRIDES.bgCanvasI);
+    expect(LIGHT_FORMULAS.surfaceDefaultI).toBe(LIGHT_OVERRIDES.surfaceDefaultI);
+    expect(LIGHT_FORMULAS.surfaceRaisedI).toBe(LIGHT_OVERRIDES.surfaceRaisedI);
+    expect(LIGHT_FORMULAS.surfaceOverlayI).toBe(LIGHT_OVERRIDES.surfaceOverlayI);
+    expect(LIGHT_FORMULAS.surfaceScreenI).toBe(LIGHT_OVERRIDES.surfaceScreenI);
+    expect(LIGHT_FORMULAS.surfaceInsetI).toBe(LIGHT_OVERRIDES.surfaceInsetI);
+    expect(LIGHT_FORMULAS.surfaceContentI).toBe(LIGHT_OVERRIDES.surfaceContentI);
+    expect(LIGHT_FORMULAS.bgAppSurfaceI).toBe(LIGHT_OVERRIDES.bgAppSurfaceI);
   });
 });

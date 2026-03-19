@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-19T02:30:06Z
+---
+
+## step-2: Created LIGHT_FORMULAS as a complete 200-field DerivationFormulas literal with no spread operators. Surface/canvas groups have full light-mode rationale. Text, border, control, badge, icon, tab, toggle, field groups also populated with rationale (early completion of steps 3/4). 78 [light-review-pending] tags remain on mode-independent dispatch fields. LIGHT_FORMULAS_LEGACY preserved for comparison. Equality tests added. All 5 verification gates pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-1
 date: 2025-03-19T02:13:26Z
 ---
