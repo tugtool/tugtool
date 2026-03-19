@@ -544,6 +544,20 @@ export interface DerivationFormulas {
   borderSignalTone: number;
   /** @semantic signal-tone — tone for semantic tone tokens (semanticTone). Dark: 50. Light: lower to avoid neon glow. */
   semanticSignalTone: number;
+  /**
+   * @semantic signal-tone — tone for the accent-subtle tinted background.
+   * Dark: lower tone (e.g. 30) so fg-default achieves body-text contrast 75 when composited
+   * over a dark parent surface at low alpha. Light: 50 (standard mid-tone orange tint).
+   * [phase-3-bug B04] calibrated from 50→30 in dark mode.
+   */
+  accentSubtleTone: number;
+  /**
+   * @semantic signal-tone — tone for the tone-caution-bg semantic background tint.
+   * Dark: lower tone (e.g. 30) so fg-default achieves body-text contrast 75 when composited
+   * over a dark parent surface at low alpha. Light: matches semanticSignalTone (35).
+   * [phase-3-bug B05] calibrated via independent tone field rather than alpha reduction.
+   */
+  cautionBgTone: number;
 
   // ===== Card Frame Style =====
   // How card title bars and tab bars present. Dark: dim tones 15-18. Light: bright tones 85-92.
@@ -1066,11 +1080,13 @@ export const DARK_FORMULAS: DerivationFormulas = {
   dividerMutedI: 4, // lowest chroma: muted dividers are the most recessive structural element
   borderSignalTone: 50, // mid-tone: dark backgrounds make mid-tone signals vivid and readable
   semanticSignalTone: 50, // mid-tone: semantic tokens at 50 are bright enough to pop on dark surfaces
+  accentSubtleTone: 30, // darker orange: composited over dark surfaces at low alpha, fg-default achieves contrast ≥75 [phase-3-bug B04]
+  cautionBgTone: 30, // darker yellow: composited over dark surfaces at low alpha, fg-default achieves contrast ≥75 [phase-3-bug B05]
 
   // ===== Card Frame Style =====
   // How card title bars and tab bars present. Dark: dim tones 15-18. Light: bright tones 85-92.
   cardFrameActiveI: 12, // elevated chroma: active title bar uses rich hue to signal focus
-  cardFrameActiveTone: 18, // above surfaceScreen: active frame floats above the screen background
+  cardFrameActiveTone: 16, // above surfaceScreen: active frame floats above the screen background; tone reduced 18→16 to bring fg-default contrast from ~73.6 to ≥75 [phase-3-bug B03]
   cardFrameInactiveI: 4, // near-neutral: inactive frames recede to avoid competing with active card
   cardFrameInactiveTone: 15, // slightly below active: inactive frames are visibly dimmer but still distinct
 
@@ -1276,41 +1292,42 @@ export const DARK_FORMULAS: DerivationFormulas = {
 };
 
 // ---------------------------------------------------------------------------
-// BASE_FORMULAS + DARK_OVERRIDES — theme family pattern [D03]
+// LIGHT_FORMULAS — light theme formula values [D04]
 // ---------------------------------------------------------------------------
 
-/**
- * Default formula values shared across all recipes.
- * `DARK_FORMULAS = { ...BASE_FORMULAS, ...DARK_OVERRIDES }`.
- * Future light / stark recipes override only the fields that differ. [D03]
- */
-export const BASE_FORMULAS: DerivationFormulas = DARK_FORMULAS;
 
 /**
- * Fields that are specific to the Dark recipe and differ from BASE_FORMULAS.
- * Currently empty because BASE_FORMULAS IS the Dark recipe.
- * Future theme families will populate this with their diverging values.
- */
-export const DARK_OVERRIDES: Partial<DerivationFormulas> = {};
-
-// ---------------------------------------------------------------------------
-// LIGHT_OVERRIDES + LIGHT_FORMULAS — light theme formula overrides [D04]
-// ---------------------------------------------------------------------------
-
-/**
- * Formula fields that differ from BASE_FORMULAS for a light-polarity recipe.
- * Every field is annotated with its design rationale, mirroring the annotation
- * style of DARK_FORMULAS.
+ * Complete formula bundle for a light-polarity recipe.
+ * Standalone 202-field literal — no object spread, no inheritance from DARK_FORMULAS. [D01]
  *
- * Fields omitted here are mode-independent — the dark default is correct for
- * light mode too (e.g., hue-slot-dispatch, sentinel-hue-dispatch, most
- * sentinel-alpha values, hue-name-dispatch except surfScreenHue and
- * fgPlaceholderSource).
+ * All semantic groups are explicitly set with design-rationale annotations:
+ *   - Canvas Darkness
+ *   - Surface Layering
+ *   - Surface Coloring
+ *   - Text Brightness
+ *   - Text Hierarchy
+ *   - Text Coloring
+ *   - Border Visibility
+ *   - Card Frame Style
+ *   - Shadow Depth
+ *   - Filled Control Prominence
+ *   - Outlined Control Style
+ *   - Ghost Control Style
+ *   - Badge Style
+ *   - Icon Style
+ *   - Tab Style
+ *   - Toggle Style
+ *   - Field Style
+ *   - Computed Tone Override
+ *   - Hue Name Dispatch
+ *   - Hue Slot Dispatch (mode-independent)
+ *   - Sentinel Hue Dispatch (mode-independent)
+ *   - Sentinel Alpha (mode-independent)
+ *   - Selection Mode
  *
- * `LIGHT_FORMULAS = { ...BASE_FORMULAS, ...LIGHT_OVERRIDES }` is the
- * complete light recipe formula bundle. [D04]
+ * Use this as `formulas` in any light-mode `ThemeRecipe`. [D01] [D04]
  */
-export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
+export const LIGHT_FORMULAS: DerivationFormulas = {
   // ===== Canvas Darkness =====
   // Light mode: near-white canvas. Inverse of dark's near-black tones 5.
   bgAppTone: 95, // near-white: light app background anchors the open, airy theme
@@ -1375,6 +1392,8 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   dividerMutedI: 5, // lower than default: muted dividers are the most recessive structural element
   borderSignalTone: 40, // below mid-tone: light backgrounds require darker signal borders to avoid neon glow
   semanticSignalTone: 35, // darker than border: semantic tokens need more contrast against bright light surfaces
+  accentSubtleTone: 50, // standard mid-tone: on bright light surfaces at low alpha, fg-default easily achieves contrast ≥75; no calibration needed
+  cautionBgTone: 35, // matches semanticSignalTone: caution bg uses same tone as other semantic tones in light mode; composited over bright surfaces fg-default passes contrast ≥75
 
   // ===== Card Frame Style =====
   // Light mode: bright tones (vs dark's dim tones 15-18). Frames sit just below canvas.
@@ -1412,6 +1431,15 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   outlinedIconHoverTone: 8, // same across states
   outlinedIconActiveTone: 8, // same across states
   outlinedIconI: 4, // same as fg chroma: icons match text warmth
+  outlinedFgRestToneLight: 0, // legacy light-mode counterpart field: derivation uses outlinedFgRestTone (set to 8 above) for both modes; this field is pure black (tone 0) and is mode-independent — value matches DARK_FORMULAS
+  outlinedFgHoverToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary tone field
+  outlinedFgActiveToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary tone field
+  outlinedIconRestToneLight: 0, // legacy light-mode counterpart for icons: derivation uses outlinedIconRestTone (set to 8 above); this value is pure black — mode-independent
+  outlinedIconHoverToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary icon tone field
+  outlinedIconActiveToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary icon tone field
+  outlinedOptionBorderRestTone: 50, // mid-dark rest border: tone 50 is mid-dark against near-white light surfaces — clearly visible without being harsh; aligns with borderStrongTone (52)
+  outlinedOptionBorderHoverTone: 55, // slightly lower on hover: border shifts toward mid-tone to acknowledge the hover bg change
+  outlinedOptionBorderActiveTone: 60, // mid-tone on press: border lifts further toward mid-range to confirm active state — consistent with dark mode's directional signal
   // outlinedBgHoverI / outlinedBgActiveI: light mode uses direct chroma, not sentinel.
   outlinedBgHoverI: 4, // direct chroma: light-mode hover bg is a solid tinted surface, not alpha sentinel
   outlinedBgHoverAlphaValue: 100, // fully opaque: light-mode hover bg is a solid surface (no alpha wash)
@@ -1436,6 +1464,16 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   ghostIconActiveI: 4, // same across states
   ghostBorderI: 20, // elevated chroma: visible hue-tinted ring without filled bg
   ghostBorderTone: 35, // darker tone: border must be dark enough to show against light surfaces
+  ghostFgRestToneLight: 0, // legacy light-mode counterpart field: derivation uses ghostFgRestTone (set to 8 above) for both modes; this field is pure black (tone 0) and is mode-independent — value matches DARK_FORMULAS
+  ghostFgHoverToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary tone field
+  ghostFgActiveToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary tone field
+  ghostFgRestILight: 0, // legacy light-mode chroma counterpart: derivation uses ghostFgRestI (set to 4 above); pure black is achromatic (I=0) — mode-independent
+  ghostFgHoverILight: 0, // same across states: legacy counterpart, derivation dispatches via primary chroma field
+  ghostFgActiveILight: 0, // same across states: legacy counterpart, derivation dispatches via primary chroma field
+  ghostIconRestToneLight: 0, // legacy light-mode icon counterpart: derivation uses ghostIconRestTone (set to 8 above); pure black mirrors pure-black fg — mode-independent
+  ghostIconHoverToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary icon tone field
+  ghostIconActiveToneLight: 0, // same across states: legacy counterpart, derivation dispatches via primary icon tone field
+  ghostIconActiveILight: 0, // legacy light-mode icon chroma counterpart: pure black is achromatic (I=0) — mode-independent
 
   // ===== Badge Style =====
   // Light mode: dark fg on tinted bg (inverse of dark's bright fg on dark bg).
@@ -1475,6 +1513,72 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   disabledBgI: 4, // slightly lower: disabled bg retains the hue softly
   disabledBorderI: 6, // same: gives disabled fields a visible edge despite light-mode tone
 
+  // ===== Hue Slot Dispatch =====
+  // Hue-slot routing is mode-independent: these fields select which palette slot drives a
+  // token's hue angle, not its lightness. Surface polarity (dark vs light) is handled by
+  // the tone fields above. Same slot assignments as DARK_FORMULAS.
+  bgAppHueSlot: "canvas", // mode-independent: app bg uses canvas hue slot in both modes — palette identity is the same
+  bgCanvasHueSlot: "canvas", // mode-independent: canvas bg uses canvas slot in both modes
+  surfaceSunkenHueSlot: "surfBareBase", // mode-independent: sunken surfaces route through bare-base slot in both modes
+  surfaceDefaultHueSlot: "surfBareBase", // mode-independent: default card surfaces use bare-base slot in both modes
+  surfaceRaisedHueSlot: "atm", // mode-independent: raised surfaces (popovers) use atm hue in both modes — warmth consistency
+  surfaceOverlayHueSlot: "surfBareBase", // mode-independent: overlays use bare-base slot in both modes
+  surfaceInsetHueSlot: "atm", // mode-independent: inset wells use atm hue in both modes — matches raised context
+  surfaceContentHueSlot: "atm", // mode-independent: content areas use atm hue in both modes — consistency with inset
+  surfaceScreenHueSlot: "surfScreen", // mode-independent: screen surfaces use surfScreen slot in both modes
+  fgMutedHueSlot: "fgMuted", // mode-independent: muted fg routes through its dedicated slot in both modes
+  fgSubtleHueSlot: "fgSubtle", // mode-independent: subtle fg routes through its dedicated slot in both modes
+  fgDisabledHueSlot: "fgDisabled", // mode-independent: disabled fg routes through its dedicated slot in both modes
+  fgPlaceholderHueSlot: "fgPlaceholder", // mode-independent: placeholder text routes through its dedicated slot in both modes
+  fgInverseHueSlot: "fgInverse", // mode-independent: inverse fg routes through fgInverse slot in both modes
+  fgOnAccentHueSlot: "fgInverse", // mode-independent: on-accent fg shares fgInverse slot in both modes — same palette identity
+  iconMutedHueSlot: "fgSubtle", // mode-independent: muted icons share fgSubtle slot in both modes — icons echo text hue
+  iconOnAccentHueSlot: "fgInverse", // mode-independent: on-accent icons share fgInverse slot in both modes
+  dividerMutedHueSlot: "borderTintBareBase", // mode-independent: muted dividers route through border tint slot in both modes
+  disabledBgHueSlot: "surfBareBase", // mode-independent: disabled bg uses bare-base slot in both modes — neutral recessive
+  fieldBgHoverHueSlot: "surfBareBase", // mode-independent: field hover bg routes through bare-base slot in both modes
+  fieldBgReadOnlyHueSlot: "surfBareBase", // mode-independent: read-only field bg routes through bare-base slot in both modes
+  fieldPlaceholderHueSlot: "fgPlaceholder", // mode-independent: placeholder text shares fgPlaceholder slot in both modes
+  fieldBorderRestHueSlot: "fgPlaceholder", // mode-independent: rest border shares fgPlaceholder slot in both modes — recessive default
+  fieldBorderHoverHueSlot: "fgSubtle", // mode-independent: hover border shifts to fgSubtle slot in both modes — signals interactivity
+  toggleTrackDisabledHueSlot: "surfBareBase", // mode-independent: disabled track uses bare-base slot in both modes — neutral signal
+  toggleThumbHueSlot: "fgInverse", // mode-independent: toggle thumb routes through fgInverse slot in both modes — high-contrast knob
+  checkmarkHueSlot: "fgInverse", // mode-independent: checkmark routes through fgInverse slot in both modes — on-filled-control glyph
+  radioDotHueSlot: "fgInverse", // mode-independent: radio dot routes through fgInverse slot in both modes — same as checkmark
+  tabBgActiveHueSlot: "cardFrame", // mode-independent: active tab bg routes through cardFrame slot in both modes — matches title bar
+  tabBgInactiveHueSlot: "cardFrame", // mode-independent: inactive tab bg shares cardFrame slot in both modes — same hue, lower tone
+
+  // ===== Sentinel Hue Dispatch =====
+  // Sentinel slots (__highlight, __verboseHighlight) are mode-independent: they bypass the
+  // hue/tone/alpha chromatic path and use a fixed white-alpha tint. Same sentinel routing
+  // as DARK_FORMULAS — the tint behavior works on both dark and light surfaces.
+  outlinedBgHoverHueSlot: "__highlight", // mode-independent: outlined hover uses white-alpha __highlight sentinel in both modes
+  outlinedBgActiveHueSlot: "__highlight", // mode-independent: outlined active uses __highlight sentinel in both modes
+  ghostActionBgHoverHueSlot: "__highlight", // mode-independent: ghost action hover uses __highlight sentinel in both modes
+  ghostActionBgActiveHueSlot: "__highlight", // mode-independent: ghost action active uses __highlight sentinel in both modes
+  ghostOptionBgHoverHueSlot: "__highlight", // mode-independent: ghost option hover uses __highlight sentinel in both modes
+  ghostOptionBgActiveHueSlot: "__highlight", // mode-independent: ghost option active uses __highlight sentinel in both modes
+  tabBgHoverHueSlot: "__highlight", // mode-independent: tab hover uses __highlight sentinel in both modes
+  tabCloseBgHoverHueSlot: "__highlight", // mode-independent: tab close hover uses __highlight sentinel in both modes
+  highlightHoverHueSlot: "__verboseHighlight", // mode-independent: highlight hover uses __verboseHighlight sentinel in both modes
+
+  // ===== Sentinel Alpha =====
+  // Sentinel alpha values control the opacity of white-tint hover/active overlays. These
+  // are mode-independent: the same percentage wash reads consistently on both dark and
+  // light surfaces because the tint color (white) adapts visually with the surface tone.
+  // Same alpha values as DARK_FORMULAS.
+  tabBgHoverAlpha: 8, // mode-independent: 8% white wash on tab hover — subtle state change in both modes
+  tabCloseBgHoverAlpha: 12, // mode-independent: 12% white wash on close button hover — slightly stronger than tab hover
+  outlinedBgHoverAlpha: 10, // mode-independent: 10% white wash on outlined button hover in dark mode (light mode uses solid bg instead)
+  outlinedBgActiveAlpha: 20, // mode-independent: 20% white wash on outlined button press in dark mode
+  ghostActionBgHoverAlpha: 10, // mode-independent: 10% white wash on ghost action hover — same as outlined
+  ghostActionBgActiveAlpha: 20, // mode-independent: 20% white wash on ghost action press — same as outlined
+  ghostOptionBgHoverAlpha: 10, // mode-independent: 10% white wash on ghost option hover — consistent with action hover
+  ghostOptionBgActiveAlpha: 20, // mode-independent: 20% white wash on ghost option press
+  highlightHoverAlpha: 5, // mode-independent: 5% white wash on selection highlight hover — very subtle
+  ghostDangerBgHoverAlpha: 10, // mode-independent: 10% white wash on danger ghost hover — same ratio as standard ghost
+  ghostDangerBgActiveAlpha: 20, // mode-independent: 20% white wash on danger ghost press
+
   // ===== Computed Tone Override =====
   // Light mode: dividers and disabled controls are recalibrated for light surfaces.
   dividerDefaultToneOverride: 78, // mid-light tone: dividers are visible on light surfaces without being harsh
@@ -1496,7 +1600,12 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   // ===== Hue Name Dispatch =====
   // Light mode overrides for derived hue slots that differ from dark.
   surfScreenHue: "cobalt", // cobalt screen bg: light surface screen uses text hue for continuity
+  fgMutedHueExpr: "__bare_primary", // mode-independent: bare-primary sentinel derives muted fg from the primary hue in both modes — palette identity is the same
+  fgSubtleHue: "indigo-cobalt", // mode-independent: indigo-cobalt is the palette hue for subtle fg text in both modes
+  fgDisabledHue: "indigo-cobalt", // mode-independent: indigo-cobalt is the palette hue for disabled fg text in both modes
+  fgInverseHue: "sapphire-cobalt", // mode-independent: sapphire-cobalt drives inverse fg in both modes — same palette identity
   fgPlaceholderSource: "atm", // placeholder derives from atm: light-mode placeholder uses surface hue for softness
+  selectionInactiveHue: "yellow", // mode-independent: yellow is the inactive selection hue in both modes — warm highlight identity
 
   // ===== Selection Mode =====
   // Light mode: atm-offset path for inactive selection (more natural on light canvas).
@@ -1505,15 +1614,6 @@ export const LIGHT_OVERRIDES: Partial<DerivationFormulas> = {
   selectionBgInactiveTone: 80, // light-mode tone: selection bg is mid-light to show through without obscuring
   selectionBgInactiveAlpha: 30, // slightly higher alpha: selection is clearly visible on light canvas
 };
-
-/**
- * Complete formula bundle for a light-polarity recipe.
- * `BASE_FORMULAS` provides all dark defaults; `LIGHT_OVERRIDES` patches every
- * field that differs in light mode.
- *
- * Use this as `formulas` in any light-mode `ThemeRecipe`. [D04]
- */
-export const LIGHT_FORMULAS: DerivationFormulas = { ...BASE_FORMULAS, ...LIGHT_OVERRIDES };
 
 // ---------------------------------------------------------------------------
 // EXAMPLE_RECIPES — built-in theme recipes
@@ -1537,7 +1637,7 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     canvas: "indigo-violet", // bg-canvas, bg-app use same hue as cardBg
     cardFrame: "indigo",     // card title bar, tab bar bg
     borderTint: "indigo-violet", // borders and dividers use same hue as cardBg
-    formulas: { ...BASE_FORMULAS, ...DARK_OVERRIDES },
+    formulas: DARK_FORMULAS,
   },
   harmony: {
     name: "harmony",
@@ -1549,7 +1649,7 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     canvas: "indigo-violet",            // same palette as brio — light near-white canvas
     cardFrame: "indigo",                // same palette as brio — indigo title bars, now bright
     borderTint: "indigo-violet",        // same palette as brio — crisp indigo-violet borders
-    formulas: { ...BASE_FORMULAS, ...LIGHT_OVERRIDES },
+    formulas: LIGHT_FORMULAS,
   },
 };
 

@@ -1142,12 +1142,12 @@ describe("deriveTheme – Harmony preset produces correct light-mode output (Ste
     }
   });
 
-  it("Harmony borderSignalTone is 40 (LIGHT_OVERRIDES value, not dark default 50)", () => {
+  it("Harmony borderSignalTone is 40 (LIGHT_FORMULAS value, not dark default 50)", () => {
     expect(LIGHT_FORMULAS.borderSignalTone).toBe(40);
     expect(DARK_FORMULAS.borderSignalTone).toBe(50);
   });
 
-  it("Harmony semanticSignalTone is 35 (LIGHT_OVERRIDES value, not dark default 50)", () => {
+  it("Harmony semanticSignalTone is 35 (LIGHT_FORMULAS value, not dark default 50)", () => {
     expect(LIGHT_FORMULAS.semanticSignalTone).toBe(35);
     expect(DARK_FORMULAS.semanticSignalTone).toBe(50);
   });

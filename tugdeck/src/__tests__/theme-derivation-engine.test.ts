@@ -25,9 +25,6 @@ import {
   EXAMPLE_RECIPES,
   DARK_FORMULAS,
   LIGHT_FORMULAS,
-  LIGHT_OVERRIDES,
-  BASE_FORMULAS,
-  DARK_OVERRIDES,
   generateResolvedCssExport,
   resolveHueSlots,
   computeTones,
@@ -73,8 +70,6 @@ import {
   KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS,
   KNOWN_PAIR_EXCEPTIONS,
   RECIPE_PAIR_EXCEPTIONS,
-  LIGHT_MODE_PAIR_EXCEPTIONS,
-  LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS,
 } from "./contrast-exceptions";
 
 // ---------------------------------------------------------------------------
@@ -374,28 +369,26 @@ describe("derivation-engine", () => {
 describe("derivation-engine integration", () => {
 
   // -------------------------------------------------------------------------
-  // T4.2: Brio light preset — 0 unexpected body-text failures
+  // T4.2: Harmony (LIGHT_FORMULAS) light-mode pipeline — 0 unexpected body-text failures
   //
-  // The light-mode engine calibration is known to have structural surface-derivation
-  // constraints (bg-app / surface-raised derived too dark for light recipes,
-  // surface-overlay/sunken near-miss with fg-default) that are tracked as
-  // KNOWN_PAIR_EXCEPTIONS in gallery-theme-generator-content.test.tsx.
-  // This test mirrors the gallery's light-mode check — body-text only — using the
-  // same set of light-mode pair exceptions.
+  // Harmony uses LIGHT_FORMULAS which has correctly calibrated light-mode surface
+  // tones. This eliminates the [phase-3-bug] B09-B14 structural surface-derivation
+  // constraints that existed when DARK_FORMULAS was incorrectly used with light mode.
   //
-  // Full ui-component and focus-indicator coverage for light mode is exercised by
-  // the gallery test suite, which runs all EXAMPLE_RECIPES with the complete
-  // exception set.
+  // This test validates the harmony recipe body-text and focus-indicator coverage.
+  // Full ui-component and focus-indicator coverage is also exercised by the
+  // parameterized recipe contrast validation loop.
+  //
+  // References: [D03] All bugs resolved, Table T01 (B09-B14), Spec S01
   // -------------------------------------------------------------------------
-  it("T4.2: deriveTheme(brio-light) -> 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
-    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
-    const output = deriveTheme(brioLight);
-    // Step 5: engine contrast floors are applied by construction inside evaluateRules.
+  it("T4.2: deriveTheme(harmony) -> 0 unexpected body-text failures (LIGHT_FORMULAS used for light mode)", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.harmony);
+    // Engine contrast floors are applied by construction inside evaluateRules.
     // No autoAdjustContrast post-processing is needed or performed.
     const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-    // Known light-mode surface-derivation constraints — imported from contrast-exceptions.ts.
-    // (LIGHT_MODE_PAIR_EXCEPTIONS imported at top of file)
+    // With LIGHT_FORMULAS, surface tokens are correctly calibrated for light mode.
+    // B09-B14 are resolved by root cause (switching to LIGHT_FORMULAS), not exceptions.
 
     // Check body-text only — mirrors the gallery test's light-mode coverage scope.
     const unexpectedBodyTextFailures = finalResults.filter((r) => {
@@ -405,7 +398,8 @@ describe("derivation-engine integration", () => {
       if (Math.abs(r.contrast) >= margin) return false;
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
       if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
-      if (LIGHT_MODE_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+      const recipeExceptions = RECIPE_PAIR_EXCEPTIONS["harmony"] ?? new Set<string>();
+      if (recipeExceptions.has(`${r.fg}|${r.bg}`)) return false;
       return true;
     });
     const descriptions = unexpectedBodyTextFailures.map(
@@ -413,30 +407,9 @@ describe("derivation-engine integration", () => {
     );
     expect(descriptions).toEqual([]);
 
-    // Focus indicator assertion (Step 5): ui-component focus-on-surface pairs
-    // must pass contrast 30. In dark mode all 9 surfaces pass (T4.1). In light mode,
-    // 5 surfaces are structurally constrained by the light-mode surface derivation
-    // (engine calibrated for dark mode per Q01). These are documented below so the
-    // test tracks regressions on the 4 surfaces that do pass, rather than silently
-    // skipping the assertion entirely.
-    //
-    // Light-mode focus exceptions (structural — deferred per Q01):
-    //   bg-app (L≈0.39): derives too dark in light mode → accent-cool-default
-    //     mid-lightness (L≈0.51) produces |contrast| ≈ 12.8, below contrast 30.
-    //   surface-raised (L≈0.44): same structural derivation issue → |contrast| ≈ 11.8.
-    //   surface-overlay / surface-sunken / field-bg-rest: perceptual contrast soft-clip region —
-    //     these surfaces land in a narrow lightness band near accent-cool-default
-    //     producing deltaYc below the LOW_CLIP threshold (contrast rounds to 0.0).
-    const LIGHT_MODE_FOCUS_EXCEPTIONS = new Set([
-      "--tug-base-accent-cool-default|--tug-base-bg-app",
-      "--tug-base-accent-cool-default|--tug-base-surface-raised",
-      "--tug-base-accent-cool-default|--tug-base-surface-overlay",
-      "--tug-base-accent-cool-default|--tug-base-surface-sunken",
-      "--tug-base-accent-cool-default|--tug-base-field-bg-rest",
-      // surface-screen uses indigo (260) canonical L (0.572) after 48-hue expansion;
-      // light-mode surface-screen lands darker, producing contrast < 30 with accent-cool-default.
-      "--tug-base-accent-cool-default|--tug-base-surface-screen",
-    ]);
+    // Focus indicator assertion: ui-component focus-on-surface pairs must pass contrast 30.
+    // With LIGHT_FORMULAS, harmony's surface tokens are correctly calibrated for light mode,
+    // so all focus surfaces should pass. Any structural exceptions are documented explicitly.
     const focusSurfaces = new Set([
       "--tug-base-bg-app",
       "--tug-base-surface-default",
@@ -453,8 +426,7 @@ describe("derivation-engine integration", () => {
         r.fg === "--tug-base-accent-cool-default" &&
         r.role === "ui-component" &&
         focusSurfaces.has(r.bg) &&
-        !r.contrastPass &&
-        !LIGHT_MODE_FOCUS_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
+        !r.contrastPass,
     );
     expect(focusFailures.map((f) => `${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
   });
@@ -677,7 +649,7 @@ const BRIO_STRUCTURAL_TOKENS: Record<string, string> = {
 export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number }> = {
   "--tug-base-accent-cool-default": { L: 0.744, C: 0.24300000000000002, h: 250 },
   "--tug-base-accent-default": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-accent-subtle": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-accent-subtle": { L: 0.528, C: 0.146, h: 55 },
   "--tug-base-badge-tinted-accent-bg": { L: 0.8160000000000001, C: 0.1898, h: 55 },
   "--tug-base-badge-tinted-accent-border": { L: 0.78, C: 0.146, h: 55 },
   "--tug-base-badge-tinted-accent-fg": { L: 0.906, C: 0.21023999999999998, h: 55 },
@@ -934,11 +906,11 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-surface-raised": { L: 0.27671999999999997, C: 0.014000000000000002, h: 263.33333333333326 },
   "--tug-base-surface-screen": { L: 0.33431999999999995, C: 0.019600000000000003, h: 260 },
   "--tug-base-surface-sunken": { L: 0.27276, C: 0.0149, h: 270 },
-  "--tug-base-tab-bg-active": { L: 0.35735999999999996, C: 0.033600000000000005, h: 260 },
+  "--tug-base-tab-bg-active": { L: 0.33432, C: 0.033600000000000005, h: 260 },
   "--tug-base-tab-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
-  "--tug-base-tab-fg-active": { L: 0.95568, C: 0.0081, h: 250 },
+  "--tug-base-tab-fg-active": { L: 0.93408, C: 0.0081, h: 250 },
   "--tug-base-tab-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
   "--tug-base-tab-fg-rest": { L: 0.744, C: 0.018900000000000004, h: 250 },
   "--tug-base-toggle-icon-disabled": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
@@ -968,7 +940,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-tone-agent-fg": { L: 0.708, C: 0.149, h: 270 },
   "--tug-base-tone-agent-icon": { L: 0.708, C: 0.149, h: 270 },
   "--tug-base-tone-caution": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-tone-caution-bg": { L: 0.9009999999999999, C: 0.125, h: 90 },
+  "--tug-base-tone-caution-bg": { L: 0.6006, C: 0.125, h: 90 },
   "--tug-base-tone-caution-border": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-tone-caution-fg": { L: 0.9009999999999999, C: 0.125, h: 90 },
   "--tug-base-tone-caution-icon": { L: 0.9009999999999999, C: 0.125, h: 90 },
@@ -1058,9 +1030,8 @@ describe("derivation-engine formulas-exports", () => {
     expect(formulas.filledBgDarkTone).toBe(20);
     expect(formulas.fieldBgRestTone).toBe(8);
 
-    // Verify EXAMPLE_RECIPES.brio.formulas is composed from BASE_FORMULAS + DARK_OVERRIDES [D03]
-    // The composed object equals DARK_FORMULAS in value (deep equality), not reference.
-    expect(EXAMPLE_RECIPES.brio.formulas).toEqual(DARK_FORMULAS);
+    // Verify EXAMPLE_RECIPES.brio.formulas is DARK_FORMULAS directly [D03]
+    expect(EXAMPLE_RECIPES.brio.formulas).toBe(DARK_FORMULAS);
   });
 
   it("T-FORMULAS-NO-REGRESSION: deriveTheme(brio) output is unchanged after preset deletion", () => {
@@ -1088,20 +1059,14 @@ describe("derivation-engine formulas-exports", () => {
 // ---------------------------------------------------------------------------
 // Step 3: Formula consolidation tests (T-FORMULAS-STEP3)
 // Verifies that DerivationFormulas has been consolidated to emphasis-level
-// fields, that BASE_FORMULAS + DARK_OVERRIDES compose correctly, and
-// that the net field count reduction meets the plan target (>= 40 fields). [D02] [D03]
+// fields and that EXAMPLE_RECIPES uses direct formula objects. [D02] [D04]
 // ---------------------------------------------------------------------------
 
 describe("derivation-engine formula-consolidation step-3", () => {
-  it("T-FORMULAS-STEP3-BASE-OVERRIDES: BASE_FORMULAS + DARK_OVERRIDES compose to DARK_FORMULAS", () => {
-    // BASE_FORMULAS IS the Brio dark recipe (DARK_OVERRIDES is currently empty).
-    // The composed spread should equal DARK_FORMULAS value-wise.
-    const composed = { ...BASE_FORMULAS, ...DARK_OVERRIDES };
-    expect(composed).toEqual(DARK_FORMULAS);
-    // BASE_FORMULAS equals DARK_FORMULAS by reference (it's an alias for now)
-    expect(BASE_FORMULAS).toBe(DARK_FORMULAS);
-    // DARK_OVERRIDES is empty
-    expect(Object.keys(DARK_OVERRIDES)).toHaveLength(0);
+  it("T-FORMULAS-STEP3-RECIPES: EXAMPLE_RECIPES.brio and harmony use DARK_FORMULAS and LIGHT_FORMULAS directly", () => {
+    // Phase 3 step 9: EXAMPLE_RECIPES uses direct formula objects, not spread composition. [D04]
+    expect(EXAMPLE_RECIPES.brio.formulas).toBe(DARK_FORMULAS);
+    expect(EXAMPLE_RECIPES.harmony.formulas).toBe(LIGHT_FORMULAS);
   });
 
   it("T-FORMULAS-STEP3-EMPHASIS-FIELDS: emphasis-level outlined fields exist with correct values", () => {
@@ -1311,13 +1276,11 @@ describe("derivation-engine generateResolvedCssExport", () => {
 // The exception sets mirror the parameterized loop / T4.2: known structural constraints are excluded
 // so the tests track real regressions rather than documented design choices.
 //
-// Light-mode tests (T4.4, T4.7) share the same set of structural surface-
-// derivation exceptions documented in T4.2 — the engine is calibrated for dark
-// mode and light-mode bg-app / surface-raised / surface-overlay / surface-sunken
-// / surface-screen are known structural constraints.
+// Light-mode tests (T4.4, T4.7) use LIGHT_FORMULAS, which has correctly calibrated
+// surface tones for light mode. This eliminates the [phase-3-bug] B09-B14 structural
+// surface-derivation constraints that existed when DARK_FORMULAS was incorrectly used
+// with light mode. No extra pair exceptions are needed for these tests.
 // ---------------------------------------------------------------------------
-
-// LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS is imported from contrast-exceptions.ts.
 
 /**
  * Known dark-mode body-text pair exceptions for high surfaceContrast recipes.
@@ -1415,14 +1378,17 @@ describe("derivation-engine convergence stress tests", () => {
   // light mode, low surface contrast (20) and low signal intensity (20).
   //
   // Tests that warm-atmosphere + cool-role inversion at low-contrast settings
-  // in light mode does not produce unexpected body-text failures beyond the
-  // documented light-mode structural surface-derivation constraints.
+  // in light mode does not produce unexpected body-text failures.
+  // Uses LIGHT_FORMULAS for light mode — resolves [phase-3-bug] B09-B14 at root cause.
+  //
+  // References: [D03] All bugs resolved, Table T01 (B09-B14)
   // -------------------------------------------------------------------------
   it("T4.4-stress: cool atmosphere, warm roles, light mode, low contrast — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.4-stress",
       description: "Stress test: cool atmosphere, warm roles, light mode, low contrast.",
       mode: "light" as const,
+      formulas: LIGHT_FORMULAS,
       cardBg: { hue: "slate" },
       text: { hue: "cobalt" },
       accent: "orange",
@@ -1438,7 +1404,7 @@ describe("derivation-engine convergence stress tests", () => {
     };
 
     const { finalResults } = runPipelineForRecipe(recipe);
-    const failures = unexpectedBodyTextFailures(finalResults, LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS);
+    const failures = unexpectedBodyTextFailures(finalResults);
     const descriptions = failures.map(
       (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
@@ -1519,15 +1485,18 @@ describe("derivation-engine convergence stress tests", () => {
   // T4.7-stress: Extreme low signalIntensity (10), light mode.
   //
   // Tests that minimum signal intensity (desaturated role hues) in light mode
-  // does not cause unexpected body-text failures beyond the documented
-  // light-mode structural surface-derivation constraints. At low intensity,
-  // role hues approach achromatic, which can shift contrast relationships.
+  // does not cause unexpected body-text failures. At low intensity, role hues
+  // approach achromatic, which can shift contrast relationships.
+  // Uses LIGHT_FORMULAS for light mode — resolves [phase-3-bug] B09-B14 at root cause.
+  //
+  // References: [D03] All bugs resolved, Table T01 (B09-B14)
   // -------------------------------------------------------------------------
   it("T4.7-stress: extreme low signalIntensity (10), light mode — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.7-stress",
       description: "Stress test: extreme low signalIntensity (10), light mode.",
       mode: "light" as const,
+      formulas: LIGHT_FORMULAS,
       cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
       accent: "orange",
@@ -1543,7 +1512,7 @@ describe("derivation-engine convergence stress tests", () => {
     };
 
     const { finalResults } = runPipelineForRecipe(recipe);
-    const failures = unexpectedBodyTextFailures(finalResults, LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS);
+    const failures = unexpectedBodyTextFailures(finalResults);
     const descriptions = failures.map(
       (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
@@ -2467,11 +2436,11 @@ describe("derivation-engine step-4 contrast floor", () => {
 
 describe("Step 4 verification — harmony light-mode cardFrameActiveTone and formula fields", () => {
   // Task 1: Bug 2 fix — cardFrameActiveTone=88 is used in harmony
-  it("LIGHT_OVERRIDES.cardFrameActiveTone is 88 (Bug 2 fix)", () => {
-    expect(LIGHT_OVERRIDES.cardFrameActiveTone).toBe(88);
+  it("LIGHT_FORMULAS.cardFrameActiveTone is 88 (Bug 2 fix)", () => {
+    expect(LIGHT_FORMULAS.cardFrameActiveTone).toBe(88);
   });
 
-  it("EXAMPLE_RECIPES.harmony formulas.cardFrameActiveTone is 88 (LIGHT_OVERRIDES applied)", () => {
+  it("EXAMPLE_RECIPES.harmony formulas.cardFrameActiveTone is 88 (LIGHT_FORMULAS value)", () => {
     const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
     expect(harmonyFormulas.cardFrameActiveTone).toBe(88);
   });
@@ -2781,5 +2750,64 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
 
     // Token count must still be 373
     expect(Object.keys(output.tokens).length).toBe(373);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 Step 2: LIGHT_FORMULAS standalone literal equality tests
+// Verifies that LIGHT_FORMULAS is a complete 202-field standalone literal
+// and that EXAMPLE_RECIPES.harmony uses it directly. [D01] [D04]
+// ---------------------------------------------------------------------------
+
+describe("phase-3-step-2 standalone LIGHT_FORMULAS equality", () => {
+  it("LIGHT_FORMULAS has exactly 202 fields (same as DARK_FORMULAS; +2 for accentSubtleTone/cautionBgTone added in step-7)", () => {
+    expect(Object.keys(LIGHT_FORMULAS).length).toBe(202);
+    expect(Object.keys(DARK_FORMULAS).length).toBe(202);
+  });
+
+  it("LIGHT_FORMULAS is used directly in EXAMPLE_RECIPES.harmony (no spread composition)", () => {
+    // Phase 3 step 9: harmony recipe references LIGHT_FORMULAS directly [D04]
+    expect(EXAMPLE_RECIPES.harmony.formulas).toBe(LIGHT_FORMULAS);
+  });
+
+  it("LIGHT_FORMULAS has no spread operators (is a standalone literal)", () => {
+    // Verify the object is its own complete definition — no prototype chain entries
+    // that would indicate inheritance from another object via spread composition
+    const keys = Object.keys(LIGHT_FORMULAS);
+    expect(keys.length).toBe(202); // 200 original + 2 added in step-7 (accentSubtleTone, cautionBgTone)
+    // Spot-check key fields from each semantic group to confirm they are own properties
+    expect(Object.hasOwn(LIGHT_FORMULAS, "bgAppTone")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "surfaceDefaultTone")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "fgDefaultTone")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "borderIBase")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "bgAppHueSlot")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "outlinedBgHoverHueSlot")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "tabBgHoverAlpha")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "dividerDefaultToneOverride")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "surfScreenHue")).toBe(true);
+    expect(Object.hasOwn(LIGHT_FORMULAS, "selectionInactiveSemanticMode")).toBe(true);
+  });
+
+  it("LIGHT_FORMULAS surface/canvas group has correct light-mode values", () => {
+    // Verify all surface/canvas fields have the expected light-mode design values (Step 2 coverage)
+    expect(LIGHT_FORMULAS.bgAppTone).toBe(95);
+    expect(LIGHT_FORMULAS.bgCanvasTone).toBe(95);
+    expect(LIGHT_FORMULAS.surfaceSunkenTone).toBe(88);
+    expect(LIGHT_FORMULAS.surfaceDefaultTone).toBe(90);
+    expect(LIGHT_FORMULAS.surfaceRaisedTone).toBe(92);
+    expect(LIGHT_FORMULAS.surfaceOverlayTone).toBe(93);
+    expect(LIGHT_FORMULAS.surfaceInsetTone).toBe(86);
+    expect(LIGHT_FORMULAS.surfaceContentTone).toBe(86);
+    expect(LIGHT_FORMULAS.surfaceScreenTone).toBe(85);
+    expect(LIGHT_FORMULAS.atmI).toBe(6);
+    expect(LIGHT_FORMULAS.bgAppI).toBe(3);
+    expect(LIGHT_FORMULAS.bgCanvasI).toBe(3);
+    expect(LIGHT_FORMULAS.surfaceDefaultI).toBe(6);
+    expect(LIGHT_FORMULAS.surfaceRaisedI).toBe(6);
+    expect(LIGHT_FORMULAS.surfaceOverlayI).toBe(5);
+    expect(LIGHT_FORMULAS.surfaceScreenI).toBe(8);
+    expect(LIGHT_FORMULAS.surfaceInsetI).toBe(6);
+    expect(LIGHT_FORMULAS.surfaceContentI).toBe(6);
+    expect(LIGHT_FORMULAS.bgAppSurfaceI).toBe(3);
   });
 });

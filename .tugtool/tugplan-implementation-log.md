@@ -9,6 +9,138 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-03-19T04:08:35Z
+---
+
+## step-11: Final verification checkpoint. All Phase 3 exit criteria met: LIGHT_FORMULAS is a complete 202-field literal (no spread), BASE_FORMULAS/DARK_OVERRIDES/LIGHT_OVERRIDES removed, zero [phase-3-bug] entries, all 1891 tests pass, audit:tokens lint/verify exit 0. Both brio and harmony are fully independent recipes.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-10
+date: 2025-03-19T04:05:28Z
+---
+
+## step-10: Regenerated @tug-pairings comment blocks in 16 CSS files via audit:tokens inject --apply. Confirmed idempotent (second run produces no changes). All verification gates pass: lint zero violations, verify 23/23 files, 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-9
+date: 2025-03-19T04:02:02Z
+---
+
+## step-9: Removed BASE_FORMULAS, DARK_OVERRIDES, LIGHT_OVERRIDES, and LIGHT_FORMULAS_LEGACY exports. Updated EXAMPLE_RECIPES.brio.formulas to DARK_FORMULAS and EXAMPLE_RECIPES.harmony.formulas to LIGHT_FORMULAS directly. Updated test imports in theme-derivation-engine.test.ts and gallery-theme-generator-content.test.tsx. Zero non-comment references to removed symbols remain.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-8
+date: 2025-03-19T03:48:56Z
+---
+
+## step-8: Verification checkpoint. Zero [phase-3-bug] entries remain. All 14 bugs resolved: B01/B06/B08 deferred [phase-4-engine], B07 [design-choice], B02-B05 fixed by calibration (new accentSubtleTone/cautionBgTone fields), B09-B14 fixed by using LIGHT_FORMULAS for light-mode tests. All 1892 tests pass. All audit gates green.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-7
+date: 2025-03-19T03:41:49Z
+---
+
+## step-7: Resolved B01-B08 [phase-3-bug] entries. B03: cardFrameActiveTone 18→16 for fg-default|tab-bg-active contrast. B04: added accentSubtleTone=30 for fg-default|accent-subtle. B05: added cautionBgTone=30 for fg-default|tone-caution-bg. B02: resolved via LIGHT_FORMULAS values. B01/B06/B08: deferred [phase-4-engine] (gamut ceiling, mode-aware tokens). B07: documented [design-choice] in harmony. Zero [phase-3-bug] entries remain.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-6
+date: 2025-03-19T03:09:53Z
+---
+
+## step-6: Updated T4.2, T4.4, T4.7 to use LIGHT_FORMULAS when mode is light — fixing the root cause of B09-B14 surface contrast bugs (dark formulas used in light mode). Removed LIGHT_MODE_PAIR_EXCEPTIONS and LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS entirely from contrast-exceptions.ts. All 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-5
+date: 2025-03-19T02:58:57Z
+---
+
+## step-5: Verification-only checkpoint. Confirmed LIGHT_FORMULAS is a complete 200-field literal with zero spread operators, zero [light-review-pending] tags, all fields annotated. deriveTheme output matches LIGHT_FORMULAS_LEGACY for both brio and harmony. All 5 verification gates pass. 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-4
+date: 2025-03-19T02:53:08Z
+---
+
+## step-4: Replaced all 78 [light-review-pending] tags with explicit design-rationale annotations. Covered: outlined/ghost ToneLight/ILight fields, outlined option border tones, hue-slot-dispatch (30 fields), sentinel-hue-dispatch (9), sentinel-alpha (11), hue-name-dispatch (5). Zero [light-review-pending] tags remain. All 200 fields fully annotated.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-3
+date: 2025-03-19T02:41:00Z
+---
+
+## step-3: Text and border semantic groups verified complete with explicit light-mode rationale (work done in step-2 commit). Updated JSDoc to document step-3 completion scope. 78 [light-review-pending] tags on mode-independent dispatch fields deferred to step-4. All verification gates pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-2
+date: 2025-03-19T02:30:06Z
+---
+
+## step-2: Created LIGHT_FORMULAS as a complete 200-field DerivationFormulas literal with no spread operators. Surface/canvas groups have full light-mode rationale. Text, border, control, badge, icon, tab, toggle, field groups also populated with rationale (early completion of steps 3/4). 78 [light-review-pending] tags remain on mode-independent dispatch fields. LIGHT_FORMULAS_LEGACY preserved for comparison. Equality tests added. All 5 verification gates pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
+step: step-1
+date: 2025-03-19T02:13:26Z
+---
+
+## step-1: Verified DARK_FORMULAS is a complete 200-field literal object with all @semantic tags and design-rationale comments. Ran audit:tokens tokens to confirm all 373 token semantic groups have formula coverage. Regenerated CSS @tug-pairings blocks via inject --apply. All verification gates pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-5
 date: 2025-03-19T00:51:51Z
 ---
