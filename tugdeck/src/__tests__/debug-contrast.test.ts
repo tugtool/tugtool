@@ -14,9 +14,9 @@ describe("debug: step-7 contrast calibration check", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
     const bugPairs = [
-      "--tug-base-fg-default|--tug-base-tab-bg-active",
-      "--tug-base-fg-default|--tug-base-accent-subtle",
-      "--tug-base-fg-default|--tug-base-tone-caution-bg",
+      "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tab-primary-normal-plain-active",
+      "--tug-base-element-global-text-normal-default-rest|--tug-base-element-global-fill-normal-accentSubtle-rest",
+      "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tone-primary-normal-caution-rest",
     ];
     const summary = bugPairs.map((pair) => {
       const [fg, bg] = pair.split("|");

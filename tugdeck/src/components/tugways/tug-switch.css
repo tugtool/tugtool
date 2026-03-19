@@ -7,7 +7,7 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-field-fg-label (field-fg-label)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-switch-label (color)            |
+ * | --tug-base-element-field-text-normal-label-rest (field-fg-label)       | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | body-text    | .tug-switch-label (color)            |
  */
 
 
@@ -58,7 +58,7 @@
   flex-shrink: 0;
   border: none;
   border-radius: 9999px;
-  background-color: var(--tug-base-toggle-track-off);
+  background-color: var(--tug-base-surface-toggle-track-normal-off-rest);
   cursor: pointer;
   padding: 2px;
   transition: background-color 80ms ease;
@@ -83,18 +83,18 @@
 /* ---- Hover (unchecked) ---- */
 
 .tug-switch:hover:not(:disabled):not([data-disabled]) {
-  background-color: var(--tug-base-toggle-track-off-hover);
+  background-color: var(--tug-base-surface-toggle-track-normal-off-hover);
 }
 
 /* ---- Checked (on) ---- */
 
 .tug-switch[data-state="checked"] {
-  background-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-on));
+  background-color: var(--tug-toggle-on-color, var(--tug-base-surface-toggle-track-normal-on-rest));
 }
 
 /* Default hover (no role) — uses pre-computed hover token [Spec S02] */
 .tug-switch[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
-  background-color: var(--tug-base-toggle-track-on-hover);
+  background-color: var(--tug-base-surface-toggle-track-normal-on-hover);
 }
 
 /* Role hover — uses injected color-mix value [Spec S02] */
@@ -106,7 +106,7 @@
 
 .tug-switch:disabled,
 .tug-switch[data-disabled] {
-  background-color: var(--tug-base-toggle-track-disabled);
+  background-color: var(--tug-base-surface-toggle-track-normal-plain-disabled);
   cursor: not-allowed;
   opacity: var(--tug-base-control-disabled-opacity);
 }
@@ -114,7 +114,7 @@
 /* ---- Focus ---- */
 
 .tug-switch:focus-visible {
-  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline: 2px solid var(--tug-base-element-global-fill-normal-accentCool-rest);
   outline-offset: 2px;
 }
 
@@ -125,7 +125,7 @@
 .tug-switch-thumb {
   display: block;
   border-radius: 9999px;
-  background-color: var(--tug-base-toggle-thumb);
+  background-color: var(--tug-base-element-toggle-thumb-normal-plain-rest);
   transition: transform 100ms ease;
   align-self: center;
 }
@@ -165,7 +165,7 @@
 
 .tug-switch:disabled .tug-switch-thumb,
 .tug-switch[data-disabled] .tug-switch-thumb {
-  background-color: var(--tug-base-toggle-thumb-disabled);
+  background-color: var(--tug-base-element-toggle-thumb-normal-plain-disabled);
 }
 
 /* ============================================================================
@@ -183,14 +183,14 @@
   cursor: not-allowed;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-switch-label {
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 400;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-base-field-fg-label);
+  color: var(--tug-base-element-field-text-normal-label-rest);
   user-select: none;
 }
 

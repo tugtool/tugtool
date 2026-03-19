@@ -7,16 +7,16 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-toggle-track-off (toggle-track-off)   | --tug-base-surface-default (surface-default)     | ui-component | .tug-checkbox (border)               |
- * | --tug-base-toggle-track-off-hover (toggle-track-off-hover) | --tug-base-surface-default (surface-default)     | ui-component | .tug-checkbox:hover:not(:disabled):not([data-disabled]) (border-color) |
+ * | --tug-base-surface-toggle-track-normal-off-rest (toggle-track-off)   | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-checkbox (border)               |
+ * | --tug-base-surface-toggle-track-normal-off-hover (toggle-track-off-hover) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-checkbox:hover:not(:disabled):not([data-disabled]) (border-color) |
  * | --tug-toggle-on-color (--tug-toggle-on-color)    | --tug-toggle-on-color (--tug-toggle-on-color)    | ui-component | .tug-checkbox[data-state="checked"] (border-color) |
- * | --tug-base-toggle-track-on-hover (toggle-track-on-hover) | --tug-base-toggle-track-on-hover (toggle-track-on-hover) | ui-component | .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
+ * | --tug-base-surface-toggle-track-normal-on-hover (toggle-track-on-hover) | --tug-base-surface-toggle-track-normal-on-hover (toggle-track-on-hover) | ui-component | .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
  * | --tug-toggle-on-hover-color (--tug-toggle-on-hover-color) | --tug-toggle-on-hover-color (--tug-toggle-on-hover-color) | ui-component | .tug-checkbox[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) (border-color) |
- * | --tug-base-toggle-track-mixed-hover (toggle-track-mixed-hover) | --tug-base-toggle-track-mixed-hover (toggle-track-mixed-hover) | ui-component | .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
- * | --tug-base-toggle-track-disabled (toggle-track-disabled) | --tug-base-toggle-track-disabled (toggle-track-disabled) | ui-component | .tug-checkbox:disabled, .tug-checkbox[data-disabled] (border-color) |
- * | --tug-base-checkmark-fg (checkmark-fg)           | --tug-base-toggle-track-on (toggle-track-on)     | body-text    | .tug-checkbox-indicator (color)      |
- * | --tug-base-checkmark-fg-mixed (checkmark-fg-mixed) | --tug-base-toggle-track-mixed (toggle-track-mixed) | body-text    | .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator (color) |
- * | --tug-base-field-fg-label (field-fg-label)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-checkbox-label (color)          |
+ * | --tug-base-surface-toggle-track-normal-mixed-hover (toggle-track-mixed-hover) | --tug-base-surface-toggle-track-normal-mixed-hover (toggle-track-mixed-hover) | ui-component | .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
+ * | --tug-base-surface-toggle-track-normal-plain-disabled (toggle-track-disabled) | --tug-base-surface-toggle-track-normal-plain-disabled (toggle-track-disabled) | ui-component | .tug-checkbox:disabled, .tug-checkbox[data-disabled] (border-color) |
+ * | --tug-base-element-checkmark-icon-normal-plain-rest (checkmark-fg)           | --tug-base-surface-toggle-track-normal-on-rest (toggle-track-on)     | body-text    | .tug-checkbox-indicator (color)      |
+ * | --tug-base-element-checkmark-icon-normal-plain-mixed (checkmark-fg-mixed) | --tug-base-surface-toggle-track-normal-mixed-rest (toggle-track-mixed) | body-text    | .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator (color) |
+ * | --tug-base-element-field-text-normal-label-rest (field-fg-label)       | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | body-text    | .tug-checkbox-label (color)          |
  */
 
 
@@ -62,13 +62,13 @@
 
 
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-checkbox {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border: 1px solid var(--tug-base-toggle-track-off);
+  border: 1px solid var(--tug-base-surface-toggle-track-normal-off-rest);
   border-radius: 0.25rem; /* 4px */
   background-color: transparent;
   cursor: pointer;
@@ -96,22 +96,22 @@
 
 /* ---- Hover (unchecked) ---- */
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-checkbox:hover:not(:disabled):not([data-disabled]) {
-  border-color: var(--tug-base-toggle-track-off-hover);
+  border-color: var(--tug-base-surface-toggle-track-normal-off-hover);
 }
 
 /* ---- Checked ---- */
 
 .tug-checkbox[data-state="checked"] {
-  background-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-on));
-  border-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-on));
+  background-color: var(--tug-toggle-on-color, var(--tug-base-surface-toggle-track-normal-on-rest));
+  border-color: var(--tug-toggle-on-color, var(--tug-base-surface-toggle-track-normal-on-rest));
 }
 
 /* Default hover (no role) — uses pre-computed hover token [Spec S02] */
 .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
-  background-color: var(--tug-base-toggle-track-on-hover);
-  border-color: var(--tug-base-toggle-track-on-hover);
+  background-color: var(--tug-base-surface-toggle-track-normal-on-hover);
+  border-color: var(--tug-base-surface-toggle-track-normal-on-hover);
 }
 
 /* Role hover — uses injected color-mix value [Spec S02] */
@@ -124,14 +124,14 @@
 
 /* Indeterminate inherits role color so it reads as "partially in this role". [D03] */
 .tug-checkbox[data-state="indeterminate"] {
-  background-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-mixed));
-  border-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-mixed));
+  background-color: var(--tug-toggle-on-color, var(--tug-base-surface-toggle-track-normal-mixed-rest));
+  border-color: var(--tug-toggle-on-color, var(--tug-base-surface-toggle-track-normal-mixed-rest));
 }
 
 /* Default hover (no role) for indeterminate [Spec S02] */
 .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
-  background-color: var(--tug-base-toggle-track-mixed-hover);
-  border-color: var(--tug-base-toggle-track-mixed-hover);
+  background-color: var(--tug-base-surface-toggle-track-normal-mixed-hover);
+  border-color: var(--tug-base-surface-toggle-track-normal-mixed-hover);
 }
 
 /* Role hover for indeterminate [Spec S02] */
@@ -144,8 +144,8 @@
 
 .tug-checkbox:disabled,
 .tug-checkbox[data-disabled] {
-  background-color: var(--tug-base-toggle-track-disabled);
-  border-color: var(--tug-base-toggle-track-disabled);
+  background-color: var(--tug-base-surface-toggle-track-normal-plain-disabled);
+  border-color: var(--tug-base-surface-toggle-track-normal-plain-disabled);
   cursor: not-allowed;
   opacity: var(--tug-base-control-disabled-opacity);
 }
@@ -153,7 +153,7 @@
 /* ---- Focus ---- */
 
 .tug-checkbox:focus-visible {
-  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline: 2px solid var(--tug-base-element-global-fill-normal-accentCool-rest);
   outline-offset: 2px;
 }
 
@@ -161,17 +161,17 @@
    Indicator (check / dash icon)
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-toggle-track-on */
+/* @tug-renders-on: --tug-base-surface-toggle-track-normal-on-rest */
 .tug-checkbox-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--tug-base-checkmark-fg);
+  color: var(--tug-base-element-checkmark-icon-normal-plain-rest);
 }
 
-/* @tug-renders-on: --tug-base-toggle-track-mixed */
+/* @tug-renders-on: --tug-base-surface-toggle-track-normal-mixed-rest */
 .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator {
-  color: var(--tug-base-checkmark-fg-mixed);
+  color: var(--tug-base-element-checkmark-icon-normal-plain-mixed);
 }
 
 .tug-checkbox-indicator svg {
@@ -209,14 +209,14 @@
   cursor: not-allowed;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-checkbox-label {
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 400;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-base-field-fg-label);
+  color: var(--tug-base-element-field-text-normal-label-rest);
   user-select: none;
 }
 

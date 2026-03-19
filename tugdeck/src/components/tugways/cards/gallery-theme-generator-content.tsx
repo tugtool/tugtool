@@ -90,22 +90,22 @@ function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): s
  * These are the representative tokens whose color best illustrates what the hue controls.
  */
 const STRUCTURAL_TOKENS: Record<string, string> = {
-  cardBg: "--tug-base-surface-default",
-  canvas: "--tug-base-bg-canvas",
-  cardFrame: "--tug-base-tab-bg-active",
-  borderTint: "--tug-base-border-default",
-  text: "--tug-base-fg-default",
-  link: "--tug-base-fg-link",
+  cardBg: "--tug-base-surface-global-primary-normal-default-rest",
+  canvas: "--tug-base-surface-global-primary-normal-canvas-rest",
+  cardFrame: "--tug-base-surface-tab-primary-normal-plain-active",
+  borderTint: "--tug-base-element-global-border-normal-default-rest",
+  text: "--tug-base-element-global-text-normal-default-rest",
+  link: "--tug-base-element-global-text-normal-link-rest",
 };
 
 const ROLE_TOKENS: Record<string, string> = {
-  accent: "--tug-base-tone-accent",
-  action: "--tug-base-tone-active",
-  agent: "--tug-base-tone-agent",
-  data: "--tug-base-tone-data",
-  success: "--tug-base-tone-success",
-  caution: "--tug-base-tone-caution",
-  danger: "--tug-base-tone-danger",
+  accent: "--tug-base-element-tone-fill-normal-accent-rest",
+  action: "--tug-base-element-tone-fill-normal-active-rest",
+  agent: "--tug-base-element-tone-fill-normal-agent-rest",
+  data: "--tug-base-element-tone-fill-normal-data-rest",
+  success: "--tug-base-element-tone-fill-normal-success-rest",
+  caution: "--tug-base-element-tone-fill-normal-caution-rest",
+  danger: "--tug-base-element-tone-fill-normal-danger-rest",
 };
 
 // ---------------------------------------------------------------------------
@@ -380,7 +380,7 @@ function ContrastDashboard({
           {passCount}/{checkedCount}
         </span>
         <span>pairs pass contrast</span>
-        <span style={{ color: "var(--tug-base-fg-muted)", marginLeft: "4px" }}>
+        <span style={{ color: "var(--tug-base-element-global-text-normal-muted-rest)", marginLeft: "4px" }}>
           ({contrastResults.length} total pairs, {contrastResults.length - checkedCount} decorative)
         </span>
       </div>
@@ -483,13 +483,13 @@ const CVD_TYPE_LABELS: Record<CVDType, string> = {
  * Ordered: accent, active, agent, data, success, caution, danger.
  */
 const CVD_SEMANTIC_TOKENS: Array<{ token: string; label: string }> = [
-  { token: "--tug-base-tone-accent",   label: "Accent" },
-  { token: "--tug-base-tone-active",   label: "Active" },
-  { token: "--tug-base-tone-agent",    label: "Agent" },
-  { token: "--tug-base-tone-data",     label: "Data" },
-  { token: "--tug-base-tone-success",  label: "Success" },
-  { token: "--tug-base-tone-caution",  label: "Caution" },
-  { token: "--tug-base-tone-danger",   label: "Danger" },
+  { token: "--tug-base-element-tone-fill-normal-accent-rest",   label: "Accent" },
+  { token: "--tug-base-element-tone-fill-normal-active-rest",   label: "Active" },
+  { token: "--tug-base-element-tone-fill-normal-agent-rest",    label: "Agent" },
+  { token: "--tug-base-element-tone-fill-normal-data-rest",     label: "Data" },
+  { token: "--tug-base-element-tone-fill-normal-success-rest",  label: "Success" },
+  { token: "--tug-base-element-tone-fill-normal-caution-rest",  label: "Caution" },
+  { token: "--tug-base-element-tone-fill-normal-danger-rest",   label: "Danger" },
 ];
 
 /**
@@ -1420,24 +1420,24 @@ export function GalleryThemeGeneratorContent() {
     // the use site, so overriding base tokens on a descendant doesn't cascade through
     // body-level aliases. We must override the component tokens directly.
     const COMPONENT_ALIASES: Record<string, string> = {
-      "--tug-card-title-bar-bg-active": "--tug-base-tab-bg-active",
-      "--tug-card-title-bar-bg-inactive": "--tug-base-tab-bg-inactive",
-      "--tug-card-title-bar-bg-collapsed": "--tug-base-tab-bg-collapsed",
-      "--tug-card-title-bar-fg": "--tug-base-fg-default",
-      "--tug-card-title-bar-icon-active": "--tug-base-icon-active",
-      "--tug-card-title-bar-icon-inactive": "--tug-base-fg-subtle",
-      "--tug-card-title-bar-icon-hover": "--tug-base-fg-muted",
-      "--tug-card-title-bar-divider": "--tug-base-divider-default",
-      "--tug-card-border": "--tug-base-border-default",
-      "--tug-card-accessory-bg": "--tug-base-surface-sunken",
-      "--tug-card-accessory-border": "--tug-base-border-default",
-      "--tug-card-bg": "--tug-base-surface-overlay",
-      "--tug-tab-bar-bg": "--tug-base-tab-bg-inactive",
-      "--tug-tab-bg-active": "--tug-base-tab-bg-active",
-      "--tug-tab-bg-hover": "--tug-base-tab-bg-hover",
-      "--tug-tab-fg-rest": "--tug-base-tab-fg-rest",
-      "--tug-tab-fg-active": "--tug-base-tab-fg-active",
-      "--tug-tab-fg-hover": "--tug-base-tab-fg-hover",
+      "--tug-card-title-bar-bg-active": "--tug-base-surface-tab-primary-normal-plain-active",
+      "--tug-card-title-bar-bg-inactive": "--tug-base-surface-tab-primary-normal-plain-inactive",
+      "--tug-card-title-bar-bg-collapsed": "--tug-base-surface-tab-primary-normal-plain-collapsed",
+      "--tug-card-title-bar-fg": "--tug-base-element-global-text-normal-default-rest",
+      "--tug-card-title-bar-icon-active": "--tug-base-element-global-icon-normal-active-rest",
+      "--tug-card-title-bar-icon-inactive": "--tug-base-element-global-text-normal-subtle-rest",
+      "--tug-card-title-bar-icon-hover": "--tug-base-element-global-text-normal-muted-rest",
+      "--tug-card-title-bar-divider": "--tug-base-element-global-divider-normal-default-rest",
+      "--tug-card-border": "--tug-base-element-global-border-normal-default-rest",
+      "--tug-card-accessory-bg": "--tug-base-surface-global-primary-normal-sunken-rest",
+      "--tug-card-accessory-border": "--tug-base-element-global-border-normal-default-rest",
+      "--tug-card-bg": "--tug-base-surface-global-primary-normal-overlay-rest",
+      "--tug-tab-bar-bg": "--tug-base-surface-tab-primary-normal-plain-inactive",
+      "--tug-tab-bg-active": "--tug-base-surface-tab-primary-normal-plain-active",
+      "--tug-tab-bg-hover": "--tug-base-surface-tab-primary-normal-plain-hover",
+      "--tug-tab-fg-rest": "--tug-base-element-tab-text-normal-plain-rest",
+      "--tug-tab-fg-active": "--tug-base-element-tab-text-normal-plain-active",
+      "--tug-tab-fg-hover": "--tug-base-element-tab-text-normal-plain-hover",
     };
     for (const [comp, base] of Object.entries(COMPONENT_ALIASES)) {
       if (base in style) {

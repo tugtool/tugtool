@@ -7,18 +7,18 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-field-fg-default (field-fg-default)   | --tug-base-field-bg-rest (field-bg-rest)         | body-text    | .tug-input (color)                   |
- * | --tug-base-field-border-rest (field-border-rest) | --tug-base-field-bg-rest (field-bg-rest)         | ui-component | .tug-input (border)                  |
- * | --tug-base-field-fg-placeholder (field-fg-placeholder) | --tug-base-field-bg-rest (field-bg-rest)         | subdued-text | .tug-input::placeholder (color)      |
- * | --tug-base-field-border-hover (field-border-hover) | --tug-base-field-bg-hover (field-bg-hover)       | ui-component | .tug-input:hover:not(:disabled):not(:read-only):not(:focus) (border-color) |
- * | --tug-base-field-border-active (field-border-active) | --tug-base-field-bg-focus (field-bg-focus)       | ui-component | .tug-input:focus (border-color)      |
- * | --tug-base-field-fg-disabled (field-fg-disabled) | --tug-base-field-bg-disabled (field-bg-disabled) | subdued-text | .tug-input:disabled (color)          |
- * | --tug-base-field-border-disabled (field-border-disabled) | --tug-base-field-bg-disabled (field-bg-disabled) | ui-component | .tug-input:disabled (border-color)   |
- * | --tug-base-field-fg-readOnly (field-fg-readOnly) | --tug-base-field-bg-readOnly (field-bg-readOnly) | subdued-text | .tug-input:read-only:not(:disabled) (color) |
- * | --tug-base-field-border-readOnly (field-border-readOnly) | --tug-base-field-bg-readOnly (field-bg-readOnly) | ui-component | .tug-input:read-only:not(:disabled) (border-color) |
- * | --tug-base-field-border-danger (field-border-danger) | --tug-base-field-bg-rest (field-bg-rest)         | ui-component | .tug-input-invalid:not(:focus) (border-color) |
- * | --tug-base-field-border-success (field-border-success) | --tug-base-field-bg-rest (field-bg-rest)         | ui-component | .tug-input-valid:not(:focus) (border-color) |
- * | --tug-base-field-tone-caution (field-tone-caution) | --tug-base-field-bg-rest (field-bg-rest)         | ui-component | .tug-input-warning:not(:focus) (border-color) |
+ * | --tug-base-element-field-text-normal-plain-rest (field-fg-default)   | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | body-text    | .tug-input (color)                   |
+ * | --tug-base-element-field-border-normal-plain-rest (field-border-rest) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | ui-component | .tug-input (border)                  |
+ * | --tug-base-element-field-text-normal-placeholder-rest (field-fg-placeholder) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | subdued-text | .tug-input::placeholder (color)      |
+ * | --tug-base-element-field-border-normal-plain-hover (field-border-hover) | --tug-base-surface-field-primary-normal-plain-hover (field-bg-hover)       | ui-component | .tug-input:hover:not(:disabled):not(:read-only):not(:focus) (border-color) |
+ * | --tug-base-element-field-border-normal-plain-active (field-border-active) | --tug-base-surface-field-primary-normal-plain-focus (field-bg-focus)       | ui-component | .tug-input:focus (border-color)      |
+ * | --tug-base-element-field-text-normal-plain-disabled (field-fg-disabled) | --tug-base-surface-field-primary-normal-plain-disabled (field-bg-disabled) | subdued-text | .tug-input:disabled (color)          |
+ * | --tug-base-element-field-border-normal-plain-disabled (field-border-disabled) | --tug-base-surface-field-primary-normal-plain-disabled (field-bg-disabled) | ui-component | .tug-input:disabled (border-color)   |
+ * | --tug-base-element-field-text-normal-plain-readOnly (field-fg-readOnly) | --tug-base-surface-field-primary-normal-plain-readOnly (field-bg-readOnly) | subdued-text | .tug-input:read-only:not(:disabled) (color) |
+ * | --tug-base-element-field-border-normal-plain-readOnly (field-border-readOnly) | --tug-base-surface-field-primary-normal-plain-readOnly (field-bg-readOnly) | ui-component | .tug-input:read-only:not(:disabled) (border-color) |
+ * | --tug-base-element-field-border-normal-danger-rest (field-border-danger) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | ui-component | .tug-input-invalid:not(:focus) (border-color) |
+ * | --tug-base-element-field-border-normal-success-rest (field-border-success) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | ui-component | .tug-input-valid:not(:focus) (border-color) |
+ * | --tug-base-element-field-fill-normal-caution-rest (field-tone-caution) | --tug-base-surface-field-primary-normal-plain-rest (field-bg-rest)         | ui-component | .tug-input-warning:not(:focus) (border-color) |
  */
 
 
@@ -73,39 +73,39 @@
   line-height: 1.4;
   letter-spacing: 0.01em;
 
-  background-color: var(--tug-base-field-bg-rest);
-  color: var(--tug-base-field-fg-default);
-  border: 1px solid var(--tug-base-field-border-rest);
+  background-color: var(--tug-base-surface-field-primary-normal-plain-rest);
+  color: var(--tug-base-element-field-text-normal-plain-rest);
+  border: 1px solid var(--tug-base-element-field-border-normal-plain-rest);
   border-radius: 0.375rem; /* 6px — matches tug-button md */
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
-/* @tug-renders-on: --tug-base-field-bg-rest */
+/* @tug-renders-on: --tug-base-surface-field-primary-normal-plain-rest */
 .tug-input::placeholder {
-  color: var(--tug-base-field-fg-placeholder);
+  color: var(--tug-base-element-field-text-normal-placeholder-rest);
 }
 
 /* ---- Hover ---- */
 
 .tug-input:hover:not(:disabled):not(:read-only):not(:focus) {
-  background-color: var(--tug-base-field-bg-hover);
-  border-color: var(--tug-base-field-border-hover);
+  background-color: var(--tug-base-surface-field-primary-normal-plain-hover);
+  border-color: var(--tug-base-element-field-border-normal-plain-hover);
 }
 
 /* ---- Focus ---- */
 
 .tug-input:focus {
-  background-color: var(--tug-base-field-bg-focus);
-  border-color: var(--tug-base-field-border-active);
+  background-color: var(--tug-base-surface-field-primary-normal-plain-focus);
+  border-color: var(--tug-base-element-field-border-normal-plain-active);
   outline: none;
 }
 
 /* ---- Disabled ---- */
 
 .tug-input:disabled {
-  background-color: var(--tug-base-field-bg-disabled);
-  color: var(--tug-base-field-fg-disabled);
-  border-color: var(--tug-base-field-border-disabled);
+  background-color: var(--tug-base-surface-field-primary-normal-plain-disabled);
+  color: var(--tug-base-element-field-text-normal-plain-disabled);
+  border-color: var(--tug-base-element-field-border-normal-plain-disabled);
   cursor: not-allowed;
   opacity: var(--tug-base-control-disabled-opacity);
 }
@@ -113,9 +113,9 @@
 /* ---- Read-only ---- */
 
 .tug-input:read-only:not(:disabled) {
-  background-color: var(--tug-base-field-bg-readOnly);
-  color: var(--tug-base-field-fg-readOnly);
-  border-color: var(--tug-base-field-border-readOnly);
+  background-color: var(--tug-base-surface-field-primary-normal-plain-readOnly);
+  color: var(--tug-base-element-field-text-normal-plain-readOnly);
+  border-color: var(--tug-base-element-field-border-normal-plain-readOnly);
   cursor: default;
 }
 
@@ -150,17 +150,17 @@
  * When focused, the focus border takes precedence (user is actively editing).
  */
 
-/* @tug-renders-on: --tug-base-field-bg-rest */
+/* @tug-renders-on: --tug-base-surface-field-primary-normal-plain-rest */
 .tug-input-invalid:not(:focus) {
-  border-color: var(--tug-base-field-border-danger);
+  border-color: var(--tug-base-element-field-border-normal-danger-rest);
 }
 
-/* @tug-renders-on: --tug-base-field-bg-rest */
+/* @tug-renders-on: --tug-base-surface-field-primary-normal-plain-rest */
 .tug-input-valid:not(:focus) {
-  border-color: var(--tug-base-field-border-success);
+  border-color: var(--tug-base-element-field-border-normal-success-rest);
 }
 
-/* @tug-renders-on: --tug-base-field-bg-rest */
+/* @tug-renders-on: --tug-base-surface-field-primary-normal-plain-rest */
 .tug-input-warning:not(:focus) {
-  border-color: var(--tug-base-field-tone-caution);
+  border-color: var(--tug-base-element-field-fill-normal-caution-rest);
 }

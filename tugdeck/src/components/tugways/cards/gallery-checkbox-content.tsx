@@ -109,7 +109,7 @@ export function GalleryCheckboxContent() {
           <legend style={{
             fontSize: "0.8125rem",
             fontWeight: 500,
-            color: "var(--tug-base-field-fg-label)",
+            color: "var(--tug-base-element-field-text-normal-label-rest)",
             marginBottom: "8px",
           }}>
             Notification preferences

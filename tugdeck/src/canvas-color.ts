@@ -2,7 +2,7 @@
  * canvas-color.ts — Compute the canvas background hex for built-in themes.
  *
  * Uses the palette engine (same source of truth as PostCSS and tug-palette.css)
- * to convert each theme's --tug-base-bg-canvas TugColor value to a hex string.
+ * to convert each theme's --tug-base-surface-global-primary-normal-canvas-rest TugColor value to a hex string.
  * This feeds the Swift bridge so the native window background matches the
  * web content on cold start.
  *
@@ -31,7 +31,7 @@ import type { ThemeName } from "./contexts/theme-provider";
 // ---------------------------------------------------------------------------
 // Canvas background TugColor params
 //
-// Mirrors the --tug-base-bg-canvas value in tug-base.css (brio) and
+// Mirrors the --tug-base-surface-global-primary-normal-canvas-rest value in tug-base.css (brio) and
 // harmony.css (harmony):
 //   brio    (tug-base.css): --tug-color(indigo-violet, i: 2, t: 5)   [263.3°]
 //   harmony (harmony.css):  --tug-color(indigo-violet, i: 3, t: 95)  [263.3°]

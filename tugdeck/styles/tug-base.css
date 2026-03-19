@@ -109,8 +109,8 @@ body {
   --chart-5: var(--tug-chart-series-violet); /* legacy-token-allowlist */
 
   /* Shiki CSS variable bridge tokens (Spec S01) */
-  --syntax-foreground: var(--tug-base-fg-default);
-  --syntax-background: var(--tug-base-surface-control);
+  --syntax-foreground: var(--tug-base-element-global-text-normal-default-rest);
+  --syntax-background: var(--tug-base-surface-global-primary-normal-control-rest);
   --syntax-token-keyword: var(--tug-syntax-keyword);
   --syntax-token-string: var(--tug-syntax-string);
   --syntax-token-comment: var(--tug-syntax-comment);
@@ -136,14 +136,14 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--tug-base-border-default);
+  background: var(--tug-base-element-global-border-normal-default-rest);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--tug-base-border-muted);
+  background: var(--tug-base-element-global-border-normal-muted-rest);
   border: 2px solid transparent;
   background-clip: padding-box;
 }

@@ -5,7 +5,7 @@
  * - role="danger" injects --tug-toggle-on-color and sets data-role
  * - role="action" maps to tone-active via ROLE_TONE_MAP
  * - no role prop: injects option-role fg-muted style and sets data-role="option" (new default)
- * - role="option": injects --tug-toggle-on-color: var(--tug-base-fg-muted) and sets data-role="option"
+ * - role="option": injects --tug-toggle-on-color: var(--tug-base-element-global-text-normal-muted-rest) and sets data-role="option"
  * - role="accent" (explicit): no inline style injected, no data-role attribute
  *
  * [D03] Selection control role via inline CSS custom property injection
@@ -25,11 +25,11 @@ afterEach(() => {
 });
 
 describe("TugCheckbox role prop", () => {
-  it('role="danger" injects --tug-toggle-on-color set to var(--tug-base-tone-danger)', () => {
+  it('role="danger" injects --tug-toggle-on-color set to var(--tug-base-element-tone-fill-normal-danger-rest)', () => {
     const { getByRole } = render(<TugCheckbox role="danger" aria-label="test" />);
     const checkbox = getByRole("checkbox");
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe(
-      "var(--tug-base-tone-danger)",
+      "var(--tug-base-element-tone-fill-normal-danger-rest)",
     );
   });
 
@@ -39,11 +39,11 @@ describe("TugCheckbox role prop", () => {
     expect(checkbox.getAttribute("data-role")).toBe("danger");
   });
 
-  it('role="action" maps to --tug-base-tone-active via ROLE_TONE_MAP', () => {
+  it('role="action" maps to --tug-base-element-tone-fill-normal-active-rest via ROLE_TONE_MAP', () => {
     const { getByRole } = render(<TugCheckbox role="action" aria-label="test" />);
     const checkbox = getByRole("checkbox");
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe(
-      "var(--tug-base-tone-active)",
+      "var(--tug-base-element-tone-fill-normal-active-rest)",
     );
   });
 
@@ -51,20 +51,20 @@ describe("TugCheckbox role prop", () => {
     const { getByRole } = render(<TugCheckbox role="action" aria-label="test" />);
     const checkbox = getByRole("checkbox");
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe(
-      "color-mix(in oklch, var(--tug-base-tone-active), white 15%)",
+      "color-mix(in oklch, var(--tug-base-element-tone-fill-normal-active-rest), white 15%)",
     );
   });
 
-  it("no role prop: injects option-role style (--tug-toggle-on-color: var(--tug-base-fg-muted))", () => {
+  it("no role prop: injects option-role style (--tug-toggle-on-color: var(--tug-base-element-global-text-normal-muted-rest))", () => {
     // With option as the default role, omitting the role prop now DOES inject
     // inline style using fg-muted (neutral/achromatic). [D06]
     const { getByRole } = render(<TugCheckbox aria-label="test" />);
     const checkbox = getByRole("checkbox");
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe(
-      "var(--tug-base-fg-muted)",
+      "var(--tug-base-element-global-text-normal-muted-rest)",
     );
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe(
-      "var(--tug-base-fg-subtle)",
+      "var(--tug-base-element-global-text-normal-subtle-rest)",
     );
   });
 
@@ -76,17 +76,17 @@ describe("TugCheckbox role prop", () => {
     expect(checkbox.getAttribute("data-role")).toBe("option");
   });
 
-  it('role="option": injects --tug-toggle-on-color: var(--tug-base-fg-muted)', () => {
+  it('role="option": injects --tug-toggle-on-color: var(--tug-base-element-global-text-normal-muted-rest)', () => {
     // The option role uses fg-muted directly rather than a --tug-base-tone-*
     // token. This is intentional: option is neutral/achromatic and does not
     // have a dedicated signal hue in the tone system. [D06]
     const { getByRole } = render(<TugCheckbox role="option" aria-label="test" />);
     const checkbox = getByRole("checkbox");
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe(
-      "var(--tug-base-fg-muted)",
+      "var(--tug-base-element-global-text-normal-muted-rest)",
     );
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe(
-      "var(--tug-base-fg-subtle)",
+      "var(--tug-base-element-global-text-normal-subtle-rest)",
     );
     expect(checkbox.getAttribute("data-role")).toBe("option");
   });

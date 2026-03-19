@@ -17,24 +17,24 @@
 
 body {
   /* --- Table / List --- */
-  --tug-table-header-bg: var(--tug-base-surface-sunken);
-  --tug-table-header-fg: var(--tug-base-fg-muted);
+  --tug-table-header-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
+  --tug-table-header-fg: var(--tug-base-element-global-text-normal-muted-rest);
   --tug-table-row-bg: transparent;
   --tug-table-row-bg-striped: --tug-color(white, i: 0, t: 100, a: 2);
   --tug-table-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-table-row-bg-selected: var(--tug-base-control-highlighted-bg);
-  --tug-table-row-border: var(--tug-base-divider-muted);
-  --tug-table-cell-divider: var(--tug-base-divider-default);
-  --tug-table-sortIndicator: var(--tug-base-fg-subtle);
+  --tug-table-row-bg-selected: var(--tug-base-surface-control-primary-normal-highlighted-rest);
+  --tug-table-row-border: var(--tug-base-element-global-divider-normal-muted-rest);
+  --tug-table-cell-divider: var(--tug-base-element-global-divider-normal-default-rest);
+  --tug-table-sortIndicator: var(--tug-base-element-global-text-normal-subtle-rest);
   --tug-list-row-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-list-row-selected: var(--tug-base-control-highlighted-bg);
+  --tug-list-row-selected: var(--tug-base-surface-control-primary-normal-highlighted-rest);
 
   /* --- Stat / Trend --- */
-  --tug-stat-label: var(--tug-base-fg-subtle);
-  --tug-stat-value: var(--tug-base-fg-default);
-  --tug-stat-trend-positive: var(--tug-base-tone-success);
-  --tug-stat-trend-negative: var(--tug-base-tone-danger);
-  --tug-stat-trend-neutral: var(--tug-base-fg-subtle);
+  --tug-stat-label: var(--tug-base-element-global-text-normal-subtle-rest);
+  --tug-stat-value: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-stat-trend-positive: var(--tug-base-element-tone-fill-normal-success-rest);
+  --tug-stat-trend-negative: var(--tug-base-element-tone-fill-normal-danger-rest);
+  --tug-stat-trend-neutral: var(--tug-base-element-global-text-normal-subtle-rest);
 
   /* --- Chart Series (palette var() references — Phase 5d5e) --- */
   --tug-chart-series-warm: --tug-color(orange);
@@ -46,21 +46,21 @@ body {
   --tug-chart-series-orchid: --tug-color(pink);
   --tug-chart-series-coral: --tug-color(coral-muted);
   /* Chart infrastructure tokens */
-  --tug-chart-grid: var(--tug-base-overlay-highlight);
-  --tug-chart-axis: var(--tug-base-border-default);
-  --tug-chart-tick: var(--tug-base-border-default);
-  --tug-chart-threshold-warning: var(--tug-base-tone-caution);
-  --tug-chart-threshold-danger: var(--tug-base-tone-danger);
+  --tug-chart-grid: var(--tug-base-surface-overlay-primary-normal-highlight-rest);
+  --tug-chart-axis: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-chart-tick: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-chart-threshold-warning: var(--tug-base-element-tone-fill-normal-caution-rest);
+  --tug-chart-threshold-danger: var(--tug-base-element-tone-fill-normal-danger-rest);
 
   /* --- Gauge --- */
-  --tug-gauge-track: var(--tug-base-divider-separator);
-  --tug-gauge-fill: var(--tug-base-accent-default);
-  --tug-gauge-needle: var(--tug-base-fg-default);
-  --tug-gauge-tick-major: var(--tug-base-fg-subtle);
-  --tug-gauge-tick-minor: var(--tug-base-fg-disabled);
-  --tug-gauge-readout: var(--tug-base-fg-default);
-  --tug-gauge-threshold-warning: var(--tug-base-tone-caution);
-  --tug-gauge-threshold-danger: var(--tug-base-tone-danger);
-  --tug-gauge-unit: var(--tug-base-fg-subtle);
-  --tug-gauge-annotation: var(--tug-base-fg-subtle);
+  --tug-gauge-track: var(--tug-base-element-global-divider-normal-separator-rest);
+  --tug-gauge-fill: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-gauge-needle: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-gauge-tick-major: var(--tug-base-element-global-text-normal-subtle-rest);
+  --tug-gauge-tick-minor: var(--tug-base-element-global-text-normal-plain-disabled);
+  --tug-gauge-readout: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-gauge-threshold-warning: var(--tug-base-element-tone-fill-normal-caution-rest);
+  --tug-gauge-threshold-danger: var(--tug-base-element-tone-fill-normal-danger-rest);
+  --tug-gauge-unit: var(--tug-base-element-global-text-normal-subtle-rest);
+  --tug-gauge-annotation: var(--tug-base-element-global-text-normal-subtle-rest);
 }

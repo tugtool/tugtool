@@ -1699,7 +1699,7 @@ export function flashSetPerimeter(
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", svgPath);
   path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "var(--tug-base-accent-default)");
+  path.setAttribute("stroke", "var(--tug-base-element-global-fill-normal-accent-rest)");
   path.setAttribute("stroke-width", "3");
   path.setAttribute("filter", `url(#set-flash-glow-${uid})`);
   svg.appendChild(path);

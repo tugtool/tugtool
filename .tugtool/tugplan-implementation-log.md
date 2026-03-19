@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-19T21:26:29Z
+---
+
+## step-7: Applied mechanical rename (--apply) across 58 files plus manual template literal updates in derivation-rules.ts (7 functions). 373 tokens renamed to six-slot convention. Zero stale references. All 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-6
 date: 2025-03-19T21:06:38Z
 ---

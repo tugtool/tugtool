@@ -260,23 +260,23 @@ function formulaField(
 
 const SURFACE_RULES: Record<string, DerivationRule> = {
   // bg-app: hueSlot "bgApp" -> formulas.bgAppHueSlot ("canvas" dark | "txt" light)
-  "--tug-base-bg-app": surface("bgApp", "bgAppSurfaceI", "bgApp"),
+  "--tug-base-surface-global-primary-normal-app-rest": surface("bgApp", "bgAppSurfaceI", "bgApp"),
   // bg-canvas: hueSlot "bgCanvas" -> formulas.bgCanvasHueSlot ("canvas" dark | "atm" light)
-  "--tug-base-bg-canvas": surface("bgCanvas", "bgCanvasI", "bgCanvas"),
+  "--tug-base-surface-global-primary-normal-canvas-rest": surface("bgCanvas", "bgCanvasI", "bgCanvas"),
   // surface-sunken: hueSlot "surfaceSunken" -> "surfBareBase" dark | "atm" light
-  "--tug-base-surface-sunken": surface("surfaceSunken", "atmI", "surfaceSunken"),
+  "--tug-base-surface-global-primary-normal-sunken-rest": surface("surfaceSunken", "atmI", "surfaceSunken"),
   // surface-default: hueSlot "surfaceDefault" -> "surfBareBase" dark | "atm" light
-  "--tug-base-surface-default": surface("surfaceDefault", "surfaceDefaultI", "surfaceDefault"),
+  "--tug-base-surface-global-primary-normal-default-rest": surface("surfaceDefault", "surfaceDefaultI", "surfaceDefault"),
   // surface-raised: hueSlot "surfaceRaised" -> "atm" dark | "txt" light
-  "--tug-base-surface-raised": surface("surfaceRaised", "surfaceRaisedI", "surfaceRaised"),
+  "--tug-base-surface-global-primary-normal-raised-rest": surface("surfaceRaised", "surfaceRaisedI", "surfaceRaised"),
   // surface-overlay: hueSlot "surfaceOverlay" -> "surfBareBase" dark | "atm" light
-  "--tug-base-surface-overlay": surface("surfaceOverlay", "surfaceOverlayI", "surfaceOverlay"),
+  "--tug-base-surface-global-primary-normal-overlay-rest": surface("surfaceOverlay", "surfaceOverlayI", "surfaceOverlay"),
   // surface-inset: hueSlot "surfaceInset" -> "atm" dark | "atm" light
-  "--tug-base-surface-inset": surface("surfaceInset", "surfaceInsetI", "surfaceInset"),
+  "--tug-base-surface-global-primary-normal-inset-rest": surface("surfaceInset", "surfaceInsetI", "surfaceInset"),
   // surface-content: same hue slot as surface-inset, same tone
-  "--tug-base-surface-content": surface("surfaceContent", "surfaceContentI", "surfaceContent"),
+  "--tug-base-surface-global-primary-normal-content-rest": surface("surfaceContent", "surfaceContentI", "surfaceContent"),
   // surface-screen: hueSlot "surfaceScreen" -> "surfScreen" dark | "txt" light
-  "--tug-base-surface-screen": surface("surfaceScreen", "surfaceScreenI", "surfaceScreen"),
+  "--tug-base-surface-global-primary-normal-screen-rest": surface("surfaceScreen", "surfaceScreenI", "surfaceScreen"),
 };
 
 // ---------------------------------------------------------------------------
@@ -285,20 +285,20 @@ const SURFACE_RULES: Record<string, DerivationRule> = {
 
 const FOREGROUND_RULES: Record<string, DerivationRule> = {
   // fg-default: always txt hue (direct key)
-  "--tug-base-fg-default": formulaField("txt", "txtI", "fgDefaultTone"),
+  "--tug-base-element-global-text-normal-default-rest": formulaField("txt", "txtI", "fgDefaultTone"),
   // fg-muted: hueSlot "fgMuted" -> "fgMuted" dark | "txt" light
-  "--tug-base-fg-muted": formulaField("fgMuted", "fgMutedI", "fgMutedTone"),
+  "--tug-base-element-global-text-normal-muted-rest": formulaField("fgMuted", "fgMutedI", "fgMutedTone"),
   // fg-subtle: hueSlot "fgSubtle" -> "fgSubtle" dark | "txt" light
-  "--tug-base-fg-subtle": formulaField("fgSubtle", "txtISubtle", "fgSubtleTone"),
+  "--tug-base-element-global-text-normal-subtle-rest": formulaField("fgSubtle", "txtISubtle", "fgSubtleTone"),
   // fg-disabled: hueSlot "fgDisabled" -> "fgDisabled" dark | "txt" light
-  "--tug-base-fg-disabled": formulaField("fgDisabled", "txtISubtle", "fgDisabledTone"),
+  "--tug-base-element-global-text-normal-plain-disabled": formulaField("fgDisabled", "txtISubtle", "fgDisabledTone"),
   // fg-inverse: hueSlot "fgInverse" -> "fgInverse" dark | "txt" light
-  "--tug-base-fg-inverse": formulaField("fgInverse", "fgInverseI", "fgInverseTone"),
+  "--tug-base-element-global-text-normal-inverse-rest": formulaField("fgInverse", "fgInverseI", "fgInverseTone"),
   // fg-placeholder: hueSlot "fgPlaceholder" -> "fgPlaceholder" dark | "atm" light
-  "--tug-base-fg-placeholder": formulaField("fgPlaceholder", "atmIBorder", "fgPlaceholderTone"),
+  "--tug-base-element-global-text-normal-placeholder-rest": formulaField("fgPlaceholder", "atmIBorder", "fgPlaceholderTone"),
 
   // fg-link: interactive hue, canonical i:50 t:50 (direct key)
-  "--tug-base-fg-link": {
+  "--tug-base-element-global-text-normal-link-rest": {
     type: "chromatic",
     hueSlot: "interactive",
     intensityExpr: lit(50),
@@ -306,7 +306,7 @@ const FOREGROUND_RULES: Record<string, DerivationRule> = {
   },
 
   // fg-link-hover: interactive hue, i:20 t:85 (= "cyan-light" preset)
-  "--tug-base-fg-link-hover": {
+  "--tug-base-element-global-text-normal-link-hover": {
     type: "chromatic",
     hueSlot: "interactive",
     intensityExpr: lit(20),
@@ -314,12 +314,12 @@ const FOREGROUND_RULES: Record<string, DerivationRule> = {
   },
 
   // fg-onAccent: hueSlot "fgOnAccent" -> "fgInverse" dark | "__white" light
-  "--tug-base-fg-onAccent": formulaField("fgOnAccent", "txtI", "fgInverseTone"),
+  "--tug-base-element-global-text-normal-onAccent-rest": formulaField("fgOnAccent", "txtI", "fgInverseTone"),
   // fg-onDanger: same as fg-onAccent
-  "--tug-base-fg-onDanger": formulaField("fgOnAccent", "txtI", "fgInverseTone"),
+  "--tug-base-element-global-text-normal-onDanger-rest": formulaField("fgOnAccent", "txtI", "fgInverseTone"),
 
   // fg-onCaution: atm hue, formula I, literal t:7 (dark text on bright bg)
-  "--tug-base-fg-onCaution": {
+  "--tug-base-element-global-text-normal-onCaution-rest": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.fgOnCautionI,
@@ -327,7 +327,7 @@ const FOREGROUND_RULES: Record<string, DerivationRule> = {
   },
 
   // fg-onSuccess: atm hue, formula I, literal t:7
-  "--tug-base-fg-onSuccess": {
+  "--tug-base-element-global-text-normal-onSuccess-rest": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.fgOnSuccessI,
@@ -341,14 +341,14 @@ const FOREGROUND_RULES: Record<string, DerivationRule> = {
 
 const ICON_RULES: Record<string, DerivationRule> = {
   // icon-default: same as fg-muted
-  "--tug-base-icon-default": formulaField("fgMuted", "fgMutedI", "fgMutedTone"),
+  "--tug-base-element-global-icon-normal-default-rest": formulaField("fgMuted", "fgMutedI", "fgMutedTone"),
   // icon-muted: hueSlot "iconMuted" -> "fgSubtle" dark | "atm" light
-  "--tug-base-icon-muted": formulaField("iconMuted", "iconMutedI", "iconMutedTone"),
+  "--tug-base-element-global-icon-normal-muted-rest": formulaField("iconMuted", "iconMutedI", "iconMutedTone"),
   // icon-disabled: same as fg-disabled
-  "--tug-base-icon-disabled": formulaField("fgDisabled", "txtISubtle", "fgDisabledTone"),
+  "--tug-base-element-global-icon-normal-plain-disabled": formulaField("fgDisabled", "txtISubtle", "fgDisabledTone"),
 
   // icon-active: vivid txt hue, literal i:100, formula tone — mixed lit/formula, inline
-  "--tug-base-icon-active": {
+  "--tug-base-element-global-icon-normal-active-rest": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: lit(100),
@@ -356,7 +356,7 @@ const ICON_RULES: Record<string, DerivationRule> = {
   },
 
   // icon-onAccent: hueSlot "iconOnAccent" -> "fgInverse" dark | "__white" light
-  "--tug-base-icon-onAccent": formulaField("iconOnAccent", "txtI", "fgInverseTone"),
+  "--tug-base-element-global-icon-normal-onAccent-rest": formulaField("iconOnAccent", "txtI", "fgInverseTone"),
 };
 
 // ---------------------------------------------------------------------------
@@ -365,16 +365,16 @@ const ICON_RULES: Record<string, DerivationRule> = {
 
 const BORDER_RULES: Record<string, DerivationRule> = {
   // border-default: borderTint hue at borderIBase, fgPlaceholderTone
-  "--tug-base-border-default": formulaField("borderTint", "borderIBase", "fgPlaceholderTone"),
+  "--tug-base-element-global-border-normal-default-rest": formulaField("borderTint", "borderIBase", "fgPlaceholderTone"),
   // border-muted: borderTint hue at borderMutedI, borderMutedTone
-  "--tug-base-border-muted": formulaField("borderTint", "borderMutedI", "borderMutedTone"),
+  "--tug-base-element-global-border-normal-muted-rest": formulaField("borderTint", "borderMutedI", "borderMutedTone"),
   // border-strong: borderStrong hue (borderTint -5°) at borderIStrong, borderStrongTone
-  "--tug-base-border-strong": formulaField("borderStrong", "borderIStrong", "borderStrongTone"),
+  "--tug-base-element-global-border-normal-strong-rest": formulaField("borderStrong", "borderIStrong", "borderStrongTone"),
   // border-inverse: txt hue at txtI, fgDefaultTone
-  "--tug-base-border-inverse": formulaField("txt", "txtI", "fgDefaultTone"),
+  "--tug-base-element-global-border-normal-inverse-rest": formulaField("txt", "txtI", "fgDefaultTone"),
 
   // border-accent: accent hue at signalI, t:50 (direct key — mode-independent)
-  "--tug-base-border-accent": {
+  "--tug-base-element-global-border-normal-accent-rest": {
     type: "chromatic",
     hueSlot: "accent",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -382,7 +382,7 @@ const BORDER_RULES: Record<string, DerivationRule> = {
   },
 
   // border-danger: destructive hue at signalI, t:50 (direct key — mode-independent)
-  "--tug-base-border-danger": {
+  "--tug-base-element-global-border-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -390,7 +390,7 @@ const BORDER_RULES: Record<string, DerivationRule> = {
   },
 
   // divider-default: borderTint hue at dividerDefaultI, dividerDefault
-  "--tug-base-divider-default": {
+  "--tug-base-element-global-divider-normal-default-rest": {
     type: "chromatic",
     hueSlot: "borderTint",
     intensityExpr: (formulas) => formulas.dividerDefaultI,
@@ -398,7 +398,7 @@ const BORDER_RULES: Record<string, DerivationRule> = {
   },
 
   // divider-muted: hueSlot "dividerMuted" -> "borderTintBareBase" dark | "borderTint" light
-  "--tug-base-divider-muted": {
+  "--tug-base-element-global-divider-normal-muted-rest": {
     type: "chromatic",
     hueSlot: "dividerMuted",
     intensityExpr: (formulas) => formulas.dividerMutedI,
@@ -411,44 +411,44 @@ const BORDER_RULES: Record<string, DerivationRule> = {
 // ---------------------------------------------------------------------------
 
 const ELEVATION_RULES: Record<string, DerivationRule> = {
-  "--tug-base-shadow-xs": {
+  "--tug-base-element-global-shadow-normal-xs-rest": {
     type: "shadow",
     alphaExpr: (formulas) => formulas.shadowXsAlpha,
   },
-  "--tug-base-shadow-md": {
+  "--tug-base-element-global-shadow-normal-md-rest": {
     type: "shadow",
     alphaExpr: (formulas) => formulas.shadowMdAlpha,
   },
-  "--tug-base-shadow-lg": {
+  "--tug-base-element-global-shadow-normal-lg-rest": {
     type: "shadow",
     alphaExpr: (formulas) => formulas.shadowLgAlpha,
   },
-  "--tug-base-shadow-xl": {
+  "--tug-base-element-global-shadow-normal-xl-rest": {
     type: "shadow",
     alphaExpr: (formulas) => formulas.shadowXlAlpha,
   },
 
   // shadow-overlay: composite value "0 4px 16px --tug-color(black, ...)"
   // Uses StructuralRule with resolvedExpr so resolved map is populated.
-  "--tug-base-shadow-overlay": {
+  "--tug-base-element-global-shadow-normal-overlay-rest": {
     type: "structural",
     valueExpr: (formulas) =>
       `0 4px 16px --tug-color(black, i: 0, t: 0, a: ${formulas.shadowOverlayAlpha})`,
     resolvedExpr: (formulas) => ({ L: 0, C: 0, h: 0, alpha: formulas.shadowOverlayAlpha / 100 }),
   },
 
-  "--tug-base-overlay-dim": {
+  "--tug-base-surface-overlay-primary-normal-dim-rest": {
     type: "shadow",
     alphaExpr: (formulas) => formulas.overlayDimAlpha,
   },
-  "--tug-base-overlay-scrim": {
+  "--tug-base-surface-overlay-primary-normal-scrim-rest": {
     type: "shadow",
     alphaExpr: (formulas) => formulas.overlayScrimAlpha,
   },
 
   // overlay-highlight: always verbose white form (i:0, t:100, a:N) per [D07] __verboseHighlight
   // Uses ChromaticRule with hueSlot "__verboseHighlight" (direct sentinel — not formulas-mediated)
-  "--tug-base-overlay-highlight": {
+  "--tug-base-surface-overlay-primary-normal-highlight-rest": {
     type: "chromatic",
     hueSlot: "__verboseHighlight",
     intensityExpr: lit(0),
@@ -545,7 +545,7 @@ export const CORE_VISUAL_RULES: Record<string, DerivationRule> = {
 
 const ACCENT_RULES: Record<string, DerivationRule> = {
   // accent-default: accent hue at signalI, t:50
-  "--tug-base-accent-default": {
+  "--tug-base-element-global-fill-normal-accent-rest": {
     type: "chromatic",
     hueSlot: "accent",
     intensityExpr: (_p, _k, computed) => computed.signalI,
@@ -556,7 +556,7 @@ const ACCENT_RULES: Record<string, DerivationRule> = {
   // tone driven by formula field: dark=30 (darker orange so composited surface over dark parent
   // gives fg-default contrast ≥75), light=50 (standard mid-tone, easily passes on bright bg).
   // alpha kept at 10 (reduced from 15) as an additional contribution. [phase-3-bug B04]
-  "--tug-base-accent-subtle": {
+  "--tug-base-element-global-fill-normal-accentSubtle-rest": {
     type: "chromatic",
     hueSlot: "accent",
     intensityExpr: (_p, _k, computed) => computed.signalI,
@@ -565,7 +565,7 @@ const ACCENT_RULES: Record<string, DerivationRule> = {
   },
 
   // accent-cool-default: txt hue at i:90, t:50 (cobalt-intense)
-  "--tug-base-accent-cool-default": {
+  "--tug-base-element-global-fill-normal-accentCool-rest": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: lit(90),
@@ -590,13 +590,12 @@ function semanticToneFamilyRules(
   hueSlot: string,
   bgAlpha: number,
 ): Record<string, DerivationRule> {
-  const base = `--tug-base-tone-${family}`;
   return {
-    [base]: semanticTone()(hueSlot),
-    [`${base}-bg`]: semanticTone(bgAlpha)(hueSlot),
-    [`${base}-fg`]: semanticTone()(hueSlot),
-    [`${base}-border`]: semanticTone()(hueSlot),
-    [`${base}-icon`]: semanticTone()(hueSlot),
+    [`--tug-base-element-tone-fill-normal-${family}-rest`]: semanticTone()(hueSlot),
+    [`--tug-base-surface-tone-primary-normal-${family}-rest`]: semanticTone(bgAlpha)(hueSlot),
+    [`--tug-base-element-tone-text-normal-${family}-rest`]: semanticTone()(hueSlot),
+    [`--tug-base-element-tone-border-normal-${family}-rest`]: semanticTone()(hueSlot),
+    [`--tug-base-element-tone-icon-normal-${family}-rest`]: semanticTone()(hueSlot),
   };
 }
 
@@ -611,7 +610,7 @@ const SEMANTIC_TONE_RULES: Record<string, DerivationRule> = {
   // Dark: cautionBgTone=30 (darker yellow so fg-default achieves contrast ≥75 composited over
   // dark parent surface at low alpha). Light: cautionBgTone=35 (matches semanticSignalTone).
   // Override spreads the family first, then overrides only the bg rule. [phase-3-bug B05]
-  "--tug-base-tone-caution-bg": {
+  "--tug-base-surface-tone-primary-normal-caution-rest": {
     type: "chromatic",
     hueSlot: "caution",
     intensityExpr: (_f: F, _k, computed) => computed.signalI,
@@ -627,7 +626,7 @@ const SEMANTIC_TONE_RULES: Record<string, DerivationRule> = {
 
 const SELECTION_RULES: Record<string, DerivationRule> = {
   // selection-bg: interactive hue at i:50, t:50, a:40
-  "--tug-base-selection-bg": {
+  "--tug-base-surface-selection-primary-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "interactive",
     intensityExpr: lit(50),
@@ -637,7 +636,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
 
   // selection-bg-inactive: hueSlot "selectionInactive" -> yellow (dark) | atm-20° (light)
   // Dark: i:0, t:30, a:25; Light: i:8, t:24, a:20
-  "--tug-base-selection-bg-inactive": {
+  "--tug-base-surface-selection-primary-normal-plain-inactive": {
     type: "chromatic",
     hueSlot: "selectionInactive",
     intensityExpr: (formulas) => formulas.selectionBgInactiveI,
@@ -646,7 +645,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
   },
 
   // selection-fg: txt hue at txtI, fgDefaultTone
-  "--tug-base-selection-fg": {
+  "--tug-base-element-selection-text-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtI,
@@ -655,7 +654,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
 
   // highlight-hover: "__verboseHighlight" dark (i:0, t:100, a:5) | "__shadow" light (a:4)
   // Formulas-mediated via highlightHoverHueSlot
-  "--tug-base-highlight-hover": {
+  "--tug-base-surface-highlight-primary-normal-hover-rest": {
     type: "chromatic",
     hueSlot: "highlightHover",
     intensityExpr: lit(0),
@@ -664,7 +663,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
   },
 
   // highlight-dropTarget: interactive hue at i:50, t:50, a:18
-  "--tug-base-highlight-dropTarget": {
+  "--tug-base-surface-highlight-primary-normal-dropTarget-rest": {
     type: "chromatic",
     hueSlot: "interactive",
     intensityExpr: lit(50),
@@ -673,7 +672,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
   },
 
   // highlight-preview: interactive hue at i:50, t:50, a:12
-  "--tug-base-highlight-preview": {
+  "--tug-base-surface-highlight-primary-normal-preview-rest": {
     type: "chromatic",
     hueSlot: "interactive",
     intensityExpr: lit(50),
@@ -682,7 +681,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
   },
 
   // highlight-inspectorTarget: interactive hue at i:50, t:50, a:22
-  "--tug-base-highlight-inspectorTarget": {
+  "--tug-base-surface-highlight-primary-normal-inspectorTarget-rest": {
     type: "chromatic",
     hueSlot: "interactive",
     intensityExpr: lit(50),
@@ -691,7 +690,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
   },
 
   // highlight-snapGuide: interactive hue at i:50, t:50, a:50
-  "--tug-base-highlight-snapGuide": {
+  "--tug-base-surface-highlight-primary-normal-snapGuide-rest": {
     type: "chromatic",
     hueSlot: "interactive",
     intensityExpr: lit(50),
@@ -700,7 +699,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
   },
 
   // highlight-flash: accent hue at signalI, t:50, a:35
-  "--tug-base-highlight-flash": {
+  "--tug-base-surface-highlight-primary-normal-flash-rest": {
     type: "chromatic",
     hueSlot: "accent",
     intensityExpr: (_p, _k, computed) => computed.signalI,
@@ -715,7 +714,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
 
 const TAB_CHROME_RULES: Record<string, DerivationRule> = {
   // tab-bg-active: hueSlot "tabBgActive" -> "cardFrame" dark | "atm" light
-  "--tug-base-tab-bg-active": {
+  "--tug-base-surface-tab-primary-normal-plain-active": {
     type: "chromatic",
     hueSlot: "tabBgActive",
     intensityExpr: (formulas) => formulas.cardFrameActiveI,
@@ -723,7 +722,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
   },
 
   // tab-bg-inactive: hueSlot "tabBgInactive" -> "cardFrame" dark | "atm" light
-  "--tug-base-tab-bg-inactive": {
+  "--tug-base-surface-tab-primary-normal-plain-inactive": {
     type: "chromatic",
     hueSlot: "tabBgInactive",
     intensityExpr: (formulas) => formulas.cardFrameInactiveI,
@@ -731,7 +730,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
   },
 
   // tab-bg-collapsed: always atm hue at inactive intensity/tone
-  "--tug-base-tab-bg-collapsed": {
+  "--tug-base-surface-tab-primary-normal-plain-collapsed": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.cardFrameInactiveI,
@@ -740,7 +739,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
 
   // tab-bg-hover: "__highlight" dark (a:8) | "__shadow" light (a:6)
   // Formulas-mediated via tabBgHoverHueSlot
-  "--tug-base-tab-bg-hover": {
+  "--tug-base-surface-tab-primary-normal-plain-hover": {
     type: "chromatic",
     hueSlot: "tabBgHover",
     intensityExpr: lit(0),
@@ -749,7 +748,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
   },
 
   // tab-fg-rest: txt hue at txtISubtle, t:50 (canonical)
-  "--tug-base-tab-fg-rest": {
+  "--tug-base-element-tab-text-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtISubtle,
@@ -757,7 +756,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
   },
 
   // tab-fg-hover: txt hue at txtI, tabFgActiveTone (90 dark | fgDefaultTone light)
-  "--tug-base-tab-fg-hover": {
+  "--tug-base-element-tab-text-normal-plain-hover": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtI,
@@ -765,7 +764,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
   },
 
   // tab-fg-active: same as tab-fg-hover
-  "--tug-base-tab-fg-active": {
+  "--tug-base-element-tab-text-normal-plain-active": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtI,
@@ -774,7 +773,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
 
   // tab-close-bg-hover: "__highlight" dark (a:12) | "__shadow" light (a:10)
   // Formulas-mediated via tabCloseBgHoverHueSlot
-  "--tug-base-tab-close-bg-hover": {
+  "--tug-base-surface-tabClose-primary-normal-plain-hover": {
     type: "chromatic",
     hueSlot: "tabCloseBgHover",
     intensityExpr: lit(0),
@@ -783,7 +782,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
   },
 
   // tab-close-fg-hover: same as tab-fg-active
-  "--tug-base-tab-close-fg-hover": {
+  "--tug-base-element-tabClose-text-normal-plain-hover": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtI,
@@ -797,7 +796,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
 
 const DISABLED_RULES: Record<string, DerivationRule> = {
   // disabled-bg: hueSlot "disabledBg" -> "surfBareBase" dark | "atm" light
-  "--tug-base-control-disabled-bg": {
+  "--tug-base-surface-control-primary-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "disabledBg",
     intensityExpr: (formulas) => formulas.disabledBgI,
@@ -805,7 +804,7 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
   },
 
   // disabled-fg: fgDisabled hue at txtISubtle, disabledFgTone
-  "--tug-base-control-disabled-fg": {
+  "--tug-base-element-control-text-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "fgDisabled",
     intensityExpr: (formulas) => formulas.txtISubtle,
@@ -813,7 +812,7 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
   },
 
   // disabled-border: atm hue at disabledBorderI, disabledBorderTone
-  "--tug-base-control-disabled-border": {
+  "--tug-base-element-control-border-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.disabledBorderI,
@@ -821,7 +820,7 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
   },
 
   // disabled-icon: same as disabled-fg
-  "--tug-base-control-disabled-icon": {
+  "--tug-base-element-control-icon-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "fgDisabled",
     intensityExpr: (formulas) => formulas.txtISubtle,
@@ -829,7 +828,7 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
   },
 
   // disabled-shadow: structural "none"
-  "--tug-base-control-disabled-shadow": {
+  "--tug-base-element-control-shadow-normal-plain-disabled": {
     type: "structural",
     valueExpr: () => "none",
   },
@@ -858,24 +857,23 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
  *   active: hueSlot at i:90, t:filledBgActiveTone  (same as filledBgActive)
  */
 function filledRoleRules(role: string, hueSlot: string): Record<string, DerivationRule> {
-  const base = `--tug-base-control-filled-${role}`;
   return {
-    // bg
-    [`${base}-bg-rest`]: filledBgRest(hueSlot),
-    [`${base}-bg-hover`]: filledBgHover(hueSlot),
-    [`${base}-bg-active`]: filledBgActive(hueSlot),
-    // fg
-    [`${base}-fg-rest`]: filledFg(),
-    [`${base}-fg-hover`]: filledFg(),
-    [`${base}-fg-active`]: filledFg(),
-    // border
-    [`${base}-border-rest`]: borderRest(hueSlot),
-    [`${base}-border-hover`]: borderHover(hueSlot),
-    [`${base}-border-active`]: filledBgActive(hueSlot),
-    // icon
-    [`${base}-icon-rest`]: filledFg(),
-    [`${base}-icon-hover`]: filledFg(),
-    [`${base}-icon-active`]: filledFg(),
+    // bg (surface)
+    [`--tug-base-surface-control-primary-filled-${role}-rest`]: filledBgRest(hueSlot),
+    [`--tug-base-surface-control-primary-filled-${role}-hover`]: filledBgHover(hueSlot),
+    [`--tug-base-surface-control-primary-filled-${role}-active`]: filledBgActive(hueSlot),
+    // fg (element text)
+    [`--tug-base-element-control-text-filled-${role}-rest`]: filledFg(),
+    [`--tug-base-element-control-text-filled-${role}-hover`]: filledFg(),
+    [`--tug-base-element-control-text-filled-${role}-active`]: filledFg(),
+    // border (element border)
+    [`--tug-base-element-control-border-filled-${role}-rest`]: borderRest(hueSlot),
+    [`--tug-base-element-control-border-filled-${role}-hover`]: borderHover(hueSlot),
+    [`--tug-base-element-control-border-filled-${role}-active`]: filledBgActive(hueSlot),
+    // icon (element icon)
+    [`--tug-base-element-control-icon-filled-${role}-rest`]: filledFg(),
+    [`--tug-base-element-control-icon-filled-${role}-hover`]: filledFg(),
+    [`--tug-base-element-control-icon-filled-${role}-active`]: filledFg(),
   };
 }
 
@@ -912,48 +910,46 @@ const FILLED_RULES: Record<string, DerivationRule> = {
  * border: roleHueSlot at Math.min(90, signalI+{5,15,25}), t:50
  */
 function outlinedFgRules(role: string, hueSlot: string): Record<string, DerivationRule> {
-  const base = `--tug-base-control-outlined-${role}`;
-
   return {
-    [`${base}-bg-rest`]: { type: "structural", valueExpr: () => "transparent" },
+    // bg (surface)
+    [`--tug-base-surface-control-primary-outlined-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
     // bg-hover: unified intensity/alpha from formulas (dark: 0/outlinedBgHoverAlpha; light: chromatic 4/100)
-    [`${base}-bg-hover`]: outlinedBg("outlinedBgHoverI", "outlinedBgHoverTone", "outlinedBgHoverAlphaValue")("outlinedBgHover"),
+    [`--tug-base-surface-control-primary-outlined-${role}-hover`]: outlinedBg("outlinedBgHoverI", "outlinedBgHoverTone", "outlinedBgHoverAlphaValue")("outlinedBgHover"),
     // bg-active: unified intensity/alpha from formulas (dark: 0/outlinedBgActiveAlpha; light: chromatic 6/100)
-    [`${base}-bg-active`]: outlinedBg("outlinedBgActiveI", "outlinedBgActiveTone", "outlinedBgActiveAlphaValue")("outlinedBgActive"),
+    [`--tug-base-surface-control-primary-outlined-${role}-active`]: outlinedBg("outlinedBgActiveI", "outlinedBgActiveTone", "outlinedBgActiveAlphaValue")("outlinedBgActive"),
     // fg — emphasis-level fields (Table T01 D02), same across all outlined roles
-    [`${base}-fg-rest`]: outlinedFg("outlinedFgI", "outlinedFgRestTone"),
-    [`${base}-fg-hover`]: outlinedFg("outlinedFgI", "outlinedFgHoverTone"),
-    [`${base}-fg-active`]: outlinedFg("outlinedFgI", "outlinedFgActiveTone"),
+    [`--tug-base-element-control-text-outlined-${role}-rest`]: outlinedFg("outlinedFgI", "outlinedFgRestTone"),
+    [`--tug-base-element-control-text-outlined-${role}-hover`]: outlinedFg("outlinedFgI", "outlinedFgHoverTone"),
+    [`--tug-base-element-control-text-outlined-${role}-active`]: outlinedFg("outlinedFgI", "outlinedFgActiveTone"),
     // border
-    [`${base}-border-rest`]: borderRest(hueSlot),
-    [`${base}-border-hover`]: borderHover(hueSlot),
-    [`${base}-border-active`]: borderActive(hueSlot),
+    [`--tug-base-element-control-border-outlined-${role}-rest`]: borderRest(hueSlot),
+    [`--tug-base-element-control-border-outlined-${role}-hover`]: borderHover(hueSlot),
+    [`--tug-base-element-control-border-outlined-${role}-active`]: borderActive(hueSlot),
     // icon — emphasis-level fields (Table T01 D02), same across all outlined roles
-    [`${base}-icon-rest`]: outlinedFg("outlinedIconI", "outlinedIconRestTone"),
-    [`${base}-icon-hover`]: outlinedFg("outlinedIconI", "outlinedIconHoverTone"),
-    [`${base}-icon-active`]: outlinedFg("outlinedIconI", "outlinedIconActiveTone"),
+    [`--tug-base-element-control-icon-outlined-${role}-rest`]: outlinedFg("outlinedIconI", "outlinedIconRestTone"),
+    [`--tug-base-element-control-icon-outlined-${role}-hover`]: outlinedFg("outlinedIconI", "outlinedIconHoverTone"),
+    [`--tug-base-element-control-icon-outlined-${role}-active`]: outlinedFg("outlinedIconI", "outlinedIconActiveTone"),
   };
 }
 
 // Outlined-option has neutral text-hue borders (not role-colored) — separate factory.
 // Distinct pattern: txtISubtle-based intensity ramp with formula tone fields.
 function outlinedOptionBorderRules(): Record<string, DerivationRule> {
-  const base = "--tug-base-control-outlined-option";
   return {
     // Override the borders from outlinedFgRules with neutral txt-hue borders
-    [`${base}-border-rest`]: {
+    "--tug-base-element-control-border-outlined-option-rest": {
       type: "chromatic",
       hueSlot: "txt",
       intensityExpr: (formulas) => formulas.txtISubtle,
       toneExpr: (formulas) => formulas.outlinedOptionBorderRestTone,
     },
-    [`${base}-border-hover`]: {
+    "--tug-base-element-control-border-outlined-option-hover": {
       type: "chromatic",
       hueSlot: "txt",
       intensityExpr: (formulas) => Math.min(90, formulas.txtISubtle + 2),
       toneExpr: (formulas) => formulas.outlinedOptionBorderHoverTone,
     },
-    [`${base}-border-active`]: {
+    "--tug-base-element-control-border-outlined-option-active": {
       type: "chromatic",
       hueSlot: "txt",
       intensityExpr: (formulas) => Math.min(90, formulas.txtISubtle + 4),
@@ -992,23 +988,23 @@ function ghostFgRules(
   bgHoverAlphaExpr: (formulas: DerivationFormulas) => number,
   bgActiveAlphaExpr: (formulas: DerivationFormulas) => number,
 ): Record<string, DerivationRule> {
-  const base = `--tug-base-control-ghost-${role}`;
   return {
-    [`${base}-bg-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`${base}-bg-hover`]: ghostBg(bgHoverAlphaExpr)(bgHoverHueSlot),
-    [`${base}-bg-active`]: ghostBg(bgActiveAlphaExpr)(bgActiveHueSlot),
+    // bg (surface)
+    [`--tug-base-surface-control-primary-ghost-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
+    [`--tug-base-surface-control-primary-ghost-${role}-hover`]: ghostBg(bgHoverAlphaExpr)(bgHoverHueSlot),
+    [`--tug-base-surface-control-primary-ghost-${role}-active`]: ghostBg(bgActiveAlphaExpr)(bgActiveHueSlot),
     // fg — emphasis-level fields (Table T02 D02), shared across ghost action and option
-    [`${base}-fg-rest`]: outlinedFg("ghostFgRestI", "ghostFgRestTone"),
-    [`${base}-fg-hover`]: outlinedFg("ghostFgHoverI", "ghostFgHoverTone"),
-    [`${base}-fg-active`]: outlinedFg("ghostFgActiveI", "ghostFgActiveTone"),
+    [`--tug-base-element-control-text-ghost-${role}-rest`]: outlinedFg("ghostFgRestI", "ghostFgRestTone"),
+    [`--tug-base-element-control-text-ghost-${role}-hover`]: outlinedFg("ghostFgHoverI", "ghostFgHoverTone"),
+    [`--tug-base-element-control-text-ghost-${role}-active`]: outlinedFg("ghostFgActiveI", "ghostFgActiveTone"),
     // border
-    [`${base}-border-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`${base}-border-hover`]: outlinedFg("ghostBorderI", "ghostBorderTone"),
-    [`${base}-border-active`]: outlinedFg("ghostBorderI", "ghostBorderTone"),
+    [`--tug-base-element-control-border-ghost-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
+    [`--tug-base-element-control-border-ghost-${role}-hover`]: outlinedFg("ghostBorderI", "ghostBorderTone"),
+    [`--tug-base-element-control-border-ghost-${role}-active`]: outlinedFg("ghostBorderI", "ghostBorderTone"),
     // icon — emphasis-level fields (Table T02 D02), shared across ghost action and option
-    [`${base}-icon-rest`]: outlinedFg("ghostIconRestI", "ghostIconRestTone"),
-    [`${base}-icon-hover`]: outlinedFg("ghostIconHoverI", "ghostIconHoverTone"),
-    [`${base}-icon-active`]: outlinedFg("ghostIconActiveI", "ghostIconActiveTone"),
+    [`--tug-base-element-control-icon-ghost-${role}-rest`]: outlinedFg("ghostIconRestI", "ghostIconRestTone"),
+    [`--tug-base-element-control-icon-ghost-${role}-hover`]: outlinedFg("ghostIconHoverI", "ghostIconHoverTone"),
+    [`--tug-base-element-control-icon-ghost-${role}-active`]: outlinedFg("ghostIconActiveI", "ghostIconActiveTone"),
   };
 }
 
@@ -1020,21 +1016,24 @@ function ghostFgRules(
  * border-hover/active: destructive hue at signalI+5, t:50, a:40/60
  */
 function ghostDangerRules(): Record<string, DerivationRule> {
-  const base = "--tug-base-control-ghost-danger";
   return {
-    [`${base}-bg-rest`]: { type: "structural", valueExpr: () => "transparent" },
+    // bg (surface)
+    "--tug-base-surface-control-primary-ghost-danger-rest": { type: "structural", valueExpr: () => "transparent" },
     // bg-hover/active: signalI+5 at destructive hue, t:50, formula-driven alpha
-    [`${base}-bg-hover`]: { ...signalRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerBgHoverAlpha },
-    [`${base}-bg-active`]: { ...signalRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerBgActiveAlpha },
-    [`${base}-fg-rest`]: signalRamp(5)("destructive"),
-    [`${base}-fg-hover`]: signalRamp(15)("destructive"),
-    [`${base}-fg-active`]: signalRamp(25)("destructive"),
-    [`${base}-border-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`${base}-border-hover`]: signalRampAlpha(5, 40)("destructive"),
-    [`${base}-border-active`]: signalRampAlpha(5, 60)("destructive"),
-    [`${base}-icon-rest`]: signalRamp(5)("destructive"),
-    [`${base}-icon-hover`]: signalRamp(15)("destructive"),
-    [`${base}-icon-active`]: signalRamp(25)("destructive"),
+    "--tug-base-surface-control-primary-ghost-danger-hover": { ...signalRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerBgHoverAlpha },
+    "--tug-base-surface-control-primary-ghost-danger-active": { ...signalRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerBgActiveAlpha },
+    // fg (element text)
+    "--tug-base-element-control-text-ghost-danger-rest": signalRamp(5)("destructive"),
+    "--tug-base-element-control-text-ghost-danger-hover": signalRamp(15)("destructive"),
+    "--tug-base-element-control-text-ghost-danger-active": signalRamp(25)("destructive"),
+    // border (element border)
+    "--tug-base-element-control-border-ghost-danger-rest": { type: "structural", valueExpr: () => "transparent" },
+    "--tug-base-element-control-border-ghost-danger-hover": signalRampAlpha(5, 40)("destructive"),
+    "--tug-base-element-control-border-ghost-danger-active": signalRampAlpha(5, 60)("destructive"),
+    // icon (element icon)
+    "--tug-base-element-control-icon-ghost-danger-rest": signalRamp(5)("destructive"),
+    "--tug-base-element-control-icon-ghost-danger-hover": signalRamp(15)("destructive"),
+    "--tug-base-element-control-icon-ghost-danger-active": signalRamp(25)("destructive"),
   };
 }
 
@@ -1062,22 +1061,22 @@ const GHOST_RULES: Record<string, DerivationRule> = {
 
 const SELECTED_HIGHLIGHTED_RULES: Record<string, DerivationRule> = {
   // surface-control: alias to outlined-action-bg-rest (transparent)
-  "--tug-base-surface-control": {
+  "--tug-base-surface-global-primary-normal-control-rest": {
     type: "structural",
-    valueExpr: () => "var(--tug-base-control-outlined-action-bg-rest)",
+    valueExpr: () => "var(--tug-base-surface-control-primary-outlined-action-rest)",
   },
 
   // selected tokens
-  "--tug-base-control-selected-bg": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(18) },
-  "--tug-base-control-selected-bg-hover": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(24) },
-  "--tug-base-control-selected-fg": { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.txtI, toneExpr: (formulas) => formulas.fgDefaultTone },
-  "--tug-base-control-selected-border": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50) },
-  "--tug-base-control-selected-disabled-bg": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(10) },
+  "--tug-base-surface-control-primary-normal-selected-rest": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(18) },
+  "--tug-base-surface-control-primary-normal-selected-hover": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(24) },
+  "--tug-base-element-control-text-normal-selected-rest": { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.txtI, toneExpr: (formulas) => formulas.fgDefaultTone },
+  "--tug-base-element-control-border-normal-selected-rest": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50) },
+  "--tug-base-surface-control-primary-normal-selected-disabled": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(10) },
 
   // highlighted tokens
-  "--tug-base-control-highlighted-bg": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(10) },
-  "--tug-base-control-highlighted-fg": { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.txtI, toneExpr: (formulas) => formulas.fgDefaultTone },
-  "--tug-base-control-highlighted-border": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(25) },
+  "--tug-base-surface-control-primary-normal-highlighted-rest": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(10) },
+  "--tug-base-element-control-text-normal-highlighted-rest": { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.txtI, toneExpr: (formulas) => formulas.fgDefaultTone },
+  "--tug-base-element-control-border-normal-highlighted-rest": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(25) },
 };
 
 // ---------------------------------------------------------------------------
@@ -1086,7 +1085,7 @@ const SELECTED_HIGHLIGHTED_RULES: Record<string, DerivationRule> = {
 
 const FIELD_RULES: Record<string, DerivationRule> = {
   // field-bg-rest: atm hue; dark: i=atmI; light: i=fieldBgRestI (7)
-  "--tug-base-field-bg-rest": {
+  "--tug-base-surface-field-primary-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.fieldBgRestI,
@@ -1094,7 +1093,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-bg-hover: hueSlot "fieldBgHover" -> "surfBareBase" dark | "atm" light
-  "--tug-base-field-bg-hover": {
+  "--tug-base-surface-field-primary-normal-plain-hover": {
     type: "chromatic",
     hueSlot: "fieldBgHover",
     intensityExpr: (formulas) => formulas.atmI,
@@ -1102,7 +1101,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-bg-focus: atm hue at i:4, fieldBgFocusTone
-  "--tug-base-field-bg-focus": {
+  "--tug-base-surface-field-primary-normal-plain-focus": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: lit(4),
@@ -1110,7 +1109,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-bg-disabled: atm hue at atmI, fieldBgDisabledTone
-  "--tug-base-field-bg-disabled": {
+  "--tug-base-surface-field-primary-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmI,
@@ -1118,7 +1117,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-bg-readOnly: hueSlot "fieldBgReadOnly" -> "surfBareBase" dark | "atm" light
-  "--tug-base-field-bg-readOnly": {
+  "--tug-base-surface-field-primary-normal-plain-readOnly": {
     type: "chromatic",
     hueSlot: "fieldBgReadOnly",
     intensityExpr: (formulas) => formulas.atmI,
@@ -1126,7 +1125,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-fg-default: txt hue at txtI, fgDefaultTone
-  "--tug-base-field-fg-default": {
+  "--tug-base-element-field-text-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtI,
@@ -1134,7 +1133,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-fg-disabled: fgDisabled hue at txtISubtle, fgDisabledTone
-  "--tug-base-field-fg-disabled": {
+  "--tug-base-element-field-text-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "fgDisabled",
     intensityExpr: (formulas) => formulas.txtISubtle,
@@ -1142,7 +1141,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-fg-readOnly: fgMuted hue at fgMutedI, fgMutedTone
-  "--tug-base-field-fg-readOnly": {
+  "--tug-base-element-field-text-normal-plain-readOnly": {
     type: "chromatic",
     hueSlot: "fgMuted",
     intensityExpr: (formulas) => formulas.fgMutedI,
@@ -1150,7 +1149,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-fg-placeholder: hueSlot "fieldPlaceholder" -> "fgPlaceholder" dark | "atm" light
-  "--tug-base-field-fg-placeholder": {
+  "--tug-base-element-field-text-normal-placeholder-rest": {
     type: "chromatic",
     hueSlot: "fieldPlaceholder",
     intensityExpr: (formulas) => formulas.atmIBorder,
@@ -1158,7 +1157,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-border-rest: hueSlot "fieldBorderRest" -> "fgPlaceholder" dark | "atm" light
-  "--tug-base-field-border-rest": {
+  "--tug-base-element-field-border-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "fieldBorderRest",
     intensityExpr: (formulas) => formulas.atmIBorder,
@@ -1167,7 +1166,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
 
   // field-border-hover: hueSlot "fieldBorderHover" -> "fgSubtle" dark | "borderStrong" light
   // borderStrongToneValue is the unified field (dark: fgSubtleTone; light: borderStrongTone)
-  "--tug-base-field-border-hover": {
+  "--tug-base-element-field-border-normal-plain-hover": {
     type: "chromatic",
     hueSlot: "fieldBorderHover",
     intensityExpr: (formulas) => formulas.borderIStrong,
@@ -1175,7 +1174,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-border-active: interactive hue at canonical i:50, t:50
-  "--tug-base-field-border-active": {
+  "--tug-base-element-field-border-normal-plain-active": {
     type: "chromatic",
     hueSlot: "interactive",
     intensityExpr: lit(50),
@@ -1183,7 +1182,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-border-danger: destructive hue at signalI, t:50
-  "--tug-base-field-border-danger": {
+  "--tug-base-element-field-border-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -1191,7 +1190,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-border-success: success hue at signalI, t:50
-  "--tug-base-field-border-success": {
+  "--tug-base-element-field-border-normal-success-rest": {
     type: "chromatic",
     hueSlot: "success",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -1199,7 +1198,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-border-disabled: atm hue at atmIBorder, dividerTone
-  "--tug-base-field-border-disabled": {
+  "--tug-base-element-field-border-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmIBorder,
@@ -1207,7 +1206,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-border-readOnly: atm hue at atmIBorder, dividerTone
-  "--tug-base-field-border-readOnly": {
+  "--tug-base-element-field-border-normal-plain-readOnly": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmIBorder,
@@ -1215,7 +1214,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-fg-label: txt hue at txtI, fgDefaultTone
-  "--tug-base-field-fg-label": {
+  "--tug-base-element-field-text-normal-label-rest": {
     type: "chromatic",
     hueSlot: "txt",
     intensityExpr: (formulas) => formulas.txtI,
@@ -1223,7 +1222,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-fg-required: destructive hue at signalI, t:50
-  "--tug-base-field-fg-required": {
+  "--tug-base-element-field-text-normal-required-rest": {
     type: "chromatic",
     hueSlot: "destructive",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -1231,7 +1230,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-tone-danger: destructive hue at signalI, t:50
-  "--tug-base-field-tone-danger": {
+  "--tug-base-element-field-fill-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -1239,7 +1238,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-tone-caution: caution hue at signalI, t:50
-  "--tug-base-field-tone-caution": {
+  "--tug-base-element-field-fill-normal-caution-rest": {
     type: "chromatic",
     hueSlot: "caution",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -1247,7 +1246,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   },
 
   // field-tone-success: success hue at signalI, t:50
-  "--tug-base-field-tone-success": {
+  "--tug-base-element-field-fill-normal-success-rest": {
     type: "chromatic",
     hueSlot: "success",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -1261,7 +1260,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
 
 const TOGGLE_RULES: Record<string, DerivationRule> = {
   // toggle-track-off: atm hue at atmIBorder, toggleTrackOffTone
-  "--tug-base-toggle-track-off": {
+  "--tug-base-surface-toggle-track-normal-off-rest": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmIBorder,
@@ -1269,7 +1268,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-track-off-hover: atm hue at min(atmIBorder+4,100), min(toggleTrackOffTone+8,100)
-  "--tug-base-toggle-track-off-hover": {
+  "--tug-base-surface-toggle-track-normal-off-hover": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => Math.min(formulas.atmIBorder + 4, 100),
@@ -1277,7 +1276,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-track-on: accent hue at signalI, t:42 (muted preset)
-  "--tug-base-toggle-track-on": {
+  "--tug-base-surface-toggle-track-normal-on-rest": {
     type: "chromatic",
     hueSlot: "accent",
     intensityExpr: (_f, _k, computed) => computed.signalI,
@@ -1285,7 +1284,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-track-on-hover: accent hue at min(signalI+5,100), toggleTrackOnHoverTone
-  "--tug-base-toggle-track-on-hover": {
+  "--tug-base-surface-toggle-track-normal-on-hover": {
     type: "chromatic",
     hueSlot: "accent",
     intensityExpr: (_f, _k, computed) => Math.min(computed.signalI + 5, 100),
@@ -1293,7 +1292,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-track-disabled: hueSlot "toggleTrackDisabled" -> "surfBareBase" dark | "atm" light
-  "--tug-base-toggle-track-disabled": {
+  "--tug-base-surface-toggle-track-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "toggleTrackDisabled",
     intensityExpr: (formulas) => formulas.toggleTrackDisabledI,
@@ -1301,7 +1300,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-track-mixed: fgSubtle hue at txtISubtle, fgSubtleTone
-  "--tug-base-toggle-track-mixed": {
+  "--tug-base-surface-toggle-track-normal-mixed-rest": {
     type: "chromatic",
     hueSlot: "fgSubtle",
     intensityExpr: (formulas) => formulas.txtISubtle,
@@ -1309,7 +1308,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-track-mixed-hover: fgSubtle hue at min(txtISubtle+5,100), min(fgSubtleTone+6,100)
-  "--tug-base-toggle-track-mixed-hover": {
+  "--tug-base-surface-toggle-track-normal-mixed-hover": {
     type: "chromatic",
     hueSlot: "fgSubtle",
     intensityExpr: (formulas) => Math.min(formulas.txtISubtle + 5, 100),
@@ -1317,7 +1316,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-thumb: hueSlot "toggleThumb" -> "fgInverse" dark | "__white" light
-  "--tug-base-toggle-thumb": {
+  "--tug-base-element-toggle-thumb-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "toggleThumb",
     intensityExpr: (formulas) => formulas.txtI,
@@ -1325,7 +1324,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-thumb-disabled: fgDisabled hue at txtISubtle, toggleThumbDisabledTone
-  "--tug-base-toggle-thumb-disabled": {
+  "--tug-base-element-toggle-thumb-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "fgDisabled",
     intensityExpr: (formulas) => formulas.txtISubtle,
@@ -1333,7 +1332,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-icon-disabled: fgDisabled hue at txtISubtle, toggleThumbDisabledTone
-  "--tug-base-toggle-icon-disabled": {
+  "--tug-base-element-toggle-icon-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "fgDisabled",
     intensityExpr: (formulas) => formulas.txtISubtle,
@@ -1341,7 +1340,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // toggle-icon-mixed: fgMuted hue at fgMutedI, fgMutedTone
-  "--tug-base-toggle-icon-mixed": {
+  "--tug-base-element-toggle-icon-normal-plain-mixed": {
     type: "chromatic",
     hueSlot: "fgMuted",
     intensityExpr: (formulas) => formulas.fgMutedI,
@@ -1349,7 +1348,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // checkmark-fg: hueSlot "checkmark" -> "fgInverse" dark | "__white" light
-  "--tug-base-checkmark-fg": {
+  "--tug-base-element-checkmark-icon-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "checkmark",
     intensityExpr: (formulas) => formulas.txtI,
@@ -1357,7 +1356,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // checkmark-fg-mixed: fgMuted hue at fgMutedI, fgMutedTone
-  "--tug-base-checkmark-fg-mixed": {
+  "--tug-base-element-checkmark-icon-normal-plain-mixed": {
     type: "chromatic",
     hueSlot: "fgMuted",
     intensityExpr: (formulas) => formulas.fgMutedI,
@@ -1365,7 +1364,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // radio-dot: hueSlot "radioDot" -> "fgInverse" dark | "__white" light
-  "--tug-base-radio-dot": {
+  "--tug-base-element-radio-dot-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "radioDot",
     intensityExpr: (formulas) => formulas.txtI,
@@ -1373,7 +1372,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   },
 
   // divider-separator: atm hue at atmIBorder, toggleTrackOffTone
-  "--tug-base-divider-separator": {
+  "--tug-base-element-global-divider-normal-separator-rest": {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmIBorder,
@@ -1394,11 +1393,10 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
  * Border: role hue at badgeTintedBorderI, badgeTintedBorderTone, alpha=badgeTintedBorderAlpha
  */
 function badgeTintedRoleRules(role: string, hueSlot: string): Record<string, DerivationRule> {
-  const base = `--tug-base-badge-tinted-${role}`;
   return {
-    [`${base}-fg`]: badgeTinted("badgeTintedFgI", "badgeTintedFgTone")(hueSlot),
-    [`${base}-bg`]: badgeTinted("badgeTintedBgI", "badgeTintedBgTone", "badgeTintedBgAlpha")(hueSlot),
-    [`${base}-border`]: badgeTinted("badgeTintedBorderI", "badgeTintedBorderTone", "badgeTintedBorderAlpha")(hueSlot),
+    [`--tug-base-element-badge-text-tinted-${role}-rest`]: badgeTinted("badgeTintedFgI", "badgeTintedFgTone")(hueSlot),
+    [`--tug-base-surface-badge-primary-tinted-${role}-rest`]: badgeTinted("badgeTintedBgI", "badgeTintedBgTone", "badgeTintedBgAlpha")(hueSlot),
+    [`--tug-base-element-badge-border-tinted-${role}-rest`]: badgeTinted("badgeTintedBorderI", "badgeTintedBorderTone", "badgeTintedBorderAlpha")(hueSlot),
   };
 }
 

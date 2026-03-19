@@ -7,13 +7,13 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-card-border (border-default)               | --tug-base-surface-default (surface-default)     | ui-component | .tugcard (border)                    |
- * | --tug-card-title-bar-fg (fg-default)             | --tug-base-tab-bg-inactive (tab-bg-inactive)     | body-text    | .tugcard-title (color)               |
- * | --tug-card-title-bar-fg (fg-default)             | --tug-base-tab-bg-active (tab-bg-active)         | body-text    | .tugcard-title (color)               |
- * | --tug-card-title-bar-icon-active (icon-active)   | --tug-base-tab-bg-active (tab-bg-active)         | ui-component | .card-frame[data-focused="true"] .tugcard-icon (color) |
- * | --tug-card-title-bar-icon-inactive (fg-subtle)   | --tug-base-tab-bg-inactive (tab-bg-inactive)     | subdued-text | .card-frame[data-focused="false"] .tugcard-icon (color) |
- * | --tug-base-selection-fg (selection-fg)           | --tug-base-selection-bg (selection-bg)           | body-text    | ::highlight(card-selection) (color)  |
- * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .tugcard-loading (color)             |
+ * | --tug-card-border (border-default)               | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tugcard (border)                    |
+ * | --tug-card-title-bar-fg (fg-default)             | --tug-base-surface-tab-primary-normal-plain-inactive (tab-bg-inactive)     | body-text    | .tugcard-title (color)               |
+ * | --tug-card-title-bar-fg (fg-default)             | --tug-base-surface-tab-primary-normal-plain-active (tab-bg-active)         | body-text    | .tugcard-title (color)               |
+ * | --tug-card-title-bar-icon-active (icon-active)   | --tug-base-surface-tab-primary-normal-plain-active (tab-bg-active)         | ui-component | .card-frame[data-focused="true"] .tugcard-icon (color) |
+ * | --tug-card-title-bar-icon-inactive (fg-subtle)   | --tug-base-surface-tab-primary-normal-plain-inactive (tab-bg-inactive)     | subdued-text | .card-frame[data-focused="false"] .tugcard-icon (color) |
+ * | --tug-base-element-selection-text-normal-plain-rest (selection-fg)           | --tug-base-surface-selection-primary-normal-plain-rest (selection-bg)           | body-text    | ::highlight(card-selection) (color)  |
+ * | --tug-base-element-global-text-normal-muted-rest (fg-muted)                   | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | subdued-text | .tugcard-loading (color)             |
  */
 
 
@@ -61,27 +61,27 @@
 
 body {
   /* --- Card --- */
-  --tug-card-bg: var(--tug-base-surface-overlay);
-  --tug-card-border: var(--tug-base-border-default);
+  --tug-card-bg: var(--tug-base-surface-global-primary-normal-overlay-rest);
+  --tug-card-border: var(--tug-base-element-global-border-normal-default-rest);
   --tug-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 40);
   --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 20);
   --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 15);
 
   /* --- Card Title Bar --- */
-  --tug-card-title-bar-bg-active: var(--tug-base-tab-bg-active);
-  --tug-card-title-bar-bg-inactive: var(--tug-base-tab-bg-inactive);
-  --tug-card-title-bar-bg-collapsed: var(--tug-base-tab-bg-collapsed);
-  --tug-card-title-bar-fg: var(--tug-base-fg-default);
-  --tug-card-title-bar-icon-active: var(--tug-base-icon-active);
-  --tug-card-title-bar-icon-inactive: var(--tug-base-fg-subtle);
-  --tug-card-title-bar-icon-hover: var(--tug-base-fg-muted);
-  --tug-card-title-bar-divider: var(--tug-base-divider-default);
+  --tug-card-title-bar-bg-active: var(--tug-base-surface-tab-primary-normal-plain-active);
+  --tug-card-title-bar-bg-inactive: var(--tug-base-surface-tab-primary-normal-plain-inactive);
+  --tug-card-title-bar-bg-collapsed: var(--tug-base-surface-tab-primary-normal-plain-collapsed);
+  --tug-card-title-bar-fg: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-card-title-bar-icon-active: var(--tug-base-element-global-icon-normal-active-rest);
+  --tug-card-title-bar-icon-inactive: var(--tug-base-element-global-text-normal-subtle-rest);
+  --tug-card-title-bar-icon-hover: var(--tug-base-element-global-text-normal-muted-rest);
+  --tug-card-title-bar-divider: var(--tug-base-element-global-divider-normal-default-rest);
 
   /* --- Card Accessory / Findbar --- */
-  --tug-card-accessory-bg: var(--tug-base-surface-sunken);
-  --tug-card-accessory-border: var(--tug-base-border-default);
-  --tug-card-findbar-bg: var(--tug-base-field-bg-focus);
-  --tug-card-findbar-border: var(--tug-base-border-default);
+  --tug-card-accessory-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
+  --tug-card-accessory-border: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-card-findbar-bg: var(--tug-base-surface-field-primary-normal-plain-focus);
+  --tug-card-findbar-border: var(--tug-base-element-global-border-normal-default-rest);
   --tug-card-findbar-match: --tug-color(yellow, i: 50, t: 50, a: 30);
   --tug-card-findbar-match-active: --tug-color(orange, i: 50, t: 50, a: 50);
 }
@@ -95,7 +95,7 @@ body {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
   border: 1px solid var(--tug-card-border);
   border-radius: var(--tug-base-radius-md);
   overflow: hidden;
@@ -190,7 +190,7 @@ body {
    Title bar title
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-tab-bg-inactive, --tug-base-tab-bg-active */
+/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-inactive, --tug-base-surface-tab-primary-normal-plain-active */
 .tugcard-title {
   flex: 1;
   overflow: hidden;
@@ -222,12 +222,12 @@ body {
   height: 100%;
 }
 
-/* @tug-renders-on: --tug-base-tab-bg-active */
+/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-active */
 .card-frame[data-focused="true"] .tugcard-icon {
   color: var(--tug-card-title-bar-icon-active);
 }
 
-/* @tug-renders-on: --tug-base-tab-bg-inactive */
+/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-inactive */
 .card-frame[data-focused="false"] .tugcard-icon {
   color: var(--tug-card-title-bar-icon-inactive);
 }
@@ -258,7 +258,7 @@ body {
  */
 .tugcard-accessory {
   flex-shrink: 0;
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
   border-bottom: 1px solid var(--tug-card-border);
 }
 
@@ -273,7 +273,7 @@ body {
 .tugcard-content {
   flex: 1;
   overflow: auto;
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
   min-height: 0; /* needed for flex children to allow scroll */
   user-select: text;
   overscroll-behavior: contain;
@@ -303,8 +303,8 @@ body {
  * every selectionchange event. This is the ONLY visible selection rendering.
  */
 ::highlight(card-selection) {
-  background-color: var(--tug-base-selection-bg);
-  color: var(--tug-base-selection-fg);
+  background-color: var(--tug-base-surface-selection-primary-normal-plain-rest);
+  color: var(--tug-base-element-selection-text-normal-plain-rest);
 }
 
 /*
@@ -316,7 +316,7 @@ body {
  * delete/add — no intermediate empty state, no flash.
  */
 ::highlight(inactive-selection) {
-  background-color: var(--tug-base-selection-bg-inactive);
+  background-color: var(--tug-base-surface-selection-primary-normal-plain-inactive);
   color: inherit;
 }
 
@@ -332,12 +332,12 @@ body {
    Loading placeholder (Phase 5 -- feeds not yet wired)
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tugcard-loading {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   font-size: var(--tug-base-font-size-sm);
 }

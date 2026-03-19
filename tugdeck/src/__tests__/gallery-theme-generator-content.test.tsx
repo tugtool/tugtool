@@ -689,13 +689,13 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     const implicit = deriveTheme(EXAMPLE_RECIPES.brio);
     // tone tokens should match between explicit defaults and recipe defaults
     const roleTokens = [
-      "--tug-base-tone-accent",
-      "--tug-base-tone-active",
-      "--tug-base-tone-agent",
-      "--tug-base-tone-data",
-      "--tug-base-tone-success",
-      "--tug-base-tone-caution",
-      "--tug-base-tone-danger",
+      "--tug-base-element-tone-fill-normal-accent-rest",
+      "--tug-base-element-tone-fill-normal-active-rest",
+      "--tug-base-element-tone-fill-normal-agent-rest",
+      "--tug-base-element-tone-fill-normal-data-rest",
+      "--tug-base-element-tone-fill-normal-success-rest",
+      "--tug-base-element-tone-fill-normal-caution-rest",
+      "--tug-base-element-tone-fill-normal-danger-rest",
     ];
     for (const token of roleTokens) {
       expect(explicit.tokens[token]).toBe(implicit.tokens[token]);
@@ -720,8 +720,8 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       text: { hue: "cobalt" },
       destructive: "pink",
     });
-    expect(withRed.tokens["--tug-base-tone-danger"]).not.toBe(
-      withPink.tokens["--tug-base-tone-danger"],
+    expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
+      withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
     );
   });
 });
@@ -925,8 +925,8 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
       cardBg: { hue: "violet" }, text: { hue: "cobalt" },
       destructive: "pink",
     });
-    expect(withRed.tokens["--tug-base-tone-danger"]).not.toBe(
-      withPink.tokens["--tug-base-tone-danger"],
+    expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
+      withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
     );
   });
 });
@@ -1172,7 +1172,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       formulas: LIGHT_FORMULAS,
     });
     // The semantic tone tokens should differ because semanticSignalTone differs (50 vs 35)
-    expect(darkOutput.tokens["--tug-base-tone-accent"]).not.toBe(lightOutput.tokens["--tug-base-tone-accent"]);
+    expect(darkOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).not.toBe(lightOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"]);
   });
 
   it("DARK_FORMULAS.borderSignalTone=50 preserves existing brio dark border-accent value", () => {
@@ -1182,7 +1182,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       formulas: DARK_FORMULAS,
     });
     // Explicit DARK_FORMULAS matches the fallback (no formulas) behavior
-    expect(brioOutput.tokens["--tug-base-border-accent"]).toBe(darkOutput.tokens["--tug-base-border-accent"]);
+    expect(brioOutput.tokens["--tug-base-element-global-border-normal-accent-rest"]).toBe(darkOutput.tokens["--tug-base-element-global-border-normal-accent-rest"]);
   });
 
   it("currentRecipe includes formulas field after export (round-trip preservation)", () => {
@@ -1226,8 +1226,8 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       text: { hue: "cobalt" },
       formulas: DARK_FORMULAS,
     });
-    expect(noFormulas.tokens["--tug-base-tone-accent"]).toBe(darkFormulas.tokens["--tug-base-tone-accent"]);
-    expect(noFormulas.tokens["--tug-base-border-accent"]).toBe(darkFormulas.tokens["--tug-base-border-accent"]);
+    expect(noFormulas.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(darkFormulas.tokens["--tug-base-element-tone-fill-normal-accent-rest"]);
+    expect(noFormulas.tokens["--tug-base-element-global-border-normal-accent-rest"]).toBe(darkFormulas.tokens["--tug-base-element-global-border-normal-accent-rest"]);
   });
 });
 
@@ -1360,8 +1360,8 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     const harmonyTokens = readRenderedTokens(container);
 
     // tone-accent must differ: harmony uses semanticSignalTone=35, brio uses 50
-    expect(harmonyTokens["--tug-base-tone-accent"]).toBeDefined();
-    expect(harmonyTokens["--tug-base-tone-accent"]).not.toBe(brioTokens["--tug-base-tone-accent"]);
+    expect(harmonyTokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBeDefined();
+    expect(harmonyTokens["--tug-base-element-tone-fill-normal-accent-rest"]).not.toBe(brioTokens["--tug-base-element-tone-fill-normal-accent-rest"]);
   });
 
   // -------------------------------------------------------------------------
@@ -1384,7 +1384,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     });
     // Tokens should have changed (light formulas in effect)
     const lightTokens = readRenderedTokens(container);
-    expect(lightTokens["--tug-base-bg-app"]).not.toBe(initialBrioTokens["--tug-base-bg-app"]);
+    expect(lightTokens["--tug-base-surface-global-primary-normal-app-rest"]).not.toBe(initialBrioTokens["--tug-base-surface-global-primary-normal-app-rest"]);
 
     // Toggle back to Dark mode
     act(() => {
@@ -1410,7 +1410,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
 
     // In dark mode, bg-app should be near-black (low L value in oklch)
     const darkTokens = readRenderedTokens(container);
-    const darkBgApp = darkTokens["--tug-base-bg-app"] ?? "";
+    const darkBgApp = darkTokens["--tug-base-surface-global-primary-normal-app-rest"] ?? "";
     // Dark bg-app is a --tug-color() reference; it will have low tone in its args
     expect(darkBgApp).toBeTruthy();
 
@@ -1418,7 +1418,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
       fireEvent.click(container.querySelector("[data-testid='gtg-mode-light']") as HTMLElement);
     });
     const lightTokens = readRenderedTokens(container);
-    const lightBgApp = lightTokens["--tug-base-bg-app"] ?? "";
+    const lightBgApp = lightTokens["--tug-base-surface-global-primary-normal-app-rest"] ?? "";
 
     // bg-app must change when switching to light mode
     expect(lightBgApp).not.toBe(darkBgApp);
@@ -1450,9 +1450,9 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
 
     // The rendered output must match direct engine call — this confirms formulas
     // are in state and round-tripped correctly through the component's runDerive path
-    expect(harmonyRendered["--tug-base-tone-accent"]).toBe(directHarmony["--tug-base-tone-accent"]);
-    expect(harmonyRendered["--tug-base-bg-app"]).toBe(directHarmony["--tug-base-bg-app"]);
-    expect(harmonyRendered["--tug-base-fg-default"]).toBe(directHarmony["--tug-base-fg-default"]);
+    expect(harmonyRendered["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(directHarmony["--tug-base-element-tone-fill-normal-accent-rest"]);
+    expect(harmonyRendered["--tug-base-surface-global-primary-normal-app-rest"]).toBe(directHarmony["--tug-base-surface-global-primary-normal-app-rest"]);
+    expect(harmonyRendered["--tug-base-element-global-text-normal-default-rest"]).toBe(directHarmony["--tug-base-element-global-text-normal-default-rest"]);
   });
 
   it("Task 3: importing Harmony recipe JSON restores light-mode formulas and matching output", () => {
@@ -1494,8 +1494,8 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     };
     const noFormulasOutput = deriveTheme(bareRecipe);
     const darkFormulasOutput = deriveTheme({ ...bareRecipe, formulas: DARK_FORMULAS });
-    expect(noFormulasOutput.tokens["--tug-base-tone-accent"]).toBe(
-      darkFormulasOutput.tokens["--tug-base-tone-accent"],
+    expect(noFormulasOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(
+      darkFormulasOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"],
     );
     expect(Object.keys(noFormulasOutput.tokens).length).toBe(373);
   });

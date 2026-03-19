@@ -72,8 +72,8 @@ describe("MutationModelDemo – Toggle CSS Var applies --demo-bg via useCSSVar",
     expect(box).not.toBeNull();
 
     // Before first click: --demo-bg not set (hook starts with varOn=false,
-    // which maps to "var(--tug-base-surface-default)" -- a non-empty value so it IS set).
-    // After first click: varOn becomes true -> value = "var(--tug-base-accent-default)".
+    // which maps to "var(--tug-base-surface-global-primary-normal-default-rest)" -- a non-empty value so it IS set).
+    // After first click: varOn becomes true -> value = "var(--tug-base-element-global-fill-normal-accent-rest)".
     const buttons = Array.from(container.querySelectorAll("button"));
     const toggleCSSVarBtn = buttons.find(
       (b) => b.textContent?.trim() === "Toggle CSS Var"
@@ -84,7 +84,7 @@ describe("MutationModelDemo – Toggle CSS Var applies --demo-bg via useCSSVar",
       fireEvent.click(toggleCSSVarBtn);
     });
 
-    // After click: varOn=true -> --demo-bg = "var(--tug-base-accent-default)"
-    expect(box.style.getPropertyValue("--demo-bg")).toBe("var(--tug-base-accent-default)");
+    // After click: varOn=true -> --demo-bg = "var(--tug-base-element-global-fill-normal-accent-rest)"
+    expect(box.style.getPropertyValue("--demo-bg")).toBe("var(--tug-base-element-global-fill-normal-accent-rest)");
   });
 });

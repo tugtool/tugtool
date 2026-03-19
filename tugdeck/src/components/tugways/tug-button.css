@@ -7,78 +7,78 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-control-outlined-action-fg-rest (control-outlined-action-fg-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | body-text    | .tug-button (color)                  |
- * | --tug-base-control-outlined-action-border-rest (control-outlined-action-border-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | ui-component | .tug-button (border)                 |
- * | --tug-base-control-outlined-action-fg-hover (control-outlined-action-fg-hover) | --tug-base-control-outlined-action-bg-hover (control-outlined-action-bg-hover) | body-text    | .tug-button:hover:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-outlined-action-border-hover (control-outlined-action-border-hover) | --tug-base-control-outlined-action-bg-hover (control-outlined-action-bg-hover) | ui-component | .tug-button:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-outlined-action-fg-active (control-outlined-action-fg-active) | --tug-base-control-outlined-action-bg-active (control-outlined-action-bg-active) | body-text    | .tug-button:active:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-outlined-action-border-active (control-outlined-action-border-active) | --tug-base-control-outlined-action-bg-active (control-outlined-action-bg-active) | ui-component | .tug-button:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-outlined-action-icon-rest (control-outlined-action-icon-rest) | --tug-base-control-outlined-action-bg-rest (control-outlined-action-bg-rest) | ui-component | .tug-button svg (color)              |
- * | --tug-base-control-outlined-action-icon-hover (control-outlined-action-icon-hover) | --tug-base-control-outlined-action-bg-hover (control-outlined-action-bg-hover) | ui-component | .tug-button:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-outlined-action-icon-active (control-outlined-action-icon-active) | --tug-base-control-outlined-action-bg-active (control-outlined-action-bg-active) | ui-component | .tug-button:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-filled-accent-fg-rest (control-filled-accent-fg-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | body-text    | .tug-button-filled-accent (color)    |
- * | --tug-base-control-filled-accent-border-rest (control-filled-accent-border-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | .tug-button-filled-accent (border-color) |
- * | --tug-base-control-filled-accent-icon-rest (control-filled-accent-icon-rest) | --tug-base-control-filled-accent-bg-rest (control-filled-accent-bg-rest) | ui-component | .tug-button-filled-accent svg (color) |
- * | --tug-base-control-filled-accent-fg-hover (control-filled-accent-fg-hover) | --tug-base-control-filled-accent-bg-hover (control-filled-accent-bg-hover) | body-text    | .tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-filled-accent-border-hover (control-filled-accent-border-hover) | --tug-base-control-filled-accent-bg-hover (control-filled-accent-bg-hover) | ui-component | .tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-filled-accent-icon-hover (control-filled-accent-icon-hover) | --tug-base-control-filled-accent-bg-hover (control-filled-accent-bg-hover) | ui-component | .tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-filled-accent-fg-active (control-filled-accent-fg-active) | --tug-base-control-filled-accent-bg-active (control-filled-accent-bg-active) | body-text    | .tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-filled-accent-border-active (control-filled-accent-border-active) | --tug-base-control-filled-accent-bg-active (control-filled-accent-bg-active) | ui-component | .tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-filled-accent-icon-active (control-filled-accent-icon-active) | --tug-base-control-filled-accent-bg-active (control-filled-accent-bg-active) | ui-component | .tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-filled-action-fg-rest (control-filled-action-fg-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | body-text    | .tug-button-filled-action (color)    |
- * | --tug-base-control-filled-action-border-rest (control-filled-action-border-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | .tug-button-filled-action (border-color) |
- * | --tug-base-control-filled-action-icon-rest (control-filled-action-icon-rest) | --tug-base-control-filled-action-bg-rest (control-filled-action-bg-rest) | ui-component | .tug-button-filled-action svg (color) |
- * | --tug-base-control-filled-action-fg-hover (control-filled-action-fg-hover) | --tug-base-control-filled-action-bg-hover (control-filled-action-bg-hover) | body-text    | .tug-button-filled-action:hover:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-filled-action-border-hover (control-filled-action-border-hover) | --tug-base-control-filled-action-bg-hover (control-filled-action-bg-hover) | ui-component | .tug-button-filled-action:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-filled-action-icon-hover (control-filled-action-icon-hover) | --tug-base-control-filled-action-bg-hover (control-filled-action-bg-hover) | ui-component | .tug-button-filled-action:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-filled-action-fg-active (control-filled-action-fg-active) | --tug-base-control-filled-action-bg-active (control-filled-action-bg-active) | body-text    | .tug-button-filled-action:active:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-filled-action-border-active (control-filled-action-border-active) | --tug-base-control-filled-action-bg-active (control-filled-action-bg-active) | ui-component | .tug-button-filled-action:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-filled-action-icon-active (control-filled-action-icon-active) | --tug-base-control-filled-action-bg-active (control-filled-action-bg-active) | ui-component | .tug-button-filled-action:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-filled-danger-fg-rest (control-filled-danger-fg-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | body-text    | .tug-button-filled-danger (color)    |
- * | --tug-base-control-filled-danger-border-rest (control-filled-danger-border-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | .tug-button-filled-danger (border-color) |
- * | --tug-base-control-filled-danger-icon-rest (control-filled-danger-icon-rest) | --tug-base-control-filled-danger-bg-rest (control-filled-danger-bg-rest) | ui-component | .tug-button-filled-danger svg (color) |
- * | --tug-base-control-filled-danger-fg-hover (control-filled-danger-fg-hover) | --tug-base-control-filled-danger-bg-hover (control-filled-danger-bg-hover) | body-text    | .tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-filled-danger-border-hover (control-filled-danger-border-hover) | --tug-base-control-filled-danger-bg-hover (control-filled-danger-bg-hover) | ui-component | .tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-filled-danger-icon-hover (control-filled-danger-icon-hover) | --tug-base-control-filled-danger-bg-hover (control-filled-danger-bg-hover) | ui-component | .tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-filled-danger-fg-active (control-filled-danger-fg-active) | --tug-base-control-filled-danger-bg-active (control-filled-danger-bg-active) | body-text    | .tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-filled-danger-border-active (control-filled-danger-border-active) | --tug-base-control-filled-danger-bg-active (control-filled-danger-bg-active) | ui-component | .tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-filled-danger-icon-active (control-filled-danger-icon-active) | --tug-base-control-filled-danger-bg-active (control-filled-danger-bg-active) | ui-component | .tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-ghost-action-fg-rest (control-ghost-action-fg-rest) | --tug-base-control-ghost-action-bg-rest (control-ghost-action-bg-rest) | body-text    | .tug-button-ghost-action (color)     |
- * | --tug-base-control-ghost-action-border-rest (control-ghost-action-border-rest) | --tug-base-control-ghost-action-bg-rest (control-ghost-action-bg-rest) | ui-component | .tug-button-ghost-action (border-color) |
- * | --tug-base-control-ghost-action-icon-rest (control-ghost-action-icon-rest) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-action svg (color) |
- * | --tug-base-control-ghost-action-fg-hover (control-ghost-action-fg-hover) | --tug-base-control-ghost-action-bg-hover (control-ghost-action-bg-hover) | body-text    | .tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-ghost-action-border-hover (control-ghost-action-border-hover) | --tug-base-control-ghost-action-bg-hover (control-ghost-action-bg-hover) | ui-component | .tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-ghost-action-icon-hover (control-ghost-action-icon-hover) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-ghost-action-fg-active (control-ghost-action-fg-active) | --tug-base-control-ghost-action-bg-active (control-ghost-action-bg-active) | body-text    | .tug-button-ghost-action:active:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-ghost-action-border-active (control-ghost-action-border-active) | --tug-base-control-ghost-action-bg-active (control-ghost-action-bg-active) | ui-component | .tug-button-ghost-action:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-ghost-action-icon-active (control-ghost-action-icon-active) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-action:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-ghost-danger-fg-rest (control-ghost-danger-fg-rest) | --tug-base-control-ghost-danger-bg-rest (control-ghost-danger-bg-rest) | body-text    | .tug-button-ghost-danger (color)     |
- * | --tug-base-control-ghost-danger-border-rest (control-ghost-danger-border-rest) | --tug-base-control-ghost-danger-bg-rest (control-ghost-danger-bg-rest) | ui-component | .tug-button-ghost-danger (border-color) |
- * | --tug-base-control-ghost-danger-icon-rest (control-ghost-danger-icon-rest) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-danger svg (color) |
- * | --tug-base-control-ghost-danger-fg-hover (control-ghost-danger-fg-hover) | --tug-base-control-ghost-danger-bg-hover (control-ghost-danger-bg-hover) | body-text    | .tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-ghost-danger-border-hover (control-ghost-danger-border-hover) | --tug-base-control-ghost-danger-bg-hover (control-ghost-danger-bg-hover) | ui-component | .tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-ghost-danger-icon-hover (control-ghost-danger-icon-hover) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-ghost-danger-fg-active (control-ghost-danger-fg-active) | --tug-base-control-ghost-danger-bg-active (control-ghost-danger-bg-active) | body-text    | .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-ghost-danger-border-active (control-ghost-danger-border-active) | --tug-base-control-ghost-danger-bg-active (control-ghost-danger-bg-active) | ui-component | .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-ghost-danger-icon-active (control-ghost-danger-icon-active) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-outlined-option-fg-rest (control-outlined-option-fg-rest) | --tug-base-control-outlined-option-bg-rest (control-outlined-option-bg-rest) | body-text    | .tug-button-outlined-option (color)  |
- * | --tug-base-control-outlined-option-border-rest (control-outlined-option-border-rest) | --tug-base-control-outlined-option-bg-rest (control-outlined-option-bg-rest) | ui-component | .tug-button-outlined-option (border-color) |
- * | --tug-base-control-outlined-option-icon-rest (control-outlined-option-icon-rest) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-outlined-option svg (color) |
- * | --tug-base-control-outlined-option-fg-hover (control-outlined-option-fg-hover) | --tug-base-control-outlined-option-bg-hover (control-outlined-option-bg-hover) | body-text    | .tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-outlined-option-border-hover (control-outlined-option-border-hover) | --tug-base-control-outlined-option-bg-hover (control-outlined-option-bg-hover) | ui-component | .tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-outlined-option-icon-hover (control-outlined-option-icon-hover) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-outlined-option-fg-active (control-outlined-option-fg-active) | --tug-base-control-outlined-option-bg-active (control-outlined-option-bg-active) | body-text    | .tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-outlined-option-border-active (control-outlined-option-border-active) | --tug-base-control-outlined-option-bg-active (control-outlined-option-bg-active) | ui-component | .tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-outlined-option-icon-active (control-outlined-option-icon-active) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-ghost-option-fg-rest (control-ghost-option-fg-rest) | --tug-base-control-ghost-option-bg-rest (control-ghost-option-bg-rest) | body-text    | .tug-button-ghost-option (color)     |
- * | --tug-base-control-ghost-option-border-rest (control-ghost-option-border-rest) | --tug-base-control-ghost-option-bg-rest (control-ghost-option-bg-rest) | ui-component | .tug-button-ghost-option (border-color) |
- * | --tug-base-control-ghost-option-icon-rest (control-ghost-option-icon-rest) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-option svg (color) |
- * | --tug-base-control-ghost-option-fg-hover (control-ghost-option-fg-hover) | --tug-base-control-ghost-option-bg-hover (control-ghost-option-bg-hover) | body-text    | .tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-ghost-option-border-hover (control-ghost-option-border-hover) | --tug-base-control-ghost-option-bg-hover (control-ghost-option-bg-hover) | ui-component | .tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-ghost-option-icon-hover (control-ghost-option-icon-hover) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
- * | --tug-base-control-ghost-option-fg-active (control-ghost-option-fg-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | body-text    | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) (color) |
- * | --tug-base-control-ghost-option-border-active (control-ghost-option-border-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | ui-component | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
- * | --tug-base-control-ghost-option-icon-active (control-ghost-option-icon-active) | --tug-base-surface-default (surface-default)     | ui-component | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-outlined-action-rest (control-outlined-action-fg-rest) | --tug-base-surface-control-primary-outlined-action-rest (control-outlined-action-bg-rest) | body-text    | .tug-button (color)                  |
+ * | --tug-base-element-control-border-outlined-action-rest (control-outlined-action-border-rest) | --tug-base-surface-control-primary-outlined-action-rest (control-outlined-action-bg-rest) | ui-component | .tug-button (border)                 |
+ * | --tug-base-element-control-text-outlined-action-hover (control-outlined-action-fg-hover) | --tug-base-surface-control-primary-outlined-action-hover (control-outlined-action-bg-hover) | body-text    | .tug-button:hover:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-outlined-action-hover (control-outlined-action-border-hover) | --tug-base-surface-control-primary-outlined-action-hover (control-outlined-action-bg-hover) | ui-component | .tug-button:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-text-outlined-action-active (control-outlined-action-fg-active) | --tug-base-surface-control-primary-outlined-action-active (control-outlined-action-bg-active) | body-text    | .tug-button:active:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-outlined-action-active (control-outlined-action-border-active) | --tug-base-surface-control-primary-outlined-action-active (control-outlined-action-bg-active) | ui-component | .tug-button:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-outlined-action-rest (control-outlined-action-icon-rest) | --tug-base-surface-control-primary-outlined-action-rest (control-outlined-action-bg-rest) | ui-component | .tug-button svg (color)              |
+ * | --tug-base-element-control-icon-outlined-action-hover (control-outlined-action-icon-hover) | --tug-base-surface-control-primary-outlined-action-hover (control-outlined-action-bg-hover) | ui-component | .tug-button:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-icon-outlined-action-active (control-outlined-action-icon-active) | --tug-base-surface-control-primary-outlined-action-active (control-outlined-action-bg-active) | ui-component | .tug-button:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-filled-accent-rest (control-filled-accent-fg-rest) | --tug-base-surface-control-primary-filled-accent-rest (control-filled-accent-bg-rest) | body-text    | .tug-button-filled-accent (color)    |
+ * | --tug-base-element-control-border-filled-accent-rest (control-filled-accent-border-rest) | --tug-base-surface-control-primary-filled-accent-rest (control-filled-accent-bg-rest) | ui-component | .tug-button-filled-accent (border-color) |
+ * | --tug-base-element-control-icon-filled-accent-rest (control-filled-accent-icon-rest) | --tug-base-surface-control-primary-filled-accent-rest (control-filled-accent-bg-rest) | ui-component | .tug-button-filled-accent svg (color) |
+ * | --tug-base-element-control-text-filled-accent-hover (control-filled-accent-fg-hover) | --tug-base-surface-control-primary-filled-accent-hover (control-filled-accent-bg-hover) | body-text    | .tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-filled-accent-hover (control-filled-accent-border-hover) | --tug-base-surface-control-primary-filled-accent-hover (control-filled-accent-bg-hover) | ui-component | .tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-filled-accent-hover (control-filled-accent-icon-hover) | --tug-base-surface-control-primary-filled-accent-hover (control-filled-accent-bg-hover) | ui-component | .tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-filled-accent-active (control-filled-accent-fg-active) | --tug-base-surface-control-primary-filled-accent-active (control-filled-accent-bg-active) | body-text    | .tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-filled-accent-active (control-filled-accent-border-active) | --tug-base-surface-control-primary-filled-accent-active (control-filled-accent-bg-active) | ui-component | .tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-filled-accent-active (control-filled-accent-icon-active) | --tug-base-surface-control-primary-filled-accent-active (control-filled-accent-bg-active) | ui-component | .tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-filled-action-rest (control-filled-action-fg-rest) | --tug-base-surface-control-primary-filled-action-rest (control-filled-action-bg-rest) | body-text    | .tug-button-filled-action (color)    |
+ * | --tug-base-element-control-border-filled-action-rest (control-filled-action-border-rest) | --tug-base-surface-control-primary-filled-action-rest (control-filled-action-bg-rest) | ui-component | .tug-button-filled-action (border-color) |
+ * | --tug-base-element-control-icon-filled-action-rest (control-filled-action-icon-rest) | --tug-base-surface-control-primary-filled-action-rest (control-filled-action-bg-rest) | ui-component | .tug-button-filled-action svg (color) |
+ * | --tug-base-element-control-text-filled-action-hover (control-filled-action-fg-hover) | --tug-base-surface-control-primary-filled-action-hover (control-filled-action-bg-hover) | body-text    | .tug-button-filled-action:hover:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-filled-action-hover (control-filled-action-border-hover) | --tug-base-surface-control-primary-filled-action-hover (control-filled-action-bg-hover) | ui-component | .tug-button-filled-action:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-filled-action-hover (control-filled-action-icon-hover) | --tug-base-surface-control-primary-filled-action-hover (control-filled-action-bg-hover) | ui-component | .tug-button-filled-action:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-filled-action-active (control-filled-action-fg-active) | --tug-base-surface-control-primary-filled-action-active (control-filled-action-bg-active) | body-text    | .tug-button-filled-action:active:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-filled-action-active (control-filled-action-border-active) | --tug-base-surface-control-primary-filled-action-active (control-filled-action-bg-active) | ui-component | .tug-button-filled-action:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-filled-action-active (control-filled-action-icon-active) | --tug-base-surface-control-primary-filled-action-active (control-filled-action-bg-active) | ui-component | .tug-button-filled-action:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-filled-danger-rest (control-filled-danger-fg-rest) | --tug-base-surface-control-primary-filled-danger-rest (control-filled-danger-bg-rest) | body-text    | .tug-button-filled-danger (color)    |
+ * | --tug-base-element-control-border-filled-danger-rest (control-filled-danger-border-rest) | --tug-base-surface-control-primary-filled-danger-rest (control-filled-danger-bg-rest) | ui-component | .tug-button-filled-danger (border-color) |
+ * | --tug-base-element-control-icon-filled-danger-rest (control-filled-danger-icon-rest) | --tug-base-surface-control-primary-filled-danger-rest (control-filled-danger-bg-rest) | ui-component | .tug-button-filled-danger svg (color) |
+ * | --tug-base-element-control-text-filled-danger-hover (control-filled-danger-fg-hover) | --tug-base-surface-control-primary-filled-danger-hover (control-filled-danger-bg-hover) | body-text    | .tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-filled-danger-hover (control-filled-danger-border-hover) | --tug-base-surface-control-primary-filled-danger-hover (control-filled-danger-bg-hover) | ui-component | .tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-filled-danger-hover (control-filled-danger-icon-hover) | --tug-base-surface-control-primary-filled-danger-hover (control-filled-danger-bg-hover) | ui-component | .tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-filled-danger-active (control-filled-danger-fg-active) | --tug-base-surface-control-primary-filled-danger-active (control-filled-danger-bg-active) | body-text    | .tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-filled-danger-active (control-filled-danger-border-active) | --tug-base-surface-control-primary-filled-danger-active (control-filled-danger-bg-active) | ui-component | .tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-filled-danger-active (control-filled-danger-icon-active) | --tug-base-surface-control-primary-filled-danger-active (control-filled-danger-bg-active) | ui-component | .tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-ghost-action-rest (control-ghost-action-fg-rest) | --tug-base-surface-control-primary-ghost-action-rest (control-ghost-action-bg-rest) | body-text    | .tug-button-ghost-action (color)     |
+ * | --tug-base-element-control-border-ghost-action-rest (control-ghost-action-border-rest) | --tug-base-surface-control-primary-ghost-action-rest (control-ghost-action-bg-rest) | ui-component | .tug-button-ghost-action (border-color) |
+ * | --tug-base-element-control-icon-ghost-action-rest (control-ghost-action-icon-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-action svg (color) |
+ * | --tug-base-element-control-text-ghost-action-hover (control-ghost-action-fg-hover) | --tug-base-surface-control-primary-ghost-action-hover (control-ghost-action-bg-hover) | body-text    | .tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-ghost-action-hover (control-ghost-action-border-hover) | --tug-base-surface-control-primary-ghost-action-hover (control-ghost-action-bg-hover) | ui-component | .tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-ghost-action-hover (control-ghost-action-icon-hover) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-ghost-action-active (control-ghost-action-fg-active) | --tug-base-surface-control-primary-ghost-action-active (control-ghost-action-bg-active) | body-text    | .tug-button-ghost-action:active:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-ghost-action-active (control-ghost-action-border-active) | --tug-base-surface-control-primary-ghost-action-active (control-ghost-action-bg-active) | ui-component | .tug-button-ghost-action:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-ghost-action-active (control-ghost-action-icon-active) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-action:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-ghost-danger-rest (control-ghost-danger-fg-rest) | --tug-base-surface-control-primary-ghost-danger-rest (control-ghost-danger-bg-rest) | body-text    | .tug-button-ghost-danger (color)     |
+ * | --tug-base-element-control-border-ghost-danger-rest (control-ghost-danger-border-rest) | --tug-base-surface-control-primary-ghost-danger-rest (control-ghost-danger-bg-rest) | ui-component | .tug-button-ghost-danger (border-color) |
+ * | --tug-base-element-control-icon-ghost-danger-rest (control-ghost-danger-icon-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-danger svg (color) |
+ * | --tug-base-element-control-text-ghost-danger-hover (control-ghost-danger-fg-hover) | --tug-base-surface-control-primary-ghost-danger-hover (control-ghost-danger-bg-hover) | body-text    | .tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-ghost-danger-hover (control-ghost-danger-border-hover) | --tug-base-surface-control-primary-ghost-danger-hover (control-ghost-danger-bg-hover) | ui-component | .tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-ghost-danger-hover (control-ghost-danger-icon-hover) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-ghost-danger-active (control-ghost-danger-fg-active) | --tug-base-surface-control-primary-ghost-danger-active (control-ghost-danger-bg-active) | body-text    | .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-ghost-danger-active (control-ghost-danger-border-active) | --tug-base-surface-control-primary-ghost-danger-active (control-ghost-danger-bg-active) | ui-component | .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-ghost-danger-active (control-ghost-danger-icon-active) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-outlined-option-rest (control-outlined-option-fg-rest) | --tug-base-surface-control-primary-outlined-option-rest (control-outlined-option-bg-rest) | body-text    | .tug-button-outlined-option (color)  |
+ * | --tug-base-element-control-border-outlined-option-rest (control-outlined-option-border-rest) | --tug-base-surface-control-primary-outlined-option-rest (control-outlined-option-bg-rest) | ui-component | .tug-button-outlined-option (border-color) |
+ * | --tug-base-element-control-icon-outlined-option-rest (control-outlined-option-icon-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-outlined-option svg (color) |
+ * | --tug-base-element-control-text-outlined-option-hover (control-outlined-option-fg-hover) | --tug-base-surface-control-primary-outlined-option-hover (control-outlined-option-bg-hover) | body-text    | .tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-outlined-option-hover (control-outlined-option-border-hover) | --tug-base-surface-control-primary-outlined-option-hover (control-outlined-option-bg-hover) | ui-component | .tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-outlined-option-hover (control-outlined-option-icon-hover) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-outlined-option-active (control-outlined-option-fg-active) | --tug-base-surface-control-primary-outlined-option-active (control-outlined-option-bg-active) | body-text    | .tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-outlined-option-active (control-outlined-option-border-active) | --tug-base-surface-control-primary-outlined-option-active (control-outlined-option-bg-active) | ui-component | .tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-outlined-option-active (control-outlined-option-icon-active) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-ghost-option-rest (control-ghost-option-fg-rest) | --tug-base-surface-control-primary-ghost-option-rest (control-ghost-option-bg-rest) | body-text    | .tug-button-ghost-option (color)     |
+ * | --tug-base-element-control-border-ghost-option-rest (control-ghost-option-border-rest) | --tug-base-surface-control-primary-ghost-option-rest (control-ghost-option-bg-rest) | ui-component | .tug-button-ghost-option (border-color) |
+ * | --tug-base-element-control-icon-ghost-option-rest (control-ghost-option-icon-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-option svg (color) |
+ * | --tug-base-element-control-text-ghost-option-hover (control-ghost-option-fg-hover) | --tug-base-surface-control-primary-ghost-option-hover (control-ghost-option-bg-hover) | body-text    | .tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-ghost-option-hover (control-ghost-option-border-hover) | --tug-base-surface-control-primary-ghost-option-hover (control-ghost-option-bg-hover) | ui-component | .tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-ghost-option-hover (control-ghost-option-icon-hover) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) svg (color) |
+ * | --tug-base-element-control-text-ghost-option-active (control-ghost-option-fg-active) | --tug-base-surface-control-primary-ghost-option-active (control-ghost-option-bg-active) | body-text    | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) (color) |
+ * | --tug-base-element-control-border-ghost-option-active (control-ghost-option-border-active) | --tug-base-surface-control-primary-ghost-option-active (control-ghost-option-bg-active) | ui-component | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) (border-color) |
+ * | --tug-base-element-control-icon-ghost-option-active (control-ghost-option-icon-active) | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) svg (color) |
  */
 
 
@@ -139,22 +139,22 @@
   position: relative;
 
   /* Default: outlined-action [D04] */
-  background-color: var(--tug-base-control-outlined-action-bg-rest);
-  color: var(--tug-base-control-outlined-action-fg-rest);
-  border: 1px solid var(--tug-base-control-outlined-action-border-rest);
+  background-color: var(--tug-base-surface-control-primary-outlined-action-rest);
+  color: var(--tug-base-element-control-text-outlined-action-rest);
+  border: 1px solid var(--tug-base-element-control-border-outlined-action-rest);
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
 .tug-button:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-outlined-action-bg-hover);
-  color: var(--tug-base-control-outlined-action-fg-hover);
-  border-color: var(--tug-base-control-outlined-action-border-hover);
+  background-color: var(--tug-base-surface-control-primary-outlined-action-hover);
+  color: var(--tug-base-element-control-text-outlined-action-hover);
+  border-color: var(--tug-base-element-control-border-outlined-action-hover);
 }
 
 .tug-button:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-outlined-action-bg-active);
-  color: var(--tug-base-control-outlined-action-fg-active);
-  border-color: var(--tug-base-control-outlined-action-border-active);
+  background-color: var(--tug-base-surface-control-primary-outlined-action-active);
+  color: var(--tug-base-element-control-text-outlined-action-active);
+  border-color: var(--tug-base-element-control-border-outlined-action-active);
 }
 
 .tug-button:focus-visible {
@@ -166,23 +166,23 @@
   opacity: var(--tug-base-control-disabled-opacity);
 }
 
-/* @tug-renders-on: --tug-base-control-outlined-action-bg-rest */
+/* @tug-renders-on: --tug-base-surface-control-primary-outlined-action-rest */
 .tug-button svg {
   pointer-events: none;
   width: 1rem;
   height: 1rem;
   flex-shrink: 0;
-  color: var(--tug-base-control-outlined-action-icon-rest);
+  color: var(--tug-base-element-control-icon-outlined-action-rest);
 }
 
-/* @tug-renders-on: --tug-base-control-outlined-action-bg-hover */
+/* @tug-renders-on: --tug-base-surface-control-primary-outlined-action-hover */
 .tug-button:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-outlined-action-icon-hover);
+  color: var(--tug-base-element-control-icon-outlined-action-hover);
 }
 
-/* @tug-renders-on: --tug-base-control-outlined-action-bg-active */
+/* @tug-renders-on: --tug-base-surface-control-primary-outlined-action-active */
 .tug-button:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-outlined-action-icon-active);
+  color: var(--tug-base-element-control-icon-outlined-action-active);
 }
 
 /* ============================================================================
@@ -212,263 +212,263 @@
 /* --- filled-accent: Primary CTA (brand orange/accent) --- */
 
 .tug-button-filled-accent {
-  background-color: var(--tug-base-control-filled-accent-bg-rest);
-  color: var(--tug-base-control-filled-accent-fg-rest);
-  border-color: var(--tug-base-control-filled-accent-border-rest);
+  background-color: var(--tug-base-surface-control-primary-filled-accent-rest);
+  color: var(--tug-base-element-control-text-filled-accent-rest);
+  border-color: var(--tug-base-element-control-border-filled-accent-rest);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-accent-bg-rest */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-accent-rest */
 .tug-button-filled-accent svg {
-  color: var(--tug-base-control-filled-accent-icon-rest);
+  color: var(--tug-base-element-control-icon-filled-accent-rest);
 }
 
 .tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-filled-accent-bg-hover);
-  color: var(--tug-base-control-filled-accent-fg-hover);
-  border-color: var(--tug-base-control-filled-accent-border-hover);
+  background-color: var(--tug-base-surface-control-primary-filled-accent-hover);
+  color: var(--tug-base-element-control-text-filled-accent-hover);
+  border-color: var(--tug-base-element-control-border-filled-accent-hover);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-accent-bg-hover */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-accent-hover */
 .tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-filled-accent-icon-hover);
+  color: var(--tug-base-element-control-icon-filled-accent-hover);
 }
 
 .tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-filled-accent-bg-active);
-  color: var(--tug-base-control-filled-accent-fg-active);
-  border-color: var(--tug-base-control-filled-accent-border-active);
+  background-color: var(--tug-base-surface-control-primary-filled-accent-active);
+  color: var(--tug-base-element-control-text-filled-accent-active);
+  border-color: var(--tug-base-element-control-border-filled-accent-active);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-accent-bg-active */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-accent-active */
 .tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-filled-accent-icon-active);
+  color: var(--tug-base-element-control-icon-filled-accent-active);
 }
 
 /* --- filled-action: Standard interactive (blue/active) --- */
 
 .tug-button-filled-action {
-  background-color: var(--tug-base-control-filled-action-bg-rest);
-  color: var(--tug-base-control-filled-action-fg-rest);
-  border-color: var(--tug-base-control-filled-action-border-rest);
+  background-color: var(--tug-base-surface-control-primary-filled-action-rest);
+  color: var(--tug-base-element-control-text-filled-action-rest);
+  border-color: var(--tug-base-element-control-border-filled-action-rest);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-action-bg-rest */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-action-rest */
 .tug-button-filled-action svg {
-  color: var(--tug-base-control-filled-action-icon-rest);
+  color: var(--tug-base-element-control-icon-filled-action-rest);
 }
 
 .tug-button-filled-action:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-filled-action-bg-hover);
-  color: var(--tug-base-control-filled-action-fg-hover);
-  border-color: var(--tug-base-control-filled-action-border-hover);
+  background-color: var(--tug-base-surface-control-primary-filled-action-hover);
+  color: var(--tug-base-element-control-text-filled-action-hover);
+  border-color: var(--tug-base-element-control-border-filled-action-hover);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-action-bg-hover */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-action-hover */
 .tug-button-filled-action:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-filled-action-icon-hover);
+  color: var(--tug-base-element-control-icon-filled-action-hover);
 }
 
 .tug-button-filled-action:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-filled-action-bg-active);
-  color: var(--tug-base-control-filled-action-fg-active);
-  border-color: var(--tug-base-control-filled-action-border-active);
+  background-color: var(--tug-base-surface-control-primary-filled-action-active);
+  color: var(--tug-base-element-control-text-filled-action-active);
+  border-color: var(--tug-base-element-control-border-filled-action-active);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-action-bg-active */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-action-active */
 .tug-button-filled-action:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-filled-action-icon-active);
+  color: var(--tug-base-element-control-icon-filled-action-active);
 }
 
 /* --- filled-danger: Destructive action (red/danger) --- */
 
 .tug-button-filled-danger {
-  background-color: var(--tug-base-control-filled-danger-bg-rest);
-  color: var(--tug-base-control-filled-danger-fg-rest);
-  border-color: var(--tug-base-control-filled-danger-border-rest);
+  background-color: var(--tug-base-surface-control-primary-filled-danger-rest);
+  color: var(--tug-base-element-control-text-filled-danger-rest);
+  border-color: var(--tug-base-element-control-border-filled-danger-rest);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-danger-bg-rest */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-danger-rest */
 .tug-button-filled-danger svg {
-  color: var(--tug-base-control-filled-danger-icon-rest);
+  color: var(--tug-base-element-control-icon-filled-danger-rest);
 }
 
 .tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-filled-danger-bg-hover);
-  color: var(--tug-base-control-filled-danger-fg-hover);
-  border-color: var(--tug-base-control-filled-danger-border-hover);
+  background-color: var(--tug-base-surface-control-primary-filled-danger-hover);
+  color: var(--tug-base-element-control-text-filled-danger-hover);
+  border-color: var(--tug-base-element-control-border-filled-danger-hover);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-danger-bg-hover */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-danger-hover */
 .tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-filled-danger-icon-hover);
+  color: var(--tug-base-element-control-icon-filled-danger-hover);
 }
 
 .tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-filled-danger-bg-active);
-  color: var(--tug-base-control-filled-danger-fg-active);
-  border-color: var(--tug-base-control-filled-danger-border-active);
+  background-color: var(--tug-base-surface-control-primary-filled-danger-active);
+  color: var(--tug-base-element-control-text-filled-danger-active);
+  border-color: var(--tug-base-element-control-border-filled-danger-active);
 }
 
-/* @tug-renders-on: --tug-base-control-filled-danger-bg-active */
+/* @tug-renders-on: --tug-base-surface-control-primary-filled-danger-active */
 .tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-filled-danger-icon-active);
+  color: var(--tug-base-element-control-icon-filled-danger-active);
 }
 
 /* --- outlined-action: Secondary action (default style) [D04] --- */
 
 .tug-button-outlined-action {
   /* Inherits base .tug-button outlined-action tokens; explicit for compound class specificity */
-  background-color: var(--tug-base-control-outlined-action-bg-rest);
-  color: var(--tug-base-control-outlined-action-fg-rest);
-  border-color: var(--tug-base-control-outlined-action-border-rest);
+  background-color: var(--tug-base-surface-control-primary-outlined-action-rest);
+  color: var(--tug-base-element-control-text-outlined-action-rest);
+  border-color: var(--tug-base-element-control-border-outlined-action-rest);
 }
 
-/* @tug-renders-on: --tug-base-control-outlined-action-bg-rest */
+/* @tug-renders-on: --tug-base-surface-control-primary-outlined-action-rest */
 .tug-button-outlined-action svg {
-  color: var(--tug-base-control-outlined-action-icon-rest);
+  color: var(--tug-base-element-control-icon-outlined-action-rest);
 }
 
 /* --- ghost-action: Link-like action (neutral) --- */
 
 .tug-button-ghost-action {
-  background-color: var(--tug-base-control-ghost-action-bg-rest);
-  color: var(--tug-base-control-ghost-action-fg-rest);
-  border-color: var(--tug-base-control-ghost-action-border-rest);
+  background-color: var(--tug-base-surface-control-primary-ghost-action-rest);
+  color: var(--tug-base-element-control-text-ghost-action-rest);
+  border-color: var(--tug-base-element-control-border-ghost-action-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-action svg {
-  color: var(--tug-base-control-ghost-action-icon-rest);
+  color: var(--tug-base-element-control-icon-ghost-action-rest);
 }
 
 .tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-ghost-action-bg-hover);
-  color: var(--tug-base-control-ghost-action-fg-hover);
-  border-color: var(--tug-base-control-ghost-action-border-hover);
+  background-color: var(--tug-base-surface-control-primary-ghost-action-hover);
+  color: var(--tug-base-element-control-text-ghost-action-hover);
+  border-color: var(--tug-base-element-control-border-ghost-action-hover);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-action:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-ghost-action-icon-hover);
+  color: var(--tug-base-element-control-icon-ghost-action-hover);
 }
 
 .tug-button-ghost-action:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-ghost-action-bg-active);
-  color: var(--tug-base-control-ghost-action-fg-active);
-  border-color: var(--tug-base-control-ghost-action-border-active);
+  background-color: var(--tug-base-surface-control-primary-ghost-action-active);
+  color: var(--tug-base-element-control-text-ghost-action-active);
+  border-color: var(--tug-base-element-control-border-ghost-action-active);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-action:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-ghost-action-icon-active);
+  color: var(--tug-base-element-control-icon-ghost-action-active);
 }
 
 /* --- ghost-danger: Subtle destructive (danger fg, transparent bg) --- */
 
 .tug-button-ghost-danger {
-  background-color: var(--tug-base-control-ghost-danger-bg-rest);
-  color: var(--tug-base-control-ghost-danger-fg-rest);
-  border-color: var(--tug-base-control-ghost-danger-border-rest);
+  background-color: var(--tug-base-surface-control-primary-ghost-danger-rest);
+  color: var(--tug-base-element-control-text-ghost-danger-rest);
+  border-color: var(--tug-base-element-control-border-ghost-danger-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-danger svg {
-  color: var(--tug-base-control-ghost-danger-icon-rest);
+  color: var(--tug-base-element-control-icon-ghost-danger-rest);
 }
 
 .tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-ghost-danger-bg-hover);
-  color: var(--tug-base-control-ghost-danger-fg-hover);
-  border-color: var(--tug-base-control-ghost-danger-border-hover);
+  background-color: var(--tug-base-surface-control-primary-ghost-danger-hover);
+  color: var(--tug-base-element-control-text-ghost-danger-hover);
+  border-color: var(--tug-base-element-control-border-ghost-danger-hover);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-ghost-danger-icon-hover);
+  color: var(--tug-base-element-control-icon-ghost-danger-hover);
 }
 
 .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-ghost-danger-bg-active);
-  color: var(--tug-base-control-ghost-danger-fg-active);
-  border-color: var(--tug-base-control-ghost-danger-border-active);
+  background-color: var(--tug-base-surface-control-primary-ghost-danger-active);
+  color: var(--tug-base-element-control-text-ghost-danger-active);
+  border-color: var(--tug-base-element-control-border-ghost-danger-active);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-ghost-danger-icon-active);
+  color: var(--tug-base-element-control-icon-ghost-danger-active);
 }
 
 /* --- outlined-option: Calm configuration control (neutral muted border) --- */
 
 .tug-button-outlined-option {
-  background-color: var(--tug-base-control-outlined-option-bg-rest);
-  color: var(--tug-base-control-outlined-option-fg-rest);
-  border-color: var(--tug-base-control-outlined-option-border-rest);
+  background-color: var(--tug-base-surface-control-primary-outlined-option-rest);
+  color: var(--tug-base-element-control-text-outlined-option-rest);
+  border-color: var(--tug-base-element-control-border-outlined-option-rest);
   /* Left padding aligns button label with menu item text:
      menu content padding (0.25rem) + item padding-left (0.5rem) = 0.75rem */
   padding-left: 0.75rem;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-outlined-option svg {
-  color: var(--tug-base-control-outlined-option-icon-rest);
+  color: var(--tug-base-element-control-icon-outlined-option-rest);
 }
 
 .tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-outlined-option-bg-hover);
-  color: var(--tug-base-control-outlined-option-fg-hover);
-  border-color: var(--tug-base-control-outlined-option-border-hover);
+  background-color: var(--tug-base-surface-control-primary-outlined-option-hover);
+  color: var(--tug-base-element-control-text-outlined-option-hover);
+  border-color: var(--tug-base-element-control-border-outlined-option-hover);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-outlined-option-icon-hover);
+  color: var(--tug-base-element-control-icon-outlined-option-hover);
 }
 
 .tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-outlined-option-bg-active);
-  color: var(--tug-base-control-outlined-option-fg-active);
-  border-color: var(--tug-base-control-outlined-option-border-active);
+  background-color: var(--tug-base-surface-control-primary-outlined-option-active);
+  color: var(--tug-base-element-control-text-outlined-option-active);
+  border-color: var(--tug-base-element-control-border-outlined-option-active);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-outlined-option-icon-active);
+  color: var(--tug-base-element-control-icon-outlined-option-active);
 }
 
 /* --- ghost-option: Ultra-calm configuration control (transparent border at rest) --- */
 
 .tug-button-ghost-option {
-  background-color: var(--tug-base-control-ghost-option-bg-rest);
-  color: var(--tug-base-control-ghost-option-fg-rest);
-  border-color: var(--tug-base-control-ghost-option-border-rest);
+  background-color: var(--tug-base-surface-control-primary-ghost-option-rest);
+  color: var(--tug-base-element-control-text-ghost-option-rest);
+  border-color: var(--tug-base-element-control-border-ghost-option-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-option svg {
-  color: var(--tug-base-control-ghost-option-icon-rest);
+  color: var(--tug-base-element-control-icon-ghost-option-rest);
 }
 
 .tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-ghost-option-bg-hover);
-  color: var(--tug-base-control-ghost-option-fg-hover);
-  border-color: var(--tug-base-control-ghost-option-border-hover);
+  background-color: var(--tug-base-surface-control-primary-ghost-option-hover);
+  color: var(--tug-base-element-control-text-ghost-option-hover);
+  border-color: var(--tug-base-element-control-border-ghost-option-hover);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-ghost-option-icon-hover);
+  color: var(--tug-base-element-control-icon-ghost-option-hover);
 }
 
 .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-ghost-option-bg-active);
-  color: var(--tug-base-control-ghost-option-fg-active);
-  border-color: var(--tug-base-control-ghost-option-border-active);
+  background-color: var(--tug-base-surface-control-primary-ghost-option-active);
+  color: var(--tug-base-element-control-text-ghost-option-active);
+  border-color: var(--tug-base-element-control-border-ghost-option-active);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-ghost-option-icon-active);
+  color: var(--tug-base-element-control-icon-ghost-option-active);
 }
 
 /* ============================================================================

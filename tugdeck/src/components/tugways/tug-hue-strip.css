@@ -7,9 +7,9 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-border-default (border-default)       | --tug-base-surface-default (surface-default)     | ui-component | .tug-hue-strip__swatch:hover (border-color) |
- * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .tug-hue-strip__label (color)        |
- * | --tug-base-accent-default (accent-default)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-hue-strip__item--selected .tug-hue-strip__label (color) |
+ * | --tug-base-element-global-border-normal-default-rest (border-default)       | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | ui-component | .tug-hue-strip__swatch:hover (border-color) |
+ * | --tug-base-element-global-text-normal-muted-rest (fg-muted)                   | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | subdued-text | .tug-hue-strip__label (color)        |
+ * | --tug-base-element-global-fill-normal-accent-rest (accent-default)       | --tug-base-surface-global-primary-normal-default-rest (surface-default)     | body-text    | .tug-hue-strip__item--selected .tug-hue-strip__label (color) |
  */
 
 
@@ -77,7 +77,7 @@
 }
 
 .tug-hue-strip__item--selected .tug-hue-strip__swatch {
-  outline: 2px solid var(--tug-base-accent-default);
+  outline: 2px solid var(--tug-base-element-global-fill-normal-accent-rest);
   outline-offset: 1px;
 }
 
@@ -93,23 +93,23 @@
   box-sizing: border-box;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-hue-strip__swatch:hover {
-  border-color: var(--tug-base-border-default);
+  border-color: var(--tug-base-element-global-border-normal-default-rest);
 }
 
 /* ============================================================================
    Rotated label
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-hue-strip__label {
   position: absolute;
   top: 100%;
   left: 60%;
   font-size: 9px;
   font-family: var(--tug-base-font-family-mono);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   user-select: none;
   white-space: nowrap;
   transform: rotate(62deg);
@@ -117,8 +117,8 @@
   margin-top: 4px;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-hue-strip__item--selected .tug-hue-strip__label {
-  color: var(--tug-base-accent-default);
+  color: var(--tug-base-element-global-fill-normal-accent-rest);
   font-weight: 600;
 }
