@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-19T21:06:38Z
+---
+
+## step-6: Generated token-rename-map.json with 374 entries (325 non-identity). Stats: 58 files, 3711 replacements. Dry-run: 4144 replacements across 68 files. All spot-checks passed.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-5
 date: 2025-03-19T20:38:59Z
 ---
