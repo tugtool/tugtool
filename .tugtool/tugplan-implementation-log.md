@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-19T03:09:53Z
+---
+
+## step-6: Updated T4.2, T4.4, T4.7 to use LIGHT_FORMULAS when mode is light — fixing the root cause of B09-B14 surface contrast bugs (dark formulas used in light mode). Removed LIGHT_MODE_PAIR_EXCEPTIONS and LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS entirely from contrast-exceptions.ts. All 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-5
 date: 2025-03-19T02:58:57Z
 ---

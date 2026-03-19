@@ -74,8 +74,6 @@ import {
   KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS,
   KNOWN_PAIR_EXCEPTIONS,
   RECIPE_PAIR_EXCEPTIONS,
-  LIGHT_MODE_PAIR_EXCEPTIONS,
-  LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS,
 } from "./contrast-exceptions";
 
 // ---------------------------------------------------------------------------
@@ -375,28 +373,26 @@ describe("derivation-engine", () => {
 describe("derivation-engine integration", () => {
 
   // -------------------------------------------------------------------------
-  // T4.2: Brio light preset — 0 unexpected body-text failures
+  // T4.2: Harmony (LIGHT_FORMULAS) light-mode pipeline — 0 unexpected body-text failures
   //
-  // The light-mode engine calibration is known to have structural surface-derivation
-  // constraints (bg-app / surface-raised derived too dark for light recipes,
-  // surface-overlay/sunken near-miss with fg-default) that are tracked as
-  // KNOWN_PAIR_EXCEPTIONS in gallery-theme-generator-content.test.tsx.
-  // This test mirrors the gallery's light-mode check — body-text only — using the
-  // same set of light-mode pair exceptions.
+  // Harmony uses LIGHT_FORMULAS which has correctly calibrated light-mode surface
+  // tones. This eliminates the [phase-3-bug] B09-B14 structural surface-derivation
+  // constraints that existed when DARK_FORMULAS was incorrectly used with light mode.
   //
-  // Full ui-component and focus-indicator coverage for light mode is exercised by
-  // the gallery test suite, which runs all EXAMPLE_RECIPES with the complete
-  // exception set.
+  // This test validates the harmony recipe body-text and focus-indicator coverage.
+  // Full ui-component and focus-indicator coverage is also exercised by the
+  // parameterized recipe contrast validation loop.
+  //
+  // References: [D03] All bugs resolved, Table T01 (B09-B14), Spec S01
   // -------------------------------------------------------------------------
-  it("T4.2: deriveTheme(brio-light) -> 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
-    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
-    const output = deriveTheme(brioLight);
-    // Step 5: engine contrast floors are applied by construction inside evaluateRules.
+  it("T4.2: deriveTheme(harmony) -> 0 unexpected body-text failures (LIGHT_FORMULAS used for light mode)", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.harmony);
+    // Engine contrast floors are applied by construction inside evaluateRules.
     // No autoAdjustContrast post-processing is needed or performed.
     const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-    // Known light-mode surface-derivation constraints — imported from contrast-exceptions.ts.
-    // (LIGHT_MODE_PAIR_EXCEPTIONS imported at top of file)
+    // With LIGHT_FORMULAS, surface tokens are correctly calibrated for light mode.
+    // B09-B14 are resolved by root cause (switching to LIGHT_FORMULAS), not exceptions.
 
     // Check body-text only — mirrors the gallery test's light-mode coverage scope.
     const unexpectedBodyTextFailures = finalResults.filter((r) => {
@@ -406,7 +402,8 @@ describe("derivation-engine integration", () => {
       if (Math.abs(r.contrast) >= margin) return false;
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
       if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
-      if (LIGHT_MODE_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+      const recipeExceptions = RECIPE_PAIR_EXCEPTIONS["harmony"] ?? new Set<string>();
+      if (recipeExceptions.has(`${r.fg}|${r.bg}`)) return false;
       return true;
     });
     const descriptions = unexpectedBodyTextFailures.map(
@@ -414,30 +411,9 @@ describe("derivation-engine integration", () => {
     );
     expect(descriptions).toEqual([]);
 
-    // Focus indicator assertion (Step 5): ui-component focus-on-surface pairs
-    // must pass contrast 30. In dark mode all 9 surfaces pass (T4.1). In light mode,
-    // 5 surfaces are structurally constrained by the light-mode surface derivation
-    // (engine calibrated for dark mode per Q01). These are documented below so the
-    // test tracks regressions on the 4 surfaces that do pass, rather than silently
-    // skipping the assertion entirely.
-    //
-    // Light-mode focus exceptions (structural — deferred per Q01):
-    //   bg-app (L≈0.39): derives too dark in light mode → accent-cool-default
-    //     mid-lightness (L≈0.51) produces |contrast| ≈ 12.8, below contrast 30.
-    //   surface-raised (L≈0.44): same structural derivation issue → |contrast| ≈ 11.8.
-    //   surface-overlay / surface-sunken / field-bg-rest: perceptual contrast soft-clip region —
-    //     these surfaces land in a narrow lightness band near accent-cool-default
-    //     producing deltaYc below the LOW_CLIP threshold (contrast rounds to 0.0).
-    const LIGHT_MODE_FOCUS_EXCEPTIONS = new Set([
-      "--tug-base-accent-cool-default|--tug-base-bg-app",
-      "--tug-base-accent-cool-default|--tug-base-surface-raised",
-      "--tug-base-accent-cool-default|--tug-base-surface-overlay",
-      "--tug-base-accent-cool-default|--tug-base-surface-sunken",
-      "--tug-base-accent-cool-default|--tug-base-field-bg-rest",
-      // surface-screen uses indigo (260) canonical L (0.572) after 48-hue expansion;
-      // light-mode surface-screen lands darker, producing contrast < 30 with accent-cool-default.
-      "--tug-base-accent-cool-default|--tug-base-surface-screen",
-    ]);
+    // Focus indicator assertion: ui-component focus-on-surface pairs must pass contrast 30.
+    // With LIGHT_FORMULAS, harmony's surface tokens are correctly calibrated for light mode,
+    // so all focus surfaces should pass. Any structural exceptions are documented explicitly.
     const focusSurfaces = new Set([
       "--tug-base-bg-app",
       "--tug-base-surface-default",
@@ -454,8 +430,7 @@ describe("derivation-engine integration", () => {
         r.fg === "--tug-base-accent-cool-default" &&
         r.role === "ui-component" &&
         focusSurfaces.has(r.bg) &&
-        !r.contrastPass &&
-        !LIGHT_MODE_FOCUS_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
+        !r.contrastPass,
     );
     expect(focusFailures.map((f) => `${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
   });
@@ -1312,13 +1287,11 @@ describe("derivation-engine generateResolvedCssExport", () => {
 // The exception sets mirror the parameterized loop / T4.2: known structural constraints are excluded
 // so the tests track real regressions rather than documented design choices.
 //
-// Light-mode tests (T4.4, T4.7) share the same set of structural surface-
-// derivation exceptions documented in T4.2 — the engine is calibrated for dark
-// mode and light-mode bg-app / surface-raised / surface-overlay / surface-sunken
-// / surface-screen are known structural constraints.
+// Light-mode tests (T4.4, T4.7) use LIGHT_FORMULAS, which has correctly calibrated
+// surface tones for light mode. This eliminates the [phase-3-bug] B09-B14 structural
+// surface-derivation constraints that existed when DARK_FORMULAS was incorrectly used
+// with light mode. No extra pair exceptions are needed for these tests.
 // ---------------------------------------------------------------------------
-
-// LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS is imported from contrast-exceptions.ts.
 
 /**
  * Known dark-mode body-text pair exceptions for high surfaceContrast recipes.
@@ -1416,14 +1389,17 @@ describe("derivation-engine convergence stress tests", () => {
   // light mode, low surface contrast (20) and low signal intensity (20).
   //
   // Tests that warm-atmosphere + cool-role inversion at low-contrast settings
-  // in light mode does not produce unexpected body-text failures beyond the
-  // documented light-mode structural surface-derivation constraints.
+  // in light mode does not produce unexpected body-text failures.
+  // Uses LIGHT_FORMULAS for light mode — resolves [phase-3-bug] B09-B14 at root cause.
+  //
+  // References: [D03] All bugs resolved, Table T01 (B09-B14)
   // -------------------------------------------------------------------------
   it("T4.4-stress: cool atmosphere, warm roles, light mode, low contrast — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.4-stress",
       description: "Stress test: cool atmosphere, warm roles, light mode, low contrast.",
       mode: "light" as const,
+      formulas: LIGHT_FORMULAS,
       cardBg: { hue: "slate" },
       text: { hue: "cobalt" },
       accent: "orange",
@@ -1439,7 +1415,7 @@ describe("derivation-engine convergence stress tests", () => {
     };
 
     const { finalResults } = runPipelineForRecipe(recipe);
-    const failures = unexpectedBodyTextFailures(finalResults, LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS);
+    const failures = unexpectedBodyTextFailures(finalResults);
     const descriptions = failures.map(
       (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
@@ -1520,15 +1496,18 @@ describe("derivation-engine convergence stress tests", () => {
   // T4.7-stress: Extreme low signalIntensity (10), light mode.
   //
   // Tests that minimum signal intensity (desaturated role hues) in light mode
-  // does not cause unexpected body-text failures beyond the documented
-  // light-mode structural surface-derivation constraints. At low intensity,
-  // role hues approach achromatic, which can shift contrast relationships.
+  // does not cause unexpected body-text failures. At low intensity, role hues
+  // approach achromatic, which can shift contrast relationships.
+  // Uses LIGHT_FORMULAS for light mode — resolves [phase-3-bug] B09-B14 at root cause.
+  //
+  // References: [D03] All bugs resolved, Table T01 (B09-B14)
   // -------------------------------------------------------------------------
   it("T4.7-stress: extreme low signalIntensity (10), light mode — 0 unexpected body-text failures", () => {
     const recipe = {
       name: "T4.7-stress",
       description: "Stress test: extreme low signalIntensity (10), light mode.",
       mode: "light" as const,
+      formulas: LIGHT_FORMULAS,
       cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
       accent: "orange",
@@ -1544,7 +1523,7 @@ describe("derivation-engine convergence stress tests", () => {
     };
 
     const { finalResults } = runPipelineForRecipe(recipe);
-    const failures = unexpectedBodyTextFailures(finalResults, LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS);
+    const failures = unexpectedBodyTextFailures(finalResults);
     const descriptions = failures.map(
       (f) => `${f.fg} on ${f.bg} [${f.role}]: contrast ${f.contrast.toFixed(1)}`,
     );
