@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-19T22:03:23Z
+---
+
+## step-10: Updated seed-rename-map.ts to identity mappings (new->new) post-rename. All 4 tooling checkpoints pass: generate:tokens 373 tokens, audit:tokens tokens zero unclassified, rename-map zero validation errors, 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-9
 date: 2025-03-19T21:48:42Z
 ---
