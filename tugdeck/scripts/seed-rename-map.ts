@@ -2,21 +2,21 @@
  * seed-rename-map.ts — Complete 373-entry seed map for the Phase 3.5A rename.
  *
  * This file contains SEED_RENAME_MAP, a Record<string, string> mapping every
- * existing --tug-base-{old} short name to its new six-slot (or three-slot for
- * chromatic) short name. Identity mappings (old === new) are used for non-color
- * tokens that are not renamed.
+ * existing --tug-base-{old} short name to its new six-slot short name. Identity
+ * mappings (old === new) are used for non-color tokens that are not renamed.
  *
  * Imported by audit-tokens.ts for the rename-map subcommand.
  *
- * Naming conventions:
- *   - Structured element/surface tokens: <plane>-<component>-<emphasis>-<role>-<channel>-<state>
- *       plane: element | surface
- *       component: global | control | tab | tabClose | tone | field | badge | selection | checkmark | toggle
- *       emphasis: normal | filled | outlined | ghost | tinted
- *       role: plain | default | accent | action | option | danger | agent | data | success | caution | ...
- *       channel: text | icon | border | shadow | divider | primary | secondary
- *       state: (omitted for stateless) | rest | hover | active | focus | disabled | readOnly | ...
- *   - Chromatic tokens: chromatic-<component>-<descriptor>
+ * Naming convention — all structured tokens use the six-slot format:
+ *   <plane>-<component>-<constituent>-<emphasis>-<role>-<state>
+ *       plane:       element | surface
+ *       component:   global | control | tab | tabClose | tone | field | badge | selection | checkmark | toggle | radio | overlay | highlight
+ *       constituent: (element) text | icon | border | shadow | divider | fill | thumb | dot
+ *                    (surface) primary | track
+ *       emphasis:    normal | filled | outlined | ghost | tinted
+ *       role:        plain | default | accent | action | option | danger | agent | data | success | caution | ...
+ *       state:       rest | hover | active | focus | disabled | readOnly | mixed | inactive | collapsed
+ *                    (all tokens have a state; non-interactive and default-state tokens use `rest`)
  *   - Non-color tokens: identity mapping (unchanged)
  */
 

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-19T19:31:28Z
+---
+
+## step-1: Updated seed-rename-map.ts header comment: reordered slots (constituent to slot 3), renamed channel to constituent, updated constituent values, made state always present with rest, removed chromatic convention, added radio/overlay/highlight components.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-7
 date: 2025-03-19T17:54:22Z
 ---
