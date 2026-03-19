@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-19T17:03:31Z
+---
+
+## step-1: Replaced hardcoded getRenameTargetFiles() with discoverTokenFiles() that recursively scans tugdeck/ for files containing --tug-base- references
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
 step: step-11
 date: 2025-03-19T04:08:35Z
 ---

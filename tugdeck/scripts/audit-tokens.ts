@@ -780,58 +780,78 @@ const RENAME_MAP: Record<string, string> = {
   separator: "divider-separator",
 };
 
-/** Files to search for token references during rename. */
-function getRenameTargetFiles(): string[] {
-  const files: string[] = [];
+/**
+ * Recursively discover all .ts, .tsx, .css files under tugdeck/ that contain
+ * --tug-base- references. Excludes node_modules/, dist/, .git/, scripts/audit-tokens.ts,
+ * and scripts/seed-rename-map.ts (these contain token names as map keys/constants,
+ * not as references to rename). Generated CSS files and scripts/generate-tug-tokens.ts
+ * are included so dry-run/stats output reflects the full blast radius.
+ *
+ * Results are sorted alphabetically by relative path for deterministic output.
+ */
+function discoverTokenFiles(): string[] {
+  const TOKEN_REFERENCE = "--tug-base-";
+  const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git"]);
+  const EXCLUDED_FILES = new Set([
+    path.join(TUGDECK, "scripts/audit-tokens.ts"),
+    path.join(TUGDECK, "scripts/seed-rename-map.ts"),
+  ]);
 
-  // Component CSS files
-  files.push(...COMPONENT_CSS_FILES);
+  const results: string[] = [];
 
-  // Generated CSS
-  files.push(GENERATED_CSS);
-
-  // Theme CSS files
-  const themesDir = path.join(TUGDECK, "styles/themes");
-  if (fs.existsSync(themesDir)) {
-    for (const f of fs.readdirSync(themesDir)) {
-      if (f.endsWith(".css")) files.push(path.join(themesDir, f));
+  function walk(dir: string): void {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      return;
     }
-  }
-
-  // TypeScript source files
-  const tsGlobs = [
-    "src/components/tugways/derivation-rules.ts",
-    "src/components/tugways/theme-derivation-engine.ts",
-    "src/components/tugways/element-surface-pairing-map.ts",
-    "src/__tests__/theme-derivation-engine.test.ts",
-    "src/__tests__/contrast-dashboard.test.tsx",
-    "src/__tests__/gallery-theme-generator-content.test.tsx",
-  ];
-  for (const g of tsGlobs) {
-    const full = path.join(TUGDECK, g);
-    if (fs.existsSync(full)) files.push(full);
-  }
-
-  // cards/*.tsx files
-  const cardsDir = path.join(TUGWAYS, "cards");
-  if (fs.existsSync(cardsDir)) {
-    for (const f of fs.readdirSync(cardsDir)) {
-      if (f.endsWith(".tsx") || f.endsWith(".ts")) {
-        files.push(path.join(cardsDir, f));
+    for (const entry of entries) {
+      const full = path.join(dir, entry);
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        if (!EXCLUDED_DIRS.has(entry)) {
+          walk(full);
+        }
+      } else if (stat.isFile()) {
+        if (!(entry.endsWith(".ts") || entry.endsWith(".tsx") || entry.endsWith(".css"))) {
+          continue;
+        }
+        if (EXCLUDED_FILES.has(full)) continue;
+        let content: string;
+        try {
+          content = fs.readFileSync(full, "utf-8");
+        } catch {
+          continue;
+        }
+        if (content.includes(TOKEN_REFERENCE)) {
+          results.push(full);
+        }
       }
     }
   }
 
-  // Token generation script
-  files.push(path.join(TUGDECK, "scripts/generate-tug-tokens.ts"));
+  walk(TUGDECK);
 
-  return [...new Set(files)]; // dedupe
+  // Sort alphabetically by relative path for deterministic output
+  results.sort((a, b) => {
+    const ra = path.relative(TUGDECK, a);
+    const rb = path.relative(TUGDECK, b);
+    return ra < rb ? -1 : ra > rb ? 1 : 0;
+  });
+
+  return results;
 }
 
 function cmdRename(apply: boolean): void {
   console.log(`\n=== Token Rename ${apply ? "(APPLYING)" : "(DRY RUN)"} ===\n`);
 
-  const files = getRenameTargetFiles();
+  const files = discoverTokenFiles();
   const changes: { file: string; count: number; replacements: string[] }[] = [];
 
   for (const filePath of files) {
