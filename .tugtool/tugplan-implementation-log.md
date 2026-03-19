@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-19T04:05:28Z
+---
+
+## step-10: Regenerated @tug-pairings comment blocks in 16 CSS files via audit:tokens inject --apply. Confirmed idempotent (second run produces no changes). All verification gates pass: lint zero violations, verify 23/23 files, 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-9
 date: 2025-03-19T04:02:02Z
 ---
