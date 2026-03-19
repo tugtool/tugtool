@@ -120,7 +120,7 @@ body {
   /* Accent */
   --tug-base-accent-cool-default: --tug-color(cobalt-intense);
   --tug-base-accent-default: --tug-color(orange);
-  --tug-base-accent-subtle: --tug-color(orange, i: 50, t: 50, a: 15);
+  --tug-base-accent-subtle: --tug-color(orange, t: 30, a: 10);
 
   /* Tone */
   --tug-base-tone-accent: --tug-color(orange);
@@ -139,7 +139,7 @@ body {
   --tug-base-tone-agent-fg: --tug-color(violet);
   --tug-base-tone-agent-icon: --tug-color(violet);
   --tug-base-tone-caution: --tug-color(yellow);
-  --tug-base-tone-caution-bg: --tug-color(yellow, i: 50, t: 50, a: 12);
+  --tug-base-tone-caution-bg: --tug-color(yellow, t: 30, a: 8);
   --tug-base-tone-caution-border: --tug-color(yellow);
   --tug-base-tone-caution-fg: --tug-color(yellow);
   --tug-base-tone-caution-icon: --tug-color(yellow);
@@ -173,13 +173,13 @@ body {
   --tug-base-highlight-snapGuide: --tug-color(cyan, i: 50, t: 50, a: 50);
 
   /* Tab */
-  --tug-base-tab-bg-active: --tug-color(indigo, i: 12, t: 18);
+  --tug-base-tab-bg-active: --tug-color(indigo, i: 12, t: 16);
   --tug-base-tab-bg-collapsed: --tug-color(indigo-violet, i: 4, t: 15);
   --tug-base-tab-bg-hover: --tug-color(white, a: 8);
   --tug-base-tab-bg-inactive: --tug-color(indigo, i: 4, t: 15);
   --tug-base-tab-close-bg-hover: --tug-color(white, a: 12);
   --tug-base-tab-close-fg-hover: --tug-color(cobalt, i: 3, t: 90);
-  --tug-base-tab-fg-active: --tug-color(cobalt, i: 3, t: 99);
+  --tug-base-tab-fg-active: --tug-color(cobalt, i: 3, t: 94);
   --tug-base-tab-fg-hover: --tug-color(cobalt, i: 3, t: 90);
   --tug-base-tab-fg-rest: --tug-color(cobalt, i: 7);
 

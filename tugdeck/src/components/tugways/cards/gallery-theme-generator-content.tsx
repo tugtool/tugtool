@@ -1134,7 +1134,8 @@ function ThemePreviewCard({
       {/* ---- Center: preview card on canvas (only this gets live tokens) ---- */}
       <div className="gtg-preview-main">
         <div className="gtg-preview-canvas" style={liveTokenStyle}>
-          <div className="tugcard" style={{ height: "auto", width: "66.7%" }}>
+          <div className="card-frame" data-focused="true" style={{ width: "66.7%" }}>
+          <div className="tugcard" style={{ height: "auto" }}>
             <div className="tugcard-title-bar" style={{ cursor: "default" }}>
               <span className="tugcard-title">Sample Card</span>
             </div>
@@ -1190,6 +1191,7 @@ function ThemePreviewCard({
                 </div>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -1421,6 +1423,11 @@ export function GalleryThemeGeneratorContent() {
       "--tug-card-title-bar-bg-active": "--tug-base-tab-bg-active",
       "--tug-card-title-bar-bg-inactive": "--tug-base-tab-bg-inactive",
       "--tug-card-title-bar-bg-collapsed": "--tug-base-tab-bg-collapsed",
+      "--tug-card-title-bar-fg": "--tug-base-fg-default",
+      "--tug-card-title-bar-icon-active": "--tug-base-icon-active",
+      "--tug-card-title-bar-icon-inactive": "--tug-base-fg-subtle",
+      "--tug-card-title-bar-icon-hover": "--tug-base-fg-muted",
+      "--tug-card-title-bar-divider": "--tug-base-divider-default",
       "--tug-card-border": "--tug-base-border-default",
       "--tug-card-accessory-bg": "--tug-base-surface-sunken",
       "--tug-card-accessory-border": "--tug-base-border-default",

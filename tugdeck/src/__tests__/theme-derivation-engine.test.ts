@@ -2435,25 +2435,24 @@ describe("derivation-engine step-4 contrast floor", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 4 verification — harmony light-mode cardFrameActiveTone and formula fields", () => {
-  // Task 1: Bug 2 fix — cardFrameActiveTone=88 is used in harmony
-  it("LIGHT_FORMULAS.cardFrameActiveTone is 88 (Bug 2 fix)", () => {
-    expect(LIGHT_FORMULAS.cardFrameActiveTone).toBe(88);
+  // Task 1: cardFrameActiveTone=96 — bright title bar clearly lighter than surface-default (90)
+  it("LIGHT_FORMULAS.cardFrameActiveTone is 96 (bright title bar above content)", () => {
+    expect(LIGHT_FORMULAS.cardFrameActiveTone).toBe(96);
   });
 
-  it("EXAMPLE_RECIPES.harmony formulas.cardFrameActiveTone is 88 (LIGHT_FORMULAS value)", () => {
+  it("EXAMPLE_RECIPES.harmony formulas.cardFrameActiveTone is 96 (LIGHT_FORMULAS value)", () => {
     const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
-    expect(harmonyFormulas.cardFrameActiveTone).toBe(88);
+    expect(harmonyFormulas.cardFrameActiveTone).toBe(96);
   });
 
-  it("harmony tab-bg-active resolves to L near 88 (cardFrameActiveTone=88 applied to derivation)", () => {
+  it("harmony tab-bg-active resolves to L near 96 (cardFrameActiveTone=96 applied to derivation)", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.harmony);
     const tabBgActive = output.resolved["--tug-base-tab-bg-active"];
     expect(tabBgActive).toBeDefined();
-    // tone 88 => approximately L=0.88 in OKLCH; allow ±0.06 for hue/chroma contribution
-    // and canonical L offset
+    // tone 96 => approximately L=0.96 in OKLCH; allow ±0.06 for hue/chroma contribution
     const approxTone = tabBgActive!.L * 100;
-    expect(approxTone).toBeGreaterThan(82);
-    expect(approxTone).toBeLessThan(94);
+    expect(approxTone).toBeGreaterThan(90);
+    expect(approxTone).toBeLessThan(100);
   });
 
   // Task 3: borderSignalTone=40 produces darker control borders in harmony vs brio
