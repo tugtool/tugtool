@@ -199,13 +199,49 @@ Report each command's outcome (success or failure). If a command fails, report t
 
 ---
 
-### 6. Report Results
+### 6. Archive Completed Plan
+
+After the merge and dependency steps, archive the completed plan file and clean
+up step files so they don't confuse future agent runs.
+
+#### Step 6a: Move the plan file to the archive directory
+
+```bash
+mkdir -p .tugtool/archive
+git mv <plan_path> .tugtool/archive/
+```
+
+#### Step 6b: Remove step files
+
+If `.tugtool/steps/` contains any files, remove them:
+
+```bash
+git rm -r .tugtool/steps/ 2>/dev/null || true
+```
+
+This is a no-op if the directory is empty or doesn't exist.
+
+#### Step 6c: Commit the archival
+
+```bash
+git commit -m "chore: archive completed plan <plan_basename>"
+```
+
+Where `<plan_basename>` is just the filename (e.g., `tugplan-token-rename-35a.md`).
+
+If there are no changes to commit (e.g., plan was already archived), skip the
+commit silently.
+
+---
+
+### 7. Report Results
 
 **Remote mode success:**
 - PR merged (URL + number)
 - Worktree cleaned up
 - Health check status
 - Dependency installation results (if any commands were run)
+- Plan archived
 - "Main is clean and ready."
 
 **Local mode success:**
@@ -213,6 +249,7 @@ Report each command's outcome (success or failure). If a command fails, report t
 - Worktree cleaned up
 - Health check status
 - Dependency installation results (if any commands were run)
+- Plan archived
 - "Main is clean and ready."
 
 ---
