@@ -106,11 +106,12 @@ or:
 **Plan** — Revising existing plan at {path}
 ```
 
-**End (output after final phase):**
+**End (output after commit):**
 ```
 ---
 **Plan**(Complete)
   Plan: {plan_path}
+  Commit: {commit_hash}
   Steps: {step_count} | Decisions: {decision_count}
   Revisions: {revision_count}
   Next: /tugplug:implement {plan_path}
@@ -430,7 +431,7 @@ if conformance_feedback.recommendation == "ESCALATE":
     )
     → If "Start over": set conformance_feedback (from this round), critic_feedback = null,
       increment revision_count, GO TO STEP 3 (author)
-    → If "Accept as-is": output session end message, HALT with success
+    → If "Accept as-is": commit the plan (section 6), then output session end message and HALT
     → If "Abort": output "**Plan** — Aborted by user" and HALT
 ```
 
@@ -480,7 +481,7 @@ if critic_feedback.recommendation == "ESCALATE":
       }]
     )
     → If "Start over": increment revision_count, GO TO STEP 3 (author)
-    → If "Accept as-is": output session end message, HALT with success
+    → If "Accept as-is": commit the plan (section 6), then output session end message and HALT
     → If "Abort": output "**Plan** — Aborted by user" and HALT
 ```
 
@@ -515,7 +516,7 @@ if conformance_feedback.recommendation == "APPROVE" and critic_feedback.recommen
     Output the Overviewer post-call message.
 
     if overviewer_feedback.recommendation == "APPROVE":
-        → Output session end message and HALT with success
+        → Commit the plan (section 6), then output session end message and HALT
 
     if overviewer_feedback.recommendation == "REVISE":
 
@@ -532,7 +533,7 @@ if conformance_feedback.recommendation == "APPROVE" and critic_feedback.recommen
                 multiSelect: false
               }]
             )
-            → If "Accept as-is": output session end message, HALT with success
+            → If "Accept as-is": commit the plan (section 6), then output session end message and HALT
             → If "Abort": output "**Plan** — Aborted by user" and HALT
 
         # Clarifying questions (if any) are passed to the author as context via overviewer_feedback.
@@ -553,6 +554,40 @@ if conformance_feedback.recommendation == "APPROVE" and critic_feedback.recommen
         # Auto-revise loop runs until both APPROVE, then returns here (overviewer runs fresh again).
         # Reset overviewer_question_answers = null before the next overviewer spawn.
 ```
+
+---
+
+### 6. Commit the Plan
+
+Before outputting the session end message, commit the completed plan file. Use
+the `tugplug:committer-agent` to perform the commit:
+
+```
+Task(
+  subagent_type: "tugplug:committer-agent",
+  max_turns: 5,
+  prompt: '{
+    "operation": "commit",
+    "worktree_path": "<repo_root>",
+    "plan_path": "<plan_path>",
+    "step_anchor": null,
+    "proposed_message": "plan(new): <plan_slug>",
+    "log_entry": null
+  }',
+  description: "Commit plan file"
+)
+```
+
+Where `<plan_slug>` is the plan filename without extension (e.g., `tugplan-token-rename-35a`).
+
+For revised plans (plan_path was provided as input, not created new), use
+`"plan(update): <plan_slug>"` as the commit message.
+
+Parse the committer output and extract `commit_hash` for the session end message.
+
+If the commit fails (e.g., no changes to commit because the plan was already
+committed), skip silently and proceed to the session end message without a
+commit hash.
 
 ---
 
