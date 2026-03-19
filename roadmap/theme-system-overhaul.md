@@ -319,7 +319,6 @@ tooling cannot:
    - Applying the Phase 3.5A six-slot naming convention to produce the new name
    - Outputting a JSON file (`token-rename-map.json`) with `{ "old-short": "new-short" }` entries
    - Validating: no collisions, all tokens covered, all new names well-formed
-   - Flagging chromatic tokens that need manual naming decisions
 
    The map generator encodes the naming rules as code, so the naming convention
    can be iterated — regenerate, preview, adjust — before touching any source files.
@@ -416,10 +415,10 @@ Every structured token follows a six-slot naming convention:
 | Slot | What it answers | Values |
 |------|----------------|--------|
 | **plane** | Which side of the contrast pair? | `element`, `surface` |
-| **component** | What UI piece? | `global`, `control`, `field`, `tab`, `tone`, `badge`, `selection`, ... |
-| **constituent** | What part of the component? | Element: `text`, `icon`, `border`, `shadow`, `divider`. Surface: `primary`, `secondary`, `tertiary` |
+| **component** | What UI piece? | `global`, `control`, `field`, `tab`, `tone`, `badge`, `selection`, `toggle`, `checkmark`, `radio`, `overlay`, `highlight`, ... |
+| **constituent** | What part of the component? | Element: `text`, `icon`, `border`, `shadow`, `divider`, `fill`, `thumb`, `dot`. Surface: `primary`, `track` |
 | **emphasis** | How visually prominent? | `normal`, `filled`, `outlined`, `ghost`, `tinted` |
-| **role** | What does it signify? | `default`, `muted`, `subtle`, `accent`, `action`, `danger`, `success`, `caution`, `agent`, `data`, `active`, `plain`, `selected`, `highlighted`, ... |
+| **role** | What does it signify? | `default`, `muted`, `subtle`, `accent`, `action`, `danger`, `success`, `caution`, `agent`, `data`, `active`, `plain`, `selected`, `highlighted`, `on`, `off`, ... |
 | **state** | What interaction state? | `rest`, `hover`, `active`, `focus`, `disabled`, `readOnly`, `mixed`, ... |
 
 **Rules:**
@@ -431,11 +430,17 @@ Every structured token follows a six-slot naming convention:
 - `primary` is the default surface constituent.
 - CamelCase within a slot is allowed when a slot value is compound
   (e.g., `onAccent` as a role, `dropTarget` as a state).
-- `selected` and `highlighted` are roles (persistent visual treatments), not
-  states. This allows clean combination with interaction states:
-  `surface-control-primary-normal-selected-hover`.
+- `selected`, `highlighted`, `on`, `off`, and `mixed` are roles (persistent
+  visual treatments), not states. This allows clean combination with interaction
+  states: `surface-control-primary-normal-selected-hover`,
+  `surface-toggle-track-normal-on-hover`.
 - `disabled` is a state. Disabled tokens use role=`plain` because disabled
   appearance is uniform regardless of the token's semantic role.
+- `fill` is an element constituent for solid-color visual marks (indicator dots,
+  progress fills, accent swatches) that are not text, icons, borders, shadows,
+  or dividers.
+- `track`, `thumb`, `dot` are constituent values for toggle/radio sub-parts.
+  Tracks are surfaces (things sit on them); thumbs and dots are elements.
 
 #### Token rename map
 
@@ -575,7 +580,7 @@ with interaction states.
 | `tone-accent-bg` | `surface-tone-primary-normal-accent-rest` |
 | `tone-accent-icon` | `element-tone-icon-normal-accent-rest` |
 | `tone-accent-border` | `element-tone-border-normal-accent-rest` |
-| `tone-accent` | *(chromatic — see below)* |
+| `tone-accent` | `element-tone-fill-normal-accent-rest` |
 
 (Same pattern for active, agent, caution, danger, data, success.)
 
@@ -615,13 +620,13 @@ field), not states. `disabled` and `readOnly` are states.
 | `field-border-danger` | `element-field-border-normal-danger-rest` |
 | `field-border-success` | `element-field-border-normal-success-rest` |
 
-**Field tokens — chromatic:**
+**Field tokens — fill (validation indicator colors):**
 
 | Current | Proposed |
 |---------|----------|
-| `field-tone-caution` | *(chromatic — see below)* |
-| `field-tone-danger` | *(chromatic — see below)* |
-| `field-tone-success` | *(chromatic — see below)* |
+| `field-tone-caution` | `element-field-fill-normal-caution-rest` |
+| `field-tone-danger` | `element-field-fill-normal-danger-rest` |
+| `field-tone-success` | `element-field-fill-normal-success-rest` |
 
 **Badge tokens:**
 
@@ -650,27 +655,163 @@ field), not states. `disabled` and `readOnly` are states.
 | `toggle-icon-disabled` | `element-toggle-icon-normal-plain-disabled` |
 | `toggle-icon-mixed` | `element-toggle-icon-normal-plain-mixed` |
 
-**Chromatic tokens (32):** These tokens do not participate in element/surface
-pairings in the standard way. They are standalone chromatic values (overlays,
-accents, highlights, toggle tracks/thumbs, radio dots). They need a naming
-convention decision — either they adopt the six-slot structure with appropriate
-values, or they are explicitly categorized as `chromatic-*` tokens outside the
-element/surface system. This decision is deferred to the planning phase.
+**Toggle track tokens (surfaces — things sit on them):**
+
+Toggle value states (`on`, `off`, `mixed`) are roles (persistent visual
+treatments). `hover` and `disabled` are interaction states. This cleanly
+decomposes the compounds without needing camelCase state values.
+
+| Current | Proposed |
+|---------|----------|
+| `toggle-track-off` | `surface-toggle-track-normal-off-rest` |
+| `toggle-track-off-hover` | `surface-toggle-track-normal-off-hover` |
+| `toggle-track-on` | `surface-toggle-track-normal-on-rest` |
+| `toggle-track-on-hover` | `surface-toggle-track-normal-on-hover` |
+| `toggle-track-disabled` | `surface-toggle-track-normal-plain-disabled` |
+| `toggle-track-mixed` | `surface-toggle-track-normal-mixed-rest` |
+| `toggle-track-mixed-hover` | `surface-toggle-track-normal-mixed-hover` |
+
+**Toggle thumb / radio dot tokens (elements — visible marks on surfaces):**
+
+| Current | Proposed |
+|---------|----------|
+| `toggle-thumb` | `element-toggle-thumb-normal-plain-rest` |
+| `toggle-thumb-disabled` | `element-toggle-thumb-normal-plain-disabled` |
+| `radio-dot` | `element-radio-dot-normal-plain-rest` |
+
+**Overlay tokens (surfaces — content sits on top of them):**
+
+| Current | Proposed |
+|---------|----------|
+| `overlay-dim` | `surface-overlay-primary-normal-dim-rest` |
+| `overlay-scrim` | `surface-overlay-primary-normal-scrim-rest` |
+| `overlay-highlight` | `surface-overlay-primary-normal-highlight-rest` |
+
+**Highlight tokens (surfaces — colored feedback regions behind content):**
+
+The role describes the purpose of the highlight (`hover`, `dropTarget`, etc.).
+These are not interaction states — `hover` here means "the highlight that
+signifies hover," not "a highlight in a hover state."
+
+| Current | Proposed |
+|---------|----------|
+| `highlight-hover` | `surface-highlight-primary-normal-hover-rest` |
+| `highlight-dropTarget` | `surface-highlight-primary-normal-dropTarget-rest` |
+| `highlight-preview` | `surface-highlight-primary-normal-preview-rest` |
+| `highlight-inspectorTarget` | `surface-highlight-primary-normal-inspectorTarget-rest` |
+| `highlight-snapGuide` | `surface-highlight-primary-normal-snapGuide-rest` |
+| `highlight-flash` | `surface-highlight-primary-normal-flash-rest` |
+
+**Tone fill tokens (elements — solid-color visual marks):**
+
+Pure chromatic values for semantic signals — indicator dots, progress fills,
+colored accents. The `fill` constituent covers solid-color visual marks that
+are not text, icons, borders, shadows, or dividers.
+
+| Current | Proposed |
+|---------|----------|
+| `tone-accent` | `element-tone-fill-normal-accent-rest` |
+| `tone-active` | `element-tone-fill-normal-active-rest` |
+| `tone-agent` | `element-tone-fill-normal-agent-rest` |
+| `tone-data` | `element-tone-fill-normal-data-rest` |
+| `tone-success` | `element-tone-fill-normal-success-rest` |
+| `tone-caution` | `element-tone-fill-normal-caution-rest` |
+| `tone-danger` | `element-tone-fill-normal-danger-rest` |
+
+**Accent fill tokens (elements — global accent chromatic values):**
+
+| Current | Proposed |
+|---------|----------|
+| `accent-default` | `element-global-fill-normal-accent-rest` |
+| `accent-cool-default` | `element-global-fill-normal-accentCool-rest` |
+| `accent-subtle` | `element-global-fill-normal-accentSubtle-rest` |
+
+**Field tone tokens (elements — validation indicator fills):**
+
+| Current | Proposed |
+|---------|----------|
+| `field-tone-danger` | `element-field-fill-normal-danger-rest` |
+| `field-tone-caution` | `element-field-fill-normal-caution-rest` |
+| `field-tone-success` | `element-field-fill-normal-success-rest` |
 
 #### Execution strategy
 
 This is a complete rename. No old names remain. The Phase 3.5-tooling upgrades
 make this mechanical rather than manual.
 
+**Step 0: Update the seed rename map to match the finalized convention.**
+
+The Phase 3.5-tooling was built before the naming convention was finalized.
+The seed rename map (`tugdeck/scripts/seed-rename-map.ts`) uses the draft
+convention (constituent in slot 5, state omitted for stateless tokens). It
+must be updated to match the finalized convention before the rename can proceed.
+
+Changes required to `seed-rename-map.ts`:
+
+1. **Header comment:** Update the slot order from
+   `<plane>-<component>-<emphasis>-<role>-<channel>-<state>` to
+   `<plane>-<component>-<constituent>-<emphasis>-<role>-<state>`.
+   Rename `channel` to `constituent`. Remove "(omitted for stateless)" from
+   the state line; state is always present.
+
+2. **Slot reorder (all ~340 non-identity entries):** Move the constituent
+   from slot 5 to slot 3. Examples:
+   - `element-global-normal-default-text` → `element-global-text-normal-default-rest`
+   - `surface-control-filled-accent-primary-rest` → `surface-control-primary-filled-accent-rest`
+   - `element-control-filled-accent-text-rest` → `element-control-text-filled-accent-rest`
+
+3. **Add `-rest` to all stateless tokens (~90 entries):** Every five-slot name
+   gets `-rest` appended. Examples:
+   - `element-global-normal-default-text` → `element-global-text-normal-default-rest`
+   - `surface-global-normal-app-primary` → `surface-global-primary-normal-app-rest`
+   - `element-tone-normal-accent-text` → `element-tone-text-normal-accent-rest`
+
+4. **Semantic fixes:**
+   - `fg-link-hover`: `linkHover` compound decomposes into role=`link`,
+     state=`hover` → `element-global-text-normal-link-hover`
+   - `fg-disabled`, `icon-disabled`: `disabled` is a state, not a role.
+     Role becomes `plain` → `element-global-text-normal-plain-disabled`,
+     `element-global-icon-normal-plain-disabled`
+   - `control-disabled-*`: same — role=`plain`, state=`disabled` →
+     `element-control-text-normal-plain-disabled`, etc.
+   - `control-highlighted-*`: `highlighted` stays as role, add state=`rest` →
+     `element-control-text-normal-highlighted-rest`, etc.
+   - `control-selected-*`: `selected` stays as role, add state=`rest` →
+     `element-control-text-normal-selected-rest`
+   - `control-selected-bg-hover`: `selected` is role, `hover` is state →
+     `surface-control-primary-normal-selected-hover`
+   - `control-selected-disabled-bg`: `selected` is role, `disabled` is state →
+     `surface-control-primary-normal-selected-disabled` (no compound needed)
+   - Field text: `label`, `placeholder`, `required` are roles; `disabled`,
+     `readOnly` are states. `field-fg-default` → `element-field-text-normal-plain-rest`
+   - `checkmark-fg-mixed`, `toggle-icon-mixed`: `mixed` is a state →
+     `element-checkmark-text-normal-plain-mixed`,
+     `element-toggle-icon-normal-plain-mixed`
+
+5. **Convert all 32 formerly-chromatic tokens to six-slot names.** Replace
+   the `chromatic-*` three-slot entries in the seed map with proper six-slot
+   names. Toggle tracks → surfaces with `on`/`off`/`mixed` as roles.
+   Toggle thumbs/radio dots → elements. Overlays and highlights → surfaces.
+   Tone/accent/field-tone fills → elements with `fill` constituent. See the
+   token rename tables above for the complete mapping.
+
+Verification after Step 0:
+```bash
+bun run audit:tokens rename-map        # exits 0, zero validation errors
+bun run audit:tokens rename-map --json > /tmp/verify-map.json
+bun run audit:tokens lint              # exits 0
+bun test                               # all tests pass
+```
+
 **Step 1: Generate the rename map.**
 
 ```bash
-bun run audit:tokens rename-map > token-rename-map.json
+bun run audit:tokens rename-map --json > token-rename-map.json
 ```
 
-Review the generated map. Resolve any chromatic tokens flagged for manual naming
-decisions. Iterate the naming convention if any names look wrong — regenerate,
-review, adjust — until the map is correct. This is the design phase.
+Review the generated map. Verify every new name follows the finalized
+six-slot convention. Iterate if any names look wrong — the naming convention
+is encoded in `seed-rename-map.ts`, so changes are mechanical.
 
 **Step 2: Preview the rename.**
 
