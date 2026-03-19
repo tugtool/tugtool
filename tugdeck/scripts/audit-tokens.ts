@@ -4,7 +4,7 @@
  *
  * Subcommands:
  *   tokens      Extract all --tug-base-* tokens from tug-base-generated.css and
- *               classify each as element / surface / chromatic / non-color.
+ *               classify each as element / surface / non-color.
  *   pairings    Parse all component CSS files and extract every
  *               foreground-on-background pairing (color/fill on background-color).
  *   rename      Bulk-rename tokens across all auto-discovered files (dry-run by default).
@@ -70,50 +70,7 @@ const COMPONENT_CSS_FILES = [
 // Token classification (Spec S01 from the plan)
 // ---------------------------------------------------------------------------
 
-type TokenClass = "element" | "surface" | "chromatic" | "non-color";
-
-/** Explicit chromatic (dual-use) token short names (after --tug-base- prefix). */
-const CHROMATIC_TOKENS = new Set([
-  "accent-default",
-  "accent-cool-default",
-  "accent-subtle",
-  // Bare tone-* (7 families)
-  "tone-accent",
-  "tone-active",
-  "tone-agent",
-  "tone-data",
-  "tone-success",
-  "tone-caution",
-  "tone-danger",
-  // Highlight
-  "highlight-hover",
-  "highlight-dropTarget",
-  "highlight-preview",
-  "highlight-inspectorTarget",
-  "highlight-snapGuide",
-  "highlight-flash",
-  // Overlay
-  "overlay-dim",
-  "overlay-scrim",
-  "overlay-highlight",
-  // Toggle track
-  "toggle-track-off",
-  "toggle-track-off-hover",
-  "toggle-track-on",
-  "toggle-track-on-hover",
-  "toggle-track-disabled",
-  "toggle-track-mixed",
-  "toggle-track-mixed-hover",
-  // Toggle thumb
-  "toggle-thumb",
-  "toggle-thumb-disabled",
-  // Radio
-  "radio-dot",
-  // Field tone
-  "field-tone-danger",
-  "field-tone-caution",
-  "field-tone-success",
-]);
+type TokenClass = "element" | "surface" | "non-color";
 
 /** Non-color pattern segments — tokens containing these are excluded from color classification. */
 const NON_COLOR_PATTERNS = [
@@ -135,53 +92,12 @@ function classifyToken(shortName: string): TokenClass {
     if (shortName.includes(pattern)) return "non-color";
   }
 
-  // Phase 2: classify color tokens
+  // Phase 2: classify color tokens by six-slot naming convention prefix.
+  // All color tokens now follow <plane>-<component>-<constituent>-<emphasis>-<role>-<state>
+  // where plane is always "element" or "surface".
 
-  // Check chromatic first (explicit list takes priority)
-  if (CHROMATIC_TOKENS.has(shortName)) return "chromatic";
-
-  // Surface: contains -bg- or starts/ends with bg, or contains surface-
-  if (
-    shortName.includes("-bg-") ||
-    shortName.endsWith("-bg") ||
-    shortName.startsWith("bg-") ||
-    shortName.includes("surface-")
-  ) {
-    return "surface";
-  }
-
-  // Element: contains or starts/ends with fg, border, divider, shadow
-  if (
-    shortName.includes("-fg-") ||
-    shortName.endsWith("-fg") ||
-    shortName.startsWith("fg-") ||
-    shortName.includes("-border-") ||
-    shortName.endsWith("-border") ||
-    shortName.startsWith("border-") ||
-    shortName.includes("-divider-") ||
-    shortName.endsWith("-divider") ||
-    shortName.startsWith("divider-") ||
-    shortName.includes("-shadow-") ||
-    shortName.endsWith("-shadow") ||
-    shortName.startsWith("shadow-")
-  ) {
-    return "element";
-  }
-
-  // Element: icon-* color tokens (but not icon-size-*, already excluded)
-  if (
-    shortName.startsWith("icon-") ||
-    shortName.includes("-icon-") ||
-    shortName.endsWith("-icon")
-  ) {
-    return "element";
-  }
-
-  // Element: checkmark, checkmark-mixed
-  if (shortName.startsWith("checkmark")) return "element";
-
-  // Element: separator
-  if (shortName === "separator") return "element";
+  if (shortName.startsWith("element-")) return "element";
+  if (shortName.startsWith("surface-")) return "surface";
 
   return "unclassified" as TokenClass;
 }
@@ -231,7 +147,7 @@ function cmdTokens(): void {
   console.log(`\n=== Token Inventory ===`);
   console.log(`Total tokens: ${tokens.length}\n`);
 
-  for (const cls of ["surface", "element", "chromatic", "non-color", "unclassified"]) {
+  for (const cls of ["surface", "element", "non-color", "unclassified"]) {
     const list = byClass.get(cls) ?? [];
     if (list.length === 0) continue;
     console.log(`--- ${cls.toUpperCase()} (${list.length}) ---`);
@@ -772,20 +688,6 @@ function loadPairingMap(): { element: string; surface: string }[] | null {
 // ---------------------------------------------------------------------------
 
 /**
- * The rename map: old short name → new short name.
- * Based on Table T01 from the plan.
- */
-const RENAME_MAP: Record<string, string> = {
-  "field-fg": "field-fg-default",
-  "field-placeholder": "field-fg-placeholder",
-  "field-label": "field-fg-label",
-  "field-required": "field-fg-required",
-  checkmark: "checkmark-fg",
-  "checkmark-mixed": "checkmark-fg-mixed",
-  separator: "divider-separator",
-};
-
-/**
  * Recursively discover all .ts, .tsx, .css files under tugdeck/ that contain
  * --tug-base- references. Excludes node_modules/, dist/, .git/, scripts/audit-tokens.ts,
  * and scripts/seed-rename-map.ts (these contain token names as map keys/constants,
@@ -904,10 +806,14 @@ function loadExternalMap(mapPath: string): Record<string, string> {
 function cmdRename(opts: RenameOptions): void {
   const { apply, mapPath, verify, stats } = opts;
 
-  // Load the rename map: external file if --map was given, else hardcoded fallback
-  const activeMap: Record<string, string> = mapPath
-    ? loadExternalMap(mapPath)
-    : RENAME_MAP;
+  // Load the rename map: --map <path> is required.
+  if (!mapPath) {
+    console.error("ERROR: --map <path> is required. The hardcoded fallback rename map has been removed.");
+    console.error("  Generate a map with: bun run audit:tokens rename-map --json > token-rename-map.json");
+    console.error("  Then run: bun run audit:tokens rename --map token-rename-map.json [--apply]");
+    process.exit(1);
+  }
+  const activeMap: Record<string, string> = loadExternalMap(mapPath);
 
   if (verify) {
     // --verify mode: scan for stale references using the same patterns as rename
@@ -1612,7 +1518,7 @@ interface RenameMapValidation {
  *   (b) No two old names map to the same new name (collision check)
  *   (c) All new names are well-formed: non-empty, no leading/trailing hyphens,
  *       kebab-case with only [a-z0-9-] characters (camelCase sub-segments within
- *       slots are permitted per D03 chromatic naming, e.g., "chromatic-accent-coolDefault")
+ *       slots are permitted for role values, e.g., "element-global-text-normal-accentCool-rest")
  */
 function validateRenameMap(
   map: Record<string, string>,
@@ -1726,7 +1632,7 @@ function cmdRenameMap(jsonMode: boolean): void {
     byClass.set(cls, list);
   }
 
-  for (const cls of ["surface", "element", "chromatic", "non-color"]) {
+  for (const cls of ["surface", "element", "non-color"]) {
     const list = byClass.get(cls) ?? [];
     if (list.length === 0) continue;
     const identity = list.filter((e) => e.old === e.new).length;

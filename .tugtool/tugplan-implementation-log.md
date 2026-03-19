@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-19T21:48:42Z
+---
+
+## step-9: Removed CHROMATIC_TOKENS set, simplified classifyToken() to element-/surface- prefix matching, removed legacy RENAME_MAP (cmdRename now requires --map), updated TokenClass, removed all chromatic references. 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-8
 date: 2025-03-19T21:37:36Z
 ---
