@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-19T02:13:26Z
+---
+
+## step-1: Verified DARK_FORMULAS is a complete 200-field literal object with all @semantic tags and design-rationale comments. Ran audit:tokens tokens to confirm all 373 token semantic groups have formula coverage. Regenerated CSS @tug-pairings blocks via inject --apply. All verification gates pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-5
 date: 2025-03-19T00:51:51Z
 ---
