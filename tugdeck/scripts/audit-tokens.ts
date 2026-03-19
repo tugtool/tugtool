@@ -1,29 +1,34 @@
 #!/usr/bin/env bun
 /**
- * token-audit.ts — Mechanical token audit tooling for the tugways design system.
+ * audit-tokens.ts — Mechanical token audit tooling for the tugways design system.
  *
  * Subcommands:
- *   tokens     Extract all --tug-base-* tokens from tug-base-generated.css and
- *              classify each as element / surface / chromatic / non-color.
- *   pairings   Parse all component CSS files and extract every
- *              foreground-on-background pairing (color/fill on background-color).
- *   rename     Bulk-rename tokens across all files (dry-run by default).
- *   inject     Generate and insert @tug-pairings comment blocks into CSS files.
- *   verify     Cross-check @tug-pairings blocks against element-surface-pairing-map.ts.
- *   lint       Hard-fail on annotation completeness, alias chain depth,
- *              missing @tug-pairings blocks, and unresolved pairings.
+ *   tokens      Extract all --tug-base-* tokens from tug-base-generated.css and
+ *               classify each as element / surface / chromatic / non-color.
+ *   pairings    Parse all component CSS files and extract every
+ *               foreground-on-background pairing (color/fill on background-color).
+ *   rename      Bulk-rename tokens across all auto-discovered files (dry-run by default).
+ *               Flags: --apply, --map <path>, --verify, --stats
+ *   rename-map  Generate the complete old->new rename map for all 373 tokens.
+ *               Flags: --json (machine-readable JSON vs. human-readable report)
+ *   inject      Generate and insert @tug-pairings comment blocks into CSS files.
+ *   verify      Cross-check @tug-pairings blocks against element-surface-pairing-map.ts.
+ *   lint        Hard-fail on annotation completeness, alias chain depth,
+ *               missing @tug-pairings blocks, and unresolved pairings.
  *
  * Usage:
- *   bun run scripts/token-audit.ts tokens
- *   bun run scripts/token-audit.ts pairings
- *   bun run scripts/token-audit.ts rename [--apply]
- *   bun run scripts/token-audit.ts inject [--apply]
- *   bun run scripts/token-audit.ts verify
- *   bun run scripts/token-audit.ts lint
+ *   bun run scripts/audit-tokens.ts tokens
+ *   bun run scripts/audit-tokens.ts pairings
+ *   bun run scripts/audit-tokens.ts rename [--apply] [--map <path>] [--verify] [--stats]
+ *   bun run scripts/audit-tokens.ts rename-map [--json]
+ *   bun run scripts/audit-tokens.ts inject [--apply]
+ *   bun run scripts/audit-tokens.ts verify
+ *   bun run scripts/audit-tokens.ts lint
  */
 
 import fs from "fs";
 import path from "path";
+import { SEED_RENAME_MAP } from "./seed-rename-map";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -780,58 +785,244 @@ const RENAME_MAP: Record<string, string> = {
   separator: "divider-separator",
 };
 
-/** Files to search for token references during rename. */
-function getRenameTargetFiles(): string[] {
-  const files: string[] = [];
+/**
+ * Recursively discover all .ts, .tsx, .css files under tugdeck/ that contain
+ * --tug-base- references. Excludes node_modules/, dist/, .git/, scripts/audit-tokens.ts,
+ * and scripts/seed-rename-map.ts (these contain token names as map keys/constants,
+ * not as references to rename). Generated CSS files and scripts/generate-tug-tokens.ts
+ * are included so dry-run/stats output reflects the full blast radius.
+ *
+ * Results are sorted alphabetically by relative path for deterministic output.
+ */
+function discoverTokenFiles(): string[] {
+  const TOKEN_REFERENCE = "--tug-base-";
+  const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git"]);
+  const EXCLUDED_FILES = new Set([
+    path.join(TUGDECK, "scripts/audit-tokens.ts"),
+    path.join(TUGDECK, "scripts/seed-rename-map.ts"),
+  ]);
 
-  // Component CSS files
-  files.push(...COMPONENT_CSS_FILES);
+  const results: string[] = [];
 
-  // Generated CSS
-  files.push(GENERATED_CSS);
-
-  // Theme CSS files
-  const themesDir = path.join(TUGDECK, "styles/themes");
-  if (fs.existsSync(themesDir)) {
-    for (const f of fs.readdirSync(themesDir)) {
-      if (f.endsWith(".css")) files.push(path.join(themesDir, f));
+  function walk(dir: string): void {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      return;
     }
-  }
-
-  // TypeScript source files
-  const tsGlobs = [
-    "src/components/tugways/derivation-rules.ts",
-    "src/components/tugways/theme-derivation-engine.ts",
-    "src/components/tugways/element-surface-pairing-map.ts",
-    "src/__tests__/theme-derivation-engine.test.ts",
-    "src/__tests__/contrast-dashboard.test.tsx",
-    "src/__tests__/gallery-theme-generator-content.test.tsx",
-  ];
-  for (const g of tsGlobs) {
-    const full = path.join(TUGDECK, g);
-    if (fs.existsSync(full)) files.push(full);
-  }
-
-  // cards/*.tsx files
-  const cardsDir = path.join(TUGWAYS, "cards");
-  if (fs.existsSync(cardsDir)) {
-    for (const f of fs.readdirSync(cardsDir)) {
-      if (f.endsWith(".tsx") || f.endsWith(".ts")) {
-        files.push(path.join(cardsDir, f));
+    for (const entry of entries) {
+      const full = path.join(dir, entry);
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        if (!EXCLUDED_DIRS.has(entry)) {
+          walk(full);
+        }
+      } else if (stat.isFile()) {
+        if (!(entry.endsWith(".ts") || entry.endsWith(".tsx") || entry.endsWith(".css"))) {
+          continue;
+        }
+        if (EXCLUDED_FILES.has(full)) continue;
+        let content: string;
+        try {
+          content = fs.readFileSync(full, "utf-8");
+        } catch {
+          continue;
+        }
+        if (content.includes(TOKEN_REFERENCE)) {
+          results.push(full);
+        }
       }
     }
   }
 
-  // Token generation script
-  files.push(path.join(TUGDECK, "scripts/generate-tug-tokens.ts"));
+  walk(TUGDECK);
 
-  return [...new Set(files)]; // dedupe
+  // Sort alphabetically by relative path for deterministic output
+  results.sort((a, b) => {
+    const ra = path.relative(TUGDECK, a);
+    const rb = path.relative(TUGDECK, b);
+    return ra < rb ? -1 : ra > rb ? 1 : 0;
+  });
+
+  return results;
 }
 
-function cmdRename(apply: boolean): void {
+interface RenameOptions {
+  apply: boolean;
+  mapPath?: string;
+  verify: boolean;
+  stats: boolean;
+}
+
+/**
+ * Load and parse an external JSON rename map file.
+ * The file must contain a JSON object mapping old short names to new short names.
+ * Throws on parse errors or invalid format; exits with code 1 on error.
+ */
+function loadExternalMap(mapPath: string): Record<string, string> {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(mapPath, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`ERROR: Could not read map file "${mapPath}": ${msg}`);
+    process.exit(1);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`ERROR: Could not parse JSON from "${mapPath}": ${msg}`);
+    process.exit(1);
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    console.error(`ERROR: Map file "${mapPath}" must contain a JSON object, not an array or primitive.`);
+    process.exit(1);
+  }
+
+  const map: Record<string, string> = {};
+  for (const [key, val] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof val !== "string") {
+      console.error(`ERROR: Map file "${mapPath}": value for key "${key}" must be a string, got ${typeof val}.`);
+      process.exit(1);
+    }
+    map[key] = val;
+  }
+
+  return map;
+}
+
+function cmdRename(opts: RenameOptions): void {
+  const { apply, mapPath, verify, stats } = opts;
+
+  // Load the rename map: external file if --map was given, else hardcoded fallback
+  const activeMap: Record<string, string> = mapPath
+    ? loadExternalMap(mapPath)
+    : RENAME_MAP;
+
+  if (verify) {
+    // --verify mode: scan for stale references using the same patterns as rename
+    console.log(`\n=== Token Rename --verify (checking for stale references) ===\n`);
+
+    const files = discoverTokenFiles();
+    let staleCount = 0;
+
+    for (const filePath of files) {
+      if (!fs.existsSync(filePath)) continue;
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+      const lines = content.split("\n");
+      const relativePath = path.relative(TUGDECK, filePath);
+
+      for (const [oldShort, newShort] of Object.entries(activeMap)) {
+        // Skip identity mappings
+        if (oldShort === newShort) continue;
+
+        const oldFull = `--tug-base-${oldShort}`;
+        const escapedOld = oldFull.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const cssRegex = new RegExp(`${escapedOld}(?=[^\\w-]|$)`, "g");
+
+        const escapedOldShort = oldShort.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const bareRegex = new RegExp(`"${escapedOldShort}"(?=\\s*:)`, "g");
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (cssRegex.test(line)) {
+            console.log(`  ${relativePath}:${i + 1}: stale CSS reference "${oldFull}"`);
+            staleCount++;
+          }
+          cssRegex.lastIndex = 0;
+          if (bareRegex.test(line)) {
+            console.log(`  ${relativePath}:${i + 1}: stale bare reference "${oldShort}"`);
+            staleCount++;
+          }
+          bareRegex.lastIndex = 0;
+        }
+      }
+    }
+
+    if (staleCount === 0) {
+      console.log(`✓ Zero stale references found.`);
+    } else {
+      console.log(`\nTotal stale references: ${staleCount}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (stats) {
+    // --stats mode: count tokens to rename, files to modify, replacements per file
+    console.log(`\n=== Token Rename --stats (blast radius preview) ===\n`);
+
+    // Count non-identity entries
+    const renameEntries = Object.entries(activeMap).filter(([old, newName]) => old !== newName);
+    console.log(`Non-identity rename entries: ${renameEntries.length}`);
+
+    const files = discoverTokenFiles();
+    const fileStats: { file: string; count: number }[] = [];
+
+    for (const filePath of files) {
+      if (!fs.existsSync(filePath)) continue;
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+      let count = 0;
+
+      for (const [oldShort] of renameEntries) {
+        const oldFull = `--tug-base-${oldShort}`;
+        const escapedOld = oldFull.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const cssRegex = new RegExp(`${escapedOld}(?=[^\\w-]|$)`, "g");
+        const cssMatches = content.match(cssRegex);
+        if (cssMatches) count += cssMatches.length;
+
+        const escapedOldShort = oldShort.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const bareRegex = new RegExp(`"${escapedOldShort}"(?=\\s*:)`, "g");
+        const bareMatches = content.match(bareRegex);
+        if (bareMatches) count += bareMatches.length;
+      }
+
+      if (count > 0) {
+        fileStats.push({ file: path.relative(TUGDECK, filePath), count });
+      }
+    }
+
+    // Sort by count descending
+    fileStats.sort((a, b) => b.count - a.count);
+
+    const totalFiles = fileStats.length;
+    const totalReplacements = fileStats.reduce((sum, f) => sum + f.count, 0);
+
+    console.log(`Files to modify: ${totalFiles}`);
+    console.log(`Total replacements: ${totalReplacements}\n`);
+
+    if (fileStats.length > 0) {
+      console.log(`Per-file replacement counts (sorted by count):`);
+      for (const { file, count } of fileStats) {
+        console.log(`  ${count.toString().padStart(4)}  ${file}`);
+      }
+    }
+    return;
+  }
+
   console.log(`\n=== Token Rename ${apply ? "(APPLYING)" : "(DRY RUN)"} ===\n`);
 
-  const files = getRenameTargetFiles();
+  const files = discoverTokenFiles();
   const changes: { file: string; count: number; replacements: string[] }[] = [];
 
   for (const filePath of files) {
@@ -841,7 +1032,7 @@ function cmdRename(apply: boolean): void {
     const replacements: string[] = [];
     let count = 0;
 
-    for (const [oldShort, newShort] of Object.entries(RENAME_MAP)) {
+    for (const [oldShort, newShort] of Object.entries(activeMap)) {
       // Replace in CSS custom property names: --tug-base-{old}
       const oldFull = `--tug-base-${oldShort}`;
       const newFull = `--tug-base-${newShort}`;
@@ -1401,12 +1592,201 @@ function cmdLint(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Subcommand: rename-map
+// ---------------------------------------------------------------------------
+
+interface RenameMapValidation {
+  /** Tokens present in inventory but missing from the map */
+  missing: string[];
+  /** New names that appear more than once (collisions) */
+  collisions: Array<{ newName: string; oldNames: string[] }>;
+  /** Map entries where the new name is malformed */
+  malformed: Array<{ oldName: string; newName: string; reason: string }>;
+}
+
+/**
+ * Validate a rename map against the live token inventory.
+ *
+ * Checks:
+ *   (a) Every token from extractTokens() is present in the map
+ *   (b) No two old names map to the same new name (collision check)
+ *   (c) All new names are well-formed: non-empty, no leading/trailing hyphens,
+ *       kebab-case with only [a-z0-9-] characters (camelCase sub-segments within
+ *       slots are permitted per D03 chromatic naming, e.g., "chromatic-accent-coolDefault")
+ */
+function validateRenameMap(
+  map: Record<string, string>,
+  tokens: TokenEntry[],
+): RenameMapValidation {
+  const missing: string[] = [];
+  const malformed: Array<{ oldName: string; newName: string; reason: string }> = [];
+
+  // (a) Check every token is present in the map
+  for (const token of tokens) {
+    if (!(token.shortName in map)) {
+      missing.push(token.shortName);
+    }
+  }
+
+  // (c) Check new names are well-formed
+  for (const [oldName, newName] of Object.entries(map)) {
+    if (!newName || newName.trim() === "") {
+      malformed.push({ oldName, newName, reason: "empty new name" });
+      continue;
+    }
+    if (newName.startsWith("-") || newName.endsWith("-")) {
+      malformed.push({ oldName, newName, reason: "leading or trailing hyphen" });
+      continue;
+    }
+    // Allow kebab-case with camelCase sub-segments (letters, digits, hyphens)
+    if (!/^[a-zA-Z0-9-]+$/.test(newName)) {
+      malformed.push({ oldName, newName, reason: `invalid characters in new name: "${newName}"` });
+    }
+  }
+
+  // (b) Check for collisions (two old names mapping to same new name)
+  const newToOlds = new Map<string, string[]>();
+  for (const [oldName, newName] of Object.entries(map)) {
+    const list = newToOlds.get(newName) ?? [];
+    list.push(oldName);
+    newToOlds.set(newName, list);
+  }
+  const collisions: Array<{ newName: string; oldNames: string[] }> = [];
+  for (const [newName, oldNames] of newToOlds) {
+    if (oldNames.length > 1) {
+      collisions.push({ newName, oldNames });
+    }
+  }
+
+  return { missing, collisions, malformed };
+}
+
+/**
+ * Generate and output the complete rename map.
+ *
+ * Default mode: human-readable grouped report to stdout.
+ * --json mode: flat {"old": "new"} JSON to stdout; validation errors to stderr.
+ */
+function cmdRenameMap(jsonMode: boolean): void {
+  const tokens = extractTokens();
+  const map = SEED_RENAME_MAP;
+
+  const validation = validateRenameMap(map, tokens);
+  const hasErrors =
+    validation.missing.length > 0 ||
+    validation.collisions.length > 0 ||
+    validation.malformed.length > 0;
+
+  if (jsonMode) {
+    // Errors go to stderr in JSON mode
+    if (hasErrors) {
+      if (validation.missing.length > 0) {
+        console.error(`ERROR: ${validation.missing.length} tokens missing from map:`);
+        for (const m of validation.missing) {
+          console.error(`  ${m}`);
+        }
+      }
+      if (validation.collisions.length > 0) {
+        console.error(`ERROR: ${validation.collisions.length} collision(s):`);
+        for (const c of validation.collisions) {
+          console.error(`  ${c.newName} <- [${c.oldNames.join(", ")}]`);
+        }
+      }
+      if (validation.malformed.length > 0) {
+        console.error(`ERROR: ${validation.malformed.length} malformed new name(s):`);
+        for (const mf of validation.malformed) {
+          console.error(`  ${mf.oldName} -> "${mf.newName}": ${mf.reason}`);
+        }
+      }
+      process.exit(1);
+    }
+
+    // Only output non-identity entries in the JSON map
+    const jsonMap: Record<string, string> = {};
+    for (const [oldName, newName] of Object.entries(map)) {
+      jsonMap[oldName] = newName;
+    }
+    console.log(JSON.stringify(jsonMap, null, 2));
+    return;
+  }
+
+  // Human-readable grouped report
+  console.log(`\n=== Rename Map Report ===`);
+  console.log(`Total tokens in inventory: ${tokens.length}`);
+  console.log(`Total entries in seed map: ${Object.keys(map).length}`);
+
+  // Group by classification
+  const byClass = new Map<string, Array<{ old: string; new: string }>>();
+  for (const token of tokens) {
+    const newName = map[token.shortName];
+    if (newName === undefined) continue;
+    const cls = token.classification;
+    const list = byClass.get(cls) ?? [];
+    list.push({ old: token.shortName, new: newName });
+    byClass.set(cls, list);
+  }
+
+  for (const cls of ["surface", "element", "chromatic", "non-color"]) {
+    const list = byClass.get(cls) ?? [];
+    if (list.length === 0) continue;
+    const identity = list.filter((e) => e.old === e.new).length;
+    const renamed = list.filter((e) => e.old !== e.new).length;
+    console.log(`\n--- ${cls.toUpperCase()} (${list.length} tokens: ${renamed} renamed, ${identity} identity) ---`);
+    for (const entry of list) {
+      if (entry.old === entry.new) {
+        console.log(`  ${entry.old}  [identity]`);
+      } else {
+        console.log(`  ${entry.old}  ->  ${entry.new}`);
+      }
+    }
+  }
+
+  // Validation results
+  console.log(`\n=== Validation ===`);
+  if (hasErrors) {
+    if (validation.missing.length > 0) {
+      console.log(`\nERROR: ${validation.missing.length} token(s) missing from map:`);
+      for (const m of validation.missing) {
+        console.log(`  ${m}`);
+      }
+    }
+    if (validation.collisions.length > 0) {
+      console.log(`\nERROR: ${validation.collisions.length} collision(s):`);
+      for (const c of validation.collisions) {
+        console.log(`  "${c.newName}" <- [${c.oldNames.join(", ")}]`);
+      }
+    }
+    if (validation.malformed.length > 0) {
+      console.log(`\nERROR: ${validation.malformed.length} malformed new name(s):`);
+      for (const mf of validation.malformed) {
+        console.log(`  ${mf.oldName} -> "${mf.newName}": ${mf.reason}`);
+      }
+    }
+    process.exit(1);
+  } else {
+    console.log(`\n✓ Validation passed: all ${tokens.length} tokens mapped, zero collisions, all new names well-formed.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 const args = process.argv.slice(2);
 const command = args[0];
 const flags = new Set(args.slice(1));
+
+// Index-based extraction of --map <path> flag value (Set-based parsing loses positional info)
+function extractFlagValue(rawArgs: string[], flag: string): string | undefined {
+  const idx = rawArgs.indexOf(flag);
+  if (idx === -1) return undefined;
+  const value = rawArgs[idx + 1];
+  if (value === undefined || value.startsWith("--")) {
+    console.error(`ERROR: ${flag} requires a path argument.`);
+    process.exit(1);
+  }
+  return value;
+}
 
 switch (command) {
   case "tokens":
@@ -1415,8 +1795,19 @@ switch (command) {
   case "pairings":
     cmdPairings();
     break;
-  case "rename":
-    cmdRename(flags.has("--apply"));
+  case "rename": {
+    const subArgs = args.slice(1);
+    const mapPath = extractFlagValue(subArgs, "--map");
+    cmdRename({
+      apply: flags.has("--apply"),
+      mapPath,
+      verify: flags.has("--verify"),
+      stats: flags.has("--stats"),
+    });
+    break;
+  }
+  case "rename-map":
+    cmdRenameMap(flags.has("--json"));
     break;
   case "inject":
     cmdInject(flags.has("--apply"));
@@ -1428,16 +1819,29 @@ switch (command) {
     cmdLint();
     break;
   default:
-    console.log(`Usage: bun run scripts/token-audit.ts <command> [flags]
+    console.log(`Usage: bun run audit:tokens <command> [flags]
 
 Commands:
-  tokens              Extract and classify all --tug-base-* tokens
-  pairings            Audit component CSS files for foreground-on-background pairings
-  rename [--apply]    Bulk-rename tokens (dry run by default)
-  inject [--apply]    Generate @tug-pairings comment blocks (dry run by default)
-  verify              Cross-check @tug-pairings blocks against pairing map
-  lint                Hard-fail on missing annotations, multi-hop aliases, missing
-                      @tug-pairings blocks, and unresolved pairings
+  tokens                              Extract and classify all --tug-base-* tokens
+  pairings                            Audit component CSS files for foreground-on-background pairings
+  rename [flags]                      Bulk-rename tokens across auto-discovered files (dry run by default)
+    --apply                             Write changes to disk (default: dry run)
+    --map <path>                        Load rename map from a JSON file (default: built-in 7-entry map)
+    --verify                            Scan for stale old-name references after rename (requires --map)
+    --stats                             Print blast radius summary: token count, file count, per-file replacements (requires --map)
+  rename-map [--json]                 Generate the complete old->new rename map for all tokens
+    --json                              Output flat JSON object suitable for --map flag (default: human-readable report)
+  inject [--apply]                    Generate @tug-pairings comment blocks (dry run by default)
+  verify                              Cross-check @tug-pairings blocks against pairing map
+  lint                                Hard-fail on missing annotations, multi-hop aliases, missing
+                                      @tug-pairings blocks, and unresolved pairings
+
+Examples:
+  bun run audit:tokens rename-map --json > token-rename-map.json
+  bun run audit:tokens rename --map token-rename-map.json --stats
+  bun run audit:tokens rename --map token-rename-map.json
+  bun run audit:tokens rename --map token-rename-map.json --apply
+  bun run audit:tokens rename --verify --map token-rename-map.json
 `);
     break;
 }

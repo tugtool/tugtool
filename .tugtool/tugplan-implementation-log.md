@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-19T17:54:22Z
+---
+
+## step-7: Integration checkpoint: verified full rename-map-to-verify pipeline end-to-end. 373 tokens mapped, 325 non-identity entries, 4144 dry-run replacements, 3695 stale refs detected (expected), all subcommands pass, 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
+step: step-6
+date: 2025-03-19T17:48:05Z
+---
+
+## step-6: Updated help text and JSDoc to document rename-map subcommand and --map, --verify, --stats flags. Verified COMPONENT_CSS_FILES count (23) matches comment.
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
+step: step-5
+date: 2025-03-19T17:39:40Z
+---
+
+## step-5: Verified --verify mode (forward-implemented in step-3): detects 3695 stale references, reports file:line:name, exits 1 when stale refs found. All checkpoints pass.
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
+step: step-4
+date: 2025-03-19T17:34:28Z
+---
+
+## step-4: Verified --stats mode (forward-implemented in step-3): 325 non-identity entries, 58 files, 3711 replacements. All checkpoints pass.
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
+step: step-3
+date: 2025-03-19T17:29:02Z
+---
+
+## step-3: Added loadExternalMap(), refactored cmdRename() to accept options object with --map, --apply, --verify, --stats flags
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
+step: step-2
+date: 2025-03-19T17:15:51Z
+---
+
+## step-2: Created seed-rename-map.ts with 373 token mappings and added validateRenameMap(), cmdRenameMap() with human-readable and --json output modes
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
+step: step-1
+date: 2025-03-19T17:03:31Z
+---
+
+## step-1: Replaced hardcoded getRenameTargetFiles() with discoverTokenFiles() that recursively scans tugdeck/ for files containing --tug-base- references
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
 step: step-11
 date: 2025-03-19T04:08:35Z
 ---
