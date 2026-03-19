@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-19T17:34:28Z
+---
+
+## step-4: Verified --stats mode (forward-implemented in step-3): 325 non-identity entries, 58 files, 3711 replacements. All checkpoints pass.
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
 step: step-3
 date: 2025-03-19T17:29:02Z
 ---
