@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-19T17:15:51Z
+---
+
+## step-2: Created seed-rename-map.ts with 373 token mappings and added validateRenameMap(), cmdRenameMap() with human-readable and --json output modes
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
 step: step-1
 date: 2025-03-19T17:03:31Z
 ---

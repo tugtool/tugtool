@@ -24,6 +24,7 @@
 
 import fs from "fs";
 import path from "path";
+import { SEED_RENAME_MAP } from "./seed-rename-map";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -1421,6 +1422,183 @@ function cmdLint(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Subcommand: rename-map
+// ---------------------------------------------------------------------------
+
+interface RenameMapValidation {
+  /** Tokens present in inventory but missing from the map */
+  missing: string[];
+  /** New names that appear more than once (collisions) */
+  collisions: Array<{ newName: string; oldNames: string[] }>;
+  /** Map entries where the new name is malformed */
+  malformed: Array<{ oldName: string; newName: string; reason: string }>;
+}
+
+/**
+ * Validate a rename map against the live token inventory.
+ *
+ * Checks:
+ *   (a) Every token from extractTokens() is present in the map
+ *   (b) No two old names map to the same new name (collision check)
+ *   (c) All new names are well-formed: non-empty, no leading/trailing hyphens,
+ *       kebab-case with only [a-z0-9-] characters (camelCase sub-segments within
+ *       slots are permitted per D03 chromatic naming, e.g., "chromatic-accent-coolDefault")
+ */
+function validateRenameMap(
+  map: Record<string, string>,
+  tokens: TokenEntry[],
+): RenameMapValidation {
+  const missing: string[] = [];
+  const malformed: Array<{ oldName: string; newName: string; reason: string }> = [];
+
+  // (a) Check every token is present in the map
+  for (const token of tokens) {
+    if (!(token.shortName in map)) {
+      missing.push(token.shortName);
+    }
+  }
+
+  // (c) Check new names are well-formed
+  for (const [oldName, newName] of Object.entries(map)) {
+    if (!newName || newName.trim() === "") {
+      malformed.push({ oldName, newName, reason: "empty new name" });
+      continue;
+    }
+    if (newName.startsWith("-") || newName.endsWith("-")) {
+      malformed.push({ oldName, newName, reason: "leading or trailing hyphen" });
+      continue;
+    }
+    // Allow kebab-case with camelCase sub-segments (letters, digits, hyphens)
+    if (!/^[a-zA-Z0-9-]+$/.test(newName)) {
+      malformed.push({ oldName, newName, reason: `invalid characters in new name: "${newName}"` });
+    }
+  }
+
+  // (b) Check for collisions (two old names mapping to same new name)
+  const newToOlds = new Map<string, string[]>();
+  for (const [oldName, newName] of Object.entries(map)) {
+    const list = newToOlds.get(newName) ?? [];
+    list.push(oldName);
+    newToOlds.set(newName, list);
+  }
+  const collisions: Array<{ newName: string; oldNames: string[] }> = [];
+  for (const [newName, oldNames] of newToOlds) {
+    if (oldNames.length > 1) {
+      collisions.push({ newName, oldNames });
+    }
+  }
+
+  return { missing, collisions, malformed };
+}
+
+/**
+ * Generate and output the complete rename map.
+ *
+ * Default mode: human-readable grouped report to stdout.
+ * --json mode: flat {"old": "new"} JSON to stdout; validation errors to stderr.
+ */
+function cmdRenameMap(jsonMode: boolean): void {
+  const tokens = extractTokens();
+  const map = SEED_RENAME_MAP;
+
+  const validation = validateRenameMap(map, tokens);
+  const hasErrors =
+    validation.missing.length > 0 ||
+    validation.collisions.length > 0 ||
+    validation.malformed.length > 0;
+
+  if (jsonMode) {
+    // Errors go to stderr in JSON mode
+    if (hasErrors) {
+      if (validation.missing.length > 0) {
+        console.error(`ERROR: ${validation.missing.length} tokens missing from map:`);
+        for (const m of validation.missing) {
+          console.error(`  ${m}`);
+        }
+      }
+      if (validation.collisions.length > 0) {
+        console.error(`ERROR: ${validation.collisions.length} collision(s):`);
+        for (const c of validation.collisions) {
+          console.error(`  ${c.newName} <- [${c.oldNames.join(", ")}]`);
+        }
+      }
+      if (validation.malformed.length > 0) {
+        console.error(`ERROR: ${validation.malformed.length} malformed new name(s):`);
+        for (const mf of validation.malformed) {
+          console.error(`  ${mf.oldName} -> "${mf.newName}": ${mf.reason}`);
+        }
+      }
+      process.exit(1);
+    }
+
+    // Only output non-identity entries in the JSON map
+    const jsonMap: Record<string, string> = {};
+    for (const [oldName, newName] of Object.entries(map)) {
+      jsonMap[oldName] = newName;
+    }
+    console.log(JSON.stringify(jsonMap, null, 2));
+    return;
+  }
+
+  // Human-readable grouped report
+  console.log(`\n=== Rename Map Report ===`);
+  console.log(`Total tokens in inventory: ${tokens.length}`);
+  console.log(`Total entries in seed map: ${Object.keys(map).length}`);
+
+  // Group by classification
+  const byClass = new Map<string, Array<{ old: string; new: string }>>();
+  for (const token of tokens) {
+    const newName = map[token.shortName];
+    if (newName === undefined) continue;
+    const cls = token.classification;
+    const list = byClass.get(cls) ?? [];
+    list.push({ old: token.shortName, new: newName });
+    byClass.set(cls, list);
+  }
+
+  for (const cls of ["surface", "element", "chromatic", "non-color"]) {
+    const list = byClass.get(cls) ?? [];
+    if (list.length === 0) continue;
+    const identity = list.filter((e) => e.old === e.new).length;
+    const renamed = list.filter((e) => e.old !== e.new).length;
+    console.log(`\n--- ${cls.toUpperCase()} (${list.length} tokens: ${renamed} renamed, ${identity} identity) ---`);
+    for (const entry of list) {
+      if (entry.old === entry.new) {
+        console.log(`  ${entry.old}  [identity]`);
+      } else {
+        console.log(`  ${entry.old}  ->  ${entry.new}`);
+      }
+    }
+  }
+
+  // Validation results
+  console.log(`\n=== Validation ===`);
+  if (hasErrors) {
+    if (validation.missing.length > 0) {
+      console.log(`\nERROR: ${validation.missing.length} token(s) missing from map:`);
+      for (const m of validation.missing) {
+        console.log(`  ${m}`);
+      }
+    }
+    if (validation.collisions.length > 0) {
+      console.log(`\nERROR: ${validation.collisions.length} collision(s):`);
+      for (const c of validation.collisions) {
+        console.log(`  "${c.newName}" <- [${c.oldNames.join(", ")}]`);
+      }
+    }
+    if (validation.malformed.length > 0) {
+      console.log(`\nERROR: ${validation.malformed.length} malformed new name(s):`);
+      for (const mf of validation.malformed) {
+        console.log(`  ${mf.oldName} -> "${mf.newName}": ${mf.reason}`);
+      }
+    }
+    process.exit(1);
+  } else {
+    console.log(`\n✓ Validation passed: all ${tokens.length} tokens mapped, zero collisions, all new names well-formed.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1438,6 +1616,9 @@ switch (command) {
   case "rename":
     cmdRename(flags.has("--apply"));
     break;
+  case "rename-map":
+    cmdRenameMap(flags.has("--json"));
+    break;
   case "inject":
     cmdInject(flags.has("--apply"));
     break;
@@ -1451,13 +1632,14 @@ switch (command) {
     console.log(`Usage: bun run scripts/token-audit.ts <command> [flags]
 
 Commands:
-  tokens              Extract and classify all --tug-base-* tokens
-  pairings            Audit component CSS files for foreground-on-background pairings
-  rename [--apply]    Bulk-rename tokens (dry run by default)
-  inject [--apply]    Generate @tug-pairings comment blocks (dry run by default)
-  verify              Cross-check @tug-pairings blocks against pairing map
-  lint                Hard-fail on missing annotations, multi-hop aliases, missing
-                      @tug-pairings blocks, and unresolved pairings
+  tokens                   Extract and classify all --tug-base-* tokens
+  pairings                 Audit component CSS files for foreground-on-background pairings
+  rename [--apply]         Bulk-rename tokens (dry run by default)
+  rename-map [--json]      Generate the complete old->new rename map (human-readable by default)
+  inject [--apply]         Generate @tug-pairings comment blocks (dry run by default)
+  verify                   Cross-check @tug-pairings blocks against pairing map
+  lint                     Hard-fail on missing annotations, multi-hop aliases, missing
+                           @tug-pairings blocks, and unresolved pairings
 `);
     break;
 }
