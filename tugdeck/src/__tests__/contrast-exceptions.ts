@@ -251,14 +251,45 @@ export const RECIPE_PAIR_EXCEPTIONS: Readonly<Record<string, ReadonlySet<string>
   brio: new Set<string>(),
 
   // harmony (light mode with LIGHT_FORMULAS):
-  // fg-inverse on surface-screen is a structural polarity mismatch already covered
-  // by KNOWN_PAIR_EXCEPTIONS. No additional harmony-specific exceptions at this stage.
-  // Phase 4 (Step 4) will populate this set with documented Harmony failures once
-  // the parameterized loop runs against the full pairing map including composited pairings.
+  //
+  // Phase 3 ground truth — documented via the step-4 parameterized loop against the
+  // full pairing map including composited pairings.
+  //
+  // Harmony uses LIGHT_FORMULAS which inverts the surface/foreground polarity relative to
+  // Brio dark. Two structural failures are harmony-specific: they pass in Brio dark but fail in
+  // Harmony because the polarity flip makes lighter tokens the "foreground" against lighter surfaces.
+  // A third pair (accent-cool-default|field-border-rest) is a global exception already listed in
+  // KNOWN_PAIR_EXCEPTIONS and is not repeated here.
+  //
+  // Cross-referenced via `bun run audit:tokens pairings`:
+  //   - fg-inverse|surface-screen: .tug-tab-inactive — fg-inverse (for on-fill dark fills)
+  //     placed on light surface-screen; polarity mismatch by design (confirmed CSS selector)
+  //   - fg-inverse|surface-default: .tug-badge-ghost and .tug-badge-outlined — fg-inverse
+  //     is near-white in dark mode (L~0.94), which becomes near-white on near-white
+  //     surface-default (L~0.95) in light mode; contrast abs 6.5 (threshold 30, ui-component)
+  //
+  // Categorization:
+  //   [design-choice]: fg-inverse surface placements are structural; they are on-fill tokens
+  //     not designed for use on light surfaces. Phase 3 will introduce a dedicated light-mode
+  //     surface token pair that preserves polarity.
   harmony: new Set([
-    // fg-inverse on surface-screen: structural polarity mismatch (fg-inverse is for on-fill text)
-    // Already in KNOWN_PAIR_EXCEPTIONS; included here for clarity in the recipe loop.
-    "--tug-base-fg-inverse|--tug-base-surface-screen", // [design-choice] fg-inverse is for on-fill text (dark bg fills), not light surface-screen
+    // --- Harmony-specific structural polarity failures (light mode only) ---
+
+    // fg-inverse is for on-fill text (dark bg fills). In light mode, fg-inverse derives near-white
+    // (L~0.94), creating near-zero contrast against near-white surface-screen (L~0.95+).
+    // CSS context: .tug-tab-inactive, role: body-text, contrast abs 8.3, threshold 75.
+    "--tug-base-fg-inverse|--tug-base-surface-screen", // [design-choice] fg-inverse designed for dark on-fill backgrounds; polarity mismatch on light surface-screen
+
+    // fg-inverse on surface-default: ghost/outlined badge foreground. In dark mode, fg-inverse
+    // is near-white (L~0.94) against dark surface-default — high contrast and passes.
+    // In light mode, fg-inverse remains near-white while surface-default is also near-white
+    // (L~0.95), producing near-zero contrast (abs 6.5). CSS context: .tug-badge-ghost,
+    // .tug-badge-outlined. Role: ui-component, threshold 30.
+    // Note: Also in KNOWN_PAIR_EXCEPTIONS for dark-mode ghost badge structural issue.
+    "--tug-base-fg-inverse|--tug-base-surface-default", // [design-choice] fg-inverse near-white on near-white surface-default in light mode; polarity mismatch; Phase 3 will introduce light-mode fg-inverse token
+
+    // Note: "--tug-base-accent-cool-default|--tug-base-field-border-rest" is already covered by
+    // KNOWN_PAIR_EXCEPTIONS (global, applies to all recipes including harmony). It is not repeated here.
   ]),
 };
 

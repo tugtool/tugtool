@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-19T00:45:11Z
+---
+
+## step-4: Captured and categorized harmony-specific contrast failures in RECIPE_PAIR_EXCEPTIONS['harmony']. 2 entries documented with [design-choice] tags, contrast values, thresholds, and CSS context. Removed duplicate already in KNOWN_PAIR_EXCEPTIONS.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
 step: step-3
 date: 2025-03-19T00:29:05Z
 ---
