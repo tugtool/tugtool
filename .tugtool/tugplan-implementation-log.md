@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-19T02:41:00Z
+---
+
+## step-3: Text and border semantic groups verified complete with explicit light-mode rationale (work done in step-2 commit). Updated JSDoc to document step-3 completion scope. 78 [light-review-pending] tags on mode-independent dispatch fields deferred to step-4. All verification gates pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-2
 date: 2025-03-19T02:30:06Z
 ---

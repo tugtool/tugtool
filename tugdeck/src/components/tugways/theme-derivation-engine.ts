@@ -1524,8 +1524,28 @@ export const LIGHT_FORMULAS_LEGACY: DerivationFormulas = { ...BASE_FORMULAS, ...
  *   - Surface Layering
  *   - Surface Coloring
  *
- * Remaining groups have explicit values from DARK_FORMULAS with `[light-review-pending]`
- * annotations marking fields that require light-mode review in Steps 3 and 4.
+ * Groups covered in Step 3 (text/border — all values from LIGHT_OVERRIDES, zero inherited):
+ *   - Text Brightness
+ *   - Text Hierarchy
+ *   - Text Coloring
+ *   - Border Visibility
+ *   - Card Frame Style
+ *   - Shadow Depth
+ *   - Filled Control Prominence
+ *   - Outlined Control Style (LIGHT_OVERRIDES fields only; *ToneLight inherited fields reviewed in Step 4)
+ *   - Ghost Control Style (LIGHT_OVERRIDES fields only; *ToneLight/*ILight inherited fields reviewed in Step 4)
+ *   - Badge Style
+ *   - Icon Style
+ *   - Tab Style
+ *   - Toggle Style
+ *   - Field Style
+ *   - Computed Tone Override
+ *   - Hue Name Dispatch (surfScreenHue, fgPlaceholderSource from LIGHT_OVERRIDES; remaining mode-independent fields reviewed in Step 4)
+ *   - Selection Mode
+ *
+ * Remaining `[light-review-pending]` fields are all inherited from DARK_FORMULAS and are
+ * mode-independent (hue slot dispatch, sentinel dispatch, sentinel alpha, and a few hue name
+ * fields). These are reviewed in Step 4 (control and component groups).
  *
  * Use this as `formulas` in any light-mode `ThemeRecipe`. [D01] [D04]
  */
