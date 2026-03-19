@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-19T00:17:46Z
+---
+
+## step-2: Replaced parentSurface skip in evaluateRules with deferred collection and pass-2 enforcement. Composites via compositeOverSurface+hexToOkLabL, enforces contrast floor, re-emits via setChromatic. Added floor-applied-composited diagnostic reason and unit tests T-COMP-1 through T-COMP-8.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-fix.md
+
+---
+
+---
 step: step-1
 date: 2025-03-18T23:52:39Z
 ---

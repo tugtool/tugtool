@@ -252,6 +252,8 @@ import {
   POLARITY_FACTOR,
   CONTRAST_MIN_DELTA,
   CONTRAST_THRESHOLDS,
+  compositeOverSurface,
+  hexToOkLabL,
 } from "./theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "./element-surface-pairing-map";
 import type { ElementSurfacePairing } from "./element-surface-pairing-map";
@@ -331,13 +333,14 @@ export interface CVDWarning {
  * contrast floor enforcement in evaluateRules(). Spec S04.
  *
  * Reasons:
- *   "floor-applied"         — tone was clamped by enforceContrastFloor to meet threshold
- *   "structurally-fixed"    — token is black/white/transparent/alpha; not adjustable
- *   "composite-dependent"   — token uses parentSurface compositing; floor not applied
+ *   "floor-applied"            — tone was clamped by enforceContrastFloor against an opaque surface (pass 1)
+ *   "floor-applied-composited" — tone was clamped by enforceContrastFloor against a composited surface L (pass 2)
+ *   "structurally-fixed"       — token is black/white/transparent/alpha; not adjustable
+ *   "composite-dependent"      — token uses parentSurface compositing; floor not applied
  */
 export interface ContrastDiagnostic {
   token: string;
-  reason: "floor-applied" | "structurally-fixed" | "composite-dependent";
+  reason: "floor-applied" | "floor-applied-composited" | "structurally-fixed" | "composite-dependent";
   surfaces: string[];
   initialTone: number;
   finalTone: number;
@@ -2320,6 +2323,22 @@ function buildElementPairingLookup(
  * @param elementPairingLookup  Map from element token name to its pairing entries (for contrast floors)
  * @param diagnostics      Output array for ContrastDiagnostic entries (mutated in place)
  */
+/**
+ * Deferred entry for pass-2 composited contrast enforcement.
+ * Captures all data needed to call enforceContrastFloor and setChromatic
+ * atomically after pass 1 has fully resolved all opaque tokens.
+ * References: [D01], Spec S02
+ */
+interface DeferredCompositedEntry {
+  tokenName: string;
+  slotPrimaryName: string;
+  hueRef: string;
+  hueAngle: number;
+  intensity: number;
+  alpha: number;
+  pairing: ElementSurfacePairing;
+}
+
 export function evaluateRules(
   rules: Record<string, DerivationRule>,
   resolvedSlots: ResolvedHueSlots,
@@ -2346,6 +2365,13 @@ export function evaluateRules(
   diagnostics: ContrastDiagnostic[] = [],
 ): void {
   const slotKeys = new Set(Object.keys(resolvedSlots));
+
+  // Pass 2 state — populated during pass 1 to enable composited enforcement
+  // after all opaque tokens are resolved. [D01], Spec S02
+  const deferredCompositedPairings: DeferredCompositedEntry[] = [];
+  // finalToneMap: captures the post-pass-1 tone for each chromatic token so
+  // pass 2 starts from the pass-1-adjusted tone (not the pre-adjustment value).
+  const finalToneMap = new Map<string, number>();
 
   for (const [tokenName, rule] of Object.entries(rules)) {
     switch (rule.type) {
@@ -2436,8 +2462,37 @@ export function evaluateRules(
           let adjustedTone = t;
 
           for (const pairing of pairings) {
-            // Skip pairs with parentSurface — compositing changes the effective L
-            if (pairing.parentSurface) continue;
+            // Pairs with parentSurface need compositing to determine the effective
+            // surface L. There are two categories:
+            //
+            // A) Surface is semi-transparent (alpha < 1.0): must composite over
+            //    parentSurface in linear sRGB to get the correct effective L.
+            //    Defer to pass 2. [D01], [D04], Spec S02
+            //
+            // B) Surface is fully opaque (alpha = 1.0): parentSurface annotation
+            //    exists for validateThemeContrast (post-hoc audit), but the surface
+            //    L is already authoritative and does not change after compositing.
+            //    These pairs are design-choice decorative constraints (same-hue
+            //    border vs bg) documented in KNOWN_PAIR_EXCEPTIONS — skip entirely
+            //    to preserve original pass-1 skip behavior for such pairs.
+            if (pairing.parentSurface) {
+              const surfaceForCheck = resolved[pairing.surface];
+              if (surfaceForCheck && (surfaceForCheck.alpha ?? 1.0) < 1.0) {
+                // Category A: semi-transparent surface — defer to pass 2
+                deferredCompositedPairings.push({
+                  tokenName,
+                  slotPrimaryName: slot.primaryName,
+                  hueRef: slot.ref,
+                  hueAngle: slot.angle,
+                  intensity: i,
+                  alpha: a,
+                  pairing,
+                });
+              }
+              // Category B: fully opaque surface with parentSurface annotation —
+              // skip (same as original behavior; pairs are documented exceptions)
+              continue;
+            }
 
             const surfaceResolved = resolved[pairing.surface];
             if (!surfaceResolved) continue; // surface not yet evaluated — skip
@@ -2500,9 +2555,116 @@ export function evaluateRules(
           }
         }
 
+        // Record post-pass-1 tone so pass 2 starts from the adjusted value.
+        // Tokens with both opaque and composited pairings need this: pass 1
+        // may have pushed tone from e.g. 50 to 60 for an opaque surface, and
+        // pass 2 must start from 60. [D01], Spec S02 (critical timing note)
+        if (a === 100) {
+          finalToneMap.set(tokenName, t);
+        }
+
         setChromatic(tokenName, slot.ref, slot.angle, i, t, a, slot.primaryName);
         break;
       }
+    }
+  }
+
+  // =========================================================================
+  // Pass 2: Composited contrast enforcement [D01], [D04], Spec S02
+  //
+  // Iterate all deferred (parentSurface) pairings. Each element token's
+  // starting tone is read from finalToneMap (post-pass-1 adjusted), so pass 2
+  // is strictly additive — it can only push tone further if the composited
+  // surface is more restrictive than any opaque surface pass 1 already handled.
+  //
+  // Compositing path: compositeOverSurface (linear sRGB alpha-blend) then
+  // hexToOkLabL — matching exactly how validateThemeContrast measures
+  // composited pairs. [D04], Spec S01
+  // =========================================================================
+  for (const entry of deferredCompositedPairings) {
+    const {
+      tokenName,
+      slotPrimaryName,
+      hueRef,
+      hueAngle,
+      intensity,
+      alpha,
+      pairing,
+    } = entry;
+
+    // Starting tone: use post-pass-1 value from finalToneMap if available,
+    // otherwise fall back to the tone baked into the current resolved entry
+    // (this handles the rare case where a token has ONLY composited pairings).
+    let currentTone = finalToneMap.get(tokenName);
+    if (currentTone === undefined) {
+      // Token had no opaque pairings — tone from rule expr (no pass-1 change).
+      // We can recover it from the resolved map via L, but it is simpler to
+      // skip if the resolved entry is not yet set (should not happen since
+      // setChromatic was called above for every chromatic token).
+      continue;
+    }
+
+    const surfaceResolved = resolved[pairing.surface];
+    const parentResolved = resolved[pairing.parentSurface!];
+    if (!surfaceResolved || !parentResolved) continue; // tokens not yet resolved
+
+    // parentSurface must be fully opaque; compositeOverSurface will throw if not.
+    // Skip gracefully in production to avoid crashing on edge cases.
+    if ((parentResolved.alpha ?? 1.0) < 1.0) continue;
+
+    // Compute composited surface L via linear sRGB alpha-blending. [D04], Spec S01
+    const compositeHex = compositeOverSurface(surfaceResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+
+    const elementL = toneToL(currentTone, slotPrimaryName);
+    const threshold = CONTRAST_THRESHOLDS[pairing.role] ?? 15;
+
+    // Check if contrast is already sufficient against the composited surface
+    const currentContrast = contrastFromLValues(elementL, compositeL);
+    if (Math.abs(currentContrast) >= threshold) continue;
+
+    // Polarity based on element vs composited surface L (not raw surfaceL). [D01]
+    const polarity: "lighter" | "darker" = elementL > compositeL ? "lighter" : "darker";
+
+    const adjustedTone = enforceContrastFloor(
+      currentTone,
+      compositeL,
+      threshold,
+      polarity,
+      slotPrimaryName,
+    );
+
+    // Only update the token if the adjusted tone actually meets the threshold.
+    // enforceContrastFloor returns the extreme tone (0 or 100) when the threshold
+    // is structurally unachievable in tone space. In that case we must NOT update
+    // the token — the pair is structurally impossible and will be documented in
+    // RECIPE_PAIR_EXCEPTIONS or KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.
+    const adjustedL = toneToL(adjustedTone, slotPrimaryName);
+    const achievedContrast = contrastFromLValues(adjustedL, compositeL);
+    if (Math.abs(achievedContrast) < threshold) continue;
+
+    if (adjustedTone !== currentTone) {
+      const priorTone = currentTone;
+
+      // Atomically update both tokens[name] (CSS string) and resolved[name]
+      // (ResolvedColor) via the same setChromatic callback used in pass 1.
+      // Without this call, tokens would encode the pre-pass-2 tone while
+      // resolved would be stale. [D01]
+      setChromatic(tokenName, hueRef, hueAngle, intensity, adjustedTone, alpha, slotPrimaryName);
+
+      // Update finalToneMap so subsequent deferred entries for the same token
+      // see the most restrictive tone. [D01], Spec S02 step 10
+      finalToneMap.set(tokenName, adjustedTone);
+      currentTone = adjustedTone;
+
+      diagnostics.push({
+        token: tokenName,
+        reason: "floor-applied-composited",
+        surfaces: [pairing.surface],
+        initialTone: priorTone,
+        finalTone: adjustedTone,
+        threshold,
+      });
     }
   }
 }

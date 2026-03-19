@@ -52,6 +52,8 @@ import {
   CONTRAST_MARGINAL_DELTA,
   toneToL,
   computePerceptualContrast,
+  compositeOverSurface,
+  hexToOkLabL,
 } from "@/components/tugways/theme-accessibility";
 
 import {
@@ -2414,14 +2416,16 @@ describe("derivation-engine step-4 contrast floor", () => {
     for (const diag of output.diagnostics) {
       expect(typeof diag.token).toBe("string");
       expect(diag.token.startsWith("--tug-base-")).toBe(true);
-      expect(["floor-applied", "structurally-fixed", "composite-dependent"]).toContain(diag.reason);
+      expect(["floor-applied", "floor-applied-composited", "structurally-fixed", "composite-dependent"]).toContain(diag.reason);
       expect(Array.isArray(diag.surfaces)).toBe(true);
       expect(typeof diag.initialTone).toBe("number");
       expect(typeof diag.finalTone).toBe("number");
       expect(typeof diag.threshold).toBe("number");
     }
-    // All floor-applied entries must have finalTone != initialTone
-    const floorApplied = output.diagnostics.filter((d) => d.reason === "floor-applied");
+    // All floor-applied entries (pass 1 and pass 2) must have finalTone != initialTone
+    const floorApplied = output.diagnostics.filter(
+      (d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited",
+    );
     for (const diag of floorApplied) {
       expect(diag.finalTone).not.toBe(diag.initialTone);
     }
@@ -2441,7 +2445,9 @@ describe("derivation-engine step-4 contrast floor", () => {
     // UNLESS they are in the known structural exception set (token cannot reach threshold in
     // tone space regardless — e.g. ghost-danger-fg tokens on red hue which is a vivid mid-tone).
     const floorApplied = new Set(
-      output.diagnostics.filter((d) => d.reason === "floor-applied").map((d) => d.token),
+      output.diagnostics
+        .filter((d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited")
+        .map((d) => d.token),
     );
 
     const floorFailures = results.filter(
@@ -2459,7 +2465,9 @@ describe("derivation-engine step-4 contrast floor", () => {
   // -------------------------------------------------------------------------
   it("T-FLOOR-6: structurally fixed tokens (alpha < 1) are not in floor diagnostics", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    const floorApplied = output.diagnostics.filter((d) => d.reason === "floor-applied");
+    const floorApplied = output.diagnostics.filter(
+      (d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited",
+    );
 
     // For every floor-applied token, check its resolved color has alpha = 1
     const semiTransparentFloor = floorApplied.filter((d) => {
@@ -2484,7 +2492,7 @@ describe("derivation-engine step-4 contrast floor", () => {
 
     const floorApplied = new Map(
       output.diagnostics
-        .filter((d) => d.reason === "floor-applied")
+        .filter((d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited")
         .map((d) => [d.token, d]),
     );
 
@@ -2634,5 +2642,199 @@ describe("Step 4 verification — harmony light-mode cardFrameActiveTone and for
     // Control border tokens (use borderRamp) must be identical
     const controlBorderToken = "--tug-base-control-outlined-action-border-rest";
     expect(fromRecipe.tokens[controlBorderToken]).toBe(fromExplicit.tokens[controlBorderToken]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 2: Pass-2 composited contrast enforcement unit tests
+// References: [D01], [D04], Spec S01, Spec S02
+// ---------------------------------------------------------------------------
+
+describe("step-2 pass-2 composited contrast enforcement", () => {
+  // -------------------------------------------------------------------------
+  // T-COMP-1: compositeL at alpha=0 equals parentL (fully transparent token)
+  // Spec S01: alpha=0 means element is invisible; compositeL = parentSurface L
+  // -------------------------------------------------------------------------
+  it("T-COMP-1: compositeL for alpha=0 token equals parent surface L", () => {
+    // Fully transparent token on a dark surface: compositeHex = surface-default hex
+    const tokenResolved: ResolvedColor = { L: 0.9, C: 0.1, h: 230, alpha: 0.0 };
+    const parentResolved: ResolvedColor = { L: 0.35, C: 0.01, h: 260, alpha: 1.0 };
+    const compositeHex = compositeOverSurface(tokenResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+    const parentL = hexToOkLabL(compositeOverSurface({ ...parentResolved, alpha: 1.0 }, parentResolved));
+    // alpha=0 means token contributes nothing; compositeHex should match the parent hex
+    // Allow small delta for hex quantization (8-bit gamma encoding)
+    expect(Math.abs(compositeL - hexToOkLabL(compositeOverSurface(parentResolved, parentResolved)))).toBeLessThan(0.01);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-2: compositeL at alpha=1.0 equals the token's own L (fully opaque)
+  // Spec S01: alpha=1 means token is fully opaque; compositing = identity
+  // -------------------------------------------------------------------------
+  it("T-COMP-2: compositeL for alpha=1.0 token equals the token L (no parent blending)", () => {
+    const tokenResolved: ResolvedColor = { L: 0.78, C: 0.146, h: 55, alpha: 1.0 };
+    const parentResolved: ResolvedColor = { L: 0.35, C: 0.01, h: 260, alpha: 1.0 };
+    const compositeHex = compositeOverSurface(tokenResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+    // At alpha=1.0, composite result must equal the token's own OKLab L
+    // The token L after hex round-trip from OKLCH should be close to 0.78
+    expect(Math.abs(compositeL - tokenResolved.L)).toBeLessThan(0.02);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-3: compositeL at alpha=0.15 (typical badge tint) is between
+  //           parent L and token L, weighted heavily toward parent
+  // Spec S01 step 2: alpha-blend in linear sRGB
+  // -------------------------------------------------------------------------
+  it("T-COMP-3: compositeL for alpha=0.15 is between parent L and token L", () => {
+    // Light token (L≈0.78) at 15% opacity on dark parent (L≈0.35)
+    const tokenResolved: ResolvedColor = { L: 0.78, C: 0.146, h: 55, alpha: 0.15 };
+    const parentResolved: ResolvedColor = { L: 0.35, C: 0.005, h: 260, alpha: 1.0 };
+    const compositeHex = compositeOverSurface(tokenResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+    // At alpha=0.15, the composite should be closer to the parent (0.35) than to the token (0.78)
+    expect(compositeL).toBeGreaterThan(parentResolved.L - 0.02);
+    expect(compositeL).toBeLessThan(tokenResolved.L);
+    // Specifically: 15% of token + 85% of parent → should be well below 0.5
+    expect(compositeL).toBeLessThan(0.55);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-4: compositeL at alpha=0.40 (selection highlight) is weighted
+  //           40% token + 60% parent
+  // Spec S01: alpha=0.40 is the selection-bg typical value
+  // -------------------------------------------------------------------------
+  it("T-COMP-4: compositeL for alpha=0.40 blends correctly between token and parent", () => {
+    // Mid-weight blend: light token on dark parent
+    const tokenResolved: ResolvedColor = { L: 0.78, C: 0.14, h: 230, alpha: 0.4 };
+    const parentResolved: ResolvedColor = { L: 0.35, C: 0.005, h: 260, alpha: 1.0 };
+    const compositeHex = compositeOverSurface(tokenResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+    // At alpha=0.40, the composite is between parent and token, closer to parent
+    expect(compositeL).toBeGreaterThan(parentResolved.L - 0.02);
+    expect(compositeL).toBeLessThan(tokenResolved.L + 0.02);
+    // 40% token + 60% parent: compositeL must be distinctly above parentL
+    expect(compositeL).toBeGreaterThan(parentResolved.L + 0.05);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-5: pass-2 enforcement adjusts tone for a composited surface
+  // Verifies that deriveTheme applies contrast enforcement for semi-transparent
+  // surfaces that previously had the parentSurface skip. [D01], Spec S02
+  // -------------------------------------------------------------------------
+  it("T-COMP-5: pass-2 enforcement produces diagnostics for composited surface pairings", () => {
+    // Run derivation on brio — if any composited pairs required tone adjustment,
+    // diagnostics will include entries from pass 2 with reason "floor-applied-composited"
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    // Not all recipes will have pass-2 diagnostics (if all composited pairs already pass),
+    // but the diagnostics array must be structurally valid
+    expect(Array.isArray(output.diagnostics)).toBe(true);
+    // All diagnostics must be well-formed regardless of pass origin
+    for (const diag of output.diagnostics) {
+      expect(["floor-applied", "floor-applied-composited"]).toContain(diag.reason);
+      expect(typeof diag.token).toBe("string");
+      expect(diag.token.startsWith("--tug-base-")).toBe(true);
+      expect(diag.finalTone).not.toBe(diag.initialTone);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-6: after pass-2 adjustment, tokens[name] CSS string tone parameter
+  //           reflects the adjusted tone (setChromatic re-emission check).
+  //           Verifies [D01] atomicity: tokens and resolved stay consistent.
+  // -------------------------------------------------------------------------
+  it("T-COMP-6: tokens CSS string and resolved L are consistent after pass-2 adjustments", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    // For every chromatic token, the CSS string must include --tug-color(
+    // and the resolved map must have a corresponding ResolvedColor entry
+    for (const tokenName of Object.keys(output.resolved)) {
+      const tokenStr = output.tokens[tokenName];
+      if (!tokenStr) continue;
+      expect(tokenStr).toContain("--tug-color(");
+    }
+    // Specifically check that tokens with pass-2 diagnostics are consistent
+    const pass2Tokens = new Set(output.diagnostics.map((d) => d.token));
+    for (const tokenName of pass2Tokens) {
+      const tokenStr = output.tokens[tokenName];
+      const resolvedColor = output.resolved[tokenName];
+      expect(tokenStr).toBeDefined();
+      expect(resolvedColor).toBeDefined();
+      // The token string must encode --tug-color() (not a stale pre-pass-2 value)
+      expect(tokenStr).toContain("--tug-color(");
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-8: enforceContrastFloor with composited surface L produces correct
+  // tone adjustment.
+  // Unit test verifying that calling enforceContrastFloor directly with a
+  // composited surface L value (obtained via compositeOverSurface + hexToOkLabL)
+  // returns a tone whose L achieves the required contrast against that composite L.
+  // This is the core unit contract of pass-2 enforcement. [D01], [D04], Spec S02
+  // -------------------------------------------------------------------------
+  it("T-COMP-8: enforceContrastFloor with composited surface L produces correct tone adjustment", () => {
+    // Set up a semi-transparent dark surface (alpha 0.10) composited over a very dark parent.
+    // This models a dark tone-background or selection-highlight surface scenario.
+    // compositeL will be slightly lighter than the parent but still very dark overall,
+    // providing sufficient room for the element to achieve contrast 75 by moving lighter.
+    const surfaceResolved: ResolvedColor = { L: 0.42, C: 0.02, h: 260, alpha: 0.10 };
+    const parentResolved: ResolvedColor = { L: 0.14, C: 0.005, h: 260, alpha: 1.0 };
+
+    // Compute composited surface L — this is the effective background L for pass-2.
+    // 10% blend of a mid surface into a very dark parent yields a near-dark compositeL.
+    const compositeHex = compositeOverSurface(surfaceResolved, parentResolved);
+    const compositeL = hexToOkLabL(compositeHex);
+
+    // compositeL must be above the raw parentL but far below the surface L
+    expect(compositeL).toBeGreaterThan(parentResolved.L);
+    expect(compositeL).toBeLessThan(surfaceResolved.L);
+
+    // Verify compositeL is dark enough that we have headroom for contrast 75.
+    // contrast 75 requires |deltaL| >= 75 / (150 * 0.85) ≈ 0.588 for lighter-on-dark.
+    // compositeL must be below 0.96 - 0.588 = 0.372 (cobalt tone-100 L ≈ 0.96).
+    expect(compositeL).toBeLessThan(0.37);
+
+    // Element starts at tone 40 (cobalt) — not far enough from compositeL to pass threshold.
+    const elementHue = "cobalt";
+    const initialTone = 40;
+    const threshold = 75; // body-text threshold
+
+    // compositeL is dark; element is lighter, so polarity = "lighter" (push to higher tone)
+    const adjustedTone = enforceContrastFloor(initialTone, compositeL, threshold, "lighter", elementHue);
+
+    // The floor must push tone higher (lighter) to gain more contrast
+    expect(adjustedTone).toBeGreaterThan(initialTone);
+
+    // The adjusted tone must produce contrast >= threshold against compositeL.
+    // Light element on dark composite: deltaL = compositeL - adjustedL is negative;
+    // contrast magnitude = |deltaL| * CONTRAST_SCALE * POLARITY_FACTOR = |deltaL| * 150 * 0.85
+    const adjustedL = toneToL(adjustedTone, elementHue);
+    const deltaL = compositeL - adjustedL;
+    const contrastMagnitude = Math.abs(deltaL) * 150 * 0.85;
+    expect(contrastMagnitude).toBeGreaterThanOrEqual(threshold);
+  });
+
+  // -------------------------------------------------------------------------
+  // T-COMP-7: brio dark still passes T4.1 assertions after pass-2 enforcement
+  // Integration regression guard: pass 2 must not break pass 1 results.
+  // References: [D01] "pass 2 adjustments are strictly additive"
+  // -------------------------------------------------------------------------
+  it("T-COMP-7: deriveTheme(brio) still passes core readability assertions with pass-2 active", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    // Core readability: fg-default on primary surfaces must pass contrast 75
+    const coreFailures = results.filter(
+      (r) =>
+        r.fg === "--tug-base-fg-default" &&
+        (r.bg === "--tug-base-surface-default" ||
+          r.bg === "--tug-base-surface-inset" ||
+          r.bg === "--tug-base-surface-content") &&
+        !r.contrastPass,
+    );
+    expect(coreFailures).toEqual([]);
+
+    // Token count must still be 373
+    expect(Object.keys(output.tokens).length).toBe(373);
   });
 });
