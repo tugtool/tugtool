@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-19T04:02:02Z
+---
+
+## step-9: Removed BASE_FORMULAS, DARK_OVERRIDES, LIGHT_OVERRIDES, and LIGHT_FORMULAS_LEGACY exports. Updated EXAMPLE_RECIPES.brio.formulas to DARK_FORMULAS and EXAMPLE_RECIPES.harmony.formulas to LIGHT_FORMULAS directly. Updated test imports in theme-derivation-engine.test.ts and gallery-theme-generator-content.test.tsx. Zero non-comment references to removed symbols remain.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-8
 date: 2025-03-19T03:48:56Z
 ---

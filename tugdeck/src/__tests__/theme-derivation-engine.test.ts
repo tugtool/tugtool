@@ -25,10 +25,6 @@ import {
   EXAMPLE_RECIPES,
   DARK_FORMULAS,
   LIGHT_FORMULAS,
-  LIGHT_FORMULAS_LEGACY,
-  LIGHT_OVERRIDES,
-  BASE_FORMULAS,
-  DARK_OVERRIDES,
   generateResolvedCssExport,
   resolveHueSlots,
   computeTones,
@@ -1034,9 +1030,8 @@ describe("derivation-engine formulas-exports", () => {
     expect(formulas.filledBgDarkTone).toBe(20);
     expect(formulas.fieldBgRestTone).toBe(8);
 
-    // Verify EXAMPLE_RECIPES.brio.formulas is composed from BASE_FORMULAS + DARK_OVERRIDES [D03]
-    // The composed object equals DARK_FORMULAS in value (deep equality), not reference.
-    expect(EXAMPLE_RECIPES.brio.formulas).toEqual(DARK_FORMULAS);
+    // Verify EXAMPLE_RECIPES.brio.formulas is DARK_FORMULAS directly [D03]
+    expect(EXAMPLE_RECIPES.brio.formulas).toBe(DARK_FORMULAS);
   });
 
   it("T-FORMULAS-NO-REGRESSION: deriveTheme(brio) output is unchanged after preset deletion", () => {
@@ -1064,20 +1059,14 @@ describe("derivation-engine formulas-exports", () => {
 // ---------------------------------------------------------------------------
 // Step 3: Formula consolidation tests (T-FORMULAS-STEP3)
 // Verifies that DerivationFormulas has been consolidated to emphasis-level
-// fields, that BASE_FORMULAS + DARK_OVERRIDES compose correctly, and
-// that the net field count reduction meets the plan target (>= 40 fields). [D02] [D03]
+// fields and that EXAMPLE_RECIPES uses direct formula objects. [D02] [D04]
 // ---------------------------------------------------------------------------
 
 describe("derivation-engine formula-consolidation step-3", () => {
-  it("T-FORMULAS-STEP3-BASE-OVERRIDES: BASE_FORMULAS + DARK_OVERRIDES compose to DARK_FORMULAS", () => {
-    // BASE_FORMULAS IS the Brio dark recipe (DARK_OVERRIDES is currently empty).
-    // The composed spread should equal DARK_FORMULAS value-wise.
-    const composed = { ...BASE_FORMULAS, ...DARK_OVERRIDES };
-    expect(composed).toEqual(DARK_FORMULAS);
-    // BASE_FORMULAS equals DARK_FORMULAS by reference (it's an alias for now)
-    expect(BASE_FORMULAS).toBe(DARK_FORMULAS);
-    // DARK_OVERRIDES is empty
-    expect(Object.keys(DARK_OVERRIDES)).toHaveLength(0);
+  it("T-FORMULAS-STEP3-RECIPES: EXAMPLE_RECIPES.brio and harmony use DARK_FORMULAS and LIGHT_FORMULAS directly", () => {
+    // Phase 3 step 9: EXAMPLE_RECIPES uses direct formula objects, not spread composition. [D04]
+    expect(EXAMPLE_RECIPES.brio.formulas).toBe(DARK_FORMULAS);
+    expect(EXAMPLE_RECIPES.harmony.formulas).toBe(LIGHT_FORMULAS);
   });
 
   it("T-FORMULAS-STEP3-EMPHASIS-FIELDS: emphasis-level outlined fields exist with correct values", () => {
@@ -2447,11 +2436,11 @@ describe("derivation-engine step-4 contrast floor", () => {
 
 describe("Step 4 verification — harmony light-mode cardFrameActiveTone and formula fields", () => {
   // Task 1: Bug 2 fix — cardFrameActiveTone=88 is used in harmony
-  it("LIGHT_OVERRIDES.cardFrameActiveTone is 88 (Bug 2 fix)", () => {
-    expect(LIGHT_OVERRIDES.cardFrameActiveTone).toBe(88);
+  it("LIGHT_FORMULAS.cardFrameActiveTone is 88 (Bug 2 fix)", () => {
+    expect(LIGHT_FORMULAS.cardFrameActiveTone).toBe(88);
   });
 
-  it("EXAMPLE_RECIPES.harmony formulas.cardFrameActiveTone is 88 (LIGHT_OVERRIDES applied)", () => {
+  it("EXAMPLE_RECIPES.harmony formulas.cardFrameActiveTone is 88 (LIGHT_FORMULAS value)", () => {
     const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
     expect(harmonyFormulas.cardFrameActiveTone).toBe(88);
   });
@@ -2766,8 +2755,8 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
 
 // ---------------------------------------------------------------------------
 // Phase 3 Step 2: LIGHT_FORMULAS standalone literal equality tests
-// Verifies that the new standalone LIGHT_FORMULAS literal produces identical
-// token output to LIGHT_FORMULAS_LEGACY (the spread-based predecessor). [D01]
+// Verifies that LIGHT_FORMULAS is a complete 202-field standalone literal
+// and that EXAMPLE_RECIPES.harmony uses it directly. [D01] [D04]
 // ---------------------------------------------------------------------------
 
 describe("phase-3-step-2 standalone LIGHT_FORMULAS equality", () => {
@@ -2776,16 +2765,9 @@ describe("phase-3-step-2 standalone LIGHT_FORMULAS equality", () => {
     expect(Object.keys(DARK_FORMULAS).length).toBe(202);
   });
 
-  it("LIGHT_FORMULAS deep-equals LIGHT_FORMULAS_LEGACY (all 200 fields identical)", () => {
-    expect(LIGHT_FORMULAS).toEqual(LIGHT_FORMULAS_LEGACY);
-  });
-
-  it("deriveTheme output is identical for LIGHT_FORMULAS and LIGHT_FORMULAS_LEGACY", () => {
-    const harmonyCopy = { ...EXAMPLE_RECIPES.harmony };
-    const outNew = deriveTheme({ ...harmonyCopy, formulas: LIGHT_FORMULAS });
-    const outLegacy = deriveTheme({ ...harmonyCopy, formulas: LIGHT_FORMULAS_LEGACY });
-    // Token maps must be identical
-    expect(outNew.tokens).toEqual(outLegacy.tokens);
+  it("LIGHT_FORMULAS is used directly in EXAMPLE_RECIPES.harmony (no spread composition)", () => {
+    // Phase 3 step 9: harmony recipe references LIGHT_FORMULAS directly [D04]
+    expect(EXAMPLE_RECIPES.harmony.formulas).toBe(LIGHT_FORMULAS);
   });
 
   it("LIGHT_FORMULAS has no spread operators (is a standalone literal)", () => {
@@ -2806,26 +2788,26 @@ describe("phase-3-step-2 standalone LIGHT_FORMULAS equality", () => {
     expect(Object.hasOwn(LIGHT_FORMULAS, "selectionInactiveSemanticMode")).toBe(true);
   });
 
-  it("LIGHT_FORMULAS surface/canvas group values match LIGHT_OVERRIDES", () => {
-    // Verify all surface/canvas fields match the LIGHT_OVERRIDES values (Step 2 coverage)
-    expect(LIGHT_FORMULAS.bgAppTone).toBe(LIGHT_OVERRIDES.bgAppTone);
-    expect(LIGHT_FORMULAS.bgCanvasTone).toBe(LIGHT_OVERRIDES.bgCanvasTone);
-    expect(LIGHT_FORMULAS.surfaceSunkenTone).toBe(LIGHT_OVERRIDES.surfaceSunkenTone);
-    expect(LIGHT_FORMULAS.surfaceDefaultTone).toBe(LIGHT_OVERRIDES.surfaceDefaultTone);
-    expect(LIGHT_FORMULAS.surfaceRaisedTone).toBe(LIGHT_OVERRIDES.surfaceRaisedTone);
-    expect(LIGHT_FORMULAS.surfaceOverlayTone).toBe(LIGHT_OVERRIDES.surfaceOverlayTone);
-    expect(LIGHT_FORMULAS.surfaceInsetTone).toBe(LIGHT_OVERRIDES.surfaceInsetTone);
-    expect(LIGHT_FORMULAS.surfaceContentTone).toBe(LIGHT_OVERRIDES.surfaceContentTone);
-    expect(LIGHT_FORMULAS.surfaceScreenTone).toBe(LIGHT_OVERRIDES.surfaceScreenTone);
-    expect(LIGHT_FORMULAS.atmI).toBe(LIGHT_OVERRIDES.atmI);
-    expect(LIGHT_FORMULAS.bgAppI).toBe(LIGHT_OVERRIDES.bgAppI);
-    expect(LIGHT_FORMULAS.bgCanvasI).toBe(LIGHT_OVERRIDES.bgCanvasI);
-    expect(LIGHT_FORMULAS.surfaceDefaultI).toBe(LIGHT_OVERRIDES.surfaceDefaultI);
-    expect(LIGHT_FORMULAS.surfaceRaisedI).toBe(LIGHT_OVERRIDES.surfaceRaisedI);
-    expect(LIGHT_FORMULAS.surfaceOverlayI).toBe(LIGHT_OVERRIDES.surfaceOverlayI);
-    expect(LIGHT_FORMULAS.surfaceScreenI).toBe(LIGHT_OVERRIDES.surfaceScreenI);
-    expect(LIGHT_FORMULAS.surfaceInsetI).toBe(LIGHT_OVERRIDES.surfaceInsetI);
-    expect(LIGHT_FORMULAS.surfaceContentI).toBe(LIGHT_OVERRIDES.surfaceContentI);
-    expect(LIGHT_FORMULAS.bgAppSurfaceI).toBe(LIGHT_OVERRIDES.bgAppSurfaceI);
+  it("LIGHT_FORMULAS surface/canvas group has correct light-mode values", () => {
+    // Verify all surface/canvas fields have the expected light-mode design values (Step 2 coverage)
+    expect(LIGHT_FORMULAS.bgAppTone).toBe(95);
+    expect(LIGHT_FORMULAS.bgCanvasTone).toBe(95);
+    expect(LIGHT_FORMULAS.surfaceSunkenTone).toBe(88);
+    expect(LIGHT_FORMULAS.surfaceDefaultTone).toBe(90);
+    expect(LIGHT_FORMULAS.surfaceRaisedTone).toBe(92);
+    expect(LIGHT_FORMULAS.surfaceOverlayTone).toBe(93);
+    expect(LIGHT_FORMULAS.surfaceInsetTone).toBe(86);
+    expect(LIGHT_FORMULAS.surfaceContentTone).toBe(86);
+    expect(LIGHT_FORMULAS.surfaceScreenTone).toBe(85);
+    expect(LIGHT_FORMULAS.atmI).toBe(6);
+    expect(LIGHT_FORMULAS.bgAppI).toBe(3);
+    expect(LIGHT_FORMULAS.bgCanvasI).toBe(3);
+    expect(LIGHT_FORMULAS.surfaceDefaultI).toBe(6);
+    expect(LIGHT_FORMULAS.surfaceRaisedI).toBe(6);
+    expect(LIGHT_FORMULAS.surfaceOverlayI).toBe(5);
+    expect(LIGHT_FORMULAS.surfaceScreenI).toBe(8);
+    expect(LIGHT_FORMULAS.surfaceInsetI).toBe(6);
+    expect(LIGHT_FORMULAS.surfaceContentI).toBe(6);
+    expect(LIGHT_FORMULAS.bgAppSurfaceI).toBe(3);
   });
 });
