@@ -25,7 +25,7 @@
  *
  * ```tsx
  * const ref = useRef<HTMLDivElement>(null);
- * useCSSVar(ref, "--tug-base-accent-default", isActive ? "var(--tug-base-accent-default)" : "var(--tug-base-accent-cool-default)");
+ * useCSSVar(ref, "--tug-base-element-global-fill-normal-accent-rest", isActive ? "var(--tug-base-element-global-fill-normal-accent-rest)" : "var(--tug-base-element-global-fill-normal-accentCool-rest)");
  * ```
  *
  * @module hooks/use-css-var
@@ -48,8 +48,8 @@ import { useEffect } from "react";
  * if `ref.current` changes or becomes null during unmount.
  *
  * @param ref   - React ref to the target DOM element
- * @param name  - CSS custom property name (e.g., "--tug-base-accent-default")
- * @param value - CSS value string (e.g., "var(--tug-base-accent-default)")
+ * @param name  - CSS custom property name (e.g., "--tug-base-element-global-fill-normal-accent-rest")
+ * @param value - CSS value string (e.g., "var(--tug-base-element-global-fill-normal-accent-rest)")
  */
 export function useCSSVar(
   ref: React.RefObject<HTMLElement | null>,

@@ -7,35 +7,39 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .gtg-hue-column-title (color)        |
- * | --tug-base-fg-default (fg-default)               | --tug-base-surface-raised (surface-raised)       | body-text    | .gtg-mode-btn:hover (color)          |
- * | --tug-base-fg-onAccent (fg-onAccent)             | --tug-base-accent-default (accent-default)       | body-text    | .gtg-mode-btn--active (color)        |
- * | --tug-base-border-default (border-default)       | --tug-base-bg-canvas (bg-canvas)                 | ui-component | .gtg-preview-canvas (border)         |
- * | --tug-base-fg-default (fg-default)               | --tug-base-bg-canvas (bg-canvas)                 | body-text    | .gtg-preview-title (color)           |
- * | --tug-base-fg-muted (fg-muted)                   | --tug-base-bg-canvas (bg-canvas)                 | subdued-text | .gtg-preview-muted (color)           |
- * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-bg-canvas (bg-canvas)                 | subdued-text | .gtg-preview-subtle (color)          |
- * | --tug-base-border-muted (border-muted)           | --tug-base-surface-raised (surface-raised)       | ui-component | .gtg-preview-inset (border)          |
- * | --tug-base-fg-link (fg-link)                     | --tug-base-bg-canvas (bg-canvas)                 | body-text    | .gtg-preview-link (color)            |
- * | --tug-base-border-default (border-default)       | --tug-base-surface-default (surface-default)     | ui-component | .gtg-compact-hue-row (border)        |
- * | --tug-base-fg-default (fg-default)               | --tug-base-surface-default (surface-default)     | body-text    | .gtg-compact-hue-label (color)       |
- * | --tug-base-border-default (border-default)       | --tug-base-surface-raised (surface-raised)       | ui-component | .gtg-compact-hue-popover (border)    |
- * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-default (surface-default)     | subdued-text | .gtg-token-value (color)             |
- * | --tug-base-fg-default (fg-default)               | --tug-base-surface-control (surface-control)     | body-text    | .gtg-preset-btn (color)              |
- * | --tug-base-border-default (border-default)       | --tug-base-surface-control (surface-control)     | ui-component | .gtg-preset-btn (border)             |
- * | --tug-base-accent-default (accent-default)       | --tug-base-accent-subtle (accent-subtle)         | ui-component | .gtg-preset-btn--active (border-color) |
- * | --tug-base-fg-onAccent (fg-onAccent)             | --tug-base-accent-subtle (accent-subtle)         | body-text    | .gtg-preset-btn--active (color)      |
- * | --tug-base-tone-success-fg (tone-success-fg)     | --tug-base-surface-default (surface-default)     | body-text    | .gtg-dash-summary-count--all-pass (color) |
- * | --tug-base-tone-caution-fg (tone-caution-fg)     | --tug-base-surface-default (surface-default)     | body-text    | .gtg-dash-summary-count--partial (color) |
- * | --tug-base-tone-danger-fg (tone-danger-fg)       | --tug-base-surface-default (surface-default)     | body-text    | .gtg-dash-summary-count--fail (color) |
- * | --tug-base-tone-success-fg (tone-success-fg)     | --tug-base-tone-success-bg (tone-success-bg)     | body-text    | .gtg-dash-badge--pass (color)        |
- * | --tug-base-tone-success-border (tone-success-border) | --tug-base-tone-success-bg (tone-success-bg)     | ui-component | .gtg-dash-badge--pass (border)       |
- * | --tug-base-tone-caution-fg (tone-caution-fg)     | --tug-base-tone-caution-bg (tone-caution-bg)     | body-text    | .gtg-dash-badge--marginal (color)    |
- * | --tug-base-tone-caution-border (tone-caution-border) | --tug-base-tone-caution-bg (tone-caution-bg)     | ui-component | .gtg-dash-badge--marginal (border)   |
- * | --tug-base-tone-danger-fg (tone-danger-fg)       | --tug-base-tone-danger-bg (tone-danger-bg)       | body-text    | .gtg-dash-badge--fail (color)        |
- * | --tug-base-tone-danger-border (tone-danger-border) | --tug-base-tone-danger-bg (tone-danger-bg)       | ui-component | .gtg-dash-badge--fail (border)       |
- * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-raised (surface-raised)       | subdued-text | .gtg-dash-badge--decorative (color)  |
- * | --tug-base-fg-default (fg-default)               | --tug-base-tone-caution-bg (tone-caution-bg)     | body-text    | .gtg-autofix-suggestion-item (color) |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gtg-hue-column-title (color)        |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | body-text    | .gtg-mode-btn:hover (color)          |
+ * | --tug-base-element-global-text-normal-onAccent-rest (element-global-text-normal-onAccent-rest) | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | body-text    | .gtg-mode-btn--active (color)        |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | ui-component | .gtg-preview-canvas (border)         |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | body-text    | .gtg-preview-title (color)           |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | subdued-text | .gtg-preview-muted (color)           |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | subdued-text | .gtg-preview-subtle (color)          |
+ * | --tug-base-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | ui-component | .gtg-preview-inset (border)          |
+ * | --tug-base-element-global-text-normal-link-rest (element-global-text-normal-link-rest) | --tug-base-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | body-text    | .gtg-preview-link (color)            |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | ui-component | .gtg-compact-hue-row (border)        |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gtg-compact-hue-label (color)       |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | ui-component | .gtg-compact-hue-popover (border)    |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gtg-token-value (color)             |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | body-text    | .gtg-preset-btn (color)              |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | ui-component | .gtg-preset-btn (border)             |
+ * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-element-global-fill-normal-accentSubtle-rest (element-global-fill-normal-accentSubtle-rest) | ui-component | .gtg-preset-btn--active (border-color) |
+ * | --tug-base-element-global-text-normal-onAccent-rest (element-global-text-normal-onAccent-rest) | --tug-base-element-global-fill-normal-accentSubtle-rest (element-global-fill-normal-accentSubtle-rest) | body-text    | .gtg-preset-btn--active (color)      |
+ * | --tug-base-element-tone-text-normal-success-rest (element-tone-text-normal-success-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gtg-dash-summary-count--all-pass (color) |
+ * | --tug-base-element-tone-text-normal-caution-rest (element-tone-text-normal-caution-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gtg-dash-summary-count--partial (color) |
+ * | --tug-base-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gtg-dash-summary-count--fail (color) |
+ * | --tug-base-element-tone-text-normal-success-rest (element-tone-text-normal-success-rest) | --tug-base-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | body-text    | .gtg-dash-badge--pass (color)        |
+ * | --tug-base-element-tone-border-normal-success-rest (element-tone-border-normal-success-rest) | --tug-base-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | ui-component | .gtg-dash-badge--pass (border)       |
+ * | --tug-base-element-tone-text-normal-caution-rest (element-tone-text-normal-caution-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | body-text    | .gtg-dash-badge--marginal (color)    |
+ * | --tug-base-element-tone-border-normal-caution-rest (element-tone-border-normal-caution-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | ui-component | .gtg-dash-badge--marginal (border)   |
+ * | --tug-base-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | body-text    | .gtg-dash-badge--fail (color)        |
+ * | --tug-base-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | ui-component | .gtg-dash-badge--fail (border)       |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | subdued-text | .gtg-dash-badge--decorative (color)  |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | body-text    | .gtg-autofix-suggestion-item (color) |
  */
+
+
+
+
 
 
 
@@ -117,13 +121,13 @@
   gap: 3px;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-hue-column-title {
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   user-select: none;
   margin-bottom: 2px;
 }
@@ -187,8 +191,8 @@
 .gtg-mode-btn {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-muted);
-  background-color: var(--tug-base-surface-default);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
   border: none;
   padding: 5px 14px;
   cursor: pointer;
@@ -198,18 +202,18 @@
 }
 
 .gtg-mode-btn:hover {
-  background-color: var(--tug-base-surface-raised);
-  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-surface-global-primary-normal-raised-rest);
+  color: var(--tug-base-element-global-text-normal-default-rest);
 }
 
 .gtg-mode-btn--active {
-  background-color: var(--tug-base-accent-default);
-  color: var(--tug-base-fg-onAccent);
+  background-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  color: var(--tug-base-element-global-text-normal-onAccent-rest);
 }
 
 .gtg-mode-btn--active:hover {
-  background-color: var(--tug-base-accent-default);
-  color: var(--tug-base-fg-onAccent);
+  background-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  color: var(--tug-base-element-global-text-normal-onAccent-rest);
 }
 
 /* ============================================================================
@@ -261,8 +265,8 @@
 }
 
 .gtg-preview-canvas {
-  background-color: var(--tug-base-bg-canvas);
-  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-global-primary-normal-canvas-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-sm);
   padding: 16px;
   background-image:
@@ -294,40 +298,40 @@
   align-items: center;
 }
 
-/* @tug-renders-on: --tug-base-bg-canvas */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-canvas-rest */
 .gtg-preview-title {
   font-size: 13px;
   font-weight: 600;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug-base-bg-canvas */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-canvas-rest */
 .gtg-preview-body {
   font-size: 12px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   line-height: 1.5;
 }
 
-/* @tug-renders-on: --tug-base-bg-canvas */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-canvas-rest */
 .gtg-preview-muted {
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
 }
 
-/* @tug-renders-on: --tug-base-bg-canvas */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-canvas-rest */
 .gtg-preview-subtle {
-  color: var(--tug-base-fg-subtle);
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
 }
 
 .gtg-preview-divider {
   height: 1px;
-  background-color: var(--tug-base-divider-default);
+  background-color: var(--tug-base-element-global-divider-normal-default-rest);
 }
 
 .gtg-preview-inset {
-  background-color: var(--tug-base-surface-raised);
-  border: 1px solid var(--tug-base-border-muted);
+  background-color: var(--tug-base-surface-global-primary-normal-raised-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-muted-rest);
   border-radius: var(--tug-base-radius-xs);
   padding: 8px 10px;
   display: flex;
@@ -345,9 +349,9 @@
   flex: 1;
 }
 
-/* @tug-renders-on: --tug-base-bg-canvas */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-canvas-rest */
 .gtg-preview-link {
-  color: var(--tug-base-fg-link);
+  color: var(--tug-base-element-global-text-normal-link-rest);
   text-decoration: underline;
 }
 
@@ -357,14 +361,14 @@
   align-items: center;
 }
 
-/* @tug-renders-on: --tug-base-bg-canvas */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-canvas-rest */
 .gtg-preview-inline-row {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
 }
 
 /* Hue swatch strip is now provided by the shared TugHueStrip component. */
@@ -388,13 +392,13 @@
 }
 
 /* Subsection title — lighter than cg-section-title */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-erp-subtitle {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   user-select: none;
 }
 
@@ -416,11 +420,11 @@
 }
 
 /* Column header (role name) */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-erp-col-label {
   font-size: 9px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   text-align: center;
   user-select: none;
   white-space: nowrap;
@@ -431,11 +435,11 @@
 }
 
 /* Row header (emphasis name) */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-erp-row-label {
   font-size: 9px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   user-select: none;
   align-self: center;
   white-space: nowrap;
@@ -481,9 +485,9 @@
   align-items: center;
   gap: 6px;
   padding: 3px 6px;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-xs);
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
   cursor: pointer;
   text-align: left;
   font-family: inherit;
@@ -491,36 +495,36 @@
 }
 
 .gtg-compact-hue-row:hover {
-  background-color: var(--tug-base-surface-raised);
+  background-color: var(--tug-base-surface-global-primary-normal-raised-rest);
 }
 
 /* Role label — fixed-width so chip columns align across rows */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-compact-hue-label {
   font-size: 10px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   width: 52px;
   flex-shrink: 0;
   user-select: none;
 }
 
 /* 16x16px color chip swatch */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-compact-hue-chip {
   width: 16px;
   height: 16px;
   border-radius: 2px;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   flex-shrink: 0;
 }
 
 /* Current hue name text */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-compact-hue-name {
   font-size: 10px;
   font-family: var(--tug-base-font-family-mono, monospace);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
@@ -532,8 +536,8 @@
 .gtg-compact-hue-popover {
   max-width: 360px;
   padding: 8px;
-  background-color: var(--tug-base-surface-raised);
-  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-global-primary-normal-raised-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-sm);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
   z-index: 100;
@@ -573,16 +577,16 @@
   align-items: center;
   gap: 8px;
   padding: 3px 8px;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: 999px;
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-slider-label {
   font-size: 10px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   width: 128px;
   flex-shrink: 0;
   user-select: none;
@@ -592,14 +596,14 @@
   flex: 1;
   min-width: 80px;
   max-width: 260px;
-  accent-color: var(--tug-base-accent-default);
+  accent-color: var(--tug-base-element-global-fill-normal-accent-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-slider-value {
   font-size: 11px;
   font-family: var(--tug-base-font-family-mono, monospace);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   width: 32px;
   text-align: right;
   flex-shrink: 0;
@@ -615,21 +619,21 @@
   gap: 2px 10px;
   max-height: 400px;
   overflow-y: auto;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-sm);
   padding: 8px;
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-token-header {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--tug-base-border-default);
+  border-bottom: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   user-select: none;
   grid-column: 1 / -1;
   display: grid;
@@ -641,11 +645,11 @@
   display: contents;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-token-name {
   font-size: 10px;
   font-family: var(--tug-base-font-family-mono, monospace);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   padding: 2px 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -653,22 +657,22 @@
   align-self: center;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-token-swatch {
   width: 24px;
   height: 20px;
   border-radius: 3px;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   align-self: center;
   flex-shrink: 0;
   content-visibility: auto;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-token-value {
   font-size: 10px;
   font-family: var(--tug-base-font-family-mono, monospace);
-  color: var(--tug-base-fg-subtle);
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
   padding: 2px 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -690,9 +694,9 @@
 .gtg-preset-btn {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
-  background-color: var(--tug-base-surface-control);
-  border: 1px solid var(--tug-base-border-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
+  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-xs);
   padding: 4px 10px;
   cursor: pointer;
@@ -701,13 +705,13 @@
 }
 
 .gtg-preset-btn:hover {
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
 }
 
 .gtg-preset-btn--active {
-  background-color: var(--tug-base-accent-subtle);
-  border-color: var(--tug-base-accent-default);
-  color: var(--tug-base-fg-onAccent);
+  background-color: var(--tug-base-element-global-fill-normal-accentSubtle-rest);
+  border-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  color: var(--tug-base-element-global-text-normal-onAccent-rest);
 }
 
 /* ============================================================================
@@ -721,10 +725,10 @@
   gap: 8px;
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   padding: 6px 10px;
-  background-color: var(--tug-base-surface-default);
-  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-sm);
   user-select: none;
 }
@@ -734,19 +738,19 @@
   font-family: var(--tug-base-font-family-mono, monospace);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-dash-summary-count--all-pass {
-  color: var(--tug-base-tone-success-fg);
+  color: var(--tug-base-element-tone-text-normal-success-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-dash-summary-count--partial {
-  color: var(--tug-base-tone-caution-fg);
+  color: var(--tug-base-element-tone-text-normal-caution-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-dash-summary-count--fail {
-  color: var(--tug-base-tone-danger-fg);
+  color: var(--tug-base-element-tone-text-normal-danger-rest);
 }
 
 /* Scrollable grid container */
@@ -756,22 +760,22 @@
   gap: 2px 8px;
   max-height: 400px;
   overflow-y: auto;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-sm);
   padding: 8px;
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
 }
 
 /* Column header row */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-dash-col-header {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--tug-base-border-default);
+  border-bottom: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   user-select: none;
   grid-column: 1 / -1;
   display: grid;
@@ -781,23 +785,23 @@
 }
 
 /* Swatch cells (fg and bg) */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-dash-swatch {
   width: 20px;
   height: 20px;
   border-radius: 3px;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   align-self: center;
   flex-shrink: 0;
   content-visibility: auto;
 }
 
 /* Token name cells */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-dash-token-name {
   font-size: 10px;
   font-family: var(--tug-base-font-family-mono, monospace);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -806,11 +810,11 @@
 }
 
 /* Numeric contrast value cells */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-dash-ratio {
   font-size: 10px;
   font-family: var(--tug-base-font-family-mono, monospace);
-  color: var(--tug-base-fg-subtle);
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
   align-self: center;
   padding: 2px 0;
   white-space: nowrap;
@@ -834,30 +838,30 @@
 
 /* Green — pass both thresholds */
 .gtg-dash-badge--pass {
-  background-color: var(--tug-base-tone-success-bg);
-  color: var(--tug-base-tone-success-fg);
-  border: 1px solid var(--tug-base-tone-success-border);
+  background-color: var(--tug-base-surface-tone-primary-normal-success-rest);
+  color: var(--tug-base-element-tone-text-normal-success-rest);
+  border: 1px solid var(--tug-base-element-tone-border-normal-success-rest);
 }
 
 /* Yellow — marginal (within 0.5 of threshold) */
 .gtg-dash-badge--marginal {
-  background-color: var(--tug-base-tone-caution-bg);
-  color: var(--tug-base-tone-caution-fg);
-  border: 1px solid var(--tug-base-tone-caution-border);
+  background-color: var(--tug-base-surface-tone-primary-normal-caution-rest);
+  color: var(--tug-base-element-tone-text-normal-caution-rest);
+  border: 1px solid var(--tug-base-element-tone-border-normal-caution-rest);
 }
 
 /* Red — fail */
 .gtg-dash-badge--fail {
-  background-color: var(--tug-base-tone-danger-bg);
-  color: var(--tug-base-tone-danger-fg);
-  border: 1px solid var(--tug-base-tone-danger-border);
+  background-color: var(--tug-base-surface-tone-primary-normal-danger-rest);
+  color: var(--tug-base-element-tone-text-normal-danger-rest);
+  border: 1px solid var(--tug-base-element-tone-border-normal-danger-rest);
 }
 
 /* Decorative — no requirement, shown as neutral */
 .gtg-dash-badge--decorative {
-  background-color: var(--tug-base-surface-raised);
-  color: var(--tug-base-fg-muted);
-  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-global-primary-normal-raised-rest);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
 }
 
 /* ============================================================================
@@ -868,30 +872,30 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-sm);
   padding: 8px;
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
   overflow-x: auto;
 }
 
 /* Column header row */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-cvd-col-headers {
   display: flex;
   align-items: center;
   gap: 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--tug-base-border-default);
+  border-bottom: 1px solid var(--tug-base-element-global-border-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-cvd-token-header {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   user-select: none;
   width: 80px;
   text-align: center;
@@ -915,11 +919,11 @@
   flex-shrink: 0;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-cvd-type-label {
   font-size: 10px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   user-select: none;
   white-space: nowrap;
 }
@@ -933,9 +937,9 @@
   border-radius: 50%;
   font-size: 9px;
   font-weight: 700;
-  background-color: var(--tug-base-tone-caution-bg);
-  color: var(--tug-base-tone-caution-fg);
-  border: 1px solid var(--tug-base-tone-caution-border);
+  background-color: var(--tug-base-surface-tone-primary-normal-caution-rest);
+  color: var(--tug-base-element-tone-text-normal-caution-rest);
+  border: 1px solid var(--tug-base-element-tone-border-normal-caution-rest);
   cursor: default;
   flex-shrink: 0;
 }
@@ -949,18 +953,18 @@
   justify-content: center;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-cvd-swatch {
   width: 36px;
   height: 28px;
   border-radius: 3px;
-  border: 1px solid var(--tug-base-border-default);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   flex-shrink: 0;
   content-visibility: auto;
 }
 
 .gtg-cvd-swatch--missing {
-  background-color: var(--tug-base-surface-raised);
+  background-color: var(--tug-base-surface-global-primary-normal-raised-rest);
   opacity: 0.4;
 }
 
@@ -984,9 +988,9 @@
 .gtg-autofix-btn {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
-  background-color: var(--tug-base-surface-control);
-  border: 1px solid var(--tug-base-border-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
+  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-xs);
   padding: 5px 12px;
   cursor: pointer;
@@ -995,7 +999,7 @@
 }
 
 .gtg-autofix-btn:hover:not(:disabled) {
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
 }
 
 .gtg-autofix-btn:disabled {
@@ -1003,11 +1007,11 @@
   cursor: not-allowed;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-autofix-result {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
 }
 
 /* CVD hue-shift suggestions list */
@@ -1016,18 +1020,18 @@
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
-  background-color: var(--tug-base-tone-caution-bg);
-  border: 1px solid var(--tug-base-tone-caution-border);
+  background-color: var(--tug-base-surface-tone-primary-normal-caution-rest);
+  border: 1px solid var(--tug-base-element-tone-border-normal-caution-rest);
   border-radius: var(--tug-base-radius-sm);
 }
 
-/* @tug-renders-on: --tug-base-tone-caution-bg */
+/* @tug-renders-on: --tug-base-surface-tone-primary-normal-caution-rest */
 .gtg-autofix-suggestions-title {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tug-base-tone-caution-fg);
+  color: var(--tug-base-element-tone-text-normal-caution-rest);
   user-select: none;
 }
 
@@ -1039,20 +1043,20 @@
   gap: 3px;
 }
 
-/* @tug-renders-on: --tug-base-tone-caution-bg */
+/* @tug-renders-on: --tug-base-surface-tone-primary-normal-caution-rest */
 .gtg-autofix-suggestion-item {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   line-height: 1.4;
 }
 
-/* @tug-renders-on: --tug-base-tone-caution-bg */
+/* @tug-renders-on: --tug-base-surface-tone-primary-normal-caution-rest */
 .gtg-autofix-suggestion-type {
   font-weight: 600;
   font-family: var(--tug-base-font-family-mono, monospace);
   font-size: 10px;
-  color: var(--tug-base-tone-caution-fg);
+  color: var(--tug-base-element-tone-text-normal-caution-rest);
 }
 
 /* ============================================================================
@@ -1065,12 +1069,12 @@
   gap: 4px;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-diag-section-title {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
   font-weight: 600;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   user-select: none;
 }
 
@@ -1083,7 +1087,7 @@
   gap: 2px;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-diag-item {
   display: flex;
   flex-direction: row;
@@ -1091,25 +1095,25 @@
   gap: 8px;
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   line-height: 1.5;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-diag-token {
   font-family: var(--tug-base-font-family-mono, monospace);
   font-size: 10px;
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 280px;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-diag-detail {
   font-size: 10px;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   flex-shrink: 0;
 }
 
@@ -1126,11 +1130,11 @@
 }
 
 /* "Load saved theme" label */
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gtg-saved-theme-label {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   user-select: none;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1140,9 +1144,9 @@
 .gtg-saved-theme-select {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
-  background-color: var(--tug-base-surface-control);
-  border: 1px solid var(--tug-base-border-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
+  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-xs);
   padding: 3px 24px 3px 8px;
   cursor: pointer;
@@ -1157,7 +1161,7 @@
 }
 
 .gtg-saved-theme-select:focus {
-  outline: 2px solid var(--tug-base-accent-default);
+  outline: 2px solid var(--tug-base-element-global-fill-normal-accent-rest);
   outline-offset: 1px;
 }
 
@@ -1196,9 +1200,9 @@
 .gtg-export-btn {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
-  background-color: var(--tug-base-surface-control);
-  border: 1px solid var(--tug-base-border-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
+  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-xs);
   padding: 5px 12px;
   cursor: pointer;
@@ -1207,16 +1211,16 @@
 }
 
 .gtg-export-btn:hover {
-  background-color: var(--tug-base-surface-default);
+  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
 }
 
 /* Inline error message shown when import validation fails */
 .gtg-import-error {
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-tone-danger-fg);
-  background-color: var(--tug-base-tone-danger-bg);
-  border: 1px solid var(--tug-base-tone-danger-border);
+  color: var(--tug-base-element-tone-text-normal-danger-rest);
+  background-color: var(--tug-base-surface-tone-primary-normal-danger-rest);
+  border: 1px solid var(--tug-base-element-tone-border-normal-danger-rest);
   border-radius: var(--tug-base-radius-xs);
   padding: 3px 8px;
 }

@@ -316,7 +316,7 @@ describe("convertCSSFile(): structure preservation", () => {
 
   it("#ffffff → var(--tug-white) through the full file conversion pipeline", () => {
     const tmpFile = join(os.tmpdir(), `test-white-${Date.now()}.css`);
-    const css = "body { --tug-base-toggle-thumb: #ffffff; }";
+    const css = "body { --tug-base-element-toggle-thumb-normal-plain-rest: #ffffff; }";
 
     writeFileSync(tmpFile, css, "utf8");
     convertCSSFile(tmpFile);

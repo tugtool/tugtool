@@ -49,7 +49,7 @@ icon:   rest / hover / active
 
 Form fields (TugInput, TugTextarea) use `--tug-base-field-*` tokens (bg-rest, bg-hover, bg-focus, border-rest, border-hover, border-focus, etc.) — these already exist.
 
-Display components (11-17) may not need interactive states. They use semantic tokens like `--tug-base-fg-*`, `--tug-base-surface-*`, `--tug-base-accent-*`.
+Display components (11-17) may not need interactive states. They use semantic tokens like `--tug-base-element-global-*`, `--tug-base-surface-global-*`, `--tug-base-element-tone-*`.
 
 ## Gallery Section Per Component
 

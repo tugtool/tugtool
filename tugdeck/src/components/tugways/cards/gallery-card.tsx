@@ -457,7 +457,7 @@ export function MutationModelDemo() {
   const [classOn, setClassOn] = useState(false);
   const [styleOn, setStyleOn] = useState(false);
 
-  useCSSVar(boxRef, "--demo-bg", varOn ? "var(--tug-base-accent-default)" : "var(--tug-base-surface-default)");
+  useCSSVar(boxRef, "--demo-bg", varOn ? "var(--tug-base-element-global-fill-normal-accent-rest)" : "var(--tug-base-surface-global-primary-normal-default-rest)");
   useDOMClass(boxRef, "demo-highlighted", classOn);
   useDOMStyle(boxRef, "border-width", styleOn ? "3px" : "1px");
 
@@ -882,9 +882,9 @@ export function GalleryTitleBarContent() {
             <div
               style={{
                 padding: "12px",
-                background: "var(--tug-base-surface-default)",
+                background: "var(--tug-base-surface-global-primary-normal-default-rest)",
                 fontSize: "12px",
-                color: "var(--tug-base-fg-muted)",
+                color: "var(--tug-base-element-global-text-normal-muted-rest)",
                 minHeight: "48px",
               }}
             >

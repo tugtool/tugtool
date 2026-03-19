@@ -206,11 +206,26 @@ describe("derivation-engine", () => {
       ["ghost", "option"],
     ];
 
+    // Map old property names to new six-slot token name patterns
+    // bg -> surface-control-primary-{emphasis}-{role}-{state}
+    // fg -> element-control-text-{emphasis}-{role}-{state}
+    // border -> element-control-border-{emphasis}-{role}-{state}
+    // icon -> element-control-icon-{emphasis}-{role}-{state}
+    function toTokenName(emphasis: string, role: string, property: string, state: string): string {
+      switch (property) {
+        case "bg":     return `--tug-base-surface-control-primary-${emphasis}-${role}-${state}`;
+        case "fg":     return `--tug-base-element-control-text-${emphasis}-${role}-${state}`;
+        case "border": return `--tug-base-element-control-border-${emphasis}-${role}-${state}`;
+        case "icon":   return `--tug-base-element-control-icon-${emphasis}-${role}-${state}`;
+        default:       return `--tug-base-control-${emphasis}-${role}-${property}-${state}`;
+      }
+    }
+
     const missingTokens: string[] = [];
     for (const [emphasis, role] of T01_COMBOS) {
       for (const property of properties) {
         for (const state of states) {
-          const tokenName = `--tug-base-control-${emphasis}-${role}-${property}-${state}`;
+          const tokenName = toTokenName(emphasis, role, property, state);
           if (output.tokens[tokenName] === undefined) {
             missingTokens.push(tokenName);
           }
@@ -225,28 +240,37 @@ describe("derivation-engine", () => {
   });
 
   // -------------------------------------------------------------------------
-  // T2.1d: --tug-base-surface-control alias present [D08]
+  // T2.1d: --tug-base-surface-global-primary-normal-control-rest alias present [D08]
   // -------------------------------------------------------------------------
-  it("T2.1d: --tug-base-surface-control alias is present in deriveTheme output", () => {
+  it("T2.1d: --tug-base-surface-global-primary-normal-control-rest alias is present in deriveTheme output", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(output.tokens["--tug-base-surface-control"]).toBe(
-      "var(--tug-base-control-outlined-action-bg-rest)",
+    expect(output.tokens["--tug-base-surface-global-primary-normal-control-rest"]).toBe(
+      "var(--tug-base-surface-control-primary-outlined-action-rest)",
     );
   });
 
   // -------------------------------------------------------------------------
-  // T2.1e: Token names match --tug-base-control-{emphasis}-{role}-{property}-{state} pattern [D02]
+  // T2.1e: Token names match six-slot element/surface control pattern [D02]
+  // After Phase 3.5A rename: bg tokens are surface-control-primary-{emphasis}-{role}-{state}
+  // and fg/border/icon tokens are element-control-{constituent}-{emphasis}-{role}-{state}
   // -------------------------------------------------------------------------
   it("T2.1e: control token names match emphasis x role pattern", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    const controlPattern =
-      /^--tug-base-control-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(bg|fg|border|icon)-(rest|hover|active)$/;
+    const surfaceControlPattern =
+      /^--tug-base-surface-control-primary-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/;
+    const elementControlPattern =
+      /^--tug-base-element-control-(text|border|icon)-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/;
 
     const controlTokens = Object.keys(output.tokens).filter(
-      (k) => k.startsWith("--tug-base-control-") && k.match(/(filled|outlined|ghost)/),
+      (k) =>
+        (k.startsWith("--tug-base-surface-control-primary-") ||
+          k.startsWith("--tug-base-element-control-")) &&
+        k.match(/(filled|outlined|ghost)/),
     );
 
-    const badTokens = controlTokens.filter((t) => !controlPattern.test(t));
+    const badTokens = controlTokens.filter(
+      (t) => !surfaceControlPattern.test(t) && !elementControlPattern.test(t),
+    );
     expect(badTokens).toEqual([]);
     expect(controlTokens.length).toBeGreaterThanOrEqual(132);
   });
@@ -332,14 +356,14 @@ describe("derivation-engine", () => {
 
     // Structural tokens (transparent/none/var()) must NOT be in resolved
     const STRUCTURAL = [
-      "--tug-base-control-ghost-action-bg-rest",
-      "--tug-base-control-ghost-action-border-rest",
-      "--tug-base-control-ghost-danger-bg-rest",
-      "--tug-base-control-ghost-danger-border-rest",
+      "--tug-base-surface-control-primary-ghost-action-rest",
+      "--tug-base-element-control-border-ghost-action-rest",
+      "--tug-base-surface-control-primary-ghost-danger-rest",
+      "--tug-base-element-control-border-ghost-danger-rest",
       "--tug-base-control-disabled-opacity",
-      "--tug-base-control-disabled-shadow",
+      "--tug-base-element-control-shadow-normal-plain-disabled",
       "--tug-base-scrollbar-track",
-      "--tug-base-surface-control",
+      "--tug-base-surface-global-primary-normal-control-rest",
     ];
     for (const token of STRUCTURAL) {
       expect(output.resolved[token]).toBeUndefined();
@@ -411,19 +435,19 @@ describe("derivation-engine integration", () => {
     // With LIGHT_FORMULAS, harmony's surface tokens are correctly calibrated for light mode,
     // so all focus surfaces should pass. Any structural exceptions are documented explicitly.
     const focusSurfaces = new Set([
-      "--tug-base-bg-app",
-      "--tug-base-surface-default",
-      "--tug-base-surface-raised",
-      "--tug-base-surface-inset",
-      "--tug-base-surface-content",
-      "--tug-base-surface-overlay",
-      "--tug-base-surface-sunken",
-      "--tug-base-surface-screen",
-      "--tug-base-field-bg-rest",
+      "--tug-base-surface-global-primary-normal-app-rest",
+      "--tug-base-surface-global-primary-normal-default-rest",
+      "--tug-base-surface-global-primary-normal-raised-rest",
+      "--tug-base-surface-global-primary-normal-inset-rest",
+      "--tug-base-surface-global-primary-normal-content-rest",
+      "--tug-base-surface-global-primary-normal-overlay-rest",
+      "--tug-base-surface-global-primary-normal-sunken-rest",
+      "--tug-base-surface-global-primary-normal-screen-rest",
+      "--tug-base-surface-field-primary-normal-plain-rest",
     ]);
     const focusFailures = finalResults.filter(
       (r) =>
-        r.fg === "--tug-base-accent-cool-default" &&
+        r.fg === "--tug-base-element-global-fill-normal-accentCool-rest" &&
         r.role === "ui-component" &&
         focusSurfaces.has(r.bg) &&
         !r.contrastPass,
@@ -488,15 +512,15 @@ describe("derivation-engine integration", () => {
 
 // Focus surfaces for the focus indicator assertion (brio dark only)
 const FOCUS_SURFACES = new Set([
-  "--tug-base-bg-app",
-  "--tug-base-surface-default",
-  "--tug-base-surface-raised",
-  "--tug-base-surface-inset",
-  "--tug-base-surface-content",
-  "--tug-base-surface-overlay",
-  "--tug-base-surface-sunken",
-  "--tug-base-surface-screen",
-  "--tug-base-field-bg-rest",
+  "--tug-base-surface-global-primary-normal-app-rest",
+  "--tug-base-surface-global-primary-normal-default-rest",
+  "--tug-base-surface-global-primary-normal-raised-rest",
+  "--tug-base-surface-global-primary-normal-inset-rest",
+  "--tug-base-surface-global-primary-normal-content-rest",
+  "--tug-base-surface-global-primary-normal-overlay-rest",
+  "--tug-base-surface-global-primary-normal-sunken-rest",
+  "--tug-base-surface-global-primary-normal-screen-rest",
+  "--tug-base-surface-field-primary-normal-plain-rest",
 ]);
 
 describe("recipe contrast validation", () => {
@@ -542,10 +566,10 @@ describe("recipe contrast validation", () => {
       // Core readability assertion: fg-default on primary surfaces passes contrast 75
       const coreFailures = results.filter(
         (r) =>
-          r.fg === "--tug-base-fg-default" &&
-          (r.bg === "--tug-base-surface-default" ||
-            r.bg === "--tug-base-surface-inset" ||
-            r.bg === "--tug-base-surface-content") &&
+          r.fg === "--tug-base-element-global-text-normal-default-rest" &&
+          (r.bg === "--tug-base-surface-global-primary-normal-default-rest" ||
+            r.bg === "--tug-base-surface-global-primary-normal-inset-rest" ||
+            r.bg === "--tug-base-surface-global-primary-normal-content-rest") &&
           !r.contrastPass,
       );
       expect(coreFailures.map((f) => `[${name}] ${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
@@ -559,7 +583,7 @@ describe("recipe contrast validation", () => {
       if (name === "brio") {
         const focusFailures = results.filter(
           (r) =>
-            r.fg === "--tug-base-accent-cool-default" &&
+            r.fg === "--tug-base-element-global-fill-normal-accentCool-rest" &&
             r.role === "ui-component" &&
             FOCUS_SURFACES.has(r.bg) &&
             !r.contrastPass,
@@ -633,332 +657,332 @@ const BRIO_STRUCTURAL_TOKENS: Record<string, string> = {
   "--tug-base-motion-easing-enter": "cubic-bezier(0, 0, 0, 1)",
   "--tug-base-motion-easing-exit": "cubic-bezier(0.2, 0, 1, 1)",
   "--tug-base-control-disabled-opacity": "0.5",
-  "--tug-base-control-disabled-shadow": "none",
-  "--tug-base-control-outlined-action-bg-rest": "transparent",
-  "--tug-base-control-outlined-option-bg-rest": "transparent",
-  "--tug-base-control-outlined-agent-bg-rest": "transparent",
-  "--tug-base-control-ghost-action-bg-rest": "transparent",
-  "--tug-base-control-ghost-action-border-rest": "transparent",
-  "--tug-base-control-ghost-option-bg-rest": "transparent",
-  "--tug-base-control-ghost-option-border-rest": "transparent",
-  "--tug-base-control-ghost-danger-bg-rest": "transparent",
-  "--tug-base-control-ghost-danger-border-rest": "transparent",
-  "--tug-base-surface-control": "var(--tug-base-control-outlined-action-bg-rest)",
+  "--tug-base-element-control-shadow-normal-plain-disabled": "none",
+  "--tug-base-surface-control-primary-outlined-action-rest": "transparent",
+  "--tug-base-surface-control-primary-outlined-option-rest": "transparent",
+  "--tug-base-surface-control-primary-outlined-agent-rest": "transparent",
+  "--tug-base-surface-control-primary-ghost-action-rest": "transparent",
+  "--tug-base-element-control-border-ghost-action-rest": "transparent",
+  "--tug-base-surface-control-primary-ghost-option-rest": "transparent",
+  "--tug-base-element-control-border-ghost-option-rest": "transparent",
+  "--tug-base-surface-control-primary-ghost-danger-rest": "transparent",
+  "--tug-base-element-control-border-ghost-danger-rest": "transparent",
+  "--tug-base-surface-global-primary-normal-control-rest": "var(--tug-base-surface-control-primary-outlined-action-rest)",
 };
 
 export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number }> = {
-  "--tug-base-accent-cool-default": { L: 0.744, C: 0.24300000000000002, h: 250 },
-  "--tug-base-accent-default": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-accent-subtle": { L: 0.528, C: 0.146, h: 55 },
-  "--tug-base-badge-tinted-accent-bg": { L: 0.8160000000000001, C: 0.1898, h: 55 },
-  "--tug-base-badge-tinted-accent-border": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-badge-tinted-accent-fg": { L: 0.906, C: 0.21023999999999998, h: 55 },
-  "--tug-base-badge-tinted-action-bg": { L: 0.8088, C: 0.18589999999999998, h: 230 },
-  "--tug-base-badge-tinted-action-border": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-badge-tinted-action-fg": { L: 0.9033, C: 0.20591999999999996, h: 230 },
-  "--tug-base-badge-tinted-agent-bg": { L: 0.7584, C: 0.1937, h: 270 },
-  "--tug-base-badge-tinted-agent-border": { L: 0.708, C: 0.149, h: 270 },
-  "--tug-base-badge-tinted-agent-fg": { L: 0.8844, C: 0.21455999999999997, h: 270 },
-  "--tug-base-badge-tinted-caution-bg": { L: 0.9128, C: 0.1625, h: 90 },
-  "--tug-base-badge-tinted-caution-border": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-badge-tinted-caution-fg": { L: 0.9422999999999999, C: 0.18, h: 90 },
-  "--tug-base-badge-tinted-danger-bg": { L: 0.7192000000000001, C: 0.28600000000000003, h: 25 },
-  "--tug-base-badge-tinted-danger-border": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-badge-tinted-danger-fg": { L: 0.8697, C: 0.31679999999999997, h: 25 },
-  "--tug-base-badge-tinted-data-bg": { L: 0.8344, C: 0.1937, h: 175 },
-  "--tug-base-badge-tinted-data-border": { L: 0.803, C: 0.149, h: 175 },
-  "--tug-base-badge-tinted-data-fg": { L: 0.9129, C: 0.21455999999999997, h: 175 },
-  "--tug-base-badge-tinted-success-bg": { L: 0.8488, C: 0.28600000000000003, h: 140 },
-  "--tug-base-badge-tinted-success-border": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-badge-tinted-success-fg": { L: 0.9182999999999999, C: 0.31679999999999997, h: 140 },
-  "--tug-base-bg-app": { L: 0.2076, C: 0.005600000000000001, h: 263.33333333333326 },
-  "--tug-base-bg-canvas": { L: 0.2076, C: 0.005600000000000001, h: 263.33333333333326 },
-  "--tug-base-border-accent": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-border-danger": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-border-default": { L: 0.5532, C: 0.016800000000000002, h: 263.33333333333326 },
-  "--tug-base-border-inverse": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-border-muted": { L: 0.57624, C: 0.019600000000000003, h: 263.33333333333326 },
-  "--tug-base-border-strong": { L: 0.6108, C: 0.019600000000000003, h: 258.33333333333326 },
-  "--tug-base-checkmark-fg": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-checkmark-fg-mixed": { L: 0.81312, C: 0.013500000000000002, h: 250 },
-  "--tug-base-control-disabled-bg": { L: 0.39552, C: 0.0149, h: 270 },
-  "--tug-base-control-disabled-border": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
-  "--tug-base-control-disabled-fg": { L: 0.58776, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-control-disabled-icon": { L: 0.58776, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-control-filled-accent-bg-active": { L: 0.78, C: 0.2628, h: 55 },
-  "--tug-base-control-filled-accent-bg-hover": { L: 0.654, C: 0.1606, h: 55 },
-  "--tug-base-control-filled-accent-bg-rest": { L: 0.402, C: 0.146, h: 55 },
-  "--tug-base-control-filled-accent-border-active": { L: 0.78, C: 0.2628, h: 55 },
-  "--tug-base-control-filled-accent-border-hover": { L: 0.78, C: 0.1898, h: 55 },
-  "--tug-base-control-filled-accent-border-rest": { L: 0.78, C: 0.1606, h: 55 },
-  "--tug-base-control-filled-accent-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-accent-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-accent-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-accent-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-accent-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-accent-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-action-bg-active": { L: 0.771, C: 0.25739999999999996, h: 230 },
-  "--tug-base-control-filled-action-bg-hover": { L: 0.6468, C: 0.1573, h: 230 },
-  "--tug-base-control-filled-action-bg-rest": { L: 0.3984, C: 0.143, h: 230 },
-  "--tug-base-control-filled-action-border-active": { L: 0.771, C: 0.25739999999999996, h: 230 },
-  "--tug-base-control-filled-action-border-hover": { L: 0.771, C: 0.18589999999999998, h: 230 },
-  "--tug-base-control-filled-action-border-rest": { L: 0.771, C: 0.1573, h: 230 },
-  "--tug-base-control-filled-action-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-action-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-action-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-action-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-action-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-action-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-agent-bg-active": { L: 0.708, C: 0.2682, h: 270 },
-  "--tug-base-control-filled-agent-bg-hover": { L: 0.5963999999999999, C: 0.16390000000000002, h: 270 },
-  "--tug-base-control-filled-agent-bg-rest": { L: 0.3732, C: 0.149, h: 270 },
-  "--tug-base-control-filled-agent-border-active": { L: 0.708, C: 0.2682, h: 270 },
-  "--tug-base-control-filled-agent-border-hover": { L: 0.708, C: 0.1937, h: 270 },
-  "--tug-base-control-filled-agent-border-rest": { L: 0.708, C: 0.16390000000000002, h: 270 },
-  "--tug-base-control-filled-agent-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-agent-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-agent-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-agent-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-agent-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-agent-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-caution-bg-active": { L: 0.9009999999999999, C: 0.225, h: 90 },
-  "--tug-base-control-filled-caution-bg-hover": { L: 0.7508, C: 0.1375, h: 90 },
-  "--tug-base-control-filled-caution-bg-rest": { L: 0.4504, C: 0.125, h: 90 },
-  "--tug-base-control-filled-caution-border-active": { L: 0.9009999999999999, C: 0.225, h: 90 },
-  "--tug-base-control-filled-caution-border-hover": { L: 0.9009999999999999, C: 0.1625, h: 90 },
-  "--tug-base-control-filled-caution-border-rest": { L: 0.9009999999999999, C: 0.1375, h: 90 },
-  "--tug-base-control-filled-caution-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-caution-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-caution-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-caution-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-caution-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-caution-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-danger-bg-active": { L: 0.659, C: 0.396, h: 25 },
-  "--tug-base-control-filled-danger-bg-hover": { L: 0.5572, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-filled-danger-bg-rest": { L: 0.3536, C: 0.22, h: 25 },
-  "--tug-base-control-filled-danger-border-active": { L: 0.659, C: 0.396, h: 25 },
-  "--tug-base-control-filled-danger-border-hover": { L: 0.659, C: 0.28600000000000003, h: 25 },
-  "--tug-base-control-filled-danger-border-rest": { L: 0.659, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-filled-danger-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-danger-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-danger-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-danger-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-danger-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-danger-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-data-bg-active": { L: 0.803, C: 0.2682, h: 175 },
-  "--tug-base-control-filled-data-bg-hover": { L: 0.6724, C: 0.16390000000000002, h: 175 },
-  "--tug-base-control-filled-data-bg-rest": { L: 0.4112, C: 0.149, h: 175 },
-  "--tug-base-control-filled-data-border-active": { L: 0.803, C: 0.2682, h: 175 },
-  "--tug-base-control-filled-data-border-hover": { L: 0.803, C: 0.1937, h: 175 },
-  "--tug-base-control-filled-data-border-rest": { L: 0.803, C: 0.16390000000000002, h: 175 },
-  "--tug-base-control-filled-data-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-data-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-data-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-data-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-data-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-data-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-success-bg-active": { L: 0.821, C: 0.396, h: 140 },
-  "--tug-base-control-filled-success-bg-hover": { L: 0.6868, C: 0.24200000000000002, h: 140 },
-  "--tug-base-control-filled-success-bg-rest": { L: 0.4184, C: 0.22, h: 140 },
-  "--tug-base-control-filled-success-border-active": { L: 0.821, C: 0.396, h: 140 },
-  "--tug-base-control-filled-success-border-hover": { L: 0.821, C: 0.28600000000000003, h: 140 },
-  "--tug-base-control-filled-success-border-rest": { L: 0.821, C: 0.24200000000000002, h: 140 },
-  "--tug-base-control-filled-success-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-success-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-success-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-success-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-success-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-filled-success-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-action-bg-active": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-ghost-action-bg-hover": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-ghost-action-border-active": { L: 0.7872, C: 0.054000000000000006, h: 250 },
-  "--tug-base-control-ghost-action-border-hover": { L: 0.7872, C: 0.054000000000000006, h: 250 },
-  "--tug-base-control-ghost-action-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-action-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-action-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-action-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-action-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-action-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-danger-bg-active": { L: 0.659, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-ghost-danger-bg-hover": { L: 0.659, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-ghost-danger-border-active": { L: 0.659, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-ghost-danger-border-hover": { L: 0.659, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-ghost-danger-fg-active": { L: 0.76736, C: 0.33, h: 25 },
-  "--tug-base-control-ghost-danger-fg-hover": { L: 0.76736, C: 0.28600000000000003, h: 25 },
-  "--tug-base-control-ghost-danger-fg-rest": { L: 0.76736, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-ghost-danger-icon-active": { L: 0.659, C: 0.33, h: 25 },
-  "--tug-base-control-ghost-danger-icon-hover": { L: 0.659, C: 0.28600000000000003, h: 25 },
-  "--tug-base-control-ghost-danger-icon-rest": { L: 0.659, C: 0.24200000000000002, h: 25 },
-  "--tug-base-control-ghost-option-bg-active": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-ghost-option-bg-hover": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-ghost-option-border-active": { L: 0.7872, C: 0.054000000000000006, h: 250 },
-  "--tug-base-control-ghost-option-border-hover": { L: 0.7872, C: 0.054000000000000006, h: 250 },
-  "--tug-base-control-ghost-option-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-option-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-option-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-option-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-option-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-ghost-option-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-highlighted-bg": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-control-highlighted-border": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-control-highlighted-fg": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-control-outlined-action-bg-active": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-outlined-action-bg-hover": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-outlined-action-border-active": { L: 0.771, C: 0.21449999999999997, h: 230 },
-  "--tug-base-control-outlined-action-border-hover": { L: 0.771, C: 0.18589999999999998, h: 230 },
-  "--tug-base-control-outlined-action-border-rest": { L: 0.771, C: 0.1573, h: 230 },
-  "--tug-base-control-outlined-action-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-action-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-action-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-action-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-action-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-action-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-agent-bg-active": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-outlined-agent-bg-hover": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-outlined-agent-border-active": { L: 0.708, C: 0.22349999999999998, h: 270 },
-  "--tug-base-control-outlined-agent-border-hover": { L: 0.708, C: 0.1937, h: 270 },
-  "--tug-base-control-outlined-agent-border-rest": { L: 0.708, C: 0.16390000000000002, h: 270 },
-  "--tug-base-control-outlined-agent-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-agent-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-agent-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-agent-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-agent-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-agent-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-option-bg-active": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-outlined-option-bg-hover": { L: 1, C: 0, h: 0 },
-  "--tug-base-control-outlined-option-border-active": { L: 0.7872, C: 0.0297, h: 250 },
-  "--tug-base-control-outlined-option-border-hover": { L: 0.7656, C: 0.024300000000000002, h: 250 },
-  "--tug-base-control-outlined-option-border-rest": { L: 0.744, C: 0.018900000000000004, h: 250 },
-  "--tug-base-control-outlined-option-fg-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-option-fg-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-option-fg-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-option-icon-active": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-option-icon-hover": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-outlined-option-icon-rest": { L: 0.96, C: 0.0054, h: 250 },
-  "--tug-base-control-selected-bg": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-control-selected-bg-hover": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-control-selected-border": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-control-selected-disabled-bg": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-control-selected-fg": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-divider-default": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
-  "--tug-base-divider-muted": { L: 0.3174, C: 0.01192, h: 270 },
-  "--tug-base-fg-default": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-fg-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-fg-inverse": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-fg-link": { L: 0.90348, C: 0.134, h: 200 },
-  "--tug-base-fg-link-hover": { L: 0.9129, C: 0.05360000000000001, h: 200 },
-  "--tug-base-fg-muted": { L: 0.81312, C: 0.013500000000000002, h: 250 },
-  "--tug-base-fg-onAccent": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-fg-onCaution": { L: 0.23064, C: 0.011200000000000002, h: 263.33333333333326 },
-  "--tug-base-fg-onDanger": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-fg-onSuccess": { L: 0.23064, C: 0.011200000000000002, h: 263.33333333333326 },
-  "--tug-base-fg-placeholder": { L: 0.5064, C: 0.0162, h: 250 },
-  "--tug-base-fg-subtle": { L: 0.6684, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-field-bg-disabled": { L: 0.21911999999999998, C: 0.014000000000000002, h: 263.33333333333326 },
-  "--tug-base-field-bg-focus": { L: 0.23064, C: 0.011200000000000002, h: 263.33333333333326 },
-  "--tug-base-field-bg-hover": { L: 0.27276, C: 0.0149, h: 270 },
-  "--tug-base-field-bg-readOnly": { L: 0.27276, C: 0.0149, h: 270 },
-  "--tug-base-field-bg-rest": { L: 0.24216, C: 0.014000000000000002, h: 263.33333333333326 },
-  "--tug-base-field-border-active": { L: 0.803, C: 0.134, h: 200 },
-  "--tug-base-field-border-danger": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-field-border-disabled": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
-  "--tug-base-field-border-hover": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-field-border-readOnly": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
-  "--tug-base-field-border-rest": { L: 0.54204, C: 0.0162, h: 250 },
-  "--tug-base-field-border-success": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-field-fg-default": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-field-fg-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-field-fg-readOnly": { L: 0.81312, C: 0.013500000000000002, h: 250 },
-  "--tug-base-field-fg-label": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-field-fg-placeholder": { L: 0.6252, C: 0.0162, h: 250 },
-  "--tug-base-field-fg-required": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-field-tone-caution": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-field-tone-danger": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-field-tone-success": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-highlight-dropTarget": { L: 0.803, C: 0.134, h: 200 },
-  "--tug-base-highlight-flash": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-highlight-hover": { L: 1, C: 0, h: 0 },
-  "--tug-base-highlight-inspectorTarget": { L: 0.803, C: 0.134, h: 200 },
-  "--tug-base-highlight-preview": { L: 0.803, C: 0.134, h: 200 },
-  "--tug-base-highlight-snapGuide": { L: 0.803, C: 0.134, h: 200 },
-  "--tug-base-icon-active": { L: 0.8735999999999999, C: 0.27, h: 250 },
-  "--tug-base-icon-default": { L: 0.81312, C: 0.013500000000000002, h: 250 },
-  "--tug-base-icon-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-icon-muted": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-icon-onAccent": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-overlay-dim": { L: 0, C: 0, h: 0 },
-  "--tug-base-overlay-highlight": { L: 1, C: 0, h: 0 },
-  "--tug-base-overlay-scrim": { L: 0, C: 0, h: 0 },
-  "--tug-base-radio-dot": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-selection-bg": { L: 0.803, C: 0.134, h: 200 },
-  "--tug-base-selection-bg-inactive": { L: 0.6006, C: 0, h: 90 },
-  "--tug-base-selection-fg": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-divider-separator": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
-  "--tug-base-shadow-lg": { L: 0, C: 0, h: 0 },
-  "--tug-base-shadow-md": { L: 0, C: 0, h: 0 },
-  "--tug-base-shadow-overlay": { L: 0, C: 0, h: 0 },
-  "--tug-base-shadow-xl": { L: 0, C: 0, h: 0 },
-  "--tug-base-shadow-xs": { L: 0, C: 0, h: 0 },
-  "--tug-base-surface-content": { L: 0.21911999999999998, C: 0.014000000000000002, h: 263.33333333333326 },
-  "--tug-base-surface-default": { L: 0.28391999999999995, C: 0.0149, h: 270 },
-  "--tug-base-surface-inset": { L: 0.21911999999999998, C: 0.014000000000000002, h: 263.33333333333326 },
-  "--tug-base-surface-overlay": { L: 0.30623999999999996, C: 0.01192, h: 270 },
-  "--tug-base-surface-raised": { L: 0.27671999999999997, C: 0.014000000000000002, h: 263.33333333333326 },
-  "--tug-base-surface-screen": { L: 0.33431999999999995, C: 0.019600000000000003, h: 260 },
-  "--tug-base-surface-sunken": { L: 0.27276, C: 0.0149, h: 270 },
-  "--tug-base-tab-bg-active": { L: 0.33432, C: 0.033600000000000005, h: 260 },
-  "--tug-base-tab-bg-hover": { L: 1, C: 0, h: 0 },
-  "--tug-base-tab-close-bg-hover": { L: 1, C: 0, h: 0 },
-  "--tug-base-tab-close-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
-  "--tug-base-tab-fg-active": { L: 0.93408, C: 0.0081, h: 250 },
-  "--tug-base-tab-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
-  "--tug-base-tab-fg-rest": { L: 0.744, C: 0.018900000000000004, h: 250 },
-  "--tug-base-toggle-icon-disabled": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-toggle-icon-mixed": { L: 0.89088, C: 0.013500000000000002, h: 250 },
-  "--tug-base-toggle-thumb": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
-  "--tug-base-toggle-thumb-disabled": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-toggle-track-disabled": { L: 0.39552, C: 0.0149, h: 270 },
-  "--tug-base-toggle-track-mixed": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-toggle-track-mixed-hover": { L: 0.6453599999999999, C: 0.033600000000000005, h: 256.66666666666663 },
-  "--tug-base-toggle-track-off": { L: 0.5532, C: 0.016800000000000002, h: 263.33333333333326 },
-  "--tug-base-toggle-track-off-hover": { L: 0.5647199999999999, C: 0.028000000000000004, h: 263.33333333333326 },
-  "--tug-base-toggle-track-on": { L: 0.6792, C: 0.146, h: 55 },
-  "--tug-base-toggle-track-on-hover": { L: 0.7170000000000001, C: 0.1606, h: 55 },
-  "--tug-base-tone-accent": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-tone-accent-bg": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-tone-accent-border": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-tone-accent-fg": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-tone-accent-icon": { L: 0.78, C: 0.146, h: 55 },
-  "--tug-base-tone-active": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-tone-active-bg": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-tone-active-border": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-tone-active-fg": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-tone-active-icon": { L: 0.771, C: 0.143, h: 230 },
-  "--tug-base-tone-agent": { L: 0.708, C: 0.149, h: 270 },
-  "--tug-base-tone-agent-bg": { L: 0.708, C: 0.149, h: 270 },
-  "--tug-base-tone-agent-border": { L: 0.708, C: 0.149, h: 270 },
-  "--tug-base-tone-agent-fg": { L: 0.708, C: 0.149, h: 270 },
-  "--tug-base-tone-agent-icon": { L: 0.708, C: 0.149, h: 270 },
-  "--tug-base-tone-caution": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-tone-caution-bg": { L: 0.6006, C: 0.125, h: 90 },
-  "--tug-base-tone-caution-border": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-tone-caution-fg": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-tone-caution-icon": { L: 0.9009999999999999, C: 0.125, h: 90 },
-  "--tug-base-tone-danger": { L: 0.91184, C: 0.22, h: 25 },
-  "--tug-base-tone-danger-bg": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-tone-danger-border": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-tone-danger-fg": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-tone-danger-icon": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-tone-data": { L: 0.803, C: 0.149, h: 175 },
-  "--tug-base-tone-data-bg": { L: 0.803, C: 0.149, h: 175 },
-  "--tug-base-tone-data-border": { L: 0.803, C: 0.149, h: 175 },
-  "--tug-base-tone-data-fg": { L: 0.803, C: 0.149, h: 175 },
-  "--tug-base-tone-data-icon": { L: 0.803, C: 0.149, h: 175 },
-  "--tug-base-tone-success": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-tone-success-bg": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-tone-success-border": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-tone-success-fg": { L: 0.821, C: 0.22, h: 140 },
-  "--tug-base-tone-success-icon": { L: 0.821, C: 0.22, h: 140 }
+  "--tug-base-element-global-fill-normal-accentCool-rest": { L: 0.744, C: 0.24300000000000002, h: 250 },
+  "--tug-base-element-global-fill-normal-accent-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-element-global-fill-normal-accentSubtle-rest": { L: 0.528, C: 0.146, h: 55 },
+  "--tug-base-surface-badge-primary-tinted-accent-rest": { L: 0.8160000000000001, C: 0.1898, h: 55 },
+  "--tug-base-element-badge-border-tinted-accent-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-element-badge-text-tinted-accent-rest": { L: 0.906, C: 0.21023999999999998, h: 55 },
+  "--tug-base-surface-badge-primary-tinted-action-rest": { L: 0.8088, C: 0.18589999999999998, h: 230 },
+  "--tug-base-element-badge-border-tinted-action-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-badge-text-tinted-action-rest": { L: 0.9033, C: 0.20591999999999996, h: 230 },
+  "--tug-base-surface-badge-primary-tinted-agent-rest": { L: 0.7584, C: 0.1937, h: 270 },
+  "--tug-base-element-badge-border-tinted-agent-rest": { L: 0.708, C: 0.149, h: 270 },
+  "--tug-base-element-badge-text-tinted-agent-rest": { L: 0.8844, C: 0.21455999999999997, h: 270 },
+  "--tug-base-surface-badge-primary-tinted-caution-rest": { L: 0.9128, C: 0.1625, h: 90 },
+  "--tug-base-element-badge-border-tinted-caution-rest": { L: 0.9009999999999999, C: 0.125, h: 90 },
+  "--tug-base-element-badge-text-tinted-caution-rest": { L: 0.9422999999999999, C: 0.18, h: 90 },
+  "--tug-base-surface-badge-primary-tinted-danger-rest": { L: 0.7192000000000001, C: 0.28600000000000003, h: 25 },
+  "--tug-base-element-badge-border-tinted-danger-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-badge-text-tinted-danger-rest": { L: 0.8697, C: 0.31679999999999997, h: 25 },
+  "--tug-base-surface-badge-primary-tinted-data-rest": { L: 0.8344, C: 0.1937, h: 175 },
+  "--tug-base-element-badge-border-tinted-data-rest": { L: 0.803, C: 0.149, h: 175 },
+  "--tug-base-element-badge-text-tinted-data-rest": { L: 0.9129, C: 0.21455999999999997, h: 175 },
+  "--tug-base-surface-badge-primary-tinted-success-rest": { L: 0.8488, C: 0.28600000000000003, h: 140 },
+  "--tug-base-element-badge-border-tinted-success-rest": { L: 0.821, C: 0.22, h: 140 },
+  "--tug-base-element-badge-text-tinted-success-rest": { L: 0.9182999999999999, C: 0.31679999999999997, h: 140 },
+  "--tug-base-surface-global-primary-normal-app-rest": { L: 0.2076, C: 0.005600000000000001, h: 263.33333333333326 },
+  "--tug-base-surface-global-primary-normal-canvas-rest": { L: 0.2076, C: 0.005600000000000001, h: 263.33333333333326 },
+  "--tug-base-element-global-border-normal-accent-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-element-global-border-normal-danger-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-global-border-normal-default-rest": { L: 0.5532, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-element-global-border-normal-inverse-rest": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-element-global-border-normal-muted-rest": { L: 0.57624, C: 0.019600000000000003, h: 263.33333333333326 },
+  "--tug-base-element-global-border-normal-strong-rest": { L: 0.6108, C: 0.019600000000000003, h: 258.33333333333326 },
+  "--tug-base-element-checkmark-icon-normal-plain-rest": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-element-checkmark-icon-normal-plain-mixed": { L: 0.81312, C: 0.013500000000000002, h: 250 },
+  "--tug-base-surface-control-primary-normal-plain-disabled": { L: 0.39552, C: 0.0149, h: 270 },
+  "--tug-base-element-control-border-normal-plain-disabled": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-element-control-text-normal-plain-disabled": { L: 0.58776, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-element-control-icon-normal-plain-disabled": { L: 0.58776, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-surface-control-primary-filled-accent-active": { L: 0.78, C: 0.2628, h: 55 },
+  "--tug-base-surface-control-primary-filled-accent-hover": { L: 0.654, C: 0.1606, h: 55 },
+  "--tug-base-surface-control-primary-filled-accent-rest": { L: 0.402, C: 0.146, h: 55 },
+  "--tug-base-element-control-border-filled-accent-active": { L: 0.78, C: 0.2628, h: 55 },
+  "--tug-base-element-control-border-filled-accent-hover": { L: 0.78, C: 0.1898, h: 55 },
+  "--tug-base-element-control-border-filled-accent-rest": { L: 0.78, C: 0.1606, h: 55 },
+  "--tug-base-element-control-text-filled-accent-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-accent-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-accent-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-accent-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-accent-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-accent-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-filled-action-active": { L: 0.771, C: 0.25739999999999996, h: 230 },
+  "--tug-base-surface-control-primary-filled-action-hover": { L: 0.6468, C: 0.1573, h: 230 },
+  "--tug-base-surface-control-primary-filled-action-rest": { L: 0.3984, C: 0.143, h: 230 },
+  "--tug-base-element-control-border-filled-action-active": { L: 0.771, C: 0.25739999999999996, h: 230 },
+  "--tug-base-element-control-border-filled-action-hover": { L: 0.771, C: 0.18589999999999998, h: 230 },
+  "--tug-base-element-control-border-filled-action-rest": { L: 0.771, C: 0.1573, h: 230 },
+  "--tug-base-element-control-text-filled-action-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-action-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-action-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-action-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-action-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-action-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-filled-agent-active": { L: 0.708, C: 0.2682, h: 270 },
+  "--tug-base-surface-control-primary-filled-agent-hover": { L: 0.5963999999999999, C: 0.16390000000000002, h: 270 },
+  "--tug-base-surface-control-primary-filled-agent-rest": { L: 0.3732, C: 0.149, h: 270 },
+  "--tug-base-element-control-border-filled-agent-active": { L: 0.708, C: 0.2682, h: 270 },
+  "--tug-base-element-control-border-filled-agent-hover": { L: 0.708, C: 0.1937, h: 270 },
+  "--tug-base-element-control-border-filled-agent-rest": { L: 0.708, C: 0.16390000000000002, h: 270 },
+  "--tug-base-element-control-text-filled-agent-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-agent-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-agent-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-agent-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-agent-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-agent-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-filled-caution-active": { L: 0.9009999999999999, C: 0.225, h: 90 },
+  "--tug-base-surface-control-primary-filled-caution-hover": { L: 0.7508, C: 0.1375, h: 90 },
+  "--tug-base-surface-control-primary-filled-caution-rest": { L: 0.4504, C: 0.125, h: 90 },
+  "--tug-base-element-control-border-filled-caution-active": { L: 0.9009999999999999, C: 0.225, h: 90 },
+  "--tug-base-element-control-border-filled-caution-hover": { L: 0.9009999999999999, C: 0.1625, h: 90 },
+  "--tug-base-element-control-border-filled-caution-rest": { L: 0.9009999999999999, C: 0.1375, h: 90 },
+  "--tug-base-element-control-text-filled-caution-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-caution-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-caution-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-caution-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-caution-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-caution-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-filled-danger-active": { L: 0.659, C: 0.396, h: 25 },
+  "--tug-base-surface-control-primary-filled-danger-hover": { L: 0.5572, C: 0.24200000000000002, h: 25 },
+  "--tug-base-surface-control-primary-filled-danger-rest": { L: 0.3536, C: 0.22, h: 25 },
+  "--tug-base-element-control-border-filled-danger-active": { L: 0.659, C: 0.396, h: 25 },
+  "--tug-base-element-control-border-filled-danger-hover": { L: 0.659, C: 0.28600000000000003, h: 25 },
+  "--tug-base-element-control-border-filled-danger-rest": { L: 0.659, C: 0.24200000000000002, h: 25 },
+  "--tug-base-element-control-text-filled-danger-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-danger-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-danger-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-danger-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-danger-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-danger-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-filled-data-active": { L: 0.803, C: 0.2682, h: 175 },
+  "--tug-base-surface-control-primary-filled-data-hover": { L: 0.6724, C: 0.16390000000000002, h: 175 },
+  "--tug-base-surface-control-primary-filled-data-rest": { L: 0.4112, C: 0.149, h: 175 },
+  "--tug-base-element-control-border-filled-data-active": { L: 0.803, C: 0.2682, h: 175 },
+  "--tug-base-element-control-border-filled-data-hover": { L: 0.803, C: 0.1937, h: 175 },
+  "--tug-base-element-control-border-filled-data-rest": { L: 0.803, C: 0.16390000000000002, h: 175 },
+  "--tug-base-element-control-text-filled-data-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-data-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-data-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-data-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-data-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-data-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-filled-success-active": { L: 0.821, C: 0.396, h: 140 },
+  "--tug-base-surface-control-primary-filled-success-hover": { L: 0.6868, C: 0.24200000000000002, h: 140 },
+  "--tug-base-surface-control-primary-filled-success-rest": { L: 0.4184, C: 0.22, h: 140 },
+  "--tug-base-element-control-border-filled-success-active": { L: 0.821, C: 0.396, h: 140 },
+  "--tug-base-element-control-border-filled-success-hover": { L: 0.821, C: 0.28600000000000003, h: 140 },
+  "--tug-base-element-control-border-filled-success-rest": { L: 0.821, C: 0.24200000000000002, h: 140 },
+  "--tug-base-element-control-text-filled-success-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-success-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-filled-success-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-success-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-success-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-filled-success-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-ghost-action-active": { L: 1, C: 0, h: 0 },
+  "--tug-base-surface-control-primary-ghost-action-hover": { L: 1, C: 0, h: 0 },
+  "--tug-base-element-control-border-ghost-action-active": { L: 0.7872, C: 0.054000000000000006, h: 250 },
+  "--tug-base-element-control-border-ghost-action-hover": { L: 0.7872, C: 0.054000000000000006, h: 250 },
+  "--tug-base-element-control-text-ghost-action-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-ghost-action-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-ghost-action-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-ghost-action-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-ghost-action-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-ghost-action-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-ghost-danger-active": { L: 0.659, C: 0.24200000000000002, h: 25 },
+  "--tug-base-surface-control-primary-ghost-danger-hover": { L: 0.659, C: 0.24200000000000002, h: 25 },
+  "--tug-base-element-control-border-ghost-danger-active": { L: 0.659, C: 0.24200000000000002, h: 25 },
+  "--tug-base-element-control-border-ghost-danger-hover": { L: 0.659, C: 0.24200000000000002, h: 25 },
+  "--tug-base-element-control-text-ghost-danger-active": { L: 0.76736, C: 0.33, h: 25 },
+  "--tug-base-element-control-text-ghost-danger-hover": { L: 0.76736, C: 0.28600000000000003, h: 25 },
+  "--tug-base-element-control-text-ghost-danger-rest": { L: 0.76736, C: 0.24200000000000002, h: 25 },
+  "--tug-base-element-control-icon-ghost-danger-active": { L: 0.659, C: 0.33, h: 25 },
+  "--tug-base-element-control-icon-ghost-danger-hover": { L: 0.659, C: 0.28600000000000003, h: 25 },
+  "--tug-base-element-control-icon-ghost-danger-rest": { L: 0.659, C: 0.24200000000000002, h: 25 },
+  "--tug-base-surface-control-primary-ghost-option-active": { L: 1, C: 0, h: 0 },
+  "--tug-base-surface-control-primary-ghost-option-hover": { L: 1, C: 0, h: 0 },
+  "--tug-base-element-control-border-ghost-option-active": { L: 0.7872, C: 0.054000000000000006, h: 250 },
+  "--tug-base-element-control-border-ghost-option-hover": { L: 0.7872, C: 0.054000000000000006, h: 250 },
+  "--tug-base-element-control-text-ghost-option-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-ghost-option-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-ghost-option-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-ghost-option-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-ghost-option-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-ghost-option-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-normal-highlighted-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-control-border-normal-highlighted-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-control-text-normal-highlighted-rest": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-surface-control-primary-outlined-action-active": { L: 1, C: 0, h: 0 },
+  "--tug-base-surface-control-primary-outlined-action-hover": { L: 1, C: 0, h: 0 },
+  "--tug-base-element-control-border-outlined-action-active": { L: 0.771, C: 0.21449999999999997, h: 230 },
+  "--tug-base-element-control-border-outlined-action-hover": { L: 0.771, C: 0.18589999999999998, h: 230 },
+  "--tug-base-element-control-border-outlined-action-rest": { L: 0.771, C: 0.1573, h: 230 },
+  "--tug-base-element-control-text-outlined-action-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-outlined-action-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-outlined-action-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-action-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-action-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-action-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-outlined-agent-active": { L: 1, C: 0, h: 0 },
+  "--tug-base-surface-control-primary-outlined-agent-hover": { L: 1, C: 0, h: 0 },
+  "--tug-base-element-control-border-outlined-agent-active": { L: 0.708, C: 0.22349999999999998, h: 270 },
+  "--tug-base-element-control-border-outlined-agent-hover": { L: 0.708, C: 0.1937, h: 270 },
+  "--tug-base-element-control-border-outlined-agent-rest": { L: 0.708, C: 0.16390000000000002, h: 270 },
+  "--tug-base-element-control-text-outlined-agent-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-outlined-agent-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-outlined-agent-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-agent-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-agent-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-agent-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-outlined-option-active": { L: 1, C: 0, h: 0 },
+  "--tug-base-surface-control-primary-outlined-option-hover": { L: 1, C: 0, h: 0 },
+  "--tug-base-element-control-border-outlined-option-active": { L: 0.7872, C: 0.0297, h: 250 },
+  "--tug-base-element-control-border-outlined-option-hover": { L: 0.7656, C: 0.024300000000000002, h: 250 },
+  "--tug-base-element-control-border-outlined-option-rest": { L: 0.744, C: 0.018900000000000004, h: 250 },
+  "--tug-base-element-control-text-outlined-option-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-outlined-option-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-text-outlined-option-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-option-active": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-option-hover": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-element-control-icon-outlined-option-rest": { L: 0.96, C: 0.0054, h: 250 },
+  "--tug-base-surface-control-primary-normal-selected-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-surface-control-primary-normal-selected-hover": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-control-border-normal-selected-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-surface-control-primary-normal-selected-disabled": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-control-text-normal-selected-rest": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-element-global-divider-normal-default-rest": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-element-global-divider-normal-muted-rest": { L: 0.3174, C: 0.01192, h: 270 },
+  "--tug-base-element-global-text-normal-default-rest": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-element-global-text-normal-plain-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-element-global-text-normal-inverse-rest": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-element-global-text-normal-link-rest": { L: 0.90348, C: 0.134, h: 200 },
+  "--tug-base-element-global-text-normal-link-hover": { L: 0.9129, C: 0.05360000000000001, h: 200 },
+  "--tug-base-element-global-text-normal-muted-rest": { L: 0.81312, C: 0.013500000000000002, h: 250 },
+  "--tug-base-element-global-text-normal-onAccent-rest": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-element-global-text-normal-onCaution-rest": { L: 0.23064, C: 0.011200000000000002, h: 263.33333333333326 },
+  "--tug-base-element-global-text-normal-onDanger-rest": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-element-global-text-normal-onSuccess-rest": { L: 0.23064, C: 0.011200000000000002, h: 263.33333333333326 },
+  "--tug-base-element-global-text-normal-placeholder-rest": { L: 0.5064, C: 0.0162, h: 250 },
+  "--tug-base-element-global-text-normal-subtle-rest": { L: 0.6684, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-surface-field-primary-normal-plain-disabled": { L: 0.21911999999999998, C: 0.014000000000000002, h: 263.33333333333326 },
+  "--tug-base-surface-field-primary-normal-plain-focus": { L: 0.23064, C: 0.011200000000000002, h: 263.33333333333326 },
+  "--tug-base-surface-field-primary-normal-plain-hover": { L: 0.27276, C: 0.0149, h: 270 },
+  "--tug-base-surface-field-primary-normal-plain-readOnly": { L: 0.27276, C: 0.0149, h: 270 },
+  "--tug-base-surface-field-primary-normal-plain-rest": { L: 0.24216, C: 0.014000000000000002, h: 263.33333333333326 },
+  "--tug-base-element-field-border-normal-plain-active": { L: 0.803, C: 0.134, h: 200 },
+  "--tug-base-element-field-border-normal-danger-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-field-border-normal-plain-disabled": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-element-field-border-normal-plain-hover": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-element-field-border-normal-plain-readOnly": { L: 0.34584, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-element-field-border-normal-plain-rest": { L: 0.54204, C: 0.0162, h: 250 },
+  "--tug-base-element-field-border-normal-success-rest": { L: 0.821, C: 0.22, h: 140 },
+  "--tug-base-element-field-text-normal-plain-rest": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-element-field-text-normal-plain-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-element-field-text-normal-plain-readOnly": { L: 0.81312, C: 0.013500000000000002, h: 250 },
+  "--tug-base-element-field-text-normal-label-rest": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-element-field-text-normal-placeholder-rest": { L: 0.6252, C: 0.0162, h: 250 },
+  "--tug-base-element-field-text-normal-required-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-field-fill-normal-caution-rest": { L: 0.9009999999999999, C: 0.125, h: 90 },
+  "--tug-base-element-field-fill-normal-danger-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-field-fill-normal-success-rest": { L: 0.821, C: 0.22, h: 140 },
+  "--tug-base-surface-highlight-primary-normal-dropTarget-rest": { L: 0.803, C: 0.134, h: 200 },
+  "--tug-base-surface-highlight-primary-normal-flash-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-surface-highlight-primary-normal-hover-rest": { L: 1, C: 0, h: 0 },
+  "--tug-base-surface-highlight-primary-normal-inspectorTarget-rest": { L: 0.803, C: 0.134, h: 200 },
+  "--tug-base-surface-highlight-primary-normal-preview-rest": { L: 0.803, C: 0.134, h: 200 },
+  "--tug-base-surface-highlight-primary-normal-snapGuide-rest": { L: 0.803, C: 0.134, h: 200 },
+  "--tug-base-element-global-icon-normal-active-rest": { L: 0.8735999999999999, C: 0.27, h: 250 },
+  "--tug-base-element-global-icon-normal-default-rest": { L: 0.81312, C: 0.013500000000000002, h: 250 },
+  "--tug-base-element-global-icon-normal-plain-disabled": { L: 0.41496, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-element-global-icon-normal-muted-rest": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-element-global-icon-normal-onAccent-rest": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-surface-overlay-primary-normal-dim-rest": { L: 0, C: 0, h: 0 },
+  "--tug-base-surface-overlay-primary-normal-highlight-rest": { L: 1, C: 0, h: 0 },
+  "--tug-base-surface-overlay-primary-normal-scrim-rest": { L: 0, C: 0, h: 0 },
+  "--tug-base-element-radio-dot-normal-plain-rest": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-surface-selection-primary-normal-plain-rest": { L: 0.803, C: 0.134, h: 200 },
+  "--tug-base-surface-selection-primary-normal-plain-inactive": { L: 0.6006, C: 0, h: 90 },
+  "--tug-base-element-selection-text-normal-plain-rest": { L: 0.9340799999999999, C: 0.0081, h: 250 },
+  "--tug-base-element-global-divider-normal-separator-rest": { L: 0.47256, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-element-global-shadow-normal-lg-rest": { L: 0, C: 0, h: 0 },
+  "--tug-base-element-global-shadow-normal-md-rest": { L: 0, C: 0, h: 0 },
+  "--tug-base-element-global-shadow-normal-overlay-rest": { L: 0, C: 0, h: 0 },
+  "--tug-base-element-global-shadow-normal-xl-rest": { L: 0, C: 0, h: 0 },
+  "--tug-base-element-global-shadow-normal-xs-rest": { L: 0, C: 0, h: 0 },
+  "--tug-base-surface-global-primary-normal-content-rest": { L: 0.21911999999999998, C: 0.014000000000000002, h: 263.33333333333326 },
+  "--tug-base-surface-global-primary-normal-default-rest": { L: 0.28391999999999995, C: 0.0149, h: 270 },
+  "--tug-base-surface-global-primary-normal-inset-rest": { L: 0.21911999999999998, C: 0.014000000000000002, h: 263.33333333333326 },
+  "--tug-base-surface-global-primary-normal-overlay-rest": { L: 0.30623999999999996, C: 0.01192, h: 270 },
+  "--tug-base-surface-global-primary-normal-raised-rest": { L: 0.27671999999999997, C: 0.014000000000000002, h: 263.33333333333326 },
+  "--tug-base-surface-global-primary-normal-screen-rest": { L: 0.33431999999999995, C: 0.019600000000000003, h: 260 },
+  "--tug-base-surface-global-primary-normal-sunken-rest": { L: 0.27276, C: 0.0149, h: 270 },
+  "--tug-base-surface-tab-primary-normal-plain-active": { L: 0.33432, C: 0.033600000000000005, h: 260 },
+  "--tug-base-surface-tab-primary-normal-plain-hover": { L: 1, C: 0, h: 0 },
+  "--tug-base-surface-tabClose-primary-normal-plain-hover": { L: 1, C: 0, h: 0 },
+  "--tug-base-element-tabClose-text-normal-plain-hover": { L: 0.9168, C: 0.0081, h: 250 },
+  "--tug-base-element-tab-text-normal-plain-active": { L: 0.93408, C: 0.0081, h: 250 },
+  "--tug-base-element-tab-text-normal-plain-hover": { L: 0.9168, C: 0.0081, h: 250 },
+  "--tug-base-element-tab-text-normal-plain-rest": { L: 0.744, C: 0.018900000000000004, h: 250 },
+  "--tug-base-element-toggle-icon-normal-plain-disabled": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-element-toggle-icon-normal-plain-mixed": { L: 0.89088, C: 0.013500000000000002, h: 250 },
+  "--tug-base-element-toggle-thumb-normal-plain-rest": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
+  "--tug-base-element-toggle-thumb-normal-plain-disabled": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-surface-toggle-track-normal-plain-disabled": { L: 0.39552, C: 0.0149, h: 270 },
+  "--tug-base-surface-toggle-track-normal-mixed-rest": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-surface-toggle-track-normal-mixed-hover": { L: 0.6453599999999999, C: 0.033600000000000005, h: 256.66666666666663 },
+  "--tug-base-surface-toggle-track-normal-off-rest": { L: 0.5532, C: 0.016800000000000002, h: 263.33333333333326 },
+  "--tug-base-surface-toggle-track-normal-off-hover": { L: 0.5647199999999999, C: 0.028000000000000004, h: 263.33333333333326 },
+  "--tug-base-surface-toggle-track-normal-on-rest": { L: 0.6792, C: 0.146, h: 55 },
+  "--tug-base-surface-toggle-track-normal-on-hover": { L: 0.7170000000000001, C: 0.1606, h: 55 },
+  "--tug-base-element-tone-fill-normal-accent-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-surface-tone-primary-normal-accent-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-element-tone-border-normal-accent-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-element-tone-text-normal-accent-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-element-tone-icon-normal-accent-rest": { L: 0.78, C: 0.146, h: 55 },
+  "--tug-base-element-tone-fill-normal-active-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-surface-tone-primary-normal-active-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-tone-border-normal-active-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-tone-text-normal-active-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-tone-icon-normal-active-rest": { L: 0.771, C: 0.143, h: 230 },
+  "--tug-base-element-tone-fill-normal-agent-rest": { L: 0.708, C: 0.149, h: 270 },
+  "--tug-base-surface-tone-primary-normal-agent-rest": { L: 0.708, C: 0.149, h: 270 },
+  "--tug-base-element-tone-border-normal-agent-rest": { L: 0.708, C: 0.149, h: 270 },
+  "--tug-base-element-tone-text-normal-agent-rest": { L: 0.708, C: 0.149, h: 270 },
+  "--tug-base-element-tone-icon-normal-agent-rest": { L: 0.708, C: 0.149, h: 270 },
+  "--tug-base-element-tone-fill-normal-caution-rest": { L: 0.9009999999999999, C: 0.125, h: 90 },
+  "--tug-base-surface-tone-primary-normal-caution-rest": { L: 0.6006, C: 0.125, h: 90 },
+  "--tug-base-element-tone-border-normal-caution-rest": { L: 0.9009999999999999, C: 0.125, h: 90 },
+  "--tug-base-element-tone-text-normal-caution-rest": { L: 0.9009999999999999, C: 0.125, h: 90 },
+  "--tug-base-element-tone-icon-normal-caution-rest": { L: 0.9009999999999999, C: 0.125, h: 90 },
+  "--tug-base-element-tone-fill-normal-danger-rest": { L: 0.91184, C: 0.22, h: 25 },
+  "--tug-base-surface-tone-primary-normal-danger-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-tone-border-normal-danger-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-tone-text-normal-danger-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-tone-icon-normal-danger-rest": { L: 0.659, C: 0.22, h: 25 },
+  "--tug-base-element-tone-fill-normal-data-rest": { L: 0.803, C: 0.149, h: 175 },
+  "--tug-base-surface-tone-primary-normal-data-rest": { L: 0.803, C: 0.149, h: 175 },
+  "--tug-base-element-tone-border-normal-data-rest": { L: 0.803, C: 0.149, h: 175 },
+  "--tug-base-element-tone-text-normal-data-rest": { L: 0.803, C: 0.149, h: 175 },
+  "--tug-base-element-tone-icon-normal-data-rest": { L: 0.803, C: 0.149, h: 175 },
+  "--tug-base-element-tone-fill-normal-success-rest": { L: 0.821, C: 0.22, h: 140 },
+  "--tug-base-surface-tone-primary-normal-success-rest": { L: 0.821, C: 0.22, h: 140 },
+  "--tug-base-element-tone-border-normal-success-rest": { L: 0.821, C: 0.22, h: 140 },
+  "--tug-base-element-tone-text-normal-success-rest": { L: 0.821, C: 0.22, h: 140 },
+  "--tug-base-element-tone-icon-normal-success-rest": { L: 0.821, C: 0.22, h: 140 }
 };
 
 // ---------------------------------------------------------------------------
@@ -1294,8 +1318,8 @@ describe("derivation-engine generateResolvedCssExport", () => {
  * a regression.
  */
 const DARK_HIGH_CONTRAST_PAIR_EXCEPTIONS = new Set([
-  "--tug-base-fg-default|--tug-base-surface-screen",
-  "--tug-base-fg-inverse|--tug-base-surface-screen",
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-global-primary-normal-screen-rest",
+  "--tug-base-element-global-text-normal-inverse-rest|--tug-base-surface-global-primary-normal-screen-rest",
 ]);
 
 /**
@@ -1794,23 +1818,23 @@ describe("resolveHueSlots — Step 3", () => {
 
     // Key Brio dark token spot-checks (from T-BRIO-MATCH fixture)
     // bg-app: indigo-violet i:2 t:5
-    expect(output.tokens["--tug-base-bg-app"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
+    expect(output.tokens["--tug-base-surface-global-primary-normal-app-rest"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
 
     // fg-default: cobalt i:3 t:94
-    expect(output.tokens["--tug-base-fg-default"]).toBe("--tug-color(cobalt, i: 3, t: 94)");
+    expect(output.tokens["--tug-base-element-global-text-normal-default-rest"]).toBe("--tug-color(cobalt, i: 3, t: 94)");
 
     // fg-subtle: indigo-cobalt i:7, tone adjusted by contrast floor from 37 → 45
     // (subdued-text threshold 45 against surface-default requires higher tone)
-    expect(output.tokens["--tug-base-fg-subtle"]).toBe("--tug-color(indigo-cobalt, i: 7, t: 45)");
+    expect(output.tokens["--tug-base-element-global-text-normal-subtle-rest"]).toBe("--tug-color(indigo-cobalt, i: 7, t: 45)");
 
     // fg-inverse: sapphire-cobalt i:3 t:100
-    expect(output.tokens["--tug-base-fg-inverse"]).toBe("--tug-color(sapphire-cobalt, i: 3, t: 100)");
+    expect(output.tokens["--tug-base-element-global-text-normal-inverse-rest"]).toBe("--tug-color(sapphire-cobalt, i: 3, t: 100)");
 
     // selection-bg-inactive: yellow i:0 t:30 a:25
-    expect(output.tokens["--tug-base-selection-bg-inactive"]).toMatch(/yellow/);
+    expect(output.tokens["--tug-base-surface-selection-primary-normal-plain-inactive"]).toMatch(/yellow/);
 
     // surface-sunken: violet (surfBareBase) i:5 t:11
-    expect(output.tokens["--tug-base-surface-sunken"]).toBe("--tug-color(violet, i: 5, t: 11)");
+    expect(output.tokens["--tug-base-surface-global-primary-normal-sunken-rest"]).toBe("--tug-color(violet, i: 5, t: 11)");
   });
 
   // -------------------------------------------------------------------------
@@ -1957,18 +1981,18 @@ describe("computeTones — Step 4", () => {
     expect(Object.keys(output.tokens).length).toBe(373);
 
     // Surface tokens spot-check (from T-BRIO-MATCH fixture)
-    expect(output.tokens["--tug-base-bg-app"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
-    expect(output.tokens["--tug-base-surface-sunken"]).toBe("--tug-color(violet, i: 5, t: 11)");
-    expect(output.tokens["--tug-base-surface-default"]).toBe("--tug-color(violet, i: 5, t: 12)");
-    expect(output.tokens["--tug-base-surface-overlay"]).toBe("--tug-color(violet, i: 4, t: 14)");
-    expect(output.tokens["--tug-base-surface-inset"]).toBe("--tug-color(indigo-violet, i: 5, t: 6)");
+    expect(output.tokens["--tug-base-surface-global-primary-normal-app-rest"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
+    expect(output.tokens["--tug-base-surface-global-primary-normal-sunken-rest"]).toBe("--tug-color(violet, i: 5, t: 11)");
+    expect(output.tokens["--tug-base-surface-global-primary-normal-default-rest"]).toBe("--tug-color(violet, i: 5, t: 12)");
+    expect(output.tokens["--tug-base-surface-global-primary-normal-overlay-rest"]).toBe("--tug-color(violet, i: 4, t: 14)");
+    expect(output.tokens["--tug-base-surface-global-primary-normal-inset-rest"]).toBe("--tug-color(indigo-violet, i: 5, t: 6)");
 
     // Divider tokens
-    expect(output.tokens["--tug-base-divider-default"]).toBe("--tug-color(indigo-violet, i: 6, t: 17)");
-    expect(output.tokens["--tug-base-divider-muted"]).toBe("--tug-color(violet, i: 4, t: 15)");
+    expect(output.tokens["--tug-base-element-global-divider-normal-default-rest"]).toBe("--tug-color(indigo-violet, i: 6, t: 17)");
+    expect(output.tokens["--tug-base-element-global-divider-normal-muted-rest"]).toBe("--tug-color(violet, i: 4, t: 15)");
 
     // Disabled control
-    expect(output.tokens["--tug-base-control-disabled-bg"]).toBeDefined();
+    expect(output.tokens["--tug-base-surface-control-primary-normal-plain-disabled"]).toBeDefined();
   });
 
   // ---------------------------------------------------------------------------
@@ -2072,15 +2096,15 @@ describe("computeTones — Step 4", () => {
     const { ruleTokens, imperative } = runCoreRules(EXAMPLE_RECIPES.brio);
 
     const SURFACE_TOKENS = [
-      "--tug-base-bg-app",
-      "--tug-base-bg-canvas",
-      "--tug-base-surface-sunken",
-      "--tug-base-surface-default",
-      "--tug-base-surface-raised",
-      "--tug-base-surface-overlay",
-      "--tug-base-surface-inset",
-      "--tug-base-surface-content",
-      "--tug-base-surface-screen",
+      "--tug-base-surface-global-primary-normal-app-rest",
+      "--tug-base-surface-global-primary-normal-canvas-rest",
+      "--tug-base-surface-global-primary-normal-sunken-rest",
+      "--tug-base-surface-global-primary-normal-default-rest",
+      "--tug-base-surface-global-primary-normal-raised-rest",
+      "--tug-base-surface-global-primary-normal-overlay-rest",
+      "--tug-base-surface-global-primary-normal-inset-rest",
+      "--tug-base-surface-global-primary-normal-content-rest",
+      "--tug-base-surface-global-primary-normal-screen-rest",
     ];
 
     const mismatches: string[] = [];
@@ -2099,18 +2123,18 @@ describe("computeTones — Step 4", () => {
     const { ruleTokens, imperative } = runCoreRules(EXAMPLE_RECIPES.brio);
 
     const FG_TOKENS = [
-      "--tug-base-fg-default",
-      "--tug-base-fg-muted",
-      "--tug-base-fg-subtle",
-      "--tug-base-fg-disabled",
-      "--tug-base-fg-inverse",
-      "--tug-base-fg-placeholder",
-      "--tug-base-fg-link",
-      "--tug-base-fg-link-hover",
-      "--tug-base-fg-onAccent",
-      "--tug-base-fg-onDanger",
-      "--tug-base-fg-onCaution",
-      "--tug-base-fg-onSuccess",
+      "--tug-base-element-global-text-normal-default-rest",
+      "--tug-base-element-global-text-normal-muted-rest",
+      "--tug-base-element-global-text-normal-subtle-rest",
+      "--tug-base-element-global-text-normal-plain-disabled",
+      "--tug-base-element-global-text-normal-inverse-rest",
+      "--tug-base-element-global-text-normal-placeholder-rest",
+      "--tug-base-element-global-text-normal-link-rest",
+      "--tug-base-element-global-text-normal-link-hover",
+      "--tug-base-element-global-text-normal-onAccent-rest",
+      "--tug-base-element-global-text-normal-onDanger-rest",
+      "--tug-base-element-global-text-normal-onCaution-rest",
+      "--tug-base-element-global-text-normal-onSuccess-rest",
     ];
 
     const mismatches: string[] = [];
@@ -2152,15 +2176,15 @@ describe("computeTones — Step 4", () => {
     const { ruleTokens, imperative } = runCoreRules(brioLight);
 
     const SURFACE_TOKENS = [
-      "--tug-base-bg-app",
-      "--tug-base-bg-canvas",
-      "--tug-base-surface-sunken",
-      "--tug-base-surface-default",
-      "--tug-base-surface-raised",
-      "--tug-base-surface-overlay",
-      "--tug-base-surface-inset",
-      "--tug-base-surface-content",
-      "--tug-base-surface-screen",
+      "--tug-base-surface-global-primary-normal-app-rest",
+      "--tug-base-surface-global-primary-normal-canvas-rest",
+      "--tug-base-surface-global-primary-normal-sunken-rest",
+      "--tug-base-surface-global-primary-normal-default-rest",
+      "--tug-base-surface-global-primary-normal-raised-rest",
+      "--tug-base-surface-global-primary-normal-overlay-rest",
+      "--tug-base-surface-global-primary-normal-inset-rest",
+      "--tug-base-surface-global-primary-normal-content-rest",
+      "--tug-base-surface-global-primary-normal-screen-rest",
     ];
 
     const mismatches: string[] = [];
@@ -2447,7 +2471,7 @@ describe("Step 4 verification — harmony light-mode cardFrameActiveTone and for
 
   it("harmony tab-bg-active resolves to L near 96 (cardFrameActiveTone=96 applied to derivation)", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.harmony);
-    const tabBgActive = output.resolved["--tug-base-tab-bg-active"];
+    const tabBgActive = output.resolved["--tug-base-surface-tab-primary-normal-plain-active"];
     expect(tabBgActive).toBeDefined();
     // tone 96 => approximately L=0.96 in OKLCH; allow ±0.06 for hue/chroma contribution
     const approxTone = tabBgActive!.L * 100;
@@ -2470,8 +2494,8 @@ describe("Step 4 verification — harmony light-mode cardFrameActiveTone and for
     // borderRamp() uses borderSignalTone — control outlined borders are the primary consumers
     const with40 = deriveTheme({ ...EXAMPLE_RECIPES.harmony, formulas: { ...LIGHT_FORMULAS, borderSignalTone: 40 } });
     const with50 = deriveTheme({ ...EXAMPLE_RECIPES.harmony, formulas: { ...LIGHT_FORMULAS, borderSignalTone: 50 } });
-    const border40 = with40.resolved["--tug-base-control-outlined-action-border-rest"];
-    const border50 = with50.resolved["--tug-base-control-outlined-action-border-rest"];
+    const border40 = with40.resolved["--tug-base-element-control-border-outlined-action-rest"];
+    const border50 = with50.resolved["--tug-base-element-control-border-outlined-action-rest"];
     expect(border40).toBeDefined();
     expect(border50).toBeDefined();
     // borderSignalTone=40 must produce a darker (lower L) token than tone=50
@@ -2482,8 +2506,8 @@ describe("Step 4 verification — harmony light-mode cardFrameActiveTone and for
     // semanticTone() uses semanticSignalTone — tone-* family tokens are the primary consumers
     const with35 = deriveTheme({ ...EXAMPLE_RECIPES.harmony, formulas: { ...LIGHT_FORMULAS, semanticSignalTone: 35 } });
     const with50 = deriveTheme({ ...EXAMPLE_RECIPES.harmony, formulas: { ...LIGHT_FORMULAS, semanticSignalTone: 50 } });
-    const tone35 = with35.resolved["--tug-base-tone-accent"];
-    const tone50 = with50.resolved["--tug-base-tone-accent"];
+    const tone35 = with35.resolved["--tug-base-element-tone-fill-normal-accent-rest"];
+    const tone50 = with50.resolved["--tug-base-element-tone-fill-normal-accent-rest"];
     expect(tone35).toBeDefined();
     expect(tone50).toBeDefined();
     // semanticSignalTone=35 must produce a darker (lower L) semantic token than tone=50
@@ -2494,11 +2518,11 @@ describe("Step 4 verification — harmony light-mode cardFrameActiveTone and for
     const harmonyOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const semanticTokens = [
-      "--tug-base-tone-accent",
-      "--tug-base-tone-active",
-      "--tug-base-tone-success",
-      "--tug-base-tone-caution",
-      "--tug-base-tone-danger",
+      "--tug-base-element-tone-fill-normal-accent-rest",
+      "--tug-base-element-tone-fill-normal-active-rest",
+      "--tug-base-element-tone-fill-normal-success-rest",
+      "--tug-base-element-tone-fill-normal-caution-rest",
+      "--tug-base-element-tone-fill-normal-danger-rest",
     ];
     for (const token of semanticTokens) {
       const harmonyL = harmonyOutput.resolved[token]?.L;
@@ -2529,11 +2553,11 @@ describe("Step 4 verification — harmony light-mode cardFrameActiveTone and for
       // Known structural element exceptions (same set as gallery tests)
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
       // Known pair exceptions (polarity mismatches)
-      if (r.fg === "--tug-base-fg-inverse" && r.bg === "--tug-base-surface-screen") return false;
+      if (r.fg === "--tug-base-element-global-text-normal-inverse-rest" && r.bg === "--tug-base-surface-global-primary-normal-screen-rest") return false;
       // fg-inverse on surface-default: badge ghost/outlined variant — in light mode, fg-inverse
       // is a light token on a light bg (same structural polarity as dark mode). The pair fails
       // contrast by construction. Phase 2 will resolve via independent token paths. [Gap #badge-inverse]
-      if (r.fg === "--tug-base-fg-inverse" && r.bg === "--tug-base-surface-default") return false;
+      if (r.fg === "--tug-base-element-global-text-normal-inverse-rest" && r.bg === "--tug-base-surface-global-primary-normal-default-rest") return false;
       return true;
     });
     const descriptions = newUnexpected.map(
@@ -2553,7 +2577,7 @@ describe("Step 4 verification — harmony light-mode cardFrameActiveTone and for
     const fromRecipe = deriveTheme(EXAMPLE_RECIPES.brio);
     const fromExplicit = deriveTheme({ ...EXAMPLE_RECIPES.brio, formulas: DARK_FORMULAS });
     // Control border tokens (use borderRamp) must be identical
-    const controlBorderToken = "--tug-base-control-outlined-action-border-rest";
+    const controlBorderToken = "--tug-base-element-control-border-outlined-action-rest";
     expect(fromRecipe.tokens[controlBorderToken]).toBe(fromExplicit.tokens[controlBorderToken]);
   });
 });
@@ -2739,10 +2763,10 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
     // Core readability: fg-default on primary surfaces must pass contrast 75
     const coreFailures = results.filter(
       (r) =>
-        r.fg === "--tug-base-fg-default" &&
-        (r.bg === "--tug-base-surface-default" ||
-          r.bg === "--tug-base-surface-inset" ||
-          r.bg === "--tug-base-surface-content") &&
+        r.fg === "--tug-base-element-global-text-normal-default-rest" &&
+        (r.bg === "--tug-base-surface-global-primary-normal-default-rest" ||
+          r.bg === "--tug-base-surface-global-primary-normal-inset-rest" ||
+          r.bg === "--tug-base-surface-global-primary-normal-content-rest") &&
         !r.contrastPass,
     );
     expect(coreFailures).toEqual([]);

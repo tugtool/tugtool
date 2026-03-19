@@ -2,7 +2,7 @@
  * TugCheckbox -- tugways public API for checkboxes.
  *
  * Wraps Radix Checkbox for accessible checked/unchecked/indeterminate state.
- * All visual states driven by --tug-base-toggle-track-* and --tug-base-checkmark-fg
+ * All visual states driven by --tug-base-toggle-track-* and --tug-base-element-checkmark-icon-normal-plain-rest
  * tokens — theme switches update CSS variables with no React re-renders.
  *
  * Features:
@@ -14,7 +14,7 @@
  *
  * [D03] Role color via inline CSS custom property injection
  * [D04] Token-driven control state model
- * [D05] Component token naming: --tug-base-toggle-*, --tug-base-checkmark-fg
+ * [D05] Component token naming: --tug-base-toggle-*, --tug-base-element-checkmark-icon-normal-plain-rest
  */
 
 import React from "react";
@@ -53,7 +53,7 @@ export type TugCheckboxRole =
 /**
  * Maps non-option, non-accent role prop values to tone token suffixes.
  * Necessary because the prop API uses "action" but tone tokens use "active"
- * (i.e., --tug-base-tone-active, not --tug-base-tone-action).
+ * (i.e., --tug-base-element-tone-fill-normal-active-rest, not --tug-base-tone-action).
  * [D03, Table T04]
  */
 const ROLE_TONE_MAP: Record<string, string> = {
@@ -96,7 +96,7 @@ export interface TugCheckboxProps {
    * Injects --tug-toggle-on-color and --tug-toggle-on-hover-color via inline
    * CSS custom properties; the CSS falls back to global tokens when not set.
    *
-   * "option" uses --tug-base-fg-muted directly (neutral/achromatic — no signal
+   * "option" uses --tug-base-element-global-text-normal-muted-rest directly (neutral/achromatic — no signal
    * hue chroma) rather than a --tug-base-tone-* token. This provides calm
    * configuration-control styling appropriate for checkboxes. [D06]
    *
@@ -131,7 +131,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     //
     // Branch 1 — "option": inject fg-muted directly (neutral/achromatic).
     //   The option role does not map to any --tug-base-tone-* token; it uses
-    //   --tug-base-fg-muted for a calm, unchromatic on-state color. [D06]
+    //   --tug-base-element-global-text-normal-muted-rest for a calm, unchromatic on-state color. [D06]
     //
     // Branch 2 — other non-accent roles (action/agent/data/success/caution/danger):
     //   inject the corresponding --tug-base-tone-* token via ROLE_TONE_MAP.
@@ -143,15 +143,15 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
 
     if (role === "option") {
       roleStyle = {
-        "--tug-toggle-on-color": "var(--tug-base-fg-muted)",
-        "--tug-toggle-on-hover-color": "var(--tug-base-fg-subtle)",
+        "--tug-toggle-on-color": "var(--tug-base-element-global-text-normal-muted-rest)",
+        "--tug-toggle-on-hover-color": "var(--tug-base-element-global-text-normal-subtle-rest)",
       } as React.CSSProperties;
       dataRole = "option";
     } else if (role !== "accent" && ROLE_TONE_MAP[role] !== undefined) {
       const toneSuffix = ROLE_TONE_MAP[role];
       roleStyle = {
-        "--tug-toggle-on-color": `var(--tug-base-tone-${toneSuffix})`,
-        "--tug-toggle-on-hover-color": `color-mix(in oklch, var(--tug-base-tone-${toneSuffix}), white 15%)`,
+        "--tug-toggle-on-color": `var(--tug-base-element-tone-fill-normal-${toneSuffix}-rest)`,
+        "--tug-toggle-on-hover-color": `color-mix(in oklch, var(--tug-base-element-tone-fill-normal-${toneSuffix}-rest), white 15%)`,
       } as React.CSSProperties;
       dataRole = role;
     }

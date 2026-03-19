@@ -74,39 +74,40 @@ Additionally, **ghost** exists as a visual variant of secondary (transparent res
 
 ## Base Token Inventory
 
+> *This section originally used legacy `fg-` / `bg-` naming. Updated to Phase 3.5A six-slot finalized names: `<plane>-<component>-<constituent>-<emphasis>-<role>-<state>`.*
+
 ### A. Surfaces
 
 Background colors at different elevation levels. These are the canvas on which everything sits.
 
 ```
---tug-base-bg-app                    App chrome background
---tug-base-bg-canvas                 Canvas/workspace background
---tug-base-surface-sunken            Recessed areas (tab bar, field bg)
---tug-base-surface-default           Standard panel/card body
---tug-base-surface-raised            Slightly elevated (active tab, kbd)
---tug-base-surface-overlay           Floating panels (menus, popovers, dialogs)
---tug-base-surface-inset             Deeply recessed (code blocks, inputs)
---tug-base-surface-content           Content reading area
---tug-base-surface-screen            High-contrast screen (terminal)
+--tug-base-surface-global-primary-normal-app-rest      App chrome background
+--tug-base-surface-global-primary-normal-canvas-rest   Canvas/workspace background
+--tug-base-surface-global-primary-normal-sunken-rest   Recessed areas (tab bar, field bg)
+--tug-base-surface-global-primary-normal-default-rest  Standard panel/card body
+--tug-base-surface-global-primary-normal-raised-rest   Slightly elevated (active tab, kbd)
+--tug-base-surface-global-primary-normal-overlay-rest  Floating panels (menus, popovers, dialogs)
+--tug-base-surface-global-primary-normal-inset-rest    Deeply recessed (code blocks, inputs)
+--tug-base-surface-global-primary-normal-content-rest  Content reading area
+--tug-base-surface-global-primary-normal-screen-rest   High-contrast screen (terminal)
 ```
 
-### B. Foreground / Text
+### B. Element — Text
 
 Text colors at different emphasis levels.
 
 ```
---tug-base-fg-default                Primary text
---tug-base-fg-muted                  Secondary text, labels
---tug-base-fg-subtle                 Tertiary text, metadata
---tug-base-fg-disabled               Disabled text
---tug-base-fg-inverse                Text on accent/filled backgrounds
---tug-base-fg-placeholder            Input placeholder text
---tug-base-fg-link                   Hyperlink text
---tug-base-fg-link-hover             Hyperlink hover
---tug-base-fg-onAccent               Text on accent bg
---tug-base-fg-onDanger               Text on danger bg
---tug-base-fg-onWarning              Text on warning bg
---tug-base-fg-onSuccess              Text on success bg
+--tug-base-element-global-text-normal-default-rest     Primary text
+--tug-base-element-global-text-normal-muted-rest       Secondary text, labels
+--tug-base-element-global-text-normal-subtle-rest      Tertiary text, metadata
+--tug-base-element-global-text-normal-plain-disabled   Disabled text
+--tug-base-element-global-text-normal-inverse-rest     Text on accent/filled backgrounds
+--tug-base-element-global-text-normal-placeholder-rest Input placeholder text
+--tug-base-element-global-text-normal-link-rest        Hyperlink text
+--tug-base-element-global-text-normal-link-hover       Hyperlink hover
+--tug-base-element-global-text-normal-onAccent-rest    Text on accent surface
+--tug-base-element-global-text-normal-onDanger-rest    Text on danger surface
+--tug-base-element-global-text-normal-onSuccess-rest   Text on success surface
 ```
 
 ### C. Icons
@@ -517,13 +518,13 @@ After this proposal, component CSS files should only define tokens that are **ge
 
 Bespoke: card header active/inactive backgrounds (theme-specific tints), card shadows (compound values), findbar match colors, dim overlay opacity.
 
-References base for: fg (→ `--tug-base-fg-default`), button fg (→ `--tug-base-fg-muted`), borders (→ `--tug-base-border-default`), dividers (→ `--tug-base-divider-default`), hover highlights (→ `--tug-base-highlight-hover`).
+References base for: text (→ `--tug-base-element-global-text-normal-default-rest`), button text (→ `--tug-base-element-global-text-normal-muted-rest`), borders (→ `--tug-base-element-global-border-normal-default-rest`), dividers (→ `--tug-base-element-global-divider-normal-default-rest`), hover highlights (→ `--tug-base-surface-highlight-primary-normal-hover-rest`).
 
 ### tug-tab.css
 
 Bespoke: tab active bg (specific tint), ghost tab bg/border, drop target colors.
 
-References base for: rest fg (→ `--tug-base-fg-subtle`), active fg (→ `--tug-base-fg-default`), underline (→ `--tug-base-accent-underline-active`), badge bg (→ `--tug-base-accent-default`), badge fg (→ `--tug-base-fg-inverse`).
+References base for: rest text (→ `--tug-base-element-global-text-normal-subtle-rest`), active text (→ `--tug-base-element-global-text-normal-default-rest`), underline (→ `--tug-base-element-tab-border-normal-active-rest`), badge surface (→ `--tug-base-surface-badge-primary-normal-accent-rest`), badge text (→ `--tug-base-element-global-text-normal-inverse-rest`).
 
 ### tug-dialog.css
 

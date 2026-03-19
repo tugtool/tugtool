@@ -219,41 +219,44 @@ describe("pairing-map", () => {
     const EXCLUDED_BG_TOKENS = new Set([
       // selected-disabled-bg uses var() reference (structural pass-through);
       // pairings are covered via control-disabled-bg directly
-      "--tug-base-control-selected-disabled-bg",
+      "--tug-base-surface-control-primary-normal-selected-disabled",
       // semi-transparent overlays / highlights — not direct surface pairings
       // (these are additive overlays layered on top of surfaces)
-      "--tug-base-highlight-hover",
-      "--tug-base-highlight-dropTarget",
-      "--tug-base-highlight-preview",
-      "--tug-base-highlight-inspectorTarget",
-      "--tug-base-highlight-snapGuide",
-      "--tug-base-highlight-flash",
-      "--tug-base-accent-subtle",
+      "--tug-base-surface-overlay-primary-normal-dim-rest",
+      "--tug-base-surface-overlay-primary-normal-scrim-rest",
+      "--tug-base-surface-overlay-primary-normal-highlight-rest",
+      "--tug-base-surface-highlight-primary-normal-hover-rest",
+      "--tug-base-surface-highlight-primary-normal-dropTarget-rest",
+      "--tug-base-surface-highlight-primary-normal-preview-rest",
+      "--tug-base-surface-highlight-primary-normal-inspectorTarget-rest",
+      "--tug-base-surface-highlight-primary-normal-snapGuide-rest",
+      "--tug-base-surface-highlight-primary-normal-flash-rest",
+      "--tug-base-element-global-fill-normal-accentSubtle-rest",
       // selection-bg-inactive is decorative / no chromatic fg over it
-      "--tug-base-selection-bg-inactive",
+      "--tug-base-surface-selection-primary-normal-plain-inactive",
       // ghost hover/active are semi-transparent (effectively overlays over parent surface)
-      "--tug-base-control-ghost-action-bg-hover",
-      "--tug-base-control-ghost-action-bg-active",
-      "--tug-base-control-ghost-danger-bg-hover",
-      "--tug-base-control-ghost-danger-bg-active",
+      "--tug-base-surface-control-primary-ghost-action-hover",
+      "--tug-base-surface-control-primary-ghost-action-active",
+      "--tug-base-surface-control-primary-ghost-danger-hover",
+      "--tug-base-surface-control-primary-ghost-danger-active",
       // option role hover/active are semi-transparent overlays (same as ghost pattern)
-      "--tug-base-control-outlined-option-bg-hover",
-      "--tug-base-control-outlined-option-bg-active",
-      "--tug-base-control-ghost-option-bg-hover",
-      "--tug-base-control-ghost-option-bg-active",
+      "--tug-base-surface-control-primary-outlined-option-hover",
+      "--tug-base-surface-control-primary-outlined-option-active",
+      "--tug-base-surface-control-primary-ghost-option-hover",
+      "--tug-base-surface-control-primary-ghost-option-active",
       // selected-bg-hover is a slightly more opaque version of selected-bg
-      "--tug-base-control-selected-bg-hover",
+      "--tug-base-surface-control-primary-normal-selected-hover",
       // field-bg-disabled paired via field-fg-disabled
-      "--tug-base-field-bg-disabled",
+      "--tug-base-surface-field-primary-normal-plain-disabled",
       // accent-cool-default is used as a focus ring / accent UI element
-      "--tug-base-accent-cool-default",
+      "--tug-base-element-global-fill-normal-accentCool-rest",
       // tab-bg-hover and tab-close-bg-hover are semi-transparent overlays
-      "--tug-base-tab-bg-hover",
-      "--tug-base-tab-close-bg-hover",
+      "--tug-base-surface-tab-primary-normal-plain-hover",
+      "--tug-base-surface-tabClose-primary-normal-plain-hover",
       // tab-bg-inactive and tab-bg-collapsed are title bar/collapsed card backgrounds
       // (text contrast is covered via tab-fg-rest / card-title-bar-fg)
-      "--tug-base-tab-bg-inactive",
-      "--tug-base-tab-bg-collapsed",
+      "--tug-base-surface-tab-primary-normal-plain-inactive",
+      "--tug-base-surface-tab-primary-normal-plain-collapsed",
     ]);
 
     const missingBgTokens: string[] = [];
@@ -434,8 +437,8 @@ describe("theme-accessibility", () => {
   // proving the pair was fixed under the normative contrast gate.
   // -------------------------------------------------------------------------
   it("T3.4: autoAdjustContrast fixes a deliberately failing pair and reaches contrast >= 75", () => {
-    const fgToken = "--tug-base-fg-default";
-    const bgToken = "--tug-base-bg-app";
+    const fgToken = "--tug-base-element-global-text-normal-default-rest";
+    const bgToken = "--tug-base-surface-global-primary-normal-app-rest";
 
     // violet canonL=0.708, L_DARK=0.15, L_LIGHT=0.96
     // fg starts at tone=88 (OKLab contrast ≈ -74.3, just below body-text threshold 75)
@@ -506,15 +509,15 @@ describe("theme-accessibility", () => {
   // but are intentionally or structurally below contrast 75 in the Brio dark theme
   // under the OKLab L metric:
   //
-  //   --tug-base-fg-link           — link fg (below 75 by design; the link colour
+  //   --tug-base-element-global-text-normal-link-rest           — link fg (below 75 by design; the link colour
   //                                  is chosen for brand recognition, not max contrast)
-  //   --tug-base-control-selected-fg  — selected item label on selected-bg tint
+  //   --tug-base-element-control-text-normal-selected-rest  — selected item label on selected-bg tint
   //                                     (selection bg is a translucent accent tint;
   //                                      combined stack passes in real rendering)
-  //   --tug-base-control-highlighted-fg — same as selected, highlighted tint
-  //   --tug-base-selection-fg      — text-selection overlay fg (rendered over
+  //   --tug-base-element-control-text-normal-highlighted-rest — same as selected, highlighted tint
+  //   --tug-base-element-selection-text-normal-plain-rest      — text-selection overlay fg (rendered over
   //                                  selection-bg translucent tint; stack passes)
-  //   --tug-base-tab-fg-active     — active tab label; near-miss by design (the tab
+  //   --tug-base-element-tab-text-normal-plain-active     — active tab label; near-miss by design (the tab
   //                                  chrome uses a deliberately reduced contrast to
   //                                  avoid competing with content)
   //
@@ -570,7 +573,7 @@ describe("theme-accessibility", () => {
     // Primary fg-default must pass contrast 75 on its canonical surfaces (belt-and-suspenders).
     // Excludes the Step 5 gap pairs which are acknowledged accessibility gaps pending Phase 2 resolution.
     const coreResults = bodyTextResults.filter(
-      (r) => r.fg === "--tug-base-fg-default" && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
+      (r) => r.fg === "--tug-base-element-global-text-normal-default-rest" && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
     expect(coreResults.length).toBeGreaterThan(0);
     expect(coreResults.every((r) => r.contrastPass)).toBe(true);
@@ -582,10 +585,10 @@ describe("theme-accessibility", () => {
   // → single adjustment satisfies all pairings.
   // -------------------------------------------------------------------------
   it("T3.6: autoAdjustContrast with fg vs 3 bgs — single adjustment satisfies all", () => {
-    const fgToken = "--tug-base-fg-default";
-    const bgToken1 = "--tug-base-bg-app";
-    const bgToken2 = "--tug-base-surface-default";
-    const bgToken3 = "--tug-base-surface-raised";
+    const fgToken = "--tug-base-element-global-text-normal-default-rest";
+    const bgToken1 = "--tug-base-surface-global-primary-normal-app-rest";
+    const bgToken2 = "--tug-base-surface-global-primary-normal-default-rest";
+    const bgToken3 = "--tug-base-surface-global-primary-normal-raised-rest";
 
     // fg at medium lightness, 3 bg tokens at varying lightness (all dark mode)
     // In dark mode, bg is dark (low L), fg should be light (high L)
@@ -797,8 +800,8 @@ describe("theme-accessibility", () => {
   // all 20 iterations) by checking the outcome is correct.
   // -------------------------------------------------------------------------
   it("T3.9: convergence — auto-adjust stops early when all pairs pass", () => {
-    const fgToken = "--tug-base-fg-default";
-    const bgToken = "--tug-base-bg-app";
+    const fgToken = "--tug-base-element-global-text-normal-default-rest";
+    const bgToken = "--tug-base-surface-global-primary-normal-app-rest";
 
     // Start near-passing: tone=88, OKLab contrast ≈ -74.3 (just below contrast 75)
     const fgL = 0.708 + (38 * (0.96 - 0.708)) / 50; // tone=88 → ~0.8995
@@ -855,9 +858,9 @@ describe("theme-accessibility", () => {
   // Both pairs must pass at the end.
   // -------------------------------------------------------------------------
   it("T3.10: cascade — adjusting one element does not break a passing pair on the same surface", () => {
-    const elementA = "--tug-base-fg-muted";
-    const elementB = "--tug-base-fg-default";
-    const sharedSurface = "--tug-base-surface-default";
+    const elementA = "--tug-base-element-global-text-normal-muted-rest";
+    const elementB = "--tug-base-element-global-text-normal-default-rest";
+    const sharedSurface = "--tug-base-surface-global-primary-normal-default-rest";
 
     // dark mode: surface is dark, elements should be light
     // elementA starts at tone=88 (OKLab contrast ≈ -74.3 — just below contrast 75, failing)
@@ -1231,9 +1234,9 @@ describe("compositeOverSurface", () => {
   // -------------------------------------------------------------------------
   it("T4.5: badge-tinted-accent-fg on composited badge-tinted-accent-bg passes contrast 30 (ui-component)", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const badgeFg = brioOutput.resolved["--tug-base-badge-tinted-accent-fg"];
-    const badgeBg = brioOutput.resolved["--tug-base-badge-tinted-accent-bg"];
-    const surfaceDefault = brioOutput.resolved["--tug-base-surface-default"];
+    const badgeFg = brioOutput.resolved["--tug-base-element-badge-text-tinted-accent-rest"];
+    const badgeBg = brioOutput.resolved["--tug-base-surface-badge-primary-tinted-accent-rest"];
+    const surfaceDefault = brioOutput.resolved["--tug-base-surface-global-primary-normal-default-rest"];
 
     // All three tokens must exist in the Brio resolved map
     expect(badgeFg).toBeDefined();
@@ -1319,8 +1322,8 @@ describe("hexToOkLabL", () => {
   // -------------------------------------------------------------------------
   it("T6.5: Brio fg-default L is substantially higher than bg-app L", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const fgDefault = brioOutput.resolved["--tug-base-fg-default"];
-    const bgApp = brioOutput.resolved["--tug-base-bg-app"];
+    const fgDefault = brioOutput.resolved["--tug-base-element-global-text-normal-default-rest"];
+    const bgApp = brioOutput.resolved["--tug-base-surface-global-primary-normal-app-rest"];
 
     expect(fgDefault).toBeDefined();
     expect(bgApp).toBeDefined();
@@ -1380,7 +1383,7 @@ describe("contrast-calibration-baseline", () => {
 
     // The primary fg-default on bg-app must pass body-text (75) threshold
     const fgDefaultPair = results.find(
-      (r) => r.fg === "--tug-base-fg-default" && r.bg === "--tug-base-bg-app",
+      (r) => r.fg === "--tug-base-element-global-text-normal-default-rest" && r.bg === "--tug-base-surface-global-primary-normal-app-rest",
     );
     expect(fgDefaultPair).toBeDefined();
     expect(fgDefaultPair!.contrastPass).toBe(true);
@@ -1522,7 +1525,7 @@ describe("contrast-calibration-baseline", () => {
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     const anchorPair = results.find(
-      (r) => r.fg === "--tug-base-fg-default" && r.bg === "--tug-base-bg-app",
+      (r) => r.fg === "--tug-base-element-global-text-normal-default-rest" && r.bg === "--tug-base-surface-global-primary-normal-app-rest",
     );
     expect(anchorPair).toBeDefined();
     expect(anchorPair!.contrastPass).toBe(true);
@@ -1575,7 +1578,7 @@ describe("contrast-calibration-baseline", () => {
     // Step 5 gap pairs (tab-bg-active, accent-subtle, tone-caution-bg) are acknowledged
     // accessibility gaps pending Phase 2 resolution and are excluded via SHARED_KNOWN_PAIR_EXCEPTIONS.
     const fgDefaultResults = results.filter(
-      (r) => r.fg === "--tug-base-fg-default" && r.role === "body-text" && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
+      (r) => r.fg === "--tug-base-element-global-text-normal-default-rest" && r.role === "body-text" && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
     expect(fgDefaultResults.length).toBeGreaterThan(0);
     const fgDefaultFailures = fgDefaultResults.filter((r) => !r.contrastPass);

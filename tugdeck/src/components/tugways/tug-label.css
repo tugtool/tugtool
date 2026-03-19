@@ -7,8 +7,8 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-field-fg-label (field-fg-label)       | --tug-base-surface-default (surface-default)     | body-text    | .tug-label (color)                   |
- * | --tug-base-field-fg-required (field-fg-required) | --tug-base-surface-default (surface-default)     | body-text    | .tug-label-required (color)          |
+ * | --tug-base-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .tug-label (color)                   |
+ * | --tug-base-element-field-text-normal-required-rest (element-field-text-normal-required-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .tug-label-required (color)          |
  */
 
 
@@ -54,7 +54,11 @@
 
 
 
-/* @tug-renders-on: --tug-base-surface-default */
+
+
+
+
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-label {
   display: inline-flex;
   align-items: flex-start;
@@ -64,7 +68,7 @@
   font-weight: 500;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-base-field-fg-label);
+  color: var(--tug-base-element-field-text-normal-label-rest);
   cursor: default;
 }
 
@@ -144,9 +148,9 @@
    Required Indicator
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-label-required {
-  color: var(--tug-base-field-fg-required);
+  color: var(--tug-base-element-field-text-normal-required-rest);
   margin-left: 0.125rem;
 }
 

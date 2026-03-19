@@ -7,17 +7,17 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-border-default (border-default)       | --tug-tab-bar-bg (tab-bg-inactive)               | body-text    | .tug-tab-bar (border-bottom)         |
- * | --tug-tab-fg-rest (tab-fg-rest)                  | --tug-base-tab-bg-inactive (tab-bg-inactive)     | body-text    | .tug-tab (color)                     |
- * | --tug-tab-fg-active (tab-fg-active)              | --tug-tab-bg-active (tab-bg-active)              | body-text    | .tug-tab[data-active="true"] (color) |
- * | --tug-tab-fg-hover (tab-fg-hover)                | --tug-tab-bg-hover (tab-bg-hover)                | body-text    | .tug-tab:not([data-active="true"]):hover (color) |
- * | --tug-tab-close-fg-hover (tab-close-fg-hover)    | --tug-tab-close-bg-hover (tab-close-bg-hover)    | body-text    | .tug-tab-close:hover (color)         |
- * | --tug-base-fg-muted (fg-muted)                   | --tug-base-tab-bg-inactive (tab-bg-inactive)     | subdued-text | .tug-tab-bar .tug-tab-add (color)    |
- * | --tug-base-control-ghost-option-fg-active (control-ghost-option-fg-active) | --tug-base-control-ghost-option-bg-active (control-ghost-option-bg-active) | body-text    | .tug-tab-bar .tug-tab-add[data-state="open"] (color) |
- * | --tug-base-surface-default (surface-default)     | --tug-tab-badge-bg (accent-default)              | body-text    | .tug-tab-overflow-badge (color)      |
- * | --tug-base-border-default (border-default)       | --tug-base-surface-control (surface-control)     | ui-component | .tug-tab-ghost (border)              |
- * | --tug-base-fg-default (fg-default)               | --tug-base-surface-control (surface-control)     | body-text    | .tug-tab-ghost (color)               |
- * | --tug-base-accent-default (accent-default)       | --tug-base-surface-control (surface-control)     | body-text    | .tug-tab-bar[data-drop-target="true"] (border-bottom-color) |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-tab-bar-bg (surface-tab-primary-normal-plain-inactive) | body-text    | .tug-tab-bar (border-bottom)         |
+ * | --tug-tab-fg-rest (element-tab-text-normal-plain-rest) | --tug-base-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | body-text    | .tug-tab (color)                     |
+ * | --tug-tab-fg-active (element-tab-text-normal-plain-active) | --tug-tab-bg-active (surface-tab-primary-normal-plain-active) | body-text    | .tug-tab[data-active="true"] (color) |
+ * | --tug-tab-fg-hover (element-tab-text-normal-plain-hover) | --tug-tab-bg-hover (surface-tab-primary-normal-plain-hover) | body-text    | .tug-tab:not([data-active="true"]):hover (color) |
+ * | --tug-tab-close-fg-hover (element-tabClose-text-normal-plain-hover) | --tug-tab-close-bg-hover (surface-tabClose-primary-normal-plain-hover) | body-text    | .tug-tab-close:hover (color)         |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | subdued-text | .tug-tab-bar .tug-tab-add (color)    |
+ * | --tug-base-element-control-text-ghost-option-active (element-control-text-ghost-option-active) | --tug-base-surface-control-primary-ghost-option-active (surface-control-primary-ghost-option-active) | body-text    | .tug-tab-bar .tug-tab-add[data-state="open"] (color) |
+ * | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | --tug-tab-badge-bg (element-global-fill-normal-accent-rest) | body-text    | .tug-tab-overflow-badge (color)      |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | ui-component | .tug-tab-ghost (border)              |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | body-text    | .tug-tab-ghost (color)               |
+ * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | body-text    | .tug-tab-bar[data-drop-target="true"] (border-bottom-color) |
  */
 
 
@@ -63,32 +63,36 @@
 
 
 
+
+
+
+
 body {
-  --tug-tab-bar-bg: var(--tug-base-tab-bg-inactive);
+  --tug-tab-bar-bg: var(--tug-base-surface-tab-primary-normal-plain-inactive);
   --tug-tab-bg-rest: transparent;
-  --tug-tab-bg-hover: var(--tug-base-tab-bg-hover);
-  --tug-tab-bg-active: var(--tug-base-tab-bg-active);
+  --tug-tab-bg-hover: var(--tug-base-surface-tab-primary-normal-plain-hover);
+  --tug-tab-bg-active: var(--tug-base-surface-tab-primary-normal-plain-active);
   --tug-tab-bg-compact: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-tab-fg-rest: var(--tug-base-tab-fg-rest);
-  --tug-tab-fg-hover: var(--tug-base-tab-fg-hover);
-  --tug-tab-fg-active: var(--tug-base-tab-fg-active);
-  --tug-tab-fg-compact: var(--tug-base-fg-muted);
-  --tug-tab-close-bg-hover: var(--tug-base-tab-close-bg-hover);
-  --tug-tab-close-fg-hover: var(--tug-base-tab-close-fg-hover);
-  --tug-tab-underline-active: var(--tug-base-accent-default);
-  --tug-tab-dropTarget-bg: var(--tug-base-highlight-preview);
-  --tug-tab-dropTarget-border: var(--tug-base-icon-active);
-  --tug-tab-badge-bg: var(--tug-base-accent-default);
-  --tug-tab-badge-fg: var(--tug-base-fg-inverse);
+  --tug-tab-fg-rest: var(--tug-base-element-tab-text-normal-plain-rest);
+  --tug-tab-fg-hover: var(--tug-base-element-tab-text-normal-plain-hover);
+  --tug-tab-fg-active: var(--tug-base-element-tab-text-normal-plain-active);
+  --tug-tab-fg-compact: var(--tug-base-element-global-text-normal-muted-rest);
+  --tug-tab-close-bg-hover: var(--tug-base-surface-tabClose-primary-normal-plain-hover);
+  --tug-tab-close-fg-hover: var(--tug-base-element-tabClose-text-normal-plain-hover);
+  --tug-tab-underline-active: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-tab-dropTarget-bg: var(--tug-base-surface-highlight-primary-normal-preview-rest);
+  --tug-tab-dropTarget-border: var(--tug-base-element-global-icon-normal-active-rest);
+  --tug-tab-badge-bg: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-tab-badge-fg: var(--tug-base-element-global-text-normal-inverse-rest);
   --tug-tab-ghost-bg: --tug-color(white, i: 0, t: 100, a: 4);
   --tug-tab-ghost-border: --tug-color(white, i: 0, t: 100, a: 8);
-  --tug-tab-insertIndicator: var(--tug-base-accent-default);
-  --tug-tab-overflow-trigger-bg: var(--tug-base-overlay-highlight);
-  --tug-tab-overflow-trigger-fg: var(--tug-base-fg-muted);
+  --tug-tab-insertIndicator: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-tab-overflow-trigger-bg: var(--tug-base-surface-overlay-primary-normal-highlight-rest);
+  --tug-tab-overflow-trigger-fg: var(--tug-base-element-global-text-normal-muted-rest);
   --tug-tab-add-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
-  --tug-tab-add-fg: var(--tug-base-fg-subtle);
-  --tug-tab-typePicker-bg: var(--tug-base-surface-default);
-  --tug-tab-typePicker-fg: var(--tug-base-fg-muted);
+  --tug-tab-add-fg: var(--tug-base-element-global-text-normal-subtle-rest);
+  --tug-tab-typePicker-bg: var(--tug-base-surface-global-primary-normal-default-rest);
+  --tug-tab-typePicker-fg: var(--tug-base-element-global-text-normal-muted-rest);
 }
 
 /* ============================================================================
@@ -104,7 +108,7 @@ body {
   overflow-y: hidden;
   height: var(--tug-base-chrome-height);
   background-color: var(--tug-tab-bar-bg);
-  border-bottom: 1px solid var(--tug-base-border-default);
+  border-bottom: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   user-select: none;
   /* Required so absolutely-positioned insertion indicator is positioned
      relative to the tab bar (Spec S06). */
@@ -115,7 +119,7 @@ body {
    Tab Buttons
    ============================================================================ */
 
-/* @tug-renders-on: --tug-base-tab-bg-inactive */
+/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-inactive */
 .tug-tab {
   display: inline-flex;
   align-items: center;
@@ -255,7 +259,7 @@ body {
  * Compound selector (specificity 0,2,0) overrides TugButton defaults (0,1,0).
  * border-radius uses !important because TugButton applies it via inline style. [S06]
  */
-/* @tug-renders-on: --tug-base-tab-bg-inactive */
+/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-inactive */
 .tug-tab-bar .tug-tab-add {
   width: var(--tug-base-chrome-height);
   height: 100%;
@@ -264,15 +268,15 @@ body {
   border: none;
   border-radius: 0 !important;
   background-color: transparent;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   font-size: var(--tug-base-font-size-lg);
   cursor: default;
 }
 
 /* Open-state: let ghost-option active tokens show through when the menu is open. */
 .tug-tab-bar .tug-tab-add[data-state="open"] {
-  background-color: var(--tug-base-control-ghost-option-bg-active);
-  color: var(--tug-base-control-ghost-option-fg-active);
+  background-color: var(--tug-base-surface-control-primary-ghost-option-active);
+  color: var(--tug-base-element-control-text-ghost-option-active);
 }
 
 /* ============================================================================
@@ -289,7 +293,7 @@ body {
  * border-radius uses !important because TugButton applies it via inline style. [S06]
  * Width matches OVERFLOW_BUTTON_WIDTH (40px) for measurement bootstrap.
  */
-/* @tug-renders-on: --tug-base-tab-bg-inactive */
+/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-inactive */
 .tug-tab-bar .tug-tab-overflow-btn {
   height: 100%;
   padding: 0 var(--tug-base-space-sm);
@@ -297,15 +301,15 @@ body {
   border: none;
   border-radius: 0 !important;
   background-color: transparent;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   font-size: var(--tug-base-font-size-sm);
   cursor: default;
 }
 
 /* Open-state: let ghost-option active tokens show through when the menu is open. */
 .tug-tab-bar .tug-tab-overflow-btn[data-state="open"] {
-  background-color: var(--tug-base-control-ghost-option-bg-active);
-  color: var(--tug-base-control-ghost-option-fg-active);
+  background-color: var(--tug-base-surface-control-primary-ghost-option-active);
+  color: var(--tug-base-element-control-text-ghost-option-active);
 }
 
 /* Badge showing the count of overflow tabs (e.g., "+3"). */
@@ -318,7 +322,7 @@ body {
   padding: 0 var(--tug-base-space-xs);
   border-radius: var(--tug-base-radius-lg);
   background-color: var(--tug-tab-badge-bg);
-  color: var(--tug-base-surface-default);
+  color: var(--tug-base-surface-global-primary-normal-default-rest);
   font-size: var(--tug-base-font-size-2xs);
   font-weight: 600;
   line-height: 1;
@@ -341,14 +345,14 @@ body {
   gap: var(--tug-base-space-xs);
   padding: 0 var(--tug-base-space-md);
   height: var(--tug-base-chrome-height);
-  background-color: var(--tug-base-surface-control);
-  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
   border-radius: var(--tug-base-radius-sm);
   opacity: 0.7;
   pointer-events: none;
   font-size: var(--tug-base-font-size-sm);
   font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
   user-select: none;
   white-space: nowrap;
 }
@@ -367,8 +371,8 @@ body {
 
 /* Drop-target highlight on multi-tab card tab bars. [Spec S07] */
 .tug-tab-bar[data-drop-target="true"] {
-  background-color: var(--tug-base-surface-control);
-  border-bottom-color: var(--tug-base-accent-default);
+  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border-bottom-color: var(--tug-base-element-global-fill-normal-accent-rest);
 }
 
 /* Drop-target highlight on single-tab card accessory divs.
@@ -376,8 +380,8 @@ body {
    [D05, Spec S07] */
 .tugcard-accessory[data-drop-target="true"] {
   min-height: var(--tug-base-chrome-height);
-  background-color: var(--tug-base-surface-control);
-  border-bottom: 2px solid var(--tug-base-accent-default);
+  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border-bottom: 2px solid var(--tug-base-element-global-fill-normal-accent-rest);
   transition:
     min-height var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
     background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
@@ -398,8 +402,8 @@ body {
 
 /* Highlight the target tab bar when a card frame is dragged over it. */
 .tug-tab-bar[data-card-drag-target="true"] {
-  background-color: var(--tug-base-surface-control);
-  border-bottom-color: var(--tug-base-accent-default);
-  outline: 2px solid var(--tug-base-accent-default);
+  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border-bottom-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  outline: 2px solid var(--tug-base-element-global-fill-normal-accent-rest);
   outline-offset: -2px;
 }

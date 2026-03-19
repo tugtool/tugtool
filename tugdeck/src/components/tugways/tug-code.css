@@ -11,14 +11,14 @@
  * @tug-pairings
  * | Element                                       | Surface                                          | Role         | Context                                          |
  * |-----------------------------------------------|--------------------------------------------------|--------------|--------------------------------------------------|
- * | --tug-syntax-comment (fg-muted)               | --tug-codeBlock-bg (surface-control)             | body-text    | Code comment text in code block                  |
- * | --tug-syntax-operator (fg-default)            | --tug-codeBlock-bg (surface-control)             | body-text    | Code operator/punctuation text in code block     |
- * | --tug-codeBlock-header-fg (fg-subtle)         | --tug-codeBlock-header-bg (surface-sunken)       | subdued-text | Code block header text on sunken header          |
- * | --tug-chat-attachment-fg (fg-muted)           | --tug-chat-attachment-bg (surface-overlay)       | subdued-text | Chat attachment label on overlay background      |
- * | --tug-feed-step-fg (fg-muted)                 | --tug-feed-step-bg (surface-sunken)              | subdued-text | Feed step text on sunken background              |
- * | --tug-terminal-fg (fg-default)                | --tug-terminal-bg (surface-inset)                | body-text    | Terminal text on inset background                |
- * | --tug-terminal-fg-muted (fg-muted)            | --tug-terminal-bg (surface-inset)                | subdued-text | Terminal muted text on inset background          |
- * | --tug-tree-row-fg (fg-default)                | parent ambient surface-default                   | body-text    | File tree row text                               |
+ * | --tug-syntax-comment (element-global-text-normal-muted-rest)               | --tug-codeBlock-bg (surface-global-primary-normal-control-rest)             | body-text    | Code comment text in code block                  |
+ * | --tug-syntax-operator (element-global-text-normal-default-rest)            | --tug-codeBlock-bg (surface-global-primary-normal-control-rest)             | body-text    | Code operator/punctuation text in code block     |
+ * | --tug-codeBlock-header-fg (element-global-text-normal-subtle-rest)         | --tug-codeBlock-header-bg (surface-global-primary-normal-sunken-rest)       | subdued-text | Code block header text on sunken header          |
+ * | --tug-chat-attachment-fg (element-global-text-normal-muted-rest)           | --tug-chat-attachment-bg (surface-global-primary-normal-overlay-rest)       | subdued-text | Chat attachment label on overlay background      |
+ * | --tug-feed-step-fg (element-global-text-normal-muted-rest)                 | --tug-feed-step-bg (surface-global-primary-normal-sunken-rest)              | subdued-text | Feed step text on sunken background              |
+ * | --tug-terminal-fg (element-global-text-normal-default-rest)                | --tug-terminal-bg (surface-global-primary-normal-inset-rest)                | body-text    | Terminal text on inset background                |
+ * | --tug-terminal-fg-muted (element-global-text-normal-muted-rest)            | --tug-terminal-bg (surface-global-primary-normal-inset-rest)                | subdued-text | Terminal muted text on inset background          |
+ * | --tug-tree-row-fg (element-global-text-normal-default-rest)                | parent ambient surface-default                   | body-text    | File tree row text                               |
  */
 
 body {
@@ -33,22 +33,22 @@ body {
   --tug-syntax-type: --tug-color(green);
   --tug-syntax-variable: --tug-color(cyan);
   /* text-derived — inherits per-theme via fg-muted override */
-  --tug-syntax-comment: var(--tug-base-fg-muted);
+  --tug-syntax-comment: var(--tug-base-element-global-text-normal-muted-rest);
   /* text-derived — inherits per-theme via fg-default override */
-  --tug-syntax-operator: var(--tug-base-fg-default);
-  --tug-syntax-punctuation: var(--tug-base-fg-default);
+  --tug-syntax-operator: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-syntax-punctuation: var(--tug-base-element-global-text-normal-default-rest);
   --tug-syntax-constant: --tug-color(cyan);
   --tug-syntax-decorator: --tug-color(violet);
   --tug-syntax-tag: --tug-color(cyan);
   --tug-syntax-attribute: --tug-color(cyan);
 
   /* --- Terminal --- */
-  --tug-terminal-bg: var(--tug-base-surface-inset);
-  --tug-terminal-fg: var(--tug-base-fg-default);
-  --tug-terminal-fg-muted: var(--tug-base-fg-muted);
-  --tug-terminal-cursor: var(--tug-base-accent-default);
+  --tug-terminal-bg: var(--tug-base-surface-global-primary-normal-inset-rest);
+  --tug-terminal-fg: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-terminal-fg-muted: var(--tug-base-element-global-text-normal-muted-rest);
+  --tug-terminal-cursor: var(--tug-base-element-global-fill-normal-accent-rest);
   --tug-terminal-selection-bg: --tug-color(cyan, i: 50, t: 50, a: 30);
-  --tug-terminal-border: var(--tug-base-divider-default);
+  --tug-terminal-border: var(--tug-base-element-global-divider-normal-default-rest);
   /* ANSI color palette — palette var() references per Phase 5d5e */
   --tug-terminal-ansi-black: --tug-color(violet, i: 5, t: 12);
   --tug-terminal-ansi-red: --tug-color(red);
@@ -60,44 +60,44 @@ body {
   --tug-terminal-ansi-white: --tug-color(cobalt, i: 3, t: 94);
 
   /* --- Conversation / Chat / Code Block --- */
-  --tug-chat-transcript-bg: var(--tug-base-field-bg-focus);
-  --tug-chat-message-user-bg: var(--tug-base-surface-default);
-  --tug-chat-message-assistant-bg: var(--tug-base-surface-sunken);
+  --tug-chat-transcript-bg: var(--tug-base-surface-field-primary-normal-plain-focus);
+  --tug-chat-message-user-bg: var(--tug-base-surface-global-primary-normal-default-rest);
+  --tug-chat-message-assistant-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
   --tug-chat-message-system-bg: --tug-color(cyan, i: 50, t: 50, a: 7);
-  --tug-chat-message-border: var(--tug-base-divider-default);
-  --tug-chat-composer-bg: var(--tug-base-surface-default);
-  --tug-chat-composer-border: var(--tug-base-border-default);
-  --tug-chat-attachment-bg: var(--tug-base-surface-overlay);
-  --tug-chat-attachment-border: var(--tug-base-border-default);
-  --tug-chat-attachment-fg: var(--tug-base-fg-muted);
-  --tug-codeBlock-bg: var(--tug-base-surface-control);
-  --tug-codeBlock-border: var(--tug-base-divider-default);
-  --tug-codeBlock-header-bg: var(--tug-base-surface-sunken);
-  --tug-codeBlock-header-fg: var(--tug-base-fg-subtle);
+  --tug-chat-message-border: var(--tug-base-element-global-divider-normal-default-rest);
+  --tug-chat-composer-bg: var(--tug-base-surface-global-primary-normal-default-rest);
+  --tug-chat-composer-border: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-chat-attachment-bg: var(--tug-base-surface-global-primary-normal-overlay-rest);
+  --tug-chat-attachment-border: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-chat-attachment-fg: var(--tug-base-element-global-text-normal-muted-rest);
+  --tug-codeBlock-bg: var(--tug-base-surface-global-primary-normal-control-rest);
+  --tug-codeBlock-border: var(--tug-base-element-global-divider-normal-default-rest);
+  --tug-codeBlock-header-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
+  --tug-codeBlock-header-fg: var(--tug-base-element-global-text-normal-subtle-rest);
 
   /* --- Files / Git / Tree --- */
   --tug-tree-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-tree-row-bg-selected: var(--tug-base-control-highlighted-bg);
+  --tug-tree-row-bg-selected: var(--tug-base-surface-control-primary-normal-highlighted-rest);
   --tug-tree-row-bg-current: --tug-color(cyan, i: 50, t: 50, a: 10);
-  --tug-tree-row-fg: var(--tug-base-fg-default);
-  --tug-tree-chevron: var(--tug-base-border-default);
-  --tug-file-status-added: var(--tug-base-tone-success);
-  --tug-file-status-modified: var(--tug-base-tone-caution);
-  --tug-file-status-deleted: var(--tug-base-tone-danger);
-  --tug-file-status-renamed: var(--tug-base-tone-active);
+  --tug-tree-row-fg: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-tree-chevron: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-file-status-added: var(--tug-base-element-tone-fill-normal-success-rest);
+  --tug-file-status-modified: var(--tug-base-element-tone-fill-normal-caution-rest);
+  --tug-file-status-deleted: var(--tug-base-element-tone-fill-normal-danger-rest);
+  --tug-file-status-renamed: var(--tug-base-element-tone-fill-normal-active-rest);
   --tug-diff-addition-bg: --tug-color(green, i: 50, t: 50, a: 12);
-  --tug-diff-addition-fg: var(--tug-base-tone-success);
+  --tug-diff-addition-fg: var(--tug-base-element-tone-fill-normal-success-rest);
   --tug-diff-deletion-bg: --tug-color(red, i: 50, t: 50, a: 12);
-  --tug-diff-deletion-fg: var(--tug-base-tone-danger);
+  --tug-diff-deletion-fg: var(--tug-base-element-tone-fill-normal-danger-rest);
 
   /* --- Workflow / Feed Progress --- */
-  --tug-feed-bg: var(--tug-base-field-bg-focus);
-  --tug-feed-border: var(--tug-base-divider-default);
-  --tug-feed-step-bg: var(--tug-base-surface-sunken);
-  --tug-feed-step-fg: var(--tug-base-fg-muted);
-  --tug-feed-step-active: var(--tug-base-accent-default);
-  --tug-feed-step-complete: var(--tug-base-tone-success);
-  --tug-feed-step-error: var(--tug-base-tone-danger);
-  --tug-feed-stream-cursor: var(--tug-base-accent-default);
-  --tug-feed-handoff: var(--tug-base-tone-active);
+  --tug-feed-bg: var(--tug-base-surface-field-primary-normal-plain-focus);
+  --tug-feed-border: var(--tug-base-element-global-divider-normal-default-rest);
+  --tug-feed-step-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
+  --tug-feed-step-fg: var(--tug-base-element-global-text-normal-muted-rest);
+  --tug-feed-step-active: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-feed-step-complete: var(--tug-base-element-tone-fill-normal-success-rest);
+  --tug-feed-step-error: var(--tug-base-element-tone-fill-normal-danger-rest);
+  --tug-feed-stream-cursor: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-feed-handoff: var(--tug-base-element-tone-fill-normal-active-rest);
 }

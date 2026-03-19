@@ -7,12 +7,16 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-fg-muted (fg-muted)                   | --tug-base-surface-default (surface-default)     | subdued-text | .gpb-control-group-title (color)     |
- * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-default (surface-default)     | subdued-text | .gpb-slider-label (color)            |
- * | --tug-base-fg-default (fg-default)               | --tug-base-surface-default (surface-default)     | body-text    | .gpb-reset:hover (color)             |
- * | --tug-base-border-muted (border-muted)           | --tug-base-surface-inset (surface-inset)         | ui-component | .gpb-context-bar (border)            |
- * | --tug-base-fg-subtle (fg-subtle)                 | --tug-base-surface-inset (surface-inset)         | subdued-text | .gpb-context-label (color)           |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gpb-control-group-title (color)     |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gpb-slider-label (color)            |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gpb-reset:hover (color)             |
+ * | --tug-base-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug-base-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | ui-component | .gpb-context-bar (border)            |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | subdued-text | .gpb-context-label (color)           |
  */
+
+
+
+
 
 
 
@@ -70,11 +74,11 @@
   min-width: 12rem;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gpb-control-group-title {
   font-size: 0.625rem;
   font-weight: 600;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 0.125rem;
@@ -86,10 +90,10 @@
   gap: 0.5rem;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gpb-slider-label {
   font-size: 0.625rem;
-  color: var(--tug-base-fg-subtle);
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
   min-width: 3rem;
   text-align: right;
 }
@@ -97,24 +101,24 @@
 .gpb-slider-input {
   flex: 1;
   height: 4px;
-  accent-color: var(--tug-base-tone-active);
+  accent-color: var(--tug-base-element-tone-fill-normal-active-rest);
   cursor: pointer;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gpb-slider-value {
   font-size: 0.625rem;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
   min-width: 2.5rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gpb-reset {
   background: none;
   border: none;
-  color: var(--tug-base-fg-subtle);
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
   font-size: 0.625rem;
   cursor: pointer;
   padding: 0 0.25rem;
@@ -123,9 +127,9 @@
   letter-spacing: 0.02em;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gpb-reset:hover {
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
 }
 
 /* ============================================================================
@@ -146,24 +150,24 @@
   align-items: flex-start;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gpb-demo-label {
   font-size: 0.625rem;
-  color: var(--tug-base-fg-subtle);
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
   text-transform: lowercase;
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gpb-status {
   margin-top: 0.5rem;
   font-size: 0.75rem;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-default */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .gpb-status code {
   font-family: var(--tug-base-font-mono);
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-element-global-text-normal-default-rest);
 }
 
 /* ============================================================================
@@ -175,13 +179,13 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
-  background-color: var(--tug-base-surface-inset);
+  background-color: var(--tug-base-surface-global-primary-normal-inset-rest);
   border-radius: var(--tug-base-radius-sm);
-  border: 1px solid var(--tug-base-border-muted);
+  border: 1px solid var(--tug-base-element-global-border-normal-muted-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-inset */
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-inset-rest */
 .gpb-context-label {
   font-size: 0.75rem;
-  color: var(--tug-base-fg-subtle);
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
 }

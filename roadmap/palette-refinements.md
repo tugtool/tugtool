@@ -52,7 +52,7 @@ scale alongside the other four presets.
 All references to `-accent` **palette preset** names in tug-palette.css, tug-tokens.css,
 theme files, and palette-engine.ts get renamed to `-intense`. Semantic tokens that use
 `accent` as a **UI role** name (e.g., `--tug-base-accent-default`, `--tug-base-accent-strong`,
-`--tug-base-fg-onAccent`) keep `accent` — the UI role and the palette preset are distinct
+`--tug-base-element-global-text-normal-onAccent-rest`) keep `accent` — the UI role and the palette preset are distinct
 concepts.
 
 ### Preset renames
@@ -208,7 +208,7 @@ theme file.
 ```css
 .my-button {
   background: var(--tug-base-accent-default);
-  color: var(--tug-base-fg-onAccent);
+  color: var(--tug-base-element-global-text-normal-onAccent-rest);
 }
 
 .sidebar {
