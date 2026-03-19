@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-12
+date: 2025-03-19T22:19:11Z
+---
+
+## step-12: Full verification: lint zero violations, pairings exit 0, verify passed, rename --verify zero stale references, 1891 tests pass. Zero chromatic-* refs remain. Phase 3.5A rename complete and verified.
+
+**Files changed:**
+- .tugtool/tugplan-token-rename-35a.md
+
+---
+
+---
 step: step-11
 date: 2025-03-19T22:14:06Z
 ---
