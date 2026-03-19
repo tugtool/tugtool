@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-19T03:48:56Z
+---
+
+## step-8: Verification checkpoint. Zero [phase-3-bug] entries remain. All 14 bugs resolved: B01/B06/B08 deferred [phase-4-engine], B07 [design-choice], B02-B05 fixed by calibration (new accentSubtleTone/cautionBgTone fields), B09-B14 fixed by using LIGHT_FORMULAS for light-mode tests. All 1892 tests pass. All audit gates green.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-7
 date: 2025-03-19T03:41:49Z
 ---
