@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-19T17:54:22Z
+---
+
+## step-7: Integration checkpoint: verified full rename-map-to-verify pipeline end-to-end. 373 tokens mapped, 325 non-identity entries, 4144 dry-run replacements, 3695 stale refs detected (expected), all subcommands pass, 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
 step: step-6
 date: 2025-03-19T17:48:05Z
 ---
