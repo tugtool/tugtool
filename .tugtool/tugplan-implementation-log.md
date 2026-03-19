@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-19T02:58:57Z
+---
+
+## step-5: Verification-only checkpoint. Confirmed LIGHT_FORMULAS is a complete 200-field literal with zero spread operators, zero [light-review-pending] tags, all fields annotated. deriveTheme output matches LIGHT_FORMULAS_LEGACY for both brio and harmony. All 5 verification gates pass. 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-independent-recipes.md
+
+---
+
+---
 step: step-4
 date: 2025-03-19T02:53:08Z
 ---
