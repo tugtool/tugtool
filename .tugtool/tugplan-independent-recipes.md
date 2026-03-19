@@ -219,12 +219,12 @@ The theme system's `LIGHT_FORMULAS` is defined as `{ ...BASE_FORMULAS, ...LIGHT_
 | B06 | `KNOWN_PAIR_EXCEPTIONS` | `fg-inverse\|tone-danger` | Dock badge text on danger signal bg | Calibrate fg-inverse/tone-danger separation; may need [Q01] resolution |
 | B07 | `KNOWN_PAIR_EXCEPTIONS` | `fg-inverse\|surface-default` | Badge ghost/outlined: dark-on-dark in dark mode, white-on-white in light | Mode-aware fg-inverse or component-level fix; relates to [Q01] |
 | B08 | `KNOWN_PAIR_EXCEPTIONS` | `tone-danger\|surface-overlay` | Danger menu item label; chromatic hue ceiling | Same strategy as B01 |
-| B09 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|bg-app` | bg-app derives too dark in light mode | Calibrate `bgAppTone` in LIGHT_FORMULAS |
-| B10 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|bg-canvas` | Same constraint as B09 | Calibrate `bgCanvasTone` |
-| B11 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|surface-raised` | surface-raised derives too dark in light mode | Calibrate `surfaceRaisedTone` |
-| B12 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|surface-overlay` | surface-overlay near-miss | Calibrate `surfaceOverlayTone` |
-| B13 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|surface-sunken` | surface-sunken near-miss | Calibrate `surfaceSunkenTone` |
-| B14 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|surface-screen` | surface-screen derives too dark | Calibrate `surfaceScreenTone` |
+| B09 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|bg-app` | bg-app derives too dark when DARK_FORMULAS used in light mode | Root cause: T4.2/T4.4/T4.7 use DARK_FORMULAS in light mode; fix by switching to LIGHT_FORMULAS |
+| B10 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|bg-canvas` | Same root cause as B09 | Switch light-mode tests to LIGHT_FORMULAS |
+| B11 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|surface-raised` | Same root cause as B09 | Switch light-mode tests to LIGHT_FORMULAS |
+| B12 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|surface-overlay` | Same root cause as B09 | Switch light-mode tests to LIGHT_FORMULAS |
+| B13 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|surface-sunken` | Same root cause as B09 | Switch light-mode tests to LIGHT_FORMULAS |
+| B14 | `LIGHT_MODE_PAIR_EXCEPTIONS` | `fg-default\|surface-screen` | Same root cause as B09 | Switch light-mode tests to LIGHT_FORMULAS |
 
 #### Semantic Groups Requiring Light-Mode Review {#semantic-groups-review}
 
@@ -283,7 +283,7 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 | File | Changes |
 |------|---------|
 | `tugdeck/src/components/tugways/theme-derivation-engine.ts` | Rewrite LIGHT_FORMULAS as literal; remove BASE_FORMULAS, DARK_OVERRIDES, LIGHT_OVERRIDES; update EXAMPLE_RECIPES |
-| `tugdeck/src/__tests__/contrast-exceptions.ts` | Remove all `[phase-3-bug]` entries from `KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS`, `KNOWN_PAIR_EXCEPTIONS`, `LIGHT_MODE_PAIR_EXCEPTIONS`, `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`; review/update `RECIPE_PAIR_EXCEPTIONS.harmony` when B07 is resolved; verify remaining `[design-choice]` entries |
+| `tugdeck/src/__tests__/contrast-exceptions.ts` | Remove `LIGHT_MODE_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS` exports entirely (B09-B14 resolved by switching tests to LIGHT_FORMULAS); remove remaining `[phase-3-bug]` entries from `KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS` and `KNOWN_PAIR_EXCEPTIONS`; review/update `RECIPE_PAIR_EXCEPTIONS.harmony` when B07 is resolved; verify remaining `[design-choice]` entries |
 | `tugdeck/src/__tests__/theme-derivation-engine.test.ts` | Update imports: has actual `import { BASE_FORMULAS, ... }` statements that must be removed/replaced |
 | `tugdeck/src/__tests__/gallery-theme-generator-content.test.tsx` | Update string references only (test descriptions mentioning old symbol names); no actual imports of removed symbols |
 | `tugdeck/src/__tests__/theme-accessibility.test.ts` | Update imports if referencing removed exports |
@@ -312,8 +312,11 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 - `tugdeck/src/components/tugways/theme-derivation-engine.ts` (minor annotation additions if any fields lack rationale comments)
 
 **Tasks:**
+- [ ] Run `bun run audit:tokens tokens` to get the full classified inventory of all 373 `--tug-base-*` tokens (element/surface/chromatic); use this to verify DARK_FORMULAS covers every semantic group that produces tokens
 - [ ] Read the complete `DARK_FORMULAS` object in `theme-derivation-engine.ts` (200 fields)
+- [ ] Cross-reference the `audit:tokens tokens` output against DARK_FORMULAS fields to confirm every token semantic group has corresponding formula coverage
 - [ ] Verify every field has a `@semantic` group tag and a design-rationale comment
+- [ ] Run `bun run audit:tokens lint` to check annotation consistency across the full DARK_FORMULAS object
 - [ ] Add any missing annotations (expected: very few or none)
 - [ ] Confirm DARK_FORMULAS is already a complete literal object (no spread)
 
@@ -342,13 +345,15 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 - `tugdeck/src/components/tugways/theme-derivation-engine.ts` — begin building `LIGHT_FORMULAS` as a new literal object; start with surface/canvas semantic groups
 
 **Tasks:**
+- [ ] Run `bun run audit:tokens tokens` to identify which tokens belong to the surface and canvas semantic groups; use the element/surface/chromatic classification to understand the token boundaries for these groups
 - [ ] Create a new `LIGHT_FORMULAS` constant as a complete `DerivationFormulas` literal object
 - [ ] Copy all 200 field names from DARK_FORMULAS as the template structure
 - [ ] For the surface and canvas semantic groups (Canvas Darkness, Surface Layering, Surface Coloring): set values from current LIGHT_OVERRIDES with existing rationale
 - [ ] For remaining groups: temporarily set values from DARK_FORMULAS with `// [light-review-pending]` comments
 - [ ] Keep the old `LIGHT_OVERRIDES`-based `LIGHT_FORMULAS` as `LIGHT_FORMULAS_LEGACY` temporarily for comparison
 - [ ] Annotate every field with light-mode design rationale
-- [ ] Run `bun run audit:tokens pairings` to verify no pairings were disrupted by the refactor
+- [ ] Run `bun run audit:tokens pairings` to verify no pairings were disrupted by the refactor — review the contrast values for all surface token pairings to confirm the refactor is value-identical
+- [ ] Run `bun run audit:tokens lint` as a quick sanity check that the new literal object has not broken annotation consistency
 
 **Tests:**
 - [ ] `bun test` passes (LIGHT_FORMULAS output must match LIGHT_FORMULAS_LEGACY exactly at this point)
@@ -377,11 +382,13 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 - `tugdeck/src/components/tugways/theme-derivation-engine.ts` — populate text and border semantic groups with explicit light-mode values and rationale
 
 **Tasks:**
+- [ ] Run `bun run audit:tokens tokens` to identify which tokens belong to the text and border semantic groups; use the classification to understand token boundaries and ensure complete coverage
 - [ ] For Text Brightness, Text Hierarchy, Text Coloring groups: transfer values from LIGHT_OVERRIDES with rationale
 - [ ] For Border Visibility group: transfer values from LIGHT_OVERRIDES with rationale
 - [ ] Review inherited fields in these groups (Table T02 "Fields Inherited" column): determine if dark value is correct for light mode
 - [ ] Replace `[light-review-pending]` comments with explicit rationale for reviewed fields
-- [ ] Run `bun run audit:tokens pairings` to verify no pairings were disrupted
+- [ ] Run `bun run audit:tokens pairings` to verify no pairings were disrupted — review contrast values for all text-on-surface and border pairings to confirm the refactor is value-identical
+- [ ] Run `bun run audit:tokens lint` to verify annotation consistency after text/border group changes
 
 **Tests:**
 - [ ] `bun test` passes (output must still match LIGHT_FORMULAS_LEGACY)
@@ -408,10 +415,12 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 - `tugdeck/src/components/tugways/theme-derivation-engine.ts` — populate remaining semantic groups: controls, badges, icons, tabs, toggles, fields, shadows, computed overrides, hue dispatch, selection
 
 **Tasks:**
+- [ ] Run `bun run audit:tokens tokens` to identify which tokens belong to control, badge, icon, tab, toggle, field, shadow, and dispatch semantic groups; use the element/surface/chromatic classification to understand token boundaries for each group
 - [ ] For each remaining semantic group (Filled Control, Outlined Control, Ghost Control, Badge, Icon, Tab, Toggle, Field, Shadow, Computed Tone, Hue Dispatch, Hue Slot Dispatch, Sentinel Dispatch, Selection): transfer values and rationale
 - [ ] Review all inherited fields: for mode-independent groups (Hue Slot Dispatch, Sentinel Dispatch), annotate with "mode-independent: same value as dark because [reason]"
 - [ ] Replace all remaining `[light-review-pending]` comments
-- [ ] Run `bun run audit:tokens pairings` to verify no pairings were disrupted
+- [ ] Run `bun run audit:tokens pairings` to verify no pairings were disrupted — review contrast values for all control/component pairings to confirm the refactor is value-identical
+- [ ] Run `bun run audit:tokens lint` to verify annotation consistency after all remaining groups are populated
 
 **Tests:**
 - [ ] `bun test` passes (output must still match LIGHT_FORMULAS_LEGACY)
@@ -429,7 +438,7 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 
 #### Step 5: Standalone LIGHT_FORMULAS integration checkpoint {#step-5}
 
-**Depends on:** #step-2, #step-3, #step-4
+**Depends on:** #step-4
 
 **Commit:** `N/A (verification only)`
 
@@ -455,38 +464,39 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 
 ---
 
-#### Step 6: Calibrate LIGHT_FORMULAS — resolve surface contrast bugs {#step-6}
+#### Step 6: Fix light-mode test formulas — resolve B09-B14 by using LIGHT_FORMULAS {#step-6}
 
 **Depends on:** #step-5
 
-**Commit:** `fix(theme): calibrate LIGHT_FORMULAS surfaces — resolve [phase-3-bug] B09-B14`
+**Commit:** `fix(theme): use LIGHT_FORMULAS for light-mode tests — resolve [phase-3-bug] B09-B14`
 
-**References:** [D03] All bugs resolved, Table T01 (B09-B14), Spec S01, Risk R01, (#bug-inventory, #verification-workflow)
+**References:** [D03] All bugs resolved, Table T01 (B09-B14), Spec S01, (#bug-inventory, #verification-workflow)
 
 **Artifacts:**
-- `tugdeck/src/components/tugways/theme-derivation-engine.ts` — adjust surface tone values in LIGHT_FORMULAS
-- `tugdeck/src/__tests__/contrast-exceptions.ts` — remove resolved `[phase-3-bug]` entries from `LIGHT_MODE_PAIR_EXCEPTIONS`, `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`, and `RECIPE_PAIR_EXCEPTIONS.harmony` (if any surface pairs overlap)
+- `tugdeck/src/__tests__/theme-derivation-engine.test.ts` — update T4.2 (brio-light synthetic), T4.4, and T4.7 (stress tests) to use `LIGHT_FORMULAS` when mode is light instead of `DARK_FORMULAS`
+- `tugdeck/src/__tests__/contrast-exceptions.ts` — remove `LIGHT_MODE_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS` exports entirely; remove all `[phase-3-bug]` B09-B14 entries
 
 **Tasks:**
-- [ ] Run `bun run audit:tokens pairings` to identify all CSS contexts affected by B09-B14 surface tokens before making any changes
-- [ ] Identify the specific contrast ratios for B09-B14 by running contrast validation and examining failure output
-- [ ] Adjust `bgAppTone`, `bgCanvasTone`, `surfaceRaisedTone`, `surfaceOverlayTone`, `surfaceSunkenTone`, `surfaceScreenTone` in LIGHT_FORMULAS to achieve passing contrast
-- [ ] After each individual field change, run `bun test` to check for calibration cascade (Risk R01)
-- [ ] Use `bun run audit:tokens pairings` after each change to verify no new pairing failures were introduced
-- [ ] Remove resolved entries from `LIGHT_MODE_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`
-- [ ] If any bug cannot be resolved by calibration, document the constraint and tag `[phase-4-engine]`
+- [ ] Read test T4.2 (brio-light synthetic variant) in `theme-derivation-engine.test.ts` and identify where it uses `DARK_FORMULAS` with light mode — this is the root cause of B09-B14, not a calibration gap in LIGHT_FORMULAS
+- [ ] Read tests T4.4 and T4.7 (stress tests) to find the same pattern: `DARK_FORMULAS` used in light mode
+- [ ] Update T4.2 to use `LIGHT_FORMULAS` when the mode is light — LIGHT_FORMULAS already has correct surface tones for light mode, so this eliminates B09-B14 at the root cause
+- [ ] Update T4.4 and T4.7 to use `LIGHT_FORMULAS` when the mode is light
+- [ ] Remove the `LIGHT_MODE_PAIR_EXCEPTIONS` export from `contrast-exceptions.ts` entirely — no test path will use dark formulas in light mode after this change
+- [ ] Remove the `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS` export from `contrast-exceptions.ts` entirely
+- [ ] Update any test code that references the removed exception sets to remove those references
+- [ ] Run `bun test` to confirm all B09-B14 contrast failures are resolved by the formula switch
 
 **Tests:**
-- [ ] `bun test` passes with fewer `[phase-3-bug]` entries
-- [ ] Resolved pairs are no longer in any exception set
+- [ ] `bun test` passes with B09-B14 entries removed
+- [ ] No test uses `DARK_FORMULAS` in light mode
 
 **Checkpoint:**
 - [ ] `bun run audit:tokens lint` — exits 0
 - [ ] `bun run audit:tokens pairings` — exits 0
-- [ ] `bun run audit:tokens inject --apply` — regenerate blocks reflecting calibrated values
+- [ ] `bun run audit:tokens inject --apply` — no unexpected changes
 - [ ] `bun run audit:tokens verify` — exits 0
 - [ ] `bun test` — all tests pass
-- [ ] B09-B14 entries removed from exception sets (or documented as `[phase-4-engine]` with rationale)
+- [ ] `grep -E 'LIGHT_MODE_PAIR_EXCEPTIONS|LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS' tugdeck/src/__tests__/contrast-exceptions.ts` returns 0 matches
 
 ---
 
@@ -500,18 +510,19 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 
 **Artifacts:**
 - `tugdeck/src/components/tugways/theme-derivation-engine.ts` — adjust element formula values; potentially add new formula fields for token-specific paths
-- `tugdeck/src/__tests__/contrast-exceptions.ts` — remove resolved `[phase-3-bug]` entries from `KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS`, `KNOWN_PAIR_EXCEPTIONS`, and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS` (B03-B05 appear in both `KNOWN_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`); review `RECIPE_PAIR_EXCEPTIONS.harmony` for `fg-inverse|surface-default` overlap with B07
+- `tugdeck/src/__tests__/contrast-exceptions.ts` — remove resolved `[phase-3-bug]` entries from `KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS` and `KNOWN_PAIR_EXCEPTIONS`; review `RECIPE_PAIR_EXCEPTIONS.harmony` for `fg-inverse|surface-default` overlap with B07 (note: `LIGHT_MODE_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS` were already removed in Step 6)
 
 **Tasks:**
-- [ ] Run `bun run audit:tokens pairings` to map all CSS contexts for B01-B08 tokens before making changes
-- [ ] B01/B08 (tone-danger): calibrate `semanticSignalTone` or add a dedicated `toneDangerTone` formula field if the shared field cannot satisfy both accent and danger constraints
-- [ ] B02 (field-fg-default): calibrate field bg/fg separation in light mode
-- [ ] B03 (fg-default|tab-bg-active): calibrate `cardFrameActiveTone` to increase contrast with `fgDefaultTone`; remove resolved entry from both `KNOWN_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`
-- [ ] B04 (fg-default|accent-subtle): calibrate accent-subtle alpha or add formula path; remove resolved entry from both `KNOWN_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`
-- [ ] B05 (fg-default|tone-caution-bg): calibrate tone-caution-bg alpha; remove resolved entry from both `KNOWN_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`
-- [ ] B06/B07 (fg-inverse pairs): attempt calibration; if a new derivation path is needed, resolve [Q01] and either add `fgInverseToneLight` formula field or document as `[phase-4-engine]`; when B07 (`fg-inverse|surface-default`) is resolved, also review and update `RECIPE_PAIR_EXCEPTIONS.harmony` which carries the same pair tagged `[design-choice]`
-- [ ] Remove resolved entries from all exception sets (including `KNOWN_PAIR_EXCEPTIONS`, `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`, and `RECIPE_PAIR_EXCEPTIONS.harmony` as applicable)
-- [ ] After each change, run `bun run audit:tokens pairings` and `bun test` to check for cascade effects (Risk R01)
+- [ ] Run `bun run audit:tokens pairings` to map ALL CSS contexts for B01-B08 tokens before making any changes — for each bug's token pair (e.g., `tone-danger`, `field-fg-default`, `fg-default|tab-bg-active`), identify every CSS file and selector where that pairing appears, its current contrast ratio, threshold, and role. This replaces manual CSS grep entirely: the pairings output shows you every affected context in <100ms.
+- [ ] B01/B08 (tone-danger): run `bun run audit:tokens pairings` and filter for `tone-danger` pairings to see all contexts where tone-danger appears as fg or bg; calibrate `semanticSignalTone` or add a dedicated `toneDangerTone` formula field if the shared field cannot satisfy both accent and danger constraints; run pairings again after the change to verify new contrast ratios
+- [ ] B02 (field-fg-default): run `bun run audit:tokens pairings` filtered for `field-fg-default` to see all field pairings; calibrate field bg/fg separation in light mode; run pairings again to verify
+- [ ] B03 (fg-default|tab-bg-active): run `bun run audit:tokens pairings` to see the current contrast for this pair and all other pairings involving `tab-bg-active`; calibrate `cardFrameActiveTone` to increase contrast with `fgDefaultTone`; run pairings to confirm the fix and check for cascade; remove resolved entry from `KNOWN_PAIR_EXCEPTIONS`
+- [ ] B04 (fg-default|accent-subtle): run `bun run audit:tokens pairings` to see all `accent-subtle` pairings; calibrate accent-subtle alpha or add formula path; run pairings to verify; remove resolved entry from `KNOWN_PAIR_EXCEPTIONS`
+- [ ] B05 (fg-default|tone-caution-bg): run `bun run audit:tokens pairings` to see all `tone-caution-bg` pairings; calibrate tone-caution-bg alpha; run pairings to verify; remove resolved entry from `KNOWN_PAIR_EXCEPTIONS`
+- [ ] B06/B07 (fg-inverse pairs): run `bun run audit:tokens pairings` to see all `fg-inverse` pairings across all CSS files — this reveals every context where fg-inverse contrast matters; attempt calibration; if a new derivation path is needed, resolve [Q01] and either add `fgInverseToneLight` formula field or document as `[phase-4-engine]`; when B07 (`fg-inverse|surface-default`) is resolved, also review and update `RECIPE_PAIR_EXCEPTIONS.harmony` which carries the same pair tagged `[design-choice]`
+- [ ] Run `bun run audit:tokens lint` after each calibration change to verify annotations remain valid
+- [ ] Remove resolved entries from `KNOWN_PAIR_EXCEPTIONS` and `RECIPE_PAIR_EXCEPTIONS.harmony` as applicable (note: `LIGHT_MODE_*` exception sets were already removed in Step 6)
+- [ ] After each change, run `bun run audit:tokens pairings` to see updated contrast ratios across all affected contexts, then run `bun test` to check for cascade effects (Risk R01)
 
 **Tests:**
 - [ ] `bun test` passes with zero `[phase-3-bug]` entries (or documented `[phase-4-engine]` deferrals)
@@ -536,6 +547,7 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 
 **Tasks:**
 - [ ] Verify zero `[phase-3-bug]` entries remain in `contrast-exceptions.ts`
+- [ ] Run `bun run audit:tokens pairings` and review the complete pairing output for both recipes — verify zero unresolved pairings and confirm overall pairing coverage is comprehensive after all calibration changes
 - [ ] Verify both brio and harmony pass the parameterized recipe contrast validation loop
 - [ ] Verify no new unexpected contrast failures were introduced by calibration
 
@@ -576,7 +588,7 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
   - [ ] Replace `{ ...BASE_FORMULAS, ...DARK_OVERRIDES }` with `DARK_FORMULAS` in test code
   - [ ] Replace `{ ...BASE_FORMULAS, ...LIGHT_OVERRIDES }` with `LIGHT_FORMULAS` in test code
   - [ ] Replace any `LIGHT_OVERRIDES.fieldName` references with `LIGHT_FORMULAS.fieldName`
-  - [ ] In `gallery-theme-generator-content.test.tsx`, update test description strings that mention old symbol names
+  - [ ] In `gallery-theme-generator-content.test.tsx`, update test description strings that mention `LIGHT_OVERRIDES` (e.g., lines like `"Harmony borderSignalTone is 40 (LIGHT_OVERRIDES value, not dark default 50)"`) to reference `LIGHT_FORMULAS` instead
   - [ ] For remaining test files (`theme-accessibility.test.ts`, `contrast-dashboard.test.tsx`, `theme-export-import.test.tsx`): search for imports of removed symbols and update if found
   - [ ] Run `bun test` to confirm all tests still pass with old exports still present
 - [ ] **Phase B — Remove legacy exports from engine (imports are already updated):**
@@ -588,7 +600,9 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
   - [ ] Update `EXAMPLE_RECIPES.harmony.formulas` from `{ ...BASE_FORMULAS, ...LIGHT_OVERRIDES }` to `LIGHT_FORMULAS`
   - [ ] Run `bun test` to confirm all tests pass after removal
 - [ ] **Phase C — Verification sweep:**
-  - [ ] Run `bun run audit:tokens pairings` to verify no pairings were affected by the refactor
+  - [ ] Run `bun run audit:tokens tokens` to verify all 373 `--tug-base-*` tokens are still classified correctly and no orphaned token references exist after removing the legacy exports
+  - [ ] Run `bun run audit:tokens pairings` to verify no pairings were affected by the refactor — contrast ratios should be identical to Step 8 checkpoint values
+  - [ ] Run `bun run audit:tokens lint` to confirm annotation consistency after the structural removal
   - [ ] Verify no remaining references to removed symbols in any source or test file
 
 **Tests:**
@@ -601,8 +615,7 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 - [ ] `bun run audit:tokens inject --apply` — no unexpected changes
 - [ ] `bun run audit:tokens verify` — exits 0
 - [ ] `bun test` — all tests pass
-- [ ] `grep -rE 'BASE_FORMULAS|DARK_OVERRIDES|LIGHT_OVERRIDES' tugdeck/src/` returns 0 matches (excluding comments describing the old pattern)
-- [ ] `grep -E 'BASE_FORMULAS|DARK_OVERRIDES|LIGHT_OVERRIDES' tugdeck/src/components/tugways/theme-derivation-engine.ts` returns 0 matches (excluding comments)
+- [ ] `grep -rE 'BASE_FORMULAS|DARK_OVERRIDES|LIGHT_OVERRIDES' tugdeck/src/ --include='*.ts' --include='*.tsx' | grep -v '^\s*//' | grep -v '^\s*\*'` returns 0 matches (excludes single-line and block comments; test description strings must also be updated per Tasks above)
 
 ---
 
@@ -618,9 +631,10 @@ All five commands are mandatory in every step's Checkpoint section. No step may 
 - All 23 component CSS files — regenerated `@tug-pairings` comment blocks
 
 **Tasks:**
-- [ ] Run `bun run audit:tokens inject --apply` to regenerate all `@tug-pairings` blocks
-- [ ] Run `bun run audit:tokens verify` to confirm map-to-CSS consistency
-- [ ] Run `bun run audit:tokens lint` to confirm zero violations
+- [ ] Run `bun run audit:tokens pairings` to see the final pairing state across all 23 CSS files before regeneration — this provides a before-snapshot of all fg-on-bg pairings, contrast values, and roles
+- [ ] Run `bun run audit:tokens inject --apply` to regenerate all `@tug-pairings` blocks from the CSS analysis
+- [ ] Run `bun run audit:tokens verify` to cross-check the regenerated pairing map against the CSS blocks — this confirms map-to-CSS consistency after regeneration
+- [ ] Run `bun run audit:tokens lint` to confirm zero annotation violations
 - [ ] Review any changed `@tug-pairings` blocks to verify they reflect recipe changes correctly
 
 **Tests:**
