@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-19T17:39:40Z
+---
+
+## step-5: Verified --verify mode (forward-implemented in step-3): detects 3695 stale references, reports file:line:name, exits 1 when stale refs found. All checkpoints pass.
+
+**Files changed:**
+- .tugtool/tugplan-audit-tokens-bulk-rename.md
+
+---
+
+---
 step: step-4
 date: 2025-03-19T17:34:28Z
 ---
