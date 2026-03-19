@@ -248,62 +248,575 @@ investigation of CSS files is an anti-pattern.
 6. ✅ Exit criteria met: `lint` zero violations, `pairings` zero unresolved,
    `verify` zero gaps, all tests pass.
 
-### Phase 2: Fix the contrast engine
+### Phase 2: Fix the contrast engine ✅ COMPLETE
 
-*Addresses Problem 4. Uses `audit-tokens.ts` for all pairing-related verification.*
+*Completed via `tugplan-contrast-engine-fix` (PR #140, merged).*
 
-1. **Remove the `parentSurface` skip from `enforceContrastFloor`.** Currently
-   (line ~2440), pairs with `parentSurface` are excluded from floor enforcement.
-   Implement inline compositing: compute the effective surface color by alpha-blending
-   the semi-transparent token over its `parentSurface`, then enforce contrast against
-   that composite. Use `bun run audit:tokens pairings` to identify all composited
-   pairings and verify none are skipped.
+1. ✅ Removed the `parentSurface` skip from `enforceContrastFloor`. Implemented
+   two-pass composited enforcement: pass 1 handles opaque pairings, pass 2 defers
+   semi-transparent pairings, composites via `compositeOverSurface` + `hexToOkLabL`,
+   then enforces contrast against the composite.
+2. ✅ Expanded test coverage: parameterized recipe loop validates every
+   `EXAMPLE_RECIPES` entry automatically. Adding a recipe adds it to contrast
+   validation.
+3. ✅ Ran expanded validation on Harmony, captured all failures. Documented each
+   failure with contrast value, threshold, role, and CSS rendering context.
+   Cross-referenced via `bun run audit:tokens pairings`.
+4. ✅ Cleaned up exception lists. Consolidated into shared module
+   (`contrast-exceptions.ts`). Every entry tagged `[design-choice]` or
+   `[phase-3-bug]` with inline rationale.
+5. ✅ All tooling gates pass: `audit:tokens lint`, `audit:tokens verify`, `bun test`.
 
-2. **Expand test coverage to validate every recipe.** The T3.5 accessibility test
-   currently runs only `deriveTheme(EXAMPLE_RECIPES.brio)`. Update it to iterate over
-   every entry in `EXAMPLE_RECIPES` — adding a recipe must automatically add it to
-   contrast validation. This means Harmony light will be validated for the first time
-   by the authoritative test.
+### Phase 3: Build independent recipes ✅ COMPLETE
 
-3. **Run the expanded validation on Harmony and capture failures.** Harmony will fail
-   — this is expected and necessary. The failures are the ground truth for Phase 3.
-   Document each failure: which pairing, what contrast ratio, what threshold, what
-   the recipe formula produces. Use `bun run audit:tokens pairings` to cross-reference
-   failures against the CSS-declared pairings and confirm every failure traces to a
-   real rendering context.
+*Completed via `tugplan-independent-recipes` (PR #141, merged).*
 
-4. **Clean up exception lists.** Phases 1 and 1.5 added `KNOWN_PAIR_EXCEPTIONS` and
-   `STEP5_GAP_PAIR_EXCEPTIONS` to tests as newly-discovered pairings surfaced
-   accessibility gaps. Review each exception: is it a genuine design choice (decorative
-   element, acceptable low contrast) or a bug that Phase 3 must fix? Categorize and
-   document. Use `bun run audit:tokens verify` to confirm the pairing map and CSS
-   blocks remain in sync after any map adjustments.
+1. ✅ Verified `DARK_FORMULAS` annotations complete (200 fields, all with
+   `@semantic` tags and design-rationale comments).
+2. ✅ Built `LIGHT_FORMULAS` as a complete, independent 202-field literal object —
+   every field explicitly set with light-mode design rationale. No spread from
+   `BASE_FORMULAS`.
+3. ✅ Calibrated both recipes using the Phase 2 contrast engine. Resolved all
+   `[phase-3-bug]` entries: B03 (cardFrameActiveTone), B04 (new accentSubtleTone
+   field), B05 (new cautionBgTone field), B02 (via LIGHT_FORMULAS values).
+   B01/B06/B08 deferred as `[phase-4-engine]` (gamut ceiling, mode-aware tokens).
+   B07 documented as `[design-choice]` (fg-inverse polarity).
+4. ✅ Removed `BASE_FORMULAS`, `DARK_OVERRIDES`, `LIGHT_OVERRIDES`, and
+   `LIGHT_FORMULAS_LEGACY`. Updated `EXAMPLE_RECIPES` to reference `DARK_FORMULAS`
+   and `LIGHT_FORMULAS` directly.
+5. ✅ Updated all test file imports. Regenerated CSS documentation via
+   `audit:tokens inject --apply`. All tooling gates pass.
+6. ✅ Fixed light-mode test formulas: T4.2, T4.4, T4.7 now use `LIGHT_FORMULAS`
+   when mode is light, eliminating the root cause of B09-B14 surface contrast bugs.
+   Removed `LIGHT_MODE_PAIR_EXCEPTIONS` and `LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS`
+   entirely.
 
-5. **Verify with tooling after every change:**
-   - `bun run audit:tokens lint` — annotations and aliases still valid
-   - `bun run audit:tokens verify` — map ↔ CSS consistency
-   - `bun test` — all tests pass (with documented exceptions for Harmony failures)
+### Phase 3.5A: Standardize element/surface terminology and token naming convention
 
-### Phase 3: Build independent recipes
+*Addresses the terminology fragmentation and inconsistent token naming across the
+codebase. This is a comprehensive rename — no old names remain.*
 
-*Addresses Problem 1. The working contrast engine from Phase 2 validates every change.*
+#### The problem
 
-1. Define `DARK_FORMULAS` as a complete, independent recipe — not a "base" that
-   others spread from. Annotate every field with design rationale (already done in
-   Part 4 of semantic-formula-architecture).
-2. Define `LIGHT_FORMULAS` as a complete, independent recipe — every field explicitly
-   set for light-mode design intent. Not `{ ...DARK_FORMULAS, ...LIGHT_OVERRIDES }`.
-   The annotated dark recipe serves as reference for understanding what each field
-   does, but the light values are chosen independently.
-3. Use the working contrast engine from Phase 2 to validate and calibrate both
-   recipes. Iterate until both pass with zero exceptions. After each formula change,
-   run `bun run audit:tokens lint` and `bun test` to verify no regressions. Use
-   `bun run audit:tokens pairings` to trace any new contrast failures back to
-   specific CSS rendering contexts.
-4. Remove `BASE_FORMULAS` and `LIGHT_OVERRIDES` — they encode the wrong abstraction.
-5. **Regenerate all CSS documentation:** Run `bun run audit:tokens inject --apply`
-   and `bun run audit:tokens verify` to ensure all `@tug-pairings` blocks and the
-   pairing map remain in sync after recipe changes that affect token derivation.
+The system uses three overlapping term pairs for the same design concept — the
+figure/ground relationship where one color sits on top of another:
+
+| Term pair | Where it appears |
+|-----------|-----------------|
+| foreground/background | CSS properties (`color`, `background-color`), some doc language |
+| fg/bg | Token names (`fg-default`, `bg-app`), formula field prefixes (`fgDefaultTone`, `bgAppTone`) |
+| element/surface | Pairing map (`element-surface-pairing-map.ts`), audit-tokens classification, `@tug-pairings` blocks |
+
+Token names are also inconsistently structured. `fg-default` puts the role first.
+`control-filled-accent-fg-rest` puts it in the middle. `tone-accent-fg` puts it at
+the end. There is no rule to follow when adding a new token.
+
+#### The solution: unified naming convention
+
+**Plane** is the top-level distinction: `element` (the thing you need to see) or
+`surface` (the thing it sits on). This aligns with WCAG's contrast model where every
+check is between a visual mark and its adjacent color context.
+
+Every structured token follows a six-slot naming convention:
+
+```
+<plane>-<component>-<emphasis>-<role>-<channel>-<state>
+```
+
+| Slot | What it answers | Values |
+|------|----------------|--------|
+| **plane** | Which side of the contrast pair? | `element`, `surface` |
+| **component** | What UI piece? | `global`, `control`, `field`, `tab`, `tone`, `badge`, `selection`, ... |
+| **emphasis** | How visually prominent? | `normal`, `filled`, `outlined`, `ghost`, `tinted` |
+| **role** | What does it signify? | `default`, `muted`, `subtle`, `accent`, `action`, `danger`, `success`, `caution`, `agent`, `data`, `active`, `plain`, ... |
+| **channel** | What visual property? | Element: `text`, `icon`, `border`, `shadow`, `divider`. Surface: `primary`, `secondary`, `tertiary` |
+| **state** | What interaction state? | `rest`, `hover`, `active`, `focus`, `disabled`, `readOnly`, ... Omitted for stateless tokens |
+
+**Rules:**
+- All six slots are always present. No shortcuts, no omissions.
+- `normal` is the default emphasis (no special visual weight).
+- `plain` is the default role (no semantic signal).
+- `primary` is the default surface channel.
+- State may be omitted for tokens that have no interaction states (global text,
+  global surfaces, tone signals). This is the only permitted omission.
+- CamelCase within a slot is allowed when a slot value is compound
+  (e.g., `linkHover` as a role, `dropTarget` as a state).
+
+#### Token rename map
+
+**Global element tokens (text, icon, border, divider, shadow):**
+
+| Current | Proposed |
+|---------|----------|
+| `fg-default` | `element-global-normal-default-text` |
+| `fg-muted` | `element-global-normal-muted-text` |
+| `fg-subtle` | `element-global-normal-subtle-text` |
+| `fg-disabled` | `element-global-normal-disabled-text` |
+| `fg-inverse` | `element-global-normal-inverse-text` |
+| `fg-placeholder` | `element-global-normal-placeholder-text` |
+| `fg-link` | `element-global-normal-link-text` |
+| `fg-link-hover` | `element-global-normal-linkHover-text` |
+| `fg-onAccent` | `element-global-normal-onAccent-text` |
+| `fg-onDanger` | `element-global-normal-onDanger-text` |
+| `fg-onSuccess` | `element-global-normal-onSuccess-text` |
+| `fg-onCaution` | `element-global-normal-onCaution-text` |
+| `icon-active` | `element-global-normal-active-icon` |
+| `icon-default` | `element-global-normal-default-icon` |
+| `icon-disabled` | `element-global-normal-disabled-icon` |
+| `icon-muted` | `element-global-normal-muted-icon` |
+| `icon-onAccent` | `element-global-normal-onAccent-icon` |
+| `border-default` | `element-global-normal-default-border` |
+| `border-muted` | `element-global-normal-muted-border` |
+| `border-strong` | `element-global-normal-strong-border` |
+| `border-inverse` | `element-global-normal-inverse-border` |
+| `border-accent` | `element-global-normal-accent-border` |
+| `border-danger` | `element-global-normal-danger-border` |
+| `divider-default` | `element-global-normal-default-divider` |
+| `divider-muted` | `element-global-normal-muted-divider` |
+| `divider-separator` | `element-global-normal-separator-divider` |
+| `shadow-xs` | `element-global-normal-plain-shadow-xs` |
+| `shadow-md` | `element-global-normal-plain-shadow-md` |
+| `shadow-lg` | `element-global-normal-plain-shadow-lg` |
+| `shadow-xl` | `element-global-normal-plain-shadow-xl` |
+| `shadow-overlay` | `element-global-normal-overlay-shadow` |
+
+**Global surface tokens:**
+
+| Current | Proposed |
+|---------|----------|
+| `bg-app` | `surface-global-normal-app-primary` |
+| `bg-canvas` | `surface-global-normal-canvas-primary` |
+| `surface-default` | `surface-global-normal-default-primary` |
+| `surface-raised` | `surface-global-normal-raised-primary` |
+| `surface-overlay` | `surface-global-normal-overlay-primary` |
+| `surface-sunken` | `surface-global-normal-sunken-primary` |
+| `surface-inset` | `surface-global-normal-inset-primary` |
+| `surface-content` | `surface-global-normal-content-primary` |
+| `surface-screen` | `surface-global-normal-screen-primary` |
+| `surface-control` | `surface-global-normal-control-primary` |
+
+**Control tokens (filled/outlined/ghost × role × channel × state):**
+
+| Current | Proposed |
+|---------|----------|
+| `control-filled-accent-fg-rest` | `element-control-filled-accent-text-rest` |
+| `control-filled-accent-bg-rest` | `surface-control-filled-accent-primary-rest` |
+| `control-filled-accent-icon-rest` | `element-control-filled-accent-icon-rest` |
+| `control-filled-accent-border-rest` | `element-control-filled-accent-border-rest` |
+| `control-filled-accent-fg-hover` | `element-control-filled-accent-text-hover` |
+| `control-filled-accent-bg-hover` | `surface-control-filled-accent-primary-hover` |
+| `control-filled-accent-icon-hover` | `element-control-filled-accent-icon-hover` |
+| `control-filled-accent-border-hover` | `element-control-filled-accent-border-hover` |
+| `control-filled-accent-fg-active` | `element-control-filled-accent-text-active` |
+| `control-filled-accent-bg-active` | `surface-control-filled-accent-primary-active` |
+| `control-filled-accent-icon-active` | `element-control-filled-accent-icon-active` |
+| `control-filled-accent-border-active` | `element-control-filled-accent-border-active` |
+| `control-disabled-fg` | `element-control-normal-disabled-text` |
+| `control-disabled-bg` | `surface-control-normal-disabled-primary` |
+| `control-disabled-icon` | `element-control-normal-disabled-icon` |
+| `control-disabled-border` | `element-control-normal-disabled-border` |
+| `control-disabled-shadow` | `element-control-normal-disabled-shadow` |
+| `control-highlighted-fg` | `element-control-normal-highlighted-text` |
+| `control-highlighted-bg` | `surface-control-normal-highlighted-primary` |
+| `control-highlighted-border` | `element-control-normal-highlighted-border` |
+| `control-selected-fg` | `element-control-normal-selected-text` |
+| `control-selected-bg` | `surface-control-normal-selected-primary` |
+| `control-selected-bg-hover` | `surface-control-normal-selected-primary-hover` |
+| `control-selected-border` | `element-control-normal-selected-border` |
+| `control-selected-disabled-bg` | `surface-control-normal-selectedDisabled-primary` |
+
+(Same pattern repeats for action, danger, agent, data, success, caution roles
+across filled/outlined/ghost emphasis levels — ~120 control tokens total.)
+
+**Tab tokens:**
+
+| Current | Proposed |
+|---------|----------|
+| `tab-fg-rest` | `element-tab-normal-plain-text-rest` |
+| `tab-fg-hover` | `element-tab-normal-plain-text-hover` |
+| `tab-fg-active` | `element-tab-normal-plain-text-active` |
+| `tab-bg-active` | `surface-tab-normal-plain-primary-active` |
+| `tab-bg-hover` | `surface-tab-normal-plain-primary-hover` |
+| `tab-bg-inactive` | `surface-tab-normal-plain-primary-inactive` |
+| `tab-bg-collapsed` | `surface-tab-normal-plain-primary-collapsed` |
+| `tab-close-fg-hover` | `element-tabClose-normal-plain-text-hover` |
+| `tab-close-bg-hover` | `surface-tabClose-normal-plain-primary-hover` |
+
+**Tone tokens (semantic signals):**
+
+| Current | Proposed |
+|---------|----------|
+| `tone-accent-fg` | `element-tone-normal-accent-text` |
+| `tone-accent-bg` | `surface-tone-normal-accent-primary` |
+| `tone-accent-icon` | `element-tone-normal-accent-icon` |
+| `tone-accent-border` | `element-tone-normal-accent-border` |
+| `tone-accent` | *(chromatic — see below)* |
+
+(Same pattern for active, agent, caution, danger, data, success.)
+
+**Field tokens:**
+
+| Current | Proposed |
+|---------|----------|
+| `field-fg-default` | `element-field-normal-plain-text-default` |
+| `field-fg-disabled` | `element-field-normal-plain-text-disabled` |
+| `field-fg-label` | `element-field-normal-plain-text-label` |
+| `field-fg-placeholder` | `element-field-normal-plain-text-placeholder` |
+| `field-fg-readOnly` | `element-field-normal-plain-text-readOnly` |
+| `field-fg-required` | `element-field-normal-plain-text-required` |
+| `field-bg-rest` | `surface-field-normal-plain-primary-rest` |
+| `field-bg-hover` | `surface-field-normal-plain-primary-hover` |
+| `field-bg-focus` | `surface-field-normal-plain-primary-focus` |
+| `field-bg-disabled` | `surface-field-normal-plain-primary-disabled` |
+| `field-bg-readOnly` | `surface-field-normal-plain-primary-readOnly` |
+| `field-border-rest` | `element-field-normal-plain-border-rest` |
+| `field-border-hover` | `element-field-normal-plain-border-hover` |
+| `field-border-active` | `element-field-normal-plain-border-active` |
+| `field-border-disabled` | `element-field-normal-plain-border-disabled` |
+| `field-border-readOnly` | `element-field-normal-plain-border-readOnly` |
+| `field-border-danger` | `element-field-normal-danger-border` |
+| `field-border-success` | `element-field-normal-success-border` |
+| `field-tone-caution` | *(chromatic — see below)* |
+| `field-tone-danger` | *(chromatic — see below)* |
+| `field-tone-success` | *(chromatic — see below)* |
+
+**Badge tokens:**
+
+| Current | Proposed |
+|---------|----------|
+| `badge-tinted-accent-fg` | `element-badge-tinted-accent-text` |
+| `badge-tinted-accent-bg` | `surface-badge-tinted-accent-primary` |
+| `badge-tinted-accent-border` | `element-badge-tinted-accent-border` |
+
+(Same pattern for action, agent, caution, danger, data, success.)
+
+**Selection tokens:**
+
+| Current | Proposed |
+|---------|----------|
+| `selection-fg` | `element-selection-normal-plain-text` |
+| `selection-bg` | `surface-selection-normal-plain-primary` |
+| `selection-bg-inactive` | `surface-selection-normal-plain-primary-inactive` |
+
+**Checkmark/toggle tokens:**
+
+| Current | Proposed |
+|---------|----------|
+| `checkmark-fg` | `element-checkmark-normal-plain-text` |
+| `checkmark-fg-mixed` | `element-checkmark-normal-mixed-text` |
+| `toggle-icon-disabled` | `element-toggle-normal-disabled-icon` |
+| `toggle-icon-mixed` | `element-toggle-normal-mixed-icon` |
+
+**Chromatic tokens (32):** These tokens do not participate in element/surface
+pairings in the standard way. They are standalone chromatic values (overlays,
+accents, highlights, toggle tracks/thumbs, radio dots). They need a naming
+convention decision — either they adopt the six-slot structure with appropriate
+values, or they are explicitly categorized as `chromatic-*` tokens outside the
+element/surface system. This decision is deferred to the planning phase.
+
+#### Scope of changes
+
+This is a complete rename. No old names remain. No backward compatibility. Every
+reference in every file is updated:
+
+1. **CSS custom property names** (`--tug-base-*`): All 373 tokens renamed per the
+   map above. Uses `audit-tokens rename --apply` for mechanical execution.
+
+2. **Component CSS files** (23 files): All `var(--tug-base-*)` references updated.
+   All `@tug-renders-on` annotations updated. All `@tug-pairings` blocks
+   regenerated via `audit-tokens inject --apply`.
+
+3. **Component alias tokens** (`--tug-card-*`, `--tug-tab-*`, etc.): Updated to
+   reference new `--tug-base-*` names.
+
+4. **TypeScript derivation rules** (`derivation-rules.ts`): All token name strings
+   updated.
+
+5. **Element-surface pairing map** (`element-surface-pairing-map.ts`): All token
+   name keys and values updated.
+
+6. **Theme derivation engine** (`theme-derivation-engine.ts`): All token references
+   in formula evaluation updated.
+
+7. **Test files**: All token name assertions, exception sets, and test descriptions
+   updated.
+
+8. **Contrast exceptions** (`contrast-exceptions.ts`): All token pair strings
+   updated.
+
+9. **Generated CSS** (`tug-base-generated.css`, `themes/harmony.css`): Regenerated
+   via `bun run generate:tokens`.
+
+10. **Documentation and comments**: All references to old names updated. All
+    "foreground/background" language in design docs updated to "element/surface."
+
+11. **audit-tokens.ts**: Token classification logic updated if needed. All
+    subcommands verified against new names.
+
+12. **Gallery/preview components**: All hardcoded token references in TSX files
+    updated.
+
+**Verification gates (after every step):**
+- `bun run audit:tokens lint` — zero violations
+- `bun run audit:tokens pairings` — zero unresolved
+- `bun run audit:tokens inject --apply` — regenerate all blocks
+- `bun run audit:tokens verify` — map ↔ CSS consistency
+- `bun test` — all tests pass
+
+### Phase 3.5B: Design vocabulary — semantic text types, contrast roles, recipe inputs
+
+*Establishes the design vocabulary for the element plane, updates contrast roles,
+and restructures recipe color inputs to match the naming convention from Phase 3.5A.*
+
+#### Semantic text types
+
+The current system treats all text as a single category. The same global text token
+is used for card titles, body prose, button labels, and status text. But these serve
+different design purposes. Phase 3.5A's naming convention already separates text
+tokens by component (control, tab, badge, field). This phase completes the picture
+by defining the semantic text types that drive element plane hue selection and
+contrast role assignment.
+
+| Type | Purpose | Examples |
+|------|---------|---------|
+| **content** | Prose, body text, descriptions | Card body, paragraphs, list items |
+| **control** | Interactive element labels | Button text, menu items, tab labels |
+| **display** | Titles, headers, emphasis | Card titles, section headers, hero text |
+| **informational** | Status, metadata, secondary | Badges, timestamps, placeholders, muted text |
+
+These types inform two things: (1) which element plane hue a token uses, and
+(2) which contrast role the pairing map assigns to it.
+
+#### Contrast roles
+
+The current contrast role vocabulary is ad-hoc (`body-text`, `ui-component`,
+`subdued-text`). Replace with four roles that map to the semantic text types:
+
+| Current role | New role | Threshold |
+|-------------|----------|-----------|
+| `body-text` | `content` | 75 |
+| `ui-component` | `control` | 60 |
+| *(new)* | `display` | 45 |
+| `subdued-text` | `informational` | 30 |
+
+The `decorative` role (threshold 15) is retained for non-text ornamental elements
+where contrast is not a legibility concern.
+
+#### Card title token
+
+The card title currently uses the global default text token. It needs its own token
+(`element-cardTitle-normal-plain-text` per the Phase 3.5A convention) with its own
+derivation rule and formula fields. This gives the card title independent control
+over hue, tone, and intensity — and allows the pairing map to assign it the
+`display` contrast role instead of `content`.
+
+#### Recipe color inputs
+
+The current `ThemeRecipe` interface specifies 13 hue inputs split into "structural"
+and "role." This split mixes planes — `canvas` and `cardBg` are surfaces, `text`
+and `borderTint` are elements, and `cardFrame` should be derived rather than
+specified directly. The recipe inputs are reorganized into three groups that map
+directly to the naming convention from Phase 3.5A:
+
+**Surface plane (2 hues)** — what the backgrounds look like:
+
+| Input | Controls | Current equivalent |
+|-------|----------|-------------------|
+| `canvas` | App background, canvas surface | `canvas` |
+| `card` | Card/panel surfaces, overlays, insets | `cardBg` |
+
+**Element plane (6 hues)** — what the foreground marks look like. The four textual
+hues map to the semantic text types. The two graphical hues (`border`, `decorative`)
+cover non-text visual marks:
+
+| Input | Controls | Current equivalent |
+|-------|----------|-------------------|
+| `content` | Body prose text, primary icons | `text` |
+| `control` | Interactive element labels, control icons | *(derived from `text` via intensity)* |
+| `display` | Card titles, section headers | *(no equivalent — used global text token)* |
+| `informational` | Muted/subtle text, metadata, placeholders | *(derived from `text` via intensity)* |
+| `border` | Borders, dividers; formula basis for frame color | `borderTint` |
+| `decorative` | Canvas grid, ornamental marks | *(missing — was `grid` in early designs)* |
+
+**Semantic roles (7 hues)** — signal colors used across both planes:
+
+| Input | Controls | Current equivalent |
+|-------|----------|-------------------|
+| `accent` | Accent signals (highlights, selection) | `accent` |
+| `action` | Action signals (buttons, links, interactive cues) | `active` |
+| `agent` | Agent/AI signals | `agent` |
+| `data` | Data visualization signals | `data` |
+| `success` | Success signals | `success` |
+| `caution` | Warning signals | `caution` |
+| `danger` | Error/destructive signals | `destructive` |
+
+Total: 2 + 6 + 7 = 15 hue inputs.
+
+**Derived values (not recipe inputs):**
+
+| Value | Derived from | Rationale |
+|-------|-------------|-----------|
+| Frame color | `element.border` hue + formula | The card frame is visually an extension of the border system — same hue family, different tone/intensity. Deriving it from the border input ensures visual coherence without requiring a separate color choice. |
+| Link color | `element.content` hue + `role.action` | Links are content text that signal action. The hue comes from the element plane; the semantic signal comes from the action role. |
+
+#### Proposed ThemeRecipe interface
+
+```typescript
+export interface ThemeRecipe {
+  name: string;
+  description: string;
+  mode: "dark" | "light";
+
+  /** Surface plane — hues for backgrounds. */
+  surface: {
+    canvas: string;         // app background, canvas
+    card: string;           // card/panel surfaces, overlays, insets
+  };
+
+  /** Element plane — hues for foreground marks. */
+  element: {
+    content: string;        // body prose, primary icons
+    control: string;        // interactive labels, control icons
+    display: string;        // card titles, section headers
+    informational: string;  // muted/subtle text, metadata
+    border: string;         // borders, dividers; formula basis for frame
+    decorative: string;     // canvas grid, ornamental marks
+  };
+
+  /** Semantic roles — signal hues used across both planes. */
+  role: {
+    accent: string;         // highlights, selection
+    action: string;         // buttons, links, interactive cues
+    agent: string;          // agent/AI signals
+    data: string;           // data visualization
+    success: string;        // success signals
+    caution: string;        // warning signals
+    danger: string;         // error/destructive signals
+  };
+
+  /** Mood knobs (Phase 4 will expand these). */
+  surfaceContrast?: number;   // 0-100, default 50
+  signalIntensity?: number;   // 0-100, default 50
+  warmth?: number;            // 0-100, default 50
+
+  /** Formula constants for this recipe. */
+  formulas?: DerivationFormulas;
+}
+```
+
+#### What must change
+
+1. **Define the four semantic text types** (`content`, `control`, `display`,
+   `informational`) in design-system-concepts.md with purpose and examples.
+
+2. **Update contrast roles.** Replace the current three-role system (`body-text`,
+   `ui-component`, `subdued-text`) with the four-role system (`content`, `control`,
+   `display`, `informational`) in the contrast engine's `CONTRAST_THRESHOLDS` map.
+
+3. **Add a card title text token.** Create `element-cardTitle-normal-plain-text`
+   with its own derivation rule and formula fields. Update `tug-card.css` to use
+   this token for `.tugcard-title`. The token uses the `display` element hue.
+
+4. **Update `ThemeRecipe` interface.** Replace the flat hue fields with the nested
+   `surface`, `element`, `role` structure. Remove `cardFrame` (derived), `link`
+   (derived), `borderTint` (renamed to `element.border`). Add `element.control`,
+   `element.display`, `element.informational`, `element.decorative`. Rename
+   `text` to `element.content`, `destructive` to `role.danger`.
+
+5. **Update `EXAMPLE_RECIPES`.** Rewrite `brio` and `harmony` recipe objects to use
+   the new structure. Choose appropriate hues for `control`, `display`,
+   `informational`, and `decorative` — these are new design decisions.
+
+6. **Update `resolveHueSlots()`.** Update Layer 1 hue resolution to read from the
+   nested structure and to derive `frame` from `element.border` and `link` from
+   `element.content` + `role.action`.
+
+7. **Add derivation rules for the new element hues.** The element plane currently
+   uses a single `text` hue slot for all text tokens. Add hue slots for `control`,
+   `display`, `informational`, and `decorative`. Update derivation rules so each
+   text token uses the hue slot matching its semantic text type.
+
+8. **Update the pairing map roles.** Reassign every pairing in
+   `element-surface-pairing-map.ts` to use the four-role vocabulary:
+   - Global text tokens (default) → `content`
+   - Control text tokens → `control`
+   - Card title token → `display`
+   - Badge text, placeholder, muted → `informational`
+   - Icon, border, divider → `control`
+
+9. **Update the Theme Generator UI.** Replace "Structural" / "Roles" column headers
+   with "Surface" / "Element" / "Roles" groupings. Add hue pickers for the new
+   element inputs.
+
+10. **Update `@tug-pairings` blocks** via `bun run audit:tokens inject --apply`.
+
+11. **Update contrast exception sets.** Some exceptions may be resolved by the
+    threshold changes. Review and remove resolved entries.
+
+12. **Verify:** `bun run audit:tokens lint`, `bun run audit:tokens pairings`,
+    `bun run audit:tokens inject --apply`, `bun run audit:tokens verify`,
+    `bun test` after all changes.
+
+#### Note on emphasis
+
+Emphasis (filled/outlined/ghost) is not a recipe color input. It controls how a role
+color is *rendered* — filled renders the hue as a solid surface, outlined renders it
+as a border, ghost renders it as transparent. The hue comes from the role; the
+rendering strategy comes from the emphasis. Emphasis may become a recipe-level
+*strategy parameter* in Phase 4 (e.g., "this recipe's default control emphasis is
+outlined"), but it is not a color specification concern.
+
+### Phase 3.5C: Spell out formula field abbreviations
+
+*Addresses the readability tax of cryptic formula field names.*
+
+The `DerivationFormulas` interface uses terse abbreviations that obscure meaning:
+`txtI`, `atmI`, `txtISubtle`, `bgAppI`, `fgDefaultTone`. These names require
+memorization or constant cross-referencing with JSDoc comments. Every person (or LLM)
+reading the code pays this tax.
+
+**Rename policy:** All formula field names in the `DerivationFormulas` interface,
+`DARK_FORMULAS`, `LIGHT_FORMULAS`, and `derivation-rules.ts` are renamed to
+self-documenting spelled-out names. The new names should align with the vocabulary
+established in Phases 3.5A and 3.5B — using `element`, `surface`, `content`,
+`control`, `display`, `informational` where applicable.
+
+**Examples:**
+
+| Current | Renamed |
+|---------|---------|
+| `txtI` | `contentTextIntensity` |
+| `atmI` | `atmosphereIntensity` |
+| `txtISubtle` | `informationalTextIntensity` |
+| `bgAppTone` | `surfaceAppTone` |
+| `bgAppI` | `surfaceAppIntensity` |
+| `fgDefaultTone` | `contentTextTone` |
+| `surfaceDefaultI` | `surfaceDefaultIntensity` |
+| `cardFrameActiveI` | `cardFrameActiveIntensity` |
+
+**What must change:**
+
+1. **Rename all formula fields** in the `DerivationFormulas` interface (202 fields).
+   Use a TypeScript-aware refactoring tool to ensure all references are updated
+   atomically.
+
+2. **Update `DARK_FORMULAS` and `LIGHT_FORMULAS`** — every field assignment gets
+   the new name.
+
+3. **Update `derivation-rules.ts`** — all `formulas.txtI` references become
+   `formulas.contentTextIntensity`, etc.
+
+4. **Update test assertions** that reference formula field names by string.
+
+5. **Verify:** TypeScript compilation (zero errors), `bun run audit:tokens lint`,
+   `bun test`. No behavioral changes — this is a pure rename.
+
+**Naming conventions:**
+- Tone fields: `<context>Tone` (e.g., `contentTextTone`, `surfaceRaisedTone`)
+- Intensity fields: `<context>Intensity` (e.g., `contentTextIntensity`, `cardFrameActiveIntensity`)
+- Alpha fields: `<context>Alpha` (e.g., `shadowExtraSmallAlpha`)
+- Hue dispatch fields: `<context>HueSlot` (e.g., `contentHueSlot`, `cardFrameHueSlot`)
+- String expression fields: `<context>HueExpression` (e.g., `mutedHueExpression`)
 
 ### Phase 4: Recipe clarity and generator improvements
 
@@ -326,14 +839,12 @@ investigation of CSS files is an anti-pattern.
 This document supersedes the relevant parts of:
 
 - **semantic-formula-architecture.md** Parts 1-4 (completed and merged). Part 5
-  (Harmony light theme) is superseded by Phase 3 of this document — the current
-  Harmony implementation is based on the flawed override approach and must be
-  rebuilt as an independent recipe.
+  (Harmony light theme) is superseded by Phase 3 of this document — the override
+  approach was rebuilt as independent recipes.
 
 - **contrast-engine-overhaul.md** Parts 1-2 (completed). Part 3 (formula
   de-duplication) is incorporated into Phase 4. Part 4 (contrast-aware derivation)
-  was partially implemented but has the structural gaps documented in Problem 4 —
-  Phase 2 of this document completes it.
+  was completed in Phase 2 of this document.
 
 - **tugplan-token-audit-pairing** (Phase 1, PR #138, merged). Audited all 23
   component CSS files, regularized 7 token names, closed all pairing gaps, added
@@ -344,8 +855,17 @@ This document supersedes the relevant parts of:
   flattened alias chains, replaced heuristic resolution with deterministic parsing,
   added Rules 16/17 and D81 to the Rules of Tugways.
 
+- **tugplan-contrast-engine-fix** (Phase 2, PR #140, merged). Two-pass composited
+  enforcement, parameterized recipe test loop, shared exception module with
+  categorized `[design-choice]` and `[phase-3-bug]` tags.
+
+- **tugplan-independent-recipes** (Phase 3, PR #141, merged). Built standalone
+  `LIGHT_FORMULAS` (202 fields), resolved all `[phase-3-bug]` entries, removed
+  `BASE_FORMULAS`/`DARK_OVERRIDES`/`LIGHT_OVERRIDES`, updated all test imports,
+  switched light-mode tests to use `LIGHT_FORMULAS`.
+
 The work done in Parts 1-4 of the semantic-formula-architecture roadmap (named
 builders, @semantic annotations, interface restructuring, design rationale comments)
-remains valuable — it provides the vocabulary and organization that the new
-independent recipes will use. The problem was not the annotation work but the
-assumption that light could be built as an override of dark.
+remains valuable — it provides the vocabulary and organization that the independent
+recipes use. The problem was not the annotation work but the assumption that light
+could be built as an override of dark.
