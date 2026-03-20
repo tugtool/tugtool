@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-20T15:39:59Z
+---
+
+## step-4: Exhaustive grep sweep for all ~95 old DerivationFormulas fields, 8 old ComputedTones fields, and 2 deleted dead fields across tugdeck/src — zero hits. bun run check passes, all 1863 tests pass, audit:tokens lint clean.
+
+**Files changed:**
+- .tugtool/tugplan-formula-field-rename.md
+
+---
+
+---
 step: step-3
 date: 2025-03-20T15:30:51Z
 ---
