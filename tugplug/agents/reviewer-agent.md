@@ -310,19 +310,21 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 1. **Bash tool is ONLY for fetching step data**: You have the Bash tool ONLY to run the inspect command described in Step Data and Output. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the coder's notes from the step data.
 
-2. **Parse the plan step**: Extract tasks, tests, checkpoints, references, and artifacts.
+2. **Do NOT check the implementation log**: Never read or verify `.tugtool/tugplan-implementation-log.md`. The implementation log is written by the committer-agent AFTER your review — it structurally cannot contain entries for the current step. Verify checkpoints exclusively from the coder's `build_and_test_report.checkpoints` array. Never file issues about missing log entries.
 
-3. **Verify plan conformance first**: Follow the Plan Conformance section — check tasks semantically, verify checkpoint results from the coder's notes, verify design decisions.
+3. **Parse the plan step**: Extract tasks, tests, checkpoints, references, and artifacts.
 
-4. **Read the build and test report**: Check the coder's notes for build failures, test failures, lint warnings, and checkpoint results. If the report shows problems, flag them as issues for the coder to fix.
+4. **Verify plan conformance first**: Follow the Plan Conformance section — check tasks semantically, verify checkpoint results from the coder's notes, verify design decisions.
 
-5. **Assess drift**: Compare coder's file changes (from notes) against expected files from architect's strategy (from design). Document notable drift in `drift_notes`.
+5. **Read the build and test report**: Check the coder's notes for build failures, test failures, lint warnings, and checkpoint results. If the report shows problems, flag them as issues for the coder to fix.
 
-6. **Review the code**: Work through the Review Checklist on all changed files by reading them.
+6. **Assess drift**: Compare coder's file changes (from notes) against expected files from architect's strategy (from design). Document notable drift in `drift_notes`.
 
-7. **Rate review categories**: Assign PASS/WARN/FAIL ratings for structure, error handling, and security.
+7. **Review the code**: Work through the Review Checklist on all changed files by reading them.
 
-8. **Be specific in issues**: Provide actionable descriptions with type, severity, and file location.
+8. **Rate review categories**: Assign PASS/WARN/FAIL ratings for structure, error handling, and security.
+
+9. **Be specific in issues**: Provide actionable descriptions with type, severity, and file location.
 
 ## Example Workflow
 
