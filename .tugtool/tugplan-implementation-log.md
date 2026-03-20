@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-20T15:30:51Z
+---
+
+## step-3: Verification-only step: confirmed theme-derivation-engine.test.ts, gallery-theme-generator-content.test.tsx, and gallery-theme-generator-content.tsx all use new four-slot names. Work was completed atomically in step-2. All 1863 tests pass, tsc clean.
+
+**Files changed:**
+- .tugtool/tugplan-formula-field-rename.md
+
+---
+
+---
 step: step-2
 date: 2025-03-20T15:22:25Z
 ---
