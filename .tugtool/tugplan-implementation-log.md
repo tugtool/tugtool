@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-20T05:16:31Z
+---
+
+## step-9: Added D82 (Semantic Text Types) and D83 (Contrast Role Vocabulary) sections to design-system-concepts.md. Documented content/control/display/informational text types with hue slots and contrast thresholds. Added Discussion Log Entry 34.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-8
 date: 2025-03-20T05:08:20Z
 ---
