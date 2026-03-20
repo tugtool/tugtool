@@ -263,27 +263,59 @@ import type { ElementSurfacePairing } from "./element-surface-pairing-map";
 // ---------------------------------------------------------------------------
 
 /**
- * Compact recipe input. Minimum 3 values (mode + cardBg + text);
- * full control with ~16. Spec S01.
+ * Compact recipe input — nested surface/element/role groups. Spec S01.
+ *
+ * Surface group: hues for background planes.
+ * Element group: hues for foreground elements (text, icons, borders).
+ *   - `cardFrame` is derived from `element.border` (same hue, formulas control tone/intensity)
+ *   - `link`/`interactive` hue is derived from `role.action` directly
+ * Role group: vivid semantic signal hues (no warmth bias).
  */
 export interface ThemeRecipe {
   name: string;
   /** Human-readable description of the design intent for this theme. */
   description: string;
   mode: "dark" | "light";
-  cardBg: { hue: string };
-  text: { hue: string };
-  accent?: string;
-  active?: string;
-  link?: string;      // hue for fg-link, fg-link-hover, selection highlight; [D05]
-  destructive?: string;
-  success?: string;
-  caution?: string;
-  agent?: string;
-  data?: string;
-  canvas?: string;    // hue for bg-canvas, bg-app (default: same as cardBg hue)
-  cardFrame?: string; // hue for card title bar, tab bar bg (default: "indigo")
-  borderTint?: string; // hue for border-default/muted/strong, dividers (default: same as cardBg hue)
+
+  surface: {
+    /** Hue for bg-canvas and bg-app backgrounds. */
+    canvas: string;
+    /** Hue for card surfaces (atmosphere hue). */
+    card: string;
+  };
+
+  element: {
+    /** Hue for primary prose/body text. Contrast role: content (75). */
+    content: string;
+    /** Hue for interactive element labels (buttons, tabs, menus). Contrast role: control (60). */
+    control: string;
+    /** Hue for titles, headers, card titles. Contrast role: display (60). */
+    display: string;
+    /** Hue for muted/metadata/placeholder text. Contrast role: informational (60). */
+    informational: string;
+    /** Hue for borders and dividers. cardFrame is derived from this hue. */
+    border: string;
+    /** Hue for non-text ornamental marks. Contrast role: decorative (15). */
+    decorative: string;
+  };
+
+  role: {
+    /** Vivid accent hue (orange by default). */
+    accent: string;
+    /** Action/active/interactive hue — also drives link/interactive hue. */
+    action: string;
+    /** Agent role hue. */
+    agent: string;
+    /** Data visualization hue. */
+    data: string;
+    /** Success/positive signal hue. */
+    success: string;
+    /** Caution/warning signal hue. */
+    caution: string;
+    /** Danger/destructive signal hue. */
+    danger: string;
+  };
+
   surfaceContrast?: number; // 0-100, default 50
   signalIntensity?: number; // 0-100, default 50
   warmth?: number; // 0-100, default 50
@@ -387,20 +419,26 @@ export interface ResolvedHueSlot {
  *
  * Slots are grouped into:
  *   - Recipe hues (atm, txt, canvas, cardFrame, borderTint, interactive, active, accent)
+ *   - Element hues (control, display, informational, decorative) — derived from element group
  *   - Semantic hues (destructive, success, caution, agent, data) — no warmth bias
  *   - Per-tier derived hues (surfBareBase, surfScreen, fgMuted, fgSubtle, fgDisabled,
  *     fgInverse, fgPlaceholder, selectionInactive, borderTintBareBase, borderStrong)
  */
 export interface ResolvedHueSlots {
   // Recipe hues (warmth bias applied to achromatic-adjacent hues)
-  atm: ResolvedHueSlot;         // atmosphere (cardBg hue)
-  txt: ResolvedHueSlot;         // text hue
+  atm: ResolvedHueSlot;         // atmosphere (surface.card hue)
+  txt: ResolvedHueSlot;         // content text hue (element.content)
   canvas: ResolvedHueSlot;      // canvas hue (bg-app, bg-canvas)
-  cardFrame: ResolvedHueSlot;   // card title bar hue
-  borderTint: ResolvedHueSlot;  // border/divider tint hue
-  interactive: ResolvedHueSlot; // link/selection hue [D05]
-  active: ResolvedHueSlot;      // active state hue
-  accent: ResolvedHueSlot;      // accent hue
+  cardFrame: ResolvedHueSlot;   // card title bar hue (derived from element.border)
+  borderTint: ResolvedHueSlot;  // border/divider tint hue (element.border)
+  interactive: ResolvedHueSlot; // link/selection hue — derived from role.action [D05]
+  active: ResolvedHueSlot;      // active state hue (role.action)
+  accent: ResolvedHueSlot;      // accent hue (role.accent)
+  // Element hues — new semantic slots for foreground element types
+  control: ResolvedHueSlot;       // interactive element label hue (element.control)
+  display: ResolvedHueSlot;       // title/header hue (element.display)
+  informational: ResolvedHueSlot; // muted/metadata/placeholder hue (element.informational)
+  decorative: ResolvedHueSlot;    // non-text ornamental hue (element.decorative)
   // Semantic hues (no warmth bias — vivid signal hues)
   destructive: ResolvedHueSlot;
   success: ResolvedHueSlot;
@@ -1622,33 +1660,63 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
 /**
  * Built-in theme recipes. Keys become preset button labels in the Theme
  * Generator card. The first entry (brio) is the default dark theme;
- * harmony is the built-in light peer. [D03] [D04]
+ * harmony is the built-in light peer.
  *
- * From roadmap/theme-generator-proposal.md [D04].
+ * Both use the nested surface/element/role structure from Phase 3.5B. [D03] [D04]
  */
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
     name: "brio",
     description: "Deep, immersive dark theme. Very dark surfaces with subtle layering. Near-white text with wide hierarchy spread. Filled controls are prominent with vivid accent backgrounds and white text. Borders are subtle. Shadows are moderate. Industrial warmth with muted chassis and vivid signals.",
     mode: "dark",
-    cardBg: { hue: "indigo-violet" },
-    text: { hue: "cobalt" },
-    link: "cyan",            // [D05]: link/selection/highlight use cyan; active stays blue
-    canvas: "indigo-violet", // bg-canvas, bg-app use same hue as cardBg
-    cardFrame: "indigo",     // card title bar, tab bar bg
-    borderTint: "indigo-violet", // borders and dividers use same hue as cardBg
+    surface: {
+      canvas: "indigo-violet", // bg-canvas, bg-app
+      card: "indigo-violet",   // card surfaces (atmosphere hue)
+    },
+    element: {
+      content: "cobalt",         // primary prose/body text
+      control: "cobalt",         // interactive element labels (matches content by default)
+      display: "indigo",         // titles/headers — indigo at 260°, +10° warmer than cobalt at 250°
+      informational: "indigo-violet", // muted/metadata text — matches canvas hue
+      border: "indigo-violet",   // borders and dividers; cardFrame derived from this
+      decorative: "gray",        // non-text ornamental marks — near-neutral
+    },
+    role: {
+      accent: "orange",
+      action: "blue",            // link/interactive hue is derived from this
+      agent: "violet",
+      data: "teal",
+      success: "green",
+      caution: "yellow",
+      danger: "red",
+    },
     formulas: DARK_FORMULAS,
   },
   harmony: {
     name: "harmony",
     description: "Bright, open canvas with crisp surfaces. Dark text for maximum readability with clear hierarchy. Filled controls use vivid accent backgrounds with white text. Borders are crisp and visible. Shadows are light. Industrial warmth with muted chassis and vivid signals — the same palette as Brio, seen in daylight.",
     mode: "light",
-    cardBg: { hue: "indigo-violet" },  // same palette as brio
-    text: { hue: "cobalt" },           // same palette as brio
-    link: "cyan",                       // same palette as brio — cyan for links/selection
-    canvas: "indigo-violet",            // same palette as brio — light near-white canvas
-    cardFrame: "indigo",                // same palette as brio — indigo title bars, now bright
-    borderTint: "indigo-violet",        // same palette as brio — crisp indigo-violet borders
+    surface: {
+      canvas: "indigo-violet", // same palette as brio — light near-white canvas
+      card: "indigo-violet",   // same palette as brio
+    },
+    element: {
+      content: "cobalt",         // same palette as brio
+      control: "cobalt",         // same palette as brio
+      display: "indigo",         // same palette as brio — indigo title bars
+      informational: "indigo-violet", // same palette as brio
+      border: "indigo-violet",   // same palette as brio — crisp indigo-violet borders
+      decorative: "gray",        // same palette as brio
+    },
+    role: {
+      accent: "orange",
+      action: "blue",            // same palette as brio
+      agent: "violet",
+      data: "teal",
+      success: "green",
+      caution: "yellow",
+      danger: "red",
+    },
     formulas: LIGHT_FORMULAS,
   },
 };
@@ -1778,6 +1846,20 @@ export function applyWarmthBias(hueName: string, angle: number, warmthBias: numb
  * The output `ResolvedHueSlots` is the canonical source for all hue angles
  * and refs used in token derivation.
  *
+ * Recipe field mapping (nested structure from Phase 3.5B):
+ *   - atm         ← recipe.surface.card
+ *   - txt         ← recipe.element.content
+ *   - canvas      ← recipe.surface.canvas
+ *   - cardFrame   ← derived from recipe.element.border (same hue)
+ *   - borderTint  ← recipe.element.border
+ *   - interactive ← derived from recipe.role.action (not a separate field)
+ *   - active      ← recipe.role.action
+ *   - accent      ← recipe.role.accent
+ *   - control     ← recipe.element.control (new semantic slot)
+ *   - display     ← recipe.element.display (new semantic slot)
+ *   - informational ← recipe.element.informational (new semantic slot)
+ *   - decorative  ← recipe.element.decorative (new semantic slot)
+ *
  * Per-tier derived hue slots (surfScreen, fgMuted, fgSubtle, fgDisabled,
  * fgInverse, fgPlaceholder, selectionInactive) are driven by
  * `formulas` fields when `recipe.formulas` is present, eliminating
@@ -1824,14 +1906,16 @@ export function resolveHueSlots(
   // -------------------------------------------------------------------------
   // Recipe hues
   // -------------------------------------------------------------------------
-  const atmHue = recipe.cardBg.hue;
-  const txtHue = recipe.text.hue;
-  const canvasHue = recipe.canvas ?? atmHue;
-  const cardFrameHue = recipe.cardFrame ?? "indigo";
-  const borderTintHue = recipe.borderTint ?? atmHue;
-  const interactiveHue = recipe.link ?? recipe.active ?? "blue";
-  const activeHue = recipe.active ?? "blue";
-  const accentHue = recipe.accent ?? "orange";
+  const atmHue = recipe.surface.card;
+  const txtHue = recipe.element.content;
+  const canvasHue = recipe.surface.canvas;
+  // cardFrame is derived from element.border (same hue; formulas control tone/intensity)
+  const cardFrameHue = recipe.element.border;
+  const borderTintHue = recipe.element.border;
+  // interactive/link hue is derived from role.action directly (not a separate recipe field)
+  const interactiveHue = recipe.role.action;
+  const activeHue = recipe.role.action;
+  const accentHue = recipe.role.accent;
 
   const atm = resolveSlot(atmHue);
   const txt = resolveSlot(txtHue);
@@ -1842,12 +1926,18 @@ export function resolveHueSlots(
   const active = resolveSemanticSlot(activeHue);
   const accent = resolveSemanticSlot(accentHue);
 
+  // Element hues — new semantic slots for foreground element types
+  const control = resolveSlot(recipe.element.control);
+  const display = resolveSlot(recipe.element.display);
+  const informational = resolveSlot(recipe.element.informational);
+  const decorative = resolveSlot(recipe.element.decorative);
+
   // Semantic hues — no warmth bias
-  const destructive = resolveSemanticSlot(recipe.destructive ?? "red");
-  const success = resolveSemanticSlot(recipe.success ?? "green");
-  const caution = resolveSemanticSlot(recipe.caution ?? "yellow");
-  const agent = resolveSemanticSlot(recipe.agent ?? "violet");
-  const data = resolveSemanticSlot(recipe.data ?? "teal");
+  const destructive = resolveSemanticSlot(recipe.role.danger);
+  const success = resolveSemanticSlot(recipe.role.success);
+  const caution = resolveSemanticSlot(recipe.role.caution);
+  const agent = resolveSemanticSlot(recipe.role.agent);
+  const data = resolveSemanticSlot(recipe.role.data);
 
   // -------------------------------------------------------------------------
   // Per-tier derived hues
@@ -1970,6 +2060,10 @@ export function resolveHueSlots(
     interactive,
     active,
     accent,
+    control,
+    display,
+    informational,
+    decorative,
     destructive,
     success,
     caution,

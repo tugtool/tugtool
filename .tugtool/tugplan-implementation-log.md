@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-20T03:12:51Z
+---
+
+## step-4: Replaced flat ThemeRecipe fields with nested surface{canvas,card}, element{content,control,display,informational,border,decorative}, role{accent,action,agent,data,success,caution,danger}. Updated EXAMPLE_RECIPES, resolveHueSlots (4 new slots), ResolvedHueSlots, and gallery UI (Surface/Element/Roles columns). Derived cardFrame from element.border and interactive from role.action.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-3
 date: 2025-03-20T02:50:33Z
 ---
