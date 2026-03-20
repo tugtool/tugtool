@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-20T22:27:55Z
+---
+
+## step-4: Created RecipeDiffView component with horizontal delta bars comparing parameter values against baseline, expandable field-level detail with deferred computation, CSS with tug token annotations, and unit tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
 step: step-3
 date: 2025-03-20T22:04:44Z
 ---
