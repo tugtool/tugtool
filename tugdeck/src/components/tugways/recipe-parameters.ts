@@ -128,6 +128,37 @@ function toneEndpoints(ref: number): { low: number; high: number } {
 }
 
 /**
+ * Compute wide endpoints for a tone field using maximum range while
+ * preserving the midpoint constraint (low + 0.5 * (high - low) = ref).
+ *
+ * Strategy:
+ *   - If ref <= 50: low = 0, high = 2 * ref (floor-anchored, widest possible range)
+ *   - If ref > 50:  low = 2 * ref - 100, high = 100 (ceiling-anchored)
+ *
+ * This doubles the visual range compared to toneEndpoints() for small-value
+ * fields (e.g. dark-mode surface tones), making the slider's effect clearly
+ * perceptible at both extremes.
+ */
+function toneEndpointsWide(ref: number): { low: number; high: number } {
+  if (ref <= 50) {
+    return { low: 0, high: clampTone(2 * ref) };
+  }
+  return { low: clampTone(2 * ref - 100), high: 100 };
+}
+
+/**
+ * Compute wide endpoints for an intensity field, same strategy as
+ * toneEndpointsWide. Used where small reference intensities would produce
+ * an imperceptibly narrow range with the default ±50% strategy.
+ */
+function intensityEndpointsWide(ref: number): { low: number; high: number } {
+  if (ref <= 50) {
+    return { low: 0, high: clampIntensity(2 * ref) };
+  }
+  return { low: clampIntensity(2 * ref - 100), high: 100 };
+}
+
+/**
  * Compute placeholder endpoints for an intensity field, guaranteeing that
  * V=50 reproduces the reference value.
  *
@@ -320,7 +351,10 @@ export const LIGHT_STRUCTURAL_TEMPLATE: Partial<DerivationFormulas> = {
 
 /**
  * Endpoint bundles for all 7 parameters in dark mode.
- * Placeholder offsets used for Plan 1; visual calibration deferred to Plan 2.
+ * Step 7 visual calibration: P1 dark-mode surface tones use toneEndpointsWide()
+ * to ensure the slider's full sweep (0–100) produces a clearly perceptible
+ * tonal range. Small reference values (5–16) would otherwise give a visually
+ * imperceptible ±50% range of only 2–8 tone units.
  *
  * P1: Surface Depth — 19 fields (canvas-darkness, surface-layering,
  *     surface-coloring subset, computed-tone-override: surfaceCanvasToneBase/Center/Scale)
@@ -331,24 +365,24 @@ export const LIGHT_STRUCTURAL_TEMPLATE: Partial<DerivationFormulas> = {
  * fixed at 50 in both endpoints.
  */
 const DARK_P1_ENDPOINTS: ParameterEndpoints = (() => {
-  // Tone fields — low = ref * 0.5, high = ref * 1.5 (clamped)
-  const surfaceAppTone = toneEndpoints(5);
-  const surfaceCanvasTone = toneEndpoints(5);
-  const surfaceSunkenTone = toneEndpoints(11);
-  const surfaceDefaultTone = toneEndpoints(12);
-  const surfaceRaisedTone = toneEndpoints(11);
-  const surfaceOverlayTone = toneEndpoints(14);
-  const surfaceInsetTone = toneEndpoints(6);
-  const surfaceContentTone = toneEndpoints(6);
-  const surfaceScreenTone = toneEndpoints(16);
-  // Intensity fields
-  const surfaceDefaultIntensity = intensityEndpoints(5);
-  const surfaceRaisedIntensity = intensityEndpoints(5);
-  const surfaceOverlayIntensity = intensityEndpoints(4);
-  const surfaceScreenIntensity = intensityEndpoints(7);
-  const surfaceInsetIntensity = intensityEndpoints(5);
-  const surfaceContentIntensity = intensityEndpoints(5);
-  const surfaceAppBaseIntensity = intensityEndpoints(2);
+  // Tone fields — wide range: low = 0, high = 2 * ref (maintains midpoint = ref at V=50)
+  const surfaceAppTone = toneEndpointsWide(5);
+  const surfaceCanvasTone = toneEndpointsWide(5);
+  const surfaceSunkenTone = toneEndpointsWide(11);
+  const surfaceDefaultTone = toneEndpointsWide(12);
+  const surfaceRaisedTone = toneEndpointsWide(11);
+  const surfaceOverlayTone = toneEndpointsWide(14);
+  const surfaceInsetTone = toneEndpointsWide(6);
+  const surfaceContentTone = toneEndpointsWide(6);
+  const surfaceScreenTone = toneEndpointsWide(16);
+  // Intensity fields — wide range for same reason as tone fields
+  const surfaceDefaultIntensity = intensityEndpointsWide(5);
+  const surfaceRaisedIntensity = intensityEndpointsWide(5);
+  const surfaceOverlayIntensity = intensityEndpointsWide(4);
+  const surfaceScreenIntensity = intensityEndpointsWide(7);
+  const surfaceInsetIntensity = intensityEndpointsWide(5);
+  const surfaceContentIntensity = intensityEndpointsWide(5);
+  const surfaceAppBaseIntensity = intensityEndpointsWide(2);
   return {
     low: {
       surfaceAppTone: surfaceAppTone.low,
@@ -400,19 +434,25 @@ const DARK_P1_ENDPOINTS: ParameterEndpoints = (() => {
 /**
  * P2: Text Hierarchy — 11 fields (text-brightness, text-hierarchy,
  *     text-coloring subset, computed-tone-override: disabledTextToneComputed)
+ *
+ * Step 7 refinement: hierarchy tones (mutedTextTone, subtleTextTone,
+ * disabledTextTone, placeholderTextTone) use toneEndpointsWide() so that
+ * P2=0 ("democratic" hierarchy) visibly collapses the separation between
+ * primary and secondary text. The ±50% default produced too narrow a range
+ * for the low-valued dark-mode tones (23–37).
  */
 const DARK_P2_ENDPOINTS: ParameterEndpoints = (() => {
-  const contentTextTone = toneEndpoints(94);
-  const inverseTextTone = toneEndpoints(100);
-  const mutedTextTone = toneEndpoints(66);
-  const subtleTextTone = toneEndpoints(37);
-  const disabledTextTone = toneEndpoints(23);
-  const placeholderTextTone = toneEndpoints(30);
+  const contentTextTone = toneEndpoints(94); // ceiling-anchored; already at max range
+  const inverseTextTone = toneEndpoints(100); // fixed at 100 in both modes
+  const mutedTextTone = toneEndpointsWide(66); // low=32, high=100 (wider than 33/99)
+  const subtleTextTone = toneEndpointsWide(37); // low=0, high=74
+  const disabledTextTone = toneEndpointsWide(23); // low=0, high=46
+  const placeholderTextTone = toneEndpointsWide(30); // low=0, high=60
   const contentTextIntensity = intensityEndpoints(3);
   const subtleTextIntensity = intensityEndpoints(7);
   const mutedTextIntensity = intensityEndpoints(5);
   const inverseTextIntensity = intensityEndpoints(3);
-  const disabledTextToneComputed = toneEndpoints(38);
+  const disabledTextToneComputed = toneEndpointsWide(38); // low=0, high=76
   return {
     low: {
       contentTextTone: contentTextTone.low,
@@ -460,10 +500,12 @@ const DARK_P2_ENDPOINTS: ParameterEndpoints = (() => {
  *                        ghostIconActiveToneLight
  */
 const DARK_P3_ENDPOINTS: ParameterEndpoints = (() => {
-  // Filled control
-  const filledSurfaceRestTone = toneEndpoints(20);
-  const filledSurfaceHoverTone = toneEndpoints(40);
-  const filledSurfaceActiveTone = toneEndpoints(50);
+  // Filled control — wide range so P3=0 produces a near-invisible button
+  // and P3=100 produces a bold, prominent filled button. toneEndpointsWide
+  // doubles the visual sweep vs the ±50% default.
+  const filledSurfaceRestTone = toneEndpointsWide(20); // low=0, high=40
+  const filledSurfaceHoverTone = toneEndpointsWide(40); // low=0, high=80
+  const filledSurfaceActiveTone = toneEndpoints(50); // low=25, high=75 (symmetric at midpoint)
   // Outlined control
   const outlinedTextRestTone = toneEndpoints(100);
   const outlinedTextHoverTone = toneEndpoints(100);
@@ -979,17 +1021,20 @@ const LIGHT_P1_ENDPOINTS: ParameterEndpoints = (() => {
 })();
 
 const LIGHT_P2_ENDPOINTS: ParameterEndpoints = (() => {
-  const contentTextTone = toneEndpoints(8);
-  const inverseTextTone = toneEndpoints(94);
-  const mutedTextTone = toneEndpoints(34);
-  const subtleTextTone = toneEndpoints(52);
-  const disabledTextTone = toneEndpoints(68);
-  const placeholderTextTone = toneEndpoints(60);
+  // Step 7 refinement: hierarchy tones use toneEndpointsWide() for the same
+  // reason as dark mode — small-valued light tones (8–34) get too narrow a
+  // visual range with ±50%.
+  const contentTextTone = toneEndpointsWide(8); // low=0, high=16
+  const inverseTextTone = toneEndpoints(94); // ceiling-anchored; already at max range
+  const mutedTextTone = toneEndpointsWide(34); // low=0, high=68
+  const subtleTextTone = toneEndpointsWide(52); // low=4, high=100 (ceiling-anchored)
+  const disabledTextTone = toneEndpointsWide(68); // low=36, high=100
+  const placeholderTextTone = toneEndpointsWide(60); // low=20, high=100
   const contentTextIntensity = intensityEndpoints(4);
   const subtleTextIntensity = intensityEndpoints(8);
   const mutedTextIntensity = intensityEndpoints(6);
   const inverseTextIntensity = intensityEndpoints(3);
-  const disabledTextToneComputed = toneEndpoints(62);
+  const disabledTextToneComputed = toneEndpointsWide(62); // low=24, high=100
   return {
     low: {
       contentTextTone: contentTextTone.low,
@@ -1021,10 +1066,11 @@ const LIGHT_P2_ENDPOINTS: ParameterEndpoints = (() => {
 })();
 
 const LIGHT_P3_ENDPOINTS: ParameterEndpoints = (() => {
-  // Filled control (same as dark — filled buttons stay vivid in both modes)
-  const filledSurfaceRestTone = toneEndpoints(20);
-  const filledSurfaceHoverTone = toneEndpoints(40);
-  const filledSurfaceActiveTone = toneEndpoints(50);
+  // Filled control — same wide range as dark mode so both modes sweep
+  // consistently from near-invisible to bold at the parameter extremes.
+  const filledSurfaceRestTone = toneEndpointsWide(20); // low=0, high=40
+  const filledSurfaceHoverTone = toneEndpointsWide(40); // low=0, high=80
+  const filledSurfaceActiveTone = toneEndpoints(50); // low=25, high=75 (symmetric)
   // Outlined control (light mode: near-dark tones, ref from LIGHT_FORMULAS)
   const outlinedTextRestTone = toneEndpoints(8);
   const outlinedTextHoverTone = toneEndpoints(8);

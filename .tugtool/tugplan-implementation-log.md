@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-20T23:44:39Z
+---
+
+## step-7: Refined endpoint bundles in recipe-parameters.ts with toneEndpointsWide/intensityEndpointsWide helpers for P1/P2/P3 parameters with small reference values, added T7.1 midpoint and T7.2 extreme/intermediate value tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
 step: step-6
 date: 2025-03-20T23:22:40Z
 ---
