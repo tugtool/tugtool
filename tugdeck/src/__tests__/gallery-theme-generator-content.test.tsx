@@ -1112,15 +1112,15 @@ describe("deriveTheme – Harmony preset produces correct light-mode output (Ste
 
   it("Harmony formulas differ from DARK_FORMULAS (light overrides are active)", () => {
     const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
-    // bgAppTone must differ: light=95, dark=5
-    expect(harmonyFormulas.bgAppTone).not.toBe(DARK_FORMULAS.bgAppTone);
-    expect(harmonyFormulas.bgAppTone).toBe(95);
+    // surfaceAppTone must differ: light=95, dark=5
+    expect(harmonyFormulas.surfaceAppTone).not.toBe(DARK_FORMULAS.surfaceAppTone);
+    expect(harmonyFormulas.surfaceAppTone).toBe(95);
   });
 
   it("Harmony formulas match LIGHT_FORMULAS", () => {
     const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
-    expect(harmonyFormulas.bgAppTone).toBe(LIGHT_FORMULAS.bgAppTone);
-    expect(harmonyFormulas.fgDefaultTone).toBe(LIGHT_FORMULAS.fgDefaultTone);
+    expect(harmonyFormulas.surfaceAppTone).toBe(LIGHT_FORMULAS.surfaceAppTone);
+    expect(harmonyFormulas.contentTextTone).toBe(LIGHT_FORMULAS.contentTextTone);
     expect(harmonyFormulas.borderSignalTone).toBe(LIGHT_FORMULAS.borderSignalTone);
     expect(harmonyFormulas.semanticSignalTone).toBe(LIGHT_FORMULAS.semanticSignalTone);
   });
@@ -1462,7 +1462,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
 
     // Verify round-trip preserves formulas
     expect(parsedHarmony.formulas).toBeDefined();
-    expect(parsedHarmony.formulas!.bgAppTone).toBe(LIGHT_FORMULAS.bgAppTone);
+    expect(parsedHarmony.formulas!.surfaceAppTone).toBe(LIGHT_FORMULAS.surfaceAppTone);
     expect(parsedHarmony.formulas!.borderSignalTone).toBe(LIGHT_FORMULAS.borderSignalTone);
     expect(parsedHarmony.formulas!.semanticSignalTone).toBe(LIGHT_FORMULAS.semanticSignalTone);
 
