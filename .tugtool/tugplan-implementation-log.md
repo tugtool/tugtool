@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-20T02:50:33Z
+---
+
+## step-3: Integration checkpoint: tsc zero errors, 1861 tests pass, audit:tokens lint zero violations, audit:tokens pairings exit 0. Contrast role migration confirmed complete.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-2
 date: 2025-03-20T02:01:19Z
 ---
