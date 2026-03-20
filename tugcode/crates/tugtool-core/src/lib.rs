@@ -50,7 +50,7 @@ pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
 pub use session::now_iso8601;
 pub use state::{
     ArtifactSummary, BatchEntry, ChecklistItemDetail, ChecklistSummary, ClaimResult,
-    CompleteResult, InitResult, PlanState, ReadyResult, ReconcileEntry, ReconcileResult,
+    CompleteResult, GcResult, InitResult, PlanState, ReadyResult, ReconcileEntry, ReconcileResult,
     ReleaseResult, SkippedMismatch, StateDb, StepInfo, StepState, UpdateResult, compute_plan_hash,
 };
 pub use types::{

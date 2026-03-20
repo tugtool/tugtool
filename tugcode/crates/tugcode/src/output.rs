@@ -677,3 +677,16 @@ pub struct StateReconcileData {
     pub skipped_count: usize,
     pub skipped_mismatches: Vec<tugtool_core::SkippedMismatch>,
 }
+
+/// Data payload for state gc command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateGcData {
+    /// Whether this was a dry run (no deletions performed)
+    pub dry_run: bool,
+    /// Plans that were removed (or would be removed with dry_run)
+    pub removed_plans: Vec<String>,
+    /// Number of plans removed (or that would be removed)
+    pub removed_count: usize,
+    /// Number of plans remaining in the database after GC
+    pub remaining_plans: usize,
+}

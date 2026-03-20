@@ -31,9 +31,9 @@ pub use open_pr::run_open_pr;
 pub use resolve::run_resolve;
 pub use state::{
     StateCommands, run_state_artifact, run_state_claim, run_state_complete,
-    run_state_complete_checklist, run_state_heartbeat, run_state_init, run_state_ready,
-    run_state_reconcile, run_state_reinit, run_state_release, run_state_reset, run_state_show,
-    run_state_start,
+    run_state_complete_checklist, run_state_gc, run_state_heartbeat, run_state_init,
+    run_state_ready, run_state_reconcile, run_state_reinit, run_state_release, run_state_reset,
+    run_state_show, run_state_start,
 };
 pub use tell::run_tell;
 pub use validate::run_validate;

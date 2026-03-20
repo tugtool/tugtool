@@ -216,6 +216,12 @@ pub enum StateCommands {
         /// Plan file path
         plan: String,
     },
+    /// Remove state entries for plans whose plan files no longer exist on disk
+    Gc {
+        /// Show what would be removed without deleting anything
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
@@ -1491,6 +1497,65 @@ pub fn run_state_reconcile(
                 "Skipped {} step(s) with hash mismatches",
                 result.skipped_count
             );
+        }
+    }
+
+    Ok(0)
+}
+
+pub fn run_state_gc(dry_run: bool, json: bool, quiet: bool) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 3. Run GC (plan_root is the repo root so relative plan paths resolve correctly)
+    let result = db
+        .gc_orphaned_plans(&repo_root, dry_run)
+        .map_err(|e| e.to_string())?;
+
+    let removed_count = result.removed_plans.len();
+
+    // 4. Output
+    if json {
+        use crate::output::{JsonResponse, StateGcData};
+        let data = StateGcData {
+            dry_run,
+            removed_count,
+            removed_plans: result.removed_plans,
+            remaining_plans: result.remaining_plans,
+        };
+        let response = JsonResponse::ok("state gc", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        if dry_run {
+            if removed_count == 0 {
+                println!("No orphaned plans found.");
+            } else {
+                println!(
+                    "Dry run: {} orphaned plan(s) would be removed:",
+                    removed_count
+                );
+                for plan in &result.removed_plans {
+                    println!("  {}", plan);
+                }
+                println!("  ({} plan(s) would remain)", result.remaining_plans);
+            }
+        } else {
+            if removed_count == 0 {
+                println!("No orphaned plans found.");
+            } else {
+                println!("Removed {} orphaned plan(s):", removed_count);
+                for plan in &result.removed_plans {
+                    println!("  {}", plan);
+                }
+            }
+            println!("{} plan(s) remaining in state.db.", result.remaining_plans);
         }
     }
 

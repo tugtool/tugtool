@@ -557,6 +557,99 @@ COMMIT;
         self.init_plan(plan_path, plan, plan_hash)
     }
 
+    /// Remove all state entries for plans whose plan files no longer exist on disk.
+    ///
+    /// Queries all distinct plan paths from the database, checks which files are
+    /// missing, and deletes all associated rows (step_artifacts, checklist_items,
+    /// step_deps, steps, plans) for each orphaned plan in a single transaction.
+    ///
+    /// When `dry_run` is true, performs the detection but does not delete anything.
+    ///
+    /// Returns a `GcResult` describing what was (or would be) removed and the
+    /// number of plans that remain after GC.
+    pub fn gc_orphaned_plans(
+        &mut self,
+        plan_root: &Path,
+        dry_run: bool,
+    ) -> Result<GcResult, TugError> {
+        let all_paths = self.list_plan_paths()?;
+
+        // Identify orphaned plans: paths in DB with no matching file on disk
+        let orphaned: Vec<String> = all_paths
+            .iter()
+            .filter(|p| !plan_root.join(p).exists())
+            .cloned()
+            .collect();
+
+        if orphaned.is_empty() || dry_run {
+            let remaining_plans = all_paths.len() - orphaned.len();
+            return Ok(GcResult {
+                removed_plans: orphaned,
+                remaining_plans,
+            });
+        }
+
+        // Delete all orphaned plans in a single transaction (FK order matters)
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Exclusive)
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin gc transaction: {}", e),
+            })?;
+
+        for plan_path in &orphaned {
+            tx.execute(
+                "DELETE FROM step_artifacts WHERE plan_path = ?1",
+                rusqlite::params![plan_path],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to delete step_artifacts for {}: {}", plan_path, e),
+            })?;
+
+            tx.execute(
+                "DELETE FROM checklist_items WHERE plan_path = ?1",
+                rusqlite::params![plan_path],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to delete checklist_items for {}: {}", plan_path, e),
+            })?;
+
+            tx.execute(
+                "DELETE FROM step_deps WHERE plan_path = ?1",
+                rusqlite::params![plan_path],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to delete step_deps for {}: {}", plan_path, e),
+            })?;
+
+            tx.execute(
+                "DELETE FROM steps WHERE plan_path = ?1",
+                rusqlite::params![plan_path],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to delete steps for {}: {}", plan_path, e),
+            })?;
+
+            tx.execute(
+                "DELETE FROM plans WHERE plan_path = ?1",
+                rusqlite::params![plan_path],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to delete plan {}: {}", plan_path, e),
+            })?;
+        }
+
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit gc transaction: {}", e),
+        })?;
+
+        let remaining_plans = all_paths.len() - orphaned.len();
+        Ok(GcResult {
+            removed_plans: orphaned,
+            remaining_plans,
+        })
+    }
+
     /// Count the number of completed steps for a plan.
     pub fn count_completed_steps(&self, plan_path: &str) -> Result<usize, TugError> {
         let count: i64 = self
@@ -2052,6 +2145,15 @@ pub struct ReconcileResult {
     pub reconciled_count: usize,
     pub skipped_count: usize,
     pub skipped_mismatches: Vec<SkippedMismatch>,
+}
+
+/// Result from gc_orphaned_plans operation
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GcResult {
+    /// Plans that were removed (or would be removed with --dry-run)
+    pub removed_plans: Vec<String>,
+    /// Number of plans still in the database after GC
+    pub remaining_plans: usize,
 }
 
 #[cfg(test)]
