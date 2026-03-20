@@ -1037,6 +1037,16 @@ export interface DerivationFormulas {
    * Dark: 25. Light: 20.
    */
   selectionSurfaceInactiveAlpha: number;
+
+  // ===== Signal Intensity Value =====
+  // Compiled signal intensity for computeTones() derivation.
+  /**
+   * @semantic signal-tone — compiled signal intensity value (0-100).
+   * Interpolated by P6: Signal Strength. Read by computeTones() to populate
+   * computed.signalIntensity. Replaces the MoodKnobs.signalIntensity passthrough.
+   * Dark reference: 50. Light reference: 50.
+   */
+  signalIntensityValue: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1320,6 +1330,9 @@ export const DARK_FORMULAS: DerivationFormulas = {
   selectionSurfaceInactiveIntensity: 0, // zero chroma: inactive selection bg uses alpha alone — the yellow hue provides identity
   selectionSurfaceInactiveTone: 30, // dim tone: inactive selection bg is dark enough to not overpower content
   selectionSurfaceInactiveAlpha: 25, // low-moderate alpha: inactive selection is clearly visible but doesn't obscure text
+
+  // ===== Signal Intensity Value =====
+  signalIntensityValue: 50, // reference value: neutral default; compileRecipe() interpolates this from P6; DARK_FORMULAS retains it for backward-compat escape hatch [D06]
 };
 
 // ---------------------------------------------------------------------------
@@ -1642,6 +1655,9 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
   selectionSurfaceInactiveIntensity: 8, // moderate chroma: selection tint is visibly colored on light surfaces
   selectionSurfaceInactiveTone: 80, // light-mode tone: selection bg is mid-light to show through without obscuring
   selectionSurfaceInactiveAlpha: 30, // slightly higher alpha: selection is clearly visible on light canvas
+
+  // ===== Signal Intensity Value =====
+  signalIntensityValue: 50, // reference value: neutral default; compileRecipe() interpolates this from P6; LIGHT_FORMULAS retains it for backward-compat escape hatch [D06]
 };
 
 // ---------------------------------------------------------------------------

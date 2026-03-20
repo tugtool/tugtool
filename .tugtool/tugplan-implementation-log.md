@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-20T18:46:52Z
+---
+
+## step-1: Created recipe-parameters.ts with RecipeParameters interface (7 design parameters), defaultParameters(), structural templates, endpoint bundles for dark/light modes with placeholder offsets, and compileRecipe() interpolation function. Added signalIntensityValue field to DerivationFormulas. 15 unit tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-parameter-engine.md
+
+---
+
+---
 step: step-5
 date: 2025-03-20T15:44:28Z
 ---
