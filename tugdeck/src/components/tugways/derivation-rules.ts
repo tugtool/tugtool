@@ -70,12 +70,12 @@ function surface(
 
 /**
  * filledFg — filled control fg/icon rule.
- * Always: txt hue, intensity = Math.max(1, txtI - 1), tone = 100.
+ * Always: control hue, intensity = Math.max(1, txtI - 1), tone = 100.
  */
 function filledFg(): ChromaticRule {
   return {
     type: "chromatic",
-    hueSlot: "txt",
+    hueSlot: "control",
     intensityExpr: (formulas) => Math.max(1, formulas.txtI - 1),
     toneExpr: lit(100),
   };
@@ -83,12 +83,12 @@ function filledFg(): ChromaticRule {
 
 /**
  * outlinedFg — outlined/ghost control fg or icon rule.
- * Always: txt hue, intensity from iField, tone from toneField.
+ * Always: control hue, intensity from iField, tone from toneField.
  */
 function outlinedFg(iField: keyof F, toneField: keyof F): ChromaticRule {
   return {
     type: "chromatic",
-    hueSlot: "txt",
+    hueSlot: "control",
     intensityExpr: (formulas) => formulas[iField] as number,
     toneExpr: (formulas) => formulas[toneField] as number,
   };
@@ -284,15 +284,15 @@ const SURFACE_RULES: Record<string, DerivationRule> = {
 // ---------------------------------------------------------------------------
 
 const FOREGROUND_RULES: Record<string, DerivationRule> = {
-  // fg-default: always txt hue (direct key)
+  // fg-default: txt hue (semantic text type: content — txt slot resolves from element.content)
   "--tug-base-element-global-text-normal-default-rest": formulaField("txt", "txtI", "fgDefaultTone"),
-  // fg-muted: hueSlot "fgMuted" -> "fgMuted" dark | "txt" light
-  "--tug-base-element-global-text-normal-muted-rest": formulaField("fgMuted", "fgMutedI", "fgMutedTone"),
-  // fg-subtle: hueSlot "fgSubtle" -> "fgSubtle" dark | "txt" light
-  "--tug-base-element-global-text-normal-subtle-rest": formulaField("fgSubtle", "txtISubtle", "fgSubtleTone"),
+  // fg-muted: informational hue (semantic text type: informational)
+  "--tug-base-element-global-text-normal-muted-rest": formulaField("informational", "fgMutedI", "fgMutedTone"),
+  // fg-subtle: informational hue (semantic text type: informational)
+  "--tug-base-element-global-text-normal-subtle-rest": formulaField("informational", "txtISubtle", "fgSubtleTone"),
   // fg-disabled: hueSlot "fgDisabled" -> "fgDisabled" dark | "txt" light
   "--tug-base-element-global-text-normal-plain-disabled": formulaField("fgDisabled", "txtISubtle", "fgDisabledTone"),
-  // fg-inverse: hueSlot "fgInverse" -> "fgInverse" dark | "txt" light
+  // fg-inverse: fgInverse hue (semantic text type: content — inverse text keeps content hue via derived slot)
   "--tug-base-element-global-text-normal-inverse-rest": formulaField("fgInverse", "fgInverseI", "fgInverseTone"),
   // fg-placeholder: hueSlot "fgPlaceholder" -> "fgPlaceholder" dark | "atm" light
   "--tug-base-element-global-text-normal-placeholder-rest": formulaField("fgPlaceholder", "atmIBorder", "fgPlaceholderTone"),
@@ -313,7 +313,7 @@ const FOREGROUND_RULES: Record<string, DerivationRule> = {
     toneExpr: lit(85),
   },
 
-  // fg-onAccent: hueSlot "fgOnAccent" -> "fgInverse" dark | "__white" light
+  // fg-onAccent: fgOnAccent hue (semantic text type: content — text on accent surfaces keeps content hue)
   "--tug-base-element-global-text-normal-onAccent-rest": formulaField("fgOnAccent", "txtI", "fgInverseTone"),
   // fg-onDanger: same as fg-onAccent
   "--tug-base-element-global-text-normal-onDanger-rest": formulaField("fgOnAccent", "txtI", "fgInverseTone"),
@@ -340,22 +340,22 @@ const FOREGROUND_RULES: Record<string, DerivationRule> = {
 // ---------------------------------------------------------------------------
 
 const ICON_RULES: Record<string, DerivationRule> = {
-  // icon-default: same as fg-muted
-  "--tug-base-element-global-icon-normal-default-rest": formulaField("fgMuted", "fgMutedI", "fgMutedTone"),
-  // icon-muted: hueSlot "iconMuted" -> "fgSubtle" dark | "atm" light
-  "--tug-base-element-global-icon-normal-muted-rest": formulaField("iconMuted", "iconMutedI", "iconMutedTone"),
+  // icon-default: control hue (semantic text type: control — default icon is interactive context)
+  "--tug-base-element-global-icon-normal-default-rest": formulaField("control", "fgMutedI", "fgMutedTone"),
+  // icon-muted: informational hue (semantic text type: informational — muted icon uses informational hue)
+  "--tug-base-element-global-icon-normal-muted-rest": formulaField("informational", "iconMutedI", "iconMutedTone"),
   // icon-disabled: same as fg-disabled
   "--tug-base-element-global-icon-normal-plain-disabled": formulaField("fgDisabled", "txtISubtle", "fgDisabledTone"),
 
-  // icon-active: vivid txt hue, literal i:100, formula tone — mixed lit/formula, inline
+  // icon-active: control hue, literal i:100, formula tone — interactive active state
   "--tug-base-element-global-icon-normal-active-rest": {
     type: "chromatic",
-    hueSlot: "txt",
+    hueSlot: "control",
     intensityExpr: lit(100),
     toneExpr: (formulas) => formulas.iconActiveTone,
   },
 
-  // icon-onAccent: hueSlot "iconOnAccent" -> "fgInverse" dark | "__white" light
+  // icon-onAccent: iconOnAccent hue (semantic text type: content — on-accent icon keeps content hue via derived slot)
   "--tug-base-element-global-icon-normal-onAccent-rest": formulaField("iconOnAccent", "txtI", "fgInverseTone"),
 };
 
@@ -520,6 +520,15 @@ const INVARIANT_RULES: Record<string, DerivationRule> = {
 };
 
 // ---------------------------------------------------------------------------
+// A. Core Visual — Card Title (display semantic text type)
+// ---------------------------------------------------------------------------
+
+const CARD_TITLE_RULES: Record<string, DerivationRule> = {
+  // card-title: display hue (semantic text type: display — card titles are display text)
+  "--tug-base-element-cardTitle-text-normal-plain-rest": formulaField("display", "txtI", "fgDefaultTone"),
+};
+
+// ---------------------------------------------------------------------------
 // CORE_VISUAL_RULES — merged rule table for section A
 // ---------------------------------------------------------------------------
 
@@ -533,6 +542,7 @@ const INVARIANT_RULES: Record<string, DerivationRule> = {
 export const CORE_VISUAL_RULES: Record<string, DerivationRule> = {
   ...SURFACE_RULES,
   ...FOREGROUND_RULES,
+  ...CARD_TITLE_RULES,
   ...ICON_RULES,
   ...BORDER_RULES,
   ...ELEVATION_RULES,
@@ -747,18 +757,18 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
     alphaExpr: (formulas) => formulas.tabBgHoverAlpha,
   },
 
-  // tab-fg-rest: txt hue at txtISubtle, t:50 (canonical)
+  // tab-fg-rest: control hue at txtISubtle, t:50 (canonical — tab labels are control text)
   "--tug-base-element-tab-text-normal-plain-rest": {
     type: "chromatic",
-    hueSlot: "txt",
+    hueSlot: "control",
     intensityExpr: (formulas) => formulas.txtISubtle,
     toneExpr: lit(50),
   },
 
-  // tab-fg-hover: txt hue at txtI, tabFgActiveTone (90 dark | fgDefaultTone light)
+  // tab-fg-hover: control hue at txtI, tabFgActiveTone (tab labels are control text)
   "--tug-base-element-tab-text-normal-plain-hover": {
     type: "chromatic",
-    hueSlot: "txt",
+    hueSlot: "control",
     intensityExpr: (formulas) => formulas.txtI,
     toneExpr: (formulas) => formulas.tabFgActiveTone,
   },
@@ -766,7 +776,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
   // tab-fg-active: same as tab-fg-hover
   "--tug-base-element-tab-text-normal-plain-active": {
     type: "chromatic",
-    hueSlot: "txt",
+    hueSlot: "control",
     intensityExpr: (formulas) => formulas.txtI,
     toneExpr: (formulas) => formulas.tabFgActiveTone,
   },
@@ -781,10 +791,10 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
     alphaExpr: (formulas) => formulas.tabCloseBgHoverAlpha,
   },
 
-  // tab-close-fg-hover: same as tab-fg-active
+  // tab-close-fg-hover: control hue — tab close button is a control element
   "--tug-base-element-tabClose-text-normal-plain-hover": {
     type: "chromatic",
-    hueSlot: "txt",
+    hueSlot: "control",
     intensityExpr: (formulas) => formulas.txtI,
     toneExpr: (formulas) => formulas.tabFgActiveTone,
   },
@@ -936,22 +946,22 @@ function outlinedFgRules(role: string, hueSlot: string): Record<string, Derivati
 // Distinct pattern: txtISubtle-based intensity ramp with formula tone fields.
 function outlinedOptionBorderRules(): Record<string, DerivationRule> {
   return {
-    // Override the borders from outlinedFgRules with neutral txt-hue borders
+    // Override the borders from outlinedFgRules with neutral control-hue borders
     "--tug-base-element-control-border-outlined-option-rest": {
       type: "chromatic",
-      hueSlot: "txt",
+      hueSlot: "control",
       intensityExpr: (formulas) => formulas.txtISubtle,
       toneExpr: (formulas) => formulas.outlinedOptionBorderRestTone,
     },
     "--tug-base-element-control-border-outlined-option-hover": {
       type: "chromatic",
-      hueSlot: "txt",
+      hueSlot: "control",
       intensityExpr: (formulas) => Math.min(90, formulas.txtISubtle + 2),
       toneExpr: (formulas) => formulas.outlinedOptionBorderHoverTone,
     },
     "--tug-base-element-control-border-outlined-option-active": {
       type: "chromatic",
-      hueSlot: "txt",
+      hueSlot: "control",
       intensityExpr: (formulas) => Math.min(90, formulas.txtISubtle + 4),
       toneExpr: (formulas) => formulas.outlinedOptionBorderActiveTone,
     },
@@ -1069,13 +1079,13 @@ const SELECTED_HIGHLIGHTED_RULES: Record<string, DerivationRule> = {
   // selected tokens
   "--tug-base-surface-control-primary-normal-selected-rest": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(18) },
   "--tug-base-surface-control-primary-normal-selected-hover": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(24) },
-  "--tug-base-element-control-text-normal-selected-rest": { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.txtI, toneExpr: (formulas) => formulas.fgDefaultTone },
+  "--tug-base-element-control-text-normal-selected-rest": { type: "chromatic", hueSlot: "control", intensityExpr: (formulas) => formulas.txtI, toneExpr: (formulas) => formulas.fgDefaultTone },
   "--tug-base-element-control-border-normal-selected-rest": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50) },
   "--tug-base-surface-control-primary-normal-selected-disabled": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(10) },
 
   // highlighted tokens
   "--tug-base-surface-control-primary-normal-highlighted-rest": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(10) },
-  "--tug-base-element-control-text-normal-highlighted-rest": { type: "chromatic", hueSlot: "txt", intensityExpr: (formulas) => formulas.txtI, toneExpr: (formulas) => formulas.fgDefaultTone },
+  "--tug-base-element-control-text-normal-highlighted-rest": { type: "chromatic", hueSlot: "control", intensityExpr: (formulas) => formulas.txtI, toneExpr: (formulas) => formulas.fgDefaultTone },
   "--tug-base-element-control-border-normal-highlighted-rest": { type: "chromatic", hueSlot: "active", intensityExpr: lit(50), toneExpr: lit(50), alphaExpr: lit(25) },
 };
 
@@ -1124,7 +1134,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.fieldBgReadOnlyTone,
   },
 
-  // field-fg-default: txt hue at txtI, fgDefaultTone
+  // field-fg-default: txt hue at txtI, fgDefaultTone (user-typed text is content)
   "--tug-base-element-field-text-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "txt",
@@ -1213,10 +1223,10 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     toneExpr: (_f, _k, computed) => computed.dividerTone,
   },
 
-  // field-fg-label: txt hue at txtI, fgDefaultTone
+  // field-fg-label: control hue at txtI, fgDefaultTone (field labels are control text)
   "--tug-base-element-field-text-normal-label-rest": {
     type: "chromatic",
-    hueSlot: "txt",
+    hueSlot: "control",
     intensityExpr: (formulas) => formulas.txtI,
     toneExpr: (formulas) => formulas.fgDefaultTone,
   },
@@ -1423,6 +1433,7 @@ const BADGE_TINTED_RULES: Record<string, DerivationRule> = {
 export const RULES: Record<string, DerivationRule> = {
   ...SURFACE_RULES,
   ...FOREGROUND_RULES,
+  ...CARD_TITLE_RULES,
   ...ICON_RULES,
   ...BORDER_RULES,
   ...ELEVATION_RULES,

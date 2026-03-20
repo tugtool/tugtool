@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-20T04:34:04Z
+---
+
+## step-6: Updated derivation-rules.ts hue slots per Table T05: filledFg/outlinedFg txt->control, muted/subtle text->informational, icon defaults->control/informational. Added card title derivation rule (element-cardTitle-text-normal-plain-rest) using display hue slot. Updated tug-card.css with --tug-card-title-fg alias. Token count 373->374. 1863 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-5
 date: 2025-03-20T04:03:30Z
 ---

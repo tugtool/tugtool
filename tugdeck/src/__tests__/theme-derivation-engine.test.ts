@@ -2,7 +2,7 @@
  * Theme Derivation Engine tests.
  *
  * Covers:
- * - T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 373 entries
+ * - T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 374 entries
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
  * - T2.5: Theme-invariant tokens are correct for Brio
  * - T2.6: Non-override tokens resolve to valid sRGB gamut colors
@@ -171,9 +171,9 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 373 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 374 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(Object.keys(output.tokens).length).toBe(373);
+    expect(Object.keys(output.tokens).length).toBe(374);
   });
 
   // -------------------------------------------------------------------------
@@ -379,6 +379,36 @@ describe("derivation-engine", () => {
     expect(brio.name).toBe("brio");
     expect(brio.mode).toBe("dark");
   });
+
+  // -------------------------------------------------------------------------
+  // T2.7: Card title token is present and uses the display hue (indigo 260°)
+  // -------------------------------------------------------------------------
+
+  it("T2.7a: deriveTheme(EXAMPLE_RECIPES.brio) produces a token for '--tug-base-element-cardTitle-text-normal-plain-rest'", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    expect(output.tokens["--tug-base-element-cardTitle-text-normal-plain-rest"]).toBeDefined();
+    // The token value must be a --tug-color() string (chromatic token)
+    expect(output.tokens["--tug-base-element-cardTitle-text-normal-plain-rest"]).toMatch(/--tug-color\(/);
+  });
+
+  it("T2.7b: card title token uses display hue (indigo 260°) distinct from body text hue (cobalt 250°)", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+
+    // Card title token uses the display hue slot (indigo, 260°)
+    const cardTitleResolved = output.resolved["--tug-base-element-cardTitle-text-normal-plain-rest"];
+    expect(cardTitleResolved).toBeDefined();
+    // indigo = 260°; allow ±1° for rounding
+    expect(cardTitleResolved!.h).toBeCloseTo(260, 0);
+
+    // Body text token uses the content (txt) hue slot (cobalt, 250°)
+    const bodyTextResolved = output.resolved["--tug-base-element-global-text-normal-default-rest"];
+    expect(bodyTextResolved).toBeDefined();
+    // cobalt = 250°; allow ±1° for rounding
+    expect(bodyTextResolved!.h).toBeCloseTo(250, 0);
+
+    // The two tokens must have different hue angles
+    expect(cardTitleResolved!.h).not.toBe(bodyTextResolved!.h);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -425,9 +455,9 @@ describe("recipe contrast validation", () => {
       const output = deriveTheme(recipe);
       const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-      // Token count must be 373 for every recipe (tokens includes invariant tokens
+      // Token count must be 374 for every recipe (tokens includes invariant tokens
       // absent from resolved; tokens and resolved differ by design) [step-3 task]
-      expect(Object.keys(output.tokens).length).toBe(373);
+      expect(Object.keys(output.tokens).length).toBe(374);
 
       // Consistency check: every chromatic token must have a --tug-color() string [D09]
       let tokensAndResolvedConsistent = true;
@@ -867,8 +897,8 @@ describe("resolveHueSlots — Step 3", () => {
   it("T-RESOLVE-MATCH: deriveTheme(brio) output is unchanged after adding resolveHueSlots call", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
-    // Token count must remain 373
-    expect(Object.keys(output.tokens).length).toBe(373);
+    // Token count must remain 374
+    expect(Object.keys(output.tokens).length).toBe(374);
 
     // Key Brio dark token spot-checks (from T-BRIO-MATCH fixture)
     // bg-app: indigo-violet i:2 t:5
@@ -877,9 +907,10 @@ describe("resolveHueSlots — Step 3", () => {
     // fg-default: cobalt i:3 t:94
     expect(output.tokens["--tug-base-element-global-text-normal-default-rest"]).toBe("--tug-color(cobalt, i: 3, t: 94)");
 
-    // fg-subtle: indigo-cobalt i:7, tone adjusted by contrast floor from 37 → 63
+    // fg-subtle: indigo-violet i:7, tone adjusted by contrast floor from 37 → 63
     // (informational threshold 60 against surface-default requires higher tone)
-    expect(output.tokens["--tug-base-element-global-text-normal-subtle-rest"]).toBe("--tug-color(indigo-cobalt, i: 7, t: 63)");
+    // Uses informational hue slot (element.informational = "indigo-violet" in brio recipe)
+    expect(output.tokens["--tug-base-element-global-text-normal-subtle-rest"]).toBe("--tug-color(indigo-violet, i: 7, t: 63)");
 
     // fg-inverse: sapphire-cobalt i:3 t:100
     expect(output.tokens["--tug-base-element-global-text-normal-inverse-rest"]).toBe("--tug-color(sapphire-cobalt, i: 3, t: 100)");
@@ -1031,8 +1062,8 @@ describe("computeTones — Step 4", () => {
   it("T-TONES-MATCH: deriveTheme(brio) output unchanged after adding computeTones call", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
-    // Token count must remain 373
-    expect(Object.keys(output.tokens).length).toBe(373);
+    // Token count must remain 374
+    expect(Object.keys(output.tokens).length).toBe(374);
 
     // Surface tokens spot-check (from T-BRIO-MATCH fixture)
     expect(output.tokens["--tug-base-surface-global-primary-normal-app-rest"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
@@ -1253,7 +1284,7 @@ describe("computeTones — Step 4", () => {
 
 // ---------------------------------------------------------------------------
 // Step 6 tests: T-RULES-COMPLETE, T-RULES-DARK-MATCH
-// These verify that the full RULES table covers all 373 tokens and that
+// These verify that the full RULES table covers all 374 tokens and that
 // evaluateRules(RULES, ...) matches imperative dark-mode output.
 // T-RULES-LIGHT-MATCH deleted (clean break per D06 — deferred to light-formulas step).
 // ---------------------------------------------------------------------------
@@ -1326,10 +1357,10 @@ describe("derivation-engine step-6 rules", () => {
   }
 
   // -------------------------------------------------------------------------
-  // T-RULES-COMPLETE: RULES table has exactly 373 entries
+  // T-RULES-COMPLETE: RULES table has exactly 374 entries
   // -------------------------------------------------------------------------
-  it("T-RULES-COMPLETE: RULES table has exactly 373 entries", () => {
-    expect(Object.keys(RULES).length).toBe(373);
+  it("T-RULES-COMPLETE: RULES table has exactly 374 entries", () => {
+    expect(Object.keys(RULES).length).toBe(374);
   });
 
   // -------------------------------------------------------------------------
@@ -1704,8 +1735,8 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
     );
     expect(coreFailures).toEqual([]);
 
-    // Token count must still be 373
-    expect(Object.keys(output.tokens).length).toBe(373);
+    // Token count must still be 374
+    expect(Object.keys(output.tokens).length).toBe(374);
   });
 });
 

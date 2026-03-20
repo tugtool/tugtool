@@ -389,9 +389,9 @@ const CHM_NOVEL_RECIPE = {
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
-  it("deriveTheme produces a ThemeOutput with 373 tokens for the novel recipe", () => {
+  it("deriveTheme produces a ThemeOutput with 374 tokens for the novel recipe", () => {
     const output = deriveTheme(CHM_NOVEL_RECIPE);
-    expect(Object.keys(output.tokens).length).toBe(373);
+    expect(Object.keys(output.tokens).length).toBe(374);
   });
 
   it("all token keys start with --tug-base-", () => {
@@ -1101,9 +1101,9 @@ describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () =>
 // ---------------------------------------------------------------------------
 
 describe("deriveTheme – Harmony preset produces correct light-mode output (Step 3)", () => {
-  it("deriveTheme(EXAMPLE_RECIPES.harmony) produces 373 tokens", () => {
+  it("deriveTheme(EXAMPLE_RECIPES.harmony) produces 374 tokens", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(output.tokens).length).toBe(373);
+    expect(Object.keys(output.tokens).length).toBe(374);
   });
 
   it("Harmony recipe includes formulas field", () => {
@@ -1237,7 +1237,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
 //   Task 1: Brio → Light → Dark round-trip produces original Brio output
 //   Task 2: Harmony preset token-for-token match with direct engine call
 //   Task 3: Export/import round-trip preserves formulas field
-//   Task 4: Token count is exactly 373 in all states
+//   Task 4: Token count is exactly 374 in all states
 //
 // Strategy: extract rendered token map from DOM via gtg-token-name / gtg-token-value
 // spans, then compare against deriveTheme() direct calls.
@@ -1276,18 +1276,18 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
   afterEach(() => { _resetForTest(); cleanup(); });
 
   // -------------------------------------------------------------------------
-  // Task 4: Token count is exactly 373 in all states
+  // Task 4: Token count is exactly 374 in all states
   // -------------------------------------------------------------------------
 
-  it("Task 4: initial render shows exactly 373 tokens", () => {
+  it("Task 4: initial render shows exactly 374 tokens", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
   });
 
-  it("Task 4: Harmony preset shows exactly 373 tokens", () => {
+  it("Task 4: Harmony preset shows exactly 374 tokens", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -1295,23 +1295,23 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     act(() => {
       fireEvent.click(container.querySelector("[data-testid='gtg-preset-harmony']") as HTMLElement);
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
   });
 
-  it("Task 4: mode toggle Dark→Light→Dark preserves 373 tokens throughout", () => {
+  it("Task 4: mode toggle Dark→Light→Dark preserves 374 tokens throughout", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
     act(() => {
       fireEvent.click(container.querySelector("[data-testid='gtg-mode-light']") as HTMLElement);
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
     act(() => {
       fireEvent.click(container.querySelector("[data-testid='gtg-mode-dark']") as HTMLElement);
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
   });
 
   // -------------------------------------------------------------------------
@@ -1375,7 +1375,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
 
     // Capture baseline Brio tokens on initial render
     const initialBrioTokens = readRenderedTokens(container);
-    expect(Object.keys(initialBrioTokens).length).toBe(373);
+    expect(Object.keys(initialBrioTokens).length).toBe(374);
 
     // Toggle to Light mode
     act(() => {
@@ -1469,7 +1469,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     // Deriving from parsed recipe must produce identical output
     const directOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
     const importedOutput = deriveTheme(parsedHarmony);
-    expect(Object.keys(importedOutput.tokens).length).toBe(373);
+    expect(Object.keys(importedOutput.tokens).length).toBe(374);
     const mismatches: string[] = [];
     for (const [name, value] of Object.entries(directOutput.tokens)) {
       if (importedOutput.tokens[name] !== value) {
@@ -1497,6 +1497,6 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     expect(noFormulasOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(
       darkFormulasOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"],
     );
-    expect(Object.keys(noFormulasOutput.tokens).length).toBe(373);
+    expect(Object.keys(noFormulasOutput.tokens).length).toBe(374);
   });
 });
