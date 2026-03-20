@@ -1638,6 +1638,58 @@ the current recipe and stark?).
   field values identical to the current `DARK_FORMULAS` / `LIGHT_FORMULAS`.
   Existing themes must render identically.
 
+#### Execution strategy
+
+Phase 4 is implemented in two plans that follow the dependency chain:
+
+**Plan 1: Recipe parameter engine** — pure TypeScript, no UI changes.
+
+Delivers the compilation pipeline and migrates the existing system to use it.
+When this plan merges, the system works exactly as before (all parameters
+default to 50), but the new pipeline exists and is exercised by tests.
+
+Scope:
+1. Define `RecipeParameters` interface (7 numeric fields, 0-100)
+2. Define initial endpoint bundles for dark and light modes — mechanically
+   derived from current formula values ± reasonable offsets, calibrated enough
+   to compile and test (visual refinement happens in Plan 2)
+3. Implement `compileRecipe(mode, parameters)` → `DerivationFormulas`
+4. Update `ThemeRecipe` — replace `surfaceContrast`, `signalIntensity`,
+   `warmth` with `parameters?: RecipeParameters`
+5. Update `deriveTheme()` to call `compileRecipe()` when parameters are present
+6. Migrate mood knob references in `computeTones()` / `resolveHueSlots()` into
+   the compilation pipeline
+7. Update `EXAMPLE_RECIPES` to use the parameter form
+8. Tests: `compileRecipe("dark", {all: 50})` === `DARK_FORMULAS` field values;
+   same for light mode; existing theme snapshots unchanged
+
+Exit criteria: `bun run check`, `bun test`, `bun run audit:tokens lint` all
+pass. Existing themes render identically. The compilation function is the only
+new code path.
+
+**Plan 2: Recipe authoring UI** — React components, depends on Plan 1.
+
+Delivers the authoring experience and enables iterative endpoint calibration.
+
+Scope:
+1. Build 7 `ParameterSlider` components replacing the 3 mood sliders in the
+   Theme Generator
+2. Wire sliders through `compileRecipe()` → `deriveTheme()` → live preview
+3. Build formula expansion panel — collapsible per-parameter field list showing
+   current interpolated values, with optional per-field override
+4. Build recipe diff view — parameter-level bars + expandable field-level
+   detail for comparing two recipes
+5. Refine endpoint bundles — use the new UI to visually evaluate parameter
+   extremes and tune the initial endpoints from Plan 1
+6. Verify contrast compliance across the full 0-100 range for each parameter
+
+Exit criteria: the Theme Generator functions as a recipe authoring tool.
+Authors can create, compare, and export recipes using the 7 design parameters.
+All existing verification gates pass.
+
+Endpoint calibration is not split into a separate plan — it is design work done
+using Plan 2's tools, not a distinct engineering deliverable.
+
 ---
 
 ## Relationship to existing roadmaps
