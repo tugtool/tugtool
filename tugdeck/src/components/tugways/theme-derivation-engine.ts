@@ -7,19 +7,19 @@
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
  *
  * The derivation uses a three-layer declarative pipeline:
- *   Layer 1 — resolveHueSlots(): recipe + warmth knob → ResolvedHueSlots
- *             Applies warmth bias to every hue in the recipe and resolves all
- *             per-tier hue variants (fg-muted, surfBareBase, etc.).
+ *   Layer 1 — resolveHueSlots(): recipe → ResolvedHueSlots
+ *             Resolves all per-tier hue variants (fg-muted, surfBareBase, etc.)
+ *             using palette angles verbatim — no warmth bias applied.
  *   Layer 2 — computeTones(): DerivationFormulas + MoodKnobs → ComputedTones
  *             Pre-computes all derived tone values from mood knobs and formula constants.
  *   Layer 3 — evaluateRules(): RULES table → tokens + resolved maps
  *             Iterates the declarative rule table in derivation-rules.ts, calling
  *             the appropriate helper for each token type.
  *
- * Mood knobs (`surfaceContrast`, `signalIntensity`, `warmth`) modulate tone
- * spreads, intensity levels, and hue angles. Mode differences (dark vs light)
- * are expressed entirely as data in DARK_FORMULAS (and future recipe formulas)
- * and the RULES table — deriveTheme() itself contains no mode branching.
+ * Mood knobs (`surfaceContrast`, `signalIntensity`) modulate tone spreads and
+ * intensity levels. Mode differences (dark vs light) are expressed entirely as
+ * data in DARK_FORMULAS (and future recipe formulas) and the RULES table —
+ * deriveTheme() itself contains no mode branching.
  *
  * Control tokens use the emphasis x role system (Table T01):
  *   13 combinations × 4 properties × 3 states = 156 emphasis-role control tokens
@@ -268,7 +268,7 @@ import type { ElementSurfacePairing } from "./element-surface-pairing-map";
  * Element group: hues for foreground elements (text, icons, borders).
  *   - `cardFrame` is derived from `element.border` (same hue, formulas control tone/intensity)
  *   - `link`/`interactive` hue is derived from `role.action` directly
- * Role group: vivid semantic signal hues (no warmth bias).
+ * Role group: vivid semantic signal hues.
  */
 export interface ThemeRecipe {
   name: string;
@@ -398,11 +398,11 @@ export interface ThemeOutput {
 // ---------------------------------------------------------------------------
 
 /**
- * A single resolved hue slot with warmth bias applied.
+ * A single resolved hue slot. Hue angle is the raw palette angle — no bias applied.
  * Produced by resolveHueSlots(). Spec S02.
  */
 export interface ResolvedHueSlot {
-  /** Hue angle in degrees, warmth-biased. */
+  /** Hue angle in degrees. Raw palette angle, used verbatim. */
   angle: number;
   /** Closest hue family name (e.g., "violet", "indigo-cobalt"). */
   name: string;
@@ -419,12 +419,12 @@ export interface ResolvedHueSlot {
  * Slots are grouped into:
  *   - Recipe hues (atm, txt, canvas, cardFrame, borderTint, interactive, active, accent)
  *   - Element hues (control, display, informational, decorative) — derived from element group
- *   - Semantic hues (destructive, success, caution, agent, data) — no warmth bias
+ *   - Semantic hues (destructive, success, caution, agent, data) — vivid signal hues
  *   - Per-tier derived hues (surfBareBase, surfScreen, fgMuted, fgSubtle, fgDisabled,
  *     fgInverse, fgPlaceholder, selectionInactive, borderTintBareBase, borderStrong)
  */
 export interface ResolvedHueSlots {
-  // Recipe hues (warmth bias applied to achromatic-adjacent hues)
+  // Recipe hues
   atm: ResolvedHueSlot;         // atmosphere (surface.card hue)
   txt: ResolvedHueSlot;         // content text hue (element.content)
   canvas: ResolvedHueSlot;      // canvas hue (bg-app, bg-canvas)
@@ -438,7 +438,7 @@ export interface ResolvedHueSlots {
   display: ResolvedHueSlot;       // title/header hue (element.display)
   informational: ResolvedHueSlot; // muted/metadata/placeholder hue (element.informational)
   decorative: ResolvedHueSlot;    // non-text ornamental hue (element.decorative)
-  // Semantic hues (no warmth bias — vivid signal hues)
+  // Semantic hues (vivid signal hues)
   destructive: ResolvedHueSlot;
   success: ResolvedHueSlot;
   caution: ResolvedHueSlot;
@@ -1017,8 +1017,8 @@ export interface DerivationFormulas {
   // Selection behavior mode flags and parameters. Mode-specific boolean + numeric.
   /**
    * @semantic selection-mode — selectionInactive resolution mode flag.
-   * When true: use resolveSemanticSlot(selectionInactiveHueExpression) — no warmth bias.
-   * When false: compute atm offset (atmBaseAngle - 20°) with warmth bias.
+   * When true: use named hue from selectionInactiveHueExpression directly.
+   * When false: compute atm offset (atmBaseAngle - 20°) verbatim.
    * Dark: true.
    */
   selectionInactiveSemanticMode: boolean;
@@ -1808,18 +1808,8 @@ function formatHueRef(_namedHue: string, targetAngle: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Warmth bias helpers — module scope (moved from inside deriveTheme for reuse)
+// Hue name helpers — module scope
 // ---------------------------------------------------------------------------
-
-/**
- * Hues that receive warmth bias when the recipe warmth knob is != 50.
- * Vivid signal hues (red, orange, yellow, green, cyan, etc.) are unaffected.
- * For hyphenated names, the primary (dominant) hue determines membership.
- */
-export const ACHROMATIC_ADJACENT_HUES: ReadonlySet<string> = new Set([
-  "violet", "cobalt", "blue", "indigo", "purple", "sky",
-  "sapphire", "iris", "cerulean",
-]);
 
 /**
  * Extract the primary base color name from a hue expression.
@@ -1830,24 +1820,13 @@ export function primaryColorName(hueExpr: string): string {
   return hyphenIdx > 0 ? hueExpr.slice(0, hyphenIdx) : hueExpr;
 }
 
-/**
- * Apply warmth bias to a hue angle when the hue is achromatic-adjacent.
- * warmthBias is (warmth - 50) / 50 * 12 degrees (±12° at extremes).
- * Non-achromatic hues are returned unchanged.
- */
-export function applyWarmthBias(hueName: string, angle: number, warmthBias: number): number {
-  const primary = primaryColorName(hueName);
-  if (!ACHROMATIC_ADJACENT_HUES.has(primary)) return angle;
-  return (angle + warmthBias + 360) % 360;
-}
-
 // ---------------------------------------------------------------------------
-// resolveHueSlots — Layer 1: recipe + warmth -> ResolvedHueSlots (Spec S02)
+// resolveHueSlots — Layer 1: recipe -> ResolvedHueSlots (Spec S02)
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve all hue slots for a recipe, applying warmth bias to
- * achromatic-adjacent hues and deriving all per-tier hues.
+ * Resolve all hue slots for a recipe, deriving all per-tier hues.
+ * Hue angles from the palette are used verbatim — no warmth bias applied.
  *
  * This is Layer 1 of the three-layer derivation pipeline (Spec S01).
  * The output `ResolvedHueSlots` is the canonical source for all hue angles
@@ -1873,28 +1852,14 @@ export function applyWarmthBias(hueName: string, angle: number, warmthBias: numb
  * all runtime mode branches from the formula path. [D03]
  *
  * @param recipe  - The theme recipe
- * @param warmth  - Warmth knob value (0-100, default 50)
  * @param formulas - Formula constants; defaults to recipe.formulas ?? DARK_FORMULAS
  */
 export function resolveHueSlots(
   recipe: ThemeRecipe,
-  warmth: number,
   formulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS,
 ): ResolvedHueSlots {
-  const warmthBias = ((warmth - 50) / 50) * 12; // ±12° at extremes
-
-  /** Build a ResolvedHueSlot from a hue name, applying warmth bias. */
+  /** Build a ResolvedHueSlot from a hue name. Hue angle used verbatim. */
   function resolveSlot(hueName: string): ResolvedHueSlot {
-    const rawAngle = resolveHueAngle(hueName);
-    const angle = applyWarmthBias(hueName, rawAngle, warmthBias);
-    const name = closestHueName(angle);
-    const ref = formatHueRef(name, angle);
-    const pName = primaryColorName(name);
-    return { angle, name, ref, primaryName: pName };
-  }
-
-  /** Build a ResolvedHueSlot for a semantic hue (no warmth bias). */
-  function resolveSemanticSlot(hueName: string): ResolvedHueSlot {
     const angle = resolveHueAngle(hueName);
     const name = closestHueName(angle);
     const ref = formatHueRef(name, angle);
@@ -1929,9 +1894,9 @@ export function resolveHueSlots(
   const canvas = resolveSlot(canvasHue);
   const cardFrame = resolveSlot(cardFrameHue);
   const borderTint = resolveSlot(borderTintHue);
-  const interactive = resolveSemanticSlot(interactiveHue);
-  const active = resolveSemanticSlot(activeHue);
-  const accent = resolveSemanticSlot(accentHue);
+  const interactive = resolveSlot(interactiveHue);
+  const active = resolveSlot(activeHue);
+  const accent = resolveSlot(accentHue);
 
   // Element hues — new semantic slots for foreground element types
   const control = resolveSlot(recipe.element.control);
@@ -1939,12 +1904,12 @@ export function resolveHueSlots(
   const informational = resolveSlot(recipe.element.informational);
   const decorative = resolveSlot(recipe.element.decorative);
 
-  // Semantic hues — no warmth bias
-  const destructive = resolveSemanticSlot(recipe.role.danger);
-  const success = resolveSemanticSlot(recipe.role.success);
-  const caution = resolveSemanticSlot(recipe.role.caution);
-  const agent = resolveSemanticSlot(recipe.role.agent);
-  const data = resolveSemanticSlot(recipe.role.data);
+  // Semantic hues — vivid signal hues
+  const destructive = resolveSlot(recipe.role.danger);
+  const success = resolveSlot(recipe.role.success);
+  const caution = resolveSlot(recipe.role.caution);
+  const agent = resolveSlot(recipe.role.agent);
+  const data = resolveSlot(recipe.role.data);
 
   // -------------------------------------------------------------------------
   // Per-tier derived hues
@@ -1960,8 +1925,7 @@ export function resolveHueSlots(
     }
     return closestHueName(resolveHueAngle(atmHue));
   })();
-  const surfBareBaseRawAngle = HUE_FAMILIES[atmBareBaseName] ?? resolveHueAngle(atmHue);
-  const surfBareBaseAngle = applyWarmthBias(atmBareBaseName, surfBareBaseRawAngle, warmthBias);
+  const surfBareBaseAngle = HUE_FAMILIES[atmBareBaseName] ?? resolveHueAngle(atmHue);
   const surfBareBase: ResolvedHueSlot = {
     angle: surfBareBaseAngle,
     name: closestHueName(surfBareBaseAngle),
@@ -1971,17 +1935,10 @@ export function resolveHueSlots(
 
   // surfScreen: driven by formulas.surfaceScreenHueExpression. [D03]
   // When surfaceScreenHueExpression equals txtHue, copy the txt slot (light-mode equivalent);
-  // otherwise resolve it as a named hue with warmth bias.
+  // otherwise resolve it as a named hue directly.
   const surfScreen: ResolvedHueSlot = formulas.surfaceScreenHueExpression === txtHue
     ? { ...txt }
-    : (() => {
-        const angle = applyWarmthBias(
-          formulas.surfaceScreenHueExpression,
-          resolveHueAngle(formulas.surfaceScreenHueExpression),
-          warmthBias,
-        );
-        return slotFromAngle(angle);
-      })();
+    : slotFromAngle(resolveHueAngle(formulas.surfaceScreenHueExpression));
 
   // fgMuted: driven by formulas.mutedTextHueExpression. [D03]
   // "__bare_primary" → bare primary of txtHue (dark-mode default).
@@ -1992,8 +1949,7 @@ export function resolveHueSlots(
         return primary in HUE_FAMILIES ? primary : txtHue;
       })()
     : formulas.mutedTextHueExpression;
-  const fgMutedRawAngle = resolveHueAngle(fgMutedHueName);
-  const fgMutedAngle = applyWarmthBias(fgMutedHueName, fgMutedRawAngle, warmthBias);
+  const fgMutedAngle = resolveHueAngle(fgMutedHueName);
   const fgMutedName = closestHueName(fgMutedAngle);
   const fgMuted: ResolvedHueSlot = {
     angle: fgMutedAngle,
@@ -2005,18 +1961,15 @@ export function resolveHueSlots(
 
   // fgSubtle: driven by formulas.subtleTextHueExpression. [D03]
   const fgSubtleHueName = formulas.subtleTextHueExpression;
-  const fgSubtleAngle = applyWarmthBias(primaryColorName(fgSubtleHueName), resolveHueAngle(fgSubtleHueName), warmthBias);
-  const fgSubtle = slotFromAngle(fgSubtleAngle);
+  const fgSubtle = slotFromAngle(resolveHueAngle(fgSubtleHueName));
 
   // fgDisabled: driven by formulas.disabledTextHueExpression. [D03]
   const fgDisabledHueName = formulas.disabledTextHueExpression;
-  const fgDisabledAngle = applyWarmthBias(primaryColorName(fgDisabledHueName), resolveHueAngle(fgDisabledHueName), warmthBias);
-  const fgDisabled = slotFromAngle(fgDisabledAngle);
+  const fgDisabled = slotFromAngle(resolveHueAngle(fgDisabledHueName));
 
   // fgInverse: driven by formulas.inverseTextHueExpression. [D03]
   const fgInverseHueName = formulas.inverseTextHueExpression;
-  const fgInverseAngle = applyWarmthBias(primaryColorName(fgInverseHueName), resolveHueAngle(fgInverseHueName), warmthBias);
-  const fgInverse = slotFromAngle(fgInverseAngle);
+  const fgInverse = slotFromAngle(resolveHueAngle(fgInverseHueName));
 
   // fgPlaceholder: driven by formulas.placeholderTextHueExpression. [D03]
   // "fgMuted" → copy fgMuted slot; "atm" → copy atm slot.
@@ -2024,14 +1977,13 @@ export function resolveHueSlots(
     formulas.placeholderTextHueExpression === "atm" ? { ...atm } : { ...fgMuted };
 
   // selectionInactive: driven by formulas.selectionInactiveSemanticMode. [D03]
-  // true  → resolveSemanticSlot(selectionInactiveHueExpression) — no warmth bias (dark default)
-  // false → compute atm offset: atmBaseAngle - 20° with warmth bias (light-mode style)
+  // true  → resolveSlot(selectionInactiveHueExpression) — named hue (dark default)
+  // false → compute atm offset: atmBaseAngle - 20° verbatim (light-mode style)
   const selectionInactive: ResolvedHueSlot = formulas.selectionInactiveSemanticMode
-    ? resolveSemanticSlot(formulas.selectionInactiveHueExpression)
+    ? resolveSlot(formulas.selectionInactiveHueExpression)
     : (() => {
         const atmBaseAngle = resolveHueAngle(atmHue);
-        const selAngle = applyWarmthBias(atmHue, (atmBaseAngle - 20 + 360) % 360, warmthBias);
-        return slotFromAngle(selAngle);
+        return slotFromAngle((atmBaseAngle - 20 + 360) % 360);
       })();
 
   // borderTintBareBase: same logic as surfBareBase but for borderTint hue.
@@ -2043,8 +1995,7 @@ export function resolveHueSlots(
     }
     return closestHueName(resolveHueAngle(borderTintHue));
   })();
-  const borderTintBareRawAngle = HUE_FAMILIES[borderTintBareBaseName] ?? resolveHueAngle(borderTintHue);
-  const borderTintBareAngle = applyWarmthBias(borderTintBareBaseName, borderTintBareRawAngle, warmthBias);
+  const borderTintBareAngle = HUE_FAMILIES[borderTintBareBaseName] ?? resolveHueAngle(borderTintHue);
   const borderTintBareBase: ResolvedHueSlot = {
     angle: borderTintBareAngle,
     name: closestHueName(borderTintBareAngle),
@@ -2054,9 +2005,7 @@ export function resolveHueSlots(
 
   // borderStrong: borderTint shifted -5° for contrast distinction.
   const borderTintRawAngle = resolveHueAngle(borderTintHue);
-  const borderStrongRawAngle = (borderTintRawAngle - 5 + 360) % 360;
-  const borderStrongAngle = applyWarmthBias(borderTintHue, borderStrongRawAngle, warmthBias);
-  const borderStrong = slotFromAngle(borderStrongAngle);
+  const borderStrong = slotFromAngle((borderTintRawAngle - 5 + 360) % 360);
 
   return {
     atm,
@@ -3051,7 +3000,7 @@ function resolvedEntryAlpha(
  *   - `contrastResults` / `cvdWarnings`: empty arrays (populated in later steps)
  *
  * Three-layer declarative pipeline (Spec S01):
- *   Layer 1 — resolveHueSlots(): recipe + warmth    -> ResolvedHueSlots
+ *   Layer 1 — resolveHueSlots(): recipe              -> ResolvedHueSlots
  *   Layer 2 — computeTones():    formulas + knobs   -> ComputedTones
  *   Layer 3 — evaluateRules():   RULES table        -> tokens + resolved maps
  */
@@ -3074,7 +3023,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 3. Layer 1 — resolve all hue slots (Spec S02)
   // -------------------------------------------------------------------------
-  const resolvedSlots = resolveHueSlots(recipe, warmth, formulas);
+  const resolvedSlots = resolveHueSlots(recipe, formulas);
 
   // -------------------------------------------------------------------------
   // 4. Layer 2 — pre-compute derived tone values (Spec S03)

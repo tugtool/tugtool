@@ -9,6 +9,54 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-20T19:04:56Z
+---
+
+## step-2: Deleted applyWarmthBias(), ACHROMATIC_ADJACENT_HUES, resolveSemanticSlot(). Removed warmth parameter from resolveHueSlots() — hue angles now come from palette verbatim. Simplified resolveSlot() to direct angle resolution. All 1877 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-parameter-engine.md
+
+---
+
+---
+step: step-2
+date: 2025-03-20T19:10:00Z
+---
+
+## step-2: Removed warmth bias system from theme-derivation-engine.ts. Deleted applyWarmthBias(), ACHROMATIC_ADJACENT_HUES, warmth parameter from resolveHueSlots(). Merged resolveSemanticSlot() into resolveSlot(). All 1877 tests pass, tsc clean.
+
+**Checkpoint results:**
+
+```
+$ cd tugdeck && bun run check
+$ bunx tsc --noEmit
+exit code: 0 (zero TypeScript errors)
+```
+
+```
+$ cd tugdeck && bun test
+bun test v1.3.9 (cf6cdbbb)
+ 1877 pass
+ 0 fail
+ 12820 expect() calls
+Ran 1877 tests across 73 files. [19.94s]
+exit code: 0
+```
+
+```
+$ grep -r "applyWarmthBias|ACHROMATIC_ADJACENT_HUES|resolveSemanticSlot" tugdeck/src/
+exit code: 0 (no matches — all three symbols fully removed)
+```
+
+**Files changed:**
+- tugdeck/src/components/tugways/theme-derivation-engine.ts
+- tugdeck/src/__tests__/theme-derivation-engine.test.ts
+
+---
+
+---
 step: step-1
 date: 2025-03-20T18:46:52Z
 ---
