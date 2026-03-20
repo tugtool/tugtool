@@ -7,10 +7,20 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | ui-component | .tug-hue-strip__swatch:hover (border-color) |
- * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .tug-hue-strip__label (color)        |
- * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .tug-hue-strip__item--selected .tug-hue-strip__label (color) |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-hue-strip__swatch:hover (border-color) |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-hue-strip__label (color)        |
+ * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-hue-strip__item--selected .tug-hue-strip__label (color) |
  */
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -77,19 +77,19 @@ body {
   --tug-base-element-global-text-normal-inverse-rest: --tug-color(sapphire-cobalt, i: 3, t: 100);
   --tug-base-element-global-text-normal-link-hover: --tug-color(blue, i: 20, t: 18);
   --tug-base-element-global-text-normal-link-rest: --tug-color(blue, t: 18);
-  --tug-base-element-global-text-normal-muted-rest: --tug-color(cobalt, i: 6, t: 28);
+  --tug-base-element-global-text-normal-muted-rest: --tug-color(indigo-violet, i: 6, t: 29);
   --tug-base-element-global-text-normal-onAccent-rest: --tug-color(sapphire-cobalt, i: 4, t: 94);
   --tug-base-element-global-text-normal-onCaution-rest: --tug-color(indigo-violet, i: 5, t: 7);
   --tug-base-element-global-text-normal-onDanger-rest: --tug-color(sapphire-cobalt, i: 4, t: 94);
   --tug-base-element-global-text-normal-onSuccess-rest: --tug-color(indigo-violet, i: 5, t: 7);
   --tug-base-element-global-text-normal-placeholder-rest: --tug-color(indigo-violet, i: 7, t: 60);
   --tug-base-element-global-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 8, t: 65);
-  --tug-base-element-global-text-normal-subtle-rest: --tug-color(indigo-cobalt, i: 8, t: 29);
+  --tug-base-element-global-text-normal-subtle-rest: --tug-color(indigo-violet, i: 8, t: 29);
 
   /* Element — Icon */
   --tug-base-element-global-icon-normal-active-rest: --tug-color(cobalt, i: 100, t: 20);
   --tug-base-element-global-icon-normal-default-rest: --tug-color(cobalt, i: 6, t: 28);
-  --tug-base-element-global-icon-normal-muted-rest: --tug-color(indigo-cobalt, i: 7, t: 29);
+  --tug-base-element-global-icon-normal-muted-rest: --tug-color(indigo-violet, i: 7, t: 29);
   --tug-base-element-global-icon-normal-onAccent-rest: --tug-color(sapphire-cobalt, i: 4, t: 94);
   --tug-base-element-global-icon-normal-plain-disabled: --tug-color(indigo-cobalt, i: 8, t: 65);
 
@@ -447,4 +447,7 @@ body {
   --tug-base-surface-badge-primary-tinted-danger-rest: --tug-color(red, i: 65, t: 80, a: 20);
   --tug-base-surface-badge-primary-tinted-data-rest: --tug-color(teal, i: 65, t: 80, a: 20);
   --tug-base-surface-badge-primary-tinted-success-rest: --tug-color(green, i: 65, t: 80, a: 20);
+
+  /* Other */
+  --tug-base-element-cardTitle-text-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
 }

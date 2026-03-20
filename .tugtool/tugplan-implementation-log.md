@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-20T05:08:20Z
+---
+
+## step-8: Regenerated @tug-pairings blocks in 23 CSS files via audit:tokens inject --apply. Updated audit-tokens.ts guessRole() for new vocabulary. Regenerated tug-base-generated.css and harmony.css via generate:tokens (includes card title token). Zero old role names remain in CSS. All audit gates pass.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-7
 date: 2025-03-20T04:50:06Z
 ---
