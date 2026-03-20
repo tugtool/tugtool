@@ -9,6 +9,36 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-20T22:04:44Z
+---
+
+## step-3: Created FormulaExpansionPanel component with read-only collapsible display of compiled formula fields grouped by parameter, CSS with tug token annotations, and unit tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-3
+date: 2026-03-20T00:00:00Z
+---
+
+## step-3: Built read-only FormulaExpansionPanel component with collapsible parameter sections showing interpolated field values; bun test 1911 pass / 0 fail, audit:tokens lint zero violations
+
+**Files changed:**
+- tugdeck/src/components/tugways/formula-expansion-panel.tsx
+- tugdeck/src/components/tugways/formula-expansion-panel.css
+- tugdeck/src/__tests__/formula-expansion-panel.test.tsx
+
+**Checkpoint results:**
+- `cd tugdeck && bun test`: 1911 pass, 0 fail (13116 expect() calls, 20.17s)
+- `cd tugdeck && bun run audit:tokens lint`: Zero violations. All annotation, alias, and pairing checks pass.
+
+---
+
+---
 step: step-2
 date: 2025-03-20T21:47:23Z
 ---
