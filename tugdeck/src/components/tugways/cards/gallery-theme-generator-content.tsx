@@ -821,10 +821,22 @@ export function validateRecipeJson(value: unknown): string | null {
     obj.signalIntensity = obj[LEGACY_FIELD];
     delete obj[LEGACY_FIELD];
   }
-  // Optional numeric fields
-  for (const field of ["surfaceContrast", "signalIntensity", "warmth"] as const) {
-    if (obj[field] !== undefined && typeof obj[field] !== "number") {
-      return `Invalid '${field}' field (number required)`;
+  // Legacy mood knob fields (surfaceContrast, signalIntensity, warmth) were removed in
+  // Phase 4 Plan 1. Legacy recipe files may still contain them. Ignore these fields
+  // gracefully — do not reject recipes that contain them. [D01][D07][Step 5]
+  // Validate optional parameters field (Phase 4: 7 design parameters). [S01][Step 5]
+  if (obj["parameters"] !== undefined) {
+    if (typeof obj["parameters"] !== "object" || obj["parameters"] === null || Array.isArray(obj["parameters"])) {
+      return "Invalid 'parameters' field (object required)";
+    }
+    const params = obj["parameters"] as Record<string, unknown>;
+    const paramKeys = ["surfaceDepth", "textHierarchy", "controlWeight", "borderDefinition", "shadowDepth", "signalStrength", "atmosphere"] as const;
+    for (const key of paramKeys) {
+      if (params[key] !== undefined) {
+        if (typeof params[key] !== "number" || (params[key] as number) < 0 || (params[key] as number) > 100) {
+          return `Invalid 'parameters.${key}' field (number 0-100 required)`;
+        }
+      }
     }
   }
   return null;

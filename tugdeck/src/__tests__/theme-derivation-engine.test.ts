@@ -646,7 +646,7 @@ describe("resolveHueSlots — Step 3", () => {
   //   role.action     = "blue"           -> interactive
   //   role.accent     = "orange"         -> accent
   //
-  // At warmth=50, warmthBias=0, so no angle shift for achromatic hues.
+  // Hue angles from the palette are used verbatim — warmth bias removed in Phase 4. [D02]
   // -------------------------------------------------------------------------
   it("T-RESOLVE: Brio recipe produces correct slot for each key", () => {
     const slots: ResolvedHueSlots = resolveHueSlots(EXAMPLE_RECIPES.brio);
@@ -763,7 +763,6 @@ describe("resolveHueSlots — Step 3", () => {
       surface: { canvas: "yellow", card: "yellow" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "yellow", border: "yellow", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      warmth: 50,
       formulas: lightFormulas,
     };
     const slots: ResolvedHueSlots = resolveHueSlots(lightRecipe);

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-20T20:05:49Z
+---
+
+## step-5: Updated validateRecipeJson to validate optional parameters field and ignore legacy mood knob fields. Updated theme-export-import tests for parameter round-trips. Cleaned stale surfaceContrast/signalIntensity/warmth from gallery and engine test files. All 1882 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-parameter-engine.md
+
+---
+
+---
 step: step-4
 date: 2025-03-20T19:53:54Z
 ---

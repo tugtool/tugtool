@@ -382,9 +382,7 @@ const CHM_NOVEL_RECIPE = {
   surface: { canvas: "amber", card: "amber" },
   element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" },
   role: { accent: "flame", action: "cobalt", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-  surfaceContrast: 70,
-  signalIntensity: 80,
-  warmth: 65,
+  // Phase 4: mood knob fields removed; recipe uses parameters (defaultParameters at 50). [D01][Step 5]
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
@@ -611,9 +609,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
       surface: { canvas: "slate", card: "slate" },
       element: { content: "slate", control: "slate", display: "indigo", informational: "slate", border: "slate", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      surfaceContrast: 50,
-      signalIntensity: 80,
-      warmth: 50,
+      // Phase 4: mood knob fields removed; recipe uses parameters (defaultParameters). [D01][Step 5]
     };
     const output = deriveTheme(greenRedRecipe);
     const warnings = checkCVDDistinguishability(output.resolved, CVD_SEMANTIC_PAIRS);
