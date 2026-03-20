@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-20T20:11:59Z
+---
+
+## step-6: Integration checkpoint: bun run check exit 0, bun test 1882 pass / 0 fail, audit:tokens lint zero violations, generate:tokens 374 tokens both modes. Warmth system fully removed. EXAMPLE_RECIPES use parameters. signalIntensity and surfaceContrast scoped to internals only.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-parameter-engine.md
+
+---
+
+---
 step: step-5
 date: 2025-03-20T20:05:49Z
 ---
