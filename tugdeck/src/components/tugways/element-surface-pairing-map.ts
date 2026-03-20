@@ -1386,28 +1386,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // =========================================================================
   // Separator / divider visibility — border against surface (Step 3)
-  // border-default and border-muted are very subtle separators in dark mode;
-  // both are below contrast 30 by design (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS).
+  // border-default and border-muted are structural layout separators intentionally
+  // below contrast 30 by design (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS).
+  // Classified as "decorative" (threshold 15) to prevent the contrast floor from
+  // bumping them toward higher lightness, which would override the subtle visual hierarchy.
+  // These are structural dividers, not informational text — "decorative" captures the
+  // design intent that these elements are layout cues, not semantic content indicators.
   // =========================================================================
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "informational",
+    role: "decorative",
   },
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "informational",
+    role: "decorative",
   },
   {
     element: "--tug-base-element-global-border-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "informational",
+    role: "decorative",
   },
   {
     element: "--tug-base-element-global-border-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "informational",
+    role: "decorative",
   },
 
   // =========================================================================
@@ -1608,10 +1612,13 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "control",
   },
   // checkmark-fg-mixed on toggle-track-mixed: indeterminate dash on mixed checkbox background
+  // The mixed-state toggle track is intentionally subdued; the dash indicator on it is
+  // classified as "decorative" (threshold 15) — the indicator's purpose is structural state
+  // signaling via position and shape, not text contrast. Contrast floor must not bump this.
   {
     element: "--tug-base-element-checkmark-icon-normal-plain-mixed",
     surface: "--tug-base-surface-toggle-track-normal-mixed-rest",
-    role: "control",
+    role: "decorative",
   },
 
   // --- Dock button badge (tug-dock.css) ---
@@ -1876,7 +1883,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
-    role: "informational",
+    role: "decorative",
   },
   // Tab hover state — tab-bg-hover has alpha 8%, same semi-transparent pattern
   {
@@ -1894,7 +1901,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-control-rest",
-    role: "informational",
+    role: "decorative",
   },
   {
     element: "--tug-base-element-global-fill-normal-accent-rest",
@@ -2090,25 +2097,25 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-border-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-inset-rest",
-    role: "informational",
+    role: "decorative",
   },
   // border-default on surface-inset (gallery-palette-content.css)
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-inset-rest",
-    role: "informational",
+    role: "decorative",
   },
   // border-default on bg-canvas (gallery-theme-generator-content.css)
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-canvas-rest",
-    role: "informational",
+    role: "decorative",
   },
   // border-default on surface-overlay (tug-menu.css dropdown panel border)
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "informational",
+    role: "decorative",
   },
   // accent-default on accent-subtle (gallery-theme-generator-content.css: mode btn active)
   {

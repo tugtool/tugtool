@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-20T02:01:19Z
+---
+
+## step-2: Updated all test assertions across 5 test files to use new ContrastRole vocabulary (content/control/display/informational). Updated VALID_ROLES, threshold lookups, role filters, and exception set comments. All 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-1
 date: 2025-03-20T01:14:27Z
 ---

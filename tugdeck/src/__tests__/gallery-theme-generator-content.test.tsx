@@ -412,10 +412,10 @@ describe("T10.3 – novel recipe end-to-end: derive → validate → export → 
     expect(() => validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP)).not.toThrow();
   });
 
-  it("0 unexpected body-text perceptual contrast failures (engine contrast floors enforced by construction; T-ACC-1 / T10.3 core assertion)", () => {
+  it("0 unexpected content perceptual contrast failures (engine contrast floors enforced by construction; T-ACC-1 / T10.3 core assertion)", () => {
     const { finalResults } = runFullPipelineForRecipe(CHM_NOVEL_RECIPE);
     const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
-      (r) => r.role === "body-text",
+      (r) => r.role === "content",
     );
     const descriptions = bodyTextUnexpected.map(
       (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
@@ -534,12 +534,12 @@ describe("T10.3 – gallery card tab 21 and existing-tab regression", () => {
 // ---------------------------------------------------------------------------
 
 describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contrast failures (engine contrast floors)", () => {
-  it("dark mode CHM recipe has 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
+  it("dark mode CHM recipe has 0 unexpected content failures (engine contrast floors enforced by construction)", () => {
     const { finalResults } = runFullPipelineForRecipe(CHM_NOVEL_RECIPE);
-    const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
-      (r) => r.role === "body-text",
+    const contentUnexpected = unexpectedFailures(finalResults).filter(
+      (r) => r.role === "content",
     );
-    const descriptions = bodyTextUnexpected.map(
+    const descriptions = contentUnexpected.map(
       (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
@@ -548,16 +548,16 @@ describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contras
   // Note: EXAMPLE_RECIPES now includes harmony (light mode with LIGHT_FORMULAS).
   // The test below covers all built-in recipes including the harmony light theme.
 
-  it("all built-in example recipes produce 0 unexpected body-text failures (engine contrast floors; regression guard)", () => {
+  it("all built-in example recipes produce 0 unexpected content failures (engine contrast floors; regression guard)", () => {
     for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES) as [string, Parameters<typeof deriveTheme>[0]][]) {
       const { finalResults } = runFullPipelineForRecipe(recipe);
-      const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
-        (r) => r.role === "body-text",
+      const contentUnexpected = unexpectedFailures(finalResults).filter(
+        (r) => r.role === "content",
       );
-      const descriptions = bodyTextUnexpected.map(
+      const descriptions = contentUnexpected.map(
         (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
       );
-      expect(descriptions, `${name} recipe should have 0 unexpected body-text failures`).toEqual([]);
+      expect(descriptions, `${name} recipe should have 0 unexpected content failures`).toEqual([]);
     }
   });
 });
