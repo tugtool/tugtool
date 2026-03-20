@@ -9,6 +9,61 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-20T14:53:22Z
+---
+
+## step-1: Baseline verification: bun run check exit 0, bun test 1863 pass / 0 fail / 12691 expect() calls, bun run audit:tokens lint zero violations
+
+**Files changed:**
+- .tugtool/tugplan-formula-field-rename.md
+
+---
+
+---
+step: step-1
+plan: tugplan-formula-field-rename.md
+date: 2026-03-20T00:00:00Z
+---
+
+## step-1 (tugplan-formula-field-rename): Baseline verification — bun run check exit 0, bun test 1863 pass / 0 fail / 12691 expect() calls, bun run audit:tokens lint zero violations.
+
+**Baseline results (for comparison in Step 5):**
+
+```
+$ cd tugdeck && bun run check
+$ bunx tsc --noEmit
+exit code: 0 (zero TypeScript errors)
+```
+
+```
+$ cd tugdeck && bun test
+bun test v1.3.9 (cf6cdbbb)
+ 1863 pass
+ 0 fail
+ 12691 expect() calls
+Ran 1863 tests across 72 files. [20.01s]
+exit code: 0
+```
+
+```
+$ cd tugdeck && bun run audit:tokens lint
+$ bun run scripts/audit-tokens.ts lint
+
+=== Lint Token Annotations ===
+
+✓ Zero violations. All annotation, alias, and pairing checks pass.
+exit code: 0
+```
+
+**All three checkpoints pass. Baseline saved for Step 5 comparison.**
+
+**Files changed:**
+- (none — verification only step)
+
+---
+
+---
 step: step-10
 date: 2025-03-20T05:30:25Z
 ---
