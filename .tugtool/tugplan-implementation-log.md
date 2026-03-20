@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-20T22:54:44Z
+---
+
+## step-5: Wired ParameterSlider, FormulaExpansionPanel, and RecipeDiffView into GalleryThemeGeneratorContent with parameters state/ref, debounced direct-call handler, compiledFormulas memo, and updated loadPreset/handleRecipeImported/currentRecipe/mode toggle
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
 step: step-4
 date: 2025-03-20T22:27:55Z
 ---
