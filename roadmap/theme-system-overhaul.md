@@ -1138,19 +1138,505 @@ established in Phases 3.5A and 3.5B — using `element`, `surface`, `content`,
 - Hue dispatch fields: `<context>HueSlot` (e.g., `contentHueSlot`, `cardFrameHueSlot`)
 - String expression fields: `<context>HueExpression` (e.g., `mutedHueExpression`)
 
-### Phase 4: Recipe clarity and generator improvements
+### Phase 4: Recipe authoring system
 
-*Addresses Problem 3.*
+*Addresses Problem 3. Makes the 200-field `DerivationFormulas` wall approachable by
+introducing a high-level design parameter language that compiles down to formula
+values.*
 
-1. Reduce the effective parameter count by completing the formula de-duplication
-   from the contrast-engine-overhaul roadmap (emphasis-level fields, not per-role).
-2. Update the Theme Generator to expose meaningful recipe parameters — the ~13
-   semantic decisions, not 3 mood sliders that don't map to anything useful.
-3. Document the recipe comparison table: dark vs light across each design decision.
-4. Prepare the architecture for dark/stark and light/stark recipes.
-5. **Maintain audit-tokens invariants:** Any changes to token structure, CSS files,
-   or the pairing map must pass `bun run audit:tokens lint` and
-   `bun run audit:tokens verify`. These are non-negotiable gates per D81.
+#### The recipe/theme distinction
+
+A **recipe** is a rendering strategy. It answers: "Given colors, how should they
+appear?" A recipe is the complete set of design decisions about brightness, contrast,
+hierarchy, weight, and depth. It is mode-specific (dark vs light) because those are
+fundamentally different rendering strategies. A recipe has no color identity — it is
+a lens, not a picture.
+
+A **theme** is a recipe + a palette. It answers: "What does this app look like?" Brio
+is a theme: indigo surfaces, orange accents, rendered through the dark recipe's
+strategy. Swap the hues to teal/red and you get a different theme from the same
+recipe. Swap the recipe to light and you get a different theme from the same palette.
+
+Currently: `ThemeRecipe` contains `formulas` (strategy) and `surface`/`element`/`role`
+hues (palette). But the strategy part — the 200 formula fields — is opaque. The
+three mood sliders (`surfaceContrast`, `signalIntensity`, `warmth`) were supposed to
+be the readable strategy layer, but three vague knobs controlling a fraction of the
+fields don't cut it.
+
+#### Design parameters: a high-level language for recipes
+
+Seven design parameters replace the three mood sliders. Each parameter controls a
+coherent visual dimension of the recipe strategy. Each maps to 8-30+ formula fields.
+Together they cover the full formula space (excluding hue-slot-dispatch and
+hue-name-dispatch fields, which are structural routing decisions, not visual tuning).
+
+All parameters use a 0-100 scale with 50 as the default (matching current
+`DARK_FORMULAS` / `LIGHT_FORMULAS` values). Moving a slider from 50 interpolates
+linearly toward curated endpoint values.
+
+##### P1: Surface Depth
+
+*How much tonal separation between surface layers?*
+
+- 0 → flat, all surfaces near the same brightness, minimal spatial hierarchy
+- 100 → strong steps between app/canvas/default/raised/overlay, pronounced depth
+
+**Formula fields controlled** (canvas-darkness + surface-layering + surface-coloring):
+
+| Field | Group | What it controls |
+|-------|-------|-----------------|
+| `surfaceAppTone` | canvas-darkness | App background lightness anchor |
+| `surfaceCanvasTone` | canvas-darkness | Canvas background lightness anchor |
+| `surfaceSunkenTone` | surface-layering | Sunken surface lightness |
+| `surfaceDefaultTone` | surface-layering | Default surface lightness |
+| `surfaceRaisedTone` | surface-layering | Raised surface lightness |
+| `surfaceOverlayTone` | surface-layering | Overlay surface lightness |
+| `surfaceInsetTone` | surface-layering | Inset surface lightness |
+| `surfaceContentTone` | surface-layering | Content surface lightness |
+| `surfaceScreenTone` | surface-layering | Screen surface lightness |
+| `surfaceDefaultIntensity` | surface-coloring | Default surface chroma |
+| `surfaceRaisedIntensity` | surface-coloring | Raised surface chroma |
+| `surfaceOverlayIntensity` | surface-coloring | Overlay surface chroma |
+| `surfaceScreenIntensity` | surface-coloring | Screen surface chroma |
+| `surfaceInsetIntensity` | surface-coloring | Inset surface chroma |
+| `surfaceContentIntensity` | surface-coloring | Content surface chroma |
+| `surfaceAppBaseIntensity` | surface-coloring | App surface base chroma |
+| `surfaceCanvasToneBase` | computed-tone-override | Canvas tone computation base |
+| `surfaceCanvasToneCenter` | computed-tone-override | Canvas tone center point |
+| `surfaceCanvasToneScale` | computed-tone-override | Canvas tone scale factor |
+
+*19 fields. The key relationship is the spread between the darkest surface
+(app/canvas) and the lightest (overlay/raised in dark mode, or the inverse in
+light mode).*
+
+##### P2: Text Hierarchy
+
+*How much spread between text levels?*
+
+- 0 → all text similar brightness, democratic, everything equally readable
+- 100 → big gap between default and muted/subtle, strong reading order
+
+**Formula fields controlled** (text-brightness + text-hierarchy + text-coloring):
+
+| Field | Group | What it controls |
+|-------|-------|-----------------|
+| `contentTextTone` | text-brightness | Primary text lightness |
+| `inverseTextTone` | text-brightness | Inverse text lightness |
+| `mutedTextTone` | text-hierarchy | Muted text lightness |
+| `subtleTextTone` | text-hierarchy | Subtle text lightness |
+| `disabledTextTone` | text-hierarchy | Disabled text lightness |
+| `placeholderTextTone` | text-hierarchy | Placeholder text lightness |
+| `contentTextIntensity` | text-coloring | Primary text chroma |
+| `subtleTextIntensity` | text-coloring | Subtle text chroma |
+| `mutedTextIntensity` | text-coloring | Muted text chroma |
+| `inverseTextIntensity` | text-coloring | Inverse text chroma |
+| `disabledTextToneComputed` | computed-tone-override | Disabled text computed tone |
+
+*11 fields. The key relationship is the tonal spread between `contentTextTone`
+(the brightest, most readable) and `subtleTextTone`/`disabledTextTone` (the
+dimmest). Intensity fields track the tonal hierarchy — dimmer text also gets
+lower chroma.*
+
+##### P3: Control Weight
+
+*How visually heavy are interactive elements?*
+
+- 0 → light, airy, minimal presence
+- 100 → bold, solid, high-contrast interactive surfaces
+
+**Formula fields controlled** (filled-control-prominence + outlined-control-style +
+ghost-control-style):
+
+| Field | Group | What it controls |
+|-------|-------|-----------------|
+| `filledSurfaceRestTone` | filled-control-prominence | Filled button rest tone |
+| `filledSurfaceHoverTone` | filled-control-prominence | Filled button hover tone |
+| `filledSurfaceActiveTone` | filled-control-prominence | Filled button active tone |
+| `outlinedTextRestTone` | outlined-control-style | Outlined text rest tone |
+| `outlinedTextHoverTone` | outlined-control-style | Outlined text hover tone |
+| `outlinedTextActiveTone` | outlined-control-style | Outlined text active tone |
+| `outlinedTextIntensity` | outlined-control-style | Outlined text chroma |
+| `outlinedIconIntensity` | outlined-control-style | Outlined icon chroma |
+| `outlinedSurfaceHoverIntensity` | outlined-control-style | Outlined hover surface chroma |
+| `outlinedSurfaceHoverAlpha` | outlined-control-style | Outlined hover surface opacity |
+| `outlinedSurfaceActiveIntensity` | outlined-control-style | Outlined active surface chroma |
+| `outlinedSurfaceActiveAlpha` | outlined-control-style | Outlined active surface opacity |
+| `outlinedOptionBorderRestTone` | outlined-control-style | Option border rest tone |
+| `outlinedOptionBorderHoverTone` | outlined-control-style | Option border hover tone |
+| `outlinedOptionBorderActiveTone` | outlined-control-style | Option border active tone |
+| `ghostTextRestIntensity` | ghost-control-style | Ghost text rest chroma |
+| `ghostTextHoverIntensity` | ghost-control-style | Ghost text hover chroma |
+| `ghostTextActiveIntensity` | ghost-control-style | Ghost text active chroma |
+| `ghostIconRestIntensity` | ghost-control-style | Ghost icon rest chroma |
+| `ghostIconHoverIntensity` | ghost-control-style | Ghost icon hover chroma |
+| `ghostIconActiveIntensity` | ghost-control-style | Ghost icon active chroma |
+| `ghostBorderIntensity` | ghost-control-style | Ghost border chroma |
+| `ghostBorderTone` | ghost-control-style | Ghost border tone |
+| `outlinedTextRestToneLight` | outlined-control-style | Outlined text rest (light mode) |
+| `outlinedTextHoverToneLight` | outlined-control-style | Outlined text hover (light mode) |
+| `outlinedTextActiveToneLight` | outlined-control-style | Outlined text active (light mode) |
+| `ghostTextRestToneLight` | ghost-control-style | Ghost text rest (light mode) |
+| `ghostTextHoverToneLight` | ghost-control-style | Ghost text hover (light mode) |
+| `ghostTextActiveToneLight` | ghost-control-style | Ghost text active (light mode) |
+| `ghostTextRestIntensityLight` | ghost-control-style | Ghost text rest chroma (light) |
+| `ghostTextHoverIntensityLight` | ghost-control-style | Ghost text hover chroma (light) |
+| `ghostTextActiveIntensityLight` | ghost-control-style | Ghost text active chroma (light) |
+| `ghostIconActiveIntensityLight` | ghost-control-style | Ghost icon active chroma (light) |
+
+*33 fields. This is the largest parameter because it spans three emphasis levels
+(filled, outlined, ghost), each with rest/hover/active states. The knob doesn't
+change which emphasis a button uses — it changes how much visual weight each
+emphasis level carries.*
+
+##### P4: Border Definition
+
+*How visible are structural boundaries?*
+
+- 0 → nearly invisible borders, clean minimal look
+- 100 → strong borders, structured, architecturally defined
+
+**Formula fields controlled** (border-visibility + card-frame-style):
+
+| Field | Group | What it controls |
+|-------|-------|-----------------|
+| `borderBaseIntensity` | border-visibility | Default border chroma |
+| `borderStrongIntensity` | border-visibility | Strong border chroma |
+| `borderMutedIntensity` | border-visibility | Muted border chroma |
+| `borderMutedTone` | border-visibility | Muted border lightness |
+| `borderStrongTone` | border-visibility | Strong border lightness |
+| `dividerDefaultIntensity` | border-visibility | Default divider chroma |
+| `dividerMutedIntensity` | border-visibility | Muted divider chroma |
+| `cardFrameActiveIntensity` | card-frame-style | Active card frame chroma |
+| `cardFrameActiveTone` | card-frame-style | Active card frame lightness |
+| `cardFrameInactiveIntensity` | card-frame-style | Inactive card frame chroma |
+| `cardFrameInactiveTone` | card-frame-style | Inactive card frame lightness |
+| `borderStrongToneComputed` | computed-tone-override | Strong border computed tone |
+| `dividerDefaultToneOverride` | computed-tone-override | Default divider computed tone |
+| `dividerMutedToneOverride` | computed-tone-override | Muted divider computed tone |
+| `disabledBorderIntensity` | field-style | Disabled border chroma |
+| `disabledBorderToneOverride` | computed-tone-override | Disabled border computed tone |
+
+*16 fields. Controls how much structural definition borders, dividers, and card
+frames provide. Low values produce a clean, borderless aesthetic; high values
+produce a structured, grid-like feel.*
+
+##### P5: Shadow Depth
+
+*How pronounced is elevation?*
+
+- 0 → flat, paper-like, no depth cues from shadows
+- 100 → deep shadows, strong z-axis, clear elevation hierarchy
+
+**Formula fields controlled** (shadow-depth):
+
+| Field | Group | What it controls |
+|-------|-------|-----------------|
+| `shadowXsAlpha` | shadow-depth | Extra-small shadow opacity |
+| `shadowMdAlpha` | shadow-depth | Medium shadow opacity |
+| `shadowLgAlpha` | shadow-depth | Large shadow opacity |
+| `shadowXlAlpha` | shadow-depth | Extra-large shadow opacity |
+| `shadowOverlayAlpha` | shadow-depth | Overlay shadow opacity |
+| `overlayDimAlpha` | shadow-depth | Dim overlay opacity |
+| `overlayScrimAlpha` | shadow-depth | Scrim overlay opacity |
+| `overlayHighlightAlpha` | shadow-depth | Highlight overlay opacity |
+
+*8 fields. The cleanest mapping — pure alpha modulation across shadow sizes and
+overlay types. The interpolation curve should be non-linear: most of the
+perceptual change happens in the 0-50 range.*
+
+##### P6: Signal Strength
+
+*How vivid are semantic colors?*
+
+- 0 → muted, pastel signals, calm and understated
+- 100 → saturated, vivid, signals that demand attention
+
+**Formula fields controlled** (text-coloring + badge-style + icon-style + tab-style +
+toggle-style + sentinel-alpha + selection-mode):
+
+| Field | Group | What it controls |
+|-------|-------|-----------------|
+| `onCautionTextIntensity` | text-coloring | Caution on-signal text chroma |
+| `onSuccessTextIntensity` | text-coloring | Success on-signal text chroma |
+| `badgeTintedTextIntensity` | badge-style | Badge text chroma |
+| `badgeTintedTextTone` | badge-style | Badge text lightness |
+| `badgeTintedSurfaceIntensity` | badge-style | Badge surface chroma |
+| `badgeTintedSurfaceTone` | badge-style | Badge surface lightness |
+| `badgeTintedSurfaceAlpha` | badge-style | Badge surface opacity |
+| `badgeTintedBorderIntensity` | badge-style | Badge border chroma |
+| `badgeTintedBorderTone` | badge-style | Badge border lightness |
+| `badgeTintedBorderAlpha` | badge-style | Badge border opacity |
+| `iconActiveTone` | icon-style | Active icon lightness |
+| `iconMutedIntensity` | icon-style | Muted icon chroma |
+| `iconMutedTone` | icon-style | Muted icon lightness |
+| `tabTextActiveTone` | tab-style | Active tab text lightness |
+| `toggleTrackOnHoverTone` | toggle-style | Toggle track on-hover lightness |
+| `toggleThumbDisabledTone` | toggle-style | Toggle thumb disabled lightness |
+| `toggleTrackDisabledIntensity` | toggle-style | Toggle track disabled chroma |
+| `ghostActionSurfaceHoverAlpha` | sentinel-alpha | Ghost action hover opacity |
+| `ghostActionSurfaceActiveAlpha` | sentinel-alpha | Ghost action active opacity |
+| `ghostOptionSurfaceHoverAlpha` | sentinel-alpha | Ghost option hover opacity |
+| `ghostOptionSurfaceActiveAlpha` | sentinel-alpha | Ghost option active opacity |
+| `ghostDangerSurfaceHoverAlpha` | sentinel-alpha | Ghost danger hover opacity |
+| `ghostDangerSurfaceActiveAlpha` | sentinel-alpha | Ghost danger active opacity |
+| `tabSurfaceHoverAlpha` | sentinel-alpha | Tab hover surface opacity |
+| `tabCloseSurfaceHoverAlpha` | sentinel-alpha | Tab close hover opacity |
+| `highlightHoverAlpha` | sentinel-alpha | Highlight hover opacity |
+| `selectionSurfaceInactiveIntensity` | selection-mode | Inactive selection chroma |
+| `selectionSurfaceInactiveTone` | selection-mode | Inactive selection lightness |
+| `selectionSurfaceInactiveAlpha` | selection-mode | Inactive selection opacity |
+
+*29 fields. Controls how vivid all semantic signal tokens are — badges, icons,
+toggles, tabs, ghost button hover states, selection highlights. This replaces and
+expands the existing `signalIntensity` mood knob.*
+
+##### P7: Atmosphere
+
+*How much chromatic character do neutral surfaces and text carry?*
+
+- 0 → achromatic, clinical, surfaces and text are pure gray
+- 100 → strongly tinted, surfaces take on the palette's hue, text picks up color
+
+**Formula fields controlled** (surface-coloring + text-coloring + field-style):
+
+| Field | Group | What it controls |
+|-------|-------|-----------------|
+| `atmosphereIntensity` | surface-coloring | Global atmosphere chroma |
+| `surfaceAppIntensity` | surface-coloring | App surface chroma |
+| `surfaceCanvasIntensity` | surface-coloring | Canvas surface chroma |
+| `atmosphereBorderIntensity` | text-coloring | Atmosphere border chroma |
+| `fieldSurfaceRestTone` | field-style | Field rest surface lightness |
+| `fieldSurfaceHoverTone` | field-style | Field hover surface lightness |
+| `fieldSurfaceFocusTone` | field-style | Field focus surface lightness |
+| `fieldSurfaceDisabledTone` | field-style | Field disabled surface lightness |
+| `fieldSurfaceReadOnlyTone` | field-style | Field read-only surface lightness |
+| `fieldSurfaceRestIntensity` | field-style | Field rest surface chroma |
+| `disabledSurfaceIntensity` | field-style | Disabled surface chroma |
+| `disabledSurfaceToneBase` | computed-tone-override | Disabled surface tone base |
+| `disabledSurfaceToneScale` | computed-tone-override | Disabled surface tone scale |
+
+*13 fields. Controls how much chromatic influence the palette has on neutral
+surfaces. At 0, surfaces are pure gray regardless of the chosen hues. At 100,
+surfaces and fields take on visible tint from the surface hue slots. This
+replaces the existing `warmth` mood knob with a more honest description of what
+it controls — chroma on neutral surfaces, not hue rotation.*
+
+##### Coverage summary
+
+| Parameter | Fields | Semantic groups covered |
+|-----------|--------|------------------------|
+| P1: Surface Depth | 19 | canvas-darkness, surface-layering, surface-coloring, computed-tone-override |
+| P2: Text Hierarchy | 11 | text-brightness, text-hierarchy, text-coloring, computed-tone-override |
+| P3: Control Weight | 33 | filled-control-prominence, outlined-control-style, ghost-control-style |
+| P4: Border Definition | 16 | border-visibility, card-frame-style, field-style, computed-tone-override |
+| P5: Shadow Depth | 8 | shadow-depth |
+| P6: Signal Strength | 29 | text-coloring, badge-style, icon-style, tab-style, toggle-style, sentinel-alpha, selection-mode |
+| P7: Atmosphere | 13 | surface-coloring, text-coloring, field-style, computed-tone-override |
+| **Total slider-controlled** | **129** | |
+| **Structural (hue routing)** | **~71** | hue-slot-dispatch, sentinel-hue-dispatch, hue-name-dispatch, selection-mode flag, computed-tone-override (remaining) |
+| **Grand total** | **200** | |
+
+The ~71 structural fields (hue-slot-dispatch, sentinel-hue-dispatch,
+hue-name-dispatch, `selectionInactiveSemanticMode`, and remaining
+computed-tone-override fields) are routing decisions that determine *which hue*
+a token uses, not *how bright or saturated* it appears. These are part of the
+recipe template and are not slider-controlled. An expert author can still edit
+them directly in the formula object.
+
+#### Slider-to-formula compilation
+
+Each design parameter at value `V` (0-100) produces formula field values by linear
+interpolation between two curated endpoint bundles:
+
+```
+fieldValue = lowEndpoint[field] + (V / 100) * (highEndpoint[field] - lowEndpoint[field])
+```
+
+Where:
+- `lowEndpoint` is the curated field values for parameter = 0 (e.g., "maximally
+  flat surfaces" for Surface Depth)
+- `highEndpoint` is the curated field values for parameter = 100 (e.g., "maximally
+  stepped surfaces" for Surface Depth)
+- `V = 50` reproduces the current `DARK_FORMULAS` / `LIGHT_FORMULAS` values exactly
+
+Each mode (dark, light) has its own pair of endpoint bundles per parameter. The
+endpoints are themselves authored design artifacts — they represent the extreme
+positions of each design dimension for that mode.
+
+The compilation function:
+
+```
+RecipeParameters { 7 design sliders }
+    → compileRecipe(mode, parameters)
+    → DerivationFormulas (200 fields)
+```
+
+The `compileRecipe()` function:
+1. Starts with the structural fields (hue routing) from the mode's template
+2. For each of the 7 parameters, interpolates the controlled fields between
+   endpoints
+3. Returns a complete `DerivationFormulas` object
+
+If a formula field is controlled by more than one parameter (some
+`computed-tone-override` and `surface-coloring` fields appear in multiple
+parameter tables), the last parameter in P1-P7 order wins. In practice, shared
+fields should be assigned to whichever parameter has the strongest conceptual
+claim, and removed from the other. The field-to-parameter mapping tables above
+are the authoritative assignment.
+
+#### Recipe authoring UI
+
+The Theme Generator evolves from a preview tool to a recipe authoring tool. It
+gains two distinct workspaces:
+
+**Recipe workspace** (new):
+- Seven labeled sliders (P1-P7), each with low/high endpoint descriptions
+- A "formula expansion" panel below each slider showing which fields it controls
+  and their current computed values
+- Preview uses a reference palette (the current theme's hues or a neutral set)
+  so the author sees strategy changes, not color changes
+- A "recipe diff" panel that compares the current parameter state against a
+  baseline (the saved recipe, or another recipe selected for comparison)
+- Export: saves as a named recipe with parameter values and the compiled formulas
+
+**Theme workspace** (existing, refined):
+- Pick a recipe (dark, light, or a custom authored recipe)
+- Choose 15 hue inputs via the existing color pickers
+- See the concrete theme rendered with the recipe's strategy
+- The 7 design parameters carry through from the recipe — the author can tweak
+  them per-theme for slight variations without creating a whole new recipe
+- The existing contrast dashboard, CVD preview, and token grid remain
+
+**Recipe diff view** (new):
+- Side-by-side comparison of two recipes
+- Top level: 7 design parameters shown as paired value bars
+- Expandable: per-semantic-group field-level differences
+- Purpose: makes it possible to see "dark/stark differs from dark mainly in
+  Surface Depth (higher) and Text Hierarchy (wider spread)" instead of comparing
+  200 raw numbers
+
+#### What must change
+
+1. **Define `RecipeParameters` interface.** Seven numeric fields (0-100), one per
+   design parameter. Stored alongside or within `ThemeRecipe`.
+
+2. **Define endpoint bundles.** For each mode (dark, light) × each parameter (7),
+   create low (0) and high (100) field value sets. These are design artifacts
+   that must be calibrated by rendering and evaluating themes at the extremes.
+   The midpoint (50) must reproduce the current `DARK_FORMULAS` /
+   `LIGHT_FORMULAS` values exactly — this is the backward-compatibility
+   constraint.
+
+3. **Implement `compileRecipe()`.** Function that takes mode + 7 parameter values
+   and returns a complete `DerivationFormulas` object. Lives in
+   `theme-derivation-engine.ts` alongside the existing derivation pipeline.
+
+4. **Update `ThemeRecipe` interface.** Replace the three mood knobs
+   (`surfaceContrast`, `signalIntensity`, `warmth`) with `parameters?:
+   RecipeParameters`. The `formulas` field remains as an optional override —
+   if provided, it takes precedence over compiled parameters (expert escape
+   hatch). If neither `parameters` nor `formulas` is provided, mode defaults
+   apply (parameters all at 50).
+
+5. **Update `deriveTheme()` entry point.** If `recipe.parameters` is provided
+   and `recipe.formulas` is not, call `compileRecipe()` to produce formulas
+   before entering the existing derivation pipeline. The pipeline itself does
+   not change.
+
+6. **Build recipe workspace UI.** Seven `ParameterSlider` components in the
+   Theme Generator, each with label, low/high descriptions, and numeric value.
+   Wire slider changes through `compileRecipe()` → `deriveTheme()` → preview
+   update.
+
+7. **Build formula expansion panel.** Collapsible panel per parameter showing
+   the field names and their current interpolated values. Read-only in the
+   default view; an "advanced" toggle enables per-field overrides that feed
+   into the `formulas` escape hatch.
+
+8. **Build recipe diff view.** Component that accepts two `RecipeParameters`
+   objects and renders the comparison. Parameter-level summary (7 bars) +
+   expandable field-level detail per semantic group.
+
+9. **Calibrate endpoint bundles.** The most labor-intensive step. For each
+   parameter × each mode, determine what "0" and "100" look like by rendering
+   test themes and evaluating the visual result. The endpoints must:
+   - Produce visually meaningful extremes (not just min/max numeric values)
+   - Maintain contrast compliance at all positions (the contrast engine
+     validates after compilation)
+   - Interpolate smoothly — no visual discontinuities at intermediate values
+
+10. **Update `EXAMPLE_RECIPES`.** Replace `formulas: DARK_FORMULAS` with
+    `parameters: { surfaceDepth: 50, textHierarchy: 50, ... }` so the example
+    recipes demonstrate the parameter system. Keep the compiled formulas
+    available as a test fixture for backward-compatibility verification.
+
+11. **Migrate existing mood knob references.** Update any code that reads
+    `recipe.surfaceContrast`, `recipe.signalIntensity`, or `recipe.warmth` to
+    read from the new parameter system. The existing `computeTones()` function
+    and `resolveHueSlots()` warmth bias logic may need to be folded into
+    `compileRecipe()` or preserved as a separate derivation-time step.
+
+12. **Verify:** `bun run check`, `bun test`, `bun run audit:tokens lint`. No
+    behavioral changes to existing themes when parameters are all at 50.
+
+#### Endpoint calibration strategy
+
+The endpoints are the design heart of this system. They must be authored, not
+computed. Guidelines:
+
+- **Start from the current formulas.** `DARK_FORMULAS` and `LIGHT_FORMULAS`
+  define the midpoint (parameter = 50). For each parameter, pull out the
+  controlled fields and determine what reasonable extremes look like.
+
+- **Low endpoint (0):** The minimum useful value for this dimension. For
+  Surface Depth, this means all surfaces at nearly the same tone — but not
+  literally identical (that would break the UI). For Text Hierarchy, this
+  means muted text is only slightly dimmer than default — but still
+  distinguishable.
+
+- **High endpoint (100):** The maximum useful value. For Shadow Depth, this
+  means dramatic shadows — but not comically dark. For Signal Strength, this
+  means vivid semantic colors — but not neon.
+
+- **Contrast compliance:** Every point on every slider must produce a theme
+  that passes the contrast engine. If an extreme violates contrast, pull the
+  endpoint back until it passes. The contrast engine is the hard constraint;
+  the endpoint is the negotiable value.
+
+- **Cross-parameter independence:** Moving one slider should not require
+  compensating adjustments to another. If Surface Depth and Text Hierarchy
+  interact (deeper surfaces require brighter text to maintain contrast), the
+  endpoints should be calibrated to account for this at the extremes, with
+  the contrast engine as the safety net at intermediate values.
+
+#### Future: stark recipes and beyond
+
+Once the parameter system is in place, creating new recipe variants becomes
+straightforward:
+
+- **Dark/stark:** Same hue routing template as dark, but with different
+  parameter defaults — higher Surface Depth, wider Text Hierarchy, stronger
+  Border Definition. The parameter values *are* the recipe definition.
+
+- **Light/stark:** Same pattern for light mode.
+
+- **Custom recipes:** Any combination of the 7 parameters, saved with a name
+  and description. The Theme Generator becomes a recipe authoring tool that
+  anyone can use to create new recipes without touching formula fields.
+
+The parameter system also enables recipe interpolation: smoothly blending
+between two recipes by interpolating their parameter values. This could power
+transitions (dark → light crossfade) or exploration (what's halfway between
+the current recipe and stark?).
+
+#### Invariants
+
+- **Maintain audit-tokens invariants:** Any changes to token structure, CSS
+  files, or the pairing map must pass `bun run audit:tokens lint` and
+  `bun run audit:tokens verify`. These are non-negotiable gates per D81.
+- **Backward compatibility:** `compileRecipe(mode, {all: 50})` must produce
+  field values identical to the current `DARK_FORMULAS` / `LIGHT_FORMULAS`.
+  Existing themes must render identically.
 
 ---
 
@@ -1183,6 +1669,17 @@ This document supersedes the relevant parts of:
   `LIGHT_FORMULAS` (202 fields), resolved all `[phase-3-bug]` entries, removed
   `BASE_FORMULAS`/`DARK_OVERRIDES`/`LIGHT_OVERRIDES`, updated all test imports,
   switched light-mode tests to use `LIGHT_FORMULAS`.
+
+- **tugplan-design-vocabulary** (Phase 3.5B, PR #144, merged). Established semantic
+  text types (content, control, display, informational), replaced contrast roles
+  (body-text/ui-component/subdued-text → content/control/display/informational),
+  restructured ThemeRecipe to nested surface/element/role groups, added card title
+  token with display role.
+
+- **tugplan-formula-field-rename** (Phase 3.5C, PR #145, merged). Renamed ~95
+  DerivationFormulas fields and 8 ComputedTones fields from cryptic abbreviations
+  to four-slot spelled-out names (e.g., `txtI` → `contentTextIntensity`,
+  `bgAppTone` → `surfaceAppTone`). Pure rename, no behavioral changes.
 
 The work done in Parts 1-4 of the semantic-formula-architecture roadmap (named
 builders, @semantic annotations, interface restructuring, design rationale comments)
