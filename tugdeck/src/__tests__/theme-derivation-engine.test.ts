@@ -606,14 +606,12 @@ describe("resolveHueSlots — Step 3", () => {
   // angle/name/ref for each slot.
   //
   // Brio dark recipe:
-  //   cardBg.hue = "indigo-violet"  -> atm
-  //   text.hue   = "cobalt"         -> txt
-  //   canvas     = "indigo-violet"  -> canvas
-  //   cardFrame  = "indigo"         -> cardFrame
-  //   borderTint = "indigo-violet"  -> borderTint
-  //   link       = "cyan"           -> interactive
-  //   active     = undefined -> "blue"
-  //   accent     = undefined -> "orange"
+  //   surface.card    = "indigo-violet"  -> atm
+  //   element.content = "cobalt"         -> txt
+  //   surface.canvas  = "indigo-violet"  -> canvas
+  //   element.border  = "indigo-violet"  -> borderTint
+  //   role.action     = "blue"           -> interactive
+  //   role.accent     = "orange"         -> accent
   //
   // At warmth=50, warmthBias=0, so no angle shift for achromatic hues.
   // -------------------------------------------------------------------------
@@ -635,18 +633,18 @@ describe("resolveHueSlots — Step 3", () => {
     expect(slots.canvas.ref).toBe(slots.atm.ref);
     expect(slots.canvas.angle).toBe(slots.atm.angle);
 
-    // cardFrame: "indigo"
-    expect(slots.cardFrame.ref).toBe("indigo");
-    expect(slots.cardFrame.name).toBe("indigo");
+    // cardFrame: derived from element.border ("indigo-violet") — same as borderTint
+    expect(slots.cardFrame.ref).toBe(slots.borderTint.ref);
+    expect(slots.cardFrame.name).toBe(slots.borderTint.name);
 
-    // borderTint: same as atm for Brio
+    // borderTint: same as atm for Brio (element.border = "indigo-violet")
     expect(slots.borderTint.ref).toBe(slots.atm.ref);
 
-    // interactive: "cyan" — not achromatic-adjacent, no warmth bias
-    expect(slots.interactive.ref).toBe("cyan");
-    expect(slots.interactive.name).toBe("cyan");
+    // interactive: derived from role.action ("blue") — not "cyan" (link removed from recipe)
+    expect(slots.interactive.ref).toBe("blue");
+    expect(slots.interactive.name).toBe("blue");
 
-    // active: "blue" (default)
+    // active: "blue" (role.action)
     expect(slots.active.ref).toBe("blue");
 
     // accent: "orange" (default)
@@ -729,8 +727,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-light",
       description: "Test recipe for light mode hue slot resolution.",
       mode: "light" as const,
-      cardBg: { hue: "yellow" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "yellow", card: "yellow" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "yellow", border: "yellow", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       warmth: 50,
       formulas: lightFormulas,
     };
@@ -786,8 +785,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-warmth",
       description: "Test recipe for warmth bias angle shifts.",
       mode: "dark" as const,
-      cardBg: { hue: "violet" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
 
     const slotsW50 = resolveHueSlots(baseRecipe, 50);
@@ -816,8 +816,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bare-base",
       description: "Test recipe for surfBareBase extraction from hyphenated hue.",
       mode: "dark" as const,
-      cardBg: { hue: "indigo-violet" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo-violet", card: "indigo-violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe, 50);
     expect(slots.surfBareBase.ref).toBe("violet");
@@ -829,8 +830,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bare-base-bare",
       description: "Test recipe for surfBareBase extraction from bare hue name.",
       mode: "dark" as const,
-      cardBg: { hue: "violet" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe, 50);
     // For bare "violet", bare base is "violet" itself
@@ -842,9 +844,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bt-bare",
       description: "Test recipe for borderTintBareBase extraction from hyphenated hue.",
       mode: "dark" as const,
-      cardBg: { hue: "indigo-violet" },
-      text: { hue: "cobalt" },
-      borderTint: "indigo-violet",
+      surface: { canvas: "indigo-violet", card: "indigo-violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe, 50);
     expect(slots.borderTintBareBase.ref).toBe("violet");

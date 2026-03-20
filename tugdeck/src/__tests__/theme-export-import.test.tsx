@@ -188,19 +188,27 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
       name: "TestTheme",
       description: "Test theme with all optional fields.",
       mode: "light" as const,
-      cardBg: { hue: "cyan" },
-      text: { hue: "blue" },
-      canvas: "cyan",
-      cardFrame: "indigo",
-      borderTint: "cyan",
-      link: "cobalt",
-      accent: "orange",
-      active: "cobalt",
-      destructive: "red",
-      success: "green",
-      caution: "yellow",
-      agent: "violet",
-      data: "teal",
+      surface: {
+        canvas: "cyan",
+        card: "indigo",
+      },
+      element: {
+        content: "blue",
+        control: "cobalt",
+        display: "indigo",
+        informational: "cyan",
+        border: "cyan",
+        decorative: "gray",
+      },
+      role: {
+        accent: "orange",
+        action: "cobalt",
+        agent: "violet",
+        data: "teal",
+        success: "green",
+        caution: "yellow",
+        danger: "red",
+      },
       surfaceContrast: 65,
       signalIntensity: 75,
       warmth: 40,
@@ -284,29 +292,31 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   });
 
   it("validateRecipeJson returns error for wrong mode ('sepia')", () => {
-    const bad = { name: "X", mode: "sepia", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const bad = { name: "X", mode: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing name", () => {
-    const bad = { mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const bad = { mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for missing cardBg", () => {
-    const bad = { name: "X", mode: "dark", text: { hue: "blue" } };
+  it("validateRecipeJson returns error for missing surface group", () => {
+    const bad = { name: "X", description: "Test.", mode: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for missing text", () => {
-    const bad = { name: "X", mode: "dark", cardBg: { hue: "red" } };
+  it("validateRecipeJson returns error for missing element group", () => {
+    const bad = { name: "X", description: "Test.", mode: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for surfaceContrast as string", () => {
     const bad = {
-      name: "X", mode: "dark",
-      cardBg: { hue: "red" }, text: { hue: "blue" },
+      name: "X", description: "Test.", mode: "dark",
+      surface: { canvas: "red", card: "red" },
+      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       surfaceContrast: "high",
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
@@ -314,8 +324,10 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 
   it("validateRecipeJson returns error for signalIntensity as string", () => {
     const bad = {
-      name: "X", mode: "dark",
-      cardBg: { hue: "red" }, text: { hue: "blue" },
+      name: "X", description: "Test.", mode: "dark",
+      surface: { canvas: "red", card: "red" },
+      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       signalIntensity: "vivid",
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
@@ -323,31 +335,33 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 
   it("validateRecipeJson returns error for warmth as boolean", () => {
     const bad = {
-      name: "X", mode: "dark",
-      cardBg: { hue: "red" }, text: { hue: "blue" },
+      name: "X", description: "Test.", mode: "dark",
+      surface: { canvas: "red", card: "red" },
+      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       warmth: true,
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing description", () => {
-    const bad = { name: "X", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const bad = { name: "X", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for empty description string", () => {
-    const bad = { name: "X", description: "", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const bad = { name: "X", description: "", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson accepts a recipe with a valid description", () => {
-    const good = { name: "X", description: "A valid theme description.", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const good = { name: "X", description: "A valid theme description.", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(good)).toBeNull();
   });
 
   it("validateRecipeJson accepts both 'dark' and 'light' modes", () => {
-    const dark = { name: "X", description: "Dark test theme.", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
-    const light = { name: "X", description: "Light test theme.", mode: "light", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const dark = { name: "X", description: "Dark test theme.", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const light = { name: "X", description: "Light test theme.", mode: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(dark)).toBeNull();
     expect(validateRecipeJson(light)).toBeNull();
   });
@@ -372,8 +386,9 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
       name: "LegacyTheme",
       description: "Legacy theme for migration testing.",
       mode: "dark",
-      cardBg: { hue: "cobalt" },
-      text: { hue: "slate" },
+      surface: { canvas: "cobalt", card: "cobalt" },
+      element: { content: "slate", control: "slate", display: "indigo", informational: "cobalt", border: "cobalt", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       [LEGACY_KEY]: 75,
     };
     const result = validateRecipeJson(legacy);

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-20T04:03:30Z
+---
+
+## step-5: Updated all ThemeRecipe construction sites in 3 test files to use nested surface/element/role structure. Fixed testid selectors (gtg-card-hue, gtg-content-hue), validateRecipeJson test objects, round-trip test, and stale comments. 1861 tests pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-4
 date: 2025-03-20T03:12:51Z
 ---

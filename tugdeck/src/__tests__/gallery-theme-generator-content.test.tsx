@@ -169,21 +169,21 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     expect(container.querySelector("[data-testid='gtg-mode-group']")).not.toBeNull();
   });
 
-  it("renders the cardBg hue as a compact picker", () => {
+  it("renders the card hue as a compact picker", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const picker = container.querySelector("[data-testid='gtg-cardbg-hue']");
+    const picker = container.querySelector("[data-testid='gtg-card-hue']");
     expect(picker).not.toBeNull();
   });
 
-  it("renders the text hue as a compact picker", () => {
+  it("renders the content hue as a compact picker", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const picker = container.querySelector("[data-testid='gtg-text-hue']");
+    const picker = container.querySelector("[data-testid='gtg-content-hue']");
     expect(picker).not.toBeNull();
   });
 
@@ -380,10 +380,9 @@ const CHM_NOVEL_RECIPE = {
   name: "CHM Mood",
   description: "CHM acceptance test recipe — industrial warmth with amber atmosphere.",
   mode: "dark" as const,
-  cardBg: { hue: "amber" },
-  text: { hue: "sand" },
-  accent: "flame",
-  active: "cobalt",
+  surface: { canvas: "amber", card: "amber" },
+  element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" },
+  role: { accent: "flame", action: "cobalt", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
   surfaceContrast: 70,
   signalIntensity: 80,
   warmth: 65,
@@ -610,10 +609,9 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
       name: "GreenRed",
       description: "CVD test recipe with explicit green/red pairing.",
       mode: "dark" as const,
-      cardBg: { hue: "slate" },
-      text: { hue: "slate" },
-      positive: "green",
-      destructive: "red",
+      surface: { canvas: "slate", card: "slate" },
+      element: { content: "slate", control: "slate", display: "indigo", informational: "slate", border: "slate", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       surfaceContrast: 50,
       signalIntensity: 80,
       warmth: 50,
@@ -635,7 +633,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders 14 hue pickers (7 structural including grid + 7 role) in the preview section", () => {
+  it("renders 15 hue pickers (2 surface + 6 element + 7 role) in the preview section", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -644,7 +642,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     expect(preview).not.toBeNull();
     // All pickers use the same CompactHuePicker component (gtg-compact-hue-row)
     const pickers = preview!.querySelectorAll(".gtg-compact-hue-row");
-    expect(pickers.length).toBe(14);
+    expect(pickers.length).toBe(15);
   });
 
   it("each role hue picker button has the correct data-testid", () => {
@@ -676,15 +674,9 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       name: "brio",
       description: "Explicit default role hues test recipe.",
       mode: "dark",
-      cardBg: { hue: "indigo-violet" },
-      text: { hue: "cobalt" },
-      accent: "orange",
-      active: "blue",
-      agent: "violet",
-      data: "teal",
-      success: "green",
-      caution: "yellow",
-      destructive: "red",
+      surface: { canvas: "indigo-violet", card: "indigo-violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const implicit = deriveTheme(EXAMPLE_RECIPES.brio);
     // tone tokens should match between explicit defaults and recipe defaults
@@ -708,17 +700,17 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       name: "test",
       description: "Test recipe with red destructive hue.",
       mode: "dark",
-      cardBg: { hue: "violet" },
-      text: { hue: "cobalt" },
-      destructive: "red",
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
       name: "test",
       description: "Test recipe with pink destructive hue.",
       mode: "dark",
-      cardBg: { hue: "violet" },
-      text: { hue: "cobalt" },
-      destructive: "pink",
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
     });
     expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
       withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
@@ -917,13 +909,15 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
     // is a CSS cascade effect invisible to JSDOM.
     const withRed = deriveTheme({
       name: "test", description: "Test recipe with red destructive hue.", mode: "dark",
-      cardBg: { hue: "violet" }, text: { hue: "cobalt" },
-      destructive: "red",
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
       name: "test", description: "Test recipe with pink destructive hue.", mode: "dark",
-      cardBg: { hue: "violet" }, text: { hue: "cobalt" },
-      destructive: "pink",
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
     });
     expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
       withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
@@ -956,7 +950,7 @@ function renderWithThemeProvider(savedThemeNames: string[] = []) {
       return new Response("body {}", { status: 200 });
     }
     if (url.startsWith("/styles/themes/") && url.endsWith("-recipe.json")) {
-      const recipe = JSON.stringify({ name: "Saved Theme", mode: "dark", cardBg: { hue: "amber" }, text: { hue: "sand" } });
+      const recipe = JSON.stringify({ name: "Saved Theme", description: "Saved theme for testing.", mode: "dark", surface: { canvas: "amber", card: "amber" }, element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } });
       return new Response(recipe, { status: 200 });
     }
     return new Response("", { status: 404 });
@@ -1069,7 +1063,7 @@ describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () =>
         return new Response("body {}", { status: 200 });
       }
       if (url.endsWith("-recipe.json")) {
-        const recipe = JSON.stringify({ name: "My Custom Theme", mode: "dark", cardBg: { hue: "cobalt" }, text: { hue: "slate" } });
+        const recipe = JSON.stringify({ name: "My Custom Theme", description: "Custom theme for testing.", mode: "dark", surface: { canvas: "cobalt", card: "cobalt" }, element: { content: "slate", control: "slate", display: "indigo", informational: "cobalt", border: "cobalt", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } });
         return new Response(recipe, { status: 200 });
       }
       return new Response("", { status: 404 });
@@ -1159,16 +1153,18 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "test-dark",
       description: "Dark formulas test",
       mode: "dark",
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: DARK_FORMULAS,
     });
     const lightOutput = deriveTheme({
       name: "test-light",
       description: "Light formulas test",
       mode: "light",
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: LIGHT_FORMULAS,
     });
     // The semantic tone tokens should differ because semanticSignalTone differs (50 vs 35)
@@ -1192,8 +1188,9 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "light-test",
       description: "Light formulas round-trip test",
       mode: "light" as const,
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: LIGHT_FORMULAS,
     };
     const serialized = JSON.stringify(recipe);
@@ -1215,15 +1212,17 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "no-formulas",
       description: "No formulas field",
       mode: "dark",
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const darkFormulas = deriveTheme({
       name: "dark-formulas",
       description: "Explicit DARK_FORMULAS",
       mode: "dark",
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: DARK_FORMULAS,
     });
     expect(noFormulas.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(darkFormulas.tokens["--tug-base-element-tone-fill-normal-accent-rest"]);
@@ -1489,8 +1488,9 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
       name: "bare",
       description: "No formulas field",
       mode: "dark" as const,
-      cardBg: { hue: "indigo-violet" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo-violet", card: "indigo-violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const noFormulasOutput = deriveTheme(bareRecipe);
     const darkFormulasOutput = deriveTheme({ ...bareRecipe, formulas: DARK_FORMULAS });
