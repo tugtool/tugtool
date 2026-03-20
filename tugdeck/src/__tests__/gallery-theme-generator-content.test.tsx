@@ -366,6 +366,56 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
     expect(darkBtn.classList.contains("tug-button-filled-action")).toBe(true);
     expect(lightBtn.classList.contains("tug-button-outlined-action")).toBe(true);
   });
+
+  it("mode toggle resets all 7 sliders to default value 50", () => {
+    // The 7 parameter keys in order, matching PARAMETER_METADATA.
+    const paramKeys = [
+      "surfaceDepth",
+      "textHierarchy",
+      "controlWeight",
+      "borderDefinition",
+      "shadowDepth",
+      "signalStrength",
+      "atmosphere",
+    ] as const;
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+
+    // Move each slider away from 50 so that the reset is detectable.
+    act(() => {
+      for (const key of paramKeys) {
+        const rangeInput = container.querySelector(
+          `[data-testid='ps-range-${key}']`,
+        ) as HTMLInputElement;
+        fireEvent.input(rangeInput, { target: { value: "75" } });
+      }
+    });
+
+    // Verify at least one slider has moved away from 50.
+    const firstRange = container.querySelector(
+      "[data-testid='ps-range-surfaceDepth']",
+    ) as HTMLInputElement;
+    expect(firstRange.value).toBe("75");
+
+    // Click the light mode toggle — this should call setParametersAndRef(defaultParameters()).
+    const lightBtn = container.querySelector(
+      "[data-testid='gtg-mode-light']",
+    ) as HTMLElement;
+    act(() => {
+      fireEvent.click(lightBtn);
+    });
+
+    // All 7 range inputs must now report value='50'.
+    for (const key of paramKeys) {
+      const rangeInput = container.querySelector(
+        `[data-testid='ps-range-${key}']`,
+      ) as HTMLInputElement;
+      expect(rangeInput.value).toBe("50");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-20T23:22:40Z
+---
+
+## step-6: Integration verification step: added mode toggle slider reset test, confirmed all 1940 tests pass, audit:tokens lint and verify both pass
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
 step: step-5
 date: 2025-03-20T22:54:44Z
 ---
