@@ -3,10 +3,11 @@
  *
  * Interactive tool for deriving complete 264-token --tug-base-* themes from a
  * compact ThemeRecipe: atmosphere + text hue selectors, mode toggle,
- * three mood sliders, token preview grid, contrast dashboard, CVD preview
- * strip, and contrast diagnostics.
+ * token preview grid, contrast dashboard, CVD preview strip, and contrast
+ * diagnostics.
  *
- * Wires controls to `deriveTheme()` with 150ms debounce on slider changes.
+ * Wires controls to `deriveTheme()`. Mood sliders removed in Phase 4 Plan 1
+ * Step 4 — the engine now derives formulas from parameters via compileRecipe().
  * Runs `validateThemeContrast()` and `checkCVDDistinguishability()` on every
  * derived output. The Contrast Diagnostics panel shows ContrastDiagnostic
  * entries from ThemeOutput.diagnostics (floor-applied and structurally-fixed)
@@ -43,6 +44,7 @@ import {
   type ContrastDiagnostic,
   type CVDWarning,
 } from "@/components/tugways/theme-derivation-engine";
+import { defaultParameters } from "@/components/tugways/recipe-parameters";
 import {
   validateThemeContrast,
   checkCVDDistinguishability,
@@ -205,44 +207,6 @@ function CompactHuePicker({
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// MoodSlider
-// ---------------------------------------------------------------------------
-
-/**
- * A labeled range input for a single mood knob (0-100).
- */
-function MoodSlider({
-  label,
-  value,
-  onChange,
-  testId,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  testId: string;
-}) {
-  return (
-    <div className="gtg-slider-row">
-      <label className="gtg-slider-label" htmlFor={testId}>
-        {label}
-      </label>
-      <input
-        id={testId}
-        type="range"
-        min={0}
-        max={100}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="gtg-slider-input"
-        data-testid={testId}
-      />
-      <span className="gtg-slider-value">{value}</span>
-    </div>
   );
 }
 
@@ -857,10 +821,22 @@ export function validateRecipeJson(value: unknown): string | null {
     obj.signalIntensity = obj[LEGACY_FIELD];
     delete obj[LEGACY_FIELD];
   }
-  // Optional numeric fields
-  for (const field of ["surfaceContrast", "signalIntensity", "warmth"] as const) {
-    if (obj[field] !== undefined && typeof obj[field] !== "number") {
-      return `Invalid '${field}' field (number required)`;
+  // Legacy mood knob fields (surfaceContrast, signalIntensity, warmth) were removed in
+  // Phase 4 Plan 1. Legacy recipe files may still contain them. Ignore these fields
+  // gracefully — do not reject recipes that contain them. [D01][D07][Step 5]
+  // Validate optional parameters field (Phase 4: 7 design parameters). [S01][Step 5]
+  if (obj["parameters"] !== undefined) {
+    if (typeof obj["parameters"] !== "object" || obj["parameters"] === null || Array.isArray(obj["parameters"])) {
+      return "Invalid 'parameters' field (object required)";
+    }
+    const params = obj["parameters"] as Record<string, unknown>;
+    const paramKeys = ["surfaceDepth", "textHierarchy", "controlWeight", "borderDefinition", "shadowDepth", "signalStrength", "atmosphere"] as const;
+    for (const key of paramKeys) {
+      if (params[key] !== undefined) {
+        if (typeof params[key] !== "number" || (params[key] as number) < 0 || (params[key] as number) > 100) {
+          return `Invalid 'parameters.${key}' field (number 0-100 required)`;
+        }
+      }
     }
   }
   return null;
@@ -1379,27 +1355,22 @@ export function GalleryThemeGeneratorContent() {
   const [informationalHue, setInformationalHue] = useState<string>(DEFAULT_RECIPE.element.informational);
   const [borderHue, setBorderHue] = useState<string>(DEFAULT_RECIPE.element.border);
   const [decorativeHue, setDecorativeHue] = useState<string>(DEFAULT_RECIPE.element.decorative);
-  const [surfaceContrast, setSurfaceContrast] = useState<number>(
-    DEFAULT_RECIPE.surfaceContrast ?? 50,
-  );
-  const [signalIntensity, setSignalIntensity] = useState<number>(
-    DEFAULT_RECIPE.signalIntensity ?? 50,
-  );
-  const [warmth, setWarmth] = useState<number>(DEFAULT_RECIPE.warmth ?? 50);
 
-  // Formula state — tracks the active DerivationFormulas for the current recipe.
-  // Defaults to DEFAULT_RECIPE.formulas ?? DARK_FORMULAS (the Brio dark default).
+  // Formula state — null means use compileRecipe(mode, defaultParameters()); non-null
+  // means the user has explicitly provided formulas (escape hatch path per [D06]).
   // A synchronous ref mirrors the state so runDerive() can read the latest value
   // without threading formulas through its parameter signature. [D01]
-  const [formulas, setFormulas] = useState<DerivationFormulas>(DEFAULT_RECIPE.formulas ?? DARK_FORMULAS);
-  const formulasRef = useRef<DerivationFormulas>(DEFAULT_RECIPE.formulas ?? DARK_FORMULAS);
+  const [formulas, setFormulas] = useState<DerivationFormulas | null>(
+    DEFAULT_RECIPE.formulas ?? null,
+  );
+  const formulasRef = useRef<DerivationFormulas | null>(DEFAULT_RECIPE.formulas ?? null);
 
   /**
    * Update both the formulas state and the ref synchronously.
-   * All four mutation sites (loadPreset, handleRecipeImported, Dark onClick,
-   * Light onClick) call this wrapper instead of setFormulas directly. [D01]
+   * Mutation sites: loadPreset, handleRecipeImported, Dark onClick, Light onClick.
+   * Pass null to let compileRecipe() derive formulas from parameters. [D01]
    */
-  function setFormulasAndRef(f: DerivationFormulas): void {
+  function setFormulasAndRef(f: DerivationFormulas | null): void {
     setFormulas(f);
     formulasRef.current = f;
   }
@@ -1493,14 +1464,15 @@ export function GalleryThemeGeneratorContent() {
     [themeOutput],
   );
 
-  // Slider debounce timer ref.
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   /**
    * Assemble the current recipe and call deriveTheme(), updating themeOutput.
    * Must be called with the latest values — no stale state.
-   * Accepts `n` (name) so that slider/hue changes preserve the current recipe
+   * Accepts `n` (name) so that hue changes preserve the current recipe
    * name rather than hardcoding "preview".
+   *
+   * When formulasRef.current is non-null, it is used as the escape-hatch
+   * formulas override (per [D06]). When null, compileRecipe() is used via the
+   * recipe.parameters path.
    */
   const runDerive = useCallback(
     (
@@ -1514,9 +1486,6 @@ export function GalleryThemeGeneratorContent() {
       informational: string,
       border: string,
       decorative: string,
-      sc: number,
-      sv: number,
-      w: number,
       accent: string,
       active: string,
       agent: string,
@@ -1532,10 +1501,9 @@ export function GalleryThemeGeneratorContent() {
         surface: { canvas, card },
         element: { content, control, display, informational, border, decorative },
         role: { accent, action: active, agent, data, success, caution, danger },
-        surfaceContrast: sc,
-        signalIntensity: sv,
-        warmth: w,
-        formulas: formulasRef.current,
+        ...(formulasRef.current !== null
+          ? { formulas: formulasRef.current }
+          : { parameters: defaultParameters() }),
       };
       setThemeOutput(deriveTheme(recipe));
     },
@@ -1547,56 +1515,9 @@ export function GalleryThemeGeneratorContent() {
    * discrete picks, not continuous drags).
    */
   useEffect(() => {
-    // Cancel any pending slider debounce when a hue/mode changes.
-    if (debounceRef.current !== null) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-    runDerive(recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, surfaceContrast, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
+    runDerive(recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
-
-  /**
-   * Debounced re-derive for slider changes (150ms delay).
-   * Accepts `n` (the current recipe name) so the name is preserved in the
-   * derived output even when sliders change.
-   */
-  const handleSliderChange = useCallback(
-    (
-      setter: React.Dispatch<React.SetStateAction<number>>,
-      newValue: number,
-      n: string,
-      m: "dark" | "light",
-      card: string,
-      canvas: string,
-      content: string,
-      control: string,
-      display: string,
-      informational: string,
-      border: string,
-      decorative: string,
-      sc: number,
-      sv: number,
-      w: number,
-      accent: string,
-      active: string,
-      agent: string,
-      data: string,
-      success: string,
-      caution: string,
-      danger: string,
-    ) => {
-      setter(newValue);
-      if (debounceRef.current !== null) {
-        clearTimeout(debounceRef.current);
-      }
-      debounceRef.current = setTimeout(() => {
-        debounceRef.current = null;
-        runDerive(n, m, card, canvas, content, control, display, informational, border, decorative, sc, sv, w, accent, active, agent, data, success, caution, danger);
-      }, 150);
-    },
-    [runDerive],
-  );
 
   // ---------------------------------------------------------------------------
   // Preset load helpers
@@ -1615,9 +1536,6 @@ export function GalleryThemeGeneratorContent() {
       setInformationalHue(r.element.informational);
       setBorderHue(r.element.border);
       setDecorativeHue(r.element.decorative);
-      setSurfaceContrast(r.surfaceContrast ?? 50);
-      setSignalIntensity(r.signalIntensity ?? 50);
-      setWarmth(r.warmth ?? 50);
       setAccentHue(r.role.accent);
       setActiveHue(r.role.action);
       setAgentHue(r.role.agent);
@@ -1625,7 +1543,10 @@ export function GalleryThemeGeneratorContent() {
       setSuccessHue(r.role.success);
       setCautionHue(r.role.caution);
       setDangerHue(r.role.danger);
-      setFormulasAndRef(r.formulas ?? DARK_FORMULAS);
+      // When loading a parameter-based recipe, set formulas to null so compileRecipe()
+      // runs at derive time. When loading a formulas-based recipe (escape hatch [D06]),
+      // set formulas to the recipe's explicit formulas. [Step 4]
+      setFormulasAndRef(r.formulas ?? null);
       setThemeOutput(deriveTheme(r));
     },
     // setFormulasAndRef is a stable plain function defined in component scope —
@@ -1643,6 +1564,9 @@ export function GalleryThemeGeneratorContent() {
    * Used by ExportImportPanel for export and as a round-trip reference.
    * `recipeName` is preserved across imports so exported filenames and CSS
    * headers reflect the actual recipe name, not a hardcoded "preview" label.
+   *
+   * When formulas state is null, the recipe uses parameters (parameter-based path).
+   * When formulas state is non-null, the recipe uses the escape-hatch formulas. [D06]
    */
   const currentRecipe = useMemo<ThemeRecipe>(
     () => ({
@@ -1652,18 +1576,19 @@ export function GalleryThemeGeneratorContent() {
       surface: { canvas: canvasHue, card: cardHue },
       element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
       role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-      surfaceContrast,
-      signalIntensity,
-      warmth,
-      formulas,
+      ...(formulas !== null ? { formulas } : { parameters: defaultParameters() }),
     }),
-    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, surfaceContrast, signalIntensity, warmth, formulas],
+    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
   );
 
   /**
    * Handle an imported recipe: apply all fields to local state and re-derive.
    * Sets `recipeName` from the imported recipe so subsequent exports preserve
    * the original name rather than reverting to "preview".
+   *
+   * When the recipe has explicit formulas, use them (escape hatch [D06]).
+   * When the recipe has parameters (or neither), set formulas to null so
+   * compileRecipe() runs at derive time. [Step 4]
    */
   const handleRecipeImported = useCallback(
     (r: ThemeRecipe) => {
@@ -1677,9 +1602,6 @@ export function GalleryThemeGeneratorContent() {
       setInformationalHue(r.element.informational);
       setBorderHue(r.element.border);
       setDecorativeHue(r.element.decorative);
-      setSurfaceContrast(r.surfaceContrast ?? 50);
-      setSignalIntensity(r.signalIntensity ?? 50);
-      setWarmth(r.warmth ?? 50);
       setAccentHue(r.role.accent);
       setActiveHue(r.role.action);
       setAgentHue(r.role.agent);
@@ -1687,7 +1609,7 @@ export function GalleryThemeGeneratorContent() {
       setSuccessHue(r.role.success);
       setCautionHue(r.role.caution);
       setDangerHue(r.role.danger);
-      setFormulasAndRef(r.formulas ?? DARK_FORMULAS);
+      setFormulasAndRef(r.formulas ?? null);
       setThemeOutput(deriveTheme(r));
     },
     // setFormulasAndRef is a stable plain function defined in component scope —
@@ -1780,7 +1702,7 @@ export function GalleryThemeGeneratorContent() {
             emphasis={mode === "dark" ? "filled" : "outlined"}
             role="action"
             size="sm"
-            onClick={() => { setMode("dark"); setFormulasAndRef(DARK_FORMULAS); }}
+            onClick={() => { setMode("dark"); setFormulasAndRef(null); }}
             data-testid="gtg-mode-dark"
           >
             Dark
@@ -1789,7 +1711,7 @@ export function GalleryThemeGeneratorContent() {
             emphasis={mode === "light" ? "filled" : "outlined"}
             role="action"
             size="sm"
-            onClick={() => { setMode("light"); setFormulasAndRef(LIGHT_FORMULAS); }}
+            onClick={() => { setMode("light"); setFormulasAndRef(null); }}
             data-testid="gtg-mode-light"
           >
             Light
@@ -1797,7 +1719,7 @@ export function GalleryThemeGeneratorContent() {
         </div>
       </div>
 
-      {/* ---- Preview + hue pickers + mood sliders ---- */}
+      {/* ---- Preview + hue pickers ---- */}
       <div data-testid="gtg-role-hues">
         <div className="cg-section">
           <div className="cg-section-title">Preview</div>
@@ -1825,14 +1747,7 @@ export function GalleryThemeGeneratorContent() {
               { key: "caution", label: "Caution", hue: cautionHue, set: setCautionHue, testId: "gtg-role-hue-caution" },
               { key: "danger", label: "Danger", hue: dangerHue, set: setDangerHue, testId: "gtg-role-hue-danger" },
             ]}
-            moodSliders={
-              <div className="gtg-mood-panel">
-                <div className="gtg-hue-column-title">Mood</div>
-                <MoodSlider label="Surface Contrast" value={surfaceContrast} onChange={(v) => handleSliderChange(setSurfaceContrast, v, recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, v, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-surface-contrast" />
-                <MoodSlider label="Signal Intensity" value={signalIntensity} onChange={(v) => handleSliderChange(setSignalIntensity, v, recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, surfaceContrast, v, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-signal-intensity" />
-                <MoodSlider label="Warmth" value={warmth} onChange={(v) => handleSliderChange(setWarmth, v, recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, surfaceContrast, signalIntensity, v, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-warmth" />
-              </div>
-            }
+            moodSliders={null}
           />
         </div>
 

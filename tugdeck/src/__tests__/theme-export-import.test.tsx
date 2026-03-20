@@ -184,6 +184,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   });
 
   it("recipe with all optional fields round-trips without data loss", () => {
+    // Phase 4: parameters field replaces mood knob fields. [D01][Step 5]
     const fullRecipe = {
       name: "TestTheme",
       description: "Test theme with all optional fields.",
@@ -209,9 +210,15 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
         caution: "yellow",
         danger: "red",
       },
-      surfaceContrast: 65,
-      signalIntensity: 75,
-      warmth: 40,
+      parameters: {
+        surfaceDepth: 65,
+        textHierarchy: 40,
+        controlWeight: 55,
+        borderDefinition: 70,
+        shadowDepth: 30,
+        signalStrength: 75,
+        atmosphere: 50,
+      },
     };
     const json1 = JSON.stringify(fullRecipe, null, 2);
     const parsed = JSON.parse(json1);
@@ -311,35 +318,86 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for surfaceContrast as string", () => {
-    const bad = {
+  it("validateRecipeJson ignores legacy surfaceContrast field (Phase 4: mood knobs removed)", () => {
+    // Phase 4: mood knob fields are removed from ThemeRecipe. Legacy recipe files may
+    // still contain them. validateRecipeJson ignores them gracefully. [D01][D07][Step 5]
+    const legacy = {
       name: "X", description: "Test.", mode: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       surfaceContrast: "high",
     };
-    expect(validateRecipeJson(bad)).not.toBeNull();
+    // Legacy field with wrong type — ignored, not rejected. [Step 5]
+    expect(validateRecipeJson(legacy)).toBeNull();
   });
 
-  it("validateRecipeJson returns error for signalIntensity as string", () => {
-    const bad = {
+  it("validateRecipeJson ignores legacy signalIntensity field (Phase 4: mood knobs removed)", () => {
+    // Phase 4: signalIntensity is removed from ThemeRecipe. Legacy files ignored. [D01][Step 5]
+    const legacy = {
       name: "X", description: "Test.", mode: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       signalIntensity: "vivid",
     };
-    expect(validateRecipeJson(bad)).not.toBeNull();
+    // Legacy field with wrong type — ignored, not rejected. [Step 5]
+    expect(validateRecipeJson(legacy)).toBeNull();
   });
 
-  it("validateRecipeJson returns error for warmth as boolean", () => {
-    const bad = {
+  it("validateRecipeJson ignores legacy warmth field (Phase 4: mood knobs removed)", () => {
+    // Phase 4: warmth is removed from ThemeRecipe. Legacy files ignored. [D01][D02][Step 5]
+    const legacy = {
       name: "X", description: "Test.", mode: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       warmth: true,
+    };
+    // Legacy field with wrong type — ignored, not rejected. [Step 5]
+    expect(validateRecipeJson(legacy)).toBeNull();
+  });
+
+  it("validateRecipeJson accepts a recipe with a valid parameters field", () => {
+    // Phase 4: parameters field replaces mood knobs. Valid parameters must be accepted. [S01][Step 5]
+    const withParams = {
+      name: "X", description: "Test.", mode: "dark",
+      surface: { canvas: "red", card: "red" },
+      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      parameters: {
+        surfaceDepth: 50,
+        textHierarchy: 50,
+        controlWeight: 50,
+        borderDefinition: 50,
+        shadowDepth: 50,
+        signalStrength: 50,
+        atmosphere: 50,
+      },
+    };
+    expect(validateRecipeJson(withParams)).toBeNull();
+  });
+
+  it("validateRecipeJson returns error for parameters field with out-of-range value", () => {
+    // parameters values must be 0-100. [S01][Step 5]
+    const bad = {
+      name: "X", description: "Test.", mode: "dark",
+      surface: { canvas: "red", card: "red" },
+      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      parameters: { surfaceDepth: 150 },
+    };
+    expect(validateRecipeJson(bad)).not.toBeNull();
+  });
+
+  it("validateRecipeJson returns error for parameters field that is not an object", () => {
+    // parameters must be an object when present. [S01][Step 5]
+    const bad = {
+      name: "X", description: "Test.", mode: "dark",
+      surface: { canvas: "red", card: "red" },
+      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      parameters: "all-50",
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });

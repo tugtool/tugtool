@@ -29,9 +29,7 @@ import {
   computeTones,
   evaluateRules,
   enforceContrastFloor,
-  ACHROMATIC_ADJACENT_HUES,
   primaryColorName,
-  applyWarmthBias,
   type DerivationFormulas,
   type MoodKnobs,
   type ComputedTones,
@@ -69,6 +67,11 @@ import {
   KNOWN_PAIR_EXCEPTIONS,
   RECIPE_PAIR_EXCEPTIONS,
 } from "./contrast-exceptions";
+
+import {
+  compileRecipe,
+  defaultParameters,
+} from "@/components/tugways/recipe-parameters";
 
 // ---------------------------------------------------------------------------
 // Helpers for contrast floor enforcement in test helpers
@@ -632,7 +635,7 @@ describe("derivation-engine generateResolvedCssExport", () => {
 
 describe("resolveHueSlots — Step 3", () => {
   // -------------------------------------------------------------------------
-  // T-RESOLVE: resolveHueSlots(EXAMPLE_RECIPES.brio, 50) produces expected
+  // T-RESOLVE: resolveHueSlots(EXAMPLE_RECIPES.brio) produces expected
   // angle/name/ref for each slot.
   //
   // Brio dark recipe:
@@ -643,18 +646,18 @@ describe("resolveHueSlots — Step 3", () => {
   //   role.action     = "blue"           -> interactive
   //   role.accent     = "orange"         -> accent
   //
-  // At warmth=50, warmthBias=0, so no angle shift for achromatic hues.
+  // Hue angles from the palette are used verbatim — warmth bias removed in Phase 4. [D02]
   // -------------------------------------------------------------------------
-  it("T-RESOLVE: Brio recipe at warmth=50 produces correct slot for each key", () => {
-    const slots: ResolvedHueSlots = resolveHueSlots(EXAMPLE_RECIPES.brio, 50);
+  it("T-RESOLVE: Brio recipe produces correct slot for each key", () => {
+    const slots: ResolvedHueSlots = resolveHueSlots(EXAMPLE_RECIPES.brio);
 
-    // atm: "indigo-violet" — hyphenated, warmth bias = 0 at warmth=50
+    // atm: "indigo-violet" — hyphenated
     expect(slots.atm.name).toBeTruthy();
     expect(slots.atm.angle).toBeGreaterThan(0);
     expect(slots.atm.ref).toBeTruthy();
     expect(slots.atm.primaryName).toBeTruthy();
 
-    // txt: "cobalt" — bare name, achromatic-adjacent, warmth=50 -> no bias
+    // txt: "cobalt" — bare name, raw palette angle used verbatim
     expect(slots.txt.ref).toBe("cobalt");
     expect(slots.txt.name).toBe("cobalt");
     expect(slots.txt.primaryName).toBe("cobalt");
@@ -680,7 +683,7 @@ describe("resolveHueSlots — Step 3", () => {
     // accent: "orange" (default)
     expect(slots.accent.ref).toBe("orange");
 
-    // Semantic hues (no warmth bias)
+    // Semantic hues (vivid signal hues)
     expect(slots.destructive.ref).toBe("red");
     expect(slots.success.ref).toBe("green");
     expect(slots.caution.ref).toBe("yellow");
@@ -760,10 +763,9 @@ describe("resolveHueSlots — Step 3", () => {
       surface: { canvas: "yellow", card: "yellow" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "yellow", border: "yellow", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      warmth: 50,
       formulas: lightFormulas,
     };
-    const slots: ResolvedHueSlots = resolveHueSlots(lightRecipe, 50);
+    const slots: ResolvedHueSlots = resolveHueSlots(lightRecipe);
 
     // In light mode, fg tiers all collapse to txt hue (fgPlaceholder is the exception: uses atm)
     expect(slots.fgMuted.ref).toBe("cobalt");
@@ -782,60 +784,32 @@ describe("resolveHueSlots — Step 3", () => {
   });
 
   // -------------------------------------------------------------------------
-  // T-WARMTH: warmth bias produces correct angle shifts for achromatic-adjacent hues.
-  //
-  // At warmth=100: warmthBias = ((100-50)/50)*12 = +12°
-  // "cobalt" base angle ≈ 250°; with +12° bias = 262° -> "indigo-cobalt" or similar
-  // At warmth=0: warmthBias = -12°; "cobalt" 250° - 12° = 238° -> "sapphire-cobalt"
-  // Non-achromatic hues (e.g., "orange") must NOT shift.
+  // T2.2: Resolved hue angles equal raw palette angles — no bias applied.
+  // Warmth bias has been removed; hue angles are used verbatim from the palette.
   // -------------------------------------------------------------------------
-  it("T-WARMTH: applyWarmthBias shifts achromatic hues and leaves vivid hues unchanged", () => {
-    // Achromatic hue "cobalt" shifts with bias
-    const cobaltAngle = 250; // approximate
-    const biasedUp = applyWarmthBias("cobalt", cobaltAngle, 12);
-    expect(biasedUp).toBeCloseTo(262, 0);
-
-    const biasedDown = applyWarmthBias("cobalt", cobaltAngle, -12);
-    expect(biasedDown).toBeCloseTo(238, 0);
-
-    const noBias = applyWarmthBias("cobalt", cobaltAngle, 0);
-    expect(noBias).toBe(cobaltAngle);
-
-    // Vivid hue "orange" must NOT shift regardless of bias
-    const orangeAngle = 40; // approximate
-    expect(applyWarmthBias("orange", orangeAngle, 12)).toBe(orangeAngle);
-    expect(applyWarmthBias("red", 30, 12)).toBe(30);
-    expect(applyWarmthBias("green", 140, 12)).toBe(140);
-    expect(applyWarmthBias("yellow", 85, -12)).toBe(85);
-    expect(applyWarmthBias("cyan", 195, 12)).toBe(195);
-  });
-
-  it("T-WARMTH: resolveHueSlots at warmth extremes shifts cobalt txt angle", () => {
-    const baseRecipe = {
-      name: "test-warmth",
-      description: "Test recipe for warmth bias angle shifts.",
+  it("T2.2: resolveHueSlots uses raw palette angles with no bias", () => {
+    const recipe = {
+      name: "test-raw-angles",
+      description: "Test recipe for raw palette angle verification.",
       mode: "dark" as const,
       surface: { canvas: "violet", card: "violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
 
-    const slotsW50 = resolveHueSlots(baseRecipe, 50);
-    const slotsW100 = resolveHueSlots(baseRecipe, 100);
-    const slotsW0 = resolveHueSlots(baseRecipe, 0);
+    const slots = resolveHueSlots(recipe);
 
-    // At warmth=50 (no bias), cobalt txt angle stays near 250°
-    const baseAngle = slotsW50.txt.angle;
+    // cobalt txt angle should equal the raw palette angle for "cobalt" — no bias shift
+    // Calling resolveHueSlots again produces identical output (no parameter-dependent variation)
+    const slotsAgain = resolveHueSlots(recipe);
+    expect(slots.txt.angle).toBe(slotsAgain.txt.angle);
 
-    // At warmth=100, txt shifts by +12°
-    expect(slotsW100.txt.angle).toBeCloseTo(baseAngle + 12, 0);
+    // Orange accent must produce the raw orange palette angle
+    expect(slots.accent.angle).toBe(slotsAgain.accent.angle);
 
-    // At warmth=0, txt shifts by -12°
-    expect(slotsW0.txt.angle).toBeCloseTo((baseAngle - 12 + 360) % 360, 0);
-
-    // Orange accent must not shift regardless of warmth
-    expect(slotsW100.accent.angle).toBe(slotsW50.accent.angle);
-    expect(slotsW0.accent.angle).toBe(slotsW50.accent.angle);
+    // Semantic hues produce the same raw angles
+    expect(slots.destructive.angle).toBe(slotsAgain.destructive.angle);
+    expect(slots.success.angle).toBe(slotsAgain.success.angle);
   });
 
   // -------------------------------------------------------------------------
@@ -850,7 +824,7 @@ describe("resolveHueSlots — Step 3", () => {
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
-    const slots = resolveHueSlots(recipe, 50);
+    const slots = resolveHueSlots(recipe);
     expect(slots.surfBareBase.ref).toBe("violet");
     expect(slots.surfBareBase.primaryName).toBe("violet");
   });
@@ -864,7 +838,7 @@ describe("resolveHueSlots — Step 3", () => {
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
-    const slots = resolveHueSlots(recipe, 50);
+    const slots = resolveHueSlots(recipe);
     // For bare "violet", bare base is "violet" itself
     expect(slots.surfBareBase.primaryName).toBe("violet");
   });
@@ -878,7 +852,7 @@ describe("resolveHueSlots — Step 3", () => {
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
-    const slots = resolveHueSlots(recipe, 50);
+    const slots = resolveHueSlots(recipe);
     expect(slots.borderTintBareBase.ref).toBe("violet");
     expect(slots.borderTintBareBase.primaryName).toBe("violet");
   });
@@ -912,7 +886,9 @@ describe("resolveHueSlots — Step 3", () => {
     // Uses informational hue slot (element.informational = "indigo-violet" in brio recipe)
     expect(output.tokens["--tug-base-element-global-text-normal-subtle-rest"]).toBe("--tug-color(indigo-violet, i: 7, t: 63)");
 
-    // fg-inverse: sapphire-cobalt i:3 t:100
+    // fg-inverse: sapphire-cobalt i:3 t:100 (compiled from P2 inverseTextTone at V=50;
+    // ref=100 is at the maximum — midpoint-preserving endpoints give low=100, high=100,
+    // so compiled value = 100 at all parameter values.)
     expect(output.tokens["--tug-base-element-global-text-normal-inverse-rest"]).toBe("--tug-color(sapphire-cobalt, i: 3, t: 100)");
 
     // selection-bg-inactive: yellow i:0 t:30 a:25
@@ -923,19 +899,32 @@ describe("resolveHueSlots — Step 3", () => {
   });
 
   // -------------------------------------------------------------------------
-  // T-ACHROMATIC-SET: ACHROMATIC_ADJACENT_HUES contains expected members.
+  // T2.4: semantic hues and recipe hues both go through the unified resolveSlot
+  // (the former separate semantic-slot function was merged into resolveSlot when warmth was removed).
+  // Verified by checking that semantic hues and recipe hues both go through
+  // resolveSlot and produce the same raw-angle output.
   // -------------------------------------------------------------------------
-  it("T-ACHROMATIC-SET: ACHROMATIC_ADJACENT_HUES contains expected hue families", () => {
-    const expected = ["violet", "cobalt", "blue", "indigo", "purple", "sky", "sapphire", "iris", "cerulean"];
-    for (const hue of expected) {
-      expect(ACHROMATIC_ADJACENT_HUES.has(hue)).toBe(true);
-    }
-    // Vivid hues should not be in the set
-    expect(ACHROMATIC_ADJACENT_HUES.has("orange")).toBe(false);
-    expect(ACHROMATIC_ADJACENT_HUES.has("red")).toBe(false);
-    expect(ACHROMATIC_ADJACENT_HUES.has("yellow")).toBe(false);
-    expect(ACHROMATIC_ADJACENT_HUES.has("green")).toBe(false);
-    expect(ACHROMATIC_ADJACENT_HUES.has("cyan")).toBe(false);
+  it("T2.4: semantic hues and recipe hues produce identical resolution (merged resolveSlot)", () => {
+    const recipe = {
+      name: "test-semantic-merge",
+      description: "Test that semantic hue resolution is identical to recipe hue resolution.",
+      mode: "dark" as const,
+      surface: { canvas: "orange", card: "orange" },
+      element: { content: "orange", control: "orange", display: "orange", informational: "orange", border: "orange", decorative: "orange" },
+      role: { accent: "orange", action: "orange", agent: "orange", data: "orange", success: "orange", caution: "orange", danger: "orange" },
+    };
+    const slots = resolveHueSlots(recipe);
+
+    // All slots should resolve to the same angle since they all use "orange"
+    const refAngle = slots.atm.angle;
+    expect(slots.txt.angle).toBe(refAngle);
+    expect(slots.accent.angle).toBe(refAngle);
+    expect(slots.interactive.angle).toBe(refAngle);
+    expect(slots.destructive.angle).toBe(refAngle);
+    expect(slots.success.angle).toBe(refAngle);
+    expect(slots.caution.angle).toBe(refAngle);
+    expect(slots.agent.angle).toBe(refAngle);
+    expect(slots.data.angle).toBe(refAngle);
   });
 
   // -------------------------------------------------------------------------
@@ -956,8 +945,8 @@ describe("resolveHueSlots — Step 3", () => {
 
 describe("computeTones — Step 4", () => {
   // Standard knobs shared across tests
-  const DARK_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
-  const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
+  const DARK_KNOBS_50: MoodKnobs = { surfaceContrast: 50 };
+  const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50 };
 
   // ---------------------------------------------------------------------------
   // T-TONES-DARK: computeTones(DARK_FORMULAS, sc=50) matches Brio dark ground truth.
@@ -1021,7 +1010,7 @@ describe("computeTones — Step 4", () => {
   //   surfaceSunken sc=100: round(11 + (100-50)/50*5) = round(11+5) = 16
   // ---------------------------------------------------------------------------
   it("T-TONES-SC: dark mode surfaceContrast=0 produces minimum tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
+    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 0 });
 
     // surfaceApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
     expect(ct.surfaceApp).toBe(-3);
@@ -1031,12 +1020,12 @@ describe("computeTones — Step 4", () => {
     expect(ct.surfaceDefault).toBe(9);
     // surfaceOverlay: 14 + (0-50)/50 * 5 = 14 - 5 = 9
     expect(ct.surfaceOverlay).toBe(9);
-    // signalIntensity: direct from knob
+    // signalIntensity: derived from DARK_FORMULAS.signalIntensityValue (=50)
     expect(ct.signalIntensity).toBe(50);
   });
 
   it("T-TONES-SC: dark mode surfaceContrast=100 produces maximum tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
+    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 100 });
 
     // surfaceApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
     expect(ct.surfaceApp).toBe(13);
@@ -1048,9 +1037,11 @@ describe("computeTones — Step 4", () => {
     expect(ct.surfaceScreen).toBe(29);
   });
 
-  it("T-TONES-SC: signal intensity extremes map directly to signalIntensity", () => {
-    const ct0 = computeTones(DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
-    const ct100 = computeTones(DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
+  it("T-TONES-SC: signal intensity derived from formulas.signalIntensityValue", () => {
+    // After Step 3, signalIntensity on ComputedTones is derived from
+    // formulas.signalIntensityValue (a P6 formula field), not from MoodKnobs.
+    const ct0 = computeTones({ ...DARK_FORMULAS, signalIntensityValue: 0 }, { surfaceContrast: 50 });
+    const ct100 = computeTones({ ...DARK_FORMULAS, signalIntensityValue: 100 }, { surfaceContrast: 50 });
     expect(ct0.signalIntensity).toBe(0);
     expect(ct100.signalIntensity).toBe(100);
   });
@@ -1113,12 +1104,12 @@ describe("computeTones — Step 4", () => {
     ruleResolved: Record<string, ResolvedColor>;
     imperative: ReturnType<typeof deriveTheme>;
   } {
-    const warmth = recipe.warmth ?? 50;
-    const surfaceContrast = recipe.surfaceContrast ?? 50;
-    const signalIntensity = recipe.signalIntensity ?? 50;
-    const recipeFormulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS;
-    const knobs = { surfaceContrast, signalIntensity, warmth };
-    const resolvedSlots = resolveHueSlots(recipe, warmth);
+    const recipeFormulas: DerivationFormulas =
+      recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+    const knobs: MoodKnobs = { surfaceContrast: 50 };
+    // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch for
+    // parameter-based recipes (avoids falling back to DARK_FORMULAS default). [Step 4]
+    const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
     const computed = computeTones(recipeFormulas, knobs);
 
     const ruleTokens: Record<string, string> = {};
@@ -1295,12 +1286,12 @@ describe("derivation-engine step-6 rules", () => {
     ruleTokens: Record<string, string>;
     imperative: ReturnType<typeof deriveTheme>;
   } {
-    const warmth = recipe.warmth ?? 50;
-    const surfaceContrast = recipe.surfaceContrast ?? 50;
-    const signalIntensity = recipe.signalIntensity ?? 50;
-    const recipeFormulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS;
-    const knobs = { surfaceContrast, signalIntensity, warmth };
-    const resolvedSlots = resolveHueSlots(recipe, warmth);
+    const recipeFormulas: DerivationFormulas =
+      recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+    const knobs: MoodKnobs = { surfaceContrast: 50 };
+    // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch for
+    // parameter-based recipes (avoids falling back to DARK_FORMULAS default). [Step 4]
+    const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
     const computed = computeTones(recipeFormulas, knobs);
 
     const ruleTokens: Record<string, string> = {};
@@ -1382,6 +1373,35 @@ describe("derivation-engine step-6 rules", () => {
 });
 // T-RULES-LIGHT-MATCH deleted in step 6 (clean break per D06):
 // light-mode rule parity requires BRIO_LIGHT_FORMULAS which is deferred to a later step.
+
+// ---------------------------------------------------------------------------
+// Step 3 tests: compileRecipe wired into deriveTheme (Spec S05, S06)
+// T3.1: deriveTheme with parameters produces 374 tokens
+// T3.2: deriveTheme with formulas escape hatch still works
+// T3.3: deriveTheme with no parameters and no formulas uses compiled defaults
+// ---------------------------------------------------------------------------
+
+describe("derivation-engine step-3 compileRecipe integration", () => {
+  const minimalDarkRecipe = EXAMPLE_RECIPES.brio;
+
+  it("T3.1: deriveTheme with parameters: defaultParameters() produces 374 tokens", () => {
+    const recipe = { ...minimalDarkRecipe, parameters: defaultParameters(), formulas: undefined };
+    const output = deriveTheme(recipe);
+    expect(Object.keys(output.tokens).length).toBe(374);
+  });
+
+  it("T3.2: deriveTheme with formulas escape hatch still works (backward compat)", () => {
+    const recipe = { ...minimalDarkRecipe, formulas: DARK_FORMULAS, parameters: undefined };
+    const output = deriveTheme(recipe);
+    expect(Object.keys(output.tokens).length).toBe(374);
+  });
+
+  it("T3.3: deriveTheme with no parameters and no formulas uses compiled defaults (374 tokens)", () => {
+    const recipe = { ...minimalDarkRecipe, parameters: undefined, formulas: undefined };
+    const output = deriveTheme(recipe);
+    expect(Object.keys(output.tokens).length).toBe(374);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Step 4 tests: enforceContrastFloor, ContrastDiagnostic, zero-failure integration

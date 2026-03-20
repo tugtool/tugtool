@@ -187,20 +187,19 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     expect(picker).not.toBeNull();
   });
 
-  it("renders three mood sliders", () => {
+  it("does not render mood sliders (removed in Step 4 — parameters replace mood knobs)", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
+    // Mood sliders (surface-contrast, signal-intensity, warmth) were removed in
+    // Phase 4 Plan 1 Step 4 when EXAMPLE_RECIPES migrated to parameters. [D01]
     const sc = container.querySelector("[data-testid='gtg-slider-surface-contrast']");
     const sv = container.querySelector("[data-testid='gtg-slider-signal-intensity']");
     const w = container.querySelector("[data-testid='gtg-slider-warmth']");
-    expect(sc).not.toBeNull();
-    expect(sv).not.toBeNull();
-    expect(w).not.toBeNull();
-    expect((sc as HTMLInputElement).type).toBe("range");
-    expect((sv as HTMLInputElement).type).toBe("range");
-    expect((w as HTMLInputElement).type).toBe("range");
+    expect(sc).toBeNull();
+    expect(sv).toBeNull();
+    expect(w).toBeNull();
   });
 
   it("renders the token preview grid with tokens", () => {
@@ -383,9 +382,7 @@ const CHM_NOVEL_RECIPE = {
   surface: { canvas: "amber", card: "amber" },
   element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" },
   role: { accent: "flame", action: "cobalt", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-  surfaceContrast: 70,
-  signalIntensity: 80,
-  warmth: 65,
+  // Phase 4: mood knob fields removed; recipe uses parameters (defaultParameters at 50). [D01][Step 5]
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
@@ -612,9 +609,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
       surface: { canvas: "slate", card: "slate" },
       element: { content: "slate", control: "slate", display: "indigo", informational: "slate", border: "slate", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      surfaceContrast: 50,
-      signalIntensity: 80,
-      warmth: 50,
+      // Phase 4: mood knob fields removed; recipe uses parameters (defaultParameters). [D01][Step 5]
     };
     const output = deriveTheme(greenRedRecipe);
     const warnings = checkCVDDistinguishability(output.resolved, CVD_SEMANTIC_PAIRS);
@@ -1100,34 +1095,34 @@ describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () =>
 // Step 3: Formulas state — generator uses correct formulas for light mode
 // ---------------------------------------------------------------------------
 
-describe("deriveTheme – Harmony preset produces correct light-mode output (Step 3)", () => {
+describe("deriveTheme – Harmony preset produces correct light-mode output (Step 3 / Step 4)", () => {
   it("deriveTheme(EXAMPLE_RECIPES.harmony) produces 374 tokens", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.harmony);
     expect(Object.keys(output.tokens).length).toBe(374);
   });
 
-  it("Harmony recipe includes formulas field", () => {
-    expect(EXAMPLE_RECIPES.harmony.formulas).toBeDefined();
+  it("Harmony recipe uses parameters field (migrated in Step 4 from formulas)", () => {
+    // Step 4 migration: EXAMPLE_RECIPES.harmony now uses parameters: defaultParameters()
+    // instead of formulas: LIGHT_FORMULAS. The formulas field is absent. [D01][Step 4]
+    expect(EXAMPLE_RECIPES.harmony.parameters).toBeDefined();
+    expect(EXAMPLE_RECIPES.harmony.formulas).toBeUndefined();
   });
 
-  it("Harmony formulas differ from DARK_FORMULAS (light overrides are active)", () => {
-    const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
-    // surfaceAppTone must differ: light=95, dark=5
-    expect(harmonyFormulas.surfaceAppTone).not.toBe(DARK_FORMULAS.surfaceAppTone);
-    expect(harmonyFormulas.surfaceAppTone).toBe(95);
+  it("Harmony derives via compileRecipe light mode — surfaceApp tone is near-white", () => {
+    // compileRecipe("light", defaultParameters()) uses LIGHT_STRUCTURAL_TEMPLATE which
+    // sets surfaceAppTone near 95. Verify the derived bg-app token is near-white (high tone).
+    const output = deriveTheme(EXAMPLE_RECIPES.harmony);
+    const bgApp = output.tokens["--tug-base-surface-global-primary-normal-app-rest"];
+    expect(bgApp).toBeDefined();
+    // Near-white tone: the token string includes a high tone value (>= 90)
+    const toneMatch = bgApp?.match(/t: (\d+)/);
+    expect(toneMatch).not.toBeNull();
+    const tone = parseInt(toneMatch![1], 10);
+    expect(tone).toBeGreaterThanOrEqual(90);
   });
 
-  it("Harmony formulas match LIGHT_FORMULAS", () => {
-    const harmonyFormulas = EXAMPLE_RECIPES.harmony.formulas!;
-    expect(harmonyFormulas.surfaceAppTone).toBe(LIGHT_FORMULAS.surfaceAppTone);
-    expect(harmonyFormulas.contentTextTone).toBe(LIGHT_FORMULAS.contentTextTone);
-    expect(harmonyFormulas.borderSignalTone).toBe(LIGHT_FORMULAS.borderSignalTone);
-    expect(harmonyFormulas.semanticSignalTone).toBe(LIGHT_FORMULAS.semanticSignalTone);
-  });
-
-  it("Harmony output tokens match direct deriveTheme(EXAMPLE_RECIPES.harmony) call (token-for-token)", () => {
-    // This verifies that when the engine receives a recipe with formulas=LIGHT_FORMULAS
-    // it produces a stable, reproducible output.
+  it("Harmony output tokens are stable and reproducible (token-for-token identical across calls)", () => {
+    // Stability: same parameters → same compileRecipe → same token output.
     const output1 = deriveTheme(EXAMPLE_RECIPES.harmony);
     const output2 = deriveTheme(EXAMPLE_RECIPES.harmony);
     expect(Object.keys(output1.tokens)).toEqual(Object.keys(output2.tokens));
@@ -1136,12 +1131,13 @@ describe("deriveTheme – Harmony preset produces correct light-mode output (Ste
     }
   });
 
-  it("Harmony borderSignalTone is 40 (LIGHT_FORMULAS value, not dark default 50)", () => {
+  it("LIGHT_FORMULAS.borderSignalTone is 40 (different from DARK_FORMULAS.borderSignalTone=50)", () => {
+    // LIGHT_FORMULAS and DARK_FORMULAS are retained as reference fixtures / escape-hatch constants.
     expect(LIGHT_FORMULAS.borderSignalTone).toBe(40);
     expect(DARK_FORMULAS.borderSignalTone).toBe(50);
   });
 
-  it("Harmony semanticSignalTone is 35 (LIGHT_FORMULAS value, not dark default 50)", () => {
+  it("LIGHT_FORMULAS.semanticSignalTone is 35 (different from DARK_FORMULAS.semanticSignalTone=50)", () => {
     expect(LIGHT_FORMULAS.semanticSignalTone).toBe(35);
     expect(DARK_FORMULAS.semanticSignalTone).toBe(50);
   });
@@ -1343,7 +1339,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     expect(mismatches).toEqual([]);
   });
 
-  it("Task 2: Harmony preset uses LIGHT_FORMULAS (semantic tone tokens are darker than Brio dark)", () => {
+  it("Task 2: Harmony preset produces different tokens from Brio (light vs dark mode)", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -1358,7 +1354,8 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     });
     const harmonyTokens = readRenderedTokens(container);
 
-    // tone-accent must differ: harmony uses semanticSignalTone=35, brio uses 50
+    // tone-accent must differ: brio is dark mode, harmony is light mode — different formula contexts.
+    // Step 4: harmony uses parameters: defaultParameters() with mode="light"; brio uses mode="dark".
     expect(harmonyTokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBeDefined();
     expect(harmonyTokens["--tug-base-element-tone-fill-normal-accent-rest"]).not.toBe(brioTokens["--tug-base-element-tone-fill-normal-accent-rest"]);
   });
@@ -1427,46 +1424,41 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
   // Task 3: Export/import round-trip preserves formulas
   // -------------------------------------------------------------------------
 
-  it("Task 3: currentRecipe exported JSON includes formulas field", () => {
+  it("Task 3: currentRecipe exported JSON includes parameters field (Step 4 migration)", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    // Load Harmony so we have light-mode formulas in state
+    // Load Harmony — now uses parameters (migrated from formulas in Step 4) [D01]
     act(() => {
       fireEvent.click(container.querySelector("[data-testid='gtg-preset-harmony']") as HTMLElement);
     });
 
-    // The Export Recipe JSON button triggers a download; we can verify the recipe
-    // object is correctly assembled by checking currentRecipe via the generateCssExport
-    // function's recipe parameter — but the easiest route is to verify the round-trip
-    // at the engine level, which is what step 3 tests already cover.
-    // Here we verify the component is in harmony state (mode=light) and the
-    // formula-controlled tokens differ from the brio dark baseline, confirming
-    // formulas are tracked in state correctly.
+    // Verify the component is in harmony state (mode=light) and the
+    // parameter-derived tokens match direct deriveTheme(EXAMPLE_RECIPES.harmony).
+    // Step 4: component state uses parameters (formulas=null), runDerive builds recipe
+    // with parameters: defaultParameters(). Output must match direct engine call.
     const harmonyRendered = readRenderedTokens(container);
     const directHarmony = deriveTheme(EXAMPLE_RECIPES.harmony).tokens;
 
-    // The rendered output must match direct engine call — this confirms formulas
-    // are in state and round-tripped correctly through the component's runDerive path
+    // The rendered output must match direct engine call
     expect(harmonyRendered["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(directHarmony["--tug-base-element-tone-fill-normal-accent-rest"]);
     expect(harmonyRendered["--tug-base-surface-global-primary-normal-app-rest"]).toBe(directHarmony["--tug-base-surface-global-primary-normal-app-rest"]);
     expect(harmonyRendered["--tug-base-element-global-text-normal-default-rest"]).toBe(directHarmony["--tug-base-element-global-text-normal-default-rest"]);
   });
 
-  it("Task 3: importing Harmony recipe JSON restores light-mode formulas and matching output", () => {
+  it("Task 3: importing Harmony recipe JSON round-trips correctly (parameters preserved)", () => {
     // Simulate the handleRecipeImported path: parse EXAMPLE_RECIPES.harmony as JSON
     // and re-import it. The output must match direct deriveTheme(EXAMPLE_RECIPES.harmony).
+    // Step 4 migration: harmony now uses parameters (not formulas). [D01][Step 4]
     const harmonyJson = JSON.stringify(EXAMPLE_RECIPES.harmony);
     const parsedHarmony = JSON.parse(harmonyJson) as typeof EXAMPLE_RECIPES.harmony;
 
-    // Verify round-trip preserves formulas
-    expect(parsedHarmony.formulas).toBeDefined();
-    expect(parsedHarmony.formulas!.surfaceAppTone).toBe(LIGHT_FORMULAS.surfaceAppTone);
-    expect(parsedHarmony.formulas!.borderSignalTone).toBe(LIGHT_FORMULAS.borderSignalTone);
-    expect(parsedHarmony.formulas!.semanticSignalTone).toBe(LIGHT_FORMULAS.semanticSignalTone);
+    // Verify round-trip preserves parameters field (Step 4 migration)
+    expect(parsedHarmony.parameters).toBeDefined();
+    expect(parsedHarmony.formulas).toBeUndefined();
 
-    // Deriving from parsed recipe must produce identical output
+    // Deriving from parsed recipe must produce identical output to direct call
     const directOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
     const importedOutput = deriveTheme(parsedHarmony);
     expect(Object.keys(importedOutput.tokens).length).toBe(374);
