@@ -28,7 +28,7 @@ This plan adds the authoring surface: 7 parameter sliders replacing the removed 
 #### Strategy {#strategy}
 
 - Build the ParameterSlider component first as a self-contained, Laws-of-Tug-compliant control (L06: appearance through CSS/DOM, not React state).
-- Wire sliders into the existing `runDerive()` pipeline with 150ms debounce, matching the existing comment in the codebase about debounce timing.
+- Wire sliders using the L06-compliant direct-call pattern (matching `loadPreset`/`handleRecipeImported`): the debounce callback calls `setThemeOutput(deriveTheme(recipe))` directly, assembling the recipe from refs. Parameters do NOT flow through the `useEffect` → `runDerive()` path. Debounce at 150ms matches the existing codebase comment.
 - Add formula expansion panel as a read-only collapsible section (per-field override deferred to a future plan per user answer).
 - Add recipe diff view as an inline collapsible section below sliders, always comparing against `defaultParameters()` (all-50 baseline).
 - Use the new UI to visually evaluate parameter extremes and refine endpoint bundles from Plan 1.
@@ -69,16 +69,16 @@ This plan adds the authoring surface: 7 parameter sliders replacing the removed 
 
 #### Constraints {#constraints}
 
-- All appearance changes must flow through CSS custom properties, not React state (L06).
-- The `RecipeParameters` object is stored as component state (local UI state, not external store). This is permitted under L06 because the parameters drive compilation, not appearance directly -- appearance flows through CSS custom properties set via `liveTokenStyle`.
-- Slider input debounced at 150ms: the `parameters` state update is debounced (not the `runDerive()` call), so the `useEffect` fires at most once per 150ms during continuous drag. This avoids excessive `deriveTheme()` calls while maintaining a single derivation path.
+- All appearance changes must flow through CSS custom properties and direct DOM manipulation, never through React state or useEffect (L06). The slider derivation path calls `setThemeOutput(deriveTheme(recipe))` directly from the debounce callback, matching the existing L06-compliant pattern used by `loadPreset()` and `handleRecipeImported()`.
+- `parameters` React state exists only for data panel rendering (FormulaExpansionPanel, RecipeDiffView). It is NOT in the useEffect dependency array. Appearance changes never flow through this state.
+- Slider input debounced at 150ms to avoid excessive `deriveTheme()` calls during continuous drag.
 - New CSS rules for slider components and panels must include `@tug-renders-on` annotations and pass `bun run audit:tokens lint` per D81.
 
 #### Assumptions {#assumptions}
 
 - The ThemePreviewCard `moodSliders` prop slot (currently passed `null`) is the intended mount point for the 7 ParameterSlider components. The sliders, formula expansion panel, and recipe diff view are all rendered as a single composed ReactNode within this slot -- keeping the authoring controls together in the right panel.
 - The ParameterSlider component renders a native HTML range input (or styled equivalent) following Laws of Tug.
-- Debouncing the `parameters` state update at 150ms (matching the existing comment in GalleryThemeGeneratorContent) is appropriate. The debounce controls how often the `useEffect` fires, which in turn controls `deriveTheme()` call frequency.
+- Debouncing at 150ms (matching the existing comment in GalleryThemeGeneratorContent) is appropriate. The debounce controls how often `deriveTheme()` is called directly from the callback.
 - `bun run audit:tokens lint` and `bun test` must pass before the plan is considered done.
 
 ---
@@ -120,34 +120,39 @@ This plan adds the authoring surface: 7 parameter sliders replacing the removed 
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Single RecipeParameters object in component state (DECIDED) {#d01-params-state}
+#### [D01] Direct-call derivation for parameters, React state only for data panels (DECIDED) {#d01-params-state}
 
-**Decision:** Store slider values as a single `RecipeParameters` object in `useState`, mirrored to a `parametersRef` (same pattern as existing `formulasRef`). Appearance changes flow through CSS custom properties via `compileRecipe()` -> `deriveTheme()` -> `liveTokenStyle`, not React state. Slider changes trigger re-derivation through the existing `useEffect` mechanism by adding `parameters` to its dependency array -- there is a single derivation path, not a dual path.
+**Decision:** Slider-driven appearance changes use the direct-call pattern: the debounce callback assembles a `ThemeRecipe` from refs, calls `setThemeOutput(deriveTheme(recipe))`, and applies CSS custom properties to the DOM. This matches the existing L06-compliant pattern used by `loadPreset()` and `handleRecipeImported()`. Parameters do NOT flow through the `useEffect` → `runDerive()` path.
+
+A separate `parameters` React state (mirrored to `parametersRef`) exists solely to drive re-rendering of data panels (FormulaExpansionPanel, RecipeDiffView). This state is NOT in the useEffect dependency array.
 
 **Rationale:**
-- Complies with Laws of Tug L06: appearance changes through CSS/DOM, not React state. The `RecipeParameters` object is local UI state (slider positions), not appearance state.
-- Single object avoids 7 separate `useState` calls and simplifies the `compileRecipe()` call site.
-- The ref pattern matches the existing `formulasRef` approach: `runDerive()` reads refs inside its callback rather than accepting additional parameters.
-- Single derivation path (useEffect) avoids dual-path bugs where `runDerive()` could be called directly with stale closure values. All derivation triggers (mode, hues, formulas, parameters) flow through the same `useEffect`.
+- **L06 compliance:** Appearance changes go through CSS and DOM, never React state. The debounce callback calls `deriveTheme()` directly and sets the output — no useEffect intermediary. This is the same pattern `loadPreset()` and `handleRecipeImported()` already use.
+- **L07 compliance:** The debounce callback reads `parametersRef.current` and `formulasRef.current` (refs, not stale closures). Hue values and mode are stable during a slider drag (they come from discrete pickers, not continuous input), so closure capture is safe for those values.
+- Single `RecipeParameters` object avoids 7 separate `useState` calls.
+- Clear separation: refs drive appearance (DOM), state drives data display (React).
 
 **Implications:**
-- `parameters` state is added to the existing `useEffect` dependency array alongside `mode`, hues, and `formulas`. When parameters change, the effect fires and calls `runDerive()`, which reads `parametersRef.current`.
-- `runDerive()` passes `{ parameters: parametersRef.current }` to `deriveTheme()` when `formulasRef.current` is null. It does NOT call `compileRecipe()` itself -- `deriveTheme()` handles compilation internally (it already has this logic). This keeps a single compilation path and avoids divergence between the derivation recipe and the exported recipe.
-- The `formulas` escape hatch (when non-null) takes precedence over parameters, consistent with Plan 1.
-- `compiledFormulas` for the UI panels (expansion panel, diff view) is computed via a separate `useMemo` that calls `compileRecipe(mode, parameters)` -- this is cheap (~130 field interpolations) and keeps the compilation result in sync with the current parameters and mode without coupling it to the derivation path.
+- `parameters` is NOT in the useEffect dependency array. The useEffect continues to handle mode/hue/formulas changes only (the pre-existing derivation triggers). Slider changes bypass it entirely.
+- The debounce callback assembles a full `ThemeRecipe` inline: hue values from closure (stable during drag), `parameters` from `parametersRef.current`, `formulas` from `formulasRef.current`. When `formulasRef.current` is non-null, the escape hatch takes precedence (consistent with Plan 1).
+- After calling `setThemeOutput(deriveTheme(recipe))`, the debounce callback also calls `setParameters(parametersRef.current)` to update React state for the data panels.
+- `compiledFormulas` for the UI panels is computed via `useMemo(() => compileRecipe(mode, parameters), [mode, parameters])` — cheap (~130 field interpolations), and in sync with the `parameters` state used for panel rendering.
+- `runDerive()` is also updated to read `parametersRef.current` instead of `defaultParameters()`, so that useEffect-triggered re-derives (from hue/mode changes) also use the current slider positions.
 
-#### [D02] 150ms debounce on slider input (DECIDED) {#d02-debounce}
+#### [D02] 150ms debounce with direct deriveTheme() call (DECIDED) {#d02-debounce}
 
-**Decision:** Debounce the `parameters` state update (not the `runDerive()` call) at 150ms. On each slider `onInput` event, update `parametersRef.current` immediately, clear any pending timeout, and set a 150ms timeout that calls `setParametersAndRef()` to commit the new value to React state. The state change triggers the existing `useEffect` which calls `runDerive()`.
+**Decision:** On each slider `onInput` event: (1) update `parametersRef.current` immediately, (2) clear any pending debounce timeout, (3) set a 150ms timeout whose callback does two things: calls `setThemeOutput(deriveTheme(recipe))` directly for appearance (L06), and calls `setParameters(parametersRef.current)` for data panel re-rendering.
 
 **Rationale:**
 - `deriveTheme()` evaluates ~200 derivation rules. 150ms prevents excessive calls during continuous slider drag.
 - Matches the existing debounce timing comment in the gallery-theme-generator-content source.
-- Debouncing the state update (rather than the `runDerive()` call) maintains a single derivation path: all re-derives flow through the `useEffect`, whether triggered by mode change, hue change, formula change, or parameter change.
+- The direct `deriveTheme()` call follows L06: appearance changes go through CSS/DOM (via `setThemeOutput` which applies `liveTokenStyle`), not through React state → useEffect.
+- The separate `setParameters()` call updates React state for the data panels only — this state is not in the useEffect dep array and does not trigger re-derivation.
 
 **Implications:**
-- The ref is always up-to-date (updated synchronously on every input event), so any `runDerive()` call reads the latest slider position. The React state update is deferred by 150ms, which defers the `useEffect` trigger.
-- No direct calls to `runDerive()` from the debounce callback -- the `useEffect` handles it.
+- The ref is always up-to-date (updated synchronously on every input event). The debounce callback reads `parametersRef.current` (always current per L07).
+- The debounce timeout ID is stored in a `useRef` and cleared on unmount via a cleanup `useEffect` to prevent callbacks firing on an unmounted component.
+- The useEffect is NOT involved in slider-driven derivation. It continues to handle discrete changes (mode, hue picker, formulas) only.
 
 #### [D03] Formula expansion panel is read-only (DECIDED) {#d03-expansion-readonly}
 
@@ -284,8 +289,8 @@ Renders 7 horizontal bars, one per parameter. Each bar shows the current value r
 | `FormulaExpansionPanel` | component | `formula-expansion-panel.tsx` | Read-only collapsible field list per parameter |
 | `getParameterFields` | fn | `recipe-parameters.ts` | Returns field names for a given parameter key + mode (reads endpoint keys) |
 | `RecipeDiffView` | component | `recipe-diff-view.tsx` | Diff bars comparing current params against defaultParameters(); receives compiledFormulas from parent useMemo, memoizes baseline |
-| `GalleryThemeGeneratorContent` | modified component | `gallery-theme-generator-content.tsx` | Add RecipeParameters state, wire sliders, add compiledFormulas useMemo, add expansion/diff panels |
-| `runDerive` | modified fn | `gallery-theme-generator-content.tsx` | Pass `{ parameters: parametersRef.current }` to deriveTheme() when formulas are null (no pre-compilation) |
+| `GalleryThemeGeneratorContent` | modified component | `gallery-theme-generator-content.tsx` | Add parametersRef + parameters state (data panels only), debounced direct-call handler (L06), compiledFormulas useMemo, expansion/diff panels |
+| `runDerive` | modified fn | `gallery-theme-generator-content.tsx` | Read `parametersRef.current` instead of `defaultParameters()` so useEffect-triggered re-derives use current slider positions |
 | `ThemePreviewCard` | modified component | `gallery-theme-generator-content.tsx` | `moodSliders` prop receives slider panel instead of null |
 
 ---
@@ -444,18 +449,25 @@ Renders 7 horizontal bars, one per parameter. Each bar shows the current value r
 - `tugdeck/src/components/tugways/cards/gallery-theme-generator-content.tsx` -- modified
 
 **Tasks:**
-- [ ] Add `RecipeParameters` state via `useState(defaultParameters())`. Add a `parametersRef` mirroring the state (same pattern as existing `formulasRef`). Add a `setParametersAndRef()` helper matching the existing `setFormulasAndRef()` pattern.
-- [ ] Create a debounced slider change handler per [D02]: on each slider `onInput` event, (1) update `parametersRef.current` immediately (so any concurrent `runDerive()` reads the latest value), (2) clear any pending debounce timeout, (3) set a 150ms timeout that calls `setParametersAndRef()` to commit the new `parametersRef.current` to React state. The state change triggers the existing `useEffect`, which calls `runDerive()`. The handler does NOT call `runDerive()` directly -- all derivation flows through the single `useEffect` path.
-- [ ] Add `parameters` to the existing `useEffect` dependency array (alongside `mode`, hues, and `formulas`). This ensures parameter state changes trigger re-derivation through the same path as mode and hue changes. The debounce on the state update (not on `runDerive()`) means the `useEffect` fires at most once per 150ms during continuous slider drag.
-- [ ] Modify `runDerive()`: replace the current `{ parameters: defaultParameters() }` spread with `{ parameters: parametersRef.current }`. Do NOT call `compileRecipe()` inside `runDerive()` -- let `deriveTheme()` handle compilation internally (it already calls `compileRecipe()` when `recipe.formulas` is absent). When `formulasRef.current` is non-null, pass `{ formulas: formulasRef.current }` as before (escape hatch precedence). Per [D01].
+- [ ] Add `parameters` React state via `useState(defaultParameters())` — this state exists **only** for data panel rendering (FormulaExpansionPanel, RecipeDiffView). It is NOT added to the useEffect dependency array. Add a `parametersRef` mirroring the state (same pattern as existing `formulasRef`). Add a `setParametersAndRef()` helper matching the existing `setFormulasAndRef()` pattern.
 - [ ] Import `compileRecipe`, `RecipeParameters`, and `defaultParameters` from `recipe-parameters.ts` (extending the existing `defaultParameters` import).
-- [ ] Add a `compiledFormulas` memo via `useMemo(() => compileRecipe(mode, parameters), [mode, parameters])`. This provides the compiled formula values for the FormulaExpansionPanel and RecipeDiffView without coupling to the derivation path. `compileRecipe()` is cheap (~130 field interpolations) so computing it in a `useMemo` is appropriate. When `formulas` is non-null (escape hatch), use `formulas` directly instead of calling `compileRecipe()`.
+- [ ] Create a debounced slider change handler per [D02]. This is the L06-compliant direct-call pattern (matching `loadPreset`/`handleRecipeImported`):
+  1. On each slider `onInput`: update `parametersRef.current` immediately (L07: refs, not stale closures).
+  2. Clear any pending debounce timeout.
+  3. Set a 150ms timeout whose callback does:
+     - **Appearance (L06):** Assemble a `ThemeRecipe` inline from closure values (hue strings, mode, recipeName — stable during slider drag) plus `parametersRef.current` and `formulasRef.current` (refs — always current). Call `setThemeOutput(deriveTheme(recipe))`. This applies CSS custom properties to the DOM via `liveTokenStyle`, bypassing React state and useEffect entirely.
+     - **Data panels:** Call `setParameters(parametersRef.current)` to update React state for FormulaExpansionPanel and RecipeDiffView re-rendering.
+- [ ] Store the debounce timeout ID in a `useRef<ReturnType<typeof setTimeout>>()`. Add a cleanup `useEffect` that clears the pending timeout on unmount to prevent callbacks firing on an unmounted component.
+- [ ] Do NOT add `parameters` to the existing useEffect dependency array. The useEffect continues to handle discrete changes (mode toggle, hue picker selection, formulas escape hatch) only. Slider-driven derivation bypasses it entirely per L06.
+- [ ] Modify `runDerive()`: replace the current `{ parameters: defaultParameters() }` spread with `{ parameters: parametersRef.current }`. This ensures that useEffect-triggered re-derives (from hue/mode changes during or after slider interaction) also use the current slider positions. Do NOT call `compileRecipe()` inside `runDerive()` — let `deriveTheme()` handle compilation internally.
+- [ ] Add a `compiledFormulas` memo via `useMemo(() => formulas ?? compileRecipe(mode, parameters), [mode, parameters, formulas])`. This provides compiled formula values for data panels. `compileRecipe()` is cheap (~130 field interpolations). When `formulas` is non-null (escape hatch), use `formulas` directly.
 - [ ] Render 7 `ParameterSlider` instances using `PARAMETER_METADATA` in the `moodSliders` prop slot of `ThemePreviewCard`.
-- [ ] Render the `FormulaExpansionPanel` below the sliders section, passing `compiledFormulas`, current `parameters`, and current `mode`. Since `compiledFormulas` is computed via `useMemo` (not async state), it is always available -- no null guard needed.
+- [ ] Render the `FormulaExpansionPanel` below the sliders section, passing `compiledFormulas`, current `parameters`, and current `mode`. Since `compiledFormulas` is computed via `useMemo` (not async state), it is always available — no null guard needed.
 - [ ] Add the `RecipeDiffView` as an inline collapsible section below the sliders, passing current `parameters` state, `compiledFormulas`, and current `mode` (per updated Spec S04). Same as FormulaExpansionPanel, no null guard needed.
-- [ ] Update `loadPreset()` and `handleRecipeImported()` to set parameters from `recipe.parameters` (or `defaultParameters()` if absent).
+- [ ] Update `loadPreset()` to set parameters from `recipe.parameters` (or `defaultParameters()` if absent) via `setParametersAndRef()`. `loadPreset` already calls `setThemeOutput(deriveTheme(r))` directly (L06-compliant) — no change needed for the appearance path.
+- [ ] Update `handleRecipeImported()` with the same `setParametersAndRef()` call. `handleRecipeImported` also already calls `setThemeOutput(deriveTheme(r))` directly.
 - [ ] In the `currentRecipe` memo, replace the hardcoded `defaultParameters()` call with the `parameters` state variable so the exported recipe reflects the actual slider positions.
-- [ ] When mode toggles (Dark/Light buttons), reset parameters to `defaultParameters()` and set formulas to null. Rationale: endpoint bundles are mode-specific (DARK_ENDPOINTS vs LIGHT_ENDPOINTS), so parameter values tuned for one mode do not produce equivalent visual results in the other mode. Resetting avoids confusing visual jumps. This matches the existing mode-toggle behavior of re-deriving from scratch. **Derivation path after mode toggle:** `setParametersAndRef(defaultParameters())` runs synchronously, updating both state and ref. The mode state change (plus the parameter state change) triggers the `useEffect`, which calls `runDerive()`, which reads `parametersRef.current` -- already set to defaults. Single derivation path, no race condition.
+- [ ] When mode toggles (Dark/Light buttons): reset `parametersRef.current` and `parameters` state to `defaultParameters()`. Rationale: endpoint bundles are mode-specific (DARK_ENDPOINTS vs LIGHT_ENDPOINTS), so parameter values tuned for one mode do not produce equivalent visual results in the other mode. Resetting avoids confusing visual jumps. The mode toggle already triggers the useEffect (mode is in the dep array), which calls `runDerive()`, which reads the just-reset `parametersRef.current`. The `setParameters()` call updates data panels. Both happen synchronously before the next render.
 
 **Tests:**
 - [ ] T5.1: Theme Generator renders 7 ParameterSlider components.
