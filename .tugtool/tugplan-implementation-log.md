@@ -9,6 +9,126 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-20T05:30:25Z
+---
+
+## step-10: Final integration checkpoint: tsc zero errors, 1863 tests pass, all audit:tokens gates pass, generate:tokens no diff. Fixed inject idempotency bug (\n? -> \n* in removal regex). All 6 design decisions verified. Plan complete.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-9
+date: 2025-03-20T05:16:31Z
+---
+
+## step-9: Added D82 (Semantic Text Types) and D83 (Contrast Role Vocabulary) sections to design-system-concepts.md. Documented content/control/display/informational text types with hue slots and contrast thresholds. Added Discussion Log Entry 34.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-8
+date: 2025-03-20T05:08:20Z
+---
+
+## step-8: Regenerated @tug-pairings blocks in 23 CSS files via audit:tokens inject --apply. Updated audit-tokens.ts guessRole() for new vocabulary. Regenerated tug-base-generated.css and harmony.css via generate:tokens (includes card title token). Zero old role names remain in CSS. All audit gates pass.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-7
+date: 2025-03-20T04:50:06Z
+---
+
+## step-7: Added 2 pairing entries for element-cardTitle-text-normal-plain-rest on tab surfaces (active/inactive) with role display. Updated stale comment clarifying --tug-card-title-bar-fg purpose. 1863 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-6
+date: 2025-03-20T04:34:04Z
+---
+
+## step-6: Updated derivation-rules.ts hue slots per Table T05: filledFg/outlinedFg txt->control, muted/subtle text->informational, icon defaults->control/informational. Added card title derivation rule (element-cardTitle-text-normal-plain-rest) using display hue slot. Updated tug-card.css with --tug-card-title-fg alias. Token count 373->374. 1863 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-5
+date: 2025-03-20T04:03:30Z
+---
+
+## step-5: Updated all ThemeRecipe construction sites in 3 test files to use nested surface/element/role structure. Fixed testid selectors (gtg-card-hue, gtg-content-hue), validateRecipeJson test objects, round-trip test, and stale comments. 1861 tests pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-4
+date: 2025-03-20T03:12:51Z
+---
+
+## step-4: Replaced flat ThemeRecipe fields with nested surface{canvas,card}, element{content,control,display,informational,border,decorative}, role{accent,action,agent,data,success,caution,danger}. Updated EXAMPLE_RECIPES, resolveHueSlots (4 new slots), ResolvedHueSlots, and gallery UI (Surface/Element/Roles columns). Derived cardFrame from element.border and interactive from role.action.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-3
+date: 2025-03-20T02:50:33Z
+---
+
+## step-3: Integration checkpoint: tsc zero errors, 1861 tests pass, audit:tokens lint zero violations, audit:tokens pairings exit 0. Contrast role migration confirmed complete.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-2
+date: 2025-03-20T02:01:19Z
+---
+
+## step-2: Updated all test assertions across 5 test files to use new ContrastRole vocabulary (content/control/display/informational). Updated VALID_ROLES, threshold lookups, role filters, and exception set comments. All 1891 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
+step: step-1
+date: 2025-03-20T01:14:27Z
+---
+
+## step-1: Replaced ContrastRole type (body-text/subdued-text/large-text/ui-component → content/control/display/informational). Updated CONTRAST_THRESHOLDS and WCAG_CONTRAST_THRESHOLDS with new keys/values. Reclassified all 339 pairing map entries. Updated JSDoc across 3 files.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-13
 date: 2025-03-19T22:39:39Z
 ---

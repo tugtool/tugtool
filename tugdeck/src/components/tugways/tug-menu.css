@@ -7,74 +7,28 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-control-text-outlined-action-active (element-control-text-outlined-action-active) | --tug-base-surface-control-primary-outlined-action-active (surface-control-primary-outlined-action-active) | body-text    | .tug-button-outlined-action[data-state="open"] (color) |
- * | --tug-base-element-control-border-outlined-action-active (element-control-border-outlined-action-active) | --tug-base-surface-control-primary-outlined-action-active (surface-control-primary-outlined-action-active) | ui-component | .tug-button-outlined-action[data-state="open"] (border-color) |
- * | --tug-base-element-control-icon-outlined-action-active (element-control-icon-outlined-action-active) | --tug-base-surface-control-primary-outlined-action-active (surface-control-primary-outlined-action-active) | ui-component | .tug-button-outlined-action[data-state="open"] svg (color) |
- * | --tug-base-element-control-text-outlined-option-active (element-control-text-outlined-option-active) | --tug-base-surface-control-primary-outlined-option-active (surface-control-primary-outlined-option-active) | body-text    | .tug-button-outlined-option[data-state="open"] (color) |
- * | --tug-base-element-control-border-outlined-option-active (element-control-border-outlined-option-active) | --tug-base-surface-control-primary-outlined-option-active (surface-control-primary-outlined-option-active) | ui-component | .tug-button-outlined-option[data-state="open"] (border-color) |
- * | --tug-base-element-control-icon-outlined-option-active (element-control-icon-outlined-option-active) | --tug-base-surface-control-primary-outlined-option-active (surface-control-primary-outlined-option-active) | ui-component | .tug-button-outlined-option[data-state="open"] svg (color) |
- * | --tug-base-element-control-text-filled-accent-active (element-control-text-filled-accent-active) | --tug-base-surface-control-primary-filled-accent-active (surface-control-primary-filled-accent-active) | body-text    | .tug-button-filled-accent[data-state="open"] (color) |
- * | --tug-base-element-control-border-filled-accent-active (element-control-border-filled-accent-active) | --tug-base-surface-control-primary-filled-accent-active (surface-control-primary-filled-accent-active) | ui-component | .tug-button-filled-accent[data-state="open"] (border-color) |
- * | --tug-base-element-control-icon-filled-accent-active (element-control-icon-filled-accent-active) | --tug-base-surface-control-primary-filled-accent-active (surface-control-primary-filled-accent-active) | ui-component | .tug-button-filled-accent[data-state="open"] svg (color) |
- * | --tug-base-element-control-text-ghost-action-active (element-control-text-ghost-action-active) | --tug-base-surface-control-primary-ghost-action-active (surface-control-primary-ghost-action-active) | body-text    | .tug-button-ghost-action[data-state="open"] (color) |
- * | --tug-base-element-control-border-ghost-action-active (element-control-border-ghost-action-active) | --tug-base-surface-control-primary-ghost-action-active (surface-control-primary-ghost-action-active) | ui-component | .tug-button-ghost-action[data-state="open"] (border-color) |
- * | --tug-base-element-control-icon-ghost-action-active (element-control-icon-ghost-action-active) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | ui-component | .tug-button-ghost-action[data-state="open"] svg (color) |
- * | --tug-base-element-control-text-ghost-option-active (element-control-text-ghost-option-active) | --tug-base-surface-control-primary-ghost-option-active (surface-control-primary-ghost-option-active) | body-text    | .tug-button-ghost-option[data-state="open"] (color) |
- * | --tug-base-element-control-border-ghost-option-active (element-control-border-ghost-option-active) | --tug-base-surface-control-primary-ghost-option-active (surface-control-primary-ghost-option-active) | ui-component | .tug-button-ghost-option[data-state="open"] (border-color) |
- * | --tug-base-element-control-icon-ghost-option-active (element-control-icon-ghost-option-active) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | ui-component | .tug-button-ghost-option[data-state="open"] svg (color) |
- * | --tug-base-element-control-text-filled-danger-active (element-control-text-filled-danger-active) | --tug-base-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | body-text    | .tug-button-filled-danger[data-state="open"] (color) |
- * | --tug-base-element-control-border-filled-danger-active (element-control-border-filled-danger-active) | --tug-base-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | ui-component | .tug-button-filled-danger[data-state="open"] (border-color) |
- * | --tug-base-element-control-icon-filled-danger-active (element-control-icon-filled-danger-active) | --tug-base-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | ui-component | .tug-button-filled-danger[data-state="open"] svg (color) |
- * | --tug-dropdown-border (element-global-border-normal-default-rest) | --tug-dropdown-bg (surface-global-primary-normal-overlay-rest) | ui-component | .tug-dropdown-content (border)       |
- * | --tug-dropdown-fg (element-global-text-normal-default-rest) | --tug-dropdown-bg (surface-global-primary-normal-overlay-rest) | body-text    | .tug-dropdown-content (color)        |
- * | --tug-base-element-control-text-filled-action-hover (element-control-text-filled-action-hover) | --tug-base-surface-control-primary-filled-action-hover (surface-control-primary-filled-action-hover) | body-text    | .tug-dropdown-item:hover:not([data-disabled]), .tug-dropdown-item[data-highlighted]:not([data-disabled]) (color) |
+ * | --tug-base-element-control-text-outlined-action-active (element-control-text-outlined-action-active) | --tug-base-surface-control-primary-outlined-action-active (surface-control-primary-outlined-action-active) | control      | .tug-button-outlined-action[data-state="open"] (color) |
+ * | --tug-base-element-control-border-outlined-action-active (element-control-border-outlined-action-active) | --tug-base-surface-control-primary-outlined-action-active (surface-control-primary-outlined-action-active) | control      | .tug-button-outlined-action[data-state="open"] (border-color) |
+ * | --tug-base-element-control-icon-outlined-action-active (element-control-icon-outlined-action-active) | --tug-base-surface-control-primary-outlined-action-active (surface-control-primary-outlined-action-active) | control      | .tug-button-outlined-action[data-state="open"] svg (color) |
+ * | --tug-base-element-control-text-outlined-option-active (element-control-text-outlined-option-active) | --tug-base-surface-control-primary-outlined-option-active (surface-control-primary-outlined-option-active) | control      | .tug-button-outlined-option[data-state="open"] (color) |
+ * | --tug-base-element-control-border-outlined-option-active (element-control-border-outlined-option-active) | --tug-base-surface-control-primary-outlined-option-active (surface-control-primary-outlined-option-active) | control      | .tug-button-outlined-option[data-state="open"] (border-color) |
+ * | --tug-base-element-control-icon-outlined-option-active (element-control-icon-outlined-option-active) | --tug-base-surface-control-primary-outlined-option-active (surface-control-primary-outlined-option-active) | control      | .tug-button-outlined-option[data-state="open"] svg (color) |
+ * | --tug-base-element-control-text-filled-accent-active (element-control-text-filled-accent-active) | --tug-base-surface-control-primary-filled-accent-active (surface-control-primary-filled-accent-active) | control      | .tug-button-filled-accent[data-state="open"] (color) |
+ * | --tug-base-element-control-border-filled-accent-active (element-control-border-filled-accent-active) | --tug-base-surface-control-primary-filled-accent-active (surface-control-primary-filled-accent-active) | control      | .tug-button-filled-accent[data-state="open"] (border-color) |
+ * | --tug-base-element-control-icon-filled-accent-active (element-control-icon-filled-accent-active) | --tug-base-surface-control-primary-filled-accent-active (surface-control-primary-filled-accent-active) | control      | .tug-button-filled-accent[data-state="open"] svg (color) |
+ * | --tug-base-element-control-text-ghost-action-active (element-control-text-ghost-action-active) | --tug-base-surface-control-primary-ghost-action-active (surface-control-primary-ghost-action-active) | control      | .tug-button-ghost-action[data-state="open"] (color) |
+ * | --tug-base-element-control-border-ghost-action-active (element-control-border-ghost-action-active) | --tug-base-surface-control-primary-ghost-action-active (surface-control-primary-ghost-action-active) | control      | .tug-button-ghost-action[data-state="open"] (border-color) |
+ * | --tug-base-element-control-icon-ghost-action-active (element-control-icon-ghost-action-active) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | control      | .tug-button-ghost-action[data-state="open"] svg (color) |
+ * | --tug-base-element-control-text-ghost-option-active (element-control-text-ghost-option-active) | --tug-base-surface-control-primary-ghost-option-active (surface-control-primary-ghost-option-active) | control      | .tug-button-ghost-option[data-state="open"] (color) |
+ * | --tug-base-element-control-border-ghost-option-active (element-control-border-ghost-option-active) | --tug-base-surface-control-primary-ghost-option-active (surface-control-primary-ghost-option-active) | control      | .tug-button-ghost-option[data-state="open"] (border-color) |
+ * | --tug-base-element-control-icon-ghost-option-active (element-control-icon-ghost-option-active) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | control      | .tug-button-ghost-option[data-state="open"] svg (color) |
+ * | --tug-base-element-control-text-filled-danger-active (element-control-text-filled-danger-active) | --tug-base-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | control      | .tug-button-filled-danger[data-state="open"] (color) |
+ * | --tug-base-element-control-border-filled-danger-active (element-control-border-filled-danger-active) | --tug-base-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | control      | .tug-button-filled-danger[data-state="open"] (border-color) |
+ * | --tug-base-element-control-icon-filled-danger-active (element-control-icon-filled-danger-active) | --tug-base-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | control      | .tug-button-filled-danger[data-state="open"] svg (color) |
+ * | --tug-dropdown-border (element-global-border-normal-default-rest) | --tug-dropdown-bg (surface-global-primary-normal-overlay-rest) | informational | .tug-dropdown-content (border)       |
+ * | --tug-dropdown-fg (element-global-text-normal-default-rest) | --tug-dropdown-bg (surface-global-primary-normal-overlay-rest) | content      | .tug-dropdown-content (color)        |
+ * | --tug-base-element-control-text-filled-action-hover (element-control-text-filled-action-hover) | --tug-base-surface-control-primary-filled-action-hover (surface-control-primary-filled-action-hover) | control      | .tug-dropdown-item:hover:not([data-disabled]), .tug-dropdown-item[data-highlighted]:not([data-disabled]) (color) |
  */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 body {

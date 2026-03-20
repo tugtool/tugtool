@@ -9,21 +9,21 @@
  * Both the derivation engine (auto-adjustment) and the contrast dashboard
  * (display) consume the same map.
  *
- * Role classification follows Table T01 (perceptual contrast thresholds normative, WCAG informational):
- *   "body-text"    — contrast 75 / 4.5:1 WCAG AA (14px / 400wt body text)
- *   "subdued-text" — contrast 45 / 3:1 WCAG AA (intentionally reduced hierarchy: muted/placeholder/read-only)
- *   "large-text"   — contrast 60 / 3:1 WCAG AA (18px+ / 700wt headings or button labels)
- *   "ui-component" — contrast 30 / 3:1 WCAG AA (icons, borders, non-text elements)
- *   "decorative"   — no minimum (structural dividers, decorative accents)
+ * Role classification follows semantic text types (Table T02, perceptual contrast thresholds normative, WCAG informational):
+ *   "content"       — contrast 75 / 4.5:1 WCAG AA (prose, body text, descriptions)
+ *   "control"       — contrast 60 / 3:1 WCAG AA (interactive element labels, icons, borders)
+ *   "display"       — contrast 60 / 3:1 WCAG AA (titles, headers, emphasis)
+ *   "informational" — contrast 60 / 3:1 WCAG AA (status, metadata, secondary/muted text)
+ *   "decorative"    — no minimum (structural dividers, decorative accents)
  *
  * @module components/tugways/element-surface-pairing-map
  */
 
 export type ContrastRole =
-  | "body-text"
-  | "subdued-text"
-  | "large-text"
-  | "ui-component"
+  | "content"
+  | "control"
+  | "display"
+  | "informational"
   | "decorative";
 
 export interface ElementSurfacePairing {
@@ -52,96 +52,96 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-app-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-canvas-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-inset-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-content-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-screen-rest",
-    role: "body-text",
+    role: "content",
   },
 
-  // Muted text (secondary text, labels) — subdued-text: intentionally below body-text contrast 75
+  // Muted text (secondary text, labels) — informational: muted/metadata text
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-inset-rest",
-    role: "subdued-text",
+    role: "informational",
   },
 
-  // Subtle text (tertiary, metadata) — subdued-text: intentionally below body-text contrast 75
+  // Subtle text (tertiary, metadata) — informational: muted/metadata text
   {
     element: "--tug-base-element-global-text-normal-subtle-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-subtle-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-subtle-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-subtle-rest",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "subdued-text",
+    role: "informational",
   },
 
   // Disabled text — decorative (no minimum requirement)
@@ -160,51 +160,51 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-inverse-rest",
     surface: "--tug-base-surface-global-primary-normal-screen-rest",
-    role: "body-text",
+    role: "content",
   },
 
-  // Placeholder text (form fields) — subdued-text: intentionally below body-text contrast 75
+  // Placeholder text (form fields) — informational: secondary/metadata text in form fields
   {
     element: "--tug-base-element-global-text-normal-placeholder-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-placeholder-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-hover",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-placeholder-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-focus",
-    role: "subdued-text",
+    role: "informational",
   },
 
   // Link text
   {
     element: "--tug-base-element-global-text-normal-link-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-link-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-link-rest",
     surface: "--tug-base-surface-global-primary-normal-content-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-link-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-link-hover",
     surface: "--tug-base-surface-global-primary-normal-content-rest",
-    role: "body-text",
+    role: "content",
   },
 
   // =========================================================================
@@ -213,57 +213,57 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-onAccent-rest",
     surface: "--tug-base-element-global-fill-normal-accent-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-text-normal-onDanger-rest",
     surface: "--tug-base-element-tone-fill-normal-danger-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-text-normal-onCaution-rest",
     surface: "--tug-base-element-tone-fill-normal-caution-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-text-normal-onSuccess-rest",
     surface: "--tug-base-element-tone-fill-normal-success-rest",
-    role: "large-text",
+    role: "control",
   },
 
   // =========================================================================
-  // Icon pairings — ui-component role (3:1 WCAG AA)
+  // Icon pairings — control role (interactive context icons), informational (muted/secondary icons)
   // =========================================================================
   {
     element: "--tug-base-element-global-icon-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-icon-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-icon-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-icon-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   {
     element: "--tug-base-element-global-icon-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-icon-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   {
@@ -280,18 +280,18 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-icon-normal-active-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-icon-normal-active-rest",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   {
     element: "--tug-base-element-global-icon-normal-onAccent-rest",
     surface: "--tug-base-element-global-fill-normal-accent-rest",
-    role: "ui-component",
+    role: "control",
   },
   // =========================================================================
   // Control — Filled Accent (button labels + icons on filled accent bg)
@@ -299,32 +299,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-filled-accent-rest",
     surface: "--tug-base-surface-control-primary-filled-accent-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-accent-hover",
     surface: "--tug-base-surface-control-primary-filled-accent-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-accent-active",
     surface: "--tug-base-surface-control-primary-filled-accent-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-accent-rest",
     surface: "--tug-base-surface-control-primary-filled-accent-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-accent-hover",
     surface: "--tug-base-surface-control-primary-filled-accent-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-accent-active",
     surface: "--tug-base-surface-control-primary-filled-accent-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -333,32 +333,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-filled-action-rest",
     surface: "--tug-base-surface-control-primary-filled-action-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-action-hover",
     surface: "--tug-base-surface-control-primary-filled-action-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-action-active",
     surface: "--tug-base-surface-control-primary-filled-action-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-action-rest",
     surface: "--tug-base-surface-control-primary-filled-action-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-action-hover",
     surface: "--tug-base-surface-control-primary-filled-action-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-action-active",
     surface: "--tug-base-surface-control-primary-filled-action-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -367,32 +367,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-filled-danger-rest",
     surface: "--tug-base-surface-control-primary-filled-danger-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-danger-hover",
     surface: "--tug-base-surface-control-primary-filled-danger-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-danger-active",
     surface: "--tug-base-surface-control-primary-filled-danger-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-danger-rest",
     surface: "--tug-base-surface-control-primary-filled-danger-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-danger-hover",
     surface: "--tug-base-surface-control-primary-filled-danger-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-danger-active",
     surface: "--tug-base-surface-control-primary-filled-danger-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -401,32 +401,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-filled-agent-rest",
     surface: "--tug-base-surface-control-primary-filled-agent-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-agent-hover",
     surface: "--tug-base-surface-control-primary-filled-agent-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-agent-active",
     surface: "--tug-base-surface-control-primary-filled-agent-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-agent-rest",
     surface: "--tug-base-surface-control-primary-filled-agent-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-agent-hover",
     surface: "--tug-base-surface-control-primary-filled-agent-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-agent-active",
     surface: "--tug-base-surface-control-primary-filled-agent-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -435,32 +435,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-filled-data-rest",
     surface: "--tug-base-surface-control-primary-filled-data-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-data-hover",
     surface: "--tug-base-surface-control-primary-filled-data-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-data-active",
     surface: "--tug-base-surface-control-primary-filled-data-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-data-rest",
     surface: "--tug-base-surface-control-primary-filled-data-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-data-hover",
     surface: "--tug-base-surface-control-primary-filled-data-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-data-active",
     surface: "--tug-base-surface-control-primary-filled-data-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -469,32 +469,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-filled-success-rest",
     surface: "--tug-base-surface-control-primary-filled-success-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-success-hover",
     surface: "--tug-base-surface-control-primary-filled-success-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-success-active",
     surface: "--tug-base-surface-control-primary-filled-success-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-success-rest",
     surface: "--tug-base-surface-control-primary-filled-success-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-success-hover",
     surface: "--tug-base-surface-control-primary-filled-success-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-success-active",
     surface: "--tug-base-surface-control-primary-filled-success-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -503,32 +503,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-filled-caution-rest",
     surface: "--tug-base-surface-control-primary-filled-caution-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-caution-hover",
     surface: "--tug-base-surface-control-primary-filled-caution-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-filled-caution-active",
     surface: "--tug-base-surface-control-primary-filled-caution-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-caution-rest",
     surface: "--tug-base-surface-control-primary-filled-caution-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-caution-hover",
     surface: "--tug-base-surface-control-primary-filled-caution-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-filled-caution-active",
     surface: "--tug-base-surface-control-primary-filled-caution-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -537,32 +537,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-outlined-action-rest",
     surface: "--tug-base-surface-control-primary-outlined-action-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-outlined-action-hover",
     surface: "--tug-base-surface-control-primary-outlined-action-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-outlined-action-active",
     surface: "--tug-base-surface-control-primary-outlined-action-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-action-rest",
     surface: "--tug-base-surface-control-primary-outlined-action-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-action-hover",
     surface: "--tug-base-surface-control-primary-outlined-action-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-action-active",
     surface: "--tug-base-surface-control-primary-outlined-action-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -571,32 +571,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-outlined-agent-rest",
     surface: "--tug-base-surface-control-primary-outlined-agent-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-outlined-agent-hover",
     surface: "--tug-base-surface-control-primary-outlined-agent-hover",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-outlined-agent-active",
     surface: "--tug-base-surface-control-primary-outlined-agent-active",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-agent-rest",
     surface: "--tug-base-surface-control-primary-outlined-agent-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-agent-hover",
     surface: "--tug-base-surface-control-primary-outlined-agent-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-agent-active",
     surface: "--tug-base-surface-control-primary-outlined-agent-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -606,32 +606,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-ghost-action-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-ghost-action-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-ghost-action-active",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-action-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-action-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-action-active",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -640,32 +640,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-ghost-danger-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-ghost-danger-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-ghost-danger-active",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-danger-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-danger-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-danger-active",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -676,32 +676,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-outlined-option-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-outlined-option-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-outlined-option-active",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-option-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-option-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-outlined-option-active",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -711,32 +711,32 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-ghost-option-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-ghost-option-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-text-ghost-option-active",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "large-text",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-option-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-option-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-icon-ghost-option-active",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -745,12 +745,12 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-text-normal-selected-rest",
     surface: "--tug-base-surface-control-primary-normal-selected-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-control-text-normal-highlighted-rest",
     surface: "--tug-base-surface-control-primary-normal-highlighted-rest",
-    role: "body-text",
+    role: "content",
   },
 
   // =========================================================================
@@ -759,17 +759,17 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-field-text-normal-plain-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-field-text-normal-plain-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-hover",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-field-text-normal-plain-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-focus",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-field-text-normal-plain-disabled",
@@ -779,22 +779,22 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-field-text-normal-plain-readOnly",
     surface: "--tug-base-surface-field-primary-normal-plain-readOnly",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-field-text-normal-label-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-field-text-normal-placeholder-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-field-text-normal-required-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   // =========================================================================
   // Semantic tone — foreground text on tone backgrounds
@@ -805,79 +805,79 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-tone-text-normal-success-rest",
     surface: "--tug-base-surface-tone-primary-normal-success-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-tone-text-normal-success-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-text-normal-caution-rest",
     surface: "--tug-base-surface-tone-primary-normal-caution-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-tone-text-normal-caution-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-text-normal-danger-rest",
     surface: "--tug-base-surface-tone-primary-normal-danger-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-tone-text-normal-danger-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-text-normal-accent-rest",
     surface: "--tug-base-surface-tone-primary-normal-accent-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-tone-text-normal-accent-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-text-normal-active-rest",
     surface: "--tug-base-surface-tone-primary-normal-active-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-tone-text-normal-active-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-text-normal-agent-rest",
     surface: "--tug-base-surface-tone-primary-normal-agent-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-tone-text-normal-agent-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-text-normal-data-rest",
     surface: "--tug-base-surface-tone-primary-normal-data-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-tone-text-normal-data-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // =========================================================================
@@ -886,72 +886,72 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-tone-icon-normal-accent-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-accent-rest",
     surface: "--tug-base-surface-tone-primary-normal-accent-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-active-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-active-rest",
     surface: "--tug-base-surface-tone-primary-normal-active-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-agent-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-agent-rest",
     surface: "--tug-base-surface-tone-primary-normal-agent-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-data-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-data-rest",
     surface: "--tug-base-surface-tone-primary-normal-data-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-success-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-success-rest",
     surface: "--tug-base-surface-tone-primary-normal-success-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-caution-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-caution-rest",
     surface: "--tug-base-surface-tone-primary-normal-caution-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-danger-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-icon-normal-danger-rest",
     surface: "--tug-base-surface-tone-primary-normal-danger-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // =========================================================================
@@ -960,12 +960,12 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-fill-normal-accent-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-fill-normal-accent-rest",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "ui-component",
+    role: "informational",
   },
   // =========================================================================
   // Selection text on selection background
@@ -975,7 +975,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-selection-text-normal-plain-rest",
     surface: "--tug-base-surface-selection-primary-normal-plain-rest",
-    role: "body-text",
+    role: "content",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
 
@@ -1000,22 +1000,22 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-toggle-thumb-normal-plain-rest",
     surface: "--tug-base-surface-toggle-track-normal-on-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-toggle-thumb-normal-plain-rest",
     surface: "--tug-base-surface-toggle-track-normal-on-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-toggle-thumb-normal-plain-rest",
     surface: "--tug-base-surface-toggle-track-normal-off-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-toggle-thumb-normal-plain-rest",
     surface: "--tug-base-surface-toggle-track-normal-off-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-toggle-thumb-normal-plain-disabled",
@@ -1030,12 +1030,12 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-toggle-icon-normal-plain-mixed",
     surface: "--tug-base-surface-toggle-track-normal-mixed-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-toggle-icon-normal-plain-mixed",
     surface: "--tug-base-surface-toggle-track-normal-mixed-hover",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -1044,27 +1044,27 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-checkmark-icon-normal-plain-rest",
     surface: "--tug-base-surface-control-primary-filled-accent-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-checkmark-icon-normal-plain-rest",
     surface: "--tug-base-element-global-fill-normal-accent-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-checkmark-icon-normal-plain-mixed",
     surface: "--tug-base-surface-control-primary-outlined-action-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-radio-dot-normal-plain-rest",
     surface: "--tug-base-surface-control-primary-filled-accent-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-radio-dot-normal-plain-rest",
     surface: "--tug-base-element-global-fill-normal-accent-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   // --- Tab Chrome ---
@@ -1074,47 +1074,47 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-tab-text-normal-plain-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tab-text-normal-plain-rest",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   // tab-fg-active over active tab background
   {
     element: "--tug-base-element-tab-text-normal-plain-active",
     surface: "--tug-base-surface-tab-primary-normal-plain-active",
-    role: "body-text",
+    role: "content",
   },
   // tab-fg-hover over hover highlight (semi-transparent over tab-bg-inactive).
   // Also paired with surface-sunken for the design-intent baseline.
   {
     element: "--tug-base-element-tab-text-normal-plain-hover",
     surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-tab-text-normal-plain-hover",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "body-text",
+    role: "content",
   },
   // close button hover fg over close bg hover (semi-transparent over tab-bg-inactive).
   {
     element: "--tug-base-element-tabClose-text-normal-plain-hover",
     surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-tabClose-text-normal-plain-hover",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "ui-component",
+    role: "control",
   },
   // fg-muted over tab bar background (add-tab [+] and overflow trigger text)
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
-    role: "ui-component",
+    role: "informational",
   },
 
   // --- Badge Tinted fg on tinted bg ---
@@ -1123,43 +1123,43 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-badge-text-tinted-accent-rest",
     surface: "--tug-base-surface-badge-primary-tinted-accent-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-text-tinted-action-rest",
     surface: "--tug-base-surface-badge-primary-tinted-action-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-text-tinted-agent-rest",
     surface: "--tug-base-surface-badge-primary-tinted-agent-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-text-tinted-data-rest",
     surface: "--tug-base-surface-badge-primary-tinted-data-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-text-tinted-danger-rest",
     surface: "--tug-base-surface-badge-primary-tinted-danger-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-text-tinted-success-rest",
     surface: "--tug-base-surface-badge-primary-tinted-success-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-text-tinted-caution-rest",
     surface: "--tug-base-surface-badge-primary-tinted-caution-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
 
@@ -1170,43 +1170,43 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-badge-border-tinted-accent-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-border-tinted-action-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-border-tinted-agent-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-border-tinted-data-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-border-tinted-danger-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-border-tinted-success-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   {
     element: "--tug-base-element-badge-border-tinted-caution-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
 
@@ -1220,62 +1220,62 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-surface-toggle-track-normal-on-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-on-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-off-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-off-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-mixed-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-mixed-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-on-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-on-hover",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-off-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-off-hover",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-mixed-hover",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-surface-toggle-track-normal-mixed-hover",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -1290,47 +1290,47 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-field-border-normal-plain-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-plain-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-plain-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-focus",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-plain-hover",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-plain-hover",
     surface: "--tug-base-surface-field-primary-normal-plain-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-plain-hover",
     surface: "--tug-base-surface-field-primary-normal-plain-focus",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-plain-active",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-plain-active",
     surface: "--tug-base-surface-field-primary-normal-plain-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-plain-active",
     surface: "--tug-base-surface-field-primary-normal-plain-focus",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -1340,12 +1340,12 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-field-border-normal-danger-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-field-border-normal-success-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -1356,58 +1356,62 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-control-border-outlined-action-rest",
     surface: "--tug-base-surface-control-primary-outlined-action-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-border-outlined-action-hover",
     surface: "--tug-base-surface-control-primary-outlined-action-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-border-outlined-action-active",
     surface: "--tug-base-surface-control-primary-outlined-action-active",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-border-outlined-agent-rest",
     surface: "--tug-base-surface-control-primary-outlined-agent-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-border-outlined-agent-hover",
     surface: "--tug-base-surface-control-primary-outlined-agent-hover",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-control-border-outlined-agent-active",
     surface: "--tug-base-surface-control-primary-outlined-agent-active",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
   // Separator / divider visibility — border against surface (Step 3)
-  // border-default and border-muted are very subtle separators in dark mode;
-  // both are below contrast 30 by design (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS).
+  // border-default and border-muted are structural layout separators intentionally
+  // below contrast 30 by design (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS).
+  // Classified as "decorative" (threshold 15) to prevent the contrast floor from
+  // bumping them toward higher lightness, which would override the subtle visual hierarchy.
+  // These are structural dividers, not informational text — "decorative" captures the
+  // design intent that these elements are layout cues, not semantic content indicators.
   // =========================================================================
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "decorative",
   },
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "decorative",
   },
   {
     element: "--tug-base-element-global-border-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "decorative",
   },
   {
     element: "--tug-base-element-global-border-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "decorative",
   },
 
   // =========================================================================
@@ -1415,7 +1419,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   //
   // accent-cool-default (cobalt-intense) is the universal focus ring color.
   // All 9 surfaces that can contain focusable elements are covered with
-  // role "ui-component" (contrast 30 threshold). surface-screen is included
+  // role "control" (contrast 60 threshold). surface-screen is included
   // because tooltips (--tug-tooltip-bg: var(--tug-base-surface-global-primary-normal-screen-rest))
   // can contain focusable elements. [D05]
   //
@@ -1426,47 +1430,47 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-app-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-raised-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-inset-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-content-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-sunken-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-screen-rest",
-    role: "ui-component",
+    role: "control",
   },
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "ui-component",
+    role: "control",
   },
   // Focused-vs-unfocused comparisons: informational only (decorative role).
   // Perceptual contrast measures element-on-area contrast; border-vs-border results are
@@ -1488,59 +1492,61 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
 
   // --- Card title bar / tab chrome (tug-card.css, tug-tab.css) ---
-  // THE primary gap: .tugcard-title (fg-default) renders on .tugcard-title-bar
-  // background (tab-bg-active when card-frame[data-focused="true"]).
+  // These pairings cover --tug-card-title-bar-fg (fg-default) used by other
+  // title-bar elements (icons, labels) on the tab-bar backgrounds. The card
+  // title itself (.tugcard-title) now uses its own dedicated token
+  // (element-cardTitle-text-normal-plain-rest) — see Step 7 additions below.
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-active",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
-    role: "body-text",
+    role: "content",
   },
   {
     element: "--tug-base-element-global-icon-normal-active-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-active",
-    role: "ui-component",
+    role: "informational",
   },
   // fg-subtle used for inactive-state card title-bar icon
   {
     element: "--tug-base-element-global-text-normal-subtle-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
-    role: "ui-component",
+    role: "informational",
   },
   // Tab overflow badge: CSS sets color: var(--tug-base-surface-global-primary-normal-default-rest) directly
   // over the accent-default badge background (tug-tab.css:283).
   {
     element: "--tug-base-surface-global-primary-normal-default-rest",
     surface: "--tug-base-element-global-fill-normal-accent-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // --- Canvas / preview surfaces (gallery-theme-generator-content.css) ---
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-canvas-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-subtle-rest",
     surface: "--tug-base-surface-global-primary-normal-canvas-rest",
-    role: "subdued-text",
+    role: "informational",
   },
   {
     element: "--tug-base-element-global-text-normal-link-rest",
     surface: "--tug-base-surface-global-primary-normal-canvas-rest",
-    role: "body-text",
+    role: "content",
   },
 
   // --- Surface inset — subtle text (gallery-popup-button.css) ---
   {
     element: "--tug-base-element-global-text-normal-subtle-rest",
     surface: "--tug-base-surface-global-primary-normal-inset-rest",
-    role: "subdued-text",
+    role: "informational",
   },
 
   // --- Surface control — text (gallery-card.css, gallery-palette-content.css,
@@ -1548,14 +1554,14 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-control-rest",
-    role: "body-text",
+    role: "content",
   },
   // fg-muted on surface-control: code comment text in code block
   // (tug-code.css: --tug-codeBlock-bg = surface-control)
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-control-rest",
-    role: "body-text",
+    role: "content",
   },
 
   // --- Accent-subtle as background — active UI states ---
@@ -1565,7 +1571,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-onAccent-rest",
     surface: "--tug-base-element-global-fill-normal-accentSubtle-rest",
-    role: "ui-component",
+    role: "informational",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   // fg-default on accent-subtle: menu selected/checked item background
@@ -1573,7 +1579,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-element-global-fill-normal-accentSubtle-rest",
-    role: "body-text",
+    role: "content",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
 
@@ -1582,22 +1588,22 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-tone-primary-normal-caution-rest",
-    role: "body-text",
+    role: "content",
     parentSurface: "--tug-base-surface-global-primary-normal-default-rest",
   },
   // tone-danger (chromatic) as fg on surface-overlay: danger menu item text (tug-menu.css)
-  // Classified as body-text: the user must read this label to understand the destructive
+  // Classified as content: the user must read this label to understand the destructive
   // action; it is readable label text regardless of the chromatic signal intent.
   {
     element: "--tug-base-element-tone-fill-normal-danger-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "body-text",
+    role: "content",
   },
   // tone-danger (chromatic) as fg on surface-default: ghost/outlined danger badge text (tug-badge.css)
   {
     element: "--tug-base-element-tone-fill-normal-danger-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // --- Checkmark / toggle track pairings (tug-checkbox.css) ---
@@ -1605,13 +1611,16 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-checkmark-icon-normal-plain-rest",
     surface: "--tug-base-surface-toggle-track-normal-on-rest",
-    role: "ui-component",
+    role: "control",
   },
   // checkmark-fg-mixed on toggle-track-mixed: indeterminate dash on mixed checkbox background
+  // The mixed-state toggle track is intentionally subdued; the dash indicator on it is
+  // classified as "decorative" (threshold 15) — the indicator's purpose is structural state
+  // signaling via position and shape, not text contrast. Contrast floor must not bump this.
   {
     element: "--tug-base-element-checkmark-icon-normal-plain-mixed",
     surface: "--tug-base-surface-toggle-track-normal-mixed-rest",
-    role: "ui-component",
+    role: "decorative",
   },
 
   // --- Dock button badge (tug-dock.css) ---
@@ -1619,7 +1628,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-inverse-rest",
     surface: "--tug-base-element-tone-fill-normal-danger-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // --- Neutral badge: divider-default used as background (tug-dialog.css) ---
@@ -1628,7 +1637,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-muted-rest",
     surface: "--tug-base-element-global-divider-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // --- Dock background = field-bg-focus (tug-dock.css) ---
@@ -1636,7 +1645,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-subtle-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-focus",
-    role: "ui-component",
+    role: "informational",
   },
 
   // =========================================================================
@@ -1645,7 +1654,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // darker/lighter variant of the fill at the same chromatic hue. The border is
   // a subtle outline accent — decorative. Hover/active variants have inherently
   // low contrast against their bg (same hue, adjacent tone), so they are
-  // classified decorative (threshold 15) not ui-component (threshold 30).
+  // classified decorative (threshold 15) not control/informational (threshold 60).
   // =========================================================================
   // Filled accent
   {
@@ -1876,7 +1885,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
-    role: "ui-component",
+    role: "decorative",
   },
   // Tab hover state — tab-bg-hover has alpha 8%, same semi-transparent pattern
   {
@@ -1894,12 +1903,28 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-control-rest",
-    role: "ui-component",
+    role: "decorative",
   },
   {
     element: "--tug-base-element-global-fill-normal-accent-rest",
     surface: "--tug-base-surface-global-primary-normal-control-rest",
-    role: "ui-component",
+    role: "informational",
+  },
+
+  // =========================================================================
+  // Card title token pairings (Step 7 additions)
+  // element-cardTitle-text-normal-plain-rest renders as .tugcard-title text
+  // on both active and inactive tab-bar backgrounds (tug-card.css [D06]).
+  // =========================================================================
+  {
+    element: "--tug-base-element-cardTitle-text-normal-plain-rest",
+    surface: "--tug-base-surface-tab-primary-normal-plain-active",
+    role: "display",
+  },
+  {
+    element: "--tug-base-element-cardTitle-text-normal-plain-rest",
+    surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
+    role: "display",
   },
 
   // =========================================================================
@@ -1909,37 +1934,37 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-badge-border-tinted-accent-rest",
     surface: "--tug-base-surface-badge-primary-tinted-accent-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-badge-border-tinted-action-rest",
     surface: "--tug-base-surface-badge-primary-tinted-action-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-badge-border-tinted-agent-rest",
     surface: "--tug-base-surface-badge-primary-tinted-agent-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-badge-border-tinted-data-rest",
     surface: "--tug-base-surface-badge-primary-tinted-data-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-badge-border-tinted-danger-rest",
     surface: "--tug-base-surface-badge-primary-tinted-danger-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-badge-border-tinted-success-rest",
     surface: "--tug-base-surface-badge-primary-tinted-success-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-badge-border-tinted-caution-rest",
     surface: "--tug-base-surface-badge-primary-tinted-caution-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // =========================================================================
@@ -2000,27 +2025,27 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-text-normal-inverse-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-fill-normal-accent-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-fill-normal-data-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-fill-normal-success-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
   {
     element: "--tug-base-element-tone-fill-normal-caution-rest",
     surface: "--tug-base-surface-global-primary-normal-default-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // =========================================================================
@@ -2069,7 +2094,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-field-fill-normal-caution-rest",
     surface: "--tug-base-surface-field-primary-normal-plain-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
   // =========================================================================
@@ -2080,7 +2105,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-fill-normal-accentCool-rest",
     surface: "--tug-base-surface-global-primary-normal-control-rest",
-    role: "ui-component",
+    role: "control",
   },
 
   // =========================================================================
@@ -2090,31 +2115,31 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug-base-element-global-border-normal-muted-rest",
     surface: "--tug-base-surface-global-primary-normal-inset-rest",
-    role: "ui-component",
+    role: "decorative",
   },
   // border-default on surface-inset (gallery-palette-content.css)
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-inset-rest",
-    role: "ui-component",
+    role: "decorative",
   },
   // border-default on bg-canvas (gallery-theme-generator-content.css)
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-canvas-rest",
-    role: "ui-component",
+    role: "decorative",
   },
   // border-default on surface-overlay (tug-menu.css dropdown panel border)
   {
     element: "--tug-base-element-global-border-normal-default-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",
-    role: "ui-component",
+    role: "decorative",
   },
   // accent-default on accent-subtle (gallery-theme-generator-content.css: mode btn active)
   {
     element: "--tug-base-element-global-fill-normal-accent-rest",
     surface: "--tug-base-element-global-fill-normal-accentSubtle-rest",
-    role: "ui-component",
+    role: "informational",
   },
 
 ];

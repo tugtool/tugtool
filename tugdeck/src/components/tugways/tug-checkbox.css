@@ -7,63 +7,17 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-surface-toggle-track-normal-off-rest (surface-toggle-track-normal-off-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | ui-component | .tug-checkbox (border)               |
- * | --tug-base-surface-toggle-track-normal-off-hover (surface-toggle-track-normal-off-hover) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | ui-component | .tug-checkbox:hover:not(:disabled):not([data-disabled]) (border-color) |
- * | --tug-toggle-on-color (--tug-toggle-on-color)    | --tug-toggle-on-color (--tug-toggle-on-color)    | ui-component | .tug-checkbox[data-state="checked"] (border-color) |
- * | --tug-base-surface-toggle-track-normal-on-hover (surface-toggle-track-normal-on-hover) | --tug-base-surface-toggle-track-normal-on-hover (surface-toggle-track-normal-on-hover) | ui-component | .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
- * | --tug-toggle-on-hover-color (--tug-toggle-on-hover-color) | --tug-toggle-on-hover-color (--tug-toggle-on-hover-color) | ui-component | .tug-checkbox[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) (border-color) |
- * | --tug-base-surface-toggle-track-normal-mixed-hover (surface-toggle-track-normal-mixed-hover) | --tug-base-surface-toggle-track-normal-mixed-hover (surface-toggle-track-normal-mixed-hover) | ui-component | .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
- * | --tug-base-surface-toggle-track-normal-plain-disabled (surface-toggle-track-normal-plain-disabled) | --tug-base-surface-toggle-track-normal-plain-disabled (surface-toggle-track-normal-plain-disabled) | ui-component | .tug-checkbox:disabled, .tug-checkbox[data-disabled] (border-color) |
- * | --tug-base-element-checkmark-icon-normal-plain-rest (element-checkmark-icon-normal-plain-rest) | --tug-base-surface-toggle-track-normal-on-rest (surface-toggle-track-normal-on-rest) | ui-component | .tug-checkbox-indicator (color)      |
- * | --tug-base-element-checkmark-icon-normal-plain-mixed (element-checkmark-icon-normal-plain-mixed) | --tug-base-surface-toggle-track-normal-mixed-rest (surface-toggle-track-normal-mixed-rest) | ui-component | .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator (color) |
- * | --tug-base-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .tug-checkbox-label (color)          |
+ * | --tug-base-surface-toggle-track-normal-off-rest (surface-toggle-track-normal-off-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-checkbox (border)               |
+ * | --tug-base-surface-toggle-track-normal-off-hover (surface-toggle-track-normal-off-hover) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-checkbox:hover:not(:disabled):not([data-disabled]) (border-color) |
+ * | --tug-toggle-on-color (--tug-toggle-on-color)    | --tug-toggle-on-color (--tug-toggle-on-color)    | informational | .tug-checkbox[data-state="checked"] (border-color) |
+ * | --tug-base-surface-toggle-track-normal-on-hover (surface-toggle-track-normal-on-hover) | --tug-base-surface-toggle-track-normal-on-hover (surface-toggle-track-normal-on-hover) | informational | .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
+ * | --tug-toggle-on-hover-color (--tug-toggle-on-hover-color) | --tug-toggle-on-hover-color (--tug-toggle-on-hover-color) | informational | .tug-checkbox[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) (border-color) |
+ * | --tug-base-surface-toggle-track-normal-mixed-hover (surface-toggle-track-normal-mixed-hover) | --tug-base-surface-toggle-track-normal-mixed-hover (surface-toggle-track-normal-mixed-hover) | informational | .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
+ * | --tug-base-surface-toggle-track-normal-plain-disabled (surface-toggle-track-normal-plain-disabled) | --tug-base-surface-toggle-track-normal-plain-disabled (surface-toggle-track-normal-plain-disabled) | informational | .tug-checkbox:disabled, .tug-checkbox[data-disabled] (border-color) |
+ * | --tug-base-element-checkmark-icon-normal-plain-rest (element-checkmark-icon-normal-plain-rest) | --tug-base-surface-toggle-track-normal-on-rest (surface-toggle-track-normal-on-rest) | control      | .tug-checkbox-indicator (color)      |
+ * | --tug-base-element-checkmark-icon-normal-plain-mixed (element-checkmark-icon-normal-plain-mixed) | --tug-base-surface-toggle-track-normal-mixed-rest (surface-toggle-track-normal-mixed-rest) | control      | .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator (color) |
+ * | --tug-base-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-checkbox-label (color)          |
  */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 /* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */

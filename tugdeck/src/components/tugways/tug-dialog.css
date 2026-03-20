@@ -12,11 +12,11 @@
  * @tug-pairings
  * | Element                                     | Surface                                        | Role         | Context                                         |
  * |---------------------------------------------|------------------------------------------------|--------------|-------------------------------------------------|
- * | --tug-dialog-fg (element-global-text-normal-default-rest)                | --tug-dialog-bg (surface-global-primary-normal-overlay-rest)              | body-text    | Dialog body text on dialog background           |
- * | --tug-alert-fg (element-global-text-normal-default-rest)                 | --tug-alert-bg (surface-global-primary-normal-default-rest)               | body-text    | Alert body text on alert background             |
- * | --tug-toast-info-fg (element-global-text-normal-default-rest)            | --tug-toast-info-bg (surface-global-primary-normal-default-rest)          | body-text    | Toast info text on toast background             |
- * | --tug-badge-neutral-fg (element-global-text-normal-muted-rest)           | --tug-badge-neutral-bg (element-global-divider-normal-default-rest)       | ui-component | Neutral badge text on divider-default background |
- * | --tug-kbd-fg (element-global-text-normal-muted-rest)                     | --tug-kbd-bg (surface-global-primary-normal-default-rest)                 | ui-component | Keyboard shortcut badge text on surface-default |
+ * | --tug-dialog-fg (element-global-text-normal-default-rest)                | --tug-dialog-bg (surface-global-primary-normal-overlay-rest)              | content      | Dialog body text on dialog background           |
+ * | --tug-alert-fg (element-global-text-normal-default-rest)                 | --tug-alert-bg (surface-global-primary-normal-default-rest)               | content      | Alert body text on alert background             |
+ * | --tug-toast-info-fg (element-global-text-normal-default-rest)            | --tug-toast-info-bg (surface-global-primary-normal-default-rest)          | content      | Toast info text on toast background             |
+ * | --tug-badge-neutral-fg (element-global-text-normal-muted-rest)           | --tug-badge-neutral-bg (element-global-divider-normal-default-rest)       | informational | Neutral badge text on divider-default background |
+ * | --tug-kbd-fg (element-global-text-normal-muted-rest)                     | --tug-kbd-bg (surface-global-primary-normal-default-rest)                 | informational | Keyboard shortcut badge text on surface-default |
  */
 
 body {

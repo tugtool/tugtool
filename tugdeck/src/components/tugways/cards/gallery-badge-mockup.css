@@ -7,78 +7,32 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-tone-border-normal-accent-rest (element-tone-border-normal-accent-rest) | --tug-base-surface-tone-primary-normal-accent-rest (surface-tone-primary-normal-accent-rest) | ui-component | .badge-mockup-tinted-border-accent (border-color) |
- * | --tug-base-element-tone-border-normal-active-rest (element-tone-border-normal-active-rest) | --tug-base-surface-tone-primary-normal-active-rest (surface-tone-primary-normal-active-rest) | ui-component | .badge-mockup-tinted-border-action (border-color) |
- * | --tug-base-element-tone-border-normal-agent-rest (element-tone-border-normal-agent-rest) | --tug-base-surface-tone-primary-normal-agent-rest (surface-tone-primary-normal-agent-rest) | ui-component | .badge-mockup-tinted-border-agent (border-color) |
- * | --tug-base-element-tone-border-normal-data-rest (element-tone-border-normal-data-rest) | --tug-base-surface-tone-primary-normal-data-rest (surface-tone-primary-normal-data-rest) | ui-component | .badge-mockup-tinted-border-data (border-color) |
- * | --tug-base-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | ui-component | .badge-mockup-tinted-border-danger (border-color) |
- * | --tug-base-element-tone-border-normal-success-rest (element-tone-border-normal-success-rest) | --tug-base-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | ui-component | .badge-mockup-tinted-border-success (border-color) |
- * | --tug-base-element-tone-border-normal-caution-rest (element-tone-border-normal-caution-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | ui-component | .badge-mockup-tinted-border-caution (border-color) |
- * | --tug-base-element-control-text-filled-accent-rest (element-control-text-filled-accent-rest) | --tug-base-surface-control-primary-filled-accent-rest (surface-control-primary-filled-accent-rest) | body-text    | .badge-mockup-filled-accent (color)  |
- * | --tug-base-element-control-border-filled-accent-rest (element-control-border-filled-accent-rest) | --tug-base-surface-control-primary-filled-accent-rest (surface-control-primary-filled-accent-rest) | ui-component | .badge-mockup-filled-accent (border-color) |
- * | --tug-base-element-control-text-filled-action-rest (element-control-text-filled-action-rest) | --tug-base-surface-control-primary-filled-action-rest (surface-control-primary-filled-action-rest) | body-text    | .badge-mockup-filled-action (color)  |
- * | --tug-base-element-control-border-filled-action-rest (element-control-border-filled-action-rest) | --tug-base-surface-control-primary-filled-action-rest (surface-control-primary-filled-action-rest) | ui-component | .badge-mockup-filled-action (border-color) |
- * | --tug-base-element-control-text-filled-agent-rest (element-control-text-filled-agent-rest) | --tug-base-surface-control-primary-filled-agent-rest (surface-control-primary-filled-agent-rest) | body-text    | .badge-mockup-filled-agent (color)   |
- * | --tug-base-element-control-border-filled-agent-rest (element-control-border-filled-agent-rest) | --tug-base-surface-control-primary-filled-agent-rest (surface-control-primary-filled-agent-rest) | ui-component | .badge-mockup-filled-agent (border-color) |
- * | --tug-base-element-control-text-filled-data-rest (element-control-text-filled-data-rest) | --tug-base-surface-control-primary-filled-data-rest (surface-control-primary-filled-data-rest) | body-text    | .badge-mockup-filled-data (color)    |
- * | --tug-base-element-control-border-filled-data-rest (element-control-border-filled-data-rest) | --tug-base-surface-control-primary-filled-data-rest (surface-control-primary-filled-data-rest) | ui-component | .badge-mockup-filled-data (border-color) |
- * | --tug-base-element-control-text-filled-danger-rest (element-control-text-filled-danger-rest) | --tug-base-surface-control-primary-filled-danger-rest (surface-control-primary-filled-danger-rest) | body-text    | .badge-mockup-filled-danger (color)  |
- * | --tug-base-element-control-border-filled-danger-rest (element-control-border-filled-danger-rest) | --tug-base-surface-control-primary-filled-danger-rest (surface-control-primary-filled-danger-rest) | ui-component | .badge-mockup-filled-danger (border-color) |
- * | --tug-base-element-control-text-filled-success-rest (element-control-text-filled-success-rest) | --tug-base-surface-control-primary-filled-success-rest (surface-control-primary-filled-success-rest) | body-text    | .badge-mockup-filled-success (color) |
- * | --tug-base-element-control-border-filled-success-rest (element-control-border-filled-success-rest) | --tug-base-surface-control-primary-filled-success-rest (surface-control-primary-filled-success-rest) | ui-component | .badge-mockup-filled-success (border-color) |
- * | --tug-base-element-control-text-filled-caution-rest (element-control-text-filled-caution-rest) | --tug-base-surface-control-primary-filled-caution-rest (surface-control-primary-filled-caution-rest) | body-text    | .badge-mockup-filled-caution (color) |
- * | --tug-base-element-control-border-filled-caution-rest (element-control-border-filled-caution-rest) | --tug-base-surface-control-primary-filled-caution-rest (surface-control-primary-filled-caution-rest) | ui-component | .badge-mockup-filled-caution (border-color) |
- * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .badge-mockup-control-group-title (color) |
- * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .badge-mockup-reset, .badge-mockup-reset-all (color) |
- * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .badge-mockup-reset:hover, .badge-mockup-reset-all:hover (color) |
- * | --tug-base-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .badge-mockup-vs-header (border-bottom) |
+ * | --tug-base-element-tone-border-normal-accent-rest (element-tone-border-normal-accent-rest) | --tug-base-surface-tone-primary-normal-accent-rest (surface-tone-primary-normal-accent-rest) | informational | .badge-mockup-tinted-border-accent (border-color) |
+ * | --tug-base-element-tone-border-normal-active-rest (element-tone-border-normal-active-rest) | --tug-base-surface-tone-primary-normal-active-rest (surface-tone-primary-normal-active-rest) | informational | .badge-mockup-tinted-border-action (border-color) |
+ * | --tug-base-element-tone-border-normal-agent-rest (element-tone-border-normal-agent-rest) | --tug-base-surface-tone-primary-normal-agent-rest (surface-tone-primary-normal-agent-rest) | informational | .badge-mockup-tinted-border-agent (border-color) |
+ * | --tug-base-element-tone-border-normal-data-rest (element-tone-border-normal-data-rest) | --tug-base-surface-tone-primary-normal-data-rest (surface-tone-primary-normal-data-rest) | informational | .badge-mockup-tinted-border-data (border-color) |
+ * | --tug-base-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .badge-mockup-tinted-border-danger (border-color) |
+ * | --tug-base-element-tone-border-normal-success-rest (element-tone-border-normal-success-rest) | --tug-base-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | informational | .badge-mockup-tinted-border-success (border-color) |
+ * | --tug-base-element-tone-border-normal-caution-rest (element-tone-border-normal-caution-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | informational | .badge-mockup-tinted-border-caution (border-color) |
+ * | --tug-base-element-control-text-filled-accent-rest (element-control-text-filled-accent-rest) | --tug-base-surface-control-primary-filled-accent-rest (surface-control-primary-filled-accent-rest) | control      | .badge-mockup-filled-accent (color)  |
+ * | --tug-base-element-control-border-filled-accent-rest (element-control-border-filled-accent-rest) | --tug-base-surface-control-primary-filled-accent-rest (surface-control-primary-filled-accent-rest) | control      | .badge-mockup-filled-accent (border-color) |
+ * | --tug-base-element-control-text-filled-action-rest (element-control-text-filled-action-rest) | --tug-base-surface-control-primary-filled-action-rest (surface-control-primary-filled-action-rest) | control      | .badge-mockup-filled-action (color)  |
+ * | --tug-base-element-control-border-filled-action-rest (element-control-border-filled-action-rest) | --tug-base-surface-control-primary-filled-action-rest (surface-control-primary-filled-action-rest) | control      | .badge-mockup-filled-action (border-color) |
+ * | --tug-base-element-control-text-filled-agent-rest (element-control-text-filled-agent-rest) | --tug-base-surface-control-primary-filled-agent-rest (surface-control-primary-filled-agent-rest) | control      | .badge-mockup-filled-agent (color)   |
+ * | --tug-base-element-control-border-filled-agent-rest (element-control-border-filled-agent-rest) | --tug-base-surface-control-primary-filled-agent-rest (surface-control-primary-filled-agent-rest) | control      | .badge-mockup-filled-agent (border-color) |
+ * | --tug-base-element-control-text-filled-data-rest (element-control-text-filled-data-rest) | --tug-base-surface-control-primary-filled-data-rest (surface-control-primary-filled-data-rest) | control      | .badge-mockup-filled-data (color)    |
+ * | --tug-base-element-control-border-filled-data-rest (element-control-border-filled-data-rest) | --tug-base-surface-control-primary-filled-data-rest (surface-control-primary-filled-data-rest) | control      | .badge-mockup-filled-data (border-color) |
+ * | --tug-base-element-control-text-filled-danger-rest (element-control-text-filled-danger-rest) | --tug-base-surface-control-primary-filled-danger-rest (surface-control-primary-filled-danger-rest) | control      | .badge-mockup-filled-danger (color)  |
+ * | --tug-base-element-control-border-filled-danger-rest (element-control-border-filled-danger-rest) | --tug-base-surface-control-primary-filled-danger-rest (surface-control-primary-filled-danger-rest) | control      | .badge-mockup-filled-danger (border-color) |
+ * | --tug-base-element-control-text-filled-success-rest (element-control-text-filled-success-rest) | --tug-base-surface-control-primary-filled-success-rest (surface-control-primary-filled-success-rest) | control      | .badge-mockup-filled-success (color) |
+ * | --tug-base-element-control-border-filled-success-rest (element-control-border-filled-success-rest) | --tug-base-surface-control-primary-filled-success-rest (surface-control-primary-filled-success-rest) | control      | .badge-mockup-filled-success (border-color) |
+ * | --tug-base-element-control-text-filled-caution-rest (element-control-text-filled-caution-rest) | --tug-base-surface-control-primary-filled-caution-rest (surface-control-primary-filled-caution-rest) | control      | .badge-mockup-filled-caution (color) |
+ * | --tug-base-element-control-border-filled-caution-rest (element-control-border-filled-caution-rest) | --tug-base-surface-control-primary-filled-caution-rest (surface-control-primary-filled-caution-rest) | control      | .badge-mockup-filled-caution (border-color) |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .badge-mockup-control-group-title (color) |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .badge-mockup-reset, .badge-mockup-reset-all (color) |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .badge-mockup-reset:hover, .badge-mockup-reset-all:hover (color) |
+ * | --tug-base-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .badge-mockup-vs-header (border-bottom) |
  */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 .badge-mockup {

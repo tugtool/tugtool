@@ -7,62 +7,16 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | body-text    | .gp-action-btn (color)               |
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | ui-component | .gp-action-btn (border)              |
- * | --tug-base-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | body-text    | .gp-import-error (color)             |
- * | --tug-base-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | ui-component | .gp-import-error (border)            |
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | ui-component | .gp-achromatic-swatch:hover (border-color) |
- * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | subdued-text | .gp-achromatic-label (color)         |
- * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .gp-curve-hue-label--selected (fill) |
- * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | body-text    | .gp-formula-snippet (color)          |
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | ui-component | .gp-formula-snippet (border)         |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .gp-action-btn (color)               |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .gp-action-btn (border)              |
+ * | --tug-base-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gp-import-error (color)             |
+ * | --tug-base-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gp-import-error (border)            |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gp-achromatic-swatch:hover (border-color) |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gp-achromatic-label (color)         |
+ * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .gp-curve-hue-label--selected (fill) |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | content      | .gp-formula-snippet (color)          |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | informational | .gp-formula-snippet (border)         |
  */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 .gp-content {

@@ -83,10 +83,12 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
   "--tug-base-element-control-icon-outlined-agent-hover", // [design-choice] agent hue at hover lightness
   "--tug-base-element-control-icon-outlined-agent-active", // [design-choice] agent hue at active lightness
 
-  // C3 — ghost-danger rest/hover/active: danger hue at mid-tone is below contrast 60 large-text
-  "--tug-base-element-control-text-ghost-danger-rest", // [design-choice] danger hue mid-tone; contrast ~40-41 below large-text threshold 60
+  // C3 — ghost-danger rest/hover/active: danger hue at mid-tone is below contrast 60 control
+  "--tug-base-element-control-text-ghost-danger-rest", // [design-choice] danger hue mid-tone; contrast ~40-41 below control threshold 60
   "--tug-base-element-control-text-ghost-danger-hover", // [design-choice] danger hue hover state; same structural constraint
   "--tug-base-element-control-text-ghost-danger-active", // [design-choice] danger hue active state; same structural constraint
+  "--tug-base-element-control-icon-ghost-danger-rest", // [design-choice] danger hue icon at rest; same structural constraint as text version
+  "--tug-base-element-control-icon-ghost-danger-hover", // [design-choice] danger hue icon hover state; same structural constraint
   "--tug-base-element-control-icon-ghost-danger-active", // [design-choice] danger hue active icon; same structural constraint
 
   // D — semantic tone tokens (status/informational colors — medium visual weight by design)
@@ -125,7 +127,33 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
   "--tug-base-element-global-icon-normal-plain-disabled", // [design-choice] disabled state icon
   "--tug-base-element-field-text-normal-plain-disabled", // [design-choice] disabled field text: intentionally low contrast
 
-  // F — Badge tinted border tokens: alpha 35%; compositing produces contrast ~19-24, below 30 threshold
+  // E3 — semantic signal field tokens below threshold by design
+  // These use semantic hue tones for state communication; hue recognition takes precedence over max contrast
+  "--tug-base-element-field-text-normal-required-rest", // [design-choice] required field asterisk: semantic signal color; contrast ~54-55 below informational 60
+  "--tug-base-element-field-border-normal-danger-rest", // [design-choice] danger field border: semantic red signal; contrast ~57 below control 60 on field bg
+
+  // F — Badge tinted text/icon tokens: composited contrast ~40-55, below informational threshold 60
+  // Badge tinted text uses mid-tone hues for semantic signal identity; the tinted bg (alpha 15%)
+  // is composited over surface-default. The resulting contrast is ~45-55, below the informational
+  // threshold (60). These are informational semantic indicators, not primary readable text.
+  // Reclassified from ui-component (30) to informational (60) per D05; the design intent of
+  // badge tinted text is colorimetric signal, not WCAG-level contrast for primary prose.
+  "--tug-base-element-badge-text-tinted-accent-rest", // [design-choice] badge tinted text: mid-tone signal color; composited contrast ~45, below informational 60
+  "--tug-base-element-badge-text-tinted-action-rest", // [design-choice] badge tinted text; same rationale as accent
+  "--tug-base-element-badge-text-tinted-agent-rest", // [design-choice] badge tinted text; same rationale
+  "--tug-base-element-badge-text-tinted-data-rest", // [design-choice] badge tinted text; same rationale
+  "--tug-base-element-badge-text-tinted-danger-rest", // [design-choice] badge tinted text; same rationale
+  "--tug-base-element-badge-text-tinted-success-rest", // [design-choice] badge tinted text; same rationale
+  "--tug-base-element-badge-text-tinted-caution-rest", // [design-choice] badge tinted text; same rationale
+  "--tug-base-element-badge-icon-tinted-accent-rest", // [design-choice] badge tinted icon; same rationale as text
+  "--tug-base-element-badge-icon-tinted-action-rest", // [design-choice] badge tinted icon; same rationale
+  "--tug-base-element-badge-icon-tinted-agent-rest", // [design-choice] badge tinted icon; same rationale
+  "--tug-base-element-badge-icon-tinted-data-rest", // [design-choice] badge tinted icon; same rationale
+  "--tug-base-element-badge-icon-tinted-danger-rest", // [design-choice] badge tinted icon; same rationale
+  "--tug-base-element-badge-icon-tinted-success-rest", // [design-choice] badge tinted icon; same rationale
+  "--tug-base-element-badge-icon-tinted-caution-rest", // [design-choice] badge tinted icon; same rationale
+
+  // F2 — Badge tinted border tokens: alpha 35%; compositing produces contrast ~19-24, below informational 60 threshold
   "--tug-base-element-badge-border-tinted-accent-rest", // [design-choice] tinted badge border: subtle same-hue outline; reinforced by filled bg and text
   "--tug-base-element-badge-border-tinted-action-rest", // [design-choice] tinted badge border; same rationale as accent
   "--tug-base-element-badge-border-tinted-agent-rest", // [design-choice] tinted badge border; same rationale as accent
@@ -135,7 +163,7 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
   "--tug-base-element-badge-border-tinted-caution-rest", // [design-choice] tinted badge border; same rationale as accent
 
   // G — Tab chrome
-  "--tug-base-element-tab-text-normal-plain-hover", // [design-choice] tab hover state: below contrast 75 body-text in both dark and light
+  "--tug-base-element-tab-text-normal-plain-hover", // [design-choice] tab hover state: below contrast 75 content in both dark and light
 
   // H — Non-text component visibility tokens below contrast 30 by design
   "--tug-base-surface-toggle-track-normal-off-rest", // [design-choice] inactive toggle track: intentionally lower-contrast to signal off state
@@ -155,14 +183,14 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
 // INTENTIONALLY_BELOW_THRESHOLD
 //
 // Element tokens intentionally below contrast thresholds used in
-// theme-accessibility tests and contrast-dashboard tests (body-text scope).
+// theme-accessibility tests and contrast-dashboard tests (content role scope).
 // This is a narrower subset of KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS focused
-// on the body-text checks in T3.5 and T7.2.
+// on the content role checks in T3.5 and T7.2.
 // ---------------------------------------------------------------------------
 
 /**
  * Element tokens intentionally or structurally below contrast 75 in the Brio
- * dark theme body-text checks.
+ * dark theme content checks.
  */
 export const INTENTIONALLY_BELOW_THRESHOLD: ReadonlySet<string> = new Set([
   "--tug-base-element-global-text-normal-link-rest", // [design-choice] link fg: brand hue recognition over max contrast
@@ -173,8 +201,8 @@ export const INTENTIONALLY_BELOW_THRESHOLD: ReadonlySet<string> = new Set([
   "--tug-base-element-global-text-normal-subtle-rest", // [design-choice] tertiary text hierarchy
   "--tug-base-element-global-text-normal-placeholder-rest", // [design-choice] placeholder: intentionally subdued input hint
   "--tug-base-element-global-text-normal-link-hover", // [design-choice] link hover: brand hue recognition
-  "--tug-base-element-global-text-normal-muted-rest", // [design-choice] muted text hierarchy (contrast ~61, below body-text 75, passes subdued-text 45)
-  "--tug-base-element-field-text-normal-plain-readOnly", // [design-choice] read-only field text (contrast ~61, passes subdued-text 45)
+  "--tug-base-element-global-text-normal-muted-rest", // [design-choice] muted text hierarchy (contrast ~61, below content 75, passes informational 60)
+  "--tug-base-element-field-text-normal-plain-readOnly", // [design-choice] read-only field text (contrast ~61, passes informational 60)
   "--tug-base-element-tab-text-normal-plain-rest", // [design-choice] tab chrome rest state: intentionally low contrast for visual hierarchy
   "--tug-base-element-tab-text-normal-plain-hover", // [design-choice] tab chrome hover state
 ]);
@@ -237,6 +265,38 @@ export const KNOWN_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set([
   "--tug-base-surface-toggle-track-normal-on-hover|--tug-base-surface-toggle-track-normal-on-hover", // [design-choice] same token as element and surface; contrast always 0 by definition; decorative
   "--tug-base-surface-toggle-track-normal-plain-disabled|--tug-base-surface-toggle-track-normal-plain-disabled", // [design-choice] same token as element and surface; contrast always 0 by definition; decorative
 
+  // Outlined button border-hover/-active on semi-transparent hover/active bg
+  // The hover/active surface is a 10-20% tinted overlay; border and surface share the same hue.
+  // Same pattern as filled/ghost button border pairs above — decorative same-hue outline.
+  "--tug-base-element-control-border-outlined-action-hover|--tug-base-surface-control-primary-outlined-action-hover", // [design-choice] same-hue border on 10-20% alpha hover tint; decorative outline
+  "--tug-base-element-control-border-outlined-action-active|--tug-base-surface-control-primary-outlined-action-active", // [design-choice] same-hue border on 10-20% alpha active tint; decorative outline
+  "--tug-base-element-control-border-outlined-agent-hover|--tug-base-surface-control-primary-outlined-agent-hover", // [design-choice] same-hue border on alpha hover tint; decorative outline
+  "--tug-base-element-control-border-outlined-agent-active|--tug-base-surface-control-primary-outlined-agent-active", // [design-choice] same-hue border on alpha active tint; decorative outline
+
+  // Focus ring (accentCool) on overlay and screen surfaces — structural ceiling
+  // The cobalt-intense focus ring passes on most surfaces after floor enforcement.
+  // On surface-overlay (dark translucent dim) and surface-screen (very light in dark mode),
+  // the effective luminance difference is constrained by the hue's color space ceiling.
+  // These are documented structural constraints; accentCool meets control 60 on all other surfaces.
+  "--tug-base-element-global-fill-normal-accentCool-rest|--tug-base-surface-global-primary-normal-overlay-rest", // [design-choice] focus ring: gamut ceiling on overlay surface; contrast ~59, within 1 unit of 60 threshold
+  "--tug-base-element-global-fill-normal-accentCool-rest|--tug-base-surface-global-primary-normal-screen-rest", // [design-choice] focus ring: gamut ceiling on screen surface; contrast ~55-56 below control 60
+
+  // On-fill text for semantic tone backgrounds (onCaution, onSuccess)
+  // These use near-white text on vivid mid-tone semantic fill backgrounds.
+  // The tone-fill colors are vivid chromatic hues; the contrast ceiling prevents reaching 60.
+  // Previously ui-component (30), reclassified to control but cannot meet control threshold due to hue ceiling.
+  "--tug-base-element-global-text-normal-onCaution-rest|--tug-base-element-tone-fill-normal-caution-rest", // [design-choice] on-caution-fill text: yellow hue ceiling; contrast ~35 below control 60
+  "--tug-base-element-global-text-normal-onSuccess-rest|--tug-base-element-tone-fill-normal-success-rest", // [design-choice] on-success-fill text: green hue ceiling; contrast ~38 below control 60
+
+  // Required field marker on surface-default
+  "--tug-base-element-field-text-normal-required-rest|--tug-base-surface-global-primary-normal-default-rest", // [design-choice] required field asterisk: semantic signal color; contrast ~54-55 below informational 60
+
+  // Tab overflow badge: surface-default token used as text color on accent fill
+  // The CSS uses var(--tug-base-surface-global-primary-normal-default-rest) as text color directly
+  // over the accent-default badge background. In dark mode this passes; in light mode the
+  // polarity flips (both tokens become near-white), producing low contrast.
+  "--tug-base-surface-global-primary-normal-default-rest|--tug-base-element-global-fill-normal-accent-rest", // [design-choice] tab overflow badge: surface-default as text color on accent fill; structural polarity constraint
+
   // B08: tone-danger on surface-overlay (danger menu item label text): vivid red clips in sRGB
   // at high tones, reducing effective OKLab-L and preventing contrast 75 in dark mode.
   // The gamut ceiling is the same structural constraint as B01 (tone-danger as element token).
@@ -274,7 +334,7 @@ export const RECIPE_PAIR_EXCEPTIONS: Readonly<Record<string, ReadonlySet<string>
   //     placed on light surface-screen; polarity mismatch by design (confirmed CSS selector)
   //   - fg-inverse|surface-default: .tug-badge-ghost and .tug-badge-outlined — fg-inverse
   //     is near-white in dark mode (L~0.94), which becomes near-white on near-white
-  //     surface-default (L~0.95) in light mode; contrast abs 6.5 (threshold 30, ui-component)
+  //     surface-default (L~0.95) in light mode; contrast abs 6.5 (threshold 60, informational)
   //
   // Categorization:
   //   [design-choice]: fg-inverse surface placements are structural; they are on-fill tokens
@@ -285,19 +345,26 @@ export const RECIPE_PAIR_EXCEPTIONS: Readonly<Record<string, ReadonlySet<string>
 
     // fg-inverse is for on-fill text (dark bg fills). In light mode, fg-inverse derives near-white
     // (L~0.94), creating near-zero contrast against near-white surface-screen (L~0.95+).
-    // CSS context: .tug-tab-inactive, role: body-text, contrast abs 8.3, threshold 75.
+    // CSS context: .tug-tab-inactive, role: content, contrast abs 8.3, threshold 75.
     "--tug-base-element-global-text-normal-inverse-rest|--tug-base-surface-global-primary-normal-screen-rest", // [design-choice] fg-inverse designed for dark on-fill backgrounds; polarity mismatch on light surface-screen
 
     // fg-inverse on surface-default: ghost/outlined badge foreground. In dark mode, fg-inverse
     // is near-white (L~0.94) against dark surface-default — high contrast and passes.
     // In light mode, fg-inverse remains near-white while surface-default is also near-white
     // (L~0.95), producing near-zero contrast (abs 6.5). CSS context: .tug-badge-ghost,
-    // .tug-badge-outlined. Role: ui-component, threshold 30.
+    // .tug-badge-outlined. Role: informational, threshold 60.
     // Note: Also in KNOWN_PAIR_EXCEPTIONS for dark-mode ghost badge structural issue.
     "--tug-base-element-global-text-normal-inverse-rest|--tug-base-surface-global-primary-normal-default-rest", // [design-choice] fg-inverse near-white on near-white surface-default in light mode; polarity mismatch; Phase 3 will introduce light-mode fg-inverse token
 
     // Note: "--tug-base-element-global-fill-normal-accentCool-rest|--tug-base-element-field-border-normal-plain-rest" is already covered by
     // KNOWN_PAIR_EXCEPTIONS (global, applies to all recipes including harmony). It is not repeated here.
+
+    // ghost-danger-hover icon on surface-default (harmony light mode only)
+    // In dark mode (brio), ghost-danger-hover icon is in KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.
+    // In light mode (harmony), the danger hue produces contrast 54.8 — below control 60 but
+    // closer to the threshold due to light-mode polarity. The structural hue ceiling prevents
+    // reaching 60 in either mode; both are design-choice exceptions.
+    "--tug-base-element-control-icon-ghost-danger-hover|--tug-base-surface-global-primary-normal-default-rest", // [design-choice] danger hue icon hover: structural hue ceiling; contrast ~54.8 in harmony light mode
   ]),
 };
 

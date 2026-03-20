@@ -139,6 +139,8 @@
 | [D79] | No RAF for React state-dependent DOM operations — RAF is a timing bet, not a contract | Concept 18 | [#d79-no-raf-for-state](#d79-no-raf-for-state) |
 | [D80] | Build-time `--tug-color()` expansion: PostCSS plugin replaces `--tug-color(hue, i, t)` with `oklch()` at build time; theme files use `--tug-color()` notation instead of hardcoded hex | Concept 22 | [#d80-tug-color-postcss](#d80-tug-color-postcss) |
 | [D81] | Token pairings are machine-auditable: every foreground-on-background rendering relationship is deterministically extractable from CSS alone — either via same-rule background-color or via `@tug-renders-on` annotation. `audit-tokens lint` enforces this. | Phase 1.5 | [#d81-machine-auditable-pairings](#d81-machine-auditable-pairings) |
+| [D82] | Four semantic text types govern element plane hue selection: `content` (prose/body), `control` (interactive labels), `display` (titles/headers), `informational` (status/metadata). Each type maps to a dedicated element hue slot and contrast role. | Concept 22 | [#d82-semantic-text-types](#d82-semantic-text-types) |
+| [D83] | Five contrast roles replace the legacy four: `content` (75), `control` (60), `display` (60), `informational` (60), `decorative` (15). All readable text roles use thresholds >= 60. `large-text`, `body-text`, `subdued-text`, and `ui-component` are retired. | Concept 22 | [#d83-contrast-role-vocabulary](#d83-contrast-role-vocabulary) |
 
 ### Key Architectural Patterns
 
@@ -198,6 +200,7 @@
 | 24 | Tugbank Defaults Store — Concept 17 | 2026-03-04 | [#log-24](#log-24) |
 | 25 | Inactive State Preservation — Concept 18 | 2026-03-04 | [#log-25](#log-25) |
 | 28 | Target/Action, Mutation Transactions, Observable Properties — Concepts 19–21 | 2026-03-05 | [#log-28](#log-28) |
+| 34 | Semantic Text Types and Contrast Role Vocabulary — Phase 3.5B | 2026-03-19 | [#log-34](#log-34) |
 
 ---
 
@@ -3773,6 +3776,50 @@ The fix is two-pronged:
 
 **`audit-tokens lint` subcommand.** Enforces four checks with hard exit code 1 on any violation: (1) `MISSING_ANNOTATION` — every fg rule without same-rule bg has an annotation; (2) `MULTI_HOP_ALIAS` — no multi-hop alias chains outside the compat allowlist; (3) `MISSING_PAIRINGS_BLOCK` — every component CSS file has a `@tug-pairings` block; (4) `UNRESOLVED_PAIRING` — zero pairings without a deterministic surface after annotation parsing.
 
+#### Semantic Text Types {#d82-semantic-text-types}
+
+**[D82] Four semantic text types govern element plane hue selection and contrast role assignment.**
+
+All text tokens are classified into exactly one of four semantic types. The type determines both the element plane hue slot used when generating the token's color and the contrast role assigned in the pairing map.
+
+| Type | Purpose | Examples | Element hue slot | Contrast role |
+|------|---------|---------|------------------|---------------|
+| `content` | Prose, body text, descriptions | Card body, paragraphs, list items | `element.content` | `content` (75) |
+| `control` | Interactive element labels | Button text, menu items, tab labels | `element.control` | `control` (60) |
+| `display` | Titles, headers, emphasis | Card titles, section headers, hero text | `element.display` | `display` (60) |
+| `informational` | Status, metadata, secondary | Badges, timestamps, placeholders, muted text | `element.informational` | `informational` (60) |
+
+The four types map cleanly to the Phase 3.5A naming convention component axis (`global`, `control`, `cardTitle`, `badge`). The current system uses a single `text` hue for all text tokens, preventing independent color control for different text purposes. The four-type classification makes this control explicit: `element.content` drives prose, `element.control` drives interactive labels, `element.display` drives titles, and `element.informational` drives muted/status text. Each may resolve to a different hue angle, enabling the recipe author to tune the typographic palette per-type without affecting the others.
+
+**Default hue conventions** (baked into `EXAMPLE_RECIPES`, not enforced by the engine):
+- `element.content` — primary brand hue (e.g., `"cobalt"` at 250°)
+- `element.control` — matches `element.content` by default (same typographic family as prose)
+- `element.display` — a subtly warmer hue than `element.content` (e.g., `"indigo"` at 260°, +10° from cobalt) to distinguish titles visually
+- `element.informational` — matches `surface.canvas` hue to make metadata recede into the background
+- `element.decorative` — near-neutral; structural marks should not compete with semantic content
+
+These conventions are recipe authoring guidelines, not engine constraints. The engine reads each element hue directly from the recipe with no automatic shifting.
+
+#### Contrast Role Vocabulary {#d83-contrast-role-vocabulary}
+
+**[D83] Five contrast roles replace the legacy four-role system. All readable text roles maintain thresholds >= 60.**
+
+| Role | Threshold | Purpose | Replaces |
+|------|-----------|---------|---------|
+| `content` | 75 | Primary prose text | `body-text` (75) |
+| `control` | 60 | Interactive element labels | `large-text` (60) and interactive `ui-component` entries |
+| `display` | 60 | Titles, headers | *(new)* |
+| `informational` | 60 | Muted/metadata text | `subdued-text` (was 45, raised to 60) and structural `ui-component` entries |
+| `decorative` | 15 | Non-text ornamental marks | `decorative` (15, unchanged) |
+
+**Why all text roles at 60+.** Card titles, display headers, and informational text (badges, timestamps, placeholders) must be as legible as body text. Reducing any text threshold below 60 compromises legibility. The `decorative` role (threshold 15) is the only appropriate reduced-contrast role because it covers non-text visual marks where contrast is not a legibility concern.
+
+**`subdued-text` threshold raised from 45 to 60.** The old `subdued-text` role allowed muted/placeholder text at threshold 45. The new `informational` role raises this to 60 — muted text must still be readable. This may require formula tone adjustments for pairings that currently pass at 45 but fail at 60.
+
+**`ui-component` split into `control` and `informational`.** The old `ui-component` role covered heterogeneous elements — interactive icons, field borders, badge text, structural borders, accent fills — under a single low threshold of 30. The new vocabulary resolves this ambiguity by semantic intent: interactive elements (icons on buttons/tabs/menus, field borders, toggle tracks/thumbs, checkbox/radio parts) are reclassified to `control` (60); structural/metadata elements (global borders, badge borders/text, tone fills/icons, accent fills, muted/subtle text) are reclassified to `informational` (60). Both now require 60 — double the old `ui-component` threshold of 30.
+
+**Retired role names.** `body-text`, `subdued-text`, `large-text`, and `ui-component` are removed from the `ContrastRole` type and `CONTRAST_THRESHOLDS` map. No new code may reference them. The pairing map, contrast exceptions, `@tug-pairings` blocks, and all test assertions use only the five roles above.
+
 #### Neutral Ramp and Opacity {#d75-neutral-ramp}
 
 **[D75] TugColor extends to neutrals and alpha via `--tug-neutral-*` and CSS relative color syntax.**
@@ -4411,3 +4458,19 @@ Pre-planning review for Phase 7a revealed that Entry 32's scope for TugAnimator 
 - **Added decision rule cheat sheet** to the TugAnimator section of Concept 8 — an 8-row table that resolves CSS vs TugAnimator vs rAF for any animation scenario.
 
 - **Narrowed Phase 7b scope** in the strategy document. Removed: gallery petals/pole migration, rAF loop migration, skeleton shimmer via TugAnimator. Kept: flash overlay, dropdown blink, button spinner migrations (all need completion/cancellation). Added explicit "keep as CSS" and "keep as rAF" sections for clarity.
+
+### Entry 34: Semantic Text Types and Contrast Role Vocabulary — Phase 3.5B {#log-34} (2026-03-19)
+
+Added design decisions D82 (Semantic Text Types) and D83 (Contrast Role Vocabulary) to Concept 22 as part of Phase 3.5B, which establishes the design vocabulary for the element plane.
+
+**Key decisions:**
+
+- **[D82] Four semantic text types.** All text tokens are classified into `content`, `control`, `display`, or `informational`. The classification determines both the element hue slot used in token generation and the contrast role in the pairing map. This replaces the current single-`text` hue that drives all text tokens regardless of purpose. Default conventions for hue selection are baked into `EXAMPLE_RECIPES` as authoring guidelines, not engine constraints: `control` matches `content` (same typographic family), `display` is +10° warmer (closest clean base hue to the +15° convention), `informational` matches `surface.canvas` (recedes into background), `decorative` is near-neutral.
+
+- **[D83] Five contrast roles replace the legacy four.** `content` (75), `control` (60), `display` (60), `informational` (60), `decorative` (15). All readable text roles maintain thresholds >= 60. The key changes: `body-text` → `content` (same threshold, renamed); `large-text` → `control` (same threshold, semantic rename); `subdued-text` → `informational` (threshold raised from 45 to 60); `ui-component` split into `control` (interactive elements, from 30 to 60) and `informational` (structural/metadata elements, from 30 to 60). The `ui-component` split is the largest change — 181 pairings reclassified at double their prior threshold. Risk R02 in the Phase 3.5B plan addresses this explicitly.
+
+- **`ThemeRecipe` restructured.** The flat recipe fields are replaced with nested `surface`/`element`/`role` groups. `cardFrame` and `link` are removed as recipe inputs; `cardFrame` is derived from `element.border` and `link`/`interactive` from `role.action`. New element hue inputs: `element.control`, `element.display`, `element.informational`, `element.decorative`.
+
+- **Card title token.** `element-cardTitle-text-normal-plain-rest` is a new derivation rule using the `display` element hue. `tug-card.css` uses this token for `.tugcard-title`, giving card titles independent color control separate from body prose.
+
+Implementation is in the Phase 3.5B plan (`tugplan-design-vocabulary.md`) with 10 execution steps. The documentation update (this entry) is step 9.

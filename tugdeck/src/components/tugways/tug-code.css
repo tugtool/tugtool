@@ -11,14 +11,14 @@
  * @tug-pairings
  * | Element                                       | Surface                                          | Role         | Context                                          |
  * |-----------------------------------------------|--------------------------------------------------|--------------|--------------------------------------------------|
- * | --tug-syntax-comment (element-global-text-normal-muted-rest)               | --tug-codeBlock-bg (surface-global-primary-normal-control-rest)             | body-text    | Code comment text in code block                  |
- * | --tug-syntax-operator (element-global-text-normal-default-rest)            | --tug-codeBlock-bg (surface-global-primary-normal-control-rest)             | body-text    | Code operator/punctuation text in code block     |
- * | --tug-codeBlock-header-fg (element-global-text-normal-subtle-rest)         | --tug-codeBlock-header-bg (surface-global-primary-normal-sunken-rest)       | subdued-text | Code block header text on sunken header          |
- * | --tug-chat-attachment-fg (element-global-text-normal-muted-rest)           | --tug-chat-attachment-bg (surface-global-primary-normal-overlay-rest)       | subdued-text | Chat attachment label on overlay background      |
- * | --tug-feed-step-fg (element-global-text-normal-muted-rest)                 | --tug-feed-step-bg (surface-global-primary-normal-sunken-rest)              | subdued-text | Feed step text on sunken background              |
- * | --tug-terminal-fg (element-global-text-normal-default-rest)                | --tug-terminal-bg (surface-global-primary-normal-inset-rest)                | body-text    | Terminal text on inset background                |
- * | --tug-terminal-fg-muted (element-global-text-normal-muted-rest)            | --tug-terminal-bg (surface-global-primary-normal-inset-rest)                | subdued-text | Terminal muted text on inset background          |
- * | --tug-tree-row-fg (element-global-text-normal-default-rest)                | parent ambient surface-default                   | body-text    | File tree row text                               |
+ * | --tug-syntax-comment (element-global-text-normal-muted-rest)               | --tug-codeBlock-bg (surface-global-primary-normal-control-rest)             | informational | Code comment text in code block                  |
+ * | --tug-syntax-operator (element-global-text-normal-default-rest)            | --tug-codeBlock-bg (surface-global-primary-normal-control-rest)             | content      | Code operator/punctuation text in code block     |
+ * | --tug-codeBlock-header-fg (element-global-text-normal-subtle-rest)         | --tug-codeBlock-header-bg (surface-global-primary-normal-sunken-rest)       | informational | Code block header text on sunken header          |
+ * | --tug-chat-attachment-fg (element-global-text-normal-muted-rest)           | --tug-chat-attachment-bg (surface-global-primary-normal-overlay-rest)       | informational | Chat attachment label on overlay background      |
+ * | --tug-feed-step-fg (element-global-text-normal-muted-rest)                 | --tug-feed-step-bg (surface-global-primary-normal-sunken-rest)              | informational | Feed step text on sunken background              |
+ * | --tug-terminal-fg (element-global-text-normal-default-rest)                | --tug-terminal-bg (surface-global-primary-normal-inset-rest)                | content      | Terminal text on inset background                |
+ * | --tug-terminal-fg-muted (element-global-text-normal-muted-rest)            | --tug-terminal-bg (surface-global-primary-normal-inset-rest)                | informational | Terminal muted text on inset background          |
+ * | --tug-tree-row-fg (element-global-text-normal-default-rest)                | parent ambient surface-default                   | content      | File tree row text                               |
  */
 
 body {

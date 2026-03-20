@@ -7,55 +7,9 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .tug-label (color)                   |
- * | --tug-base-element-field-text-normal-required-rest (element-field-text-normal-required-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | body-text    | .tug-label-required (color)          |
+ * | --tug-base-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-label (color)                   |
+ * | --tug-base-element-field-text-normal-required-rest (element-field-text-normal-required-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-label-required (color)          |
  */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 /* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */

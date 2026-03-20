@@ -2,15 +2,15 @@
  * Theme Derivation Engine tests.
  *
  * Covers:
- * - T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 373 entries
+ * - T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 374 entries
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
  * - T2.5: Theme-invariant tokens are correct for Brio
  * - T2.6: Non-override tokens resolve to valid sRGB gamut colors
  * - Recipe contrast validation (parameterized loop): one test case per EXAMPLE_RECIPES entry;
  *   adding a recipe automatically adds it to contrast validation [D02], Spec S04
  * - T-RESOLVED-CSS: generateResolvedCssExport() produces valid resolved oklch() CSS
- * - resolveHueSlots, computeTones, evaluateRules unit tests
- * - Contrast floor enforcement and composited contrast enforcement
+ * - resolveHueSlots / computeTones / evaluateRules unit and integration tests
+ * - Contrast floor enforcement and composited contrast enforcement tests
  *
  * Run with: cd tugdeck && bun test --grep "derivation-engine"
  *
@@ -19,7 +19,6 @@
 import "./setup-rtl";
 
 import { describe, it, expect } from "bun:test";
-
 
 import {
   deriveTheme,
@@ -37,18 +36,17 @@ import {
   type MoodKnobs,
   type ComputedTones,
   type ResolvedHueSlots,
+  type ResolvedHueSlot,
   type ResolvedColor,
   type ContrastDiagnostic,
 } from "@/components/tugways/theme-derivation-engine";
 import { CORE_VISUAL_RULES, RULES } from "@/components/tugways/derivation-rules";
-
 
 import {
   validateThemeContrast,
   CONTRAST_THRESHOLDS,
   CONTRAST_MARGINAL_DELTA,
   toneToL,
-  computePerceptualContrast,
   compositeOverSurface,
   hexToOkLabL,
 } from "@/components/tugways/theme-accessibility";
@@ -173,9 +171,9 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 373 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 374 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(Object.keys(output.tokens).length).toBe(373);
+    expect(Object.keys(output.tokens).length).toBe(374);
   });
 
   // -------------------------------------------------------------------------
@@ -381,8 +379,37 @@ describe("derivation-engine", () => {
     expect(brio.name).toBe("brio");
     expect(brio.mode).toBe("dark");
   });
-});
 
+  // -------------------------------------------------------------------------
+  // T2.7: Card title token is present and uses the display hue (indigo 260°)
+  // -------------------------------------------------------------------------
+
+  it("T2.7a: deriveTheme(EXAMPLE_RECIPES.brio) produces a token for '--tug-base-element-cardTitle-text-normal-plain-rest'", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    expect(output.tokens["--tug-base-element-cardTitle-text-normal-plain-rest"]).toBeDefined();
+    // The token value must be a --tug-color() string (chromatic token)
+    expect(output.tokens["--tug-base-element-cardTitle-text-normal-plain-rest"]).toMatch(/--tug-color\(/);
+  });
+
+  it("T2.7b: card title token uses display hue (indigo 260°) distinct from body text hue (cobalt 250°)", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+
+    // Card title token uses the display hue slot (indigo, 260°)
+    const cardTitleResolved = output.resolved["--tug-base-element-cardTitle-text-normal-plain-rest"];
+    expect(cardTitleResolved).toBeDefined();
+    // indigo = 260°; allow ±1° for rounding
+    expect(cardTitleResolved!.h).toBeCloseTo(260, 0);
+
+    // Body text token uses the content (txt) hue slot (cobalt, 250°)
+    const bodyTextResolved = output.resolved["--tug-base-element-global-text-normal-default-rest"];
+    expect(bodyTextResolved).toBeDefined();
+    // cobalt = 250°; allow ±1° for rounding
+    expect(bodyTextResolved!.h).toBeCloseTo(250, 0);
+
+    // The two tokens must have different hue angles
+    expect(cardTitleResolved!.h).not.toBe(bodyTextResolved!.h);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Test suite: recipe contrast validation (parameterized loop)
@@ -428,9 +455,9 @@ describe("recipe contrast validation", () => {
       const output = deriveTheme(recipe);
       const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-      // Token count must be 373 for every recipe (tokens includes invariant tokens
+      // Token count must be 374 for every recipe (tokens includes invariant tokens
       // absent from resolved; tokens and resolved differ by design) [step-3 task]
-      expect(Object.keys(output.tokens).length).toBe(373);
+      expect(Object.keys(output.tokens).length).toBe(374);
 
       // Consistency check: every chromatic token must have a --tug-color() string [D09]
       let tokensAndResolvedConsistent = true;
@@ -473,7 +500,8 @@ describe("recipe contrast validation", () => {
       expect(coreFailures.map((f) => `[${name}] ${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
 
       // Focus indicator assertion: brio dark only.
-      // In dark mode, accent-cool-default must pass contrast 30 on all 9 focus surfaces.
+      // In dark mode, accent-cool-default must pass contrast 60 on all 9 focus surfaces.
+      // Structural ceiling exceptions (overlay, screen) are in KNOWN_PAIR_EXCEPTIONS.
       // Light-mode recipes have structural surface-derivation constraints (engine calibrated
       // for dark mode) — those are documented in T4.2 (LIGHT_MODE_FOCUS_EXCEPTIONS).
       // This assertion is gated on recipe name "brio" for extensibility — add a
@@ -482,16 +510,16 @@ describe("recipe contrast validation", () => {
         const focusFailures = results.filter(
           (r) =>
             r.fg === "--tug-base-element-global-fill-normal-accentCool-rest" &&
-            r.role === "ui-component" &&
+            r.role === "control" &&
             FOCUS_SURFACES.has(r.bg) &&
-            !r.contrastPass,
+            !r.contrastPass &&
+            !KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
         );
         expect(focusFailures.map((f) => `[${name}] ${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
       }
     });
   }
 });
-
 
 // ---------------------------------------------------------------------------
 // oklchDeltaE: Euclidean distance in OKLCH space. [D01] Spec S04.
@@ -608,14 +636,12 @@ describe("resolveHueSlots — Step 3", () => {
   // angle/name/ref for each slot.
   //
   // Brio dark recipe:
-  //   cardBg.hue = "indigo-violet"  -> atm
-  //   text.hue   = "cobalt"         -> txt
-  //   canvas     = "indigo-violet"  -> canvas
-  //   cardFrame  = "indigo"         -> cardFrame
-  //   borderTint = "indigo-violet"  -> borderTint
-  //   link       = "cyan"           -> interactive
-  //   active     = undefined -> "blue"
-  //   accent     = undefined -> "orange"
+  //   surface.card    = "indigo-violet"  -> atm
+  //   element.content = "cobalt"         -> txt
+  //   surface.canvas  = "indigo-violet"  -> canvas
+  //   element.border  = "indigo-violet"  -> borderTint
+  //   role.action     = "blue"           -> interactive
+  //   role.accent     = "orange"         -> accent
   //
   // At warmth=50, warmthBias=0, so no angle shift for achromatic hues.
   // -------------------------------------------------------------------------
@@ -637,18 +663,18 @@ describe("resolveHueSlots — Step 3", () => {
     expect(slots.canvas.ref).toBe(slots.atm.ref);
     expect(slots.canvas.angle).toBe(slots.atm.angle);
 
-    // cardFrame: "indigo"
-    expect(slots.cardFrame.ref).toBe("indigo");
-    expect(slots.cardFrame.name).toBe("indigo");
+    // cardFrame: derived from element.border ("indigo-violet") — same as borderTint
+    expect(slots.cardFrame.ref).toBe(slots.borderTint.ref);
+    expect(slots.cardFrame.name).toBe(slots.borderTint.name);
 
-    // borderTint: same as atm for Brio
+    // borderTint: same as atm for Brio (element.border = "indigo-violet")
     expect(slots.borderTint.ref).toBe(slots.atm.ref);
 
-    // interactive: "cyan" — not achromatic-adjacent, no warmth bias
-    expect(slots.interactive.ref).toBe("cyan");
-    expect(slots.interactive.name).toBe("cyan");
+    // interactive: derived from role.action ("blue") — not "cyan" (link removed from recipe)
+    expect(slots.interactive.ref).toBe("blue");
+    expect(slots.interactive.name).toBe("blue");
 
-    // active: "blue" (default)
+    // active: "blue" (role.action)
     expect(slots.active.ref).toBe("blue");
 
     // accent: "orange" (default)
@@ -731,8 +757,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-light",
       description: "Test recipe for light mode hue slot resolution.",
       mode: "light" as const,
-      cardBg: { hue: "yellow" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "yellow", card: "yellow" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "yellow", border: "yellow", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       warmth: 50,
       formulas: lightFormulas,
     };
@@ -788,8 +815,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-warmth",
       description: "Test recipe for warmth bias angle shifts.",
       mode: "dark" as const,
-      cardBg: { hue: "violet" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
 
     const slotsW50 = resolveHueSlots(baseRecipe, 50);
@@ -818,8 +846,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bare-base",
       description: "Test recipe for surfBareBase extraction from hyphenated hue.",
       mode: "dark" as const,
-      cardBg: { hue: "indigo-violet" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo-violet", card: "indigo-violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe, 50);
     expect(slots.surfBareBase.ref).toBe("violet");
@@ -831,8 +860,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bare-base-bare",
       description: "Test recipe for surfBareBase extraction from bare hue name.",
       mode: "dark" as const,
-      cardBg: { hue: "violet" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe, 50);
     // For bare "violet", bare base is "violet" itself
@@ -844,9 +874,9 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bt-bare",
       description: "Test recipe for borderTintBareBase extraction from hyphenated hue.",
       mode: "dark" as const,
-      cardBg: { hue: "indigo-violet" },
-      text: { hue: "cobalt" },
-      borderTint: "indigo-violet",
+      surface: { canvas: "indigo-violet", card: "indigo-violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe, 50);
     expect(slots.borderTintBareBase.ref).toBe("violet");
@@ -867,8 +897,8 @@ describe("resolveHueSlots — Step 3", () => {
   it("T-RESOLVE-MATCH: deriveTheme(brio) output is unchanged after adding resolveHueSlots call", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
-    // Token count must remain 373
-    expect(Object.keys(output.tokens).length).toBe(373);
+    // Token count must remain 374
+    expect(Object.keys(output.tokens).length).toBe(374);
 
     // Key Brio dark token spot-checks (from T-BRIO-MATCH fixture)
     // bg-app: indigo-violet i:2 t:5
@@ -877,9 +907,10 @@ describe("resolveHueSlots — Step 3", () => {
     // fg-default: cobalt i:3 t:94
     expect(output.tokens["--tug-base-element-global-text-normal-default-rest"]).toBe("--tug-color(cobalt, i: 3, t: 94)");
 
-    // fg-subtle: indigo-cobalt i:7, tone adjusted by contrast floor from 37 → 45
-    // (subdued-text threshold 45 against surface-default requires higher tone)
-    expect(output.tokens["--tug-base-element-global-text-normal-subtle-rest"]).toBe("--tug-color(indigo-cobalt, i: 7, t: 45)");
+    // fg-subtle: indigo-violet i:7, tone adjusted by contrast floor from 37 → 63
+    // (informational threshold 60 against surface-default requires higher tone)
+    // Uses informational hue slot (element.informational = "indigo-violet" in brio recipe)
+    expect(output.tokens["--tug-base-element-global-text-normal-subtle-rest"]).toBe("--tug-color(indigo-violet, i: 7, t: 63)");
 
     // fg-inverse: sapphire-cobalt i:3 t:100
     expect(output.tokens["--tug-base-element-global-text-normal-inverse-rest"]).toBe("--tug-color(sapphire-cobalt, i: 3, t: 100)");
@@ -1031,8 +1062,8 @@ describe("computeTones — Step 4", () => {
   it("T-TONES-MATCH: deriveTheme(brio) output unchanged after adding computeTones call", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
-    // Token count must remain 373
-    expect(Object.keys(output.tokens).length).toBe(373);
+    // Token count must remain 374
+    expect(Object.keys(output.tokens).length).toBe(374);
 
     // Surface tokens spot-check (from T-BRIO-MATCH fixture)
     expect(output.tokens["--tug-base-surface-global-primary-normal-app-rest"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
@@ -1253,7 +1284,7 @@ describe("computeTones — Step 4", () => {
 
 // ---------------------------------------------------------------------------
 // Step 6 tests: T-RULES-COMPLETE, T-RULES-DARK-MATCH
-// These verify that the full RULES table covers all 373 tokens and that
+// These verify that the full RULES table covers all 374 tokens and that
 // evaluateRules(RULES, ...) matches imperative dark-mode output.
 // T-RULES-LIGHT-MATCH deleted (clean break per D06 — deferred to light-formulas step).
 // ---------------------------------------------------------------------------
@@ -1326,10 +1357,10 @@ describe("derivation-engine step-6 rules", () => {
   }
 
   // -------------------------------------------------------------------------
-  // T-RULES-COMPLETE: RULES table has exactly 373 entries
+  // T-RULES-COMPLETE: RULES table has exactly 374 entries
   // -------------------------------------------------------------------------
-  it("T-RULES-COMPLETE: RULES table has exactly 373 entries", () => {
-    expect(Object.keys(RULES).length).toBe(373);
+  it("T-RULES-COMPLETE: RULES table has exactly 374 entries", () => {
+    expect(Object.keys(RULES).length).toBe(374);
   });
 
   // -------------------------------------------------------------------------
@@ -1374,7 +1405,7 @@ describe("derivation-engine step-4 contrast floor", () => {
   // -------------------------------------------------------------------------
   it("T-FLOOR-2: enforceContrastFloor returns adjusted tone when below threshold", () => {
     // At tone 50 (mid-gray), contrast against tone-5 (very dark) should be insufficient
-    // for body-text (75). The floor should push tone higher.
+    // for content (75). The floor should push tone higher.
     const darkSurfaceL = toneToL(5, "cobalt");
     const result = enforceContrastFloor(50, darkSurfaceL, 75, "lighter", "cobalt");
     // The adjusted tone must be higher than 50
@@ -1443,7 +1474,11 @@ describe("derivation-engine step-4 contrast floor", () => {
     );
 
     const floorFailures = results.filter(
-      (r) => !r.contrastPass && floorApplied.has(r.fg) && !KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg),
+      (r) =>
+        !r.contrastPass &&
+        floorApplied.has(r.fg) &&
+        !KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg) &&
+        !KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
 
     const descriptions = floorFailures.map(
@@ -1492,11 +1527,15 @@ describe("derivation-engine step-4 contrast floor", () => {
     // verify it passes via hex-path validation. Tokens in KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS
     // may be floor-applied but still fail because their threshold is unachievable in tone space
     // (e.g. ghost-danger-fg on vivid red hue — best achievable tone still below contrast 60).
+    // Specific (fg, bg) pairs in KNOWN_PAIR_EXCEPTIONS are excluded: some surfaces (overlay,
+    // screen) have structural luminance ceilings that prevent the threshold from being reached
+    // regardless of tone adjustment.
     const reconciliationFailures: string[] = [];
     for (const result of results) {
       const diag = floorApplied.get(result.fg);
       if (!diag) continue;
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(result.fg)) continue;
+      if (KNOWN_PAIR_EXCEPTIONS.has(`${result.fg}|${result.bg}`)) continue;
       if (!result.contrastPass) {
         reconciliationFailures.push(
           `${result.fg} on ${result.bg} [${result.role}]: hex-path contrast ${result.contrast.toFixed(1)} < threshold ${CONTRAST_THRESHOLDS[result.role] ?? 15} (floor set tone to ${diag.finalTone})`,
@@ -1659,7 +1698,7 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
     // Element starts at tone 40 (cobalt) — not far enough from compositeL to pass threshold.
     const elementHue = "cobalt";
     const initialTone = 40;
-    const threshold = 75; // body-text threshold
+    const threshold = 75; // content threshold
 
     // compositeL is dark; element is lighter, so polarity = "lighter" (push to higher tone)
     const adjustedTone = enforceContrastFloor(initialTone, compositeL, threshold, "lighter", elementHue);
@@ -1696,7 +1735,8 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
     );
     expect(coreFailures).toEqual([]);
 
-    // Token count must still be 373
-    expect(Object.keys(output.tokens).length).toBe(373);
+    // Token count must still be 374
+    expect(Object.keys(output.tokens).length).toBe(374);
   });
 });
+

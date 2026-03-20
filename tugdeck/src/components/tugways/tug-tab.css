@@ -7,64 +7,18 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-tab-bar-bg (surface-tab-primary-normal-plain-inactive) | body-text    | .tug-tab-bar (border-bottom)         |
- * | --tug-tab-fg-rest (element-tab-text-normal-plain-rest) | --tug-base-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | body-text    | .tug-tab (color)                     |
- * | --tug-tab-fg-active (element-tab-text-normal-plain-active) | --tug-tab-bg-active (surface-tab-primary-normal-plain-active) | body-text    | .tug-tab[data-active="true"] (color) |
- * | --tug-tab-fg-hover (element-tab-text-normal-plain-hover) | --tug-tab-bg-hover (surface-tab-primary-normal-plain-hover) | body-text    | .tug-tab:not([data-active="true"]):hover (color) |
- * | --tug-tab-close-fg-hover (element-tabClose-text-normal-plain-hover) | --tug-tab-close-bg-hover (surface-tabClose-primary-normal-plain-hover) | body-text    | .tug-tab-close:hover (color)         |
- * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | subdued-text | .tug-tab-bar .tug-tab-add (color)    |
- * | --tug-base-element-control-text-ghost-option-active (element-control-text-ghost-option-active) | --tug-base-surface-control-primary-ghost-option-active (surface-control-primary-ghost-option-active) | body-text    | .tug-tab-bar .tug-tab-add[data-state="open"] (color) |
- * | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | --tug-tab-badge-bg (element-global-fill-normal-accent-rest) | body-text    | .tug-tab-overflow-badge (color)      |
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | ui-component | .tug-tab-ghost (border)              |
- * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | body-text    | .tug-tab-ghost (color)               |
- * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | body-text    | .tug-tab-bar[data-drop-target="true"] (border-bottom-color) |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-tab-bar-bg (surface-tab-primary-normal-plain-inactive) | content      | .tug-tab-bar (border-bottom)         |
+ * | --tug-tab-fg-rest (element-tab-text-normal-plain-rest) | --tug-base-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | content      | .tug-tab (color)                     |
+ * | --tug-tab-fg-active (element-tab-text-normal-plain-active) | --tug-tab-bg-active (surface-tab-primary-normal-plain-active) | content      | .tug-tab[data-active="true"] (color) |
+ * | --tug-tab-fg-hover (element-tab-text-normal-plain-hover) | --tug-tab-bg-hover (surface-tab-primary-normal-plain-hover) | content      | .tug-tab:not([data-active="true"]):hover (color) |
+ * | --tug-tab-close-fg-hover (element-tabClose-text-normal-plain-hover) | --tug-tab-close-bg-hover (surface-tabClose-primary-normal-plain-hover) | content      | .tug-tab-close:hover (color)         |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | informational | .tug-tab-bar .tug-tab-add (color)    |
+ * | --tug-base-element-control-text-ghost-option-active (element-control-text-ghost-option-active) | --tug-base-surface-control-primary-ghost-option-active (surface-control-primary-ghost-option-active) | control      | .tug-tab-bar .tug-tab-add[data-state="open"] (color) |
+ * | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | --tug-tab-badge-bg (element-global-fill-normal-accent-rest) | content      | .tug-tab-overflow-badge (color)      |
+ * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .tug-tab-ghost (border)              |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .tug-tab-ghost (color)               |
+ * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .tug-tab-bar[data-drop-target="true"] (border-bottom-color) |
  */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 body {

@@ -26,12 +26,12 @@
  * Logical pairings (hardcoded oklch, not tracked by contrast engine):
  * | Element (hardcoded)          | Surface (hardcoded)          | Role         | Context                                  |
  * |------------------------------|------------------------------|--------------|------------------------------------------|
- * | oklch(0.88 0.01 240)         | oklch(0.14 0.01 240)         | body-text    | Panel main text on dark panel background |
- * | oklch(0.72 0.18 200)         | oklch(0.14 0.01 240)         | body-text    | Title and property labels on panel bg    |
- * | oklch(0.72 0.18 200)         | oklch(0.18 0.01 240)         | body-text    | Section title on header background       |
- * | oklch(0.55 0.02 240)         | oklch(0.14 0.01 240)         | subdued-text | Row label and dim text on panel bg       |
- * | oklch(0.7 0.12 140)          | oklch(0.14 0.01 240)         | body-text    | Token chain resolved value text          |
- * | oklch(0.72 0.18 55)          | oklch(0.14 0.01 240)         | body-text    | Terminal/pin badge display (orange tone) |
+ * | oklch(0.88 0.01 240)         | oklch(0.14 0.01 240)         | content      | Panel main text on dark panel background |
+ * | oklch(0.72 0.18 200)         | oklch(0.14 0.01 240)         | content      | Title and property labels on panel bg    |
+ * | oklch(0.72 0.18 200)         | oklch(0.18 0.01 240)         | content      | Section title on header background       |
+ * | oklch(0.55 0.02 240)         | oklch(0.14 0.01 240)         | informational | Row label and dim text on panel bg       |
+ * | oklch(0.7 0.12 140)          | oklch(0.14 0.01 240)         | content      | Token chain resolved value text          |
+ * | oklch(0.72 0.18 55)          | oklch(0.14 0.01 240)         | content      | Terminal/pin badge display (orange tone) |
  */
 
 /* ---------------------------------------------------------------------------

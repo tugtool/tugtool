@@ -97,10 +97,10 @@ describe("contrast-dashboard – T7.2: Brio body-text pairs pass", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-    const bodyTextResults = results.filter((r) => r.role === "body-text");
-    expect(bodyTextResults.length).toBeGreaterThan(0);
+    const contentResults = results.filter((r) => r.role === "content");
+    expect(contentResults.length).toBeGreaterThan(0);
 
-    const unexpectedFailures = bodyTextResults.filter(
+    const unexpectedFailures = contentResults.filter(
       (r) => !r.contrastPass && !INTENTIONALLY_BELOW_THRESHOLD.has(r.fg) && !SHARED_KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
 

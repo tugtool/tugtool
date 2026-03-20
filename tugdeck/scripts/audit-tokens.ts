@@ -1111,7 +1111,7 @@ function cmdInject(apply: boolean): void {
       let css = fs.readFileSync(file, "utf-8");
 
       // Remove existing @tug-pairings block if present
-      css = css.replace(/\/\*\*[\s\S]*?@tug-pairings[\s\S]*?\*\/\n?/, "");
+      css = css.replace(/\/\*\*[\s\S]*?@tug-pairings[\s\S]*?\*\/\n*/, "");
 
       // Insert after the file-level docblock comment (first */ found)
       const docblockEnd = css.indexOf("*/");
@@ -1147,13 +1147,7 @@ function guessRole(
   elementShortName: string,
   property: string,
 ): string {
-  if (property === "border" || property === "border-color") return "ui-component";
-  if (
-    elementShortName.includes("icon-") ||
-    elementShortName.startsWith("icon-") ||
-    elementShortName.includes("-icon-")
-  )
-    return "ui-component";
+  // Decorative: dividers, shadows, separators
   if (
     elementShortName.includes("divider-") ||
     elementShortName.includes("shadow-") ||
@@ -1161,6 +1155,36 @@ function guessRole(
     elementShortName === "divider-separator"
   )
     return "decorative";
+
+  // Control element tokens (interactive labels, icons, borders on controls)
+  if (elementShortName.startsWith("element-control-")) return "control";
+
+  // Card title tokens
+  if (elementShortName.startsWith("element-cardTitle-")) return "display";
+
+  // Badge and tone tokens are informational
+  if (
+    elementShortName.startsWith("element-badge-") ||
+    elementShortName.startsWith("element-tone-")
+  )
+    return "informational";
+
+  // Global icons are interactive context → control
+  if (
+    elementShortName.includes("icon-") ||
+    elementShortName.startsWith("icon-") ||
+    elementShortName.includes("-icon-")
+  )
+    return "control";
+
+  // Global structural borders are informational
+  if (
+    (property === "border" || property === "border-color") &&
+    !elementShortName.startsWith("element-control-")
+  )
+    return "informational";
+
+  // Muted/subtle/placeholder/disabled text is informational
   if (
     elementShortName.includes("muted") ||
     elementShortName.includes("subtle") ||
@@ -1168,9 +1192,12 @@ function guessRole(
     elementShortName.includes("disabled") ||
     elementShortName.includes("readOnly")
   )
-    return "subdued-text";
-  if (elementShortName.includes("fg-")) return "body-text";
-  return "body-text";
+    return "informational";
+
+  // Legacy fg- tokens
+  if (elementShortName.includes("fg-")) return "content";
+
+  return "content";
 }
 
 // ---------------------------------------------------------------------------

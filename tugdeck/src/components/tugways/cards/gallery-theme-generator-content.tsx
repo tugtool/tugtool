@@ -86,16 +86,25 @@ function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): s
 }
 
 /**
- * Token names used to sample the actual resolved color for each structural/role hue.
+ * Token names used to sample the actual resolved color for each surface hue.
  * These are the representative tokens whose color best illustrates what the hue controls.
  */
-const STRUCTURAL_TOKENS: Record<string, string> = {
-  cardBg: "--tug-base-surface-global-primary-normal-default-rest",
+const SURFACE_TOKENS: Record<string, string> = {
+  card: "--tug-base-surface-global-primary-normal-default-rest",
   canvas: "--tug-base-surface-global-primary-normal-canvas-rest",
-  cardFrame: "--tug-base-surface-tab-primary-normal-plain-active",
-  borderTint: "--tug-base-element-global-border-normal-default-rest",
-  text: "--tug-base-element-global-text-normal-default-rest",
-  link: "--tug-base-element-global-text-normal-link-rest",
+};
+
+/**
+ * Token names used to sample the actual resolved color for each element hue.
+ */
+const ELEMENT_TOKENS: Record<string, string> = {
+  content: "--tug-base-element-global-text-normal-default-rest",
+  control: "--tug-base-element-global-icon-normal-default-rest",
+  // display: card title token added in Step 6; use global default as placeholder
+  display: "--tug-base-element-global-text-normal-default-rest",
+  informational: "--tug-base-element-global-text-normal-muted-rest",
+  border: "--tug-base-element-global-border-normal-default-rest",
+  decorative: "--tug-base-element-global-border-normal-muted-rest",
 };
 
 const ROLE_TOKENS: Record<string, string> = {
@@ -810,19 +819,36 @@ export function validateRecipeJson(value: unknown): string | null {
   if (obj["mode"] !== "dark" && obj["mode"] !== "light") {
     return "Invalid 'mode' field (must be 'dark' or 'light')";
   }
-  if (typeof obj["cardBg"] !== "object" || obj["cardBg"] === null) {
-    return "Missing or invalid 'cardBg' field (object required)";
+  // Validate surface group
+  if (typeof obj["surface"] !== "object" || obj["surface"] === null) {
+    return "Missing or invalid 'surface' field (object required)";
   }
-  const cardBg = obj["cardBg"] as Record<string, unknown>;
-  if (typeof cardBg["hue"] !== "string" || cardBg["hue"].trim() === "") {
-    return "Missing or invalid 'cardBg.hue' field (string required)";
+  const surface = obj["surface"] as Record<string, unknown>;
+  if (typeof surface["canvas"] !== "string" || surface["canvas"].trim() === "") {
+    return "Missing or invalid 'surface.canvas' field (string required)";
   }
-  if (typeof obj["text"] !== "object" || obj["text"] === null) {
-    return "Missing or invalid 'text' field (object required)";
+  if (typeof surface["card"] !== "string" || surface["card"].trim() === "") {
+    return "Missing or invalid 'surface.card' field (string required)";
   }
-  const txt = obj["text"] as Record<string, unknown>;
-  if (typeof txt["hue"] !== "string" || txt["hue"].trim() === "") {
-    return "Missing or invalid 'text.hue' field (string required)";
+  // Validate element group
+  if (typeof obj["element"] !== "object" || obj["element"] === null) {
+    return "Missing or invalid 'element' field (object required)";
+  }
+  const element = obj["element"] as Record<string, unknown>;
+  for (const field of ["content", "control", "display", "informational", "border", "decorative"] as const) {
+    if (typeof element[field] !== "string" || element[field].trim() === "") {
+      return `Missing or invalid 'element.${field}' field (string required)`;
+    }
+  }
+  // Validate role group
+  if (typeof obj["role"] !== "object" || obj["role"] === null) {
+    return "Missing or invalid 'role' field (object required)";
+  }
+  const role = obj["role"] as Record<string, unknown>;
+  for (const field of ["accent", "action", "agent", "data", "success", "caution", "danger"] as const) {
+    if (typeof role[field] !== "string" || role[field].trim() === "") {
+      return `Missing or invalid 'role.${field}' field (string required)`;
+    }
   }
   // Legacy migration shim: handle recipe files saved before the Gap-1 field rename.
   // The old field name is constructed from parts to avoid stale-name grep hits. [Risk R01]
@@ -1111,19 +1137,21 @@ const SELECTION_ROLES: TugCheckboxRole[] = [
 ];
 
 /**
- * ThemePreviewCard — annotated preview with structural color chips overlaid
- * on the elements they control, and role color chips in a right sidebar.
+ * ThemePreviewCard — annotated preview with surface/element/role color chips
+ * overlaid on the elements they control.
  * Uses real tugcard/tug-tab CSS classes. [D08, D09]
  */
 function ThemePreviewCard({
   resolvedColor,
-  structural,
+  surface,
+  element,
   roles,
   moodSliders,
   liveTokenStyle,
 }: {
   resolvedColor: (key: string) => string;
-  structural: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
+  surface: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
+  element: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
   roles: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
   moodSliders: React.ReactNode;
   liveTokenStyle: React.CSSProperties;
@@ -1196,13 +1224,19 @@ function ThemePreviewCard({
         </div>
       </div>
 
-      {/* ---- Right: structural + role columns, mood sliders below ---- */}
+      {/* ---- Right: surface / element / role columns, mood sliders below ---- */}
       <div className="gtg-right-panel">
         <div className="gtg-hue-sidebars">
           <div className="gtg-hue-sidebar">
-            <div className="gtg-hue-column-title">Structural</div>
-            {structural.map(({ key, label, hue, set, testId }) => (
-              <CompactHuePicker key={key} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
+            <div className="gtg-hue-column-title">Surface</div>
+            {surface.map(({ key, label, hue, set, testId }) => (
+              <CompactHuePicker key={testId} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
+            ))}
+          </div>
+          <div className="gtg-hue-sidebar">
+            <div className="gtg-hue-column-title">Element</div>
+            {element.map(({ key, label, hue, set, testId }) => (
+              <CompactHuePicker key={testId} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
             ))}
           </div>
           <div className="gtg-hue-sidebar">
@@ -1335,8 +1369,16 @@ export function GalleryThemeGeneratorContent() {
 
   const [recipeName, setRecipeName] = useState<string>(DEFAULT_RECIPE.name);
   const [mode, setMode] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
-  const [cardBgHue, setCardBgHue] = useState<string>(DEFAULT_RECIPE.cardBg.hue);
-  const [textHue, setTextHue] = useState<string>(DEFAULT_RECIPE.text.hue);
+  // Surface hue state
+  const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card);
+  const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.surface.canvas);
+  // Element hue state
+  const [contentHue, setContentHue] = useState<string>(DEFAULT_RECIPE.element.content);
+  const [controlHue, setControlHue] = useState<string>(DEFAULT_RECIPE.element.control);
+  const [displayHue, setDisplayHue] = useState<string>(DEFAULT_RECIPE.element.display);
+  const [informationalHue, setInformationalHue] = useState<string>(DEFAULT_RECIPE.element.informational);
+  const [borderHue, setBorderHue] = useState<string>(DEFAULT_RECIPE.element.border);
+  const [decorativeHue, setDecorativeHue] = useState<string>(DEFAULT_RECIPE.element.decorative);
   const [surfaceContrast, setSurfaceContrast] = useState<number>(
     DEFAULT_RECIPE.surfaceContrast ?? 50,
   );
@@ -1348,7 +1390,7 @@ export function GalleryThemeGeneratorContent() {
   // Formula state — tracks the active DerivationFormulas for the current recipe.
   // Defaults to DEFAULT_RECIPE.formulas ?? DARK_FORMULAS (the Brio dark default).
   // A synchronous ref mirrors the state so runDerive() can read the latest value
-  // without threading formulas through its 18-parameter signature. [D01]
+  // without threading formulas through its parameter signature. [D01]
   const [formulas, setFormulas] = useState<DerivationFormulas>(DEFAULT_RECIPE.formulas ?? DARK_FORMULAS);
   const formulasRef = useRef<DerivationFormulas>(DEFAULT_RECIPE.formulas ?? DARK_FORMULAS);
 
@@ -1362,21 +1404,14 @@ export function GalleryThemeGeneratorContent() {
     formulasRef.current = f;
   }
 
-  // Structural hue state — new fields for canvas, cardFrame, borderTint, link. [D04]
-  const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.canvas ?? DEFAULT_RECIPE.cardBg.hue);
-  const [cardFrameHue, setCardFrameHue] = useState<string>(DEFAULT_RECIPE.cardFrame ?? "indigo");
-  const [borderTintHue, setBorderTintHue] = useState<string>(DEFAULT_RECIPE.borderTint ?? DEFAULT_RECIPE.cardBg.hue);
-  const [linkHue, setLinkHue] = useState<string>(DEFAULT_RECIPE.link ?? DEFAULT_RECIPE.active ?? "blue");
-
   // Role hue state — one per role in the 7-role system. [D05, Step 6]
-  // Note: recipe field "destructive" maps to the "danger" role in the UI.
-  const [accentHue, setAccentHue] = useState<string>(DEFAULT_RECIPE.accent ?? "orange");
-  const [activeHue, setActiveHue] = useState<string>(DEFAULT_RECIPE.active ?? "blue");
-  const [agentHue, setAgentHue] = useState<string>(DEFAULT_RECIPE.agent ?? "violet");
-  const [dataHue, setDataHue] = useState<string>(DEFAULT_RECIPE.data ?? "teal");
-  const [successHue, setSuccessHue] = useState<string>(DEFAULT_RECIPE.success ?? "green");
-  const [cautionHue, setCautionHue] = useState<string>(DEFAULT_RECIPE.caution ?? "yellow");
-  const [dangerHue, setDangerHue] = useState<string>(DEFAULT_RECIPE.destructive ?? "red");
+  const [accentHue, setAccentHue] = useState<string>(DEFAULT_RECIPE.role.accent);
+  const [activeHue, setActiveHue] = useState<string>(DEFAULT_RECIPE.role.action);
+  const [agentHue, setAgentHue] = useState<string>(DEFAULT_RECIPE.role.agent);
+  const [dataHue, setDataHue] = useState<string>(DEFAULT_RECIPE.role.data);
+  const [successHue, setSuccessHue] = useState<string>(DEFAULT_RECIPE.role.success);
+  const [cautionHue, setCautionHue] = useState<string>(DEFAULT_RECIPE.role.caution);
+  const [dangerHue, setDangerHue] = useState<string>(DEFAULT_RECIPE.role.danger);
 
   // The derived theme output — updated whenever the recipe changes.
   const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(DEFAULT_RECIPE));
@@ -1447,10 +1482,10 @@ export function GalleryThemeGeneratorContent() {
     return style as React.CSSProperties;
   }, [themeOutput]);
 
-  /** Look up the actual resolved CSS color for a structural or role hue key. */
+  /** Look up the actual resolved CSS color for a surface, element, or role hue key. */
   const resolvedColor = useCallback(
     (key: string): string => {
-      const token = STRUCTURAL_TOKENS[key] ?? ROLE_TOKENS[key];
+      const token = SURFACE_TOKENS[key] ?? ELEMENT_TOKENS[key] ?? ROLE_TOKENS[key];
       if (!token) return "transparent";
       const r = themeOutput.resolved[token];
       return r ? resolvedToCSS(r) : "transparent";
@@ -1471,15 +1506,17 @@ export function GalleryThemeGeneratorContent() {
     (
       n: string,
       m: "dark" | "light",
-      cardBg: string,
-      txt: string,
+      card: string,
+      canvas: string,
+      content: string,
+      control: string,
+      display: string,
+      informational: string,
+      border: string,
+      decorative: string,
       sc: number,
       sv: number,
       w: number,
-      canvas: string,
-      cardFrame: string,
-      borderTint: string,
-      link: string,
       accent: string,
       active: string,
       agent: string,
@@ -1490,24 +1527,14 @@ export function GalleryThemeGeneratorContent() {
     ) => {
       const recipe: ThemeRecipe = {
         name: n,
-        description: `Generated theme (${m} mode, cardBg: ${cardBg}, text: ${txt})`,
+        description: `Generated theme (${m} mode, card: ${card}, content: ${content})`,
         mode: m,
-        cardBg: { hue: cardBg },
-        text: { hue: txt },
+        surface: { canvas, card },
+        element: { content, control, display, informational, border, decorative },
+        role: { accent, action: active, agent, data, success, caution, danger },
         surfaceContrast: sc,
         signalIntensity: sv,
         warmth: w,
-        canvas,
-        cardFrame,
-        borderTint,
-        link,
-        accent,
-        active,
-        agent,
-        data,
-        success,
-        caution,
-        destructive: danger,
         formulas: formulasRef.current,
       };
       setThemeOutput(deriveTheme(recipe));
@@ -1525,9 +1552,9 @@ export function GalleryThemeGeneratorContent() {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    runDerive(recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
+    runDerive(recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, surfaceContrast, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, cardBgHue, textHue, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
+  }, [mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
 
   /**
    * Debounced re-derive for slider changes (150ms delay).
@@ -1540,15 +1567,17 @@ export function GalleryThemeGeneratorContent() {
       newValue: number,
       n: string,
       m: "dark" | "light",
-      cardBg: string,
-      txt: string,
+      card: string,
+      canvas: string,
+      content: string,
+      control: string,
+      display: string,
+      informational: string,
+      border: string,
+      decorative: string,
       sc: number,
       sv: number,
       w: number,
-      canvas: string,
-      cardFrame: string,
-      borderTint: string,
-      link: string,
       accent: string,
       active: string,
       agent: string,
@@ -1563,7 +1592,7 @@ export function GalleryThemeGeneratorContent() {
       }
       debounceRef.current = setTimeout(() => {
         debounceRef.current = null;
-        runDerive(n, m, cardBg, txt, sc, sv, w, canvas, cardFrame, borderTint, link, accent, active, agent, data, success, caution, danger);
+        runDerive(n, m, card, canvas, content, control, display, informational, border, decorative, sc, sv, w, accent, active, agent, data, success, caution, danger);
       }, 150);
     },
     [runDerive],
@@ -1578,22 +1607,24 @@ export function GalleryThemeGeneratorContent() {
       const r = EXAMPLE_RECIPES[presetKey];
       setRecipeName(r.name);
       setMode(r.mode);
-      setCardBgHue(r.cardBg.hue);
-      setTextHue(r.text.hue);
+      setCardHue(r.surface.card);
+      setCanvasHue(r.surface.canvas);
+      setContentHue(r.element.content);
+      setControlHue(r.element.control);
+      setDisplayHue(r.element.display);
+      setInformationalHue(r.element.informational);
+      setBorderHue(r.element.border);
+      setDecorativeHue(r.element.decorative);
       setSurfaceContrast(r.surfaceContrast ?? 50);
       setSignalIntensity(r.signalIntensity ?? 50);
       setWarmth(r.warmth ?? 50);
-      setCanvasHue(r.canvas ?? r.cardBg.hue);
-      setCardFrameHue(r.cardFrame ?? "indigo");
-      setBorderTintHue(r.borderTint ?? r.cardBg.hue);
-      setLinkHue(r.link ?? r.active ?? "blue");
-      setAccentHue(r.accent ?? "orange");
-      setActiveHue(r.active ?? "blue");
-      setAgentHue(r.agent ?? "violet");
-      setDataHue(r.data ?? "teal");
-      setSuccessHue(r.success ?? "green");
-      setCautionHue(r.caution ?? "yellow");
-      setDangerHue(r.destructive ?? "red");
+      setAccentHue(r.role.accent);
+      setActiveHue(r.role.action);
+      setAgentHue(r.role.agent);
+      setDataHue(r.role.data);
+      setSuccessHue(r.role.success);
+      setCautionHue(r.role.caution);
+      setDangerHue(r.role.danger);
       setFormulasAndRef(r.formulas ?? DARK_FORMULAS);
       setThemeOutput(deriveTheme(r));
     },
@@ -1616,27 +1647,17 @@ export function GalleryThemeGeneratorContent() {
   const currentRecipe = useMemo<ThemeRecipe>(
     () => ({
       name: recipeName,
-      description: `Generated theme (${mode} mode, cardBg: ${cardBgHue}, text: ${textHue})`,
+      description: `Generated theme (${mode} mode, card: ${cardHue}, content: ${contentHue})`,
       mode,
-      cardBg: { hue: cardBgHue },
-      text: { hue: textHue },
+      surface: { canvas: canvasHue, card: cardHue },
+      element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
+      role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
       surfaceContrast,
       signalIntensity,
       warmth,
-      canvas: canvasHue,
-      cardFrame: cardFrameHue,
-      borderTint: borderTintHue,
-      link: linkHue,
-      accent: accentHue,
-      active: activeHue,
-      agent: agentHue,
-      data: dataHue,
-      success: successHue,
-      caution: cautionHue,
-      destructive: dangerHue,
       formulas,
     }),
-    [recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
+    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, surfaceContrast, signalIntensity, warmth, formulas],
   );
 
   /**
@@ -1648,22 +1669,24 @@ export function GalleryThemeGeneratorContent() {
     (r: ThemeRecipe) => {
       setRecipeName(r.name);
       setMode(r.mode);
-      setCardBgHue(r.cardBg.hue);
-      setTextHue(r.text.hue);
+      setCardHue(r.surface.card);
+      setCanvasHue(r.surface.canvas);
+      setContentHue(r.element.content);
+      setControlHue(r.element.control);
+      setDisplayHue(r.element.display);
+      setInformationalHue(r.element.informational);
+      setBorderHue(r.element.border);
+      setDecorativeHue(r.element.decorative);
       setSurfaceContrast(r.surfaceContrast ?? 50);
       setSignalIntensity(r.signalIntensity ?? 50);
       setWarmth(r.warmth ?? 50);
-      setCanvasHue(r.canvas ?? r.cardBg.hue);
-      setCardFrameHue(r.cardFrame ?? "indigo");
-      setBorderTintHue(r.borderTint ?? r.cardBg.hue);
-      setLinkHue(r.link ?? r.active ?? "blue");
-      setAccentHue(r.accent ?? "orange");
-      setActiveHue(r.active ?? "blue");
-      setAgentHue(r.agent ?? "violet");
-      setDataHue(r.data ?? "teal");
-      setSuccessHue(r.success ?? "green");
-      setCautionHue(r.caution ?? "yellow");
-      setDangerHue(r.destructive ?? "red");
+      setAccentHue(r.role.accent);
+      setActiveHue(r.role.action);
+      setAgentHue(r.role.agent);
+      setDataHue(r.role.data);
+      setSuccessHue(r.role.success);
+      setCautionHue(r.role.caution);
+      setDangerHue(r.role.danger);
       setFormulasAndRef(r.formulas ?? DARK_FORMULAS);
       setThemeOutput(deriveTheme(r));
     },
@@ -1781,14 +1804,17 @@ export function GalleryThemeGeneratorContent() {
           <ThemePreviewCard
             resolvedColor={resolvedColor}
             liveTokenStyle={liveTokenStyle}
-            structural={[
-              { key: "cardBg", label: "Card BG", hue: cardBgHue, set: setCardBgHue, testId: "gtg-cardbg-hue" },
-              { key: "cardFrame", label: "Frame", hue: cardFrameHue, set: setCardFrameHue, testId: "gtg-cardframe-hue" },
-              { key: "borderTint", label: "Border", hue: borderTintHue, set: setBorderTintHue, testId: "gtg-bordertint-hue" },
-              { key: "text", label: "Text", hue: textHue, set: setTextHue, testId: "gtg-text-hue" },
-              { key: "link", label: "Link", hue: linkHue, set: setLinkHue, testId: "gtg-link-hue" },
-              { key: "canvas", label: "Grid", hue: canvasHue, set: setCanvasHue, testId: "gtg-grid-hue" },
+            surface={[
+              { key: "card", label: "Card", hue: cardHue, set: setCardHue, testId: "gtg-card-hue" },
               { key: "canvas", label: "Canvas", hue: canvasHue, set: setCanvasHue, testId: "gtg-canvas-hue" },
+            ]}
+            element={[
+              { key: "content", label: "Content", hue: contentHue, set: setContentHue, testId: "gtg-content-hue" },
+              { key: "control", label: "Control", hue: controlHue, set: setControlHue, testId: "gtg-control-hue" },
+              { key: "display", label: "Display", hue: displayHue, set: setDisplayHue, testId: "gtg-display-hue" },
+              { key: "informational", label: "Info", hue: informationalHue, set: setInformationalHue, testId: "gtg-informational-hue" },
+              { key: "border", label: "Border", hue: borderHue, set: setBorderHue, testId: "gtg-border-hue" },
+              { key: "decorative", label: "Decorative", hue: decorativeHue, set: setDecorativeHue, testId: "gtg-decorative-hue" },
             ]}
             roles={[
               { key: "accent", label: "Accent", hue: accentHue, set: setAccentHue, testId: "gtg-role-hue-accent" },
@@ -1802,9 +1828,9 @@ export function GalleryThemeGeneratorContent() {
             moodSliders={
               <div className="gtg-mood-panel">
                 <div className="gtg-hue-column-title">Mood</div>
-                <MoodSlider label="Surface Contrast" value={surfaceContrast} onChange={(v) => handleSliderChange(setSurfaceContrast, v, recipeName, mode, cardBgHue, textHue, v, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-surface-contrast" />
-                <MoodSlider label="Signal Intensity" value={signalIntensity} onChange={(v) => handleSliderChange(setSignalIntensity, v, recipeName, mode, cardBgHue, textHue, surfaceContrast, v, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-signal-intensity" />
-                <MoodSlider label="Warmth" value={warmth} onChange={(v) => handleSliderChange(setWarmth, v, recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, v, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-warmth" />
+                <MoodSlider label="Surface Contrast" value={surfaceContrast} onChange={(v) => handleSliderChange(setSurfaceContrast, v, recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, v, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-surface-contrast" />
+                <MoodSlider label="Signal Intensity" value={signalIntensity} onChange={(v) => handleSliderChange(setSignalIntensity, v, recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, surfaceContrast, v, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-signal-intensity" />
+                <MoodSlider label="Warmth" value={warmth} onChange={(v) => handleSliderChange(setWarmth, v, recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, surfaceContrast, signalIntensity, v, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-warmth" />
               </div>
             }
           />

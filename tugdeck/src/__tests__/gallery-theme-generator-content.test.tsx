@@ -169,21 +169,21 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     expect(container.querySelector("[data-testid='gtg-mode-group']")).not.toBeNull();
   });
 
-  it("renders the cardBg hue as a compact picker", () => {
+  it("renders the card hue as a compact picker", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const picker = container.querySelector("[data-testid='gtg-cardbg-hue']");
+    const picker = container.querySelector("[data-testid='gtg-card-hue']");
     expect(picker).not.toBeNull();
   });
 
-  it("renders the text hue as a compact picker", () => {
+  it("renders the content hue as a compact picker", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const picker = container.querySelector("[data-testid='gtg-text-hue']");
+    const picker = container.querySelector("[data-testid='gtg-content-hue']");
     expect(picker).not.toBeNull();
   });
 
@@ -380,19 +380,18 @@ const CHM_NOVEL_RECIPE = {
   name: "CHM Mood",
   description: "CHM acceptance test recipe — industrial warmth with amber atmosphere.",
   mode: "dark" as const,
-  cardBg: { hue: "amber" },
-  text: { hue: "sand" },
-  accent: "flame",
-  active: "cobalt",
+  surface: { canvas: "amber", card: "amber" },
+  element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" },
+  role: { accent: "flame", action: "cobalt", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
   surfaceContrast: 70,
   signalIntensity: 80,
   warmth: 65,
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
-  it("deriveTheme produces a ThemeOutput with 373 tokens for the novel recipe", () => {
+  it("deriveTheme produces a ThemeOutput with 374 tokens for the novel recipe", () => {
     const output = deriveTheme(CHM_NOVEL_RECIPE);
-    expect(Object.keys(output.tokens).length).toBe(373);
+    expect(Object.keys(output.tokens).length).toBe(374);
   });
 
   it("all token keys start with --tug-base-", () => {
@@ -412,10 +411,10 @@ describe("T10.3 – novel recipe end-to-end: derive → validate → export → 
     expect(() => validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP)).not.toThrow();
   });
 
-  it("0 unexpected body-text perceptual contrast failures (engine contrast floors enforced by construction; T-ACC-1 / T10.3 core assertion)", () => {
+  it("0 unexpected content perceptual contrast failures (engine contrast floors enforced by construction; T-ACC-1 / T10.3 core assertion)", () => {
     const { finalResults } = runFullPipelineForRecipe(CHM_NOVEL_RECIPE);
     const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
-      (r) => r.role === "body-text",
+      (r) => r.role === "content",
     );
     const descriptions = bodyTextUnexpected.map(
       (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
@@ -534,12 +533,12 @@ describe("T10.3 – gallery card tab 21 and existing-tab regression", () => {
 // ---------------------------------------------------------------------------
 
 describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contrast failures (engine contrast floors)", () => {
-  it("dark mode CHM recipe has 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
+  it("dark mode CHM recipe has 0 unexpected content failures (engine contrast floors enforced by construction)", () => {
     const { finalResults } = runFullPipelineForRecipe(CHM_NOVEL_RECIPE);
-    const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
-      (r) => r.role === "body-text",
+    const contentUnexpected = unexpectedFailures(finalResults).filter(
+      (r) => r.role === "content",
     );
-    const descriptions = bodyTextUnexpected.map(
+    const descriptions = contentUnexpected.map(
       (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
@@ -548,16 +547,16 @@ describe("T-ACC-1 – CHM mood recipe: 0 unexpected body-text perceptual contras
   // Note: EXAMPLE_RECIPES now includes harmony (light mode with LIGHT_FORMULAS).
   // The test below covers all built-in recipes including the harmony light theme.
 
-  it("all built-in example recipes produce 0 unexpected body-text failures (engine contrast floors; regression guard)", () => {
+  it("all built-in example recipes produce 0 unexpected content failures (engine contrast floors; regression guard)", () => {
     for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES) as [string, Parameters<typeof deriveTheme>[0]][]) {
       const { finalResults } = runFullPipelineForRecipe(recipe);
-      const bodyTextUnexpected = unexpectedFailures(finalResults).filter(
-        (r) => r.role === "body-text",
+      const contentUnexpected = unexpectedFailures(finalResults).filter(
+        (r) => r.role === "content",
       );
-      const descriptions = bodyTextUnexpected.map(
+      const descriptions = contentUnexpected.map(
         (f) => `${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`,
       );
-      expect(descriptions, `${name} recipe should have 0 unexpected body-text failures`).toEqual([]);
+      expect(descriptions, `${name} recipe should have 0 unexpected content failures`).toEqual([]);
     }
   });
 });
@@ -610,10 +609,9 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
       name: "GreenRed",
       description: "CVD test recipe with explicit green/red pairing.",
       mode: "dark" as const,
-      cardBg: { hue: "slate" },
-      text: { hue: "slate" },
-      positive: "green",
-      destructive: "red",
+      surface: { canvas: "slate", card: "slate" },
+      element: { content: "slate", control: "slate", display: "indigo", informational: "slate", border: "slate", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       surfaceContrast: 50,
       signalIntensity: 80,
       warmth: 50,
@@ -635,7 +633,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders 14 hue pickers (7 structural including grid + 7 role) in the preview section", () => {
+  it("renders 15 hue pickers (2 surface + 6 element + 7 role) in the preview section", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -644,7 +642,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     expect(preview).not.toBeNull();
     // All pickers use the same CompactHuePicker component (gtg-compact-hue-row)
     const pickers = preview!.querySelectorAll(".gtg-compact-hue-row");
-    expect(pickers.length).toBe(14);
+    expect(pickers.length).toBe(15);
   });
 
   it("each role hue picker button has the correct data-testid", () => {
@@ -676,15 +674,9 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       name: "brio",
       description: "Explicit default role hues test recipe.",
       mode: "dark",
-      cardBg: { hue: "indigo-violet" },
-      text: { hue: "cobalt" },
-      accent: "orange",
-      active: "blue",
-      agent: "violet",
-      data: "teal",
-      success: "green",
-      caution: "yellow",
-      destructive: "red",
+      surface: { canvas: "indigo-violet", card: "indigo-violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const implicit = deriveTheme(EXAMPLE_RECIPES.brio);
     // tone tokens should match between explicit defaults and recipe defaults
@@ -708,17 +700,17 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       name: "test",
       description: "Test recipe with red destructive hue.",
       mode: "dark",
-      cardBg: { hue: "violet" },
-      text: { hue: "cobalt" },
-      destructive: "red",
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
       name: "test",
       description: "Test recipe with pink destructive hue.",
       mode: "dark",
-      cardBg: { hue: "violet" },
-      text: { hue: "cobalt" },
-      destructive: "pink",
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
     });
     expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
       withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
@@ -917,13 +909,15 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
     // is a CSS cascade effect invisible to JSDOM.
     const withRed = deriveTheme({
       name: "test", description: "Test recipe with red destructive hue.", mode: "dark",
-      cardBg: { hue: "violet" }, text: { hue: "cobalt" },
-      destructive: "red",
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
       name: "test", description: "Test recipe with pink destructive hue.", mode: "dark",
-      cardBg: { hue: "violet" }, text: { hue: "cobalt" },
-      destructive: "pink",
+      surface: { canvas: "violet", card: "violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
     });
     expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
       withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
@@ -956,7 +950,7 @@ function renderWithThemeProvider(savedThemeNames: string[] = []) {
       return new Response("body {}", { status: 200 });
     }
     if (url.startsWith("/styles/themes/") && url.endsWith("-recipe.json")) {
-      const recipe = JSON.stringify({ name: "Saved Theme", mode: "dark", cardBg: { hue: "amber" }, text: { hue: "sand" } });
+      const recipe = JSON.stringify({ name: "Saved Theme", description: "Saved theme for testing.", mode: "dark", surface: { canvas: "amber", card: "amber" }, element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } });
       return new Response(recipe, { status: 200 });
     }
     return new Response("", { status: 404 });
@@ -1069,7 +1063,7 @@ describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () =>
         return new Response("body {}", { status: 200 });
       }
       if (url.endsWith("-recipe.json")) {
-        const recipe = JSON.stringify({ name: "My Custom Theme", mode: "dark", cardBg: { hue: "cobalt" }, text: { hue: "slate" } });
+        const recipe = JSON.stringify({ name: "My Custom Theme", description: "Custom theme for testing.", mode: "dark", surface: { canvas: "cobalt", card: "cobalt" }, element: { content: "slate", control: "slate", display: "indigo", informational: "cobalt", border: "cobalt", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } });
         return new Response(recipe, { status: 200 });
       }
       return new Response("", { status: 404 });
@@ -1107,9 +1101,9 @@ describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () =>
 // ---------------------------------------------------------------------------
 
 describe("deriveTheme – Harmony preset produces correct light-mode output (Step 3)", () => {
-  it("deriveTheme(EXAMPLE_RECIPES.harmony) produces 373 tokens", () => {
+  it("deriveTheme(EXAMPLE_RECIPES.harmony) produces 374 tokens", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(output.tokens).length).toBe(373);
+    expect(Object.keys(output.tokens).length).toBe(374);
   });
 
   it("Harmony recipe includes formulas field", () => {
@@ -1159,16 +1153,18 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "test-dark",
       description: "Dark formulas test",
       mode: "dark",
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: DARK_FORMULAS,
     });
     const lightOutput = deriveTheme({
       name: "test-light",
       description: "Light formulas test",
       mode: "light",
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: LIGHT_FORMULAS,
     });
     // The semantic tone tokens should differ because semanticSignalTone differs (50 vs 35)
@@ -1192,8 +1188,9 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "light-test",
       description: "Light formulas round-trip test",
       mode: "light" as const,
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: LIGHT_FORMULAS,
     };
     const serialized = JSON.stringify(recipe);
@@ -1215,15 +1212,17 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "no-formulas",
       description: "No formulas field",
       mode: "dark",
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const darkFormulas = deriveTheme({
       name: "dark-formulas",
       description: "Explicit DARK_FORMULAS",
       mode: "dark",
-      cardBg: { hue: "indigo" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo", card: "indigo" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: DARK_FORMULAS,
     });
     expect(noFormulas.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(darkFormulas.tokens["--tug-base-element-tone-fill-normal-accent-rest"]);
@@ -1238,7 +1237,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
 //   Task 1: Brio → Light → Dark round-trip produces original Brio output
 //   Task 2: Harmony preset token-for-token match with direct engine call
 //   Task 3: Export/import round-trip preserves formulas field
-//   Task 4: Token count is exactly 373 in all states
+//   Task 4: Token count is exactly 374 in all states
 //
 // Strategy: extract rendered token map from DOM via gtg-token-name / gtg-token-value
 // spans, then compare against deriveTheme() direct calls.
@@ -1277,18 +1276,18 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
   afterEach(() => { _resetForTest(); cleanup(); });
 
   // -------------------------------------------------------------------------
-  // Task 4: Token count is exactly 373 in all states
+  // Task 4: Token count is exactly 374 in all states
   // -------------------------------------------------------------------------
 
-  it("Task 4: initial render shows exactly 373 tokens", () => {
+  it("Task 4: initial render shows exactly 374 tokens", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
   });
 
-  it("Task 4: Harmony preset shows exactly 373 tokens", () => {
+  it("Task 4: Harmony preset shows exactly 374 tokens", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -1296,23 +1295,23 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     act(() => {
       fireEvent.click(container.querySelector("[data-testid='gtg-preset-harmony']") as HTMLElement);
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
   });
 
-  it("Task 4: mode toggle Dark→Light→Dark preserves 373 tokens throughout", () => {
+  it("Task 4: mode toggle Dark→Light→Dark preserves 374 tokens throughout", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
     act(() => {
       fireEvent.click(container.querySelector("[data-testid='gtg-mode-light']") as HTMLElement);
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
     act(() => {
       fireEvent.click(container.querySelector("[data-testid='gtg-mode-dark']") as HTMLElement);
     });
-    expect(readRenderedTokenCount(container)).toBe(373);
+    expect(readRenderedTokenCount(container)).toBe(374);
   });
 
   // -------------------------------------------------------------------------
@@ -1376,7 +1375,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
 
     // Capture baseline Brio tokens on initial render
     const initialBrioTokens = readRenderedTokens(container);
-    expect(Object.keys(initialBrioTokens).length).toBe(373);
+    expect(Object.keys(initialBrioTokens).length).toBe(374);
 
     // Toggle to Light mode
     act(() => {
@@ -1470,7 +1469,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     // Deriving from parsed recipe must produce identical output
     const directOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
     const importedOutput = deriveTheme(parsedHarmony);
-    expect(Object.keys(importedOutput.tokens).length).toBe(373);
+    expect(Object.keys(importedOutput.tokens).length).toBe(374);
     const mismatches: string[] = [];
     for (const [name, value] of Object.entries(directOutput.tokens)) {
       if (importedOutput.tokens[name] !== value) {
@@ -1489,14 +1488,15 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
       name: "bare",
       description: "No formulas field",
       mode: "dark" as const,
-      cardBg: { hue: "indigo-violet" },
-      text: { hue: "cobalt" },
+      surface: { canvas: "indigo-violet", card: "indigo-violet" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const noFormulasOutput = deriveTheme(bareRecipe);
     const darkFormulasOutput = deriveTheme({ ...bareRecipe, formulas: DARK_FORMULAS });
     expect(noFormulasOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(
       darkFormulasOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"],
     );
-    expect(Object.keys(noFormulasOutput.tokens).length).toBe(373);
+    expect(Object.keys(noFormulasOutput.tokens).length).toBe(374);
   });
 });
