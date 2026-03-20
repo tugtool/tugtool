@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-20T04:50:06Z
+---
+
+## step-7: Added 2 pairing entries for element-cardTitle-text-normal-plain-rest on tab surfaces (active/inactive) with role display. Updated stale comment clarifying --tug-card-title-bar-fg purpose. 1863 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-6
 date: 2025-03-20T04:34:04Z
 ---

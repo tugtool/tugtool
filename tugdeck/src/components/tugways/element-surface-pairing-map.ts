@@ -1492,8 +1492,10 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
 
   // --- Card title bar / tab chrome (tug-card.css, tug-tab.css) ---
-  // THE primary gap: .tugcard-title (fg-default) renders on .tugcard-title-bar
-  // background (tab-bg-active when card-frame[data-focused="true"]).
+  // These pairings cover --tug-card-title-bar-fg (fg-default) used by other
+  // title-bar elements (icons, labels) on the tab-bar backgrounds. The card
+  // title itself (.tugcard-title) now uses its own dedicated token
+  // (element-cardTitle-text-normal-plain-rest) — see Step 7 additions below.
   {
     element: "--tug-base-element-global-text-normal-default-rest",
     surface: "--tug-base-surface-tab-primary-normal-plain-active",
@@ -1907,6 +1909,22 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     element: "--tug-base-element-global-fill-normal-accent-rest",
     surface: "--tug-base-surface-global-primary-normal-control-rest",
     role: "informational",
+  },
+
+  // =========================================================================
+  // Card title token pairings (Step 7 additions)
+  // element-cardTitle-text-normal-plain-rest renders as .tugcard-title text
+  // on both active and inactive tab-bar backgrounds (tug-card.css [D06]).
+  // =========================================================================
+  {
+    element: "--tug-base-element-cardTitle-text-normal-plain-rest",
+    surface: "--tug-base-surface-tab-primary-normal-plain-active",
+    role: "display",
+  },
+  {
+    element: "--tug-base-element-cardTitle-text-normal-plain-rest",
+    surface: "--tug-base-surface-tab-primary-normal-plain-inactive",
+    role: "display",
   },
 
   // =========================================================================
