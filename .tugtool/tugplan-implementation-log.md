@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-20T15:44:28Z
+---
+
+## step-5: Final verification: bun run check exit 0, bun test 1863 pass / 0 fail (matches Step 1 baseline), bun run audit:tokens lint zero violations. Four-slot rename complete.
+
+**Files changed:**
+- .tugtool/tugplan-formula-field-rename.md
+
+---
+
+---
 step: step-4
 date: 2025-03-20T15:39:59Z
 ---
