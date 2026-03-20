@@ -60,6 +60,8 @@ This is a pure mechanical rename with no behavioral changes. The authoritative o
 - Renaming `ThemeRecipe`, `MoodKnobs`, `ResolvedHueSlots`, or other non-formula interfaces
 - Adding new fields or removing fields beyond the two confirmed dead ones
 - Changing the `RULES` table structure or adding/removing rules
+- Changing function signatures — `resolveHueSlots(recipe, warmth, formulas?)` retains its warmth parameter; `computeTones(formulas, knobs)` retains its knobs parameter. Only the field names inside `DerivationFormulas` and `ComputedTones` objects change.
+- Changing the relationship between `surfaceCanvasTone` and `surfaceCanvasToneBase` — both are renamed but their runtime semantics (surfaceContrast modulation via `surfaceCanvasToneBase`/`surfaceCanvasToneCenter`/`surfaceCanvasToneScale`) are preserved identically. Any P1 interpolation or `compileRecipe()` behavior that sets `surfaceCanvasToneBase` from an interpolated `surfaceCanvasTone` is outside this rename scope.
 
 #### Dependencies / Prerequisites {#dependencies}
 
@@ -331,6 +333,11 @@ The complete rename table is in `roadmap/3c-renaming-scheme-2.txt`. It defines ~
 **Tasks:**
 - [ ] In `theme-derivation-engine.test.ts`: update all string-literal references to formula field names and ComputedTones field names in test assertions
 - [ ] In `theme-derivation-engine.test.ts`: update any test descriptions/comments that reference old field names
+- [ ] In `theme-derivation-engine.test.ts`: update the T-RESOLVE-LIGHT test's `lightFormulas` object — it spreads `DARK_FORMULAS` and overrides hue-expression fields (e.g., `surfaceScreenHueExpression`, `mutedTextHueExpression`, `subtleTextHueExpression`, `disabledTextHueExpression`, `inverseTextHueExpression`, `placeholderTextHueExpression`, `selectionInactiveHueExpression`, `selectionInactiveSemanticMode`). If any of these field names are in the rename table, update them. Verify the spread `...DARK_FORMULAS` picks up the renamed field names automatically.
+- [ ] In `theme-derivation-engine.test.ts`: update all ~8 direct `resolveHueSlots(recipe, warmthValue)` call sites — these calls pass recipe objects that may contain formula field overrides with old names. Check each recipe literal in T-RESOLVE, T-RESOLVE-LIGHT, T-WARMTH, and bare-primary tests for old field names in their `formulas` overrides. Note: `resolveHueSlots` signature is unchanged by this plan (`resolveHueSlots(recipe, warmth, formulas?)` — warmth parameter stays, only formula field names inside objects change).
+- [ ] In `theme-derivation-engine.test.ts`: update the T-WARMTH tests (both `applyWarmthBias` and `resolveHueSlots at warmth extremes`) — these tests reference formula field names in recipe construction and assertions. The `applyWarmthBias` and `ACHROMATIC_ADJACENT_HUES` imports are NOT deleted or renamed by this plan (they are function/constant exports, not formula fields).
+- [ ] In `theme-derivation-engine.test.ts`: update T-ACHROMATIC-SET test if it references any old formula field names in assertions or setup (the test itself checks `ACHROMATIC_ADJACENT_HUES` membership, which is not renamed, but verify surrounding context)
+- [ ] In `theme-derivation-engine.test.ts`: update the warmth modulation tests that construct recipe objects with formula overrides — any old field names in the constructed recipe must use new names
 - [ ] In `gallery-theme-generator-content.test.tsx`: update all string-literal references to formula field names (e.g., `harmonyFormulas.bgAppTone` -> `harmonyFormulas.surfaceAppTone`, `harmonyFormulas.fgDefaultTone` -> `harmonyFormulas.contentTextDefaultTone`)
 - [ ] In `gallery-theme-generator-content.tsx`: verify imports compile correctly; update any field-name string references if present
 - [ ] Search for any other `.ts` or `.tsx` files in `tugdeck/src/` that reference old formula field names and update them
