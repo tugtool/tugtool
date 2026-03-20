@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-20T19:25:45Z
+---
+
+## step-3: Removed surfaceContrast/signalIntensity/warmth from ThemeRecipe, added parameters?: RecipeParameters. deriveTheme() now calls compileRecipe() when no explicit formulas provided. MoodKnobs stripped to surfaceContrast:50 only. computeTones() derives signalIntensity from formulas.signalIntensityValue. All 1880 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-parameter-engine.md
+
+---
+
+---
 step: step-2
 date: 2025-03-20T19:04:56Z
 ---
@@ -17,6 +29,36 @@ date: 2025-03-20T19:04:56Z
 
 **Files changed:**
 - .tugtool/tugplan-recipe-parameter-engine.md
+
+---
+
+---
+step: step-3
+date: 2026-03-20T00:00:00Z
+---
+
+## step-3: Wired compileRecipe() into deriveTheme() — ThemeRecipe now carries an optional parameters field, deriveTheme() calls compileRecipe() when present and falls back to defaults otherwise. Removed mood knobs (warmth/contrast/saturation) from ThemeRecipe.
+
+**Checkpoint results:**
+
+```
+$ cd tugdeck && bun run check
+$ bunx tsc --noEmit
+exit code: 0 (zero TypeScript errors)
+```
+
+```
+$ cd tugdeck && bun test
+bun test v1.3.9 (cf6cdbbb)
+ 1880 pass
+ 0 fail
+Ran 1880 tests across 73 files.
+exit code: 0
+```
+
+**Files changed:**
+- tugdeck/src/components/tugways/theme-derivation-engine.ts
+- tugdeck/src/__tests__/theme-derivation-engine.test.ts
 
 ---
 

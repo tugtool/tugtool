@@ -6,19 +6,24 @@
  *   - `tokens`: all 373 token values as `--tug-color()` strings (for CSS export)
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
  *
- * The derivation uses a three-layer declarative pipeline:
+ * The derivation uses a four-step pipeline:
+ *   Step 0 — compileRecipe(): RecipeParameters → DerivationFormulas
+ *             Interpolates 7 design parameters (0-100) against curated endpoint
+ *             bundles to produce a complete DerivationFormulas. Skipped when
+ *             recipe.formulas is provided directly (escape hatch). [D06]
  *   Layer 1 — resolveHueSlots(): recipe → ResolvedHueSlots
  *             Resolves all per-tier hue variants (fg-muted, surfBareBase, etc.)
  *             using palette angles verbatim — no warmth bias applied.
  *   Layer 2 — computeTones(): DerivationFormulas + MoodKnobs → ComputedTones
- *             Pre-computes all derived tone values from mood knobs and formula constants.
+ *             Pre-computes all derived tone values. surfaceContrast is fixed at 50
+ *             (scaling neutralized by compiled formulas); signalIntensity is derived
+ *             from formulas.signalIntensityValue. [D04]
  *   Layer 3 — evaluateRules(): RULES table → tokens + resolved maps
  *             Iterates the declarative rule table in derivation-rules.ts, calling
  *             the appropriate helper for each token type.
  *
- * Mood knobs (`surfaceContrast`, `signalIntensity`) modulate tone spreads and
- * intensity levels. Mode differences (dark vs light) are expressed entirely as
- * data in DARK_FORMULAS (and future recipe formulas) and the RULES table —
+ * Mode differences (dark vs light) are expressed entirely as data in
+ * DARK_FORMULAS / LIGHT_FORMULAS and the RULES table —
  * deriveTheme() itself contains no mode branching.
  *
  * Control tokens use the emphasis x role system (Table T01):
@@ -246,6 +251,11 @@ import {
 } from "./palette-engine";
 import { RULES } from "./derivation-rules";
 import {
+  type RecipeParameters,
+  defaultParameters,
+  compileRecipe,
+} from "./recipe-parameters";
+import {
   toneToL,
   CONTRAST_SCALE,
   POLARITY_FACTOR,
@@ -315,10 +325,9 @@ export interface ThemeRecipe {
     danger: string;
   };
 
-  surfaceContrast?: number; // 0-100, default 50
-  signalIntensity?: number; // 0-100, default 50
-  warmth?: number; // 0-100, default 50
-  /** All formula constants for this recipe. Falls back to DARK_FORMULAS when absent. [D02] */
+  /** Seven design parameters (0-100). Compiled by compileRecipe() to produce DerivationFormulas. */
+  parameters?: RecipeParameters;
+  /** All formula constants for this recipe. Takes precedence over parameters when provided. [D06] */
   formulas?: DerivationFormulas;
 }
 
@@ -2044,17 +2053,13 @@ export function resolveHueSlots(
 
 /**
  * Normalized mood knob values passed to computeTones() and rule expressions.
- * All fields are 0-100 integers matching the ThemeRecipe optional fields.
+ * surfaceContrast is fixed at 50 — scaling expressions in computeTones() are
+ * neutralized by setting scale formula fields to 0 in compiled formulas. [D04]
  * Spec S04.
  */
 export interface MoodKnobs {
-  /** Surface contrast knob (0-100, default 50). */
+  /** Surface contrast knob. Fixed at 50 to neutralize computeTones() scaling. */
   surfaceContrast: number;
-  /** Signal intensity knob (0-100, default 50). */
-  signalIntensity: number;
-  /** Warmth knob (0-100, default 50). Included for completeness; warmth bias is
-   *  applied in resolveHueSlots(), not in computeTones(). */
-  warmth: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -2097,7 +2102,7 @@ export interface ComputedTones {
   outlinedSurfaceActiveTone: number;
   toggleTrackOffTone: number;
   toggleDisabledTone: number;
-  // Signal intensity (derived from signalIntensity knob)
+  // Signal intensity (derived from formulas.signalIntensityValue — P6: Signal Strength) [D04]
   signalIntensity: number;
 }
 
@@ -2112,14 +2117,19 @@ export interface ComputedTones {
  * Called by deriveTheme() as Layer 2 of the pipeline. The output ComputedTones
  * is referenced by rule expressions in the RULES table (Layer 3).
  *
+ * surfaceContrast is fixed at 50 in MoodKnobs — scaling expressions are neutralized
+ * by compiled formula scale fields set to 0. [D04]
+ * signalIntensity on ComputedTones is derived from formulas.signalIntensityValue
+ * (interpolated by compileRecipe() from P6: Signal Strength), not from MoodKnobs. [D04]
+ *
  * All formulas are verified against Brio dark-mode ground truth by T-TONES-DARK.
  *
  * Mode-branching is eliminated: computed-tone override fields on formulas use the
  * `number | null` convention — a number means "use this flat value", null means
- * "derive from the formula". [D04] Spec S03.
+ * "derive from the formula". Spec S03.
  *
  * @param formulas - Recipe formula constants (DerivationFormulas)
- * @param knobs    - Normalized mood knob values
+ * @param knobs    - Mood knobs (surfaceContrast fixed at 50 in production)
  */
 export function computeTones(formulas: DerivationFormulas, knobs: MoodKnobs): ComputedTones {
   const sc = knobs.surfaceContrast;
@@ -2131,11 +2141,9 @@ export function computeTones(formulas: DerivationFormulas, knobs: MoodKnobs): Co
   // bg-app: anchored at formulas.surfaceAppTone at sc=50, ±8 units at extremes
   const surfaceApp = formulas.surfaceAppTone + ((sc - 50) / 50) * 8;
 
-  // bg-canvas: unified formula using formulas fields (Spec S03)
-  //   Dark: surfaceCanvasToneBase=surfaceAppTone, surfaceCanvasToneCenter=50, surfaceCanvasToneScale=8
-  //         -> Math.round(surfaceAppTone + ((sc - 50)/50) * 8) = Math.round(surfaceApp)
-  //   Light: surfaceCanvasToneBase=35, surfaceCanvasToneCenter=0, surfaceCanvasToneScale=10
-  //          -> Math.round(35 + (sc/100) * 10)
+  // bg-canvas: formula parameters from compiled formulas. When compileRecipe() is used,
+  // surfaceCanvasToneScale is set to 0 and surfaceCanvasToneCenter to 50, so (sc-50)/50 * 0 = 0
+  // and the formula passes through surfaceCanvasToneBase directly. [D04]
   const surfaceCanvas = Math.round(
     formulas.surfaceCanvasToneBase +
       ((sc - formulas.surfaceCanvasToneCenter) /
@@ -2204,8 +2212,10 @@ export function computeTones(formulas: DerivationFormulas, knobs: MoodKnobs): Co
   const toggleDisabledTone = formulas.toggleDisabledToneOverride ??
     Math.round(surfaceOverlay);
 
-  // Signal intensity: direct mapping from knob (0→0, 50→50, 100→100)
-  const signalIntensity = Math.round(knobs.signalIntensity);
+  // Signal intensity: derived from compiled formula field signalIntensityValue.
+  // compileRecipe() interpolates signalIntensityValue from P6: Signal Strength.
+  // The 18+ rule expressions in derivation-rules.ts read computed.signalIntensity unchanged. [D04]
+  const signalIntensity = Math.round(formulas.signalIntensityValue);
 
   return {
     surfaceApp: Math.round(surfaceApp),
@@ -3006,19 +3016,18 @@ function resolvedEntryAlpha(
  */
 export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
-  // 1. Resolve formula constants [D01]
-  // recipe.formulas when provided, else Dark recipe default. [D02]
-  // Silent fallback: the only production recipe is the Dark recipe.
+  // 1. Resolve formula constants [D01] [D06]
+  // Precedence: recipe.formulas > compileRecipe(mode, parameters) > compiled defaults
   // -------------------------------------------------------------------------
-  const formulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS;
+  const formulas: DerivationFormulas =
+    recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
 
   // -------------------------------------------------------------------------
-  // 2. Mood knob normalization (0-100, default 50)
+  // 2. Mood knob — surfaceContrast fixed at 50 to neutralize computeTones() scaling [D04]
+  // signalIntensity and warmth removed from MoodKnobs (warmth removed in Step 2,
+  // signalIntensity now derived from formulas.signalIntensityValue in computeTones).
   // -------------------------------------------------------------------------
-  const surfaceContrast = recipe.surfaceContrast ?? 50;
-  const signalIntensity = recipe.signalIntensity ?? 50;
-  const warmth = recipe.warmth ?? 50;
-  const knobs: MoodKnobs = { surfaceContrast, signalIntensity, warmth };
+  const knobs: MoodKnobs = { surfaceContrast: 50 };
 
   // -------------------------------------------------------------------------
   // 3. Layer 1 — resolve all hue slots (Spec S02)

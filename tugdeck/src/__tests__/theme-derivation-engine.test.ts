@@ -68,6 +68,11 @@ import {
   RECIPE_PAIR_EXCEPTIONS,
 } from "./contrast-exceptions";
 
+import {
+  compileRecipe,
+  defaultParameters,
+} from "@/components/tugways/recipe-parameters";
+
 // ---------------------------------------------------------------------------
 // Helpers for contrast floor enforcement in test helpers
 // ---------------------------------------------------------------------------
@@ -939,8 +944,8 @@ describe("resolveHueSlots — Step 3", () => {
 
 describe("computeTones — Step 4", () => {
   // Standard knobs shared across tests
-  const DARK_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
-  const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
+  const DARK_KNOBS_50: MoodKnobs = { surfaceContrast: 50 };
+  const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50 };
 
   // ---------------------------------------------------------------------------
   // T-TONES-DARK: computeTones(DARK_FORMULAS, sc=50) matches Brio dark ground truth.
@@ -1004,7 +1009,7 @@ describe("computeTones — Step 4", () => {
   //   surfaceSunken sc=100: round(11 + (100-50)/50*5) = round(11+5) = 16
   // ---------------------------------------------------------------------------
   it("T-TONES-SC: dark mode surfaceContrast=0 produces minimum tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
+    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 0 });
 
     // surfaceApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
     expect(ct.surfaceApp).toBe(-3);
@@ -1014,12 +1019,12 @@ describe("computeTones — Step 4", () => {
     expect(ct.surfaceDefault).toBe(9);
     // surfaceOverlay: 14 + (0-50)/50 * 5 = 14 - 5 = 9
     expect(ct.surfaceOverlay).toBe(9);
-    // signalIntensity: direct from knob
+    // signalIntensity: derived from DARK_FORMULAS.signalIntensityValue (=50)
     expect(ct.signalIntensity).toBe(50);
   });
 
   it("T-TONES-SC: dark mode surfaceContrast=100 produces maximum tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
+    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 100 });
 
     // surfaceApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
     expect(ct.surfaceApp).toBe(13);
@@ -1031,9 +1036,11 @@ describe("computeTones — Step 4", () => {
     expect(ct.surfaceScreen).toBe(29);
   });
 
-  it("T-TONES-SC: signal intensity extremes map directly to signalIntensity", () => {
-    const ct0 = computeTones(DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
-    const ct100 = computeTones(DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
+  it("T-TONES-SC: signal intensity derived from formulas.signalIntensityValue", () => {
+    // After Step 3, signalIntensity on ComputedTones is derived from
+    // formulas.signalIntensityValue (a P6 formula field), not from MoodKnobs.
+    const ct0 = computeTones({ ...DARK_FORMULAS, signalIntensityValue: 0 }, { surfaceContrast: 50 });
+    const ct100 = computeTones({ ...DARK_FORMULAS, signalIntensityValue: 100 }, { surfaceContrast: 50 });
     expect(ct0.signalIntensity).toBe(0);
     expect(ct100.signalIntensity).toBe(100);
   });
@@ -1096,10 +1103,9 @@ describe("computeTones — Step 4", () => {
     ruleResolved: Record<string, ResolvedColor>;
     imperative: ReturnType<typeof deriveTheme>;
   } {
-    const surfaceContrast = recipe.surfaceContrast ?? 50;
-    const signalIntensity = recipe.signalIntensity ?? 50;
-    const recipeFormulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS;
-    const knobs = { surfaceContrast, signalIntensity, warmth: 50 };
+    const recipeFormulas: DerivationFormulas =
+      recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+    const knobs: MoodKnobs = { surfaceContrast: 50 };
     const resolvedSlots = resolveHueSlots(recipe);
     const computed = computeTones(recipeFormulas, knobs);
 
@@ -1277,10 +1283,9 @@ describe("derivation-engine step-6 rules", () => {
     ruleTokens: Record<string, string>;
     imperative: ReturnType<typeof deriveTheme>;
   } {
-    const surfaceContrast = recipe.surfaceContrast ?? 50;
-    const signalIntensity = recipe.signalIntensity ?? 50;
-    const recipeFormulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS;
-    const knobs = { surfaceContrast, signalIntensity, warmth: 50 };
+    const recipeFormulas: DerivationFormulas =
+      recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+    const knobs: MoodKnobs = { surfaceContrast: 50 };
     const resolvedSlots = resolveHueSlots(recipe);
     const computed = computeTones(recipeFormulas, knobs);
 
@@ -1363,6 +1368,35 @@ describe("derivation-engine step-6 rules", () => {
 });
 // T-RULES-LIGHT-MATCH deleted in step 6 (clean break per D06):
 // light-mode rule parity requires BRIO_LIGHT_FORMULAS which is deferred to a later step.
+
+// ---------------------------------------------------------------------------
+// Step 3 tests: compileRecipe wired into deriveTheme (Spec S05, S06)
+// T3.1: deriveTheme with parameters produces 374 tokens
+// T3.2: deriveTheme with formulas escape hatch still works
+// T3.3: deriveTheme with no parameters and no formulas uses compiled defaults
+// ---------------------------------------------------------------------------
+
+describe("derivation-engine step-3 compileRecipe integration", () => {
+  const minimalDarkRecipe = EXAMPLE_RECIPES.brio;
+
+  it("T3.1: deriveTheme with parameters: defaultParameters() produces 374 tokens", () => {
+    const recipe = { ...minimalDarkRecipe, parameters: defaultParameters(), formulas: undefined };
+    const output = deriveTheme(recipe);
+    expect(Object.keys(output.tokens).length).toBe(374);
+  });
+
+  it("T3.2: deriveTheme with formulas escape hatch still works (backward compat)", () => {
+    const recipe = { ...minimalDarkRecipe, formulas: DARK_FORMULAS, parameters: undefined };
+    const output = deriveTheme(recipe);
+    expect(Object.keys(output.tokens).length).toBe(374);
+  });
+
+  it("T3.3: deriveTheme with no parameters and no formulas uses compiled defaults (374 tokens)", () => {
+    const recipe = { ...minimalDarkRecipe, parameters: undefined, formulas: undefined };
+    const output = deriveTheme(recipe);
+    expect(Object.keys(output.tokens).length).toBe(374);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Step 4 tests: enforceContrastFloor, ContrastDiagnostic, zero-failure integration

@@ -1379,13 +1379,11 @@ export function GalleryThemeGeneratorContent() {
   const [informationalHue, setInformationalHue] = useState<string>(DEFAULT_RECIPE.element.informational);
   const [borderHue, setBorderHue] = useState<string>(DEFAULT_RECIPE.element.border);
   const [decorativeHue, setDecorativeHue] = useState<string>(DEFAULT_RECIPE.element.decorative);
-  const [surfaceContrast, setSurfaceContrast] = useState<number>(
-    DEFAULT_RECIPE.surfaceContrast ?? 50,
-  );
-  const [signalIntensity, setSignalIntensity] = useState<number>(
-    DEFAULT_RECIPE.signalIntensity ?? 50,
-  );
-  const [warmth, setWarmth] = useState<number>(DEFAULT_RECIPE.warmth ?? 50);
+  // Mood sliders — kept for Step 4 UI removal. Values are no longer part of ThemeRecipe;
+  // deriveTheme() uses compileRecipe() with parameters instead of these knobs. [Step 3]
+  const [surfaceContrast, setSurfaceContrast] = useState<number>(50);
+  const [signalIntensity, setSignalIntensity] = useState<number>(50);
+  const [warmth, setWarmth] = useState<number>(50);
 
   // Formula state — tracks the active DerivationFormulas for the current recipe.
   // Defaults to DEFAULT_RECIPE.formulas ?? DARK_FORMULAS (the Brio dark default).
@@ -1532,9 +1530,6 @@ export function GalleryThemeGeneratorContent() {
         surface: { canvas, card },
         element: { content, control, display, informational, border, decorative },
         role: { accent, action: active, agent, data, success, caution, danger },
-        surfaceContrast: sc,
-        signalIntensity: sv,
-        warmth: w,
         formulas: formulasRef.current,
       };
       setThemeOutput(deriveTheme(recipe));
@@ -1615,9 +1610,6 @@ export function GalleryThemeGeneratorContent() {
       setInformationalHue(r.element.informational);
       setBorderHue(r.element.border);
       setDecorativeHue(r.element.decorative);
-      setSurfaceContrast(r.surfaceContrast ?? 50);
-      setSignalIntensity(r.signalIntensity ?? 50);
-      setWarmth(r.warmth ?? 50);
       setAccentHue(r.role.accent);
       setActiveHue(r.role.action);
       setAgentHue(r.role.agent);
@@ -1652,12 +1644,9 @@ export function GalleryThemeGeneratorContent() {
       surface: { canvas: canvasHue, card: cardHue },
       element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
       role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-      surfaceContrast,
-      signalIntensity,
-      warmth,
       formulas,
     }),
-    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, surfaceContrast, signalIntensity, warmth, formulas],
+    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
   );
 
   /**
@@ -1677,9 +1666,6 @@ export function GalleryThemeGeneratorContent() {
       setInformationalHue(r.element.informational);
       setBorderHue(r.element.border);
       setDecorativeHue(r.element.decorative);
-      setSurfaceContrast(r.surfaceContrast ?? 50);
-      setSignalIntensity(r.signalIntensity ?? 50);
-      setWarmth(r.warmth ?? 50);
       setAccentHue(r.role.accent);
       setActiveHue(r.role.action);
       setAgentHue(r.role.agent);
