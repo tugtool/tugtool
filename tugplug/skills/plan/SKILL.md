@@ -589,6 +589,8 @@ If the commit fails (e.g., no changes to commit because the plan was already
 committed), skip silently and proceed to the session end message without a
 commit hash.
 
+DO NOT include Co-Authored-By lines or mention AI models in the commit message.
+
 ---
 
 ## Reference: Persistent Agent Pattern
