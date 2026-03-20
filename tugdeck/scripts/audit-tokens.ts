@@ -1111,7 +1111,7 @@ function cmdInject(apply: boolean): void {
       let css = fs.readFileSync(file, "utf-8");
 
       // Remove existing @tug-pairings block if present
-      css = css.replace(/\/\*\*[\s\S]*?@tug-pairings[\s\S]*?\*\/\n?/, "");
+      css = css.replace(/\/\*\*[\s\S]*?@tug-pairings[\s\S]*?\*\/\n*/, "");
 
       // Insert after the file-level docblock comment (first */ found)
       const docblockEnd = css.indexOf("*/");

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-20T05:30:25Z
+---
+
+## step-10: Final integration checkpoint: tsc zero errors, 1863 tests pass, all audit:tokens gates pass, generate:tokens no diff. Fixed inject idempotency bug (\n? -> \n* in removal regex). All 6 design decisions verified. Plan complete.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-9
 date: 2025-03-20T05:16:31Z
 ---
