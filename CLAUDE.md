@@ -49,11 +49,11 @@ bun run generate:tokens
 
 The alias `generate:control-tokens` also works for backward compat. The script is `tugdeck/scripts/generate-tug-tokens.ts`. The generated block is bounded by `@generated:tokens:begin` / `@generated:tokens:end` markers inside the `body {}` block. Non-token declarations (`zoom`, `--chart-*`, `--syntax-*`) live outside the markers.
 
-## Tugdeck — Rules of Tugways
+## Tugdeck — Laws of Tug
 
-Before implementing any tugways/tugdeck code, verify against the full [Rules of Tugways](roadmap/design-system-concepts.md#rules-of-tugways) in design-system-concepts.md. Critical rules:
+Before implementing any tugways/tugdeck code, verify against the [Laws of Tug](tuglaws/laws-of-tug.md) and [Design Decisions](tuglaws/design-decisions.md). Critical laws:
 
-1. **Never call `root.render()` after initial mount.** State changes flow through subscribable stores or direct DOM manipulation. [D40, D42]
-2. **Read external state with `useSyncExternalStore` only.** No `useState` + manual sync. [D40]
-3. **Use `useLayoutEffect` for registrations that events depend on.** [D41]
-4. **Appearance changes go through CSS and DOM, never React state.** [D08, D09]
+1. **One `root.render()`, at mount, ever.** [L01]
+2. **External state enters React through `useSyncExternalStore` only.** [L02]
+3. **Use `useLayoutEffect` for registrations that events depend on.** [L03]
+4. **Appearance changes go through CSS and DOM, never React state.** [L06]
