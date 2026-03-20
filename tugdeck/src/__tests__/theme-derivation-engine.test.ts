@@ -887,7 +887,9 @@ describe("resolveHueSlots — Step 3", () => {
     // Uses informational hue slot (element.informational = "indigo-violet" in brio recipe)
     expect(output.tokens["--tug-base-element-global-text-normal-subtle-rest"]).toBe("--tug-color(indigo-violet, i: 7, t: 63)");
 
-    // fg-inverse: sapphire-cobalt i:3 t:100
+    // fg-inverse: sapphire-cobalt i:3 t:100 (compiled from P2 inverseTextTone at V=50;
+    // ref=100 is at the maximum — midpoint-preserving endpoints give low=100, high=100,
+    // so compiled value = 100 at all parameter values.)
     expect(output.tokens["--tug-base-element-global-text-normal-inverse-rest"]).toBe("--tug-color(sapphire-cobalt, i: 3, t: 100)");
 
     // selection-bg-inactive: yellow i:0 t:30 a:25
@@ -1106,7 +1108,9 @@ describe("computeTones — Step 4", () => {
     const recipeFormulas: DerivationFormulas =
       recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
     const knobs: MoodKnobs = { surfaceContrast: 50 };
-    const resolvedSlots = resolveHueSlots(recipe);
+    // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch for
+    // parameter-based recipes (avoids falling back to DARK_FORMULAS default). [Step 4]
+    const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
     const computed = computeTones(recipeFormulas, knobs);
 
     const ruleTokens: Record<string, string> = {};
@@ -1286,7 +1290,9 @@ describe("derivation-engine step-6 rules", () => {
     const recipeFormulas: DerivationFormulas =
       recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
     const knobs: MoodKnobs = { surfaceContrast: 50 };
-    const resolvedSlots = resolveHueSlots(recipe);
+    // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch for
+    // parameter-based recipes (avoids falling back to DARK_FORMULAS default). [Step 4]
+    const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
     const computed = computeTones(recipeFormulas, knobs);
 
     const ruleTokens: Record<string, string> = {};

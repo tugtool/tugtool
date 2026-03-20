@@ -1678,7 +1678,9 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
  * Generator card. The first entry (brio) is the default dark theme;
  * harmony is the built-in light peer.
  *
- * Both use the nested surface/element/role structure from Phase 3.5B. [D03] [D04]
+ * Both use the nested surface/element/role structure from Phase 3.5B [D03][D04]
+ * and the 7-parameter system from Phase 4 Plan 1 [D01]. Parameters are compiled
+ * by compileRecipe() into DerivationFormulas at derive time. [D06]
  */
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
@@ -1706,7 +1708,7 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
       caution: "yellow",
       danger: "red",
     },
-    formulas: DARK_FORMULAS,
+    parameters: defaultParameters(),
   },
   harmony: {
     name: "harmony",
@@ -1733,7 +1735,7 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
       caution: "yellow",
       danger: "red",
     },
-    formulas: LIGHT_FORMULAS,
+    parameters: defaultParameters(),
   },
 };
 

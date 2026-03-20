@@ -111,27 +111,46 @@ function clampIntensity(v: number): number {
 }
 
 /**
- * Compute placeholder endpoints for a tone field.
- * low = ref * 0.5 (clamped 0-100), high = ref * 1.5 (clamped 0-100).
+ * Compute placeholder endpoints for a tone field, guaranteeing that V=50
+ * reproduces the reference value (arithmetic mean of low and high = ref).
+ *
+ * Strategy:
+ *   - If ref * 1.5 <= 100: low = ref * 0.5, high = ref * 1.5 (symmetric ±50%)
+ *   - If ref * 1.5 > 100: high = 100, low = 2 * ref - 100 (clamped to 0)
+ *     This ensures low + 0.5 * (high - low) = ref even when the upper ceiling
+ *     forces the high endpoint to 100.
  */
 function toneEndpoints(ref: number): { low: number; high: number } {
-  return { low: clampTone(ref * 0.5), high: clampTone(ref * 1.5) };
+  if (ref * 1.5 <= 100) {
+    return { low: clampTone(ref * 0.5), high: clampTone(ref * 1.5) };
+  }
+  return { low: clampTone(2 * ref - 100), high: 100 };
 }
 
 /**
- * Compute placeholder endpoints for an intensity field.
- * low = ref * 0.5 (clamped 0-100), high = ref * 1.5 (clamped 0-100).
+ * Compute placeholder endpoints for an intensity field, guaranteeing that
+ * V=50 reproduces the reference value.
+ *
+ * Same midpoint-preserving strategy as toneEndpoints.
  */
 function intensityEndpoints(ref: number): { low: number; high: number } {
-  return { low: clampIntensity(ref * 0.5), high: clampIntensity(ref * 1.5) };
+  if (ref * 1.5 <= 100) {
+    return { low: clampIntensity(ref * 0.5), high: clampIntensity(ref * 1.5) };
+  }
+  return { low: clampIntensity(2 * ref - 100), high: 100 };
 }
 
 /**
- * Compute placeholder endpoints for an alpha field.
- * low = ref * 0.5 (clamped 0-100), high = ref * 1.5 (clamped 0-100).
+ * Compute placeholder endpoints for an alpha field, guaranteeing that
+ * V=50 reproduces the reference value.
+ *
+ * Same midpoint-preserving strategy as toneEndpoints.
  */
 function alphaEndpoints(ref: number): { low: number; high: number } {
-  return { low: clampAlpha(ref * 0.5), high: clampAlpha(ref * 1.5) };
+  if (ref * 1.5 <= 100) {
+    return { low: clampAlpha(ref * 0.5), high: clampAlpha(ref * 1.5) };
+  }
+  return { low: clampAlpha(2 * ref - 100), high: 100 };
 }
 
 // ---------------------------------------------------------------------------
