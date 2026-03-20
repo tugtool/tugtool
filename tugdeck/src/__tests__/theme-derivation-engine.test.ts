@@ -312,7 +312,7 @@ describe("derivation-engine", () => {
   it("T2.6: non-override chromatic tokens resolve to valid sRGB colors and use recipe seed hues", () => {
     // T2.6 per plan: sanity check that non-overridden tokens are reasonable.
     // All chromatic tokens should resolve to valid sRGB gamut colors.
-    // Note: at signalIntensity=50, signalI=55. Since PEAK_C_SCALE=2, the engine
+    // Note: at signalIntensity=50, signalIntensity=55. Since PEAK_C_SCALE=2, the engine
     // can produce colors with C = (55/100) * maxChroma * 2, which may slightly
     // exceed the sRGB gamut for some hues. Allow up to 30% out-of-gamut
     // since MAX_CHROMA_FOR_HUE was derived for intensity=50 (sRGB safe), and
@@ -744,14 +744,14 @@ describe("resolveHueSlots — Step 3", () => {
     // All other formula fields are irrelevant to resolveHueSlots, so spread DARK_FORMULAS.
     const lightFormulas = {
       ...DARK_FORMULAS,
-      surfScreenHue: "cobalt",          // same as txtHue -> copies txt slot
-      fgMutedHueExpr: "cobalt",         // literal txtHue (not "__bare_primary")
-      fgSubtleHue: "cobalt",            // collapses to txt
-      fgDisabledHue: "cobalt",          // collapses to txt
-      fgInverseHue: "cobalt",           // collapses to txt
-      fgPlaceholderSource: "atm",       // copies atm slot
+      surfaceScreenHueExpression: "cobalt",   // same as txtHue -> copies txt slot
+      mutedTextHueExpression: "cobalt",        // literal txtHue (not "__bare_primary")
+      subtleTextHueExpression: "cobalt",       // collapses to txt
+      disabledTextHueExpression: "cobalt",     // collapses to txt
+      inverseTextHueExpression: "cobalt",      // collapses to txt
+      placeholderTextHueExpression: "atm",     // copies atm slot
       selectionInactiveSemanticMode: false, // compute atm-offset path
-      selectionInactiveHue: "yellow",   // unused when semanticMode=false
+      selectionInactiveHueExpression: "yellow",   // unused when semanticMode=false
     };
     const lightRecipe = {
       name: "test-light",
@@ -968,14 +968,14 @@ describe("computeTones — Step 4", () => {
   //   disabled-bg=22, disabled-fg=38, disabled-border=28
   //   outlined-bg-rest=8 (inset+2=8), outlined-bg-hover=12 (raised+1=12), outlined-bg-active=14 (overlay=14)
   //   toggle-track-off=28, toggle-disabled=22
-  //   signalI=50
+  //   signalIntensity=50
   // ---------------------------------------------------------------------------
   it("T-TONES-DARK: Brio dark at sc=50 matches ground-truth tone values", () => {
     const ct: ComputedTones = computeTones(DARK_FORMULAS, DARK_KNOBS_50);
 
     // Surface tones (Brio ground truth)
-    expect(ct.bgApp).toBe(5);
-    expect(ct.bgCanvas).toBe(5);
+    expect(ct.surfaceApp).toBe(5);
+    expect(ct.surfaceCanvas).toBe(5);
     expect(ct.surfaceSunken).toBe(11);
     expect(ct.surfaceDefault).toBe(12);
     expect(ct.surfaceRaised).toBe(11);
@@ -990,21 +990,21 @@ describe("computeTones — Step 4", () => {
     expect(ct.dividerTone).toBe(17);
 
     // Control/field derived tones
-    expect(ct.disabledBgTone).toBe(22);
-    expect(ct.disabledFgTone).toBe(38);
+    expect(ct.disabledSurfaceTone).toBe(22);
+    expect(ct.disabledTextTone).toBe(38);
     expect(ct.disabledBorderTone).toBe(28);
 
     // Outlined bg: inset+2=8, raised+1=12, overlay=14
-    expect(ct.outlinedBgRestTone).toBe(8);
-    expect(ct.outlinedBgHoverTone).toBe(12);
-    expect(ct.outlinedBgActiveTone).toBe(14);
+    expect(ct.outlinedSurfaceRestTone).toBe(8);
+    expect(ct.outlinedSurfaceHoverTone).toBe(12);
+    expect(ct.outlinedSurfaceActiveTone).toBe(14);
 
     // Toggle
     expect(ct.toggleTrackOffTone).toBe(28);
     expect(ct.toggleDisabledTone).toBe(22);
 
     // Signal intensity
-    expect(ct.signalI).toBe(50);
+    expect(ct.signalIntensity).toBe(50);
   });
 
   // T-TONES-LIGHT deleted in step 6: computeTones takes DerivationFormulas;
@@ -1014,32 +1014,32 @@ describe("computeTones — Step 4", () => {
   // T-TONES-SC: surfaceContrast=0 and surfaceContrast=100 produce expected extremes.
   //
   // Dark mode extreme values (derived from DARK_FORMULAS):
-  //   sc=0:   bgApp = round(5 + (0-50)/50 * 8) = round(5 - 8) = round(-3) = -3
+  //   sc=0:   surfaceApp = round(5 + (0-50)/50 * 8) = round(5 - 8) = round(-3) = -3
   //           (clamping is not applied by computeTones; rules/deriveTheme clamp)
-  //   sc=100: bgApp = round(5 + (100-50)/50 * 8) = round(5 + 8) = 13
+  //   sc=100: surfaceApp = round(5 + (100-50)/50 * 8) = round(5 + 8) = 13
   //   surfaceSunken sc=0: round(11 + (0-50)/50*5) = round(11-5) = 6
   //   surfaceSunken sc=100: round(11 + (100-50)/50*5) = round(11+5) = 16
   // ---------------------------------------------------------------------------
   it("T-TONES-SC: dark mode surfaceContrast=0 produces minimum tone values", () => {
     const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
 
-    // bgApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
-    expect(ct.bgApp).toBe(-3);
+    // surfaceApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
+    expect(ct.surfaceApp).toBe(-3);
     // surfaceSunken: 11 + (0-50)/50 * 5 = 11 - 5 = 6
     expect(ct.surfaceSunken).toBe(6);
     // surfaceDefault: 12 + (0-50)/50 * 3 = 12 - 3 = 9
     expect(ct.surfaceDefault).toBe(9);
     // surfaceOverlay: 14 + (0-50)/50 * 5 = 14 - 5 = 9
     expect(ct.surfaceOverlay).toBe(9);
-    // signalI: direct from knob
-    expect(ct.signalI).toBe(50);
+    // signalIntensity: direct from knob
+    expect(ct.signalIntensity).toBe(50);
   });
 
   it("T-TONES-SC: dark mode surfaceContrast=100 produces maximum tone values", () => {
     const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
 
-    // bgApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
-    expect(ct.bgApp).toBe(13);
+    // surfaceApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
+    expect(ct.surfaceApp).toBe(13);
     // surfaceSunken: 11 + (100-50)/50 * 5 = 11 + 5 = 16
     expect(ct.surfaceSunken).toBe(16);
     // surfaceDefault: 12 + (100-50)/50 * 3 = 12 + 3 = 15
@@ -1048,11 +1048,11 @@ describe("computeTones — Step 4", () => {
     expect(ct.surfaceScreen).toBe(29);
   });
 
-  it("T-TONES-SC: signal intensity extremes map directly to signalI", () => {
+  it("T-TONES-SC: signal intensity extremes map directly to signalIntensity", () => {
     const ct0 = computeTones(DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
     const ct100 = computeTones(DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
-    expect(ct0.signalI).toBe(0);
-    expect(ct100.signalI).toBe(100);
+    expect(ct0.signalIntensity).toBe(0);
+    expect(ct100.signalIntensity).toBe(100);
   });
 
   // ---------------------------------------------------------------------------
@@ -1088,13 +1088,13 @@ describe("computeTones — Step 4", () => {
 
     // All fields from Spec S03 must be present and be numbers
     const requiredFields: (keyof ComputedTones)[] = [
-      "bgApp", "bgCanvas", "surfaceSunken", "surfaceDefault", "surfaceRaised",
+      "surfaceApp", "surfaceCanvas", "surfaceSunken", "surfaceDefault", "surfaceRaised",
       "surfaceOverlay", "surfaceInset", "surfaceContent", "surfaceScreen",
       "dividerDefault", "dividerMuted", "dividerTone",
-      "disabledBgTone", "disabledFgTone", "disabledBorderTone",
-      "outlinedBgRestTone", "outlinedBgHoverTone", "outlinedBgActiveTone",
+      "disabledSurfaceTone", "disabledTextTone", "disabledBorderTone",
+      "outlinedSurfaceRestTone", "outlinedSurfaceHoverTone", "outlinedSurfaceActiveTone",
       "toggleTrackOffTone", "toggleDisabledTone",
-      "signalI",
+      "signalIntensity",
     ];
     for (const field of requiredFields) {
       expect(typeof ct[field]).toBe("number");

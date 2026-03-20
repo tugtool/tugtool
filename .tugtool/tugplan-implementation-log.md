@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-20T15:22:25Z
+---
+
+## step-2: Atomic rename of DerivationFormulas (~95 fields), ComputedTones (8 fields), delete 2 dead fields. Updated DARK/LIGHT_FORMULAS, computeTones, resolveHueSlots, derivation-rules.ts builders/sentinels, and test files. All 1863 tests pass, tsc clean, audit clean.
+
+**Files changed:**
+- .tugtool/tugplan-formula-field-rename.md
+
+---
+
+---
 step: step-1
 date: 2025-03-20T14:53:22Z
 ---
