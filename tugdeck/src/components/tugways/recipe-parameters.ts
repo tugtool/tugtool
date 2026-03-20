@@ -1464,6 +1464,25 @@ export const LIGHT_ENDPOINTS: ModeEndpoints = {
  * @param parameters - RecipeParameters (7 values 0-100)
  * @returns Complete DerivationFormulas (all fields populated)
  */
+/**
+ * Returns the sorted list of field names controlled by a given parameter key
+ * in a given mode.
+ *
+ * Field names are derived from the keys of the corresponding endpoint bundle's
+ * `low` map (low and high maps always have identical keys).
+ *
+ * @param paramKey - One of the 7 RecipeParameters keys
+ * @param mode     - "dark" or "light"
+ * @returns Sorted array of field name strings
+ */
+export function getParameterFields(
+  paramKey: keyof RecipeParameters,
+  mode: "dark" | "light",
+): string[] {
+  const endpoints = mode === "dark" ? DARK_ENDPOINTS : LIGHT_ENDPOINTS;
+  return Object.keys(endpoints[paramKey].low).sort();
+}
+
 export function compileRecipe(
   mode: "dark" | "light",
   parameters: RecipeParameters,

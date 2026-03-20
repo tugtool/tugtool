@@ -9,6 +9,34 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-20T21:47:23Z
+---
+
+## step-2: Added getParameterFields() helper function to recipe-parameters.ts for field introspection by parameter and mode, with unit tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-2
+date: 2026-03-20T00:00:00Z
+---
+
+## step-2: Added getParameterFields helper to recipe-parameters.ts with unit tests; checkpoint bun test -- recipe-parameters: 18 pass / 0 fail
+
+**Files changed:**
+- tugdeck/src/components/tugways/recipe-parameters.ts
+- tugdeck/src/__tests__/recipe-parameters.test.ts
+
+**Checkpoint results:**
+- `cd tugdeck && bun test -- recipe-parameters`: 18 pass, 0 fail (173 expect() calls, 78ms)
+
+---
+
+---
 step: step-1
 date: 2025-03-20T21:32:31Z
 ---

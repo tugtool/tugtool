@@ -17,8 +17,11 @@ import { describe, it, expect } from "bun:test";
 import {
   compileRecipe,
   defaultParameters,
+  getParameterFields,
   DARK_STRUCTURAL_TEMPLATE,
   LIGHT_STRUCTURAL_TEMPLATE,
+  DARK_ENDPOINTS,
+  LIGHT_ENDPOINTS,
   type RecipeParameters,
 } from "@/components/tugways/recipe-parameters";
 import { type DerivationFormulas } from "@/components/tugways/theme-derivation-engine";
@@ -500,5 +503,52 @@ describe("recipe-parameters", () => {
     expect(params.shadowDepth).toBe(50);
     expect(params.signalStrength).toBe(50);
     expect(params.atmosphere).toBe(50);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T2.1: getParameterFields("surfaceDepth", "dark") matches DARK_ENDPOINTS keys
+  // ---------------------------------------------------------------------------
+
+  it("T2.1: getParameterFields('surfaceDepth', 'dark') returns fields matching Object.keys(DARK_ENDPOINTS.surfaceDepth.low)", () => {
+    const fields = getParameterFields("surfaceDepth", "dark");
+    const expected = Object.keys(DARK_ENDPOINTS.surfaceDepth.low).sort();
+    expect(fields).toEqual(expected);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T2.2: getParameterFields("controlWeight", "light") matches LIGHT_P3_ENDPOINTS keys
+  // ---------------------------------------------------------------------------
+
+  it("T2.2: getParameterFields('controlWeight', 'light') returns fields matching LIGHT_ENDPOINTS.controlWeight.low keys", () => {
+    const fields = getParameterFields("controlWeight", "light");
+    const expected = Object.keys(LIGHT_ENDPOINTS.controlWeight.low).sort();
+    expect(fields).toEqual(expected);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T2.3: All 7 parameters x 2 modes return non-empty field lists
+  // ---------------------------------------------------------------------------
+
+  it("T2.3: all 7 parameters x 2 modes return non-empty sorted field lists", () => {
+    const paramKeys: Array<keyof RecipeParameters> = [
+      "surfaceDepth",
+      "textHierarchy",
+      "controlWeight",
+      "borderDefinition",
+      "shadowDepth",
+      "signalStrength",
+      "atmosphere",
+    ];
+    const modes: Array<"dark" | "light"> = ["dark", "light"];
+
+    for (const paramKey of paramKeys) {
+      for (const mode of modes) {
+        const fields = getParameterFields(paramKey, mode);
+        expect(fields.length).toBeGreaterThan(0);
+        // Verify sorted order
+        const sorted = [...fields].sort();
+        expect(fields).toEqual(sorted);
+      }
+    }
   });
 });
