@@ -1,0 +1,13 @@
+[tugtool]
+# Validation strictness: "lenient", "normal", "strict"
+validation_level = "normal"
+
+# Include info-level messages in validation output
+show_info = false
+
+[tugtool.naming]
+# Plan file prefix (default: "plan-")
+prefix = "tugplan-"
+
+# Allowed name pattern (regex)
+name_pattern = "^[a-z][a-z0-9-]{1,49}$"

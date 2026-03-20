@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-20T01:14:27Z
+---
+
+## step-1: Replaced ContrastRole type (body-text/subdued-text/large-text/ui-component → content/control/display/informational). Updated CONTRAST_THRESHOLDS and WCAG_CONTRAST_THRESHOLDS with new keys/values. Reclassified all 339 pairing map entries. Updated JSDoc across 3 files.
+
+**Files changed:**
+- .tugtool/tugplan-design-vocabulary.md
+
+---
+
+---
 step: step-13
 date: 2025-03-19T22:39:39Z
 ---

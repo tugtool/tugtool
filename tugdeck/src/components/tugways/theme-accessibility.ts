@@ -142,11 +142,11 @@ export function hexToOkLabL(hex: string): number {
 
 /**
  * Scale factor converting OKLab ΔL to the contrast score range used by
- * CONTRAST_THRESHOLDS (body-text=75, large-text=60, ui-component=30, decorative=15).
+ * CONTRAST_THRESHOLDS (content=75, control=60, display=60, informational=60, decorative=15).
  *
  * Calibrated against the Brio dark token set. The anchor pair fg-default/bg-app
  * has OKLab ΔL≈0.727 (fgL≈0.935, bgL≈0.208), yielding a score of ≈−92.7 with
- * POLARITY_FACTOR=0.85 — comfortably above the body-text threshold of 75.
+ * POLARITY_FACTOR=0.85 — comfortably above the content threshold of 75.
  *
  * Reference: Ottosson 2020 OKLab perceptual lightness model.
  */
@@ -199,11 +199,9 @@ export const CONTRAST_MIN_DELTA = 0.03;
  *   - 0: insufficient lightness delta (perceptually indistinguishable)
  *
  * Magnitude is the normative contrast gate per CONTRAST_THRESHOLDS:
- *   >= 75 → body text
- *   >= 60 → large / bold text
- *   >= 45 → subdued text (muted/placeholder/read-only)
- *   >= 30 → UI components / icons
- *   >= 15 → decorative
+ *   >= 75 → content (primary prose text)
+ *   >= 60 → control / display / informational (interactive labels, titles, metadata)
+ *   >= 15 → decorative (non-text ornamental marks)
  *
  * @param elementHex - Element (foreground) color as #rrggbb
  * @param surfaceHex - Surface (background) color as #rrggbb
@@ -232,19 +230,19 @@ export function computePerceptualContrast(elementHex: string, surfaceHex: string
 // ---------------------------------------------------------------------------
 
 /**
- * Minimum WCAG 2.x contrast ratio per contrast role (Table T01).
+ * Minimum WCAG 2.x contrast ratio per contrast role (Table T02).
  *
- *   body-text     → 4.5:1 (WCAG AA for 14px/400wt text)
- *   subdued-text  → 3.0:1 (intentionally reduced hierarchy: muted/placeholder/read-only)
- *   large-text    → 3.0:1 (WCAG AA for 18px+ / 700wt text)
- *   ui-component  → 3.0:1 (WCAG AA non-text contrast)
- *   decorative    → 1.0   (no minimum)
+ *   content       → 4.5:1 (WCAG AA for 14px/400wt body text)
+ *   control       → 3.0:1 (WCAG AA for 18px+ / 700wt interactive element labels)
+ *   display       → 3.0:1 (WCAG AA for titles, headers, emphasis)
+ *   informational → 3.0:1 (WCAG AA for muted/metadata text and informational elements)
+ *   decorative    → 1.0   (no minimum — non-text ornamental marks)
  */
 export const WCAG_CONTRAST_THRESHOLDS: Record<string, number> = {
-  "body-text": 4.5,
-  "subdued-text": 3.0,
-  "large-text": 3.0,
-  "ui-component": 3.0,
+  content: 4.5,
+  control: 3.0,
+  display: 3.0,
+  informational: 3.0,
   decorative: 1.0,
 };
 
@@ -1048,18 +1046,18 @@ export type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivati
 /**
  * Minimum perceptual contrast magnitude per role — normative gate [D06].
  *
- * Adjusted for design system quality bar:
- *   body-text    → 75
- *   subdued-text → 45  (intentionally reduced hierarchy: muted/placeholder/read-only text)
- *   large-text   → 60  (intentional quality bar)
- *   ui-component → 30
- *   decorative   → 15
+ * Semantic text type thresholds (Table T02):
+ *   content       → 75  (primary prose text — body, descriptions, paragraphs)
+ *   control       → 60  (interactive element labels, icons, borders, focus indicators)
+ *   display       → 60  (titles, headers, card titles, emphasis text)
+ *   informational → 60  (muted/metadata/secondary text and informational elements)
+ *   decorative    → 15  (non-text ornamental marks, structural dividers)
  */
 export const CONTRAST_THRESHOLDS: Record<string, number> = {
-  "body-text": 75,
-  "subdued-text": 45,
-  "large-text": 60,
-  "ui-component": 30,
+  content: 75,
+  control: 60,
+  display: 60,
+  informational: 60,
   decorative: 15,
 };
 

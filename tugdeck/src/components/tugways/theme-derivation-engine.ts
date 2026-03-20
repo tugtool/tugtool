@@ -314,7 +314,7 @@ export interface ContrastResult {
   wcagRatio: number;
   contrast: number;
   contrastPass: boolean;
-  role: "body-text" | "subdued-text" | "large-text" | "ui-component" | "decorative";
+  role: "content" | "control" | "display" | "informational" | "decorative";
 }
 
 /**
@@ -546,14 +546,14 @@ export interface DerivationFormulas {
   semanticSignalTone: number;
   /**
    * @semantic signal-tone — tone for the accent-subtle tinted background.
-   * Dark: lower tone (e.g. 30) so fg-default achieves body-text contrast 75 when composited
+   * Dark: lower tone (e.g. 30) so fg-default achieves content contrast 75 when composited
    * over a dark parent surface at low alpha. Light: 50 (standard mid-tone orange tint).
    * [phase-3-bug B04] calibrated from 50→30 in dark mode.
    */
   accentSubtleTone: number;
   /**
    * @semantic signal-tone — tone for the tone-caution-bg semantic background tint.
-   * Dark: lower tone (e.g. 30) so fg-default achieves body-text contrast 75 when composited
+   * Dark: lower tone (e.g. 30) so fg-default achieves content contrast 75 when composited
    * over a dark parent surface at low alpha. Light: matches semanticSignalTone (35).
    * [phase-3-bug B05] calibrated via independent tone field rather than alpha reduction.
    */
@@ -2298,7 +2298,7 @@ function contrastFromLValues(elementL: number, surfaceL: number): number {
  *
  * @param elementTone   - Current tone value (0–100)
  * @param surfaceL      - Surface OKLab L from resolved map
- * @param threshold     - Required contrast magnitude (e.g. 75 for body-text)
+ * @param threshold     - Required contrast magnitude (e.g. 75 for content role)
  * @param polarity      - Direction to search ("lighter" | "darker")
  * @param elementHueName - Primary hue name for toneToL conversion
  */
