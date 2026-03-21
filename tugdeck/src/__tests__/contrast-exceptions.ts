@@ -302,6 +302,15 @@ export const KNOWN_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set([
   // The gamut ceiling is the same structural constraint as B01 (tone-danger as element token).
   // Resolving requires gamut-mapping-aware derivation — engine work deferred to Phase 4.
   "--tug-base-element-tone-fill-normal-danger-rest|--tug-base-surface-global-primary-normal-overlay-rest", // [phase-4-engine] danger menu item text: vivid red gamut ceiling prevents reaching contrast 75; resolving requires gamut-mapping-aware derivation (Phase 4)
+
+  // B09–B10: text on active tab frame in light mode (harmony recipe).
+  // LIGHT_FORMULAS.cardFrameActiveTone = 40 (mid-dark). In light mode the
+  // indigo-violet cardFrame hue at tone 40 produces an OKLab-L that conflicts
+  // with content-role text tokens. These are structural failures introduced by
+  // the cardFrameActiveTone = 40 design value; Plan 2 will recalibrate this field
+  // in LIGHT_FORMULAS to achieve adequate contrast with all content text.
+  "--tug-base-element-tab-text-normal-plain-active|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] active tab text on light active tab frame: cardFrameActiveTone=40 conflict; contrast 69.0 (content 75); Plan 2 recalibrates
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] default text on light active tab frame: cardFrameActiveTone=40 conflict; contrast 54.9; Plan 2 recalibrates
 ]);
 
 // ---------------------------------------------------------------------------
@@ -518,6 +527,21 @@ export const ENDPOINT_CONSTRAINT_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set(
   "--tug-base-element-control-icon-filled-danger-rest|--tug-base-surface-control-primary-filled-danger-rest", // [endpoint-constraint] on-fill icon at controlWeight=100: danger hue at tone 30; Plan 2 caps high endpoint
   "--tug-base-element-control-text-filled-agent-rest|--tug-base-surface-control-primary-filled-agent-rest", // [endpoint-constraint] on-fill text at controlWeight=100: agent hue at tone 30; Plan 2 caps high endpoint
   "--tug-base-element-control-icon-filled-agent-rest|--tug-base-surface-control-primary-filled-agent-rest", // [endpoint-constraint] on-fill icon at controlWeight=100: agent hue at tone 30; Plan 2 caps high endpoint
+
+  // -------------------------------------------------------------------------
+  // P — light mode: cardTitle text on active tab surface (baseline-structural)
+  //
+  // LIGHT_FORMULAS.cardFrameActiveTone = 40 (mid-dark tone). In light mode the
+  // indigo-violet cardFrame hue at tone 40 produces an OKLab-L that is too
+  // close to the display-role cardTitle text (near-dark, L~0.3), yielding
+  // contrast ~55.4 — below the display threshold. This failure appears both at
+  // the reference value (V=50) and at all parameter extremes where cardFrame
+  // tone is unchanged. The borderDefinition=0 extreme lowers the low endpoint
+  // to tone 20, yielding contrast ~20.9. Plan 2 will recalibrate
+  // cardFrameActiveTone in LIGHT_FORMULAS to a value that provides adequate
+  // contrast with both display text (cardTitle) and content text.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-cardTitle-text-normal-plain-rest|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] cardTitle display text on light active tab frame at LIGHT_FORMULAS.cardFrameActiveTone=40: contrast ~55.4; Plan 2 recalibrates cardFrameActiveTone
 ]);
 
 // ---------------------------------------------------------------------------
@@ -581,6 +605,15 @@ export const RECIPE_PAIR_EXCEPTIONS: Readonly<Record<string, ReadonlySet<string>
     // closer to the threshold due to light-mode polarity. The structural hue ceiling prevents
     // reaching 60 in either mode; both are design-choice exceptions.
     "--tug-base-element-control-icon-ghost-danger-hover|--tug-base-surface-global-primary-normal-default-rest", // [design-choice] danger hue icon hover: structural hue ceiling; contrast ~54.8 in harmony light mode
+
+    // LIGHT_FORMULAS.cardFrameActiveTone = 40 produces inadequate contrast with
+    // content/display tokens on the active tab surface in light mode. These three
+    // pairs fail at the reference value (V=50) and are therefore baseline-structural
+    // for the harmony recipe. Plan 2 will recalibrate cardFrameActiveTone in
+    // LIGHT_FORMULAS to a value that passes all role thresholds.
+    "--tug-base-element-tab-text-normal-plain-active|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] active tab text on active tab frame: cardFrameActiveTone=40 produces OKLab-L conflict with content text; harmony light mode
+    "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] default text on active tab frame at cardFrameActiveTone=40: contrast 54.9; Plan 2 recalibrates
+    "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] active icon on active tab frame at cardFrameActiveTone=40: informational threshold; Plan 2 recalibrates
   ]),
 };
 

@@ -23,6 +23,7 @@
  * @module components/tugways/recipe-parameters
  */
 
+import { DARK_FORMULAS, LIGHT_FORMULAS } from "./formula-constants";
 import type { DerivationFormulas } from "./theme-derivation-engine";
 
 // ---------------------------------------------------------------------------
@@ -366,23 +367,23 @@ export const LIGHT_STRUCTURAL_TEMPLATE: Partial<DerivationFormulas> = {
  */
 const DARK_P1_ENDPOINTS: ParameterEndpoints = (() => {
   // Tone fields — wide range: low = 0, high = 2 * ref (maintains midpoint = ref at V=50)
-  const surfaceAppTone = toneEndpointsWide(5);
-  const surfaceCanvasTone = toneEndpointsWide(5);
-  const surfaceSunkenTone = toneEndpointsWide(11);
-  const surfaceDefaultTone = toneEndpointsWide(12);
-  const surfaceRaisedTone = toneEndpointsWide(11);
-  const surfaceOverlayTone = toneEndpointsWide(14);
-  const surfaceInsetTone = toneEndpointsWide(6);
-  const surfaceContentTone = toneEndpointsWide(6);
-  const surfaceScreenTone = toneEndpointsWide(16);
+  const surfaceAppTone = toneEndpointsWide(DARK_FORMULAS.surfaceAppTone);
+  const surfaceCanvasTone = toneEndpointsWide(DARK_FORMULAS.surfaceCanvasTone);
+  const surfaceSunkenTone = toneEndpointsWide(DARK_FORMULAS.surfaceSunkenTone);
+  const surfaceDefaultTone = toneEndpointsWide(DARK_FORMULAS.surfaceDefaultTone);
+  const surfaceRaisedTone = toneEndpointsWide(DARK_FORMULAS.surfaceRaisedTone);
+  const surfaceOverlayTone = toneEndpointsWide(DARK_FORMULAS.surfaceOverlayTone);
+  const surfaceInsetTone = toneEndpointsWide(DARK_FORMULAS.surfaceInsetTone);
+  const surfaceContentTone = toneEndpointsWide(DARK_FORMULAS.surfaceContentTone);
+  const surfaceScreenTone = toneEndpointsWide(DARK_FORMULAS.surfaceScreenTone);
   // Intensity fields — wide range for same reason as tone fields
-  const surfaceDefaultIntensity = intensityEndpointsWide(5);
-  const surfaceRaisedIntensity = intensityEndpointsWide(5);
-  const surfaceOverlayIntensity = intensityEndpointsWide(4);
-  const surfaceScreenIntensity = intensityEndpointsWide(7);
-  const surfaceInsetIntensity = intensityEndpointsWide(5);
-  const surfaceContentIntensity = intensityEndpointsWide(5);
-  const surfaceAppBaseIntensity = intensityEndpointsWide(2);
+  const surfaceDefaultIntensity = intensityEndpointsWide(DARK_FORMULAS.surfaceDefaultIntensity);
+  const surfaceRaisedIntensity = intensityEndpointsWide(DARK_FORMULAS.surfaceRaisedIntensity);
+  const surfaceOverlayIntensity = intensityEndpointsWide(DARK_FORMULAS.surfaceOverlayIntensity);
+  const surfaceScreenIntensity = intensityEndpointsWide(DARK_FORMULAS.surfaceScreenIntensity);
+  const surfaceInsetIntensity = intensityEndpointsWide(DARK_FORMULAS.surfaceInsetIntensity);
+  const surfaceContentIntensity = intensityEndpointsWide(DARK_FORMULAS.surfaceContentIntensity);
+  const surfaceAppBaseIntensity = intensityEndpointsWide(DARK_FORMULAS.surfaceAppBaseIntensity);
   return {
     low: {
       surfaceAppTone: surfaceAppTone.low,
@@ -442,17 +443,17 @@ const DARK_P1_ENDPOINTS: ParameterEndpoints = (() => {
  * for the low-valued dark-mode tones (23–37).
  */
 const DARK_P2_ENDPOINTS: ParameterEndpoints = (() => {
-  const contentTextTone = toneEndpoints(94); // ceiling-anchored; already at max range
-  const inverseTextTone = toneEndpoints(100); // fixed at 100 in both modes
-  const mutedTextTone = toneEndpointsWide(66); // low=32, high=100 (wider than 33/99)
-  const subtleTextTone = toneEndpointsWide(37); // low=0, high=74
-  const disabledTextTone = toneEndpointsWide(23); // low=0, high=46
-  const placeholderTextTone = toneEndpointsWide(30); // low=0, high=60
-  const contentTextIntensity = intensityEndpoints(3);
-  const subtleTextIntensity = intensityEndpoints(7);
-  const mutedTextIntensity = intensityEndpoints(5);
-  const inverseTextIntensity = intensityEndpoints(3);
-  const disabledTextToneComputed = toneEndpointsWide(38); // low=0, high=76
+  const contentTextTone = toneEndpoints(DARK_FORMULAS.contentTextTone); // ceiling-anchored; already at max range
+  const inverseTextTone = toneEndpoints(DARK_FORMULAS.inverseTextTone); // fixed at 100 in both modes
+  const mutedTextTone = toneEndpointsWide(DARK_FORMULAS.mutedTextTone); // low=32, high=100 (wider than 33/99)
+  const subtleTextTone = toneEndpointsWide(DARK_FORMULAS.subtleTextTone); // low=0, high=74
+  const disabledTextTone = toneEndpointsWide(DARK_FORMULAS.disabledTextTone); // low=0, high=46
+  const placeholderTextTone = toneEndpointsWide(DARK_FORMULAS.placeholderTextTone); // low=0, high=60
+  const contentTextIntensity = intensityEndpoints(DARK_FORMULAS.contentTextIntensity);
+  const subtleTextIntensity = intensityEndpoints(DARK_FORMULAS.subtleTextIntensity);
+  const mutedTextIntensity = intensityEndpoints(DARK_FORMULAS.mutedTextIntensity);
+  const inverseTextIntensity = intensityEndpoints(DARK_FORMULAS.inverseTextIntensity);
+  const disabledTextToneComputed = toneEndpointsWide(DARK_FORMULAS.disabledTextToneComputed); // low=0, high=76
   return {
     low: {
       contentTextTone: contentTextTone.low,
@@ -503,58 +504,58 @@ const DARK_P3_ENDPOINTS: ParameterEndpoints = (() => {
   // Filled control — wide range so P3=0 produces a near-invisible button
   // and P3=100 produces a bold, prominent filled button. toneEndpointsWide
   // doubles the visual sweep vs the ±50% default.
-  const filledSurfaceRestTone = toneEndpointsWide(20); // low=0, high=40
-  const filledSurfaceHoverTone = toneEndpointsWide(40); // low=0, high=80
-  const filledSurfaceActiveTone = toneEndpoints(50); // low=25, high=75 (symmetric at midpoint)
+  const filledSurfaceRestTone = toneEndpointsWide(DARK_FORMULAS.filledSurfaceRestTone); // low=0, high=40
+  const filledSurfaceHoverTone = toneEndpointsWide(DARK_FORMULAS.filledSurfaceHoverTone); // low=0, high=80
+  const filledSurfaceActiveTone = toneEndpoints(DARK_FORMULAS.filledSurfaceActiveTone); // low=25, high=75 (symmetric at midpoint)
   // Outlined control
-  const outlinedTextRestTone = toneEndpoints(100);
-  const outlinedTextHoverTone = toneEndpoints(100);
-  const outlinedTextActiveTone = toneEndpoints(100);
-  const outlinedTextIntensity = intensityEndpoints(2);
-  const outlinedIconRestTone = toneEndpoints(100);
-  const outlinedIconHoverTone = toneEndpoints(100);
-  const outlinedIconActiveTone = toneEndpoints(100);
-  const outlinedIconIntensity = intensityEndpoints(2);
-  const outlinedSurfaceHoverIntensity = intensityEndpoints(0);
-  const outlinedSurfaceHoverAlpha = alphaEndpoints(10);
-  const outlinedSurfaceActiveIntensity = intensityEndpoints(0);
-  const outlinedSurfaceActiveAlpha = alphaEndpoints(20);
-  const outlinedOptionBorderRestTone = toneEndpoints(50);
-  const outlinedOptionBorderHoverTone = toneEndpoints(55);
-  const outlinedOptionBorderActiveTone = toneEndpoints(60);
+  const outlinedTextRestTone = toneEndpoints(DARK_FORMULAS.outlinedTextRestTone);
+  const outlinedTextHoverTone = toneEndpoints(DARK_FORMULAS.outlinedTextHoverTone);
+  const outlinedTextActiveTone = toneEndpoints(DARK_FORMULAS.outlinedTextActiveTone);
+  const outlinedTextIntensity = intensityEndpoints(DARK_FORMULAS.outlinedTextIntensity);
+  const outlinedIconRestTone = toneEndpoints(DARK_FORMULAS.outlinedIconRestTone);
+  const outlinedIconHoverTone = toneEndpoints(DARK_FORMULAS.outlinedIconHoverTone);
+  const outlinedIconActiveTone = toneEndpoints(DARK_FORMULAS.outlinedIconActiveTone);
+  const outlinedIconIntensity = intensityEndpoints(DARK_FORMULAS.outlinedIconIntensity);
+  const outlinedSurfaceHoverIntensity = intensityEndpoints(DARK_FORMULAS.outlinedSurfaceHoverIntensity);
+  const outlinedSurfaceHoverAlpha = alphaEndpoints(DARK_FORMULAS.outlinedSurfaceHoverAlpha);
+  const outlinedSurfaceActiveIntensity = intensityEndpoints(DARK_FORMULAS.outlinedSurfaceActiveIntensity);
+  const outlinedSurfaceActiveAlpha = alphaEndpoints(DARK_FORMULAS.outlinedSurfaceActiveAlpha);
+  const outlinedOptionBorderRestTone = toneEndpoints(DARK_FORMULAS.outlinedOptionBorderRestTone);
+  const outlinedOptionBorderHoverTone = toneEndpoints(DARK_FORMULAS.outlinedOptionBorderHoverTone);
+  const outlinedOptionBorderActiveTone = toneEndpoints(DARK_FORMULAS.outlinedOptionBorderActiveTone);
   // Light-mode outlined tone counterparts (dark mode: 0 = pure black)
-  const outlinedTextRestToneLight = toneEndpoints(0);
-  const outlinedTextHoverToneLight = toneEndpoints(0);
-  const outlinedTextActiveToneLight = toneEndpoints(0);
-  const outlinedIconRestToneLight = toneEndpoints(0);
-  const outlinedIconHoverToneLight = toneEndpoints(0);
-  const outlinedIconActiveToneLight = toneEndpoints(0);
+  const outlinedTextRestToneLight = toneEndpoints(DARK_FORMULAS.outlinedTextRestToneLight);
+  const outlinedTextHoverToneLight = toneEndpoints(DARK_FORMULAS.outlinedTextHoverToneLight);
+  const outlinedTextActiveToneLight = toneEndpoints(DARK_FORMULAS.outlinedTextActiveToneLight);
+  const outlinedIconRestToneLight = toneEndpoints(DARK_FORMULAS.outlinedIconRestToneLight);
+  const outlinedIconHoverToneLight = toneEndpoints(DARK_FORMULAS.outlinedIconHoverToneLight);
+  const outlinedIconActiveToneLight = toneEndpoints(DARK_FORMULAS.outlinedIconActiveToneLight);
   // Ghost control
-  const ghostTextRestTone = toneEndpoints(100);
-  const ghostTextHoverTone = toneEndpoints(100);
-  const ghostTextActiveTone = toneEndpoints(100);
-  const ghostTextRestIntensity = intensityEndpoints(2);
-  const ghostTextHoverIntensity = intensityEndpoints(2);
-  const ghostTextActiveIntensity = intensityEndpoints(2);
-  const ghostIconRestTone = toneEndpoints(100);
-  const ghostIconHoverTone = toneEndpoints(100);
-  const ghostIconActiveTone = toneEndpoints(100);
-  const ghostIconRestIntensity = intensityEndpoints(2);
-  const ghostIconHoverIntensity = intensityEndpoints(2);
-  const ghostIconActiveIntensity = intensityEndpoints(2);
-  const ghostBorderIntensity = intensityEndpoints(20);
-  const ghostBorderTone = toneEndpoints(60);
+  const ghostTextRestTone = toneEndpoints(DARK_FORMULAS.ghostTextRestTone);
+  const ghostTextHoverTone = toneEndpoints(DARK_FORMULAS.ghostTextHoverTone);
+  const ghostTextActiveTone = toneEndpoints(DARK_FORMULAS.ghostTextActiveTone);
+  const ghostTextRestIntensity = intensityEndpoints(DARK_FORMULAS.ghostTextRestIntensity);
+  const ghostTextHoverIntensity = intensityEndpoints(DARK_FORMULAS.ghostTextHoverIntensity);
+  const ghostTextActiveIntensity = intensityEndpoints(DARK_FORMULAS.ghostTextActiveIntensity);
+  const ghostIconRestTone = toneEndpoints(DARK_FORMULAS.ghostIconRestTone);
+  const ghostIconHoverTone = toneEndpoints(DARK_FORMULAS.ghostIconHoverTone);
+  const ghostIconActiveTone = toneEndpoints(DARK_FORMULAS.ghostIconActiveTone);
+  const ghostIconRestIntensity = intensityEndpoints(DARK_FORMULAS.ghostIconRestIntensity);
+  const ghostIconHoverIntensity = intensityEndpoints(DARK_FORMULAS.ghostIconHoverIntensity);
+  const ghostIconActiveIntensity = intensityEndpoints(DARK_FORMULAS.ghostIconActiveIntensity);
+  const ghostBorderIntensity = intensityEndpoints(DARK_FORMULAS.ghostBorderIntensity);
+  const ghostBorderTone = toneEndpoints(DARK_FORMULAS.ghostBorderTone);
   // Light-mode ghost tone/intensity counterparts
-  const ghostTextRestToneLight = toneEndpoints(0);
-  const ghostTextHoverToneLight = toneEndpoints(0);
-  const ghostTextActiveToneLight = toneEndpoints(0);
-  const ghostTextRestIntensityLight = intensityEndpoints(0);
-  const ghostTextHoverIntensityLight = intensityEndpoints(0);
-  const ghostTextActiveIntensityLight = intensityEndpoints(0);
-  const ghostIconRestToneLight = toneEndpoints(0);
-  const ghostIconHoverToneLight = toneEndpoints(0);
-  const ghostIconActiveToneLight = toneEndpoints(0);
-  const ghostIconActiveIntensityLight = intensityEndpoints(0);
+  const ghostTextRestToneLight = toneEndpoints(DARK_FORMULAS.ghostTextRestToneLight);
+  const ghostTextHoverToneLight = toneEndpoints(DARK_FORMULAS.ghostTextHoverToneLight);
+  const ghostTextActiveToneLight = toneEndpoints(DARK_FORMULAS.ghostTextActiveToneLight);
+  const ghostTextRestIntensityLight = intensityEndpoints(DARK_FORMULAS.ghostTextRestIntensityLight);
+  const ghostTextHoverIntensityLight = intensityEndpoints(DARK_FORMULAS.ghostTextHoverIntensityLight);
+  const ghostTextActiveIntensityLight = intensityEndpoints(DARK_FORMULAS.ghostTextActiveIntensityLight);
+  const ghostIconRestToneLight = toneEndpoints(DARK_FORMULAS.ghostIconRestToneLight);
+  const ghostIconHoverToneLight = toneEndpoints(DARK_FORMULAS.ghostIconHoverToneLight);
+  const ghostIconActiveToneLight = toneEndpoints(DARK_FORMULAS.ghostIconActiveToneLight);
+  const ghostIconActiveIntensityLight = intensityEndpoints(DARK_FORMULAS.ghostIconActiveIntensityLight);
   return {
     low: {
       filledSurfaceRestTone: filledSurfaceRestTone.low,
@@ -674,22 +675,22 @@ const DARK_P3_ENDPOINTS: ParameterEndpoints = (() => {
  *   We use 17 as the reference for these endpoints.
  */
 const DARK_P4_ENDPOINTS: ParameterEndpoints = (() => {
-  const borderBaseIntensity = intensityEndpoints(6);
-  const borderStrongIntensity = intensityEndpoints(7);
-  const borderMutedTone = toneEndpoints(37);
-  const borderMutedIntensity = intensityEndpoints(7);
-  const borderStrongTone = toneEndpoints(40);
-  const dividerDefaultIntensity = intensityEndpoints(6);
-  const dividerMutedIntensity = intensityEndpoints(4);
-  const cardFrameActiveIntensity = intensityEndpoints(12);
-  const cardFrameActiveTone = toneEndpoints(16);
-  const cardFrameInactiveIntensity = intensityEndpoints(4);
-  const cardFrameInactiveTone = toneEndpoints(15);
-  const borderStrongToneComputed = toneEndpoints(37);
-  const dividerDefaultToneOverride = toneEndpoints(17);
-  const dividerMutedToneOverride = toneEndpoints(15);
-  const disabledBorderIntensity = intensityEndpoints(6);
-  const disabledBorderToneOverride = toneEndpoints(28);
+  const borderBaseIntensity = intensityEndpoints(DARK_FORMULAS.borderBaseIntensity);
+  const borderStrongIntensity = intensityEndpoints(DARK_FORMULAS.borderStrongIntensity);
+  const borderMutedTone = toneEndpoints(DARK_FORMULAS.borderMutedTone);
+  const borderMutedIntensity = intensityEndpoints(DARK_FORMULAS.borderMutedIntensity);
+  const borderStrongTone = toneEndpoints(DARK_FORMULAS.borderStrongTone);
+  const dividerDefaultIntensity = intensityEndpoints(DARK_FORMULAS.dividerDefaultIntensity);
+  const dividerMutedIntensity = intensityEndpoints(DARK_FORMULAS.dividerMutedIntensity);
+  const cardFrameActiveIntensity = intensityEndpoints(DARK_FORMULAS.cardFrameActiveIntensity);
+  const cardFrameActiveTone = toneEndpoints(DARK_FORMULAS.cardFrameActiveTone);
+  const cardFrameInactiveIntensity = intensityEndpoints(DARK_FORMULAS.cardFrameInactiveIntensity);
+  const cardFrameInactiveTone = toneEndpoints(DARK_FORMULAS.cardFrameInactiveTone);
+  const borderStrongToneComputed = toneEndpoints(DARK_FORMULAS.borderStrongToneComputed);
+  const dividerDefaultToneOverride = toneEndpoints(DARK_FORMULAS.dividerDefaultToneOverride!);
+  const dividerMutedToneOverride = toneEndpoints(DARK_FORMULAS.dividerMutedToneOverride!);
+  const disabledBorderIntensity = intensityEndpoints(DARK_FORMULAS.disabledBorderIntensity);
+  const disabledBorderToneOverride = toneEndpoints(DARK_FORMULAS.disabledBorderToneOverride!);
   return {
     low: {
       borderBaseIntensity: borderBaseIntensity.low,
@@ -734,14 +735,14 @@ const DARK_P4_ENDPOINTS: ParameterEndpoints = (() => {
  * P5: Shadow Depth — 8 fields (shadow-depth)
  */
 const DARK_P5_ENDPOINTS: ParameterEndpoints = (() => {
-  const shadowXsAlpha = alphaEndpoints(20);
-  const shadowMdAlpha = alphaEndpoints(60);
-  const shadowLgAlpha = alphaEndpoints(70);
-  const shadowXlAlpha = alphaEndpoints(80);
-  const shadowOverlayAlpha = alphaEndpoints(60);
-  const overlayDimAlpha = alphaEndpoints(48);
-  const overlayScrimAlpha = alphaEndpoints(64);
-  const overlayHighlightAlpha = alphaEndpoints(6);
+  const shadowXsAlpha = alphaEndpoints(DARK_FORMULAS.shadowXsAlpha);
+  const shadowMdAlpha = alphaEndpoints(DARK_FORMULAS.shadowMdAlpha);
+  const shadowLgAlpha = alphaEndpoints(DARK_FORMULAS.shadowLgAlpha);
+  const shadowXlAlpha = alphaEndpoints(DARK_FORMULAS.shadowXlAlpha);
+  const shadowOverlayAlpha = alphaEndpoints(DARK_FORMULAS.shadowOverlayAlpha);
+  const overlayDimAlpha = alphaEndpoints(DARK_FORMULAS.overlayDimAlpha);
+  const overlayScrimAlpha = alphaEndpoints(DARK_FORMULAS.overlayScrimAlpha);
+  const overlayHighlightAlpha = alphaEndpoints(DARK_FORMULAS.overlayHighlightAlpha);
   return {
     low: {
       shadowXsAlpha: shadowXsAlpha.low,
@@ -774,40 +775,40 @@ const DARK_P5_ENDPOINTS: ParameterEndpoints = (() => {
  *   signalIntensityValue (new field for computeTones() signalIntensity derivation)
  */
 const DARK_P6_ENDPOINTS: ParameterEndpoints = (() => {
-  const onCautionTextIntensity = intensityEndpoints(4);
-  const onSuccessTextIntensity = intensityEndpoints(4);
-  const badgeTintedTextIntensity = intensityEndpoints(72);
-  const badgeTintedTextTone = toneEndpoints(85);
-  const badgeTintedSurfaceIntensity = intensityEndpoints(65);
-  const badgeTintedSurfaceTone = toneEndpoints(60);
-  const badgeTintedSurfaceAlpha = alphaEndpoints(15);
-  const badgeTintedBorderIntensity = intensityEndpoints(50);
-  const badgeTintedBorderTone = toneEndpoints(50);
-  const badgeTintedBorderAlpha = alphaEndpoints(35);
-  const iconActiveTone = toneEndpoints(80);
-  const iconMutedIntensity = intensityEndpoints(7);
-  const iconMutedTone = toneEndpoints(37);
-  const tabTextActiveTone = toneEndpoints(90);
-  const toggleTrackOnHoverTone = toneEndpoints(45);
-  const toggleThumbDisabledTone = toneEndpoints(40);
-  const toggleTrackDisabledIntensity = intensityEndpoints(5);
-  const ghostActionSurfaceHoverAlpha = alphaEndpoints(10);
-  const ghostActionSurfaceActiveAlpha = alphaEndpoints(20);
-  const ghostOptionSurfaceHoverAlpha = alphaEndpoints(10);
-  const ghostOptionSurfaceActiveAlpha = alphaEndpoints(20);
-  const ghostDangerSurfaceHoverAlpha = alphaEndpoints(10);
-  const ghostDangerSurfaceActiveAlpha = alphaEndpoints(20);
-  const tabSurfaceHoverAlpha = alphaEndpoints(8);
-  const tabCloseSurfaceHoverAlpha = alphaEndpoints(12);
-  const highlightHoverAlpha = alphaEndpoints(5);
-  const selectionSurfaceInactiveIntensity = intensityEndpoints(0);
-  const selectionSurfaceInactiveTone = toneEndpoints(30);
-  const selectionSurfaceInactiveAlpha = alphaEndpoints(25);
+  const onCautionTextIntensity = intensityEndpoints(DARK_FORMULAS.onCautionTextIntensity);
+  const onSuccessTextIntensity = intensityEndpoints(DARK_FORMULAS.onSuccessTextIntensity);
+  const badgeTintedTextIntensity = intensityEndpoints(DARK_FORMULAS.badgeTintedTextIntensity);
+  const badgeTintedTextTone = toneEndpoints(DARK_FORMULAS.badgeTintedTextTone);
+  const badgeTintedSurfaceIntensity = intensityEndpoints(DARK_FORMULAS.badgeTintedSurfaceIntensity);
+  const badgeTintedSurfaceTone = toneEndpoints(DARK_FORMULAS.badgeTintedSurfaceTone);
+  const badgeTintedSurfaceAlpha = alphaEndpoints(DARK_FORMULAS.badgeTintedSurfaceAlpha);
+  const badgeTintedBorderIntensity = intensityEndpoints(DARK_FORMULAS.badgeTintedBorderIntensity);
+  const badgeTintedBorderTone = toneEndpoints(DARK_FORMULAS.badgeTintedBorderTone);
+  const badgeTintedBorderAlpha = alphaEndpoints(DARK_FORMULAS.badgeTintedBorderAlpha);
+  const iconActiveTone = toneEndpoints(DARK_FORMULAS.iconActiveTone);
+  const iconMutedIntensity = intensityEndpoints(DARK_FORMULAS.iconMutedIntensity);
+  const iconMutedTone = toneEndpoints(DARK_FORMULAS.iconMutedTone);
+  const tabTextActiveTone = toneEndpoints(DARK_FORMULAS.tabTextActiveTone);
+  const toggleTrackOnHoverTone = toneEndpoints(DARK_FORMULAS.toggleTrackOnHoverTone);
+  const toggleThumbDisabledTone = toneEndpoints(DARK_FORMULAS.toggleThumbDisabledTone);
+  const toggleTrackDisabledIntensity = intensityEndpoints(DARK_FORMULAS.toggleTrackDisabledIntensity);
+  const ghostActionSurfaceHoverAlpha = alphaEndpoints(DARK_FORMULAS.ghostActionSurfaceHoverAlpha);
+  const ghostActionSurfaceActiveAlpha = alphaEndpoints(DARK_FORMULAS.ghostActionSurfaceActiveAlpha);
+  const ghostOptionSurfaceHoverAlpha = alphaEndpoints(DARK_FORMULAS.ghostOptionSurfaceHoverAlpha);
+  const ghostOptionSurfaceActiveAlpha = alphaEndpoints(DARK_FORMULAS.ghostOptionSurfaceActiveAlpha);
+  const ghostDangerSurfaceHoverAlpha = alphaEndpoints(DARK_FORMULAS.ghostDangerSurfaceHoverAlpha);
+  const ghostDangerSurfaceActiveAlpha = alphaEndpoints(DARK_FORMULAS.ghostDangerSurfaceActiveAlpha);
+  const tabSurfaceHoverAlpha = alphaEndpoints(DARK_FORMULAS.tabSurfaceHoverAlpha);
+  const tabCloseSurfaceHoverAlpha = alphaEndpoints(DARK_FORMULAS.tabCloseSurfaceHoverAlpha);
+  const highlightHoverAlpha = alphaEndpoints(DARK_FORMULAS.highlightHoverAlpha);
+  const selectionSurfaceInactiveIntensity = intensityEndpoints(DARK_FORMULAS.selectionSurfaceInactiveIntensity);
+  const selectionSurfaceInactiveTone = toneEndpoints(DARK_FORMULAS.selectionSurfaceInactiveTone);
+  const selectionSurfaceInactiveAlpha = alphaEndpoints(DARK_FORMULAS.selectionSurfaceInactiveAlpha);
   // Extra signal-tone fields (omitted from roadmap tables)
-  const borderSignalTone = toneEndpoints(50);
-  const semanticSignalTone = toneEndpoints(50);
-  const accentSubtleTone = toneEndpoints(30);
-  const cautionSurfaceTone = toneEndpoints(30);
+  const borderSignalTone = toneEndpoints(DARK_FORMULAS.borderSignalTone);
+  const semanticSignalTone = toneEndpoints(DARK_FORMULAS.semanticSignalTone);
+  const accentSubtleTone = toneEndpoints(DARK_FORMULAS.accentSubtleTone);
+  const cautionSurfaceTone = toneEndpoints(DARK_FORMULAS.cautionSurfaceTone);
   // signalIntensityValue: new field for computeTones() — P6 is signal strength
   // Low = 0 (fully muted), high = 100 (fully vivid).
   // Reference value is 50 (neutral/default), so low=0, high=100.
@@ -893,18 +894,18 @@ const DARK_P6_ENDPOINTS: ParameterEndpoints = (() => {
  *     field-style, computed-tone-override: disabledSurfaceToneBase/Scale)
  */
 const DARK_P7_ENDPOINTS: ParameterEndpoints = (() => {
-  const atmosphereIntensity = intensityEndpoints(5);
-  const surfaceAppIntensity = intensityEndpoints(2);
-  const surfaceCanvasIntensity = intensityEndpoints(2);
-  const atmosphereBorderIntensity = intensityEndpoints(6);
-  const fieldSurfaceRestTone = toneEndpoints(8);
-  const fieldSurfaceHoverTone = toneEndpoints(11);
-  const fieldSurfaceFocusTone = toneEndpoints(7);
-  const fieldSurfaceDisabledTone = toneEndpoints(6);
-  const fieldSurfaceReadOnlyTone = toneEndpoints(11);
-  const fieldSurfaceRestIntensity = intensityEndpoints(5);
-  const disabledSurfaceIntensity = intensityEndpoints(5);
-  const disabledSurfaceToneBase = toneEndpoints(22);
+  const atmosphereIntensity = intensityEndpoints(DARK_FORMULAS.atmosphereIntensity);
+  const surfaceAppIntensity = intensityEndpoints(DARK_FORMULAS.surfaceAppIntensity);
+  const surfaceCanvasIntensity = intensityEndpoints(DARK_FORMULAS.surfaceCanvasIntensity);
+  const atmosphereBorderIntensity = intensityEndpoints(DARK_FORMULAS.atmosphereBorderIntensity);
+  const fieldSurfaceRestTone = toneEndpoints(DARK_FORMULAS.fieldSurfaceRestTone);
+  const fieldSurfaceHoverTone = toneEndpoints(DARK_FORMULAS.fieldSurfaceHoverTone);
+  const fieldSurfaceFocusTone = toneEndpoints(DARK_FORMULAS.fieldSurfaceFocusTone);
+  const fieldSurfaceDisabledTone = toneEndpoints(DARK_FORMULAS.fieldSurfaceDisabledTone);
+  const fieldSurfaceReadOnlyTone = toneEndpoints(DARK_FORMULAS.fieldSurfaceReadOnlyTone);
+  const fieldSurfaceRestIntensity = intensityEndpoints(DARK_FORMULAS.fieldSurfaceRestIntensity);
+  const disabledSurfaceIntensity = intensityEndpoints(DARK_FORMULAS.disabledSurfaceIntensity);
+  const disabledSurfaceToneBase = toneEndpoints(DARK_FORMULAS.disabledSurfaceToneBase);
   return {
     low: {
       atmosphereIntensity: atmosphereIntensity.low,
@@ -958,22 +959,22 @@ export const DARK_ENDPOINTS: ModeEndpoints = {
 // ---------------------------------------------------------------------------
 
 const LIGHT_P1_ENDPOINTS: ParameterEndpoints = (() => {
-  const surfaceAppTone = toneEndpoints(95);
-  const surfaceCanvasTone = toneEndpoints(95);
-  const surfaceSunkenTone = toneEndpoints(88);
-  const surfaceDefaultTone = toneEndpoints(90);
-  const surfaceRaisedTone = toneEndpoints(92);
-  const surfaceOverlayTone = toneEndpoints(93);
-  const surfaceInsetTone = toneEndpoints(86);
-  const surfaceContentTone = toneEndpoints(86);
-  const surfaceScreenTone = toneEndpoints(85);
-  const surfaceDefaultIntensity = intensityEndpoints(6);
-  const surfaceRaisedIntensity = intensityEndpoints(6);
-  const surfaceOverlayIntensity = intensityEndpoints(5);
-  const surfaceScreenIntensity = intensityEndpoints(8);
-  const surfaceInsetIntensity = intensityEndpoints(6);
-  const surfaceContentIntensity = intensityEndpoints(6);
-  const surfaceAppBaseIntensity = intensityEndpoints(3);
+  const surfaceAppTone = toneEndpoints(LIGHT_FORMULAS.surfaceAppTone);
+  const surfaceCanvasTone = toneEndpoints(LIGHT_FORMULAS.surfaceCanvasTone);
+  const surfaceSunkenTone = toneEndpoints(LIGHT_FORMULAS.surfaceSunkenTone);
+  const surfaceDefaultTone = toneEndpoints(LIGHT_FORMULAS.surfaceDefaultTone);
+  const surfaceRaisedTone = toneEndpoints(LIGHT_FORMULAS.surfaceRaisedTone);
+  const surfaceOverlayTone = toneEndpoints(LIGHT_FORMULAS.surfaceOverlayTone);
+  const surfaceInsetTone = toneEndpoints(LIGHT_FORMULAS.surfaceInsetTone);
+  const surfaceContentTone = toneEndpoints(LIGHT_FORMULAS.surfaceContentTone);
+  const surfaceScreenTone = toneEndpoints(LIGHT_FORMULAS.surfaceScreenTone);
+  const surfaceDefaultIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceDefaultIntensity);
+  const surfaceRaisedIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceRaisedIntensity);
+  const surfaceOverlayIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceOverlayIntensity);
+  const surfaceScreenIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceScreenIntensity);
+  const surfaceInsetIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceInsetIntensity);
+  const surfaceContentIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceContentIntensity);
+  const surfaceAppBaseIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceAppBaseIntensity);
   return {
     low: {
       surfaceAppTone: surfaceAppTone.low,
@@ -1024,17 +1025,17 @@ const LIGHT_P2_ENDPOINTS: ParameterEndpoints = (() => {
   // Step 7 refinement: hierarchy tones use toneEndpointsWide() for the same
   // reason as dark mode — small-valued light tones (8–34) get too narrow a
   // visual range with ±50%.
-  const contentTextTone = toneEndpointsWide(8); // low=0, high=16
-  const inverseTextTone = toneEndpoints(94); // ceiling-anchored; already at max range
-  const mutedTextTone = toneEndpointsWide(34); // low=0, high=68
-  const subtleTextTone = toneEndpointsWide(52); // low=4, high=100 (ceiling-anchored)
-  const disabledTextTone = toneEndpointsWide(68); // low=36, high=100
-  const placeholderTextTone = toneEndpointsWide(60); // low=20, high=100
-  const contentTextIntensity = intensityEndpoints(4);
-  const subtleTextIntensity = intensityEndpoints(8);
-  const mutedTextIntensity = intensityEndpoints(6);
-  const inverseTextIntensity = intensityEndpoints(3);
-  const disabledTextToneComputed = toneEndpointsWide(62); // low=24, high=100
+  const contentTextTone = toneEndpointsWide(LIGHT_FORMULAS.contentTextTone); // low=0, high=16
+  const inverseTextTone = toneEndpoints(LIGHT_FORMULAS.inverseTextTone); // ceiling-anchored; already at max range
+  const mutedTextTone = toneEndpointsWide(LIGHT_FORMULAS.mutedTextTone); // low=0, high=68
+  const subtleTextTone = toneEndpointsWide(LIGHT_FORMULAS.subtleTextTone); // low=4, high=100 (ceiling-anchored)
+  const disabledTextTone = toneEndpointsWide(LIGHT_FORMULAS.disabledTextTone); // low=36, high=100
+  const placeholderTextTone = toneEndpointsWide(LIGHT_FORMULAS.placeholderTextTone); // low=20, high=100
+  const contentTextIntensity = intensityEndpoints(LIGHT_FORMULAS.contentTextIntensity);
+  const subtleTextIntensity = intensityEndpoints(LIGHT_FORMULAS.subtleTextIntensity);
+  const mutedTextIntensity = intensityEndpoints(LIGHT_FORMULAS.mutedTextIntensity);
+  const inverseTextIntensity = intensityEndpoints(LIGHT_FORMULAS.inverseTextIntensity);
+  const disabledTextToneComputed = toneEndpointsWide(LIGHT_FORMULAS.disabledTextToneComputed); // low=24, high=100
   return {
     low: {
       contentTextTone: contentTextTone.low,
@@ -1068,58 +1069,58 @@ const LIGHT_P2_ENDPOINTS: ParameterEndpoints = (() => {
 const LIGHT_P3_ENDPOINTS: ParameterEndpoints = (() => {
   // Filled control — same wide range as dark mode so both modes sweep
   // consistently from near-invisible to bold at the parameter extremes.
-  const filledSurfaceRestTone = toneEndpointsWide(20); // low=0, high=40
-  const filledSurfaceHoverTone = toneEndpointsWide(40); // low=0, high=80
-  const filledSurfaceActiveTone = toneEndpoints(50); // low=25, high=75 (symmetric)
+  const filledSurfaceRestTone = toneEndpointsWide(LIGHT_FORMULAS.filledSurfaceRestTone); // low=0, high=40
+  const filledSurfaceHoverTone = toneEndpointsWide(LIGHT_FORMULAS.filledSurfaceHoverTone); // low=0, high=80
+  const filledSurfaceActiveTone = toneEndpoints(LIGHT_FORMULAS.filledSurfaceActiveTone); // low=25, high=75 (symmetric)
   // Outlined control (light mode: near-dark tones, ref from LIGHT_FORMULAS)
-  const outlinedTextRestTone = toneEndpoints(8);
-  const outlinedTextHoverTone = toneEndpoints(8);
-  const outlinedTextActiveTone = toneEndpoints(8);
-  const outlinedTextIntensity = intensityEndpoints(4);
-  const outlinedIconRestTone = toneEndpoints(8);
-  const outlinedIconHoverTone = toneEndpoints(8);
-  const outlinedIconActiveTone = toneEndpoints(8);
-  const outlinedIconIntensity = intensityEndpoints(4);
-  const outlinedSurfaceHoverIntensity = intensityEndpoints(4);
-  const outlinedSurfaceHoverAlpha = alphaEndpoints(100);
-  const outlinedSurfaceActiveIntensity = intensityEndpoints(6);
-  const outlinedSurfaceActiveAlpha = alphaEndpoints(100);
-  const outlinedOptionBorderRestTone = toneEndpoints(50);
-  const outlinedOptionBorderHoverTone = toneEndpoints(55);
-  const outlinedOptionBorderActiveTone = toneEndpoints(60);
+  const outlinedTextRestTone = toneEndpoints(LIGHT_FORMULAS.outlinedTextRestTone);
+  const outlinedTextHoverTone = toneEndpoints(LIGHT_FORMULAS.outlinedTextHoverTone);
+  const outlinedTextActiveTone = toneEndpoints(LIGHT_FORMULAS.outlinedTextActiveTone);
+  const outlinedTextIntensity = intensityEndpoints(LIGHT_FORMULAS.outlinedTextIntensity);
+  const outlinedIconRestTone = toneEndpoints(LIGHT_FORMULAS.outlinedIconRestTone);
+  const outlinedIconHoverTone = toneEndpoints(LIGHT_FORMULAS.outlinedIconHoverTone);
+  const outlinedIconActiveTone = toneEndpoints(LIGHT_FORMULAS.outlinedIconActiveTone);
+  const outlinedIconIntensity = intensityEndpoints(LIGHT_FORMULAS.outlinedIconIntensity);
+  const outlinedSurfaceHoverIntensity = intensityEndpoints(LIGHT_FORMULAS.outlinedSurfaceHoverIntensity);
+  const outlinedSurfaceHoverAlpha = alphaEndpoints(LIGHT_FORMULAS.outlinedSurfaceHoverAlpha);
+  const outlinedSurfaceActiveIntensity = intensityEndpoints(LIGHT_FORMULAS.outlinedSurfaceActiveIntensity);
+  const outlinedSurfaceActiveAlpha = alphaEndpoints(LIGHT_FORMULAS.outlinedSurfaceActiveAlpha);
+  const outlinedOptionBorderRestTone = toneEndpoints(LIGHT_FORMULAS.outlinedOptionBorderRestTone);
+  const outlinedOptionBorderHoverTone = toneEndpoints(LIGHT_FORMULAS.outlinedOptionBorderHoverTone);
+  const outlinedOptionBorderActiveTone = toneEndpoints(LIGHT_FORMULAS.outlinedOptionBorderActiveTone);
   // Light-mode outlined tone counterparts (mode-independent: pure black = 0)
-  const outlinedTextRestToneLight = toneEndpoints(0);
-  const outlinedTextHoverToneLight = toneEndpoints(0);
-  const outlinedTextActiveToneLight = toneEndpoints(0);
-  const outlinedIconRestToneLight = toneEndpoints(0);
-  const outlinedIconHoverToneLight = toneEndpoints(0);
-  const outlinedIconActiveToneLight = toneEndpoints(0);
+  const outlinedTextRestToneLight = toneEndpoints(LIGHT_FORMULAS.outlinedTextRestToneLight);
+  const outlinedTextHoverToneLight = toneEndpoints(LIGHT_FORMULAS.outlinedTextHoverToneLight);
+  const outlinedTextActiveToneLight = toneEndpoints(LIGHT_FORMULAS.outlinedTextActiveToneLight);
+  const outlinedIconRestToneLight = toneEndpoints(LIGHT_FORMULAS.outlinedIconRestToneLight);
+  const outlinedIconHoverToneLight = toneEndpoints(LIGHT_FORMULAS.outlinedIconHoverToneLight);
+  const outlinedIconActiveToneLight = toneEndpoints(LIGHT_FORMULAS.outlinedIconActiveToneLight);
   // Ghost control (light mode: near-dark tones)
-  const ghostTextRestTone = toneEndpoints(8);
-  const ghostTextHoverTone = toneEndpoints(8);
-  const ghostTextActiveTone = toneEndpoints(8);
-  const ghostTextRestIntensity = intensityEndpoints(4);
-  const ghostTextHoverIntensity = intensityEndpoints(4);
-  const ghostTextActiveIntensity = intensityEndpoints(4);
-  const ghostIconRestTone = toneEndpoints(8);
-  const ghostIconHoverTone = toneEndpoints(8);
-  const ghostIconActiveTone = toneEndpoints(8);
-  const ghostIconRestIntensity = intensityEndpoints(4);
-  const ghostIconHoverIntensity = intensityEndpoints(4);
-  const ghostIconActiveIntensity = intensityEndpoints(4);
-  const ghostBorderIntensity = intensityEndpoints(20);
-  const ghostBorderTone = toneEndpoints(35);
+  const ghostTextRestTone = toneEndpoints(LIGHT_FORMULAS.ghostTextRestTone);
+  const ghostTextHoverTone = toneEndpoints(LIGHT_FORMULAS.ghostTextHoverTone);
+  const ghostTextActiveTone = toneEndpoints(LIGHT_FORMULAS.ghostTextActiveTone);
+  const ghostTextRestIntensity = intensityEndpoints(LIGHT_FORMULAS.ghostTextRestIntensity);
+  const ghostTextHoverIntensity = intensityEndpoints(LIGHT_FORMULAS.ghostTextHoverIntensity);
+  const ghostTextActiveIntensity = intensityEndpoints(LIGHT_FORMULAS.ghostTextActiveIntensity);
+  const ghostIconRestTone = toneEndpoints(LIGHT_FORMULAS.ghostIconRestTone);
+  const ghostIconHoverTone = toneEndpoints(LIGHT_FORMULAS.ghostIconHoverTone);
+  const ghostIconActiveTone = toneEndpoints(LIGHT_FORMULAS.ghostIconActiveTone);
+  const ghostIconRestIntensity = intensityEndpoints(LIGHT_FORMULAS.ghostIconRestIntensity);
+  const ghostIconHoverIntensity = intensityEndpoints(LIGHT_FORMULAS.ghostIconHoverIntensity);
+  const ghostIconActiveIntensity = intensityEndpoints(LIGHT_FORMULAS.ghostIconActiveIntensity);
+  const ghostBorderIntensity = intensityEndpoints(LIGHT_FORMULAS.ghostBorderIntensity);
+  const ghostBorderTone = toneEndpoints(LIGHT_FORMULAS.ghostBorderTone);
   // Light-mode ghost tone/intensity counterparts (mode-independent: pure black)
-  const ghostTextRestToneLight = toneEndpoints(0);
-  const ghostTextHoverToneLight = toneEndpoints(0);
-  const ghostTextActiveToneLight = toneEndpoints(0);
-  const ghostTextRestIntensityLight = intensityEndpoints(0);
-  const ghostTextHoverIntensityLight = intensityEndpoints(0);
-  const ghostTextActiveIntensityLight = intensityEndpoints(0);
-  const ghostIconRestToneLight = toneEndpoints(0);
-  const ghostIconHoverToneLight = toneEndpoints(0);
-  const ghostIconActiveToneLight = toneEndpoints(0);
-  const ghostIconActiveIntensityLight = intensityEndpoints(0);
+  const ghostTextRestToneLight = toneEndpoints(LIGHT_FORMULAS.ghostTextRestToneLight);
+  const ghostTextHoverToneLight = toneEndpoints(LIGHT_FORMULAS.ghostTextHoverToneLight);
+  const ghostTextActiveToneLight = toneEndpoints(LIGHT_FORMULAS.ghostTextActiveToneLight);
+  const ghostTextRestIntensityLight = intensityEndpoints(LIGHT_FORMULAS.ghostTextRestIntensityLight);
+  const ghostTextHoverIntensityLight = intensityEndpoints(LIGHT_FORMULAS.ghostTextHoverIntensityLight);
+  const ghostTextActiveIntensityLight = intensityEndpoints(LIGHT_FORMULAS.ghostTextActiveIntensityLight);
+  const ghostIconRestToneLight = toneEndpoints(LIGHT_FORMULAS.ghostIconRestToneLight);
+  const ghostIconHoverToneLight = toneEndpoints(LIGHT_FORMULAS.ghostIconHoverToneLight);
+  const ghostIconActiveToneLight = toneEndpoints(LIGHT_FORMULAS.ghostIconActiveToneLight);
+  const ghostIconActiveIntensityLight = intensityEndpoints(LIGHT_FORMULAS.ghostIconActiveIntensityLight);
   return {
     low: {
       filledSurfaceRestTone: filledSurfaceRestTone.low,
@@ -1225,22 +1226,22 @@ const LIGHT_P3_ENDPOINTS: ParameterEndpoints = (() => {
 })();
 
 const LIGHT_P4_ENDPOINTS: ParameterEndpoints = (() => {
-  const borderBaseIntensity = intensityEndpoints(8);
-  const borderStrongIntensity = intensityEndpoints(10);
-  const borderMutedTone = toneEndpoints(62);
-  const borderMutedIntensity = intensityEndpoints(8);
-  const borderStrongTone = toneEndpoints(52);
-  const dividerDefaultIntensity = intensityEndpoints(7);
-  const dividerMutedIntensity = intensityEndpoints(5);
-  const cardFrameActiveIntensity = intensityEndpoints(18);
-  const cardFrameActiveTone = toneEndpoints(85);
-  const cardFrameInactiveIntensity = intensityEndpoints(5);
-  const cardFrameInactiveTone = toneEndpoints(90);
-  const borderStrongToneComputed = toneEndpoints(40);
-  const dividerDefaultToneOverride = toneEndpoints(78);
-  const dividerMutedToneOverride = toneEndpoints(82);
-  const disabledBorderIntensity = intensityEndpoints(6);
-  const disabledBorderToneOverride = toneEndpoints(72);
+  const borderBaseIntensity = intensityEndpoints(LIGHT_FORMULAS.borderBaseIntensity);
+  const borderStrongIntensity = intensityEndpoints(LIGHT_FORMULAS.borderStrongIntensity);
+  const borderMutedTone = toneEndpoints(LIGHT_FORMULAS.borderMutedTone);
+  const borderMutedIntensity = intensityEndpoints(LIGHT_FORMULAS.borderMutedIntensity);
+  const borderStrongTone = toneEndpoints(LIGHT_FORMULAS.borderStrongTone);
+  const dividerDefaultIntensity = intensityEndpoints(LIGHT_FORMULAS.dividerDefaultIntensity);
+  const dividerMutedIntensity = intensityEndpoints(LIGHT_FORMULAS.dividerMutedIntensity);
+  const cardFrameActiveIntensity = intensityEndpoints(LIGHT_FORMULAS.cardFrameActiveIntensity);
+  const cardFrameActiveTone = toneEndpoints(LIGHT_FORMULAS.cardFrameActiveTone);
+  const cardFrameInactiveIntensity = intensityEndpoints(LIGHT_FORMULAS.cardFrameInactiveIntensity);
+  const cardFrameInactiveTone = toneEndpoints(LIGHT_FORMULAS.cardFrameInactiveTone);
+  const borderStrongToneComputed = toneEndpoints(LIGHT_FORMULAS.borderStrongToneComputed);
+  const dividerDefaultToneOverride = toneEndpoints(LIGHT_FORMULAS.dividerDefaultToneOverride!);
+  const dividerMutedToneOverride = toneEndpoints(LIGHT_FORMULAS.dividerMutedToneOverride!);
+  const disabledBorderIntensity = intensityEndpoints(LIGHT_FORMULAS.disabledBorderIntensity);
+  const disabledBorderToneOverride = toneEndpoints(LIGHT_FORMULAS.disabledBorderToneOverride!);
   return {
     low: {
       borderBaseIntensity: borderBaseIntensity.low,
@@ -1282,14 +1283,14 @@ const LIGHT_P4_ENDPOINTS: ParameterEndpoints = (() => {
 })();
 
 const LIGHT_P5_ENDPOINTS: ParameterEndpoints = (() => {
-  const shadowXsAlpha = alphaEndpoints(10);
-  const shadowMdAlpha = alphaEndpoints(25);
-  const shadowLgAlpha = alphaEndpoints(35);
-  const shadowXlAlpha = alphaEndpoints(40);
-  const shadowOverlayAlpha = alphaEndpoints(30);
-  const overlayDimAlpha = alphaEndpoints(32);
-  const overlayScrimAlpha = alphaEndpoints(48);
-  const overlayHighlightAlpha = alphaEndpoints(4);
+  const shadowXsAlpha = alphaEndpoints(LIGHT_FORMULAS.shadowXsAlpha);
+  const shadowMdAlpha = alphaEndpoints(LIGHT_FORMULAS.shadowMdAlpha);
+  const shadowLgAlpha = alphaEndpoints(LIGHT_FORMULAS.shadowLgAlpha);
+  const shadowXlAlpha = alphaEndpoints(LIGHT_FORMULAS.shadowXlAlpha);
+  const shadowOverlayAlpha = alphaEndpoints(LIGHT_FORMULAS.shadowOverlayAlpha);
+  const overlayDimAlpha = alphaEndpoints(LIGHT_FORMULAS.overlayDimAlpha);
+  const overlayScrimAlpha = alphaEndpoints(LIGHT_FORMULAS.overlayScrimAlpha);
+  const overlayHighlightAlpha = alphaEndpoints(LIGHT_FORMULAS.overlayHighlightAlpha);
   return {
     low: {
       shadowXsAlpha: shadowXsAlpha.low,
@@ -1315,41 +1316,41 @@ const LIGHT_P5_ENDPOINTS: ParameterEndpoints = (() => {
 })();
 
 const LIGHT_P6_ENDPOINTS: ParameterEndpoints = (() => {
-  const onCautionTextIntensity = intensityEndpoints(5);
-  const onSuccessTextIntensity = intensityEndpoints(5);
-  const badgeTintedTextIntensity = intensityEndpoints(72);
-  const badgeTintedTextTone = toneEndpoints(15);
-  const badgeTintedSurfaceIntensity = intensityEndpoints(65);
-  const badgeTintedSurfaceTone = toneEndpoints(80);
-  const badgeTintedSurfaceAlpha = alphaEndpoints(20);
-  const badgeTintedBorderIntensity = intensityEndpoints(50);
-  const badgeTintedBorderTone = toneEndpoints(40);
-  const badgeTintedBorderAlpha = alphaEndpoints(40);
-  const iconActiveTone = toneEndpoints(20);
-  const iconMutedIntensity = intensityEndpoints(7);
-  const iconMutedTone = toneEndpoints(52);
-  const tabTextActiveTone = toneEndpoints(10);
-  const toggleTrackOnHoverTone = toneEndpoints(35);
-  const toggleThumbDisabledTone = toneEndpoints(65);
-  const toggleTrackDisabledIntensity = intensityEndpoints(5);
+  const onCautionTextIntensity = intensityEndpoints(LIGHT_FORMULAS.onCautionTextIntensity);
+  const onSuccessTextIntensity = intensityEndpoints(LIGHT_FORMULAS.onSuccessTextIntensity);
+  const badgeTintedTextIntensity = intensityEndpoints(LIGHT_FORMULAS.badgeTintedTextIntensity);
+  const badgeTintedTextTone = toneEndpoints(LIGHT_FORMULAS.badgeTintedTextTone);
+  const badgeTintedSurfaceIntensity = intensityEndpoints(LIGHT_FORMULAS.badgeTintedSurfaceIntensity);
+  const badgeTintedSurfaceTone = toneEndpoints(LIGHT_FORMULAS.badgeTintedSurfaceTone);
+  const badgeTintedSurfaceAlpha = alphaEndpoints(LIGHT_FORMULAS.badgeTintedSurfaceAlpha);
+  const badgeTintedBorderIntensity = intensityEndpoints(LIGHT_FORMULAS.badgeTintedBorderIntensity);
+  const badgeTintedBorderTone = toneEndpoints(LIGHT_FORMULAS.badgeTintedBorderTone);
+  const badgeTintedBorderAlpha = alphaEndpoints(LIGHT_FORMULAS.badgeTintedBorderAlpha);
+  const iconActiveTone = toneEndpoints(LIGHT_FORMULAS.iconActiveTone);
+  const iconMutedIntensity = intensityEndpoints(LIGHT_FORMULAS.iconMutedIntensity);
+  const iconMutedTone = toneEndpoints(LIGHT_FORMULAS.iconMutedTone);
+  const tabTextActiveTone = toneEndpoints(LIGHT_FORMULAS.tabTextActiveTone);
+  const toggleTrackOnHoverTone = toneEndpoints(LIGHT_FORMULAS.toggleTrackOnHoverTone);
+  const toggleThumbDisabledTone = toneEndpoints(LIGHT_FORMULAS.toggleThumbDisabledTone);
+  const toggleTrackDisabledIntensity = intensityEndpoints(LIGHT_FORMULAS.toggleTrackDisabledIntensity);
   // Sentinel alphas (mode-independent — same as dark)
-  const ghostActionSurfaceHoverAlpha = alphaEndpoints(10);
-  const ghostActionSurfaceActiveAlpha = alphaEndpoints(20);
-  const ghostOptionSurfaceHoverAlpha = alphaEndpoints(10);
-  const ghostOptionSurfaceActiveAlpha = alphaEndpoints(20);
-  const ghostDangerSurfaceHoverAlpha = alphaEndpoints(10);
-  const ghostDangerSurfaceActiveAlpha = alphaEndpoints(20);
-  const tabSurfaceHoverAlpha = alphaEndpoints(8);
-  const tabCloseSurfaceHoverAlpha = alphaEndpoints(12);
-  const highlightHoverAlpha = alphaEndpoints(5);
-  const selectionSurfaceInactiveIntensity = intensityEndpoints(8);
-  const selectionSurfaceInactiveTone = toneEndpoints(80);
-  const selectionSurfaceInactiveAlpha = alphaEndpoints(30);
+  const ghostActionSurfaceHoverAlpha = alphaEndpoints(LIGHT_FORMULAS.ghostActionSurfaceHoverAlpha);
+  const ghostActionSurfaceActiveAlpha = alphaEndpoints(LIGHT_FORMULAS.ghostActionSurfaceActiveAlpha);
+  const ghostOptionSurfaceHoverAlpha = alphaEndpoints(LIGHT_FORMULAS.ghostOptionSurfaceHoverAlpha);
+  const ghostOptionSurfaceActiveAlpha = alphaEndpoints(LIGHT_FORMULAS.ghostOptionSurfaceActiveAlpha);
+  const ghostDangerSurfaceHoverAlpha = alphaEndpoints(LIGHT_FORMULAS.ghostDangerSurfaceHoverAlpha);
+  const ghostDangerSurfaceActiveAlpha = alphaEndpoints(LIGHT_FORMULAS.ghostDangerSurfaceActiveAlpha);
+  const tabSurfaceHoverAlpha = alphaEndpoints(LIGHT_FORMULAS.tabSurfaceHoverAlpha);
+  const tabCloseSurfaceHoverAlpha = alphaEndpoints(LIGHT_FORMULAS.tabCloseSurfaceHoverAlpha);
+  const highlightHoverAlpha = alphaEndpoints(LIGHT_FORMULAS.highlightHoverAlpha);
+  const selectionSurfaceInactiveIntensity = intensityEndpoints(LIGHT_FORMULAS.selectionSurfaceInactiveIntensity);
+  const selectionSurfaceInactiveTone = toneEndpoints(LIGHT_FORMULAS.selectionSurfaceInactiveTone);
+  const selectionSurfaceInactiveAlpha = alphaEndpoints(LIGHT_FORMULAS.selectionSurfaceInactiveAlpha);
   // Extra signal-tone fields
-  const borderSignalTone = toneEndpoints(40);
-  const semanticSignalTone = toneEndpoints(35);
-  const accentSubtleTone = toneEndpoints(50);
-  const cautionSurfaceTone = toneEndpoints(35);
+  const borderSignalTone = toneEndpoints(LIGHT_FORMULAS.borderSignalTone);
+  const semanticSignalTone = toneEndpoints(LIGHT_FORMULAS.semanticSignalTone);
+  const accentSubtleTone = toneEndpoints(LIGHT_FORMULAS.accentSubtleTone);
+  const cautionSurfaceTone = toneEndpoints(LIGHT_FORMULAS.cautionSurfaceTone);
   return {
     low: {
       onCautionTextIntensity: onCautionTextIntensity.low,
@@ -1427,18 +1428,18 @@ const LIGHT_P6_ENDPOINTS: ParameterEndpoints = (() => {
 })();
 
 const LIGHT_P7_ENDPOINTS: ParameterEndpoints = (() => {
-  const atmosphereIntensity = intensityEndpoints(6);
-  const surfaceAppIntensity = intensityEndpoints(3);
-  const surfaceCanvasIntensity = intensityEndpoints(3);
-  const atmosphereBorderIntensity = intensityEndpoints(7);
-  const fieldSurfaceRestTone = toneEndpoints(91);
-  const fieldSurfaceHoverTone = toneEndpoints(88);
-  const fieldSurfaceFocusTone = toneEndpoints(92);
-  const fieldSurfaceDisabledTone = toneEndpoints(94);
-  const fieldSurfaceReadOnlyTone = toneEndpoints(88);
-  const fieldSurfaceRestIntensity = intensityEndpoints(5);
-  const disabledSurfaceIntensity = intensityEndpoints(4);
-  const disabledSurfaceToneBase = toneEndpoints(78);
+  const atmosphereIntensity = intensityEndpoints(LIGHT_FORMULAS.atmosphereIntensity);
+  const surfaceAppIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceAppIntensity);
+  const surfaceCanvasIntensity = intensityEndpoints(LIGHT_FORMULAS.surfaceCanvasIntensity);
+  const atmosphereBorderIntensity = intensityEndpoints(LIGHT_FORMULAS.atmosphereBorderIntensity);
+  const fieldSurfaceRestTone = toneEndpoints(LIGHT_FORMULAS.fieldSurfaceRestTone);
+  const fieldSurfaceHoverTone = toneEndpoints(LIGHT_FORMULAS.fieldSurfaceHoverTone);
+  const fieldSurfaceFocusTone = toneEndpoints(LIGHT_FORMULAS.fieldSurfaceFocusTone);
+  const fieldSurfaceDisabledTone = toneEndpoints(LIGHT_FORMULAS.fieldSurfaceDisabledTone);
+  const fieldSurfaceReadOnlyTone = toneEndpoints(LIGHT_FORMULAS.fieldSurfaceReadOnlyTone);
+  const fieldSurfaceRestIntensity = intensityEndpoints(LIGHT_FORMULAS.fieldSurfaceRestIntensity);
+  const disabledSurfaceIntensity = intensityEndpoints(LIGHT_FORMULAS.disabledSurfaceIntensity);
+  const disabledSurfaceToneBase = toneEndpoints(LIGHT_FORMULAS.disabledSurfaceToneBase);
   return {
     low: {
       atmosphereIntensity: atmosphereIntensity.low,
