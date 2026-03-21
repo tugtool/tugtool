@@ -695,10 +695,38 @@ fn run_merge_in(
         }
     }
 
-    // P4: Main sync check (remote mode only, warning not blocker)
+    // P4: Main sync check (remote mode: blocker, local mode: skip)
+    // In remote mode, merge does fetch + reset --hard origin/main, which
+    // destroys any local unpushed commits. Block the merge to protect them.
     if effective_mode == "remote" {
         if let Err(e) = check_main_sync(&repo_root) {
-            all_warnings.push(format!("Main sync warning: {}", e));
+            let err_msg = format!(
+                "Local main has unpushed changes that would be lost by remote merge.\n\
+                 {}\n\
+                 Push or stash your local changes before merging.",
+                e
+            );
+            let data = MergeData {
+                status: "error".to_string(),
+                merge_mode: Some("remote".to_string()),
+                branch_name: Some(branch.clone()),
+                worktree_path: Some(wt_path.display().to_string()),
+                pr_url: pr_info.as_ref().map(|p| p.url.clone()),
+                pr_number: pr_info.as_ref().map(|p| p.number),
+                squash_commit: None,
+                worktree_cleaned: None,
+                dry_run,
+                untracked_files: None,
+                warnings: Some(all_warnings.clone()),
+                error: Some(err_msg.clone()),
+                message: None,
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&data).unwrap());
+            } else if !quiet {
+                eprintln!("error: {}", err_msg);
+            }
+            return Err(err_msg);
         }
     }
 
@@ -835,11 +863,9 @@ fn run_merge_in(
             return Err(err_msg);
         }
 
-        // Fetch and reset to origin/main (infra files are safe in temp)
-        // We use fetch + reset --hard instead of pull --ff-only because
-        // pull --ff-only fails if any dirty files survive the discard step,
-        // and the fetch part advances the branch ref leaving HEAD and working
-        // tree out of sync (making ALL implementation files appear dirty).
+        // Fetch the squash commit, then fast-forward local main.
+        // The preflight sync check guarantees local main == origin/main
+        // before the PR merge, so this is always a one-commit fast-forward.
         let mut fetch_cmd = Command::new("git");
         fetch_cmd
             .arg("-C")
@@ -847,7 +873,7 @@ fn run_merge_in(
             .args(["fetch", "origin", "main"]);
         if let Err(e) = run_cmd(&mut fetch_cmd, "git fetch origin main") {
             let err_msg = format!(
-                "Failed to fetch after merge: {}. Working tree has been restored to pre-merge state.",
+                "Failed to fetch after merge: {}. The PR was merged on GitHub but local main is not updated. Run: git fetch origin main && git merge --ff-only origin/main",
                 e
             );
             let data = MergeData {
@@ -871,14 +897,14 @@ fn run_merge_in(
             return Err(err_msg);
         }
 
-        let mut reset_cmd = Command::new("git");
-        reset_cmd
+        let mut ff_cmd = Command::new("git");
+        ff_cmd
             .arg("-C")
             .arg(&repo_root)
-            .args(["reset", "--hard", "origin/main"]);
-        if let Err(e) = run_cmd(&mut reset_cmd, "git reset --hard origin/main") {
+            .args(["merge", "--ff-only", "origin/main"]);
+        if let Err(e) = run_cmd(&mut ff_cmd, "git merge --ff-only origin/main") {
             let err_msg = format!(
-                "Failed to reset after merge: {}. Working tree has been restored to pre-merge state.",
+                "Failed to fast-forward after merge: {}. The PR was merged on GitHub but local main is not updated. Run: git merge --ff-only origin/main",
                 e
             );
             let data = MergeData {

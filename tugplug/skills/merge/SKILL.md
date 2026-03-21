@@ -58,7 +58,6 @@ If the command fails (exit code non-zero), report the error and halt. The error 
 Note: Any uncommitted changes in main will block the merge — the user must commit or stash them before merging.
 
 If the dry-run output includes a `warnings` array, present each warning to the user before asking for confirmation. Warnings are non-blocking (the merge can proceed) but surface important information such as:
-- Main sync warning (local main is out of sync with origin/main)
 - Multiple worktrees found for the plan
 - gh CLI unavailable (falling back to local mode)
 - Branch divergence details (commit count, diff stat)
@@ -265,7 +264,6 @@ If any step fails, report clearly and suggest recovery. Do not retry automatical
 - **Worktree cleanup failed**: Run `git worktree remove <path> --force`
 
 **Common preflight warnings** (non-blocking):
-- **Main sync warning**: Local main is out of sync with origin/main. This is now a warning, not a blocker — the merge can proceed.
 - **Multiple worktrees**: More than one worktree matches the plan. The most recent is used; others may be stale.
 - **gh CLI unavailable**: Remote origin detected but `gh` is not installed or authenticated. Falls back to local merge mode.
 - **Branch divergence**: Shows commit count and diff stat for the branch ahead of main. Informational only.
@@ -274,6 +272,7 @@ If any step fails, report clearly and suggest recovery. Do not retry automatical
 **Blocking errors**:
 - **Uncommitted changes in main**: Any tracked modified files on main will block the merge. User must commit or stash these changes before merging.
 - **Dirty implementation worktree**: Uncommitted changes in the implementation worktree would be lost during cleanup. Must commit or discard before merging.
+- **Main out of sync with origin** (remote mode): Local main has unpushed commits that `reset --hard origin/main` would destroy. Push or stash local changes before merging.
 
 ---
 
