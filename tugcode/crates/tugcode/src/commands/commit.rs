@@ -65,6 +65,9 @@ pub fn run_commit(
     // Convert paths to Path references
     let worktree_path = Path::new(&worktree);
 
+    // Plan commits use step-0 as a sentinel: skip log, state, and worktree guard
+    let is_plan_commit = step == "step-0";
+
     // Validate inputs
     if !worktree_path.exists() {
         return {
@@ -80,25 +83,39 @@ pub fn run_commit(
     }
 
     // Check that we're in a linked worktree, not the main worktree
-    let git_path = worktree_path.join(".git");
-    if git_path.is_dir() {
-        let msg = "Refusing to auto-stage in main worktree. tugtool commit must run in a linked worktree (.git must be a file, not a directory).";
-        if json {
-            let response = JsonResponse::<CommitData>::error("commit", Default::default(), vec![]);
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
-        } else if !quiet {
-            eprintln!("error: {}", msg);
+    // (plan commits are allowed in the main worktree)
+    if !is_plan_commit {
+        let git_path = worktree_path.join(".git");
+        if git_path.is_dir() {
+            let msg = "Refusing to auto-stage in main worktree. tugtool commit must run in a linked worktree (.git must be a file, not a directory).";
+            if json {
+                let response =
+                    JsonResponse::<CommitData>::error("commit", Default::default(), vec![]);
+                println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            } else if !quiet {
+                eprintln!("error: {}", msg);
+            }
+            return Err(msg.to_string());
         }
-        return Err(msg.to_string());
     }
 
-    // Step 1: Rotate log if needed
-    let rotate_result = log_rotate_inner(worktree_path, false)
-        .map_err(|e| format!("Log rotation failed: {}", e))?;
+    // Step 1-2: Rotate log and prepend entry (skip for plan commits)
+    let rotate_result = if is_plan_commit {
+        crate::commands::log::RotateResult {
+            rotated: false,
+            archived_path: None,
+            original_lines: None,
+            original_bytes: None,
+            reason: String::new(),
+        }
+    } else {
+        log_rotate_inner(worktree_path, false).map_err(|e| format!("Log rotation failed: {}", e))?
+    };
 
-    // Step 2: Prepend log entry
-    let _prepend_result = log_prepend_inner(worktree_path, &step, &plan, &summary)
-        .map_err(|e| format!("Log prepend failed: {}", e))?;
+    if !is_plan_commit {
+        let _prepend_result = log_prepend_inner(worktree_path, &step, &plan, &summary)
+            .map_err(|e| format!("Log prepend failed: {}", e))?;
+    }
 
     // Step 3: Stage all changes
     let output = Command::new("git")
@@ -186,8 +203,10 @@ pub fn run_commit(
 
     let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    // Step 7: Complete step in state.db (non-fatal)
-    let (state_update_failed, state_failure_reason, state_warnings) = {
+    // Step 7: Complete step in state.db (non-fatal, skip for plan commits)
+    let (state_update_failed, state_failure_reason, state_warnings) = if is_plan_commit {
+        (false, None, vec![])
+    } else {
         match tugtool_core::find_repo_root_from(worktree_path) {
             Ok(repo_root) => {
                 // Resolve the raw --plan argument to a repo-relative path, matching
@@ -324,7 +343,7 @@ pub fn run_commit(
     let data = CommitData {
         committed: true,
         commit_hash: Some(commit_hash),
-        log_updated: true,
+        log_updated: !is_plan_commit,
         log_rotated: rotate_result.rotated,
         archived_path: rotate_result.archived_path.clone(),
         files_staged,

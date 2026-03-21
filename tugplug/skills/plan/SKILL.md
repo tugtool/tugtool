@@ -570,9 +570,9 @@ Task(
     "operation": "commit",
     "worktree_path": "<repo_root>",
     "plan_path": "<plan_path>",
-    "step_anchor": null,
+    "step_anchor": "step-0",
     "proposed_message": "plan(new): <plan_slug>",
-    "log_entry": null
+    "log_entry": { "summary": "Commit plan: <plan_slug>" }
   }',
   description: "Commit plan file"
 )
