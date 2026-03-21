@@ -21,7 +21,7 @@ A two-part workflow for creating themes:
 - Six-slot CSS token naming
 - 15 hue picks on the Theme Generator card
 - Hand-tuned brio dark constants that produce a good-looking theme
-- The engine pipeline: hue resolution → tone computation → rule evaluation → token emission
+- The engine pipeline: hue resolution → rule evaluation → token emission
 - `enforceContrastFloor()` — binary-search tone clamping, already in `evaluateRules()`
 - `audit:tokens` tooling for lint, verify, pairings
 
@@ -244,9 +244,9 @@ const formulas = darkRecipe({ ...defaultDarkControls, canvasTone: 3 });
 
 1. **Write a one-off script** that reads current `DARK_FORMULAS` and reverse-engineers the offsets: "surfaceSunkenTone (11) = surfaceAppTone (5) + 6, so the offset is +6." This generates the initial function body mechanically.
 2. **Hand-review** the generated function: group related fields, identify which values should become `contrastSearch` calls vs offsets vs constants.
-3. **Verify parity:** call `darkRecipe(defaultDarkControls)` and diff against current `DARK_FORMULAS`. Every field should match.
+3. **Verify:** call `darkRecipe(defaultDarkControls)`, feed into `deriveTheme`, and verify all element-on-surface contrast pairings pass their role thresholds.
 
-This is ~25 values. The engine expands them to ~200 fields. Change `canvas.tone` from 5 to 92 and you get a light theme — text tone flips automatically via `contrastSearch`, all offsets adjust, all contrast requirements are met.
+This is ~25 values. The engine expands them to ~200 fields. Dark and light are separate recipe functions with their own rules — you don't get a light theme by changing inputs to the dark recipe. You call `lightRecipe()`.
 
 ---
 
@@ -254,7 +254,7 @@ This is ~25 values. The engine expands them to ~200 fields. Change `canvas.tone`
 
 ### Part 1 panel: Recipe authoring (for recipe authors)
 
-Not shown by default. Accessed via a "Recipe" tab or mode. Shows:
+Not shown by default. Accessed via a "Recipe" tab or panel toggle. Shows:
 - The recipe's rules in an editable form
 - A live preview of the expanded constants
 - The ability to save/load/name recipes
@@ -281,24 +281,23 @@ The controls in Part 2 are *overrides* on the recipe defaults. The recipe says c
 
 ## What changes in the engine
 
-### Add a recipe rule layer
-
-Between `ThemeRecipe` (hues + recipe choice) and `DerivationFormulas` (bag of ~200 fields), add a new layer:
+### New pipeline
 
 ```
-ThemeRecipe (hues + recipe name + overrides)
+ThemeRecipe (hues + recipe name + control overrides)
     │
     ▼
-RecipeRules (the recipe's ~25 rules)
+recipe function (darkRecipe / lightRecipe)
+    applies controls, contrastSearch, offsets
     │
     ▼
-expandRules(rules, overrides) → DerivationFormulas (~200 fields)
+DerivationFormulas (~200 fields)
     │
     ▼
-resolveHueSlots → computeTones → evaluateRules → tokens
+resolveHueSlots → evaluateRules → tokens
 ```
 
-`expandRules` is where the recipe's formulas execute. It takes the recipe's rules, applies any user overrides (canvas tone nudged from 5 to 8), and produces the full `DerivationFormulas` object. Contrast-dependent rules (`contrastSearch`) execute here.
+The recipe function is where the rules execute. It takes `RecipeControls` (with user overrides merged onto recipe defaults), runs `contrastSearch` for text tones, applies offsets for surfaces, and returns the complete `DerivationFormulas`. No `computeTones`, no `MoodKnobs` — the recipe function handles everything those did.
 
 ### Make contrast enforcement complete
 
@@ -310,7 +309,7 @@ resolveHueSlots → computeTones → evaluateRules → tokens
 - Delete `compileRecipe()` (endpoint interpolation)
 - Delete `formula-constants.ts` (DARK_FORMULAS/LIGHT_FORMULAS as standalone files)
 - Delete `FormulaExpansionPanel`, `RecipeDiffView`
-- The recipe constants that brio uses today become the *output* of `expandRules(darkRecipeRules, defaults)`, not hand-maintained input
+- The recipe constants that brio uses today become the *output* of `darkRecipe(defaultDarkControls)`, not hand-maintained input
 
 ---
 
@@ -341,9 +340,9 @@ The goal: a coder-agent working on these files should spend its time on *design 
 
 ## Execution sequence
 
-**Step 1: Define the recipe rule format.** Write the `RecipeRules` interface. Write `expandRules()`. Write the dark recipe rules. Verify that `expandRules(darkRules, defaults)` produces output matching current brio constants.
+**Step 1: Write the dark recipe function.** Create `recipe-functions.ts`. Write `RecipeControls` interface, `contrastSearch`, `darkRecipe()`, `defaultDarkControls`, and the built-in registry. Verify that all contrast pairings pass thresholds.
 
-**Step 2: Write the light recipe rules.** Independent from dark — not derived from it. Verify that `expandRules(lightRules, defaults)` produces a good light theme. This is where the light theme finally stands on its own.
+**Step 2: Write the light recipe function.** Independent from dark — not derived from it. Write `lightRecipe()` and `defaultLightControls`. Verify that all contrast pairings pass thresholds. This is where the light theme finally stands on its own.
 
 **Step 3: Complete contrast enforcement.** Audit `evaluateRules` coverage using `bun run audit:tokens pairings`. Fix any gaps. After this step, illegible combinations are impossible.
 
