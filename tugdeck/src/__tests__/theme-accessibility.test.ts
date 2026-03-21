@@ -53,7 +53,7 @@ import {
   deriveTheme,
   EXAMPLE_RECIPES,
   type ResolvedColor,
-} from "@/components/tugways/theme-derivation-engine";
+} from "@/components/tugways/theme-engine";
 import { oklchToHex, oklchToLinearSRGB } from "@/components/tugways/palette-engine";
 
 import {

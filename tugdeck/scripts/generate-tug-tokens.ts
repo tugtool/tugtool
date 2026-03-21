@@ -27,7 +27,7 @@ import {
   deriveTheme,
   EXAMPLE_RECIPES,
   type ThemeRecipe,
-} from "../src/components/tugways/theme-derivation-engine";
+} from "../src/components/tugways/theme-engine";
 
 // ---------------------------------------------------------------------------
 // Token grouping — ordered by prefix per six-slot convention

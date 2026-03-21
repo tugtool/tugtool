@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-21T19:36:34Z
+---
+
+## step-7: Verification-only step: build clean, generate:tokens 374 tokens, audit:tokens lint zero violations, audit:tokens verify 341 pairings all pass, audit:tokens pairings zero gaps. Full pipeline verified end-to-end.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
+step: step-6
+date: 2025-03-21T19:24:00Z
+---
+
+## step-6: Eliminated computeTones pipeline layer. Extended DerivationFormulas with ComputedTones fields populated directly by recipe functions. Simplified Expr from 3-param to 1-param. Updated 32+ expressions in derivation-rules.ts. Deleted MoodKnobs, ComputedTones, computeTones. All 1869 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
+step: step-5
+date: 2025-03-21T18:38:35Z
+---
+
+## step-5: Deleted 8 source files and 5 test files for the old parameter/formula system. Renamed theme-derivation-engine.ts to theme-engine.ts. Renamed ThemeRecipe.mode/ThemeOutput.mode to .recipe. Renamed fetchGeneratorMode/putGeneratorMode to fetchGeneratorRecipe/putGeneratorRecipe. Updated all imports and references across 15 files.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
+step: step-4
+date: 2025-03-21T18:09:00Z
+---
+
+## step-4: Replaced 7 parameter sliders with TugButton dark/light toggle and 6 RecipeControls sliders. Wired debounced handler for L06-compliant live preview. Removed old ParameterSlider/FormulaExpansionPanel/RecipeDiffView from the generator card UI.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
+step: step-3
+date: 2025-03-21T17:41:10Z
+---
+
+## step-3: Added toggle token pairings to ELEMENT_SURFACE_PAIRING_MAP. Updated audit script to skip self-referential pairings. Fixed test helper to use Spec S04 formula resolution. Zero gaps in audit:tokens pairings.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
+step: step-2
+date: 2025-03-21T17:22:20Z
+---
+
+## step-2: Added light entry to RECIPE_REGISTRY and controls: defaultLightControls to EXAMPLE_RECIPES.harmony. lightRecipe was already implemented in step-1. All checkpoints pass: build, generate:tokens, audit:tokens lint/verify.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
+step: step-1
+date: 2025-03-21T17:08:55Z
+---
+
+## step-1: Created recipe-functions.ts with RecipeControls interface, contrastSearch binary search, darkRecipe function, defaultDarkControls, and RECIPE_REGISTRY. Wired into deriveTheme via Spec S04 precedence. Updated EXAMPLE_RECIPES.brio with controls: defaultDarkControls. All checkpoints pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
 step: step-9
 date: 2025-03-21T00:28:41Z
 ---

@@ -2,7 +2,7 @@
  * Temporary debug test to check actual contrast values for step-7 planning.
  * This file will be deleted after step-7 analysis.
  */
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
+import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
 import {
   validateThemeContrast,
   CONTRAST_THRESHOLDS,

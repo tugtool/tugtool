@@ -20,7 +20,7 @@ import {
   generateCssExport,
   validateRecipeJson,
 } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
+import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
 import { _resetForTest } from "@/card-registry";
 import {
   TugThemeProvider,
@@ -188,7 +188,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
     const fullRecipe = {
       name: "TestTheme",
       description: "Test theme with all optional fields.",
-      mode: "light" as const,
+      recipe: "light" as const,
       surface: {
         canvas: "cyan",
         card: "indigo",
@@ -298,23 +298,23 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson({})).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for wrong mode ('sepia')", () => {
-    const bad = { name: "X", mode: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+  it("validateRecipeJson returns error for wrong recipe ('sepia')", () => {
+    const bad = { name: "X", description: "Test.", recipe: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing name", () => {
-    const bad = { mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing surface group", () => {
-    const bad = { name: "X", description: "Test.", mode: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", description: "Test.", recipe: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing element group", () => {
-    const bad = { name: "X", description: "Test.", mode: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
@@ -322,7 +322,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     // Phase 4: mood knob fields are removed from ThemeRecipe. Legacy recipe files may
     // still contain them. validateRecipeJson ignores them gracefully. [D01][D07][Step 5]
     const legacy = {
-      name: "X", description: "Test.", mode: "dark",
+      name: "X", description: "Test.", recipe: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -335,7 +335,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   it("validateRecipeJson ignores legacy signalIntensity field (Phase 4: mood knobs removed)", () => {
     // Phase 4: signalIntensity is removed from ThemeRecipe. Legacy files ignored. [D01][Step 5]
     const legacy = {
-      name: "X", description: "Test.", mode: "dark",
+      name: "X", description: "Test.", recipe: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -348,7 +348,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   it("validateRecipeJson ignores legacy warmth field (Phase 4: mood knobs removed)", () => {
     // Phase 4: warmth is removed from ThemeRecipe. Legacy files ignored. [D01][D02][Step 5]
     const legacy = {
-      name: "X", description: "Test.", mode: "dark",
+      name: "X", description: "Test.", recipe: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -361,7 +361,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   it("validateRecipeJson accepts a recipe with a valid parameters field", () => {
     // Phase 4: parameters field replaces mood knobs. Valid parameters must be accepted. [S01][Step 5]
     const withParams = {
-      name: "X", description: "Test.", mode: "dark",
+      name: "X", description: "Test.", recipe: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -378,48 +378,61 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(withParams)).toBeNull();
   });
 
-  it("validateRecipeJson returns error for parameters field with out-of-range value", () => {
-    // parameters values must be 0-100. [S01][Step 5]
-    const bad = {
-      name: "X", description: "Test.", mode: "dark",
+  it("validateRecipeJson returns null for legacy parameters field (now ignored gracefully)", () => {
+    // Step 4: parameters field is legacy — accepted gracefully, not validated. [Step 4]
+    const withLegacyParams = {
+      name: "X", description: "Test.", recipe: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       parameters: { surfaceDepth: 150 },
     };
-    expect(validateRecipeJson(bad)).not.toBeNull();
+    // Legacy parameters field is now ignored gracefully (no validation error). [Step 4]
+    expect(validateRecipeJson(withLegacyParams)).toBeNull();
   });
 
-  it("validateRecipeJson returns error for parameters field that is not an object", () => {
-    // parameters must be an object when present. [S01][Step 5]
+  it("validateRecipeJson returns error for controls field with out-of-range value", () => {
+    // controls values must be 0-100. [Spec S01][Step 4]
     const bad = {
-      name: "X", description: "Test.", mode: "dark",
+      name: "X", description: "Test.", recipe: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      parameters: "all-50",
+      controls: { canvasTone: 150 },
+    };
+    expect(validateRecipeJson(bad)).not.toBeNull();
+  });
+
+  it("validateRecipeJson returns error for controls field that is not an object", () => {
+    // controls must be an object when present. [Spec S01][Step 4]
+    const bad = {
+      name: "X", description: "Test.", recipe: "dark",
+      surface: { canvas: "red", card: "red" },
+      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      controls: "dark-defaults",
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing description", () => {
-    const bad = { name: "X", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for empty description string", () => {
-    const bad = { name: "X", description: "", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", description: "", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson accepts a recipe with a valid description", () => {
-    const good = { name: "X", description: "A valid theme description.", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const good = { name: "X", description: "A valid theme description.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(good)).toBeNull();
   });
 
   it("validateRecipeJson accepts both 'dark' and 'light' modes", () => {
-    const dark = { name: "X", description: "Dark test theme.", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    const light = { name: "X", description: "Light test theme.", mode: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const dark = { name: "X", description: "Dark test theme.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const light = { name: "X", description: "Light test theme.", recipe: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(dark)).toBeNull();
     expect(validateRecipeJson(light)).toBeNull();
   });
@@ -443,7 +456,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     const legacy: Record<string, unknown> = {
       name: "LegacyTheme",
       description: "Legacy theme for migration testing.",
-      mode: "dark",
+      recipe: "dark",
       surface: { canvas: "cobalt", card: "cobalt" },
       element: { content: "slate", control: "slate", display: "indigo", informational: "cobalt", border: "cobalt", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
