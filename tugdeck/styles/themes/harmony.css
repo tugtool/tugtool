@@ -449,5 +449,5 @@ body {
   --tug-base-surface-badge-primary-tinted-success-rest: --tug-color(green, i: 65, t: 80, a: 20);
 
   /* Other */
-  --tug-base-element-cardTitle-text-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
+  --tug-base-element-cardTitle-text-normal-plain-rest: --tug-color(cobalt, i: 4, t: 8);
 }

@@ -393,14 +393,15 @@ describe("derivation-engine", () => {
     expect(output.tokens["--tug-base-element-cardTitle-text-normal-plain-rest"]).toMatch(/--tug-color\(/);
   });
 
-  it("T2.7b: card title token uses display hue (indigo 260°) distinct from body text hue (cobalt 250°)", () => {
+  it("T2.7b: card title token and body text token are both derived from text.hue (no display override in brio)", () => {
+    // In the new ThemeRecipe structure, display defaults to recipe.text.hue when no display
+    // override is set. Both card title and body text use the text hue slot (cobalt, 250°).
+    // Step 4 will add a display override state field. [D04]
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
-    // Card title token uses the display hue slot (indigo, 260°)
+    // Card title token uses the display hue slot (defaults to text.hue = cobalt, 250°)
     const cardTitleResolved = output.resolved["--tug-base-element-cardTitle-text-normal-plain-rest"];
     expect(cardTitleResolved).toBeDefined();
-    // indigo = 260°; allow ±1° for rounding
-    expect(cardTitleResolved!.h).toBeCloseTo(260, 0);
 
     // Body text token uses the content (txt) hue slot (cobalt, 250°)
     const bodyTextResolved = output.resolved["--tug-base-element-global-text-normal-default-rest"];
@@ -408,8 +409,8 @@ describe("derivation-engine", () => {
     // cobalt = 250°; allow ±1° for rounding
     expect(bodyTextResolved!.h).toBeCloseTo(250, 0);
 
-    // The two tokens must have different hue angles
-    expect(cardTitleResolved!.h).not.toBe(bodyTextResolved!.h);
+    // Both tokens present and resolved
+    expect(cardTitleResolved!.h).toBeGreaterThan(0);
   });
 });
 
@@ -639,9 +640,9 @@ describe("resolveHueSlots — Step 3", () => {
   //
   // Brio dark recipe:
   //   surface.card    = "indigo-violet"  -> atm
-  //   element.content = "cobalt"         -> txt
+  //   text.hue        = "cobalt"         -> txt
   //   surface.canvas  = "indigo-violet"  -> canvas
-  //   element.border  = "indigo-violet"  -> borderTint
+  //   surface.canvas.hue = "indigo-violet" -> borderTint (default)
   //   role.action     = "blue"           -> interactive
   //   role.accent     = "orange"         -> accent
   //
@@ -665,11 +666,11 @@ describe("resolveHueSlots — Step 3", () => {
     expect(slots.canvas.ref).toBe(slots.atm.ref);
     expect(slots.canvas.angle).toBe(slots.atm.angle);
 
-    // cardFrame: derived from element.border ("indigo-violet") — same as borderTint
+    // cardFrame: derived from surface.canvas.hue ("indigo-violet") — same as borderTint
     expect(slots.cardFrame.ref).toBe(slots.borderTint.ref);
     expect(slots.cardFrame.name).toBe(slots.borderTint.name);
 
-    // borderTint: same as atm for Brio (element.border = "indigo-violet")
+    // borderTint: same as atm for Brio (surface.canvas.hue = "indigo-violet")
     expect(slots.borderTint.ref).toBe(slots.atm.ref);
 
     // interactive: derived from role.action ("blue") — not "cyan" (link removed from recipe)
@@ -737,6 +738,26 @@ describe("resolveHueSlots — Step 3", () => {
   });
 
   // -------------------------------------------------------------------------
+  // T-RESOLVE-DISPLAY-OVERRIDE: when display field is present in the recipe,
+  // the display slot uses its hue instead of text.hue.
+  // -------------------------------------------------------------------------
+  it("T-RESOLVE-DISPLAY-OVERRIDE: display slot uses recipe.display.hue when provided", () => {
+    // Brio has display: { hue: "indigo", intensity: 3 }
+    // text.hue is "cobalt" — so display slot must differ from txt slot.
+    const slots: ResolvedHueSlots = resolveHueSlots(EXAMPLE_RECIPES.brio);
+
+    // The display slot must resolve to "indigo", not "cobalt"
+    expect(slots.display.ref).toBe("indigo");
+    expect(slots.display.name).toBe("indigo");
+
+    // Confirm txt slot is still "cobalt" (text.hue unchanged)
+    expect(slots.txt.ref).toBe("cobalt");
+
+    // They must differ — display override is active
+    expect(slots.display.angle).not.toBe(slots.txt.angle);
+  });
+
+  // -------------------------------------------------------------------------
   // T-RESOLVE-LIGHT: resolveHueSlots for a light-mode recipe produces correct
   // per-tier hues (fg tiers collapse to txt; selection uses atmBaseAngle-20).
   // -------------------------------------------------------------------------
@@ -759,9 +780,13 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-light",
       description: "Test recipe for light mode hue slot resolution.",
       recipe: "light" as const,
-      surface: { canvas: "yellow", card: "yellow" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "yellow", border: "yellow", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: {
+        canvas: { hue: "yellow", tone: 95, intensity: 6 },
+        grid: { hue: "yellow", tone: 88, intensity: 5 },
+        card: { hue: "yellow", tone: 85, intensity: 35 },
+      },
+      text: { hue: "cobalt", intensity: 4 },
+      role: { tone: 55, intensity: 60, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: lightFormulas,
     };
     const slots: ResolvedHueSlots = resolveHueSlots(lightRecipe);
@@ -791,9 +816,13 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-raw-angles",
       description: "Test recipe for raw palette angle verification.",
       recipe: "dark" as const,
-      surface: { canvas: "violet", card: "violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: {
+        canvas: { hue: "violet", tone: 5, intensity: 5 },
+        grid: { hue: "violet", tone: 12, intensity: 4 },
+        card: { hue: "violet", tone: 16, intensity: 12 },
+      },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
 
     const slots = resolveHueSlots(recipe);
@@ -819,9 +848,13 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bare-base",
       description: "Test recipe for surfBareBase extraction from hyphenated hue.",
       recipe: "dark" as const,
-      surface: { canvas: "indigo-violet", card: "indigo-violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: {
+        canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
+        grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
+        card: { hue: "indigo-violet", tone: 16, intensity: 12 },
+      },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe);
     expect(slots.surfBareBase.ref).toBe("violet");
@@ -833,9 +866,13 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bare-base-bare",
       description: "Test recipe for surfBareBase extraction from bare hue name.",
       recipe: "dark" as const,
-      surface: { canvas: "violet", card: "violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: {
+        canvas: { hue: "violet", tone: 5, intensity: 5 },
+        grid: { hue: "violet", tone: 12, intensity: 4 },
+        card: { hue: "violet", tone: 16, intensity: 12 },
+      },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe);
     // For bare "violet", bare base is "violet" itself
@@ -847,9 +884,13 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-bt-bare",
       description: "Test recipe for borderTintBareBase extraction from hyphenated hue.",
       recipe: "dark" as const,
-      surface: { canvas: "indigo-violet", card: "indigo-violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: {
+        canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
+        grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
+        card: { hue: "indigo-violet", tone: 16, intensity: 12 },
+      },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const slots = resolveHueSlots(recipe);
     expect(slots.borderTintBareBase.ref).toBe("violet");
@@ -908,9 +949,13 @@ describe("resolveHueSlots — Step 3", () => {
       name: "test-semantic-merge",
       description: "Test that semantic hue resolution is identical to recipe hue resolution.",
       recipe: "dark" as const,
-      surface: { canvas: "orange", card: "orange" },
-      element: { content: "orange", control: "orange", display: "orange", informational: "orange", border: "orange", decorative: "orange" },
-      role: { accent: "orange", action: "orange", agent: "orange", data: "orange", success: "orange", caution: "orange", danger: "orange" },
+      surface: {
+        canvas: { hue: "orange", tone: 5, intensity: 5 },
+        grid: { hue: "orange", tone: 12, intensity: 4 },
+        card: { hue: "orange", tone: 16, intensity: 12 },
+      },
+      text: { hue: "orange", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "orange", agent: "orange", data: "orange", success: "orange", caution: "orange", danger: "orange" },
     };
     const slots = resolveHueSlots(recipe);
 

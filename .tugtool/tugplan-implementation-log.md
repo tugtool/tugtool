@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-21T23:25:59Z
+---
+
+## step-1: Defined ThemeColorSpec interface, restructured ThemeRecipe (surface uses ThemeColorSpec objects, element group removed, text/grid added, role gains tone/intensity, optional display/border), updated EXAMPLE_RECIPES, resolveHueSlots, validateRecipeJson with legacy migration, and all test files
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
 step: step-7
 date: 2025-03-21T19:36:34Z
 ---

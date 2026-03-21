@@ -764,6 +764,19 @@ export function generateCssExport(
  *
  * Exported for unit testing.
  */
+/**
+ * Detect if a surface value is the old string format (hue-only) vs new ThemeColorSpec.
+ */
+function isThemeColorSpec(v: unknown): v is { hue: string; tone: number; intensity: number } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as Record<string, unknown>)["hue"] === "string" &&
+    typeof (v as Record<string, unknown>)["tone"] === "number" &&
+    typeof (v as Record<string, unknown>)["intensity"] === "number"
+  );
+}
+
 export function validateRecipeJson(value: unknown): string | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return "Expected an object";
@@ -778,37 +791,177 @@ export function validateRecipeJson(value: unknown): string | null {
   if (obj["recipe"] !== "dark" && obj["recipe"] !== "light") {
     return "Invalid 'recipe' field (must be 'dark' or 'light')";
   }
+
+  const isDark = obj["recipe"] === "dark";
+
   // Validate surface group
   if (typeof obj["surface"] !== "object" || obj["surface"] === null) {
     return "Missing or invalid 'surface' field (object required)";
   }
   const surface = obj["surface"] as Record<string, unknown>;
-  if (typeof surface["canvas"] !== "string" || surface["canvas"].trim() === "") {
-    return "Missing or invalid 'surface.canvas' field (string required)";
+
+  // Detect old-format recipe: string surface values or element group present
+  const isOldFormat =
+    typeof surface["canvas"] === "string" ||
+    typeof surface["card"] === "string" ||
+    (typeof obj["element"] === "object" && obj["element"] !== null);
+
+  if (isOldFormat) {
+    // ---- Old-format migration ----
+    // Extract canvas hue (string or ThemeColorSpec)
+    let canvasHue: string;
+    if (typeof surface["canvas"] === "string") {
+      canvasHue = surface["canvas"].trim();
+      if (canvasHue === "") return "Missing or invalid 'surface.canvas' field (string required)";
+    } else if (isThemeColorSpec(surface["canvas"])) {
+      canvasHue = surface["canvas"].hue;
+    } else {
+      return "Missing or invalid 'surface.canvas' field (string required)";
+    }
+
+    // Extract card hue (string or ThemeColorSpec)
+    let cardHue: string;
+    if (typeof surface["card"] === "string") {
+      cardHue = surface["card"].trim();
+      if (cardHue === "") return "Missing or invalid 'surface.card' field (string required)";
+    } else if (isThemeColorSpec(surface["card"])) {
+      cardHue = surface["card"].hue;
+    } else {
+      return "Missing or invalid 'surface.card' field (string required)";
+    }
+
+    // Mode-dependent defaults
+    const canvasTone = isDark ? 5 : 95;
+    const canvasIntensity = isDark ? 5 : 6;
+    const gridTone = isDark ? 12 : 88;
+    const gridIntensity = isDark ? 4 : 5;
+    const cardTone = isDark ? 16 : 85;
+    const cardIntensity = isDark ? 12 : 35;
+    const textIntensity = isDark ? 3 : 4;
+    const roleTone = isDark ? 50 : 55;
+    const roleIntensity = isDark ? 50 : 60;
+
+    // Extract controls values if present (Spec S05 rule 6)
+    let controlsCanvasTone = canvasTone;
+    let controlsCanvasIntensity = canvasIntensity;
+    let controlsCardTone = cardTone;
+    let controlsCardIntensity = cardIntensity;
+    let controlsRoleTone = roleTone;
+    let controlsRoleIntensity = roleIntensity;
+    if (typeof obj["controls"] === "object" && obj["controls"] !== null && !Array.isArray(obj["controls"])) {
+      const controls = obj["controls"] as Record<string, unknown>;
+      if (typeof controls["canvasTone"] === "number") controlsCanvasTone = controls["canvasTone"] as number;
+      if (typeof controls["canvasIntensity"] === "number") controlsCanvasIntensity = controls["canvasIntensity"] as number;
+      if (typeof controls["frameTone"] === "number") controlsCardTone = controls["frameTone"] as number;
+      if (typeof controls["frameIntensity"] === "number") controlsCardIntensity = controls["frameIntensity"] as number;
+      if (typeof controls["roleTone"] === "number") controlsRoleTone = controls["roleTone"] as number;
+      if (typeof controls["roleIntensity"] === "number") controlsRoleIntensity = controls["roleIntensity"] as number;
+    }
+
+    // Extract element group for text/display mapping
+    let textHue = canvasHue; // fallback
+    let displayHueOverride: string | undefined;
+    if (typeof obj["element"] === "object" && obj["element"] !== null) {
+      const element = obj["element"] as Record<string, unknown>;
+      if (typeof element["content"] === "string" && element["content"].trim() !== "") {
+        textHue = element["content"].trim();
+      }
+      if (typeof element["display"] === "string" && element["display"].trim() !== "" &&
+          element["display"].trim() !== textHue) {
+        displayHueOverride = element["display"].trim();
+      }
+    }
+
+    // Validate role group
+    if (typeof obj["role"] !== "object" || obj["role"] === null) {
+      return "Missing or invalid 'role' field (object required)";
+    }
+    const role = obj["role"] as Record<string, unknown>;
+    for (const field of ["accent", "action", "agent", "data", "success", "caution", "danger"] as const) {
+      if (typeof role[field] !== "string" || (role[field] as string).trim() === "") {
+        return `Missing or invalid 'role.${field}' field (string required)`;
+      }
+    }
+
+    // Migrate in-place to new format. New-format fields win over controls values
+    // if both are present (new-format surface already set as ThemeColorSpec above).
+    const finalCanvasTone = isThemeColorSpec(surface["canvas"]) ? surface["canvas"].tone : controlsCanvasTone;
+    const finalCanvasIntensity = isThemeColorSpec(surface["canvas"]) ? surface["canvas"].intensity : controlsCanvasIntensity;
+    const finalCardTone = isThemeColorSpec(surface["card"]) ? surface["card"].tone : controlsCardTone;
+    const finalCardIntensity = isThemeColorSpec(surface["card"]) ? surface["card"].intensity : controlsCardIntensity;
+    const finalRoleTone = typeof (role as Record<string, unknown>)["tone"] === "number" ? (role as Record<string, unknown>)["tone"] as number : controlsRoleTone;
+    const finalRoleIntensity = typeof (role as Record<string, unknown>)["intensity"] === "number" ? (role as Record<string, unknown>)["intensity"] as number : controlsRoleIntensity;
+
+    // Rewrite obj in-place to new format
+    obj["surface"] = {
+      canvas: { hue: canvasHue, tone: finalCanvasTone, intensity: finalCanvasIntensity },
+      grid: isThemeColorSpec(surface["grid"])
+        ? surface["grid"]
+        : { hue: canvasHue, tone: gridTone, intensity: gridIntensity },
+      card: { hue: cardHue, tone: finalCardTone, intensity: finalCardIntensity },
+    };
+    obj["text"] = typeof obj["text"] === "object" && obj["text"] !== null
+      ? obj["text"]
+      : { hue: textHue, intensity: textIntensity };
+    if ((role as Record<string, unknown>)["tone"] === undefined || (role as Record<string, unknown>)["tone"] === null) {
+      (role as Record<string, unknown>)["tone"] = finalRoleTone;
+    }
+    if ((role as Record<string, unknown>)["intensity"] === undefined || (role as Record<string, unknown>)["intensity"] === null) {
+      (role as Record<string, unknown>)["intensity"] = finalRoleIntensity;
+    }
+    if (displayHueOverride !== undefined && !obj["display"]) {
+      obj["display"] = { hue: displayHueOverride, intensity: textIntensity };
+    }
+    // Remove old element group
+    delete obj["element"];
+    // Remove controls field (now migrated into surface/role)
+    delete obj["controls"];
+    // Legacy field rename shim (applied to old-format too): signalVividity -> signalIntensity
+    const LEGACY_FIELD_OLD = "signal" + "Vividity";
+    if (LEGACY_FIELD_OLD in obj && !("signalIntensity" in obj)) {
+      obj.signalIntensity = obj[LEGACY_FIELD_OLD];
+      delete obj[LEGACY_FIELD_OLD];
+    }
+    return null;
   }
-  if (typeof surface["card"] !== "string" || surface["card"].trim() === "") {
-    return "Missing or invalid 'surface.card' field (string required)";
-  }
-  // Validate element group
-  if (typeof obj["element"] !== "object" || obj["element"] === null) {
-    return "Missing or invalid 'element' field (object required)";
-  }
-  const element = obj["element"] as Record<string, unknown>;
-  for (const field of ["content", "control", "display", "informational", "border", "decorative"] as const) {
-    if (typeof element[field] !== "string" || element[field].trim() === "") {
-      return `Missing or invalid 'element.${field}' field (string required)`;
+
+  // ---- New-format validation ----
+  // Validate surface ThemeColorSpec objects
+  for (const field of ["canvas", "grid", "card"] as const) {
+    if (!isThemeColorSpec(surface[field])) {
+      return `Missing or invalid 'surface.${field}' field (ThemeColorSpec with hue, tone, intensity required)`;
     }
   }
+
+  // Validate text group
+  if (typeof obj["text"] !== "object" || obj["text"] === null) {
+    return "Missing or invalid 'text' field (object required)";
+  }
+  const text = obj["text"] as Record<string, unknown>;
+  if (typeof text["hue"] !== "string" || text["hue"].trim() === "") {
+    return "Missing or invalid 'text.hue' field (string required)";
+  }
+  if (typeof text["intensity"] !== "number") {
+    return "Missing or invalid 'text.intensity' field (number required)";
+  }
+
   // Validate role group
   if (typeof obj["role"] !== "object" || obj["role"] === null) {
     return "Missing or invalid 'role' field (object required)";
   }
   const role = obj["role"] as Record<string, unknown>;
+  if (typeof role["tone"] !== "number") {
+    return "Missing or invalid 'role.tone' field (number required)";
+  }
+  if (typeof role["intensity"] !== "number") {
+    return "Missing or invalid 'role.intensity' field (number required)";
+  }
   for (const field of ["accent", "action", "agent", "data", "success", "caution", "danger"] as const) {
-    if (typeof role[field] !== "string" || role[field].trim() === "") {
+    if (typeof role[field] !== "string" || (role[field] as string).trim() === "") {
       return `Missing or invalid 'role.${field}' field (string required)`;
     }
   }
+
   // Legacy migration shim: handle recipe files saved before the Gap-1 field rename.
   // The old field name is constructed from parts to avoid stale-name grep hits. [Risk R01]
   const LEGACY_FIELD = "signal" + "Vividity";
@@ -818,22 +971,6 @@ export function validateRecipeJson(value: unknown): string | null {
   }
   // Legacy mood knob fields (surfaceContrast, signalIntensity, warmth) and legacy
   // `parameters` field are ignored gracefully — do not reject recipes that contain them.
-  // [D01][D07][Step 5]
-  // Validate optional controls field (legacy field — validated for graceful round-trip).
-  if (obj["controls"] !== undefined) {
-    if (typeof obj["controls"] !== "object" || obj["controls"] === null || Array.isArray(obj["controls"])) {
-      return "Invalid 'controls' field (object required)";
-    }
-    const controls = obj["controls"] as Record<string, unknown>;
-    const controlKeys = ["canvasTone", "canvasIntensity", "frameTone", "frameIntensity", "roleTone", "roleIntensity"] as const;
-    for (const key of controlKeys) {
-      if (controls[key] !== undefined) {
-        if (typeof controls[key] !== "number" || (controls[key] as number) < 0 || (controls[key] as number) > 100) {
-          return `Invalid 'controls.${key}' field (number 0-100 required)`;
-        }
-      }
-    }
-  }
   return null;
 }
 
@@ -1349,15 +1486,10 @@ export function GalleryThemeGeneratorContent() {
     fetchGeneratorRecipe().then((saved) => { if (saved) setModeRaw(saved); });
   }, []);
   // Surface hue state
-  const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card);
-  const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.surface.canvas);
-  // Element hue state
-  const [contentHue, setContentHue] = useState<string>(DEFAULT_RECIPE.element.content);
-  const [controlHue, setControlHue] = useState<string>(DEFAULT_RECIPE.element.control);
-  const [displayHue, setDisplayHue] = useState<string>(DEFAULT_RECIPE.element.display);
-  const [informationalHue, setInformationalHue] = useState<string>(DEFAULT_RECIPE.element.informational);
-  const [borderHue, setBorderHue] = useState<string>(DEFAULT_RECIPE.element.border);
-  const [decorativeHue, setDecorativeHue] = useState<string>(DEFAULT_RECIPE.element.decorative);
+  const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card.hue);
+  const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.surface.canvas.hue);
+  // Text hue state (replaces element.content)
+  const [contentHue, setContentHue] = useState<string>(DEFAULT_RECIPE.text.hue);
 
   // Formula state — null means use deriveTheme() defaults; non-null
   // means the user has explicitly provided formulas (escape hatch path per [D06]).
@@ -1486,11 +1618,6 @@ export function GalleryThemeGeneratorContent() {
       card: string,
       canvas: string,
       content: string,
-      control: string,
-      display: string,
-      informational: string,
-      border: string,
-      decorative: string,
       accent: string,
       active: string,
       agent: string,
@@ -1499,13 +1626,28 @@ export function GalleryThemeGeneratorContent() {
       caution: string,
       danger: string,
     ) => {
+      // Use mode-dependent defaults for tone/intensity (Step 4 will add per-field state)
+      const isDark = m === "dark";
+      const canvasTone = isDark ? 5 : 95;
+      const canvasIntensity = isDark ? 5 : 6;
+      const gridTone = isDark ? 12 : 88;
+      const gridIntensity = isDark ? 4 : 5;
+      const cardTone = isDark ? 16 : 85;
+      const cardIntensity = isDark ? 12 : 35;
+      const textIntensity = isDark ? 3 : 4;
+      const roleTone = isDark ? 50 : 55;
+      const roleIntensity = isDark ? 50 : 60;
       const recipe: ThemeRecipe = {
         name: n,
         description: `Generated theme (${m} mode, card: ${card}, content: ${content})`,
         recipe: m,
-        surface: { canvas, card },
-        element: { content, control, display, informational, border, decorative },
-        role: { accent, action: active, agent, data, success, caution, danger },
+        surface: {
+          canvas: { hue: canvas, tone: canvasTone, intensity: canvasIntensity },
+          grid: { hue: canvas, tone: gridTone, intensity: gridIntensity },
+          card: { hue: card, tone: cardTone, intensity: cardIntensity },
+        },
+        text: { hue: content, intensity: textIntensity },
+        role: { tone: roleTone, intensity: roleIntensity, accent, action: active, agent, data, success, caution, danger },
         ...(formulasRef.current !== null ? { formulas: formulasRef.current } : {}),
       };
       setThemeOutput(deriveTheme(recipe));
@@ -1518,9 +1660,9 @@ export function GalleryThemeGeneratorContent() {
    * discrete picks, not continuous drags).
    */
   useEffect(() => {
-    runDerive(recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
+    runDerive(recipeName, mode, cardHue, canvasHue, contentHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
+  }, [mode, cardHue, canvasHue, contentHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
 
   // ---------------------------------------------------------------------------
   // Preset load helpers
@@ -1531,14 +1673,9 @@ export function GalleryThemeGeneratorContent() {
       const r = EXAMPLE_RECIPES[presetKey];
       setRecipeName(r.name);
       setMode(r.recipe);
-      setCardHue(r.surface.card);
-      setCanvasHue(r.surface.canvas);
-      setContentHue(r.element.content);
-      setControlHue(r.element.control);
-      setDisplayHue(r.element.display);
-      setInformationalHue(r.element.informational);
-      setBorderHue(r.element.border);
-      setDecorativeHue(r.element.decorative);
+      setCardHue(r.surface.card.hue);
+      setCanvasHue(r.surface.canvas.hue);
+      setContentHue(r.text.hue);
       setAccentHue(r.role.accent);
       setActiveHue(r.role.action);
       setAgentHue(r.role.agent);
@@ -1570,16 +1707,32 @@ export function GalleryThemeGeneratorContent() {
    * When formulas state is non-null, the recipe uses the escape-hatch formulas. [D06]
    */
   const currentRecipe = useMemo<ThemeRecipe>(
-    () => ({
-      name: recipeName,
-      description: `Generated theme (${mode} mode, card: ${cardHue}, content: ${contentHue})`,
-      recipe: mode,
-      surface: { canvas: canvasHue, card: cardHue },
-      element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
-      role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-      ...(formulas !== null ? { formulas } : {}),
-    }),
-    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
+    () => {
+      const isDark = mode === "dark";
+      const canvasTone = isDark ? 5 : 95;
+      const canvasIntensity = isDark ? 5 : 6;
+      const gridTone = isDark ? 12 : 88;
+      const gridIntensity = isDark ? 4 : 5;
+      const cardTone = isDark ? 16 : 85;
+      const cardIntensity = isDark ? 12 : 35;
+      const textIntensity = isDark ? 3 : 4;
+      const roleTone = isDark ? 50 : 55;
+      const roleIntensity = isDark ? 50 : 60;
+      return {
+        name: recipeName,
+        description: `Generated theme (${mode} mode, card: ${cardHue}, content: ${contentHue})`,
+        recipe: mode,
+        surface: {
+          canvas: { hue: canvasHue, tone: canvasTone, intensity: canvasIntensity },
+          grid: { hue: canvasHue, tone: gridTone, intensity: gridIntensity },
+          card: { hue: cardHue, tone: cardTone, intensity: cardIntensity },
+        },
+        text: { hue: contentHue, intensity: textIntensity },
+        role: { tone: roleTone, intensity: roleIntensity, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
+        ...(formulas !== null ? { formulas } : {}),
+      };
+    },
+    [recipeName, mode, cardHue, canvasHue, contentHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
   );
 
   /**
@@ -1595,14 +1748,9 @@ export function GalleryThemeGeneratorContent() {
     (r: ThemeRecipe) => {
       setRecipeName(r.name);
       setMode(r.recipe);
-      setCardHue(r.surface.card);
-      setCanvasHue(r.surface.canvas);
-      setContentHue(r.element.content);
-      setControlHue(r.element.control);
-      setDisplayHue(r.element.display);
-      setInformationalHue(r.element.informational);
-      setBorderHue(r.element.border);
-      setDecorativeHue(r.element.decorative);
+      setCardHue(r.surface.card.hue);
+      setCanvasHue(r.surface.canvas.hue);
+      setContentHue(r.text.hue);
       setAccentHue(r.role.accent);
       setActiveHue(r.role.action);
       setAgentHue(r.role.agent);
@@ -1709,9 +1857,13 @@ export function GalleryThemeGeneratorContent() {
                 name: recipeName,
                 description: `Generated theme (dark mode)`,
                 recipe: "dark",
-                surface: { canvas: canvasHue, card: cardHue },
-                element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
-                role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
+                surface: {
+                  canvas: { hue: canvasHue, tone: 5, intensity: 5 },
+                  grid: { hue: canvasHue, tone: 12, intensity: 4 },
+                  card: { hue: cardHue, tone: 16, intensity: 12 },
+                },
+                text: { hue: contentHue, intensity: 3 },
+                role: { tone: 50, intensity: 50, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
               };
               setThemeOutput(deriveTheme(recipe));
             }}
@@ -1730,9 +1882,13 @@ export function GalleryThemeGeneratorContent() {
                 name: recipeName,
                 description: `Generated theme (light mode)`,
                 recipe: "light",
-                surface: { canvas: canvasHue, card: cardHue },
-                element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
-                role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
+                surface: {
+                  canvas: { hue: canvasHue, tone: 95, intensity: 6 },
+                  grid: { hue: canvasHue, tone: 88, intensity: 5 },
+                  card: { hue: cardHue, tone: 85, intensity: 35 },
+                },
+                text: { hue: contentHue, intensity: 4 },
+                role: { tone: 55, intensity: 60, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
               };
               setThemeOutput(deriveTheme(recipe));
             }}
@@ -1756,11 +1912,6 @@ export function GalleryThemeGeneratorContent() {
             ]}
             element={[
               { key: "content", label: "Content", hue: contentHue, set: setContentHue, testId: "gtg-content-hue" },
-              { key: "control", label: "Control", hue: controlHue, set: setControlHue, testId: "gtg-control-hue" },
-              { key: "display", label: "Display", hue: displayHue, set: setDisplayHue, testId: "gtg-display-hue" },
-              { key: "informational", label: "Info", hue: informationalHue, set: setInformationalHue, testId: "gtg-informational-hue" },
-              { key: "border", label: "Border", hue: borderHue, set: setBorderHue, testId: "gtg-border-hue" },
-              { key: "decorative", label: "Decorative", hue: decorativeHue, set: setDecorativeHue, testId: "gtg-decorative-hue" },
             ]}
             roles={[
               { key: "accent", label: "Accent", hue: accentHue, set: setAccentHue, testId: "gtg-role-hue-accent" },
