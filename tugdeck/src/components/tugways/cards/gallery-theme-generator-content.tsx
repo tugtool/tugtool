@@ -1579,20 +1579,21 @@ export function GalleryThemeGeneratorContent() {
    */
   const handleParameterChange = useCallback(
     (paramKey: keyof RecipeParameters, value: number) => {
-      // Update ref immediately — always current before the debounce fires. [D02]
-      parametersRef.current = { ...parametersRef.current, [paramKey]: value };
+      // Update ref AND state immediately so the controlled slider tracks the drag.
+      // State update is cheap — it only triggers compiledFormulas recompute (~130
+      // interpolations) and data panel re-renders. [D02]
+      const next = { ...parametersRef.current, [paramKey]: value };
+      parametersRef.current = next;
+      setParametersAndRef(next);
 
-      // Clear pending debounce.
+      // Debounce only the expensive deriveTheme() call. [D01, D02]
       if (debounceTimerRef.current !== undefined) {
         clearTimeout(debounceTimerRef.current);
       }
 
-      // Capture stable closure values (mode, hue strings) — safe per [D02] comment
-      // (these come from discrete pickers and do not change during slider drag).
       debounceTimerRef.current = setTimeout(() => {
         debounceTimerRef.current = undefined;
 
-        // Build recipe inline using refs (always current per L07). [D01]
         const recipe: ThemeRecipe = {
           name: recipeName,
           description: `Generated theme (${mode} mode)`,
@@ -1620,12 +1621,8 @@ export function GalleryThemeGeneratorContent() {
             : { parameters: parametersRef.current }),
         };
 
-        // Appearance update (L06): direct call, bypasses React state and useEffect.
+        // Appearance update (L06): direct call, bypasses useEffect.
         setThemeOutput(deriveTheme(recipe));
-
-        // Data panel update: update parameters state for FormulaExpansionPanel and RecipeDiffView.
-        // This state is NOT in the useEffect dep array and does not trigger re-derivation.
-        setParametersAndRef(parametersRef.current);
       }, 150);
     },
     // Closure captures stable values (mode, hue strings, recipeName).
