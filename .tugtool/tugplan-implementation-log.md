@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-21T17:22:20Z
+---
+
+## step-2: Added light entry to RECIPE_REGISTRY and controls: defaultLightControls to EXAMPLE_RECIPES.harmony. lightRecipe was already implemented in step-1. All checkpoints pass: build, generate:tokens, audit:tokens lint/verify.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
 step: step-1
 date: 2025-03-21T17:08:55Z
 ---

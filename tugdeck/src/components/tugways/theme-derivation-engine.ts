@@ -239,7 +239,7 @@
  */
 
 import { DARK_FORMULAS, LIGHT_FORMULAS } from "./formula-constants";
-import { type RecipeControls, RECIPE_REGISTRY, defaultDarkControls } from "./recipe-functions";
+import { type RecipeControls, RECIPE_REGISTRY, defaultDarkControls, defaultLightControls } from "./recipe-functions";
 
 import {
   HUE_FAMILIES,
@@ -1135,6 +1135,8 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
       caution: "yellow",
       danger: "red",
     },
+    // Use recipe function path — lightRecipe(defaultLightControls) produces DerivationFormulas. [D01]
+    controls: defaultLightControls,
     parameters: defaultParameters(),
   },
 };

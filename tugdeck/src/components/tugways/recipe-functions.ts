@@ -836,4 +836,5 @@ export const RECIPE_REGISTRY: Record<
   }
 > = {
   dark: { fn: darkRecipe, defaults: defaultDarkControls },
+  light: { fn: lightRecipe, defaults: defaultLightControls },
 };
