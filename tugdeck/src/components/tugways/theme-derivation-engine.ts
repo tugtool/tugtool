@@ -239,6 +239,7 @@
  */
 
 import { DARK_FORMULAS, LIGHT_FORMULAS } from "./formula-constants";
+import { type RecipeControls, RECIPE_REGISTRY, defaultDarkControls } from "./recipe-functions";
 
 import {
   HUE_FAMILIES,
@@ -331,6 +332,12 @@ export interface ThemeRecipe {
   parameters?: RecipeParameters;
   /** All formula constants for this recipe. Takes precedence over parameters when provided. [D06] */
   formulas?: DerivationFormulas;
+  /**
+   * Recipe control values. When provided, looked up in RECIPE_REGISTRY[recipe.mode]
+   * and the registered recipe function is called with these controls to produce
+   * DerivationFormulas. Takes precedence over parameters but not over formulas. (Spec S04)
+   */
+  controls?: RecipeControls;
 }
 
 /**
@@ -1069,9 +1076,9 @@ export interface DerivationFormulas {
  * Generator card. The first entry (brio) is the default dark theme;
  * harmony is the built-in light peer.
  *
- * Both use the nested surface/element/role structure from Phase 3.5B [D03][D04]
- * and the 7-parameter system from Phase 4 Plan 1 [D01]. Parameters are compiled
- * by compileRecipe() into DerivationFormulas at derive time. [D06]
+ * Both use the nested surface/element/role structure from Phase 3.5B [D03][D04].
+ * Brio uses the recipe function path via controls: defaultDarkControls. [D01]
+ * Harmony still uses the legacy parameter system (updated to recipe functions in Step 2).
  */
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
@@ -1099,6 +1106,8 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
       caution: "yellow",
       danger: "red",
     },
+    // Use recipe function path — darkRecipe(defaultDarkControls) produces DerivationFormulas. [D01]
+    controls: defaultDarkControls,
     parameters: defaultParameters(),
   },
   harmony: {
@@ -2410,10 +2419,23 @@ function resolvedEntryAlpha(
 export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 1. Resolve formula constants [D01] [D06]
-  // Precedence: recipe.formulas > compileRecipe(mode, parameters) > compiled defaults
+  // Precedence (Spec S04):
+  //   1. recipe.formulas — use directly (existing escape hatch)
+  //   2. recipe.controls + RECIPE_REGISTRY[mode] — call registry function
+  //   3. RECIPE_REGISTRY[mode] with defaults — call registry function with defaults
+  //   4. compileRecipe fallback (legacy parameter system)
   // -------------------------------------------------------------------------
-  const formulas: DerivationFormulas =
-    recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+  let formulas: DerivationFormulas;
+  if (recipe.formulas) {
+    formulas = recipe.formulas;
+  } else {
+    const registryEntry = RECIPE_REGISTRY[recipe.mode];
+    if (registryEntry) {
+      formulas = registryEntry.fn(recipe.controls ?? registryEntry.defaults);
+    } else {
+      formulas = compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+    }
+  }
 
   // -------------------------------------------------------------------------
   // 2. Mood knob — surfaceContrast fixed at 50 to neutralize computeTones() scaling [D04]

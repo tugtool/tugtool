@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-21T17:08:55Z
+---
+
+## step-1: Created recipe-functions.ts with RecipeControls interface, contrastSearch binary search, darkRecipe function, defaultDarkControls, and RECIPE_REGISTRY. Wired into deriveTheme via Spec S04 precedence. Updated EXAMPLE_RECIPES.brio with controls: defaultDarkControls. All checkpoints pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
 step: step-9
 date: 2025-03-21T00:28:41Z
 ---
