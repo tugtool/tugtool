@@ -605,6 +605,11 @@ function cmdPairings(): void {
     const gaps: CssPairing[] = [];
     for (const p of deduped) {
       if (p.surfaceResolved.startsWith("(")) continue;
+      // Self-referential pairings (element === surface) are border-matches-background
+      // decorative pairings. Dynamic CSS custom properties injected at runtime
+      // (e.g. --tug-toggle-on-color) fall into this category — they cannot be
+      // represented in the pairing map (which only tracks --tug-base-* tokens).
+      if (p.elementResolved === p.surfaceResolved) continue;
       const key = `${p.elementResolved}||${p.surfaceResolved}`;
       if (!mapKeys.has(key)) gaps.push(p);
     }

@@ -2142,5 +2142,25 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "informational",
   },
 
+  // =========================================================================
+  // Dynamic toggle tokens (tug-checkbox.css)
+  //
+  // --tug-toggle-on-color and --tug-toggle-on-hover-color are runtime-injected
+  // CSS custom properties set by TugCheckbox to the role fill color.
+  // In the checked state, border-color === background-color — these are
+  // self-referential decorative pairings (no contrast requirement).
+  // They are not static design tokens and cannot be enforced by evaluateRules.
+  // =========================================================================
+  {
+    element: "--tug-toggle-on-color",
+    surface: "--tug-toggle-on-color",
+    role: "decorative",
+  },
+  {
+    element: "--tug-toggle-on-hover-color",
+    surface: "--tug-toggle-on-hover-color",
+    role: "decorative",
+  },
+
 ];
 

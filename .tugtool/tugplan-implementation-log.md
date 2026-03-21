@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-21T17:41:10Z
+---
+
+## step-3: Added toggle token pairings to ELEMENT_SURFACE_PAIRING_MAP. Updated audit script to skip self-referential pairings. Fixed test helper to use Spec S04 formula resolution. Zero gaps in audit:tokens pairings.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
 step: step-2
 date: 2025-03-21T17:22:20Z
 ---

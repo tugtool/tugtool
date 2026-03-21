@@ -73,6 +73,8 @@ import {
   defaultParameters,
 } from "@/components/tugways/recipe-parameters";
 
+import { RECIPE_REGISTRY } from "@/components/tugways/recipe-functions";
+
 // ---------------------------------------------------------------------------
 // Helpers for contrast floor enforcement in test helpers
 // ---------------------------------------------------------------------------
@@ -1104,8 +1106,21 @@ describe("computeTones — Step 4", () => {
     ruleResolved: Record<string, ResolvedColor>;
     imperative: ReturnType<typeof deriveTheme>;
   } {
-    const recipeFormulas: DerivationFormulas =
-      recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+    // Mirror deriveTheme() formula resolution precedence (Spec S04):
+    //   1. recipe.formulas (direct escape hatch)
+    //   2. RECIPE_REGISTRY[mode] with recipe.controls (or registry defaults)
+    //   3. compileRecipe fallback (legacy parameter system)
+    let recipeFormulas: DerivationFormulas;
+    if (recipe.formulas) {
+      recipeFormulas = recipe.formulas;
+    } else {
+      const registryEntry = RECIPE_REGISTRY[recipe.mode];
+      if (registryEntry) {
+        recipeFormulas = registryEntry.fn(recipe.controls ?? registryEntry.defaults);
+      } else {
+        recipeFormulas = compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+      }
+    }
     const knobs: MoodKnobs = { surfaceContrast: 50 };
     // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch for
     // parameter-based recipes (avoids falling back to DARK_FORMULAS default). [Step 4]
@@ -1286,8 +1301,18 @@ describe("derivation-engine step-6 rules", () => {
     ruleTokens: Record<string, string>;
     imperative: ReturnType<typeof deriveTheme>;
   } {
-    const recipeFormulas: DerivationFormulas =
-      recipe.formulas ?? compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+    // Mirror deriveTheme() formula resolution precedence (Spec S04).
+    let recipeFormulas: DerivationFormulas;
+    if (recipe.formulas) {
+      recipeFormulas = recipe.formulas;
+    } else {
+      const registryEntry = RECIPE_REGISTRY[recipe.mode];
+      if (registryEntry) {
+        recipeFormulas = registryEntry.fn(recipe.controls ?? registryEntry.defaults);
+      } else {
+        recipeFormulas = compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
+      }
+    }
     const knobs: MoodKnobs = { surfaceContrast: 50 };
     // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch for
     // parameter-based recipes (avoids falling back to DARK_FORMULAS default). [Step 4]
