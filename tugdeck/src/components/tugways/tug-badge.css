@@ -23,7 +23,7 @@
  * | --tug-base-element-control-border-ghost-action-rest (element-control-border-ghost-action-rest) | --tug-base-surface-control-primary-ghost-action-rest (surface-control-primary-ghost-action-rest) | control      | .tug-badge-ghost-action (border-color) |
  * | --tug-base-element-control-text-ghost-danger-rest (element-control-text-ghost-danger-rest) | --tug-base-surface-control-primary-ghost-danger-rest (surface-control-primary-ghost-danger-rest) | control      | .tug-badge-ghost-danger (color)      |
  * | --tug-base-element-control-border-ghost-danger-rest (element-control-border-ghost-danger-rest) | --tug-base-surface-control-primary-ghost-danger-rest (surface-control-primary-ghost-danger-rest) | control      | .tug-badge-ghost-danger (border-color) |
- * | --tug-base-element-global-text-normal-inverse-rest (element-global-text-normal-inverse-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-badge-outlined-accent (color)   |
+ * | --tug-base-element-tone-text-normal-accent-rest (element-tone-text-normal-accent-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-accent (color)   |
  * | --tug-base-element-tone-fill-normal-accent-rest (element-tone-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-accent (border-color) |
  * | --tug-base-element-tone-fill-normal-danger-rest (element-tone-fill-normal-danger-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-danger (border-color) |
  * | --tug-base-element-tone-fill-normal-data-rest (element-tone-fill-normal-data-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-data (border-color) |
@@ -203,7 +203,7 @@
 /* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-badge-outlined-accent {
   background-color: transparent;
-  color: var(--tug-base-element-global-text-normal-inverse-rest);
+  color: var(--tug-base-element-tone-text-normal-accent-rest);
   border-color: var(--tug-base-element-tone-fill-normal-accent-rest);
 }
 
@@ -212,7 +212,7 @@
 /* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-badge-outlined-danger {
   background-color: transparent;
-  color: var(--tug-base-element-global-text-normal-inverse-rest);
+  color: var(--tug-base-element-tone-text-normal-danger-rest);
   border-color: var(--tug-base-element-tone-fill-normal-danger-rest);
 }
 
@@ -221,7 +221,7 @@
 /* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-badge-outlined-data {
   background-color: transparent;
-  color: var(--tug-base-element-global-text-normal-inverse-rest);
+  color: var(--tug-base-element-tone-text-normal-data-rest);
   border-color: var(--tug-base-element-tone-fill-normal-data-rest);
 }
 
@@ -278,7 +278,7 @@
 /* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-badge-outlined-success {
   background-color: transparent;
-  color: var(--tug-base-element-global-text-normal-inverse-rest);
+  color: var(--tug-base-element-tone-text-normal-success-rest);
   border-color: var(--tug-base-element-tone-fill-normal-success-rest);
 }
 
@@ -304,7 +304,7 @@
 /* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
 .tug-badge-outlined-caution {
   background-color: transparent;
-  color: var(--tug-base-element-global-text-normal-inverse-rest);
+  color: var(--tug-base-element-tone-text-normal-caution-rest);
   border-color: var(--tug-base-element-tone-fill-normal-caution-rest);
 }
 
