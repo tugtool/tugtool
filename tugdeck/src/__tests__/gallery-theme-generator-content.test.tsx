@@ -41,8 +41,8 @@ import {
 // ---------------------------------------------------------------------------
 // Reference formula constants (replaces deleted formula-constants.ts)
 // ---------------------------------------------------------------------------
-const DARK_FORMULAS = darkRecipeFn();
-const LIGHT_FORMULAS = lightRecipeFn();
+const DARK_FORMULAS = darkRecipeFn(EXAMPLE_RECIPES.brio);
+const LIGHT_FORMULAS = lightRecipeFn(EXAMPLE_RECIPES.harmony);
 
 // ---------------------------------------------------------------------------
 // Known-exception sets shared by T10.3 and T-ACC-1

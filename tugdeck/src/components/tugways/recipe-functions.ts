@@ -24,7 +24,7 @@
  */
 
 import { DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
-import type { DerivationFormulas } from "./theme-engine";
+import type { DerivationFormulas, ThemeRecipe } from "./theme-engine";
 
 // ---------------------------------------------------------------------------
 // contrastSearch — Spec S02
@@ -162,13 +162,13 @@ export function contrastSearch(
  * contrastSearch is used for frameTone-relative values and signals where
  * the minimum-passing tone is the right choice.
  */
-export function darkRecipe(): DerivationFormulas {
-  const c = 5; // canvasTone
-  const canvasIntensity = 5;
-  const frameTone = 16;
-  const frameIntensity = 12;
-  const roleTone = 50;
-  const roleIntensity = 50;
+export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
+  const c = recipe.surface.canvas.tone; // canvasTone from recipe
+  const canvasIntensity = recipe.surface.canvas.intensity;
+  const frameTone = recipe.surface.card.tone;
+  const frameIntensity = recipe.surface.card.intensity;
+  const roleTone = recipe.role.tone;
+  const roleIntensity = recipe.role.intensity;
 
   // Text brightness: design offset from canvas — near-white on dark (canvas+89 → ~94)
   // Not using contrastSearch here because the design intent is maximum legibility
@@ -218,9 +218,9 @@ export function darkRecipe(): DerivationFormulas {
     placeholderTextTone: primaryTextTone - 64,
 
     // ===== Text Coloring =====
-    contentTextIntensity: 3,
-    subtleTextIntensity: 7,
-    mutedTextIntensity: 5,
+    contentTextIntensity: recipe.text.intensity,
+    subtleTextIntensity: recipe.text.intensity + 4,
+    mutedTextIntensity: recipe.text.intensity + 2,
     atmosphereBorderIntensity: 6,
     inverseTextIntensity: 3,
     onCautionTextIntensity: 4,
@@ -236,7 +236,7 @@ export function darkRecipe(): DerivationFormulas {
     borderStrongTone: primaryTextTone - 54,
     dividerDefaultIntensity: 6,
     dividerMutedIntensity: 4,
-    borderSignalTone: roleTone, // signal borders use role tone (=50)
+    borderSignalTone: roleTone, // signal borders use role tone
     semanticSignalTone: roleTone,
 
     // ===== Card Frame Style =====
@@ -256,10 +256,10 @@ export function darkRecipe(): DerivationFormulas {
     overlayHighlightAlpha: 6,
 
     // ===== Filled Control Prominence =====
-    // Offsets from DARK_FORMULAS: rest=20 (canvas+15), hover=40 (canvas+35), active=50 (canvas+45)
-    filledSurfaceRestTone: c + 15,
-    filledSurfaceHoverTone: c + 35,
-    filledSurfaceActiveTone: c + 45,
+    // Dark mode: rest = recipe.role.tone, hover/active are clamped offsets per D03
+    filledSurfaceRestTone: recipe.role.tone,
+    filledSurfaceHoverTone: Math.max(0, Math.min(100, recipe.role.tone + 5)),
+    filledSurfaceActiveTone: Math.max(0, Math.min(100, recipe.role.tone + 10)),
 
     // ===== Outlined Control Style =====
     // Dark: fg is near-white (100), legacy light counterparts are pure black (0)
@@ -503,13 +503,13 @@ export function darkRecipe(): DerivationFormulas {
  * Note: contentTextTone uses canvas-87 (a design intent offset → ~8) rather than
  * contrastSearch, because the design calls for near-black text on light backgrounds.
  */
-export function lightRecipe(): DerivationFormulas {
-  const c = 95; // canvasTone
-  const canvasIntensity = 6;
-  const frameTone = 85;
-  const frameIntensity = 35;
-  const roleTone = 50;
-  const roleIntensity = 50;
+export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
+  const c = recipe.surface.canvas.tone; // canvasTone from recipe
+  const canvasIntensity = recipe.surface.canvas.intensity;
+  const frameTone = recipe.surface.card.tone;
+  const frameIntensity = recipe.surface.card.intensity;
+  const roleTone = recipe.role.tone;
+  const roleIntensity = recipe.role.intensity;
 
   // Text brightness: design offset from canvas — near-black on light (canvas-87 → ~8)
   const primaryTextTone = c - 87;
@@ -556,9 +556,9 @@ export function lightRecipe(): DerivationFormulas {
     placeholderTextTone: primaryTextTone + 52,
 
     // ===== Text Coloring =====
-    contentTextIntensity: 4,
-    subtleTextIntensity: 8,
-    mutedTextIntensity: 6,
+    contentTextIntensity: recipe.text.intensity,
+    subtleTextIntensity: recipe.text.intensity + 4,
+    mutedTextIntensity: recipe.text.intensity + 2,
     atmosphereBorderIntensity: 7,
     inverseTextIntensity: 3,
     onCautionTextIntensity: 5,
@@ -593,10 +593,11 @@ export function lightRecipe(): DerivationFormulas {
     overlayHighlightAlpha: 4,
 
     // ===== Filled Control Prominence =====
-    // Light mode: same bold tone approach as dark — filled buttons stay vivid
-    filledSurfaceRestTone: 20,
-    filledSurfaceHoverTone: 40,
-    filledSurfaceActiveTone: 50,
+    // Light mode: rest = recipe.role.tone, hover/active are clamped offsets per D03
+    // Light mode darkens on hover/active, so offsets are negative.
+    filledSurfaceRestTone: recipe.role.tone,
+    filledSurfaceHoverTone: Math.max(0, Math.min(100, recipe.role.tone - 5)),
+    filledSurfaceActiveTone: Math.max(0, Math.min(100, recipe.role.tone - 10)),
 
     // ===== Outlined Control Style =====
     // Light: fg is near-dark (primaryTextTone=8)
@@ -824,7 +825,7 @@ export function lightRecipe(): DerivationFormulas {
  * Built-in recipe registry. Maps recipe name to its recipe function.
  * Used by deriveTheme() to produce DerivationFormulas. (Spec S03)
  */
-export const RECIPE_REGISTRY: Record<string, { fn: () => DerivationFormulas }> = {
+export const RECIPE_REGISTRY: Record<string, { fn: (recipe: ThemeRecipe) => DerivationFormulas }> = {
   dark: { fn: darkRecipe },
   light: { fn: lightRecipe },
 };

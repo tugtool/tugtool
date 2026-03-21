@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-21T23:42:14Z
+---
+
+## step-2: Updated darkRecipe/lightRecipe to accept ThemeRecipe, replacing hardcoded tone/intensity constants with recipe spec reads. Updated RECIPE_REGISTRY type, deriveTheme and resolveHueSlots call sites, and test call sites.
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
 step: step-1
 date: 2025-03-21T23:25:59Z
 ---

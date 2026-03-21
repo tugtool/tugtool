@@ -84,10 +84,10 @@ function buildTestPairingLookup(
 }
 
 /** Reference dark formula constants (replaces deleted DARK_FORMULAS from formula-constants). */
-const DARK_FORMULAS = darkRecipeFn();
+const DARK_FORMULAS = darkRecipeFn(EXAMPLE_RECIPES.brio);
 
 /** Reference light formula constants (replaces deleted LIGHT_FORMULAS from formula-constants). */
-const LIGHT_FORMULAS = lightRecipeFn();
+const LIGHT_FORMULAS = lightRecipeFn(EXAMPLE_RECIPES.harmony);
 
 /** Cached pairing lookup for tests that need contrast floor behavior. */
 const TEST_PAIRING_LOOKUP = buildTestPairingLookup(ELEMENT_SURFACE_PAIRING_MAP);
@@ -1005,8 +1005,8 @@ describe("derivation-engine step-5 rules", () => {
     } else {
       const registryEntry = RECIPE_REGISTRY[recipe.recipe];
       recipeFormulas = registryEntry
-        ? registryEntry.fn()
-        : darkRecipeFn();
+        ? registryEntry.fn(recipe)
+        : darkRecipeFn(recipe);
     }
     // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch. [Step 4]
     const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
@@ -1190,8 +1190,8 @@ describe("derivation-engine step-6 rules", () => {
     } else {
       const registryEntry = RECIPE_REGISTRY[recipe.recipe];
       recipeFormulas = registryEntry
-        ? registryEntry.fn()
-        : darkRecipeFn();
+        ? registryEntry.fn(recipe)
+        : darkRecipeFn(recipe);
     }
     // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch. [Step 4]
     const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);

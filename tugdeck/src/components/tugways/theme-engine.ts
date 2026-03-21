@@ -1293,11 +1293,11 @@ export function primaryColorName(hueExpr: string): string {
  * all runtime mode branches from the formula path. [D03]
  *
  * @param recipe  - The theme recipe
- * @param formulas - Formula constants; defaults to recipe.formulas ?? darkRecipe()
+ * @param formulas - Formula constants; defaults to recipe.formulas ?? darkRecipe(recipe)
  */
 export function resolveHueSlots(
   recipe: ThemeRecipe,
-  formulas: DerivationFormulas = recipe.formulas ?? darkRecipe(),
+  formulas: DerivationFormulas = recipe.formulas ?? darkRecipe(recipe),
 ): ResolvedHueSlots {
   /** Build a ResolvedHueSlot from a hue name. Hue angle used verbatim. */
   function resolveSlot(hueName: string): ResolvedHueSlot {
@@ -2258,7 +2258,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     formulas = recipe.formulas;
   } else {
     const registryEntry = RECIPE_REGISTRY[recipe.recipe];
-    formulas = registryEntry ? registryEntry.fn() : darkRecipe();
+    formulas = registryEntry ? registryEntry.fn(recipe) : darkRecipe(recipe);
   }
 
   // -------------------------------------------------------------------------
