@@ -368,16 +368,16 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
     expect(lightBtn.classList.contains("tug-button-outlined-action")).toBe(true);
   });
 
-  it("mode toggle resets all 7 sliders to default value 50", () => {
-    // The 7 parameter keys in order, matching PARAMETER_METADATA.
-    const paramKeys = [
-      "surfaceDepth",
-      "textHierarchy",
-      "controlWeight",
-      "borderDefinition",
-      "shadowDepth",
-      "signalStrength",
-      "atmosphere",
+  it("mode toggle resets RecipeControls sliders to mode-default values", () => {
+    // Step 4: Mode toggle resets controls to defaultDarkControls/defaultLightControls. [Step 4]
+    // The 6 RecipeControls keys matching RECIPE_CONTROLS_METADATA.
+    const controlKeys = [
+      "canvasTone",
+      "canvasIntensity",
+      "frameTone",
+      "frameIntensity",
+      "roleTone",
+      "roleIntensity",
     ] as const;
 
     let container!: HTMLElement;
@@ -385,23 +385,25 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
 
-    // Move each slider away from 50 so that the reset is detectable.
+    // Move each control slider away from its default so that the reset is detectable.
     act(() => {
-      for (const key of paramKeys) {
+      for (const key of controlKeys) {
         const rangeInput = container.querySelector(
-          `[data-testid='ps-range-${key}']`,
+          `[data-testid='rcs-range-${key}']`,
         ) as HTMLInputElement;
-        fireEvent.input(rangeInput, { target: { value: "75" } });
+        if (rangeInput) {
+          fireEvent.input(rangeInput, { target: { value: "75" } });
+        }
       }
     });
 
-    // Verify at least one slider has moved away from 50.
-    const firstRange = container.querySelector(
-      "[data-testid='ps-range-surfaceDepth']",
+    // Verify at least one slider has moved (canvasTone default is 5 for dark).
+    const canvasToneRange = container.querySelector(
+      "[data-testid='rcs-range-canvasTone']",
     ) as HTMLInputElement;
-    expect(firstRange.value).toBe("75");
+    expect(canvasToneRange.value).toBe("75");
 
-    // Click the light mode toggle — this should call setParametersAndRef(defaultParameters()).
+    // Click the light mode toggle — this should call setControlsAndRef(defaultLightControls).
     const lightBtn = container.querySelector(
       "[data-testid='gtg-mode-light']",
     ) as HTMLElement;
@@ -409,13 +411,8 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
       fireEvent.click(lightBtn);
     });
 
-    // All 7 range inputs must now report value='50'.
-    for (const key of paramKeys) {
-      const rangeInput = container.querySelector(
-        `[data-testid='ps-range-${key}']`,
-      ) as HTMLInputElement;
-      expect(rangeInput.value).toBe("50");
-    }
+    // canvasTone should now be reset to defaultLightControls.canvasTone (95).
+    expect(canvasToneRange.value).toBe("95");
   });
 });
 
@@ -1551,195 +1548,84 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
 // T5.1 – T5.6
 // ---------------------------------------------------------------------------
 
-describe("Step 5 (Plan 2) – ParameterSlider integration (T5.1–T5.6)", () => {
+describe("Step 4 – RecipeControls slider integration", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
   // -------------------------------------------------------------------------
-  // T5.1: Theme Generator renders 7 ParameterSlider components
+  // T5.1 (updated): Theme Generator renders 6 RecipeControlSlider components
   // -------------------------------------------------------------------------
 
-  it("T5.1: renders 7 ParameterSlider components with correct data-testids", () => {
+  it("renders 6 RecipeControlSlider components with correct data-testids", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    expect(container.querySelector("[data-testid='gtg-parameter-panel']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='gtg-parameter-sliders']")).not.toBeNull();
-    for (const meta of PARAMETER_METADATA) {
-      const slider = container.querySelector(`[data-testid='parameter-slider-${meta.paramKey}']`);
-      expect(slider, `slider for ${meta.paramKey} should be rendered`).not.toBeNull();
+    expect(container.querySelector("[data-testid='gtg-recipe-controls-panel']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gtg-recipe-controls-sliders']")).not.toBeNull();
+    const controlKeys = ["canvasTone", "canvasIntensity", "frameTone", "frameIntensity", "roleTone", "roleIntensity"] as const;
+    for (const key of controlKeys) {
+      const slider = container.querySelector(`[data-testid='recipe-control-slider-${key}']`);
+      expect(slider, `slider for ${key} should be rendered`).not.toBeNull();
     }
   });
 
-  it("T5.1: all 7 sliders render with default value of 50", () => {
+  it("RecipeControlSlider renders with defaultDarkControls values on dark mode start", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    for (const meta of PARAMETER_METADATA) {
-      const rangeInput = container.querySelector(`[data-testid='ps-range-${meta.paramKey}']`) as HTMLInputElement | null;
-      expect(rangeInput, `range input for ${meta.paramKey} should be present`).not.toBeNull();
-      expect(rangeInput!.value, `${meta.paramKey} should default to 50`).toBe("50");
-    }
+    // defaultDarkControls: canvasTone=5, canvasIntensity=5, frameTone=16,
+    // frameIntensity=12, roleTone=50, roleIntensity=50
+    const canvasToneRange = container.querySelector("[data-testid='rcs-range-canvasTone']") as HTMLInputElement | null;
+    expect(canvasToneRange).not.toBeNull();
+    expect(canvasToneRange!.value).toBe("5");
+
+    const frameToneRange = container.querySelector("[data-testid='rcs-range-frameTone']") as HTMLInputElement | null;
+    expect(frameToneRange).not.toBeNull();
+    expect(frameToneRange!.value).toBe("16");
   });
 
   // -------------------------------------------------------------------------
-  // T5.2: Moving a slider triggers compileRecipe() -> deriveTheme() and updates preview.
-  // We verify this by checking that a slider input event produces different
-  // tokens compared to the default (all-50) output.
+  // T5.2 (updated): darkRecipe with non-default controls produces different formulas
   // -------------------------------------------------------------------------
 
-  /**
-   * Fire an onInput event on a React-controlled range input via React fiber props.
-   * happy-dom does not forward native input events to React's synthetic listeners
-   * for range inputs, so we invoke the React props directly.
-   */
-  function invokeRangeOnInput(el: HTMLInputElement, value: number): void {
-    const key = Object.keys(el).find(
-      (k) => k.startsWith("__reactProps$") || k.startsWith("__reactFiber$"),
-    );
-    if (!key) return;
-    const fiberOrProps = (el as unknown as Record<string, unknown>)[key];
-    let props: Record<string, unknown> | null = null;
-    if (key.startsWith("__reactProps$")) {
-      props = fiberOrProps as Record<string, unknown>;
-    } else {
-      let fiber = fiberOrProps as { memoizedProps?: Record<string, unknown>; return?: unknown } | null;
-      while (fiber) {
-        if (fiber.memoizedProps) { props = fiber.memoizedProps; break; }
-        fiber = fiber.return as typeof fiber;
-      }
-    }
-    const onInput = props?.["onInput"] as ((e: { target: { value: string } }) => void) | undefined;
-    if (typeof onInput === "function") {
-      act(() => { onInput({ target: { value: String(value) } }); });
-    }
-  }
+  it("darkRecipe with non-default canvasTone produces different formulas than defaults", () => {
+    const { darkRecipe, defaultDarkControls: defaults } = require("@/components/tugways/recipe-functions") as typeof import("@/components/tugways/recipe-functions");
+    const defaultFormulas = darkRecipe(defaults);
+    const altControls = { ...defaults, canvasTone: 20 };
+    const altFormulas = darkRecipe(altControls);
 
-  it("T5.2: slider onInput updates the range input value (via React state)", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-    const rangeInput = container.querySelector(`[data-testid='ps-range-surfaceDepth']`) as HTMLInputElement;
-    expect(rangeInput).not.toBeNull();
-
-    // Invoke onInput with value 80
-    invokeRangeOnInput(rangeInput, 80);
-
-    // The React state update for value display should reflect the new value.
-    // The parameters state update (via debounce) happens after 150ms so the
-    // value display may still be 50. But the range element's value attribute
-    // from React state should reflect the immediate parametersRef update that
-    // flows back through state on the next debounce flush.
-    // For now assert the rangeInput is still present and functioning.
-    expect(rangeInput).toBeDefined();
-  });
-
-  it("T5.2: compileRecipe with non-default surfaceDepth produces different formulas than default", () => {
-    // Verify the compilation pipeline: non-default parameters produce different
-    // field values than all-50 defaults, which would drive different deriveTheme output.
-    const defaultFormulas = compileRecipe("dark", defaultParameters());
-    const altParams = { ...defaultParameters(), surfaceDepth: 80 };
-    const altFormulas = compileRecipe("dark", altParams);
-
-    // At least one surfaceDepth-controlled field should differ
+    // At least one canvasTone-controlled field should differ
     const defaultKeys = Object.keys(defaultFormulas) as (keyof typeof defaultFormulas)[];
     const diffFields = defaultKeys.filter(
       (k) => typeof defaultFormulas[k] === "number" && defaultFormulas[k] !== altFormulas[k],
     );
-    expect(diffFields.length, "non-default surfaceDepth should produce different formula fields").toBeGreaterThan(0);
+    expect(diffFields.length, "non-default canvasTone should produce different formula fields").toBeGreaterThan(0);
   });
 
   // -------------------------------------------------------------------------
-  // T5.3: FormulaExpansionPanel appears below sliders with correct field data
+  // T5.5 (updated): Loading a preset resets sliders to that recipe's controls.
+  // Brio uses defaultDarkControls (canvasTone=5), Harmony uses defaultLightControls (canvasTone=95).
   // -------------------------------------------------------------------------
 
-  it("T5.3: FormulaExpansionPanel is rendered below sliders", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-    const panel = container.querySelector("[data-testid='formula-expansion-panel']");
-    expect(panel).not.toBeNull();
-
-    // Panel should be inside the parameter panel (which holds sliders + panels)
-    const paramPanel = container.querySelector("[data-testid='gtg-parameter-panel']");
-    expect(paramPanel).not.toBeNull();
-    expect(paramPanel!.contains(panel)).toBe(true);
-  });
-
-  it("T5.3: FormulaExpansionPanel renders 7 collapsible sections (one per parameter)", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-    for (const meta of PARAMETER_METADATA) {
-      const section = container.querySelector(`[data-testid='fep-section-${meta.paramKey}']`);
-      expect(section, `fep-section for ${meta.paramKey} should be present`).not.toBeNull();
-    }
-  });
-
-  // -------------------------------------------------------------------------
-  // T5.4: RecipeDiffView appears as a collapsible section below sliders
-  // -------------------------------------------------------------------------
-
-  it("T5.4: RecipeDiffView is rendered as a collapsible section below sliders", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-    const diffView = container.querySelector("[data-testid='recipe-diff-view']");
-    expect(diffView).not.toBeNull();
-
-    // Should be a <details> element (collapsible)
-    expect(diffView!.tagName.toLowerCase()).toBe("details");
-
-    // Should be inside the parameter panel
-    const paramPanel = container.querySelector("[data-testid='gtg-parameter-panel']");
-    expect(paramPanel!.contains(diffView)).toBe(true);
-  });
-
-  it("T5.4: RecipeDiffView renders 7 bar sections (one per parameter)", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-    for (const meta of PARAMETER_METADATA) {
-      const bar = container.querySelector(`[data-testid='rdv-bar-${meta.paramKey}']`);
-      expect(bar, `rdv-bar for ${meta.paramKey} should be present`).not.toBeNull();
-    }
-  });
-
-  // -------------------------------------------------------------------------
-  // T5.5: Loading a preset resets all sliders to the preset's parameter values.
-  // We test with the brio preset (which uses defaultParameters() — all 50).
-  // -------------------------------------------------------------------------
-
-  it("T5.5: loading brio preset resets sliders to defaultParameters() (all 50)", () => {
+  it("loading brio preset resets canvasTone slider to 5 (defaultDarkControls)", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
 
-    // Click brio preset
     const brioBtn = container.querySelector("[data-testid='gtg-preset-brio']") as HTMLElement;
     act(() => {
       fireEvent.click(brioBtn);
     });
 
-    // All sliders should show 50 (brio uses defaultParameters())
-    for (const meta of PARAMETER_METADATA) {
-      const rangeInput = container.querySelector(`[data-testid='ps-range-${meta.paramKey}']`) as HTMLInputElement | null;
-      expect(rangeInput, `slider for ${meta.paramKey} should be present after preset load`).not.toBeNull();
-      expect(rangeInput!.value, `${meta.paramKey} should be 50 after brio preset`).toBe("50");
-    }
+    const canvasToneRange = container.querySelector("[data-testid='rcs-range-canvasTone']") as HTMLInputElement | null;
+    expect(canvasToneRange).not.toBeNull();
+    expect(canvasToneRange!.value, "brio uses defaultDarkControls: canvasTone=5").toBe("5");
   });
 
-  it("T5.5: loadPreset updates parameters state so sliders reflect preset values", () => {
-    // Both brio and harmony use defaultParameters() (all 50), so all sliders = 50.
-    // Test preset load resets sliders back to 50 on harmony load (light mode).
+  it("loading harmony preset resets canvasTone slider to 95 (defaultLightControls)", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -1750,22 +1636,17 @@ describe("Step 5 (Plan 2) – ParameterSlider integration (T5.1–T5.6)", () => 
       fireEvent.click(harmonyBtn);
     });
 
-    for (const meta of PARAMETER_METADATA) {
-      const rangeInput = container.querySelector(`[data-testid='ps-range-${meta.paramKey}']`) as HTMLInputElement | null;
-      expect(rangeInput, `slider ${meta.paramKey} should exist after harmony preset`).not.toBeNull();
-      expect(rangeInput!.value, `${meta.paramKey} should be 50 after harmony preset (harmony uses defaultParameters())`).toBe("50");
-    }
+    const canvasToneRange = container.querySelector("[data-testid='rcs-range-canvasTone']") as HTMLInputElement | null;
+    expect(canvasToneRange).not.toBeNull();
+    expect(canvasToneRange!.value, "harmony uses defaultLightControls: canvasTone=95").toBe("95");
   });
 
   // -------------------------------------------------------------------------
-  // T5.6: Exporting recipe JSON includes the parameters field
+  // T5.6 (updated): currentRecipe includes the controls field (not parameters)
   // -------------------------------------------------------------------------
 
-  it("T5.6: currentRecipe includes the parameters field (not formulas) after initial render", () => {
-    // Verify that the currentRecipe assembled in GalleryThemeGeneratorContent
-    // includes parameters when formulas=null (the initial state).
-    // We verify this by round-tripping through the recipe validation and checking
-    // that the exported JSON contains a parameters key.
+  it("currentRecipe includes the controls field (not parameters) after initial render", () => {
+    const { defaultDarkControls: defaults } = require("@/components/tugways/recipe-functions") as typeof import("@/components/tugways/recipe-functions");
     const defaultRecipe = {
       name: "brio",
       description: "Generated theme (dark mode, card: indigo-violet, content: cobalt)",
@@ -1773,30 +1654,17 @@ describe("Step 5 (Plan 2) – ParameterSlider integration (T5.1–T5.6)", () => 
       surface: { canvas: "indigo-violet", card: "indigo-violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      parameters: defaultParameters(),
+      controls: defaults,
     };
-    // The recipe should have parameters, not formulas
-    expect(defaultRecipe.parameters).toBeDefined();
-    expect((defaultRecipe as { formulas?: unknown }).formulas).toBeUndefined();
+    // The recipe should have controls, not parameters
+    expect(defaultRecipe.controls).toBeDefined();
+    expect((defaultRecipe as { parameters?: unknown }).parameters).toBeUndefined();
 
-    // Serializing and parsing preserves parameters
+    // Serializing and parsing preserves controls
     const json = JSON.stringify(defaultRecipe);
     const parsed = JSON.parse(json) as typeof defaultRecipe;
-    expect(parsed.parameters).toBeDefined();
-    expect(parsed.parameters.surfaceDepth).toBe(50);
-    expect(parsed.parameters.atmosphere).toBe(50);
-  });
-
-  it("T5.6: parameters in currentRecipe are correct defaults after initial render", () => {
-    // The currentRecipe memo uses `parameters` state (not hardcoded defaultParameters()).
-    // Initially parameters = defaultParameters(), so the recipe parameters should be all 50.
-    const defaults = defaultParameters();
-    for (const key of Object.keys(defaults) as (keyof typeof defaults)[]) {
-      expect(defaults[key]).toBe(50);
-    }
-    // Verify compileRecipe with these defaults produces expected formula fields
-    const formulas = compileRecipe("dark", defaults);
-    expect(typeof formulas).toBe("object");
-    expect(formulas).not.toBeNull();
+    expect(parsed.controls).toBeDefined();
+    expect(parsed.controls.canvasTone).toBe(5);
+    expect(parsed.controls.roleIntensity).toBe(50);
   });
 });

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-21T18:09:00Z
+---
+
+## step-4: Replaced 7 parameter sliders with TugButton dark/light toggle and 6 RecipeControls sliders. Wired debounced handler for L06-compliant live preview. Removed old ParameterSlider/FormulaExpansionPanel/RecipeDiffView from the generator card UI.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
 step: step-3
 date: 2025-03-21T17:41:10Z
 ---

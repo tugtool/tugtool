@@ -35,6 +35,10 @@
  * | --tug-base-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug-base-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gtg-dash-badge--fail (border)       |
  * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-raised-rest (surface-global-primary-normal-raised-rest) | informational | .gtg-dash-badge--decorative (color)  |
  * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | content      | .gtg-autofix-suggestion-item (color) |
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .rcs-label (color)                   |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .rcs-value (color)                   |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .rcs-low-label (color)               |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .rcs-high-label (color)              |
  */
 
 
@@ -1177,4 +1181,143 @@
   border: 1px solid var(--tug-base-element-tone-border-normal-danger-rest);
   border-radius: var(--tug-base-radius-xs);
   padding: 3px 8px;
+}
+
+/* ============================================================================
+   RecipeControls panel — replaces old parameter sliders [Step 4]
+   ========================================================================= */
+
+/*
+ * @tug-pairings (RecipeControlSlider additions)
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content | .rcs-label (color) |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .rcs-value (color) |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .rcs-low-label (color) |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .rcs-high-label (color) |
+ */
+
+.gtg-recipe-controls-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+}
+
+.gtg-recipe-controls-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+/* ---- RecipeControlSlider component styles ---- */
+
+.rcs-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.rcs-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+.rcs-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--tug-base-element-global-text-normal-default-rest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+.rcs-value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tug-base-element-global-text-normal-muted-rest);
+  flex-shrink: 0;
+  min-width: 2ch;
+  text-align: right;
+}
+
+.rcs-track-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+.rcs-low-label,
+.rcs-high-label {
+  font-size: 9px;
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rcs-range {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  outline: none;
+}
+
+/* Track — WebKit / Blink */
+.rcs-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--tug-base-element-global-border-normal-muted-rest, rgba(128, 128, 128, 0.3));
+}
+
+/* Track — Firefox */
+.rcs-range::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--tug-base-element-global-border-normal-muted-rest, rgba(128, 128, 128, 0.3));
+}
+
+/* Thumb — WebKit / Blink */
+.rcs-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tug-base-element-global-fill-normal-accent-rest, #4a90e2);
+  cursor: pointer;
+  margin-top: -4.5px;
+  border: none;
+}
+
+/* Thumb — Firefox */
+.rcs-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tug-base-element-global-fill-normal-accent-rest, #4a90e2);
+  cursor: pointer;
+  border: none;
+}
+
+/* Focus styling */
+.rcs-range:focus-visible {
+  outline: none;
+}
+
+.rcs-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--tug-base-element-global-fill-normal-accent-rest, #4a90e2);
+}
+
+.rcs-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 2px var(--tug-base-element-global-fill-normal-accent-rest, #4a90e2);
 }
