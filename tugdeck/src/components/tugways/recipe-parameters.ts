@@ -1232,10 +1232,10 @@ const LIGHT_P4_ENDPOINTS: ParameterEndpoints = (() => {
   const borderStrongTone = toneEndpoints(52);
   const dividerDefaultIntensity = intensityEndpoints(7);
   const dividerMutedIntensity = intensityEndpoints(5);
-  const cardFrameActiveIntensity = intensityEndpoints(12);
-  const cardFrameActiveTone = toneEndpoints(96);
+  const cardFrameActiveIntensity = intensityEndpoints(18);
+  const cardFrameActiveTone = toneEndpoints(85);
   const cardFrameInactiveIntensity = intensityEndpoints(5);
-  const cardFrameInactiveTone = toneEndpoints(93);
+  const cardFrameInactiveTone = toneEndpoints(90);
   const borderStrongToneComputed = toneEndpoints(40);
   const dividerDefaultToneOverride = toneEndpoints(78);
   const dividerMutedToneOverride = toneEndpoints(82);

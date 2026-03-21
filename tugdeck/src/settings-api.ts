@@ -159,6 +159,37 @@ export function putTheme(theme: string): void {
   });
 }
 
+// ---- Theme Generator mode persistence ----
+
+/**
+ * Fetch the Theme Generator mode from tugbank.
+ * Returns "dark" or "light", or `null` if not stored.
+ */
+export async function fetchGeneratorMode(): Promise<"dark" | "light" | null> {
+  try {
+    const response = await fetch("/api/defaults/dev.tugtool.app/generator-mode");
+    if (!response.ok) return null;
+    const tagged = await response.json();
+    const v = tagged?.value;
+    return v === "dark" || v === "light" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * PUT the Theme Generator mode to tugbank (fire-and-forget).
+ */
+export function putGeneratorMode(mode: "dark" | "light"): void {
+  fetch("/api/defaults/dev.tugtool.app/generator-mode", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: mode }),
+  }).catch((err) => {
+    console.warn("[settings] PUT generator-mode failed:", err);
+  });
+}
+
 // ---- Phase 5f: Tab state and deck state API ([D01], [D03], Spec S02) ----
 
 /**

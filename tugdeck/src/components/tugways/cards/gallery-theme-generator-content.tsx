@@ -28,7 +28,8 @@
  * @module components/tugways/cards/gallery-theme-generator-content
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo, useId } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo, useId, type SetStateAction } from "react";
+import { fetchGeneratorMode, putGeneratorMode } from "@/settings-api";
 import * as Popover from "@radix-ui/react-popover";
 import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
@@ -1354,7 +1355,15 @@ export function GalleryThemeGeneratorContent() {
   }, [refreshSavedThemes]);
 
   const [recipeName, setRecipeName] = useState<string>(DEFAULT_RECIPE.name);
-  const [mode, setMode] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
+  const [mode, setModeRaw] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
+  const setMode = useCallback((m: "dark" | "light") => {
+    putGeneratorMode(m);
+    setModeRaw(m);
+  }, []);
+  // Restore persisted mode from tugbank on mount.
+  useEffect(() => {
+    fetchGeneratorMode().then((saved) => { if (saved) setModeRaw(saved); });
+  }, []);
   // Surface hue state
   const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card);
   const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.surface.canvas);
@@ -1459,6 +1468,7 @@ export function GalleryThemeGeneratorContent() {
       "--tug-card-title-bar-bg-active": "--tug-base-surface-tab-primary-normal-plain-active",
       "--tug-card-title-bar-bg-inactive": "--tug-base-surface-tab-primary-normal-plain-inactive",
       "--tug-card-title-bar-bg-collapsed": "--tug-base-surface-tab-primary-normal-plain-collapsed",
+      "--tug-card-title-fg": "--tug-base-element-cardTitle-text-normal-plain-rest",
       "--tug-card-title-bar-fg": "--tug-base-element-global-text-normal-default-rest",
       "--tug-card-title-bar-icon-active": "--tug-base-element-global-icon-normal-active-rest",
       "--tug-card-title-bar-icon-inactive": "--tug-base-element-global-text-normal-subtle-rest",
@@ -1468,6 +1478,8 @@ export function GalleryThemeGeneratorContent() {
       "--tug-card-accessory-bg": "--tug-base-surface-global-primary-normal-sunken-rest",
       "--tug-card-accessory-border": "--tug-base-element-global-border-normal-default-rest",
       "--tug-card-bg": "--tug-base-surface-global-primary-normal-overlay-rest",
+      "--tug-card-findbar-bg": "--tug-base-surface-field-primary-normal-plain-focus",
+      "--tug-card-findbar-border": "--tug-base-element-global-border-normal-default-rest",
       "--tug-tab-bar-bg": "--tug-base-surface-tab-primary-normal-plain-inactive",
       "--tug-tab-bg-active": "--tug-base-surface-tab-primary-normal-plain-active",
       "--tug-tab-bg-hover": "--tug-base-surface-tab-primary-normal-plain-hover",

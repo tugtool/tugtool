@@ -176,12 +176,12 @@ body {
   /* Tab */
   --tug-base-element-tab-text-normal-plain-active: --tug-color(cobalt, i: 4, t: 10);
   --tug-base-element-tab-text-normal-plain-hover: --tug-color(cobalt, i: 4, t: 10);
-  --tug-base-element-tab-text-normal-plain-rest: --tug-color(cobalt, i: 8, t: 29);
+  --tug-base-element-tab-text-normal-plain-rest: --tug-color(cobalt, i: 8, t: 28);
   --tug-base-element-tabClose-text-normal-plain-hover: --tug-color(cobalt, i: 4, t: 10);
-  --tug-base-surface-tab-primary-normal-plain-active: --tug-color(indigo-violet, i: 12, t: 96);
-  --tug-base-surface-tab-primary-normal-plain-collapsed: --tug-color(indigo-violet, i: 5, t: 93);
+  --tug-base-surface-tab-primary-normal-plain-active: --tug-color(indigo-violet, i: 18, t: 85);
+  --tug-base-surface-tab-primary-normal-plain-collapsed: --tug-color(indigo-violet, i: 5, t: 90);
   --tug-base-surface-tab-primary-normal-plain-hover: --tug-color(white, a: 8);
-  --tug-base-surface-tab-primary-normal-plain-inactive: --tug-color(indigo-violet, i: 5, t: 93);
+  --tug-base-surface-tab-primary-normal-plain-inactive: --tug-color(indigo-violet, i: 5, t: 90);
   --tug-base-surface-tabClose-primary-normal-plain-hover: --tug-color(white, a: 12);
 
   /* Control — Disabled */
