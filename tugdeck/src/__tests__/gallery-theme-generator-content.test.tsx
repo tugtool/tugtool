@@ -29,7 +29,7 @@ import {
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
-import { darkRecipe as darkRecipeFn, lightRecipe as lightRecipeFn, defaultDarkControls, defaultLightControls } from "@/components/tugways/recipe-functions";
+import { darkRecipe as darkRecipeFn, lightRecipe as lightRecipeFn } from "@/components/tugways/recipe-functions";
 import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
@@ -41,8 +41,8 @@ import {
 // ---------------------------------------------------------------------------
 // Reference formula constants (replaces deleted formula-constants.ts)
 // ---------------------------------------------------------------------------
-const DARK_FORMULAS = darkRecipeFn(defaultDarkControls);
-const LIGHT_FORMULAS = lightRecipeFn(defaultLightControls);
+const DARK_FORMULAS = darkRecipeFn();
+const LIGHT_FORMULAS = lightRecipeFn();
 
 // ---------------------------------------------------------------------------
 // Known-exception sets shared by T10.3 and T-ACC-1
@@ -372,52 +372,6 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
     expect(lightBtn.classList.contains("tug-button-outlined-action")).toBe(true);
   });
 
-  it("mode toggle resets RecipeControls sliders to mode-default values", () => {
-    // Step 4: Mode toggle resets controls to defaultDarkControls/defaultLightControls. [Step 4]
-    // The 6 RecipeControls keys matching RECIPE_CONTROLS_METADATA.
-    const controlKeys = [
-      "canvasTone",
-      "canvasIntensity",
-      "frameTone",
-      "frameIntensity",
-      "roleTone",
-      "roleIntensity",
-    ] as const;
-
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-
-    // Move each control slider away from its default so that the reset is detectable.
-    act(() => {
-      for (const key of controlKeys) {
-        const rangeInput = container.querySelector(
-          `[data-testid='rcs-range-${key}']`,
-        ) as HTMLInputElement;
-        if (rangeInput) {
-          fireEvent.input(rangeInput, { target: { value: "75" } });
-        }
-      }
-    });
-
-    // Verify at least one slider has moved (canvasTone default is 5 for dark).
-    const canvasToneRange = container.querySelector(
-      "[data-testid='rcs-range-canvasTone']",
-    ) as HTMLInputElement;
-    expect(canvasToneRange.value).toBe("75");
-
-    // Click the light mode toggle — this should call setControlsAndRef(defaultLightControls).
-    const lightBtn = container.querySelector(
-      "[data-testid='gtg-mode-light']",
-    ) as HTMLElement;
-    act(() => {
-      fireEvent.click(lightBtn);
-    });
-
-    // canvasTone should now be reset to defaultLightControls.canvasTone (95).
-    expect(canvasToneRange.value).toBe("95");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1155,15 +1109,8 @@ describe("deriveTheme – Harmony preset produces correct light-mode output (Ste
     expect(Object.keys(output.tokens).length).toBe(374);
   });
 
-  it("Harmony recipe uses controls field (recipe function path, Step 5)", () => {
-    // Step 5: EXAMPLE_RECIPES.harmony now uses controls: defaultLightControls.
-    // The parameters field is removed. The formulas field is absent. [D01][Step 5]
-    expect(EXAMPLE_RECIPES.harmony.controls).toBeDefined();
-    expect(EXAMPLE_RECIPES.harmony.formulas).toBeUndefined();
-  });
-
   it("Harmony derives via lightRecipe — surfaceApp tone is near-white", () => {
-    // lightRecipe(defaultLightControls) uses the light STRUCTURAL_TEMPLATE which
+    // lightRecipe() uses the light STRUCTURAL_TEMPLATE which
     // sets surfaceAppTone near 95. Verify the derived bg-app token is near-white (high tone).
     const output = deriveTheme(EXAMPLE_RECIPES.harmony);
     const bgApp = output.tokens["--tug-base-surface-global-primary-normal-app-rest"];
@@ -1501,16 +1448,11 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     expect(harmonyRendered["--tug-base-element-global-text-normal-default-rest"]).toBe(directHarmony["--tug-base-element-global-text-normal-default-rest"]);
   });
 
-  it("Task 3: importing Harmony recipe JSON round-trips correctly (controls preserved)", () => {
+  it("Task 3: importing Harmony recipe JSON round-trips correctly", () => {
     // Simulate the handleRecipeImported path: parse EXAMPLE_RECIPES.harmony as JSON
     // and re-import it. The output must match direct deriveTheme(EXAMPLE_RECIPES.harmony).
-    // Step 5: harmony now uses controls (not parameters). [D01][Step 5]
     const harmonyJson = JSON.stringify(EXAMPLE_RECIPES.harmony);
     const parsedHarmony = JSON.parse(harmonyJson) as typeof EXAMPLE_RECIPES.harmony;
-
-    // Verify round-trip preserves controls field (Step 5)
-    expect(parsedHarmony.controls).toBeDefined();
-    expect(parsedHarmony.formulas).toBeUndefined();
 
     // Deriving from parsed recipe must produce identical output to direct call
     const directOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
@@ -1547,128 +1489,3 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
   });
 });
 
-// ---------------------------------------------------------------------------
-// Step 5 (Plan 2): ParameterSlider integration into GalleryThemeGeneratorContent
-// T5.1 – T5.6
-// ---------------------------------------------------------------------------
-
-describe("Step 4 – RecipeControls slider integration", () => {
-  beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  // -------------------------------------------------------------------------
-  // T5.1 (updated): Theme Generator renders 6 RecipeControlSlider components
-  // -------------------------------------------------------------------------
-
-  it("renders 6 RecipeControlSlider components with correct data-testids", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-    expect(container.querySelector("[data-testid='gtg-recipe-controls-panel']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='gtg-recipe-controls-sliders']")).not.toBeNull();
-    const controlKeys = ["canvasTone", "canvasIntensity", "frameTone", "frameIntensity", "roleTone", "roleIntensity"] as const;
-    for (const key of controlKeys) {
-      const slider = container.querySelector(`[data-testid='recipe-control-slider-${key}']`);
-      expect(slider, `slider for ${key} should be rendered`).not.toBeNull();
-    }
-  });
-
-  it("RecipeControlSlider renders with defaultDarkControls values on dark mode start", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-    // defaultDarkControls: canvasTone=5, canvasIntensity=5, frameTone=16,
-    // frameIntensity=12, roleTone=50, roleIntensity=50
-    const canvasToneRange = container.querySelector("[data-testid='rcs-range-canvasTone']") as HTMLInputElement | null;
-    expect(canvasToneRange).not.toBeNull();
-    expect(canvasToneRange!.value).toBe("5");
-
-    const frameToneRange = container.querySelector("[data-testid='rcs-range-frameTone']") as HTMLInputElement | null;
-    expect(frameToneRange).not.toBeNull();
-    expect(frameToneRange!.value).toBe("16");
-  });
-
-  // -------------------------------------------------------------------------
-  // T5.2 (updated): darkRecipe with non-default controls produces different formulas
-  // -------------------------------------------------------------------------
-
-  it("darkRecipe with non-default canvasTone produces different formulas than defaults", () => {
-    const { darkRecipe, defaultDarkControls: defaults } = require("@/components/tugways/recipe-functions") as typeof import("@/components/tugways/recipe-functions");
-    const defaultFormulas = darkRecipe(defaults);
-    const altControls = { ...defaults, canvasTone: 20 };
-    const altFormulas = darkRecipe(altControls);
-
-    // At least one canvasTone-controlled field should differ
-    const defaultKeys = Object.keys(defaultFormulas) as (keyof typeof defaultFormulas)[];
-    const diffFields = defaultKeys.filter(
-      (k) => typeof defaultFormulas[k] === "number" && defaultFormulas[k] !== altFormulas[k],
-    );
-    expect(diffFields.length, "non-default canvasTone should produce different formula fields").toBeGreaterThan(0);
-  });
-
-  // -------------------------------------------------------------------------
-  // T5.5 (updated): Loading a preset resets sliders to that recipe's controls.
-  // Brio uses defaultDarkControls (canvasTone=5), Harmony uses defaultLightControls (canvasTone=95).
-  // -------------------------------------------------------------------------
-
-  it("loading brio preset resets canvasTone slider to 5 (defaultDarkControls)", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-
-    const brioBtn = container.querySelector("[data-testid='gtg-preset-brio']") as HTMLElement;
-    act(() => {
-      fireEvent.click(brioBtn);
-    });
-
-    const canvasToneRange = container.querySelector("[data-testid='rcs-range-canvasTone']") as HTMLInputElement | null;
-    expect(canvasToneRange).not.toBeNull();
-    expect(canvasToneRange!.value, "brio uses defaultDarkControls: canvasTone=5").toBe("5");
-  });
-
-  it("loading harmony preset resets canvasTone slider to 95 (defaultLightControls)", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryThemeGeneratorContent />));
-    });
-
-    const harmonyBtn = container.querySelector("[data-testid='gtg-preset-harmony']") as HTMLElement;
-    act(() => {
-      fireEvent.click(harmonyBtn);
-    });
-
-    const canvasToneRange = container.querySelector("[data-testid='rcs-range-canvasTone']") as HTMLInputElement | null;
-    expect(canvasToneRange).not.toBeNull();
-    expect(canvasToneRange!.value, "harmony uses defaultLightControls: canvasTone=95").toBe("95");
-  });
-
-  // -------------------------------------------------------------------------
-  // T5.6 (updated): currentRecipe includes the controls field (not parameters)
-  // -------------------------------------------------------------------------
-
-  it("currentRecipe includes the controls field (not parameters) after initial render", () => {
-    const { defaultDarkControls: defaults } = require("@/components/tugways/recipe-functions") as typeof import("@/components/tugways/recipe-functions");
-    const defaultRecipe = {
-      name: "brio",
-      description: "Generated theme (dark mode, card: indigo-violet, content: cobalt)",
-      recipe: "dark" as const,
-      surface: { canvas: "indigo-violet", card: "indigo-violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      controls: defaults,
-    };
-    // The recipe should have controls, not parameters
-    expect(defaultRecipe.controls).toBeDefined();
-    expect((defaultRecipe as { parameters?: unknown }).parameters).toBeUndefined();
-
-    // Serializing and parsing preserves controls
-    const json = JSON.stringify(defaultRecipe);
-    const parsed = JSON.parse(json) as typeof defaultRecipe;
-    expect(parsed.controls).toBeDefined();
-    expect(parsed.controls.canvasTone).toBe(5);
-    expect(parsed.controls.roleIntensity).toBe(50);
-  });
-});

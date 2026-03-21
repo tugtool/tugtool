@@ -6,12 +6,10 @@
  * DARK_FORMULAS / LIGHT_FORMULAS. [D01]
  *
  * Architecture:
- *   - `RecipeControls` — 6-field interface capturing the fundamental design dials (Spec S01)
  *   - `contrastSearch` — binary search in tone space for a contrast threshold (Spec S02)
  *   - `darkRecipe` — dark theme: rules + contrastSearch calls -> DerivationFormulas
  *   - `lightRecipe` — light theme: independent rules, not derived from dark (D03)
- *   - `defaultDarkControls`, `defaultLightControls` — defaults that reproduce current output
- *   - `RECIPE_REGISTRY` — map of recipe name -> {fn, defaults} (Spec S03)
+ *   - `RECIPE_REGISTRY` — map of recipe name -> fn (Spec S03)
  *
  * `contrastSearch` uses `toneToL` with the generic fallback (DEFAULT_CANONICAL_L lookup
  * returning 0.77 when hueName is omitted). The downstream `enforceContrastFloor` in
@@ -19,39 +17,14 @@
  * are approximate starting points that the safety net refines. [D02]
  *
  * References: [D01] Recipe functions replace constant bags, [D02] contrastSearch is
- * a clean implementation, [D03] Light recipe is independent, Spec S01, Spec S02,
- * Spec S03, (#recipe-controls, #contrast-search-spec, #recipe-registry)
+ * a clean implementation, [D03] Light recipe is independent, Spec S02, Spec S03,
+ * (#contrast-search-spec, #recipe-registry)
  *
  * @module components/tugways/recipe-functions
  */
 
 import { DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
 import type { DerivationFormulas } from "./theme-engine";
-
-// ---------------------------------------------------------------------------
-// RecipeControls — Spec S01
-// ---------------------------------------------------------------------------
-
-/**
- * The six fundamental design controls for a theme recipe.
- * Each field maps to a semantic design decision. (Spec S01)
- *
- * canvasTone:       How dark/light the app background is.
- *                   Dark ~5, light ~95.
- * canvasIntensity:  How chromatic the canvas surfaces are (0-100).
- * frameTone:        Card title bar lightness.
- * frameIntensity:   Card title bar color saturation.
- * roleTone:         Role-colored fill lightness (filled buttons, signals).
- * roleIntensity:    Role color vividness. Maps to signalIntensityValue in the pipeline.
- */
-export interface RecipeControls {
-  canvasTone: number;
-  canvasIntensity: number;
-  frameTone: number;
-  frameIntensity: number;
-  roleTone: number;
-  roleIntensity: number;
-}
 
 // ---------------------------------------------------------------------------
 // contrastSearch — Spec S02
@@ -170,28 +143,9 @@ export function contrastSearch(
 // ---------------------------------------------------------------------------
 
 /**
- * Default RecipeControls for the dark recipe.
- * Values reproduce current DARK_FORMULAS output.
- *   canvasTone:      5  — near-black deep immersive background
- *   canvasIntensity: 5  — moderate atmosphere chroma
- *   frameTone:       16 — card title bar tone (active frame)
- *   frameIntensity:  12 — card title bar chroma (active frame)
- *   roleTone:        50 — mid-tone vivid signal fills
- *   roleIntensity:   50 — neutral default signal intensity
- */
-export const defaultDarkControls: RecipeControls = {
-  canvasTone: 5,
-  canvasIntensity: 5,
-  frameTone: 16,
-  frameIntensity: 12,
-  roleTone: 50,
-  roleIntensity: 50,
-};
-
-/**
- * Dark theme recipe function. (Spec S01, [D01])
+ * Dark theme recipe function. [D01]
  *
- * Rules are expressed as offsets from controls + contrastSearch calls + constants.
+ * Rules are expressed as offsets + contrastSearch calls + constants.
  * Pre-computed tone fields (surfaceApp, signalIntensity, etc.) are set directly
  * by this function. [D04]
  *
@@ -199,8 +153,8 @@ export const defaultDarkControls: RecipeControls = {
  *   canvasTone = 5 (base)
  *   surface tiers: +1 to +11 above canvas
  *   text: canvas+89 for primary (near-white design intent), -28/-57/-71 offsets for hierarchy
- *   frame: controls.frameTone / controls.frameIntensity
- *   signals: controls.roleTone for filled controls and signal tones
+ *   frame: frameTone=16 / frameIntensity=12
+ *   signals: roleTone=50 for filled controls and signal tones
  *
  * Note: contentTextTone uses canvas+89 (a design intent offset) rather than
  * contrastSearch, because the design calls for near-white (tone~94) text on dark
@@ -208,8 +162,13 @@ export const defaultDarkControls: RecipeControls = {
  * contrastSearch is used for frameTone-relative values and signals where
  * the minimum-passing tone is the right choice.
  */
-export function darkRecipe(controls: RecipeControls): DerivationFormulas {
-  const c = controls.canvasTone;
+export function darkRecipe(): DerivationFormulas {
+  const c = 5; // canvasTone
+  const canvasIntensity = 5;
+  const frameTone = 16;
+  const frameIntensity = 12;
+  const roleTone = 50;
+  const roleIntensity = 50;
 
   // Text brightness: design offset from canvas — near-white on dark (canvas+89 → ~94)
   // Not using contrastSearch here because the design intent is maximum legibility
@@ -233,7 +192,7 @@ export function darkRecipe(controls: RecipeControls): DerivationFormulas {
 
     // ===== Surface Coloring =====
     // Intensity constants — atmosphere hue at moderate chroma
-    atmosphereIntensity: controls.canvasIntensity,
+    atmosphereIntensity: canvasIntensity,
     surfaceAppIntensity: 2,
     surfaceCanvasIntensity: 2,
     surfaceDefaultIntensity: 5,
@@ -277,14 +236,14 @@ export function darkRecipe(controls: RecipeControls): DerivationFormulas {
     borderStrongTone: primaryTextTone - 54,
     dividerDefaultIntensity: 6,
     dividerMutedIntensity: 4,
-    borderSignalTone: controls.roleTone, // signal borders use role tone (=50)
-    semanticSignalTone: controls.roleTone,
+    borderSignalTone: roleTone, // signal borders use role tone (=50)
+    semanticSignalTone: roleTone,
 
     // ===== Card Frame Style =====
-    cardFrameActiveIntensity: controls.frameIntensity,
-    cardFrameActiveTone: controls.frameTone,
+    cardFrameActiveIntensity: frameIntensity,
+    cardFrameActiveTone: frameTone,
     cardFrameInactiveIntensity: 4,
-    cardFrameInactiveTone: controls.frameTone - 1,
+    cardFrameInactiveTone: frameTone - 1,
 
     // ===== Shadow Depth =====
     shadowXsAlpha: 20,
@@ -319,9 +278,9 @@ export function darkRecipe(controls: RecipeControls): DerivationFormulas {
     outlinedIconHoverToneLight: 0,
     outlinedIconActiveToneLight: 0,
     // Option border: mid-tone (roleTone=50) and +5/+10 for hover/active
-    outlinedOptionBorderRestTone: controls.roleTone,
-    outlinedOptionBorderHoverTone: controls.roleTone + 5,
-    outlinedOptionBorderActiveTone: controls.roleTone + 10,
+    outlinedOptionBorderRestTone: roleTone,
+    outlinedOptionBorderHoverTone: roleTone + 5,
+    outlinedOptionBorderActiveTone: roleTone + 10,
     outlinedSurfaceHoverIntensity: 0, // sentinel path
     outlinedSurfaceHoverAlpha: 10,
     outlinedSurfaceActiveIntensity: 0, // sentinel path
@@ -362,7 +321,7 @@ export function darkRecipe(controls: RecipeControls): DerivationFormulas {
     badgeTintedSurfaceTone: c + 55, // matches ghostBorderTone: 60
     badgeTintedSurfaceAlpha: 15,
     badgeTintedBorderIntensity: 50,
-    badgeTintedBorderTone: controls.roleTone, // 50
+    badgeTintedBorderTone: roleTone, // 50
     badgeTintedBorderAlpha: 35,
 
     // ===== Icon Style =====
@@ -500,7 +459,7 @@ export function darkRecipe(controls: RecipeControls): DerivationFormulas {
     toggleDisabledTone: c + 17, // = disabledSurfaceTone
 
     // ===== Computed Signal Intensity =====
-    signalIntensity: Math.round(controls.roleIntensity),
+    signalIntensity: Math.round(roleIntensity),
 
     // ===== Hue Name Dispatch =====
     // Dark mode: indigo screen bg, bare-primary muted, indigo-cobalt subtle/disabled
@@ -519,32 +478,13 @@ export function darkRecipe(controls: RecipeControls): DerivationFormulas {
     selectionSurfaceInactiveAlpha: 25,
 
     // ===== Signal Intensity Value =====
-    signalIntensityValue: controls.roleIntensity,
+    signalIntensityValue: roleIntensity,
   };
 }
 
 // ---------------------------------------------------------------------------
 // lightRecipe — Light theme recipe function [D01] [D03]
 // ---------------------------------------------------------------------------
-
-/**
- * Default RecipeControls for the light recipe.
- * Values reproduce current LIGHT_FORMULAS output.
- *   canvasTone:      95 — near-white open airy background
- *   canvasIntensity: 6  — moderate atmosphere chroma
- *   frameTone:       85 — card title bar tone (active frame, below canvas)
- *   frameIntensity:  35 — strong chroma for vivid light-mode title bar
- *   roleTone:        50 — mid-tone vivid signal fills (same as dark)
- *   roleIntensity:   50 — neutral default signal intensity
- */
-export const defaultLightControls: RecipeControls = {
-  canvasTone: 95,
-  canvasIntensity: 6,
-  frameTone: 85,
-  frameIntensity: 35,
-  roleTone: 50,
-  roleIntensity: 50,
-};
 
 /**
  * Light theme recipe function. Independent from darkRecipe — not derived by
@@ -558,13 +498,18 @@ export const defaultLightControls: RecipeControls = {
  *   canvasTone = 95 (base)
  *   surface tiers: -2 to -10 below canvas
  *   text: canvas-87 for primary (near-black design intent), +26/+44/+60 offsets for hierarchy
- *   frame: controls.frameTone / controls.frameIntensity
+ *   frame: frameTone=85 / frameIntensity=35
  *
  * Note: contentTextTone uses canvas-87 (a design intent offset → ~8) rather than
  * contrastSearch, because the design calls for near-black text on light backgrounds.
  */
-export function lightRecipe(controls: RecipeControls): DerivationFormulas {
-  const c = controls.canvasTone;
+export function lightRecipe(): DerivationFormulas {
+  const c = 95; // canvasTone
+  const canvasIntensity = 6;
+  const frameTone = 85;
+  const frameIntensity = 35;
+  const roleTone = 50;
+  const roleIntensity = 50;
 
   // Text brightness: design offset from canvas — near-black on light (canvas-87 → ~8)
   const primaryTextTone = c - 87;
@@ -585,7 +530,7 @@ export function lightRecipe(controls: RecipeControls): DerivationFormulas {
     surfaceScreenTone: c - 10,
 
     // ===== Surface Coloring =====
-    atmosphereIntensity: controls.canvasIntensity,
+    atmosphereIntensity: canvasIntensity,
     surfaceAppIntensity: 3,
     surfaceCanvasIntensity: 3,
     surfaceDefaultIntensity: 6,
@@ -632,8 +577,8 @@ export function lightRecipe(controls: RecipeControls): DerivationFormulas {
     semanticSignalTone: c - 60, // 35 in LIGHT_FORMULAS
 
     // ===== Card Frame Style =====
-    cardFrameActiveIntensity: controls.frameIntensity,
-    cardFrameActiveTone: controls.frameTone,
+    cardFrameActiveIntensity: frameIntensity,
+    cardFrameActiveTone: frameTone,
     cardFrameInactiveIntensity: 5,
     cardFrameInactiveTone: c - 5, // matches surfaceDefaultTone: 90
 
@@ -669,9 +614,9 @@ export function lightRecipe(controls: RecipeControls): DerivationFormulas {
     outlinedIconRestToneLight: 0,
     outlinedIconHoverToneLight: 0,
     outlinedIconActiveToneLight: 0,
-    outlinedOptionBorderRestTone: controls.roleTone, // 50
-    outlinedOptionBorderHoverTone: controls.roleTone + 5, // 55
-    outlinedOptionBorderActiveTone: controls.roleTone + 10, // 60
+    outlinedOptionBorderRestTone: roleTone, // 50
+    outlinedOptionBorderHoverTone: roleTone + 5, // 55
+    outlinedOptionBorderActiveTone: roleTone + 10, // 60
     // Light mode: direct chroma path, fully opaque
     outlinedSurfaceHoverIntensity: 4,
     outlinedSurfaceHoverAlpha: 100,
@@ -744,7 +689,7 @@ export function lightRecipe(controls: RecipeControls): DerivationFormulas {
     disabledBorderIntensity: 6,
 
     // ===== Signal / Accent Tones =====
-    accentSubtleTone: controls.roleTone, // 50 in LIGHT_FORMULAS
+    accentSubtleTone: roleTone, // 50 in LIGHT_FORMULAS
     cautionSurfaceTone: c - 60, // 35 in LIGHT_FORMULAS: matches semanticSignalTone
 
     // ===== Hue Slot Dispatch =====
@@ -848,7 +793,7 @@ export function lightRecipe(controls: RecipeControls): DerivationFormulas {
     toggleDisabledTone: c - 15,  // 80 in LIGHT_FORMULAS
 
     // ===== Computed Signal Intensity =====
-    signalIntensity: Math.round(controls.roleIntensity),
+    signalIntensity: Math.round(roleIntensity),
 
     // ===== Hue Name Dispatch =====
     // Light mode: cobalt screen bg (vs dark's indigo), atm placeholder (vs dark's fgMuted)
@@ -867,7 +812,7 @@ export function lightRecipe(controls: RecipeControls): DerivationFormulas {
     selectionSurfaceInactiveAlpha: 30,
 
     // ===== Signal Intensity Value =====
-    signalIntensityValue: controls.roleIntensity,
+    signalIntensityValue: roleIntensity,
   };
 }
 
@@ -876,16 +821,10 @@ export function lightRecipe(controls: RecipeControls): DerivationFormulas {
 // ---------------------------------------------------------------------------
 
 /**
- * Built-in recipe registry. Maps recipe name to {fn, defaults}.
- * Used by deriveTheme() when recipe.controls is provided. (Spec S03)
+ * Built-in recipe registry. Maps recipe name to its recipe function.
+ * Used by deriveTheme() to produce DerivationFormulas. (Spec S03)
  */
-export const RECIPE_REGISTRY: Record<
-  string,
-  {
-    fn: (controls: RecipeControls) => DerivationFormulas;
-    defaults: RecipeControls;
-  }
-> = {
-  dark: { fn: darkRecipe, defaults: defaultDarkControls },
-  light: { fn: lightRecipe, defaults: defaultLightControls },
+export const RECIPE_REGISTRY: Record<string, { fn: () => DerivationFormulas }> = {
+  dark: { fn: darkRecipe },
+  light: { fn: lightRecipe },
 };

@@ -64,7 +64,7 @@ import {
   RECIPE_PAIR_EXCEPTIONS,
 } from "./contrast-exceptions";
 
-import { RECIPE_REGISTRY, darkRecipe as darkRecipeFn, lightRecipe as lightRecipeFn, defaultDarkControls, defaultLightControls } from "@/components/tugways/recipe-functions";
+import { RECIPE_REGISTRY, darkRecipe as darkRecipeFn, lightRecipe as lightRecipeFn } from "@/components/tugways/recipe-functions";
 
 // ---------------------------------------------------------------------------
 // Helpers for contrast floor enforcement in test helpers
@@ -84,10 +84,10 @@ function buildTestPairingLookup(
 }
 
 /** Reference dark formula constants (replaces deleted DARK_FORMULAS from formula-constants). */
-const DARK_FORMULAS = darkRecipeFn(defaultDarkControls);
+const DARK_FORMULAS = darkRecipeFn();
 
 /** Reference light formula constants (replaces deleted LIGHT_FORMULAS from formula-constants). */
-const LIGHT_FORMULAS = lightRecipeFn(defaultLightControls);
+const LIGHT_FORMULAS = lightRecipeFn();
 
 /** Cached pairing lookup for tests that need contrast floor behavior. */
 const TEST_PAIRING_LOOKUP = buildTestPairingLookup(ELEMENT_SURFACE_PAIRING_MAP);
@@ -953,15 +953,15 @@ describe("derivation-engine step-5 rules", () => {
   } {
     // Mirror deriveTheme() formula resolution precedence (Spec S04):
     //   1. recipe.formulas (direct escape hatch)
-    //   2. RECIPE_REGISTRY[recipe.recipe] with recipe.controls (or registry defaults)
+    //   2. RECIPE_REGISTRY[recipe.recipe]
     let recipeFormulas: DerivationFormulas;
     if (recipe.formulas) {
       recipeFormulas = recipe.formulas;
     } else {
       const registryEntry = RECIPE_REGISTRY[recipe.recipe];
       recipeFormulas = registryEntry
-        ? registryEntry.fn(recipe.controls ?? registryEntry.defaults)
-        : darkRecipeFn(defaultDarkControls);
+        ? registryEntry.fn()
+        : darkRecipeFn();
     }
     // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch. [Step 4]
     const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
@@ -1145,8 +1145,8 @@ describe("derivation-engine step-6 rules", () => {
     } else {
       const registryEntry = RECIPE_REGISTRY[recipe.recipe];
       recipeFormulas = registryEntry
-        ? registryEntry.fn(recipe.controls ?? registryEntry.defaults)
-        : darkRecipeFn(defaultDarkControls);
+        ? registryEntry.fn()
+        : darkRecipeFn();
     }
     // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch. [Step 4]
     const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
@@ -1239,20 +1239,20 @@ describe("derivation-engine step-6 rules", () => {
 describe("derivation-engine step-3 recipe-function integration", () => {
   const minimalDarkRecipe = EXAMPLE_RECIPES.brio;
 
-  it("T3.1: deriveTheme with controls: defaultDarkControls produces 374 tokens", () => {
-    const recipe = { ...minimalDarkRecipe, controls: defaultDarkControls, formulas: undefined };
+  it("T3.1: deriveTheme with no controls and no formulas produces 374 tokens", () => {
+    const recipe = { ...minimalDarkRecipe, formulas: undefined };
     const output = deriveTheme(recipe);
     expect(Object.keys(output.tokens).length).toBe(374);
   });
 
   it("T3.2: deriveTheme with formulas escape hatch still works (backward compat)", () => {
-    const recipe = { ...minimalDarkRecipe, formulas: DARK_FORMULAS, controls: undefined };
+    const recipe = { ...minimalDarkRecipe, formulas: DARK_FORMULAS };
     const output = deriveTheme(recipe);
     expect(Object.keys(output.tokens).length).toBe(374);
   });
 
-  it("T3.3: deriveTheme with no controls and no formulas uses registry defaults (374 tokens)", () => {
-    const recipe = { ...minimalDarkRecipe, controls: undefined, formulas: undefined };
+  it("T3.3: deriveTheme with no formulas uses registry defaults (374 tokens)", () => {
+    const recipe = { ...minimalDarkRecipe, formulas: undefined };
     const output = deriveTheme(recipe);
     expect(Object.keys(output.tokens).length).toBe(374);
   });

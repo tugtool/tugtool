@@ -231,7 +231,7 @@
  * @module components/tugways/theme-engine
  */
 
-import { type RecipeControls, RECIPE_REGISTRY, defaultDarkControls, defaultLightControls, darkRecipe, lightRecipe } from "./recipe-functions";
+import { RECIPE_REGISTRY, darkRecipe } from "./recipe-functions";
 
 import {
   HUE_FAMILIES,
@@ -315,14 +315,8 @@ export interface ThemeRecipe {
     danger: string;
   };
 
-  /** All formula constants for this recipe. Takes precedence over controls when provided. [D06] */
+  /** All formula constants for this recipe. When provided, used directly instead of calling the recipe function. [D06] */
   formulas?: DerivationFormulas;
-  /**
-   * Recipe control values. When provided, looked up in RECIPE_REGISTRY[recipe.recipe]
-   * and the registered recipe function is called with these controls to produce
-   * DerivationFormulas. Takes precedence only when formulas is absent. (Spec S04)
-   */
-  controls?: RecipeControls;
 }
 
 /**
@@ -470,7 +464,7 @@ export interface ResolvedHueSlots {
  * parameterizations of one recipe. [D01]
  *
  * Lives on `ThemeRecipe.formulas` (optional; `deriveTheme()` falls back to
- * `darkRecipe(defaultDarkControls)` when absent). [D02]
+ * `darkRecipe()` when absent). [D02]
  *
  * Fields are grouped by the 23 semantic decision groups (see module JSDoc
  * table). Each group is introduced with a banner comment. Search for
@@ -1139,8 +1133,6 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
       caution: "yellow",
       danger: "red",
     },
-    // Use recipe function path — darkRecipe(defaultDarkControls) produces DerivationFormulas. [D01]
-    controls: defaultDarkControls,
   },
   harmony: {
     name: "harmony",
@@ -1167,8 +1159,6 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
       caution: "yellow",
       danger: "red",
     },
-    // Use recipe function path — lightRecipe(defaultLightControls) produces DerivationFormulas. [D01]
-    controls: defaultLightControls,
   },
 };
 
@@ -1296,11 +1286,11 @@ export function primaryColorName(hueExpr: string): string {
  * all runtime mode branches from the formula path. [D03]
  *
  * @param recipe  - The theme recipe
- * @param formulas - Formula constants; defaults to recipe.formulas ?? darkRecipe(defaultDarkControls)
+ * @param formulas - Formula constants; defaults to recipe.formulas ?? darkRecipe()
  */
 export function resolveHueSlots(
   recipe: ThemeRecipe,
-  formulas: DerivationFormulas = recipe.formulas ?? darkRecipe(defaultDarkControls),
+  formulas: DerivationFormulas = recipe.formulas ?? darkRecipe(),
 ): ResolvedHueSlots {
   /** Build a ResolvedHueSlot from a hue name. Hue angle used verbatim. */
   function resolveSlot(hueName: string): ResolvedHueSlot {
@@ -2251,19 +2241,16 @@ function resolvedEntryAlpha(
 export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 1. Resolve formula constants [D01] [D06]
-  // Precedence (Spec S04):
-  //   1. recipe.formulas — use directly (existing escape hatch)
-  //   2. recipe.controls + RECIPE_REGISTRY[recipe.recipe] — call registry function
-  //   3. RECIPE_REGISTRY[recipe.recipe] with defaults — call registry function with defaults
+  // Precedence:
+  //   1. recipe.formulas — use directly (escape hatch)
+  //   2. RECIPE_REGISTRY[recipe.recipe] — call the registered recipe function
   // -------------------------------------------------------------------------
   let formulas: DerivationFormulas;
   if (recipe.formulas) {
     formulas = recipe.formulas;
   } else {
     const registryEntry = RECIPE_REGISTRY[recipe.recipe];
-    formulas = registryEntry
-      ? registryEntry.fn(recipe.controls ?? registryEntry.defaults)
-      : darkRecipe(defaultDarkControls);
+    formulas = registryEntry ? registryEntry.fn() : darkRecipe();
   }
 
   // -------------------------------------------------------------------------

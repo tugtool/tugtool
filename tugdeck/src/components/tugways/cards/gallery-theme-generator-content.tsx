@@ -3,14 +3,10 @@
  *
  * Interactive tool for deriving complete 264-token --tug-base-* themes from a
  * compact ThemeRecipe: atmosphere + text hue selectors, dark|light recipe
- * toggle, RecipeControls sliders, token preview grid, contrast dashboard, CVD
- * preview strip, and contrast diagnostics.
+ * toggle, token preview grid, contrast dashboard, CVD preview strip, and
+ * contrast diagnostics.
  *
- * Wires controls to `deriveTheme()`. The dark|light toggle selects the
- * corresponding recipe function from RECIPE_REGISTRY. RecipeControls sliders
- * (canvasTone, canvasIntensity, frameTone, frameIntensity, roleTone,
- * roleIntensity) drive the recipe function call, replacing the old parameter
- * slider system. Runs `validateThemeContrast()` and
+ * Wires recipe state to `deriveTheme()`. Runs `validateThemeContrast()` and
  * `checkCVDDistinguishability()` on every derived output. The Contrast
  * Diagnostics panel shows ContrastDiagnostic entries from
  * ThemeOutput.diagnostics (floor-applied and structurally-fixed) and displays
@@ -19,14 +15,12 @@
  * Rules of Tugways compliance:
  *   - Appearance changes through CSS custom properties on the preview container,
  *     not React state. [D08, D09, L06]
- *   - useState only for recipe controls and local UI state (not external
- *     store). [D40]
+ *   - useState only for local UI state (not external store). [D40]
  *   - No root.render() after initial mount. [D40, D42]
  *
  * **Authoritative references:** [D04] ThemeRecipe, [D05] CVD matrices,
  * [D06] Gallery tab pattern, [D07] Contrast thresholds, [D03] Pairing map,
- * [D04] ContrastDiagnostic output, Spec S01, Spec S02, Spec S04,
- * (#recipe-controls, #recipe-registry, #constraints)
+ * [D04] ContrastDiagnostic output, Spec S02, Spec S04
  *
  * @module components/tugways/cards/gallery-theme-generator-content
  */
@@ -46,12 +40,6 @@ import {
   type ContrastDiagnostic,
   type CVDWarning,
 } from "@/components/tugways/theme-engine";
-import {
-  RECIPE_REGISTRY,
-  defaultDarkControls,
-  defaultLightControls,
-  type RecipeControls,
-} from "@/components/tugways/recipe-functions";
 import {
   validateThemeContrast,
   checkCVDDistinguishability,
@@ -831,7 +819,7 @@ export function validateRecipeJson(value: unknown): string | null {
   // Legacy mood knob fields (surfaceContrast, signalIntensity, warmth) and legacy
   // `parameters` field are ignored gracefully — do not reject recipes that contain them.
   // [D01][D07][Step 5]
-  // Validate optional controls field (Step 4: RecipeControls replaces parameters). [Spec S01]
+  // Validate optional controls field (legacy field — validated for graceful round-trip).
   if (obj["controls"] !== undefined) {
     if (typeof obj["controls"] !== "object" || obj["controls"] === null || Array.isArray(obj["controls"])) {
       return "Invalid 'controls' field (object required)";
@@ -1317,98 +1305,6 @@ function EmphasisRolePreview() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// RecipeControlSlider — native range input for a single RecipeControls field
-// ---------------------------------------------------------------------------
-
-/**
- * Metadata entry for a single RecipeControls slider.
- * Mirrors ParameterMetadataEntry but typed for RecipeControls. (Spec S01)
- */
-interface RecipeControlsMetadataEntry {
-  controlKey: keyof RecipeControls;
-  label: string;
-  lowLabel: string;
-  highLabel: string;
-}
-
-/**
- * Ordered metadata for all 6 RecipeControls sliders.
- * Maps each field to a human-readable label and extreme descriptions. (Spec S01)
- */
-const RECIPE_CONTROLS_METADATA: RecipeControlsMetadataEntry[] = [
-  { controlKey: "canvasTone",       label: "Canvas Tone",       lowLabel: "Darker",     highLabel: "Lighter"   },
-  { controlKey: "canvasIntensity",  label: "Canvas Intensity",  lowLabel: "Achromatic", highLabel: "Vivid"     },
-  { controlKey: "frameTone",        label: "Frame Tone",        lowLabel: "Darker",     highLabel: "Lighter"   },
-  { controlKey: "frameIntensity",   label: "Frame Intensity",   lowLabel: "Muted",      highLabel: "Vivid"     },
-  { controlKey: "roleTone",         label: "Role Tone",         lowLabel: "Darker",     highLabel: "Lighter"   },
-  { controlKey: "roleIntensity",    label: "Role Intensity",    lowLabel: "Muted",      highLabel: "Vivid"     },
-];
-
-/**
- * RecipeControlSlider — native HTML range input for one RecipeControls field.
- *
- * Layout:
- *   - Label row: label text + numeric value
- *   - Slider row: low-label | range input (0-100) | high-label
- *
- * Fires onChange on every `input` event for continuous updates during drag.
- * Uses native <input type="range"> per [D05]. L16: rendered on card surface.
- *
- * @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest
- */
-function RecipeControlSlider({
-  controlKey,
-  label,
-  lowLabel,
-  highLabel,
-  value,
-  onChange,
-}: {
-  controlKey: keyof RecipeControls;
-  label: string;
-  lowLabel: string;
-  highLabel: string;
-  value: number;
-  onChange: (key: keyof RecipeControls, value: number) => void;
-}) {
-  const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
-    const newValue = Number((e.target as HTMLInputElement).value);
-    onChange(controlKey, newValue);
-  };
-
-  return (
-    <div className="rcs-slider" data-testid={`recipe-control-slider-${controlKey}`}>
-      <div className="rcs-label-row">
-        {/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */}
-        <span className="rcs-label" data-testid={`rcs-label-${controlKey}`}>{label}</span>
-        {/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */}
-        <span className="rcs-value" data-testid={`rcs-value-${controlKey}`}>{Math.round(value)}</span>
-      </div>
-      <div className="rcs-track-row">
-        {/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */}
-        <span className="rcs-low-label" data-testid={`rcs-low-label-${controlKey}`}>{lowLabel}</span>
-        <input
-          type="range"
-          className="rcs-range"
-          min={0}
-          max={100}
-          step={1}
-          value={value}
-          onInput={handleInput}
-          onChange={() => {
-            // onChange is required for controlled React inputs, but we use onInput
-            // for continuous updates during drag. This is intentionally a no-op.
-          }}
-          aria-label={`${label}: ${Math.round(value)}`}
-          data-testid={`rcs-range-${controlKey}`}
-        />
-        {/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */}
-        <span className="rcs-high-label" data-testid={`rcs-high-label-${controlKey}`}>{highLabel}</span>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // GalleryThemeGeneratorContent — main component
@@ -1417,15 +1313,14 @@ function RecipeControlSlider({
 /**
  * GalleryThemeGeneratorContent — Theme Generator gallery card tab.
  *
- * Manages local recipe state (mode, atmosphere, text hue, RecipeControls).
- * Calls `deriveTheme()` on every recipe change, debounced 150ms for sliders.
+ * Manages local recipe state (mode, atmosphere, text hue).
+ * Calls `deriveTheme()` on every recipe change.
  * Runs `validateThemeContrast()` and `checkCVDDistinguishability()` on each
  * derived output to populate the contrast dashboard and CVD strip.
  * The Contrast Diagnostics panel displays ThemeOutput.diagnostics entries.
  *
  * **Authoritative reference:** [D06] Gallery tab pattern, [D04] ThemeRecipe,
- * [D07] Contrast thresholds, [D03] Pairing map, [D05] CVD matrices,
- * [D02] Native contrast fix, Spec S01 RecipeControls, Spec S03 RECIPE_REGISTRY.
+ * [D07] Contrast thresholds, [D03] Pairing map, [D05] CVD matrices.
  */
 export function GalleryThemeGeneratorContent() {
   // Optional theme context — null when rendered outside a TugThemeProvider (e.g. tests).
@@ -1464,7 +1359,7 @@ export function GalleryThemeGeneratorContent() {
   const [borderHue, setBorderHue] = useState<string>(DEFAULT_RECIPE.element.border);
   const [decorativeHue, setDecorativeHue] = useState<string>(DEFAULT_RECIPE.element.decorative);
 
-  // Formula state — null means use RECIPE_REGISTRY[mode].fn(controls); non-null
+  // Formula state — null means use deriveTheme() defaults; non-null
   // means the user has explicitly provided formulas (escape hatch path per [D06]).
   // A synchronous ref mirrors the state so runDerive() can read the latest value
   // without threading formulas through its parameter signature. [D01]
@@ -1476,33 +1371,12 @@ export function GalleryThemeGeneratorContent() {
   /**
    * Update both the formulas state and the ref synchronously.
    * Mutation sites: loadPreset, handleRecipeImported, Dark onClick, Light onClick.
-   * Pass null to use RECIPE_REGISTRY[mode].fn(controls) at derive time. [D01]
+   * Pass null to use deriveTheme() defaults at derive time. [D01]
    */
   function setFormulasAndRef(f: DerivationFormulas | null): void {
     setFormulas(f);
     formulasRef.current = f;
   }
-
-  // RecipeControls state — tracked in both React state (for slider rendering) and a ref
-  // (for debounced handler reads). Appearance changes never flow through this state —
-  // they go through setThemeOutput() directly. Per [D01, L06].
-  const [controls, setControls] = useState<RecipeControls>(
-    DEFAULT_RECIPE.controls ?? defaultDarkControls,
-  );
-  const controlsRef = useRef<RecipeControls>(DEFAULT_RECIPE.controls ?? defaultDarkControls);
-
-  /**
-   * Update both the controls state and the ref synchronously.
-   * Used by loadPreset, handleRecipeImported, mode toggle, and the debounced
-   * slider callback. [D01]
-   */
-  function setControlsAndRef(c: RecipeControls): void {
-    setControls(c);
-    controlsRef.current = c;
-  }
-
-  // Debounce timeout ID stored in a ref for safe cleanup on unmount. [D02]
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Role hue state — one per role in the 7-role system. [D05, Step 6]
   const [accentHue, setAccentHue] = useState<string>(DEFAULT_RECIPE.role.accent);
@@ -1603,8 +1477,7 @@ export function GalleryThemeGeneratorContent() {
    * name rather than hardcoding "preview".
    *
    * When formulasRef.current is non-null, it is used as the escape-hatch
-   * formulas override (per [D06]). When null, RECIPE_REGISTRY[mode].fn(controls)
-   * is called via the recipe.controls path. [D01]
+   * formulas override (per [D06]). When null, deriveTheme() uses defaults. [D01]
    */
   const runDerive = useCallback(
     (
@@ -1633,9 +1506,7 @@ export function GalleryThemeGeneratorContent() {
         surface: { canvas, card },
         element: { content, control, display, informational, border, decorative },
         role: { accent, action: active, agent, data, success, caution, danger },
-        ...(formulasRef.current !== null
-          ? { formulas: formulasRef.current }
-          : { controls: controlsRef.current }),
+        ...(formulasRef.current !== null ? { formulas: formulasRef.current } : {}),
       };
       setThemeOutput(deriveTheme(recipe));
     },
@@ -1650,89 +1521,6 @@ export function GalleryThemeGeneratorContent() {
     runDerive(recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
-
-  // Cleanup: clear any pending debounce timer on unmount to prevent callbacks
-  // firing on an unmounted component. Per [D02].
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current !== undefined) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Debounced RecipeControls slider handler — L06-compliant direct-call pattern.
-  // [D01, D02, L06]
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Handle a RecipeControls slider change (canvasTone, canvasIntensity, etc.):
-   *   1. Update controlsRef.current immediately (synchronous).
-   *   2. Update controls state so the slider renders the dragged value.
-   *   3. Clear any pending debounce timeout.
-   *   4. After 150ms: assemble ThemeRecipe with controls + call
-   *      setThemeOutput(deriveTheme(recipe)) directly for appearance (L06).
-   *
-   * The recipe is assembled inline from closure values (stable: mode, hue strings,
-   * recipeName) and refs (always current: controlsRef, formulasRef). [D01, D02]
-   *
-   * NOTE: controls is NOT added to the useEffect dependency array. This handler
-   * bypasses the useEffect → runDerive() path entirely. [D01, L06]
-   */
-  const handleControlChange = useCallback(
-    (controlKey: keyof RecipeControls, value: number) => {
-      // Update ref AND state immediately so the controlled slider tracks the drag.
-      const next = { ...controlsRef.current, [controlKey]: value };
-      controlsRef.current = next;
-      setControlsAndRef(next);
-
-      // Debounce only the expensive deriveTheme() call. [D01, D02]
-      if (debounceTimerRef.current !== undefined) {
-        clearTimeout(debounceTimerRef.current);
-      }
-
-      debounceTimerRef.current = setTimeout(() => {
-        debounceTimerRef.current = undefined;
-
-        const recipe: ThemeRecipe = {
-          name: recipeName,
-          description: `Generated theme (${mode} mode)`,
-          recipe: mode,
-          surface: { canvas: canvasHue, card: cardHue },
-          element: {
-            content: contentHue,
-            control: controlHue,
-            display: displayHue,
-            informational: informationalHue,
-            border: borderHue,
-            decorative: decorativeHue,
-          },
-          role: {
-            accent: accentHue,
-            action: activeHue,
-            agent: agentHue,
-            data: dataHue,
-            success: successHue,
-            caution: cautionHue,
-            danger: dangerHue,
-          },
-          ...(formulasRef.current !== null
-            ? { formulas: formulasRef.current }
-            : { controls: controlsRef.current }),
-        };
-
-        // Appearance update (L06): direct call, bypasses useEffect.
-        setThemeOutput(deriveTheme(recipe));
-      }, 150);
-    },
-    // Closure captures stable values (mode, hue strings, recipeName).
-    // formulasRef and controlsRef are refs — stable references.
-    // debounceTimerRef is a ref — stable reference.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mode, recipeName, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
-  );
 
   // ---------------------------------------------------------------------------
   // Preset load helpers
@@ -1759,15 +1547,11 @@ export function GalleryThemeGeneratorContent() {
       setCautionHue(r.role.caution);
       setDangerHue(r.role.danger);
       // When loading a formulas-based recipe (escape hatch [D06]), set formulas directly.
-      // Otherwise set formulas to null so RECIPE_REGISTRY[recipe].fn(controls) is used. [D01]
+      // Otherwise set formulas to null so deriveTheme() uses recipe defaults. [D01]
       setFormulasAndRef(r.formulas ?? null);
-      // Restore control slider positions from the preset recipe (or registry defaults). [D01]
-      const registryEntry = RECIPE_REGISTRY[r.recipe];
-      setControlsAndRef(r.controls ?? (registryEntry ? registryEntry.defaults : defaultDarkControls));
       setThemeOutput(deriveTheme(r));
     },
-    // setFormulasAndRef and setControlsAndRef are stable plain functions defined
-    // in component scope — no dependency needed.
+    // setFormulasAndRef is a stable plain function defined in component scope — no dependency needed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -1782,7 +1566,7 @@ export function GalleryThemeGeneratorContent() {
    * `recipeName` is preserved across imports so exported filenames and CSS
    * headers reflect the actual recipe name, not a hardcoded "preview" label.
    *
-   * When formulas state is null, the recipe uses controls (recipe-function path).
+   * When formulas state is null, the recipe uses deriveTheme() defaults.
    * When formulas state is non-null, the recipe uses the escape-hatch formulas. [D06]
    */
   const currentRecipe = useMemo<ThemeRecipe>(
@@ -1793,9 +1577,9 @@ export function GalleryThemeGeneratorContent() {
       surface: { canvas: canvasHue, card: cardHue },
       element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
       role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-      ...(formulas !== null ? { formulas } : { controls }),
+      ...(formulas !== null ? { formulas } : {}),
     }),
-    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas, controls],
+    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
   );
 
   /**
@@ -1805,7 +1589,7 @@ export function GalleryThemeGeneratorContent() {
    *
    * When the recipe has explicit formulas, use them (escape hatch [D06]).
    * When the recipe has controls (or neither), set formulas to null so
-   * RECIPE_REGISTRY[recipe].fn(controls) runs at derive time. [D01]
+   * deriveTheme() uses defaults at derive time. [D01]
    */
   const handleRecipeImported = useCallback(
     (r: ThemeRecipe) => {
@@ -1827,13 +1611,9 @@ export function GalleryThemeGeneratorContent() {
       setCautionHue(r.role.caution);
       setDangerHue(r.role.danger);
       setFormulasAndRef(r.formulas ?? null);
-      // Restore control slider positions from the imported recipe (or registry defaults). [D01]
-      const registryEntry = RECIPE_REGISTRY[r.recipe];
-      setControlsAndRef(r.controls ?? (registryEntry ? registryEntry.defaults : defaultDarkControls));
       setThemeOutput(deriveTheme(r));
     },
-    // setFormulasAndRef and setControlsAndRef are stable plain functions defined
-    // in component scope — no dependency needed.
+    // setFormulasAndRef is a stable plain function defined in component scope — no dependency needed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -1925,7 +1705,6 @@ export function GalleryThemeGeneratorContent() {
             onClick={() => {
               setMode("dark");
               setFormulasAndRef(null);
-              setControlsAndRef(defaultDarkControls);
               const recipe: ThemeRecipe = {
                 name: recipeName,
                 description: `Generated theme (dark mode)`,
@@ -1933,7 +1712,6 @@ export function GalleryThemeGeneratorContent() {
                 surface: { canvas: canvasHue, card: cardHue },
                 element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
                 role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-                controls: defaultDarkControls,
               };
               setThemeOutput(deriveTheme(recipe));
             }}
@@ -1948,7 +1726,6 @@ export function GalleryThemeGeneratorContent() {
             onClick={() => {
               setMode("light");
               setFormulasAndRef(null);
-              setControlsAndRef(defaultLightControls);
               const recipe: ThemeRecipe = {
                 name: recipeName,
                 description: `Generated theme (light mode)`,
@@ -1956,7 +1733,6 @@ export function GalleryThemeGeneratorContent() {
                 surface: { canvas: canvasHue, card: cardHue },
                 element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
                 role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-                controls: defaultLightControls,
               };
               setThemeOutput(deriveTheme(recipe));
             }}
@@ -1995,23 +1771,7 @@ export function GalleryThemeGeneratorContent() {
               { key: "caution", label: "Caution", hue: cautionHue, set: setCautionHue, testId: "gtg-role-hue-caution" },
               { key: "danger", label: "Danger", hue: dangerHue, set: setDangerHue, testId: "gtg-role-hue-danger" },
             ]}
-            moodSliders={
-              <div className="gtg-recipe-controls-panel" data-testid="gtg-recipe-controls-panel">
-                <div className="gtg-recipe-controls-sliders" data-testid="gtg-recipe-controls-sliders">
-                  {RECIPE_CONTROLS_METADATA.map((meta) => (
-                    <RecipeControlSlider
-                      key={meta.controlKey}
-                      controlKey={meta.controlKey}
-                      label={meta.label}
-                      lowLabel={meta.lowLabel}
-                      highLabel={meta.highLabel}
-                      value={controls[meta.controlKey]}
-                      onChange={handleControlChange}
-                    />
-                  ))}
-                </div>
-              </div>
-            }
+            moodSliders={null}
           />
         </div>
 

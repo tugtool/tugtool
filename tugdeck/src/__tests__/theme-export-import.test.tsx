@@ -391,30 +391,6 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(withLegacyParams)).toBeNull();
   });
 
-  it("validateRecipeJson returns error for controls field with out-of-range value", () => {
-    // controls values must be 0-100. [Spec S01][Step 4]
-    const bad = {
-      name: "X", description: "Test.", recipe: "dark",
-      surface: { canvas: "red", card: "red" },
-      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      controls: { canvasTone: 150 },
-    };
-    expect(validateRecipeJson(bad)).not.toBeNull();
-  });
-
-  it("validateRecipeJson returns error for controls field that is not an object", () => {
-    // controls must be an object when present. [Spec S01][Step 4]
-    const bad = {
-      name: "X", description: "Test.", recipe: "dark",
-      surface: { canvas: "red", card: "red" },
-      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      controls: "dark-defaults",
-    };
-    expect(validateRecipeJson(bad)).not.toBeNull();
-  });
-
   it("validateRecipeJson returns error for missing description", () => {
     const bad = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
