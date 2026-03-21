@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-21T00:17:20Z
+---
+
+## step-8: Created endpoint-contrast.test.ts with 28 parameterized tests (7 params x 2 modes x 2 extremes) verifying contrast compliance. Added endpoint constraint pair exceptions for structural failures.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
 step: step-7
 date: 2025-03-20T23:44:39Z
 ---
