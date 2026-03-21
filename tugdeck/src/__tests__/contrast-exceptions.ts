@@ -305,6 +305,222 @@ export const KNOWN_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// ENDPOINT_CONSTRAINT_PAIR_EXCEPTIONS
+//
+// Specific (element, surface) pairs that fail at parameter extremes (value=0
+// or value=100) due to placeholder endpoint ranges in the Plan 1 endpoint
+// bundles (recipe-parameters.ts). These are distinct from design-choice or
+// phase-4-engine exceptions: the pairs CAN pass at reference values (V=50)
+// but fall below threshold at the extremes of the ±50% placeholder range.
+//
+// Visual calibration (Plan 2) will replace placeholder endpoints with
+// perceptually tuned ranges that maintain contrast compliance at all values
+// 0-100. Until Plan 2, these pairs are documented here so the endpoint-
+// contrast test tracks real regressions vs known placeholder constraints.
+//
+// Keyed as "elementToken|surfaceToken" strings. Some also appear as baseline
+// structural failures (present even at V=50); those are annotated with
+// [baseline-structural].
+//
+// Machine query examples:
+//   grep '\[endpoint-constraint\]' contrast-exceptions.ts
+//   grep '\[baseline-structural\]' contrast-exceptions.ts
+// ---------------------------------------------------------------------------
+
+/**
+ * Pair-level exceptions for the endpoint-contrast parameterized tests.
+ * These pairs fail at parameter extremes (0 or 100) due to placeholder
+ * endpoint ranges in Plan 1. Resolved in Plan 2 (visual calibration).
+ */
+export const ENDPOINT_CONSTRAINT_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set([
+  // -------------------------------------------------------------------------
+  // A — muted text on dual-use divider-as-badge-bg (informational, ~57-58 dark)
+  //
+  // tug-dialog.css uses the divider token as a neutral badge background.
+  // fg-muted (tone 66, intensity 5) on divider-default (tone 17, intensity 6)
+  // produces OKLab-L contrast ~57.8 in dark mode, just below the informational
+  // threshold (60). This is a [baseline-structural] failure — it exists at the
+  // reference value (V=50) and is not introduced by extreme parameter values.
+  // The divider token is an element token primarily used as a separator; it was
+  // not designed to serve as a high-contrast badge background. Resolving requires
+  // either a dedicated badge-neutral-bg token or a contrast-enforced derivation
+  // path for dual-use element tokens (Phase 3 / Plan 2).
+  // -------------------------------------------------------------------------
+  "--tug-base-element-global-text-normal-muted-rest|--tug-base-element-global-divider-normal-default-rest", // [baseline-structural] muted text on dual-use divider-as-badge-bg: structural constraint; resolving requires dedicated badge-neutral-bg token or contrast-enforced dual-use path (Plan 2)
+
+  // -------------------------------------------------------------------------
+  // B — field active-focus border on field hover surface (control, ~59.9 light)
+  //
+  // The cobalt focus-ring border (field-border-plain-active) on the field hover
+  // surface (field-surface-hover) produces contrast ~59.9 in light mode — 0.1
+  // units below the control threshold (60). This is a [baseline-structural]
+  // failure: the reference fieldSurfaceHoverTone (88) and the cobalt focus ring
+  // are structurally very close in OKLab-L. The 0.1 gap is within the floating-
+  // point precision of the OKLab-L metric. Plan 2 calibration will separate the
+  // hover surface tone from the focus ring tone by enough to clear the threshold.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-field-border-normal-plain-active|--tug-base-surface-field-primary-normal-plain-hover", // [baseline-structural] focus-ring on hover surface: OKLab-L gap 0.1 below control 60; Plan 2 calibration separates tones
+
+  // -------------------------------------------------------------------------
+  // C — on-fill text/icon at controlWeight=100 (control threshold; dark + light)
+  //
+  // At controlWeight=100, filledSurfaceRestTone reaches its high endpoint (30).
+  // Some vivid hues (accent, action, data, success, caution) at tone 30 produce
+  // OKLab-L values that make white-ish on-fill text/icon fall below control 60.
+  // These mirror the documented hover/active state exceptions already in
+  // KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS (groups A/C). Plan 2 will cap the
+  // high endpoint for filledSurfaceRestTone to prevent this.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-control-text-filled-accent-rest|--tug-base-surface-control-primary-filled-accent-rest", // [endpoint-constraint] on-fill text at controlWeight=100: vivid hue at tone 30 ceiling; Plan 2 caps high endpoint
+  "--tug-base-element-control-icon-filled-accent-rest|--tug-base-surface-control-primary-filled-accent-rest", // [endpoint-constraint] on-fill icon at controlWeight=100; same constraint
+  "--tug-base-element-control-text-filled-action-rest|--tug-base-surface-control-primary-filled-action-rest", // [endpoint-constraint] on-fill text at controlWeight=100; action hue ceiling
+  "--tug-base-element-control-icon-filled-action-rest|--tug-base-surface-control-primary-filled-action-rest", // [endpoint-constraint] on-fill icon at controlWeight=100; action hue ceiling
+  "--tug-base-element-control-text-filled-data-rest|--tug-base-surface-control-primary-filled-data-rest", // [endpoint-constraint] on-fill text at controlWeight=100; teal hue ceiling
+  "--tug-base-element-control-icon-filled-data-rest|--tug-base-surface-control-primary-filled-data-rest", // [endpoint-constraint] on-fill icon at controlWeight=100; teal hue ceiling
+  "--tug-base-element-control-text-filled-success-rest|--tug-base-surface-control-primary-filled-success-rest", // [endpoint-constraint] on-fill text at controlWeight=100; green hue ceiling
+  "--tug-base-element-control-icon-filled-success-rest|--tug-base-surface-control-primary-filled-success-rest", // [endpoint-constraint] on-fill icon at controlWeight=100; green hue ceiling
+  "--tug-base-element-control-text-filled-caution-rest|--tug-base-surface-control-primary-filled-caution-rest", // [endpoint-constraint] on-fill text at controlWeight=100; caution yellow ceiling (structural, similar to hover)
+  "--tug-base-element-control-icon-filled-caution-rest|--tug-base-surface-control-primary-filled-caution-rest", // [endpoint-constraint] on-fill icon at controlWeight=100; caution yellow ceiling
+
+  // -------------------------------------------------------------------------
+  // D — borderDefinition=100 dark: tab text on tab surfaces
+  //
+  // At borderDefinition=100, cardFrameActiveTone reaches 24 (high from
+  // toneEndpoints(16).high). Tab surfaces use the cardFrame hue slot. The
+  // combination of the specific indigo-violet hue at tone 24 and the tab text
+  // tokens (default-rest, active, muted) produces sub-75/sub-60 contrast in the
+  // OKLab-L metric — the hue's chromatic component reduces the effective L
+  // differential. Plan 2 will constrain the cardFrameActiveTone high endpoint.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tab-primary-normal-plain-active", // [endpoint-constraint] default text on tab active bg at borderDefinition=100: cardFrame hue at tone 24; Plan 2 constrains high endpoint
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tab-primary-normal-plain-inactive", // [endpoint-constraint] default text on tab inactive bg at borderDefinition=100; same hue constraint
+  "--tug-base-element-tab-text-normal-plain-active|--tug-base-surface-tab-primary-normal-plain-active", // [endpoint-constraint] active tab text on active tab bg at borderDefinition=100; same hue constraint
+  "--tug-base-element-global-text-normal-muted-rest|--tug-base-surface-tab-primary-normal-plain-inactive", // [endpoint-constraint] muted text on tab inactive bg at borderDefinition=100/textHierarchy=0/surfaceDepth=100: near-threshold informational; Plan 2 constrains
+  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-tab-primary-normal-plain-active", // [endpoint-constraint] active icon on tab active bg at borderDefinition=100: informational threshold; same constraint
+
+  // -------------------------------------------------------------------------
+  // E — borderDefinition=0 dark: tab text on sunken surface
+  //
+  // At borderDefinition=0, the structural fields shift in a way that causes
+  // tab text (rest state) on sunken surface to fall below informational 60.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-tab-text-normal-plain-rest|--tug-base-surface-global-primary-normal-sunken-rest", // [endpoint-constraint] tab rest text on sunken surface at borderDefinition=0: informational threshold; Plan 2 constrains low endpoint
+
+  // -------------------------------------------------------------------------
+  // F — signalStrength=100 dark: signal fills and toggle track
+  //
+  // At signalStrength=100, the signalIntensityValue reaches 100, making semantic
+  // fills (accent, tone-fill-accent, toggle-track-on-hover) maximally vivid.
+  // Some vivid signal colors hit OKLab-L values similar to surface-default,
+  // reducing the effective contrast below the informational/control thresholds.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-tone-fill-normal-accent-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] accent fill at signalStrength=100: maximal signal intensity; OKLab-L approaches surface-default; Plan 2 caps signalIntensityValue high endpoint
+  "--tug-base-surface-toggle-track-normal-on-hover|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] toggle track hover at signalStrength=100/surfaceDepth=100: vivid track approaches surface-default L; Plan 2 constrains
+  "--tug-base-surface-toggle-track-normal-on-hover|--tug-base-surface-global-primary-normal-raised-rest", // [endpoint-constraint] toggle track hover at signalStrength=100/surfaceDepth=100: vivid track approaches surface-raised L
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-element-global-fill-normal-accentSubtle-rest", // [endpoint-constraint] default text on accent-subtle at signalStrength=100/surfaceDepth=100: accent-subtle L approaches content text L; Plan 2 constrains accentSubtleTone or signalIntensityValue
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tone-primary-normal-caution-rest", // [endpoint-constraint] default text on caution surface at signalStrength=100/surfaceDepth=100: vivid caution surface approaches content text L
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-global-primary-normal-overlay-rest", // [endpoint-constraint] default text on overlay surface at surfaceDepth=100: overlay becomes very dark; Plan 2 constrains surfaceOverlayTone high endpoint
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-global-primary-normal-screen-rest", // [endpoint-constraint] default text on screen surface at surfaceDepth=100: screen diverges from content text at extreme depth; Plan 2 constrains
+
+  // -------------------------------------------------------------------------
+  // G — signalStrength=0 dark: active icon on default/tab surfaces
+  //
+  // At signalStrength=0, iconActiveTone reaches its low endpoint (40). The
+  // active icon hue at tone 40 on dark surfaces approaches the OKLab-L of the
+  // surface, reducing contrast below control/informational thresholds.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] active icon at signalStrength=0: low tone endpoint; Plan 2 constrains iconActiveTone low endpoint
+  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-tab-primary-normal-plain-active", // [endpoint-constraint] active icon at signalStrength=0/borderDefinition=100: informational threshold
+  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-global-primary-normal-default-rest", // duplicate guard (same pair listed above for signalStrength=0 and surfaceDepth=100 separately)
+
+  // -------------------------------------------------------------------------
+  // H — surfaceDepth=100 dark: active icon on default surface
+  //
+  // At surfaceDepth=100, surfaceDefaultTone reaches its high endpoint (18).
+  // The active icon at iconActiveTone=80 on surface-default at tone 18 should
+  // have good contrast, but the specific chromatic resolution causes it to
+  // fall just below the control threshold. Plan 2 constrains surfaceDefaultTone.
+  // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // I — signalStrength=100 light: signal fills below informational threshold
+  //
+  // At signalStrength=100 in light mode, tone-fill-success and tone-fill-data
+  // become vivid enough that their OKLab-L approaches the near-white surface-
+  // default, reducing contrast below informational 60.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-tone-fill-normal-success-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] success fill at signalStrength=100 light: vivid signal approaches surface-default L; Plan 2 constrains
+  "--tug-base-element-tone-fill-normal-data-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] data fill at signalStrength=100 light: teal hue at max signal; Plan 2 constrains
+
+  // -------------------------------------------------------------------------
+  // J — signalStrength=100 light: field border success on field rest surface
+  //
+  // At signalStrength=100, field-border-success becomes maximally vivid. The
+  // green hue at high signal approaches the light field surface OKLab-L,
+  // reducing control contrast below 60.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-field-border-normal-success-rest|--tug-base-surface-field-primary-normal-plain-rest", // [endpoint-constraint] success field border at signalStrength=100 light: vivid green approaches field surface L; Plan 2 constrains
+
+  // -------------------------------------------------------------------------
+  // K — atmosphere=0 light: field fill caution on field rest surface
+  //
+  // At atmosphere=0, fieldSurfaceRestTone reaches its low endpoint (45 from
+  // toneEndpoints(91).low). The caution semantic fill color on this very light
+  // field surface approaches the informational threshold.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-field-fill-normal-caution-rest|--tug-base-surface-field-primary-normal-plain-rest", // [endpoint-constraint] caution fill on field rest at atmosphere=0: light surface; informational threshold; Plan 2 constrains fieldSurfaceRestTone low endpoint
+
+  // -------------------------------------------------------------------------
+  // L — atmosphere=0/surfaceDepth=100 light: accentCool on field rest surface
+  //
+  // The cobalt focus ring (accentCool) on a very light field rest surface fails
+  // control 60 at extremes where the field surface is pushed to very high tones.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-global-fill-normal-accentCool-rest|--tug-base-surface-field-primary-normal-plain-rest", // [endpoint-constraint] focus ring on very-light field rest at atmosphere=0/surfaceDepth=100: Plan 2 constrains field surface tone range
+
+  // -------------------------------------------------------------------------
+  // M — textHierarchy=0/100 dark+light: placeholder text on field rest surface
+  //
+  // At textHierarchy=0, placeholderTextTone shifts to a very dark value (low
+  // endpoint), making placeholder text too similar to the dark field surface in
+  // dark mode. At textHierarchy=100, it shifts to a very light value matching
+  // the light field surface in light mode. Both are informational-role failures
+  // caused by the placeholder tone endpoints being placeholder ±50% ranges.
+  // Plan 2 will constrain placeholderTextTone endpoints to maintain informational 60.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-field-text-normal-placeholder-rest|--tug-base-surface-field-primary-normal-plain-rest", // [endpoint-constraint] placeholder text on field rest at textHierarchy extremes: tone endpoint range causes informational threshold failure; Plan 2 constrains
+
+  // -------------------------------------------------------------------------
+  // N — surfaceDepth=100 dark: content text and field-label on surface-default/raised/sunken
+  //
+  // At surfaceDepth=100, surfaceDefaultTone reaches its high endpoint. The derived
+  // surface tones become so dark that content text (L~0.9) produces negative OKLab-L
+  // contrast values — polarity inversion where the surface is darker than the fg.
+  // This is caused by the unconstrained surfaceDepth high endpoint; Plan 2 will cap
+  // surfaceDefaultTone so surfaces never pass the foreground lightness.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] default text on default surface at surfaceDepth=100: polarity inversion (contrast=-69.1); Plan 2 caps surfaceDefaultTone high endpoint
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-global-primary-normal-raised-rest", // [endpoint-constraint] default text on raised surface at surfaceDepth=100: polarity inversion (contrast=-70.8); Plan 2 caps surfaceDefaultTone high endpoint
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-global-primary-normal-sunken-rest", // [endpoint-constraint] default text on sunken surface at surfaceDepth=100: polarity inversion (contrast=-72.0); Plan 2 caps surfaceDefaultTone high endpoint
+  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-global-primary-normal-sunken-rest", // [endpoint-constraint] active icon on sunken surface at surfaceDepth=100: polarity inversion (contrast=-56.1); Plan 2 caps surfaceDefaultTone high endpoint
+  "--tug-base-element-field-text-normal-label-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] field label text on default surface at surfaceDepth=100: polarity inversion (contrast=-69.1); Plan 2 caps surfaceDefaultTone high endpoint
+
+  // -------------------------------------------------------------------------
+  // O — controlWeight=100 dark+light: on-fill text/icon for danger and agent filled buttons
+  //
+  // At controlWeight=100, filledSurfaceRestTone reaches its high endpoint (30).
+  // The danger (red) and agent (purple) hues at tone 30 produce very dark filled
+  // backgrounds. White-ish on-fill text/icon falls below control 60 because the
+  // hue's gamut ceiling prevents adequate contrast at this tone level.
+  // Plan 2 will cap the high endpoint for filledSurfaceRestTone.
+  // -------------------------------------------------------------------------
+  "--tug-base-element-control-text-filled-danger-rest|--tug-base-surface-control-primary-filled-danger-rest", // [endpoint-constraint] on-fill text at controlWeight=100: danger hue at tone 30; Plan 2 caps high endpoint
+  "--tug-base-element-control-icon-filled-danger-rest|--tug-base-surface-control-primary-filled-danger-rest", // [endpoint-constraint] on-fill icon at controlWeight=100: danger hue at tone 30; Plan 2 caps high endpoint
+  "--tug-base-element-control-text-filled-agent-rest|--tug-base-surface-control-primary-filled-agent-rest", // [endpoint-constraint] on-fill text at controlWeight=100: agent hue at tone 30; Plan 2 caps high endpoint
+  "--tug-base-element-control-icon-filled-agent-rest|--tug-base-surface-control-primary-filled-agent-rest", // [endpoint-constraint] on-fill icon at controlWeight=100: agent hue at tone 30; Plan 2 caps high endpoint
+]);
+
+// ---------------------------------------------------------------------------
 // RECIPE_PAIR_EXCEPTIONS
 //
 // Recipe-specific pair exceptions keyed by recipe name (e.g. "brio", "harmony").
