@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { GalleryThemeGeneratorContent } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
+import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
 import { _resetForTest } from "@/card-registry";
 
 // ---------------------------------------------------------------------------

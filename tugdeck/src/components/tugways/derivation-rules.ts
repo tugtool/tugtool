@@ -31,7 +31,7 @@ import type {
   DerivationFormulas,
   ComputedTones,
   ChromaticRule,
-} from "./theme-derivation-engine";
+} from "./theme-engine";
 
 // Local type alias for concise builder signatures [D01]
 type F = DerivationFormulas;

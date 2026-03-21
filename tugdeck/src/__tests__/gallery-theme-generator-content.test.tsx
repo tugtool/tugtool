@@ -28,10 +28,8 @@ import {
 } from "@/components/tugways/cards/gallery-card";
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
-import { DARK_FORMULAS, LIGHT_FORMULAS } from "@/components/tugways/formula-constants";
-import { compileRecipe, defaultParameters } from "@/components/tugways/recipe-parameters";
-import { PARAMETER_METADATA } from "@/components/tugways/parameter-slider";
+import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
+import { darkRecipe as darkRecipeFn, lightRecipe as lightRecipeFn, defaultDarkControls, defaultLightControls } from "@/components/tugways/recipe-functions";
 import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
@@ -39,6 +37,12 @@ import {
   KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS,
   KNOWN_PAIR_EXCEPTIONS,
 } from "./contrast-exceptions";
+
+// ---------------------------------------------------------------------------
+// Reference formula constants (replaces deleted formula-constants.ts)
+// ---------------------------------------------------------------------------
+const DARK_FORMULAS = darkRecipeFn(defaultDarkControls);
+const LIGHT_FORMULAS = lightRecipeFn(defaultLightControls);
 
 // ---------------------------------------------------------------------------
 // Known-exception sets shared by T10.3 and T-ACC-1
@@ -428,7 +432,7 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
 const CHM_NOVEL_RECIPE = {
   name: "CHM Mood",
   description: "CHM acceptance test recipe — industrial warmth with amber atmosphere.",
-  mode: "dark" as const,
+  recipe: "dark" as const,
   surface: { canvas: "amber", card: "amber" },
   element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" },
   role: { accent: "flame", action: "cobalt", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -655,7 +659,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
     const greenRedRecipe = {
       name: "GreenRed",
       description: "CVD test recipe with explicit green/red pairing.",
-      mode: "dark" as const,
+      recipe: "dark" as const,
       surface: { canvas: "slate", card: "slate" },
       element: { content: "slate", control: "slate", display: "indigo", informational: "slate", border: "slate", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -718,7 +722,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     const explicit = deriveTheme({
       name: "brio",
       description: "Explicit default role hues test recipe.",
-      mode: "dark",
+      recipe: "dark",
       surface: { canvas: "indigo-violet", card: "indigo-violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -744,7 +748,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     const withRed = deriveTheme({
       name: "test",
       description: "Test recipe with red destructive hue.",
-      mode: "dark",
+      recipe: "dark",
       surface: { canvas: "violet", card: "violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -752,7 +756,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     const withPink = deriveTheme({
       name: "test",
       description: "Test recipe with pink destructive hue.",
-      mode: "dark",
+      recipe: "dark",
       surface: { canvas: "violet", card: "violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
@@ -953,13 +957,13 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
     // This is a unit-level assertion on deriveTheme() since the live preview update
     // is a CSS cascade effect invisible to JSDOM.
     const withRed = deriveTheme({
-      name: "test", description: "Test recipe with red destructive hue.", mode: "dark",
+      name: "test", description: "Test recipe with red destructive hue.", recipe: "dark",
       surface: { canvas: "violet", card: "violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
-      name: "test", description: "Test recipe with pink destructive hue.", mode: "dark",
+      name: "test", description: "Test recipe with pink destructive hue.", recipe: "dark",
       surface: { canvas: "violet", card: "violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
@@ -995,7 +999,7 @@ function renderWithThemeProvider(savedThemeNames: string[] = []) {
       return new Response("body {}", { status: 200 });
     }
     if (url.startsWith("/styles/themes/") && url.endsWith("-recipe.json")) {
-      const recipe = JSON.stringify({ name: "Saved Theme", description: "Saved theme for testing.", mode: "dark", surface: { canvas: "amber", card: "amber" }, element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } });
+      const recipe = JSON.stringify({ name: "Saved Theme", description: "Saved theme for testing.", recipe: "dark", surface: { canvas: "amber", card: "amber" }, element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } });
       return new Response(recipe, { status: 200 });
     }
     return new Response("", { status: 404 });
@@ -1108,7 +1112,7 @@ describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () =>
         return new Response("body {}", { status: 200 });
       }
       if (url.endsWith("-recipe.json")) {
-        const recipe = JSON.stringify({ name: "My Custom Theme", description: "Custom theme for testing.", mode: "dark", surface: { canvas: "cobalt", card: "cobalt" }, element: { content: "slate", control: "slate", display: "indigo", informational: "cobalt", border: "cobalt", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } });
+        const recipe = JSON.stringify({ name: "My Custom Theme", description: "Custom theme for testing.", recipe: "dark", surface: { canvas: "cobalt", card: "cobalt" }, element: { content: "slate", control: "slate", display: "indigo", informational: "cobalt", border: "cobalt", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } });
         return new Response(recipe, { status: 200 });
       }
       return new Response("", { status: 404 });
@@ -1151,15 +1155,15 @@ describe("deriveTheme – Harmony preset produces correct light-mode output (Ste
     expect(Object.keys(output.tokens).length).toBe(374);
   });
 
-  it("Harmony recipe uses parameters field (migrated in Step 4 from formulas)", () => {
-    // Step 4 migration: EXAMPLE_RECIPES.harmony now uses parameters: defaultParameters()
-    // instead of formulas: LIGHT_FORMULAS. The formulas field is absent. [D01][Step 4]
-    expect(EXAMPLE_RECIPES.harmony.parameters).toBeDefined();
+  it("Harmony recipe uses controls field (recipe function path, Step 5)", () => {
+    // Step 5: EXAMPLE_RECIPES.harmony now uses controls: defaultLightControls.
+    // The parameters field is removed. The formulas field is absent. [D01][Step 5]
+    expect(EXAMPLE_RECIPES.harmony.controls).toBeDefined();
     expect(EXAMPLE_RECIPES.harmony.formulas).toBeUndefined();
   });
 
-  it("Harmony derives via compileRecipe light mode — surfaceApp tone is near-white", () => {
-    // compileRecipe("light", defaultParameters()) uses LIGHT_STRUCTURAL_TEMPLATE which
+  it("Harmony derives via lightRecipe — surfaceApp tone is near-white", () => {
+    // lightRecipe(defaultLightControls) uses the light STRUCTURAL_TEMPLATE which
     // sets surfaceAppTone near 95. Verify the derived bg-app token is near-white (high tone).
     const output = deriveTheme(EXAMPLE_RECIPES.harmony);
     const bgApp = output.tokens["--tug-base-surface-global-primary-normal-app-rest"];
@@ -1172,7 +1176,7 @@ describe("deriveTheme – Harmony preset produces correct light-mode output (Ste
   });
 
   it("Harmony output tokens are stable and reproducible (token-for-token identical across calls)", () => {
-    // Stability: same parameters → same compileRecipe → same token output.
+    // Stability: same controls → same recipe function → same token output.
     const output1 = deriveTheme(EXAMPLE_RECIPES.harmony);
     const output2 = deriveTheme(EXAMPLE_RECIPES.harmony);
     expect(Object.keys(output1.tokens)).toEqual(Object.keys(output2.tokens));
@@ -1198,7 +1202,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
     const darkOutput = deriveTheme({
       name: "test-dark",
       description: "Dark formulas test",
-      mode: "dark",
+      recipe: "dark",
       surface: { canvas: "indigo", card: "indigo" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -1207,7 +1211,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
     const lightOutput = deriveTheme({
       name: "test-light",
       description: "Light formulas test",
-      mode: "light",
+      recipe: "light",
       surface: { canvas: "indigo", card: "indigo" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -1233,7 +1237,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
     const recipe = {
       name: "light-test",
       description: "Light formulas round-trip test",
-      mode: "light" as const,
+      recipe: "light" as const,
       surface: { canvas: "indigo", card: "indigo" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -1257,7 +1261,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
     const noFormulas = deriveTheme({
       name: "no-formulas",
       description: "No formulas field",
-      mode: "dark",
+      recipe: "dark",
       surface: { canvas: "indigo", card: "indigo" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -1265,7 +1269,7 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
     const darkFormulas = deriveTheme({
       name: "dark-formulas",
       description: "Explicit DARK_FORMULAS",
-      mode: "dark",
+      recipe: "dark",
       surface: { canvas: "indigo", card: "indigo" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -1497,15 +1501,15 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     expect(harmonyRendered["--tug-base-element-global-text-normal-default-rest"]).toBe(directHarmony["--tug-base-element-global-text-normal-default-rest"]);
   });
 
-  it("Task 3: importing Harmony recipe JSON round-trips correctly (parameters preserved)", () => {
+  it("Task 3: importing Harmony recipe JSON round-trips correctly (controls preserved)", () => {
     // Simulate the handleRecipeImported path: parse EXAMPLE_RECIPES.harmony as JSON
     // and re-import it. The output must match direct deriveTheme(EXAMPLE_RECIPES.harmony).
-    // Step 4 migration: harmony now uses parameters (not formulas). [D01][Step 4]
+    // Step 5: harmony now uses controls (not parameters). [D01][Step 5]
     const harmonyJson = JSON.stringify(EXAMPLE_RECIPES.harmony);
     const parsedHarmony = JSON.parse(harmonyJson) as typeof EXAMPLE_RECIPES.harmony;
 
-    // Verify round-trip preserves parameters field (Step 4 migration)
-    expect(parsedHarmony.parameters).toBeDefined();
+    // Verify round-trip preserves controls field (Step 5)
+    expect(parsedHarmony.controls).toBeDefined();
     expect(parsedHarmony.formulas).toBeUndefined();
 
     // Deriving from parsed recipe must produce identical output to direct call
@@ -1529,7 +1533,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     const bareRecipe = {
       name: "bare",
       description: "No formulas field",
-      mode: "dark" as const,
+      recipe: "dark" as const,
       surface: { canvas: "indigo-violet", card: "indigo-violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -1650,7 +1654,7 @@ describe("Step 4 – RecipeControls slider integration", () => {
     const defaultRecipe = {
       name: "brio",
       description: "Generated theme (dark mode, card: indigo-violet, content: cobalt)",
-      mode: "dark" as const,
+      recipe: "dark" as const,
       surface: { canvas: "indigo-violet", card: "indigo-violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },

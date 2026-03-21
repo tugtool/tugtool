@@ -6,11 +6,7 @@
  *   - `tokens`: all 373 token values as `--tug-color()` strings (for CSS export)
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
  *
- * The derivation uses a four-step pipeline:
- *   Step 0 — compileRecipe(): RecipeParameters → DerivationFormulas
- *             Interpolates 7 design parameters (0-100) against curated endpoint
- *             bundles to produce a complete DerivationFormulas. Skipped when
- *             recipe.formulas is provided directly (escape hatch). [D06]
+ * The derivation uses a three-step pipeline:
  *   Layer 1 — resolveHueSlots(): recipe → ResolvedHueSlots
  *             Resolves all per-tier hue variants (fg-muted, surfBareBase, etc.)
  *             using palette angles verbatim — no warmth bias applied.
@@ -23,7 +19,7 @@
  *             the appropriate helper for each token type.
  *
  * Mode differences (dark vs light) are expressed entirely as data in
- * DARK_FORMULAS / LIGHT_FORMULAS and the RULES table —
+ * the recipe functions (darkRecipe / lightRecipe) and the RULES table —
  * deriveTheme() itself contains no mode branching.
  *
  * Control tokens use the emphasis x role system (Table T01):
@@ -235,11 +231,10 @@
  *                                  selectionSurfaceInactiveIntensity, selectionSurfaceInactiveTone,
  *                                  selectionSurfaceInactiveAlpha
  *
- * @module components/tugways/theme-derivation-engine
+ * @module components/tugways/theme-engine
  */
 
-import { DARK_FORMULAS, LIGHT_FORMULAS } from "./formula-constants";
-import { type RecipeControls, RECIPE_REGISTRY, defaultDarkControls, defaultLightControls } from "./recipe-functions";
+import { type RecipeControls, RECIPE_REGISTRY, defaultDarkControls, defaultLightControls, darkRecipe, lightRecipe } from "./recipe-functions";
 
 import {
   HUE_FAMILIES,
@@ -253,11 +248,6 @@ import {
   resolveHyphenatedHue,
 } from "./palette-engine";
 import { RULES } from "./derivation-rules";
-import {
-  type RecipeParameters,
-  defaultParameters,
-  compileRecipe,
-} from "./recipe-parameters";
 import {
   toneToL,
   CONTRAST_SCALE,
@@ -287,7 +277,7 @@ export interface ThemeRecipe {
   name: string;
   /** Human-readable description of the design intent for this theme. */
   description: string;
-  mode: "dark" | "light";
+  recipe: "dark" | "light";
 
   surface: {
     /** Hue for bg-canvas and bg-app backgrounds. */
@@ -328,14 +318,12 @@ export interface ThemeRecipe {
     danger: string;
   };
 
-  /** Seven design parameters (0-100). Compiled by compileRecipe() to produce DerivationFormulas. */
-  parameters?: RecipeParameters;
-  /** All formula constants for this recipe. Takes precedence over parameters when provided. [D06] */
+  /** All formula constants for this recipe. Takes precedence over controls when provided. [D06] */
   formulas?: DerivationFormulas;
   /**
-   * Recipe control values. When provided, looked up in RECIPE_REGISTRY[recipe.mode]
+   * Recipe control values. When provided, looked up in RECIPE_REGISTRY[recipe.recipe]
    * and the registered recipe function is called with these controls to produce
-   * DerivationFormulas. Takes precedence over parameters but not over formulas. (Spec S04)
+   * DerivationFormulas. Takes precedence only when formulas is absent. (Spec S04)
    */
   controls?: RecipeControls;
 }
@@ -403,7 +391,7 @@ export interface ContrastDiagnostic {
  */
 export interface ThemeOutput {
   name: string;
-  mode: "dark" | "light";
+  recipe: "dark" | "light";
   tokens: Record<string, string>;
   resolved: Record<string, ResolvedColor>;
   contrastResults: ContrastResult[];
@@ -485,7 +473,7 @@ export interface ResolvedHueSlots {
  * parameterizations of one recipe. [D01]
  *
  * Lives on `ThemeRecipe.formulas` (optional; `deriveTheme()` falls back to
- * `DARK_FORMULAS` when absent). [D02]
+ * `darkRecipe(defaultDarkControls)` when absent). [D02]
  *
  * Fields are grouped by the 23 semantic decision groups (see module JSDoc
  * table). Each group is introduced with a banner comment. Search for
@@ -1077,14 +1065,13 @@ export interface DerivationFormulas {
  * harmony is the built-in light peer.
  *
  * Both use the nested surface/element/role structure from Phase 3.5B [D03][D04].
- * Brio uses the recipe function path via controls: defaultDarkControls. [D01]
- * Harmony still uses the legacy parameter system (updated to recipe functions in Step 2).
+ * Both use the recipe function path via controls (darkRecipe / lightRecipe). [D01]
  */
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
     name: "brio",
     description: "Deep, immersive dark theme. Very dark surfaces with subtle layering. Near-white text with wide hierarchy spread. Filled controls are prominent with vivid accent backgrounds and white text. Borders are subtle. Shadows are moderate. Industrial warmth with muted chassis and vivid signals.",
-    mode: "dark",
+    recipe: "dark",
     surface: {
       canvas: "indigo-violet", // bg-canvas, bg-app
       card: "indigo-violet",   // card surfaces (atmosphere hue)
@@ -1108,12 +1095,11 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     },
     // Use recipe function path — darkRecipe(defaultDarkControls) produces DerivationFormulas. [D01]
     controls: defaultDarkControls,
-    parameters: defaultParameters(),
   },
   harmony: {
     name: "harmony",
     description: "Bright, open canvas with crisp surfaces. Dark text for maximum readability with clear hierarchy. Filled controls use vivid accent backgrounds with white text. Borders are crisp and visible. Shadows are light. Industrial warmth with muted chassis and vivid signals — the same palette as Brio, seen in daylight.",
-    mode: "light",
+    recipe: "light",
     surface: {
       canvas: "indigo-violet", // same palette as brio — light near-white canvas
       card: "indigo-violet",   // same palette as brio
@@ -1137,7 +1123,6 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     },
     // Use recipe function path — lightRecipe(defaultLightControls) produces DerivationFormulas. [D01]
     controls: defaultLightControls,
-    parameters: defaultParameters(),
   },
 };
 
@@ -1265,11 +1250,11 @@ export function primaryColorName(hueExpr: string): string {
  * all runtime mode branches from the formula path. [D03]
  *
  * @param recipe  - The theme recipe
- * @param formulas - Formula constants; defaults to recipe.formulas ?? DARK_FORMULAS
+ * @param formulas - Formula constants; defaults to recipe.formulas ?? darkRecipe(defaultDarkControls)
  */
 export function resolveHueSlots(
   recipe: ThemeRecipe,
-  formulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS,
+  formulas: DerivationFormulas = recipe.formulas ?? darkRecipe(defaultDarkControls),
 ): ResolvedHueSlots {
   /** Build a ResolvedHueSlot from a hue name. Hue angle used verbatim. */
   function resolveSlot(hueName: string): ResolvedHueSlot {
@@ -1524,7 +1509,7 @@ export interface ComputedTones {
  * surfaceContrast is fixed at 50 in MoodKnobs — scaling expressions are neutralized
  * by compiled formula scale fields set to 0. [D04]
  * signalIntensity on ComputedTones is derived from formulas.signalIntensityValue
- * (interpolated by compileRecipe() from P6: Signal Strength), not from MoodKnobs. [D04]
+ * (set by the recipe function via P6: Signal Strength), not from MoodKnobs. [D04]
  *
  * All formulas are verified against Brio dark-mode ground truth by T-TONES-DARK.
  *
@@ -1545,7 +1530,7 @@ export function computeTones(formulas: DerivationFormulas, knobs: MoodKnobs): Co
   // bg-app: anchored at formulas.surfaceAppTone at sc=50, ±8 units at extremes
   const surfaceApp = formulas.surfaceAppTone + ((sc - 50) / 50) * 8;
 
-  // bg-canvas: formula parameters from compiled formulas. When compileRecipe() is used,
+  // bg-canvas: formula parameters from compiled formulas. When using recipe functions,
   // surfaceCanvasToneScale is set to 0 and surfaceCanvasToneCenter to 50, so (sc-50)/50 * 0 = 0
   // and the formula passes through surfaceCanvasToneBase directly. [D04]
   const surfaceCanvas = Math.round(
@@ -1617,7 +1602,7 @@ export function computeTones(formulas: DerivationFormulas, knobs: MoodKnobs): Co
     Math.round(surfaceOverlay);
 
   // Signal intensity: derived from compiled formula field signalIntensityValue.
-  // compileRecipe() interpolates signalIntensityValue from P6: Signal Strength.
+  // Recipe functions set signalIntensityValue from P6: Signal Strength.
   // The 18+ rule expressions in derivation-rules.ts read computed.signalIntensity unchanged. [D04]
   const signalIntensity = Math.round(formulas.signalIntensityValue);
 
@@ -2423,20 +2408,17 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // 1. Resolve formula constants [D01] [D06]
   // Precedence (Spec S04):
   //   1. recipe.formulas — use directly (existing escape hatch)
-  //   2. recipe.controls + RECIPE_REGISTRY[mode] — call registry function
-  //   3. RECIPE_REGISTRY[mode] with defaults — call registry function with defaults
-  //   4. compileRecipe fallback (legacy parameter system)
+  //   2. recipe.controls + RECIPE_REGISTRY[recipe.recipe] — call registry function
+  //   3. RECIPE_REGISTRY[recipe.recipe] with defaults — call registry function with defaults
   // -------------------------------------------------------------------------
   let formulas: DerivationFormulas;
   if (recipe.formulas) {
     formulas = recipe.formulas;
   } else {
-    const registryEntry = RECIPE_REGISTRY[recipe.mode];
-    if (registryEntry) {
-      formulas = registryEntry.fn(recipe.controls ?? registryEntry.defaults);
-    } else {
-      formulas = compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
-    }
+    const registryEntry = RECIPE_REGISTRY[recipe.recipe];
+    formulas = registryEntry
+      ? registryEntry.fn(recipe.controls ?? registryEntry.defaults)
+      : darkRecipe(defaultDarkControls);
   }
 
   // -------------------------------------------------------------------------
@@ -2502,7 +2484,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // =========================================================================
   return {
     name: recipe.name,
-    mode: recipe.mode,
+    recipe: recipe.recipe,
     tokens,
     resolved,
     contrastResults: [],

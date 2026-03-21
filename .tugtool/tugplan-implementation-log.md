@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-21T18:38:35Z
+---
+
+## step-5: Deleted 8 source files and 5 test files for the old parameter/formula system. Renamed theme-derivation-engine.ts to theme-engine.ts. Renamed ThemeRecipe.mode/ThemeOutput.mode to .recipe. Renamed fetchGeneratorMode/putGeneratorMode to fetchGeneratorRecipe/putGeneratorRecipe. Updated all imports and references across 15 files.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
 step: step-4
 date: 2025-03-21T18:09:00Z
 ---

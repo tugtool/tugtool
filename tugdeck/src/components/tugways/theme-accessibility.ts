@@ -18,7 +18,7 @@
  */
 
 import { oklchToHex, oklchToLinearSRGB, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
-import type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivation-engine";
+import type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-engine";
 import type { ElementSurfacePairing } from "./element-surface-pairing-map";
 
 // ---------------------------------------------------------------------------
@@ -350,7 +350,7 @@ function lToTone(L: number, hueName: string): number {
  * Forward formula matching the derivation engine's resolveOklch():
  *   L = L_DARK + min(tone,50)*(canonL-L_DARK)/50 + max(tone-50,0)*(L_LIGHT-canonL)/50
  *
- * Used by enforceContrastFloor in theme-derivation-engine.ts for the binary
+ * Used by enforceContrastFloor in theme-engine.ts for the binary
  * search in tone space — avoids a hex round-trip when both element and surface L
  * values are already known.
  *
@@ -1037,7 +1037,7 @@ export function checkCVDDistinguishability(
 // ---------------------------------------------------------------------------
 
 export { oklchToHex } from "./palette-engine";
-export type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivation-engine";
+export type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-engine";
 
 // ---------------------------------------------------------------------------
 // Perceptual contrast thresholds (normative) and WCAG ratio thresholds (informational)

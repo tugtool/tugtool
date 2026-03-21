@@ -20,7 +20,6 @@ import "./setup-rtl";
 
 import { describe, it, expect } from "bun:test";
 
-import { DARK_FORMULAS } from "@/components/tugways/formula-constants";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
@@ -37,7 +36,7 @@ import {
   type ResolvedHueSlot,
   type ResolvedColor,
   type ContrastDiagnostic,
-} from "@/components/tugways/theme-derivation-engine";
+} from "@/components/tugways/theme-engine";
 import { CORE_VISUAL_RULES, RULES } from "@/components/tugways/derivation-rules";
 
 import {
@@ -68,12 +67,7 @@ import {
   RECIPE_PAIR_EXCEPTIONS,
 } from "./contrast-exceptions";
 
-import {
-  compileRecipe,
-  defaultParameters,
-} from "@/components/tugways/recipe-parameters";
-
-import { RECIPE_REGISTRY } from "@/components/tugways/recipe-functions";
+import { RECIPE_REGISTRY, darkRecipe as darkRecipeFn, lightRecipe as lightRecipeFn, defaultDarkControls, defaultLightControls } from "@/components/tugways/recipe-functions";
 
 // ---------------------------------------------------------------------------
 // Helpers for contrast floor enforcement in test helpers
@@ -92,6 +86,12 @@ function buildTestPairingLookup(
   return lookup;
 }
 
+/** Reference dark formula constants (replaces deleted DARK_FORMULAS from formula-constants). */
+const DARK_FORMULAS = darkRecipeFn(defaultDarkControls);
+
+/** Reference light formula constants (replaces deleted LIGHT_FORMULAS from formula-constants). */
+const LIGHT_FORMULAS = lightRecipeFn(defaultLightControls);
+
 /** Cached pairing lookup for tests that need contrast floor behavior. */
 const TEST_PAIRING_LOOKUP = buildTestPairingLookup(ELEMENT_SURFACE_PAIRING_MAP);
 
@@ -99,7 +99,7 @@ const TEST_PAIRING_LOOKUP = buildTestPairingLookup(ELEMENT_SURFACE_PAIRING_MAP);
  * Compute a ResolvedColor for a chromatic token given hue angle, intensity (0-100),
  * tone (0-100), alpha (0-100), and the primary hue name.
  *
- * Replicates the private resolveOklch() formula from theme-derivation-engine.ts
+ * Replicates the private resolveOklch() formula from theme-engine.ts
  * so that test setChromatic callbacks can populate ruleResolved, enabling
  * contrast floor enforcement within evaluateRules() test calls.
  */
@@ -379,10 +379,10 @@ describe("derivation-engine", () => {
     expect(output.cvdWarnings).toEqual([]);
   });
 
-  it("ThemeOutput.name and mode match the recipe", () => {
+  it("ThemeOutput.name and recipe match the recipe", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     expect(brio.name).toBe("brio");
-    expect(brio.mode).toBe("dark");
+    expect(brio.recipe).toBe("dark");
   });
 
   // -------------------------------------------------------------------------
@@ -761,7 +761,7 @@ describe("resolveHueSlots — Step 3", () => {
     const lightRecipe = {
       name: "test-light",
       description: "Test recipe for light mode hue slot resolution.",
-      mode: "light" as const,
+      recipe: "light" as const,
       surface: { canvas: "yellow", card: "yellow" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "yellow", border: "yellow", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -793,7 +793,7 @@ describe("resolveHueSlots — Step 3", () => {
     const recipe = {
       name: "test-raw-angles",
       description: "Test recipe for raw palette angle verification.",
-      mode: "dark" as const,
+      recipe: "dark" as const,
       surface: { canvas: "violet", card: "violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -821,7 +821,7 @@ describe("resolveHueSlots — Step 3", () => {
     const recipe = {
       name: "test-bare-base",
       description: "Test recipe for surfBareBase extraction from hyphenated hue.",
-      mode: "dark" as const,
+      recipe: "dark" as const,
       surface: { canvas: "indigo-violet", card: "indigo-violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -835,7 +835,7 @@ describe("resolveHueSlots — Step 3", () => {
     const recipe = {
       name: "test-bare-base-bare",
       description: "Test recipe for surfBareBase extraction from bare hue name.",
-      mode: "dark" as const,
+      recipe: "dark" as const,
       surface: { canvas: "violet", card: "violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -849,7 +849,7 @@ describe("resolveHueSlots — Step 3", () => {
     const recipe = {
       name: "test-bt-bare",
       description: "Test recipe for borderTintBareBase extraction from hyphenated hue.",
-      mode: "dark" as const,
+      recipe: "dark" as const,
       surface: { canvas: "indigo-violet", card: "indigo-violet" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -910,7 +910,7 @@ describe("resolveHueSlots — Step 3", () => {
     const recipe = {
       name: "test-semantic-merge",
       description: "Test that semantic hue resolution is identical to recipe hue resolution.",
-      mode: "dark" as const,
+      recipe: "dark" as const,
       surface: { canvas: "orange", card: "orange" },
       element: { content: "orange", control: "orange", display: "orange", informational: "orange", border: "orange", decorative: "orange" },
       role: { accent: "orange", action: "orange", agent: "orange", data: "orange", success: "orange", caution: "orange", danger: "orange" },
@@ -1108,22 +1108,18 @@ describe("computeTones — Step 4", () => {
   } {
     // Mirror deriveTheme() formula resolution precedence (Spec S04):
     //   1. recipe.formulas (direct escape hatch)
-    //   2. RECIPE_REGISTRY[mode] with recipe.controls (or registry defaults)
-    //   3. compileRecipe fallback (legacy parameter system)
+    //   2. RECIPE_REGISTRY[recipe.recipe] with recipe.controls (or registry defaults)
     let recipeFormulas: DerivationFormulas;
     if (recipe.formulas) {
       recipeFormulas = recipe.formulas;
     } else {
-      const registryEntry = RECIPE_REGISTRY[recipe.mode];
-      if (registryEntry) {
-        recipeFormulas = registryEntry.fn(recipe.controls ?? registryEntry.defaults);
-      } else {
-        recipeFormulas = compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
-      }
+      const registryEntry = RECIPE_REGISTRY[recipe.recipe];
+      recipeFormulas = registryEntry
+        ? registryEntry.fn(recipe.controls ?? registryEntry.defaults)
+        : darkRecipeFn(defaultDarkControls);
     }
     const knobs: MoodKnobs = { surfaceContrast: 50 };
-    // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch for
-    // parameter-based recipes (avoids falling back to DARK_FORMULAS default). [Step 4]
+    // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch. [Step 4]
     const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
     const computed = computeTones(recipeFormulas, knobs);
 
@@ -1263,7 +1259,7 @@ describe("computeTones — Step 4", () => {
   // T-RULES-SURFACES-LIGHT: Surface tokens also match for Brio light recipe
   // ---------------------------------------------------------------------------
   it("T-RULES-SURFACES-LIGHT: rule-derived surface tokens match imperative output for Brio light", () => {
-    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
+    const brioLight = { ...EXAMPLE_RECIPES.brio, recipe: "light" as const };
     const { ruleTokens, imperative } = runCoreRules(brioLight);
 
     const SURFACE_TOKENS = [
@@ -1306,16 +1302,13 @@ describe("derivation-engine step-6 rules", () => {
     if (recipe.formulas) {
       recipeFormulas = recipe.formulas;
     } else {
-      const registryEntry = RECIPE_REGISTRY[recipe.mode];
-      if (registryEntry) {
-        recipeFormulas = registryEntry.fn(recipe.controls ?? registryEntry.defaults);
-      } else {
-        recipeFormulas = compileRecipe(recipe.mode, recipe.parameters ?? defaultParameters());
-      }
+      const registryEntry = RECIPE_REGISTRY[recipe.recipe];
+      recipeFormulas = registryEntry
+        ? registryEntry.fn(recipe.controls ?? registryEntry.defaults)
+        : darkRecipeFn(defaultDarkControls);
     }
     const knobs: MoodKnobs = { surfaceContrast: 50 };
-    // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch for
-    // parameter-based recipes (avoids falling back to DARK_FORMULAS default). [Step 4]
+    // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch. [Step 4]
     const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
     const computed = computeTones(recipeFormulas, knobs);
 
@@ -1400,29 +1393,29 @@ describe("derivation-engine step-6 rules", () => {
 // light-mode rule parity requires BRIO_LIGHT_FORMULAS which is deferred to a later step.
 
 // ---------------------------------------------------------------------------
-// Step 3 tests: compileRecipe wired into deriveTheme (Spec S05, S06)
-// T3.1: deriveTheme with parameters produces 374 tokens
+// Step 3 tests: recipe function path in deriveTheme (Spec S04)
+// T3.1: deriveTheme with controls produces 374 tokens
 // T3.2: deriveTheme with formulas escape hatch still works
-// T3.3: deriveTheme with no parameters and no formulas uses compiled defaults
+// T3.3: deriveTheme with no controls and no formulas uses registry defaults
 // ---------------------------------------------------------------------------
 
-describe("derivation-engine step-3 compileRecipe integration", () => {
+describe("derivation-engine step-3 recipe-function integration", () => {
   const minimalDarkRecipe = EXAMPLE_RECIPES.brio;
 
-  it("T3.1: deriveTheme with parameters: defaultParameters() produces 374 tokens", () => {
-    const recipe = { ...minimalDarkRecipe, parameters: defaultParameters(), formulas: undefined };
+  it("T3.1: deriveTheme with controls: defaultDarkControls produces 374 tokens", () => {
+    const recipe = { ...minimalDarkRecipe, controls: defaultDarkControls, formulas: undefined };
     const output = deriveTheme(recipe);
     expect(Object.keys(output.tokens).length).toBe(374);
   });
 
   it("T3.2: deriveTheme with formulas escape hatch still works (backward compat)", () => {
-    const recipe = { ...minimalDarkRecipe, formulas: DARK_FORMULAS, parameters: undefined };
+    const recipe = { ...minimalDarkRecipe, formulas: DARK_FORMULAS, controls: undefined };
     const output = deriveTheme(recipe);
     expect(Object.keys(output.tokens).length).toBe(374);
   });
 
-  it("T3.3: deriveTheme with no parameters and no formulas uses compiled defaults (374 tokens)", () => {
-    const recipe = { ...minimalDarkRecipe, parameters: undefined, formulas: undefined };
+  it("T3.3: deriveTheme with no controls and no formulas uses registry defaults (374 tokens)", () => {
+    const recipe = { ...minimalDarkRecipe, controls: undefined, formulas: undefined };
     const output = deriveTheme(recipe);
     expect(Object.keys(output.tokens).length).toBe(374);
   });

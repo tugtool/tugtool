@@ -26,7 +26,7 @@
  */
 
 import { DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
-import type { DerivationFormulas } from "./theme-derivation-engine";
+import type { DerivationFormulas } from "./theme-engine";
 
 // ---------------------------------------------------------------------------
 // RecipeControls — Spec S01
@@ -64,7 +64,7 @@ export interface RecipeControls {
  *
  * This is the same piecewise formula used by enforceContrastFloor and toneToL
  * in theme-accessibility.ts. Duplicated here to avoid a circular import
- * (recipe-functions.ts -> theme-derivation-engine.ts -> recipe-functions.ts).
+ * (recipe-functions.ts -> theme-engine.ts -> recipe-functions.ts).
  * Both implementations use the same math. [D02]
  */
 function toneToLLocal(tone: number, hueName?: string): number {

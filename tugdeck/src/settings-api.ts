@@ -159,13 +159,16 @@ export function putTheme(theme: string): void {
   });
 }
 
-// ---- Theme Generator mode persistence ----
+// ---- Theme Generator recipe persistence ----
 
 /**
- * Fetch the Theme Generator mode from tugbank.
+ * Fetch the Theme Generator recipe from tugbank.
  * Returns "dark" or "light", or `null` if not stored.
+ *
+ * Note: the REST endpoint path remains `/api/defaults/dev.tugtool.app/generator-mode`
+ * (legacy name) to preserve backward compatibility with previously persisted values.
  */
-export async function fetchGeneratorMode(): Promise<"dark" | "light" | null> {
+export async function fetchGeneratorRecipe(): Promise<"dark" | "light" | null> {
   try {
     const response = await fetch("/api/defaults/dev.tugtool.app/generator-mode");
     if (!response.ok) return null;
@@ -178,13 +181,16 @@ export async function fetchGeneratorMode(): Promise<"dark" | "light" | null> {
 }
 
 /**
- * PUT the Theme Generator mode to tugbank (fire-and-forget).
+ * PUT the Theme Generator recipe to tugbank (fire-and-forget).
+ *
+ * Note: the REST endpoint path remains `/api/defaults/dev.tugtool.app/generator-mode`
+ * (legacy name) to preserve backward compatibility with previously persisted values.
  */
-export function putGeneratorMode(mode: "dark" | "light"): void {
+export function putGeneratorRecipe(recipe: "dark" | "light"): void {
   fetch("/api/defaults/dev.tugtool.app/generator-mode", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "string", value: mode }),
+    body: JSON.stringify({ kind: "string", value: recipe }),
   }).catch((err) => {
     console.warn("[settings] PUT generator-mode failed:", err);
   });

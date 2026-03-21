@@ -39,7 +39,7 @@ function paletteHotReload(): VitePlugin {
 }
 
 /**
- * Vite plugin: regenerate tokens when theme-derivation-engine.ts changes.
+ * Vite plugin: regenerate tokens when theme-engine.ts changes.
  *
  * The derivation engine is the single source of truth for all --tug-base-* tokens.
  * When it changes, we re-run generate-tug-tokens.ts to update the
@@ -65,7 +65,7 @@ function controlTokenHotReload(): VitePlugin {
       regenerate();
     },
     handleHotUpdate({ file }) {
-      if (file.endsWith("theme-derivation-engine.ts")) {
+      if (file.endsWith("theme-engine.ts")) {
         regenerate();
       }
     },

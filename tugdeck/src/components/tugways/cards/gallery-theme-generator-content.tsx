@@ -32,7 +32,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, useId } from "react";
-import { fetchGeneratorMode, putGeneratorMode } from "@/settings-api";
+import { fetchGeneratorRecipe, putGeneratorRecipe } from "@/settings-api";
 import * as Popover from "@radix-ui/react-popover";
 import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
@@ -45,7 +45,7 @@ import {
   type ContrastResult,
   type ContrastDiagnostic,
   type CVDWarning,
-} from "@/components/tugways/theme-derivation-engine";
+} from "@/components/tugways/theme-engine";
 import {
   RECIPE_REGISTRY,
   defaultDarkControls,
@@ -787,8 +787,8 @@ export function validateRecipeJson(value: unknown): string | null {
   if (typeof obj["description"] !== "string" || obj["description"].trim() === "") {
     return "Missing or invalid 'description' field (non-empty string required)";
   }
-  if (obj["mode"] !== "dark" && obj["mode"] !== "light") {
-    return "Invalid 'mode' field (must be 'dark' or 'light')";
+  if (obj["recipe"] !== "dark" && obj["recipe"] !== "light") {
+    return "Invalid 'recipe' field (must be 'dark' or 'light')";
   }
   // Validate surface group
   if (typeof obj["surface"] !== "object" || obj["surface"] === null) {
@@ -1444,14 +1444,14 @@ export function GalleryThemeGeneratorContent() {
   }, [refreshSavedThemes]);
 
   const [recipeName, setRecipeName] = useState<string>(DEFAULT_RECIPE.name);
-  const [mode, setModeRaw] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
+  const [mode, setModeRaw] = useState<"dark" | "light">(DEFAULT_RECIPE.recipe);
   const setMode = useCallback((m: "dark" | "light") => {
-    putGeneratorMode(m);
+    putGeneratorRecipe(m);
     setModeRaw(m);
   }, []);
-  // Restore persisted mode from tugbank on mount.
+  // Restore persisted recipe from tugbank on mount.
   useEffect(() => {
-    fetchGeneratorMode().then((saved) => { if (saved) setModeRaw(saved); });
+    fetchGeneratorRecipe().then((saved) => { if (saved) setModeRaw(saved); });
   }, []);
   // Surface hue state
   const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card);
@@ -1629,7 +1629,7 @@ export function GalleryThemeGeneratorContent() {
       const recipe: ThemeRecipe = {
         name: n,
         description: `Generated theme (${m} mode, card: ${card}, content: ${content})`,
-        mode: m,
+        recipe: m,
         surface: { canvas, card },
         element: { content, control, display, informational, border, decorative },
         role: { accent, action: active, agent, data, success, caution, danger },
@@ -1699,7 +1699,7 @@ export function GalleryThemeGeneratorContent() {
         const recipe: ThemeRecipe = {
           name: recipeName,
           description: `Generated theme (${mode} mode)`,
-          mode,
+          recipe: mode,
           surface: { canvas: canvasHue, card: cardHue },
           element: {
             content: contentHue,
@@ -1742,7 +1742,7 @@ export function GalleryThemeGeneratorContent() {
     (presetKey: keyof typeof EXAMPLE_RECIPES) => {
       const r = EXAMPLE_RECIPES[presetKey];
       setRecipeName(r.name);
-      setMode(r.mode);
+      setMode(r.recipe);
       setCardHue(r.surface.card);
       setCanvasHue(r.surface.canvas);
       setContentHue(r.element.content);
@@ -1759,10 +1759,10 @@ export function GalleryThemeGeneratorContent() {
       setCautionHue(r.role.caution);
       setDangerHue(r.role.danger);
       // When loading a formulas-based recipe (escape hatch [D06]), set formulas directly.
-      // Otherwise set formulas to null so RECIPE_REGISTRY[mode].fn(controls) is used. [D01]
+      // Otherwise set formulas to null so RECIPE_REGISTRY[recipe].fn(controls) is used. [D01]
       setFormulasAndRef(r.formulas ?? null);
       // Restore control slider positions from the preset recipe (or registry defaults). [D01]
-      const registryEntry = RECIPE_REGISTRY[r.mode];
+      const registryEntry = RECIPE_REGISTRY[r.recipe];
       setControlsAndRef(r.controls ?? (registryEntry ? registryEntry.defaults : defaultDarkControls));
       setThemeOutput(deriveTheme(r));
     },
@@ -1789,7 +1789,7 @@ export function GalleryThemeGeneratorContent() {
     () => ({
       name: recipeName,
       description: `Generated theme (${mode} mode, card: ${cardHue}, content: ${contentHue})`,
-      mode,
+      recipe: mode,
       surface: { canvas: canvasHue, card: cardHue },
       element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
       role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
@@ -1805,12 +1805,12 @@ export function GalleryThemeGeneratorContent() {
    *
    * When the recipe has explicit formulas, use them (escape hatch [D06]).
    * When the recipe has controls (or neither), set formulas to null so
-   * RECIPE_REGISTRY[mode].fn(controls) runs at derive time. [D01]
+   * RECIPE_REGISTRY[recipe].fn(controls) runs at derive time. [D01]
    */
   const handleRecipeImported = useCallback(
     (r: ThemeRecipe) => {
       setRecipeName(r.name);
-      setMode(r.mode);
+      setMode(r.recipe);
       setCardHue(r.surface.card);
       setCanvasHue(r.surface.canvas);
       setContentHue(r.element.content);
@@ -1828,7 +1828,7 @@ export function GalleryThemeGeneratorContent() {
       setDangerHue(r.role.danger);
       setFormulasAndRef(r.formulas ?? null);
       // Restore control slider positions from the imported recipe (or registry defaults). [D01]
-      const registryEntry = RECIPE_REGISTRY[r.mode];
+      const registryEntry = RECIPE_REGISTRY[r.recipe];
       setControlsAndRef(r.controls ?? (registryEntry ? registryEntry.defaults : defaultDarkControls));
       setThemeOutput(deriveTheme(r));
     },
@@ -1929,7 +1929,7 @@ export function GalleryThemeGeneratorContent() {
               const recipe: ThemeRecipe = {
                 name: recipeName,
                 description: `Generated theme (dark mode)`,
-                mode: "dark",
+                recipe: "dark",
                 surface: { canvas: canvasHue, card: cardHue },
                 element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
                 role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
@@ -1952,7 +1952,7 @@ export function GalleryThemeGeneratorContent() {
               const recipe: ThemeRecipe = {
                 name: recipeName,
                 description: `Generated theme (light mode)`,
-                mode: "light",
+                recipe: "light",
                 surface: { canvas: canvasHue, card: cardHue },
                 element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
                 role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
