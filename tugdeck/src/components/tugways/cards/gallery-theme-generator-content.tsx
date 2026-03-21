@@ -44,7 +44,17 @@ import {
   type ContrastDiagnostic,
   type CVDWarning,
 } from "@/components/tugways/theme-derivation-engine";
-import { defaultParameters } from "@/components/tugways/recipe-parameters";
+import {
+  defaultParameters,
+  compileRecipe,
+  type RecipeParameters,
+} from "@/components/tugways/recipe-parameters";
+import {
+  ParameterSlider,
+  PARAMETER_METADATA,
+} from "@/components/tugways/parameter-slider";
+import { FormulaExpansionPanel } from "@/components/tugways/formula-expansion-panel";
+import { RecipeDiffView } from "@/components/tugways/recipe-diff-view";
 import {
   validateThemeContrast,
   checkCVDDistinguishability,
@@ -1375,6 +1385,26 @@ export function GalleryThemeGeneratorContent() {
     formulasRef.current = f;
   }
 
+  // Parameters state — exists ONLY for data panel rendering (FormulaExpansionPanel,
+  // RecipeDiffView). NOT added to the useEffect dependency array. Appearance
+  // changes never flow through this state — they go through setThemeOutput() directly.
+  // Per [D01]: slider-driven appearance changes use the direct-call pattern (L06).
+  const [parameters, setParameters] = useState<RecipeParameters>(defaultParameters);
+  const parametersRef = useRef<RecipeParameters>(defaultParameters());
+
+  /**
+   * Update both the parameters state and the ref synchronously.
+   * Mirrors the setFormulasAndRef pattern. Used by loadPreset, handleRecipeImported,
+   * mode toggle, and the debounced slider callback. [D01]
+   */
+  function setParametersAndRef(p: RecipeParameters): void {
+    setParameters(p);
+    parametersRef.current = p;
+  }
+
+  // Debounce timeout ID stored in a ref for safe cleanup on unmount. [D02]
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   // Role hue state — one per role in the 7-role system. [D05, Step 6]
   const [accentHue, setAccentHue] = useState<string>(DEFAULT_RECIPE.role.accent);
   const [activeHue, setActiveHue] = useState<string>(DEFAULT_RECIPE.role.action);
@@ -1503,7 +1533,7 @@ export function GalleryThemeGeneratorContent() {
         role: { accent, action: active, agent, data, success, caution, danger },
         ...(formulasRef.current !== null
           ? { formulas: formulasRef.current }
-          : { parameters: defaultParameters() }),
+          : { parameters: parametersRef.current }),
       };
       setThemeOutput(deriveTheme(recipe));
     },
@@ -1518,6 +1548,109 @@ export function GalleryThemeGeneratorContent() {
     runDerive(recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
+
+  // Cleanup: clear any pending debounce timer on unmount to prevent callbacks
+  // firing on an unmounted component. Per [D02].
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current !== undefined) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Debounced slider handler — L06-compliant direct-call pattern. [D01, D02]
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Handle a slider parameter change:
+   *   1. Update parametersRef.current immediately (synchronous, L07).
+   *   2. Clear any pending debounce timeout.
+   *   3. After 150ms: assemble ThemeRecipe + call setThemeOutput(deriveTheme(recipe))
+   *      directly for appearance (L06), then call setParameters() for data panel rendering.
+   *
+   * The recipe is assembled inline from closure values (stable: mode, hue strings,
+   * recipeName) and refs (always current: parametersRef, formulasRef). [D01, D02]
+   *
+   * NOTE: parameters is NOT added to useEffect dependency array. This handler
+   * bypasses the useEffect → runDerive() path entirely. [D01]
+   */
+  const handleParameterChange = useCallback(
+    (paramKey: keyof RecipeParameters, value: number) => {
+      // Update ref immediately — always current before the debounce fires. [D02]
+      parametersRef.current = { ...parametersRef.current, [paramKey]: value };
+
+      // Clear pending debounce.
+      if (debounceTimerRef.current !== undefined) {
+        clearTimeout(debounceTimerRef.current);
+      }
+
+      // Capture stable closure values (mode, hue strings) — safe per [D02] comment
+      // (these come from discrete pickers and do not change during slider drag).
+      debounceTimerRef.current = setTimeout(() => {
+        debounceTimerRef.current = undefined;
+
+        // Build recipe inline using refs (always current per L07). [D01]
+        const recipe: ThemeRecipe = {
+          name: recipeName,
+          description: `Generated theme (${mode} mode)`,
+          mode,
+          surface: { canvas: canvasHue, card: cardHue },
+          element: {
+            content: contentHue,
+            control: controlHue,
+            display: displayHue,
+            informational: informationalHue,
+            border: borderHue,
+            decorative: decorativeHue,
+          },
+          role: {
+            accent: accentHue,
+            action: activeHue,
+            agent: agentHue,
+            data: dataHue,
+            success: successHue,
+            caution: cautionHue,
+            danger: dangerHue,
+          },
+          ...(formulasRef.current !== null
+            ? { formulas: formulasRef.current }
+            : { parameters: parametersRef.current }),
+        };
+
+        // Appearance update (L06): direct call, bypasses React state and useEffect.
+        setThemeOutput(deriveTheme(recipe));
+
+        // Data panel update: update parameters state for FormulaExpansionPanel and RecipeDiffView.
+        // This state is NOT in the useEffect dep array and does not trigger re-derivation.
+        setParametersAndRef(parametersRef.current);
+      }, 150);
+    },
+    // Closure captures stable values (mode, hue strings, recipeName).
+    // formulasRef and parametersRef are refs — stable references.
+    // debounceTimerRef is a ref — stable reference.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mode, recipeName, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
+  );
+
+  // ---------------------------------------------------------------------------
+  // compiledFormulas — for data panels (FormulaExpansionPanel, RecipeDiffView)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compiled formulas for data panel rendering. Computed via useMemo so it stays
+   * in sync with the parameters state used for panel rendering. When the formulas
+   * escape hatch is active (formulas !== null), use it directly.
+   *
+   * Per [D01]: this is cheap (~130 field interpolations) and provides accurate
+   * field values for FormulaExpansionPanel and RecipeDiffView.
+   */
+  const compiledFormulas = useMemo(
+    () => formulas ?? compileRecipe(mode, parameters),
+    [mode, parameters, formulas],
+  );
 
   // ---------------------------------------------------------------------------
   // Preset load helpers
@@ -1547,10 +1680,13 @@ export function GalleryThemeGeneratorContent() {
       // runs at derive time. When loading a formulas-based recipe (escape hatch [D06]),
       // set formulas to the recipe's explicit formulas. [Step 4]
       setFormulasAndRef(r.formulas ?? null);
+      // Restore parameter slider positions from the preset recipe (or default).
+      // Per Step 5: loadPreset updates parameters state so sliders reflect the preset. [D01]
+      setParametersAndRef(r.parameters ?? defaultParameters());
       setThemeOutput(deriveTheme(r));
     },
-    // setFormulasAndRef is a stable plain function defined in component scope —
-    // no dependency needed.
+    // setFormulasAndRef and setParametersAndRef are stable plain functions defined
+    // in component scope — no dependency needed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -1576,9 +1712,9 @@ export function GalleryThemeGeneratorContent() {
       surface: { canvas: canvasHue, card: cardHue },
       element: { content: contentHue, control: controlHue, display: displayHue, informational: informationalHue, border: borderHue, decorative: decorativeHue },
       role: { accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-      ...(formulas !== null ? { formulas } : { parameters: defaultParameters() }),
+      ...(formulas !== null ? { formulas } : { parameters }),
     }),
-    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
+    [recipeName, mode, cardHue, canvasHue, contentHue, controlHue, displayHue, informationalHue, borderHue, decorativeHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas, parameters],
   );
 
   /**
@@ -1610,10 +1746,14 @@ export function GalleryThemeGeneratorContent() {
       setCautionHue(r.role.caution);
       setDangerHue(r.role.danger);
       setFormulasAndRef(r.formulas ?? null);
+      // Restore parameter slider positions from the imported recipe (or default).
+      // Per Step 5: handleRecipeImported updates parameters state so sliders reflect
+      // the imported recipe values. [D01]
+      setParametersAndRef(r.parameters ?? defaultParameters());
       setThemeOutput(deriveTheme(r));
     },
-    // setFormulasAndRef is a stable plain function defined in component scope —
-    // no dependency needed.
+    // setFormulasAndRef and setParametersAndRef are stable plain functions defined
+    // in component scope — no dependency needed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -1702,7 +1842,7 @@ export function GalleryThemeGeneratorContent() {
             emphasis={mode === "dark" ? "filled" : "outlined"}
             role="action"
             size="sm"
-            onClick={() => { setMode("dark"); setFormulasAndRef(null); }}
+            onClick={() => { setMode("dark"); setFormulasAndRef(null); setParametersAndRef(defaultParameters()); }}
             data-testid="gtg-mode-dark"
           >
             Dark
@@ -1711,7 +1851,7 @@ export function GalleryThemeGeneratorContent() {
             emphasis={mode === "light" ? "filled" : "outlined"}
             role="action"
             size="sm"
-            onClick={() => { setMode("light"); setFormulasAndRef(null); }}
+            onClick={() => { setMode("light"); setFormulasAndRef(null); setParametersAndRef(defaultParameters()); }}
             data-testid="gtg-mode-light"
           >
             Light
@@ -1747,7 +1887,33 @@ export function GalleryThemeGeneratorContent() {
               { key: "caution", label: "Caution", hue: cautionHue, set: setCautionHue, testId: "gtg-role-hue-caution" },
               { key: "danger", label: "Danger", hue: dangerHue, set: setDangerHue, testId: "gtg-role-hue-danger" },
             ]}
-            moodSliders={null}
+            moodSliders={
+              <div className="gtg-parameter-panel" data-testid="gtg-parameter-panel">
+                <div className="gtg-parameter-sliders" data-testid="gtg-parameter-sliders">
+                  {PARAMETER_METADATA.map((meta) => (
+                    <ParameterSlider
+                      key={meta.paramKey}
+                      paramKey={meta.paramKey}
+                      label={meta.label}
+                      lowLabel={meta.lowLabel}
+                      highLabel={meta.highLabel}
+                      value={parameters[meta.paramKey]}
+                      onChange={handleParameterChange}
+                    />
+                  ))}
+                </div>
+                <FormulaExpansionPanel
+                  compiledFormulas={compiledFormulas}
+                  parameters={parameters}
+                  mode={mode}
+                />
+                <RecipeDiffView
+                  parameters={parameters}
+                  compiledFormulas={compiledFormulas}
+                  mode={mode}
+                />
+              </div>
+            }
           />
         </div>
 

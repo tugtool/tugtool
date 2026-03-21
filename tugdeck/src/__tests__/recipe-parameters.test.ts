@@ -17,11 +17,18 @@ import { describe, it, expect } from "bun:test";
 import {
   compileRecipe,
   defaultParameters,
+  getParameterFields,
   DARK_STRUCTURAL_TEMPLATE,
   LIGHT_STRUCTURAL_TEMPLATE,
+  DARK_ENDPOINTS,
+  LIGHT_ENDPOINTS,
   type RecipeParameters,
 } from "@/components/tugways/recipe-parameters";
-import { type DerivationFormulas } from "@/components/tugways/theme-derivation-engine";
+import {
+  type DerivationFormulas,
+  DARK_FORMULAS,
+  LIGHT_FORMULAS,
+} from "@/components/tugways/theme-derivation-engine";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -500,5 +507,207 @@ describe("recipe-parameters", () => {
     expect(params.shadowDepth).toBe(50);
     expect(params.signalStrength).toBe(50);
     expect(params.atmosphere).toBe(50);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T2.1: getParameterFields("surfaceDepth", "dark") matches DARK_ENDPOINTS keys
+  // ---------------------------------------------------------------------------
+
+  it("T2.1: getParameterFields('surfaceDepth', 'dark') returns fields matching Object.keys(DARK_ENDPOINTS.surfaceDepth.low)", () => {
+    const fields = getParameterFields("surfaceDepth", "dark");
+    const expected = Object.keys(DARK_ENDPOINTS.surfaceDepth.low).sort();
+    expect(fields).toEqual(expected);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T2.2: getParameterFields("controlWeight", "light") matches LIGHT_P3_ENDPOINTS keys
+  // ---------------------------------------------------------------------------
+
+  it("T2.2: getParameterFields('controlWeight', 'light') returns fields matching LIGHT_ENDPOINTS.controlWeight.low keys", () => {
+    const fields = getParameterFields("controlWeight", "light");
+    const expected = Object.keys(LIGHT_ENDPOINTS.controlWeight.low).sort();
+    expect(fields).toEqual(expected);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T2.3: All 7 parameters x 2 modes return non-empty field lists
+  // ---------------------------------------------------------------------------
+
+  it("T2.3: all 7 parameters x 2 modes return non-empty sorted field lists", () => {
+    const paramKeys: Array<keyof RecipeParameters> = [
+      "surfaceDepth",
+      "textHierarchy",
+      "controlWeight",
+      "borderDefinition",
+      "shadowDepth",
+      "signalStrength",
+      "atmosphere",
+    ];
+    const modes: Array<"dark" | "light"> = ["dark", "light"];
+
+    for (const paramKey of paramKeys) {
+      for (const mode of modes) {
+        const fields = getParameterFields(paramKey, mode);
+        expect(fields.length).toBeGreaterThan(0);
+        // Verify sorted order
+        const sorted = [...fields].sort();
+        expect(fields).toEqual(sorted);
+      }
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // T7.1: Midpoint constraint — compileRecipe(mode, defaultParameters()) reproduces
+  // the reference DARK_FORMULAS / LIGHT_FORMULAS numeric fields at V=50.
+  // This verifies that endpoint refinements did not break the midpoint invariant.
+  // ---------------------------------------------------------------------------
+
+  it("T7.1: compileRecipe('dark', defaultParameters()) — all numeric fields match DARK_FORMULAS reference values", () => {
+    const compiled = compileRecipe("dark", defaultParameters());
+
+    // Fields intentionally neutralized by compileRecipe() per [D04]:
+    // surfaceCanvasToneScale: forced to 0 (DARK_FORMULAS has 8) to eliminate
+    //   the surfaceContrast-scaling path in computeTones().
+    const neutralizedFields = new Set(["surfaceCanvasToneScale"]);
+
+    // Collect all numeric fields from DARK_FORMULAS that are controlled by
+    // the parameter endpoint system (i.e. all numeric fields).
+    const mismatches: string[] = [];
+    for (const [key, refValue] of Object.entries(DARK_FORMULAS as Record<string, unknown>)) {
+      if (typeof refValue !== "number") continue;
+      if (neutralizedFields.has(key)) continue; // intentional override
+      const compiledValue = (compiled as Record<string, unknown>)[key];
+      if (typeof compiledValue !== "number") {
+        mismatches.push(`${key}: expected ${refValue} but got ${String(compiledValue)}`);
+        continue;
+      }
+      // Allow floating-point tolerance of ±0.01 to account for rounding
+      if (Math.abs(compiledValue - refValue) > 0.01) {
+        mismatches.push(`${key}: expected ${refValue} but got ${compiledValue}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("T7.1: compileRecipe('light', defaultParameters()) — all numeric fields match LIGHT_FORMULAS reference values", () => {
+    const compiled = compileRecipe("light", defaultParameters());
+
+    // Fields intentionally neutralized by compileRecipe() per [D04].
+    const neutralizedFields = new Set(["surfaceCanvasToneScale"]);
+
+    const mismatches: string[] = [];
+    for (const [key, refValue] of Object.entries(LIGHT_FORMULAS as Record<string, unknown>)) {
+      if (typeof refValue !== "number") continue;
+      if (neutralizedFields.has(key)) continue;
+      const compiledValue = (compiled as Record<string, unknown>)[key];
+      if (typeof compiledValue !== "number") {
+        mismatches.push(`${key}: expected ${refValue} but got ${String(compiledValue)}`);
+        continue;
+      }
+      if (Math.abs(compiledValue - refValue) > 0.01) {
+        mismatches.push(`${key}: expected ${refValue} but got ${compiledValue}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T7.2: compileRecipe() at all-0 and all-100 produces valid DerivationFormulas.
+  // No NaN values, no out-of-range numeric fields, and all required fields present.
+  // ---------------------------------------------------------------------------
+
+  it("T7.2: compileRecipe at all-0 — no NaN values in output", () => {
+    const allZero: RecipeParameters = {
+      surfaceDepth: 0,
+      textHierarchy: 0,
+      controlWeight: 0,
+      borderDefinition: 0,
+      shadowDepth: 0,
+      signalStrength: 0,
+      atmosphere: 0,
+    };
+
+    for (const mode of ["dark", "light"] as const) {
+      const compiled = compileRecipe(mode, allZero);
+      const nanFields: string[] = [];
+      for (const [key, value] of Object.entries(compiled as Record<string, unknown>)) {
+        if (typeof value === "number" && isNaN(value)) {
+          nanFields.push(key);
+        }
+      }
+      expect(nanFields).toEqual([]);
+
+      // All required numeric fields in [0, 100]
+      const outOfRange = findOutOfRangeFields(compiled as DerivationFormulas);
+      expect(outOfRange).toEqual([]);
+
+      // All required fields present
+      const missing = findMissingFields(compiled as DerivationFormulas);
+      expect(missing).toEqual([]);
+    }
+  });
+
+  it("T7.2: compileRecipe at all-100 — no NaN values in output", () => {
+    const allMax: RecipeParameters = {
+      surfaceDepth: 100,
+      textHierarchy: 100,
+      controlWeight: 100,
+      borderDefinition: 100,
+      shadowDepth: 100,
+      signalStrength: 100,
+      atmosphere: 100,
+    };
+
+    for (const mode of ["dark", "light"] as const) {
+      const compiled = compileRecipe(mode, allMax);
+      const nanFields: string[] = [];
+      for (const [key, value] of Object.entries(compiled as Record<string, unknown>)) {
+        if (typeof value === "number" && isNaN(value)) {
+          nanFields.push(key);
+        }
+      }
+      expect(nanFields).toEqual([]);
+
+      // All required numeric fields in [0, 100]
+      const outOfRange = findOutOfRangeFields(compiled as DerivationFormulas);
+      expect(outOfRange).toEqual([]);
+
+      // All required fields present
+      const missing = findMissingFields(compiled as DerivationFormulas);
+      expect(missing).toEqual([]);
+    }
+  });
+
+  it("T7.2: intermediate parameter values (25 and 75) produce smooth interpolation — no out-of-range fields", () => {
+    const paramKeys: Array<keyof RecipeParameters> = [
+      "surfaceDepth",
+      "textHierarchy",
+      "controlWeight",
+      "borderDefinition",
+      "shadowDepth",
+      "signalStrength",
+      "atmosphere",
+    ];
+
+    for (const paramKey of paramKeys) {
+      for (const testValue of [25, 75]) {
+        const params: RecipeParameters = {
+          surfaceDepth: 50,
+          textHierarchy: 50,
+          controlWeight: 50,
+          borderDefinition: 50,
+          shadowDepth: 50,
+          signalStrength: 50,
+          atmosphere: 50,
+        };
+        params[paramKey] = testValue;
+
+        for (const mode of ["dark", "light"] as const) {
+          const compiled = compileRecipe(mode, params);
+          const outOfRange = findOutOfRangeFields(compiled as DerivationFormulas);
+          expect(outOfRange).toEqual([]);
+        }
+      }
+    }
   });
 });

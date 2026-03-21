@@ -9,6 +9,148 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-21T00:28:41Z
+---
+
+## step-9: Final verification step: all 1973 tests pass, audit:tokens lint/pairings/verify all pass, all 5 success criteria confirmed
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-8
+date: 2025-03-21T00:17:20Z
+---
+
+## step-8: Created endpoint-contrast.test.ts with 28 parameterized tests (7 params x 2 modes x 2 extremes) verifying contrast compliance. Added endpoint constraint pair exceptions for structural failures.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-7
+date: 2025-03-20T23:44:39Z
+---
+
+## step-7: Refined endpoint bundles in recipe-parameters.ts with toneEndpointsWide/intensityEndpointsWide helpers for P1/P2/P3 parameters with small reference values, added T7.1 midpoint and T7.2 extreme/intermediate value tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-6
+date: 2025-03-20T23:22:40Z
+---
+
+## step-6: Integration verification step: added mode toggle slider reset test, confirmed all 1940 tests pass, audit:tokens lint and verify both pass
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-5
+date: 2025-03-20T22:54:44Z
+---
+
+## step-5: Wired ParameterSlider, FormulaExpansionPanel, and RecipeDiffView into GalleryThemeGeneratorContent with parameters state/ref, debounced direct-call handler, compiledFormulas memo, and updated loadPreset/handleRecipeImported/currentRecipe/mode toggle
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-4
+date: 2025-03-20T22:27:55Z
+---
+
+## step-4: Created RecipeDiffView component with horizontal delta bars comparing parameter values against baseline, expandable field-level detail with deferred computation, CSS with tug token annotations, and unit tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-3
+date: 2025-03-20T22:04:44Z
+---
+
+## step-3: Created FormulaExpansionPanel component with read-only collapsible display of compiled formula fields grouped by parameter, CSS with tug token annotations, and unit tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-3
+date: 2026-03-20T00:00:00Z
+---
+
+## step-3: Built read-only FormulaExpansionPanel component with collapsible parameter sections showing interpolated field values; bun test 1911 pass / 0 fail, audit:tokens lint zero violations
+
+**Files changed:**
+- tugdeck/src/components/tugways/formula-expansion-panel.tsx
+- tugdeck/src/components/tugways/formula-expansion-panel.css
+- tugdeck/src/__tests__/formula-expansion-panel.test.tsx
+
+**Checkpoint results:**
+- `cd tugdeck && bun test`: 1911 pass, 0 fail (13116 expect() calls, 20.17s)
+- `cd tugdeck && bun run audit:tokens lint`: Zero violations. All annotation, alias, and pairing checks pass.
+
+---
+
+---
+step: step-2
+date: 2025-03-20T21:47:23Z
+---
+
+## step-2: Added getParameterFields() helper function to recipe-parameters.ts for field introspection by parameter and mode, with unit tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
+step: step-2
+date: 2026-03-20T00:00:00Z
+---
+
+## step-2: Added getParameterFields helper to recipe-parameters.ts with unit tests; checkpoint bun test -- recipe-parameters: 18 pass / 0 fail
+
+**Files changed:**
+- tugdeck/src/components/tugways/recipe-parameters.ts
+- tugdeck/src/__tests__/recipe-parameters.test.ts
+
+**Checkpoint results:**
+- `cd tugdeck && bun test -- recipe-parameters`: 18 pass, 0 fail (173 expect() calls, 78ms)
+
+---
+
+---
+step: step-1
+date: 2025-03-20T21:32:31Z
+---
+
+## step-1: Created ParameterSlider component with native range input, PARAMETER_METADATA constant with all 7 parameter definitions, CSS styling with tug token annotations, and unit tests
+
+**Files changed:**
+- .tugtool/tugplan-recipe-authoring-ui.md
+
+---
+
+---
 step: step-6
 date: 2025-03-20T20:11:59Z
 ---

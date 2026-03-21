@@ -1,0 +1,140 @@
+/**
+ * parameter-slider.css — ParameterSlider component styles.
+ *
+ * Styles for the slider track, thumb, label row, and value display.
+ * Color-setting rules that reference --tug-base-* tokens include
+ * @tug-renders-on annotations per D81.
+ *
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content | .ps-label (color) |
+ * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .ps-value (color) |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .ps-low-label (color) |
+ * | --tug-base-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .ps-high-label (color) |
+ */
+
+/* ============================================================================
+   Slider container
+   ========================================================================== */
+
+.ps-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+/* ============================================================================
+   Label row: label text + numeric value
+   ========================================================================== */
+
+.ps-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+.ps-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--tug-base-element-global-text-normal-default-rest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+.ps-value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tug-base-element-global-text-normal-muted-rest);
+  flex-shrink: 0;
+  min-width: 2ch;
+  text-align: right;
+}
+
+/* ============================================================================
+   Track row: low-label | range input | high-label
+   ========================================================================== */
+
+.ps-track-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+.ps-low-label,
+.ps-high-label {
+  font-size: 9px;
+  color: var(--tug-base-element-global-text-normal-subtle-rest);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Native range input — track and thumb styling
+   ========================================================================== */
+
+.ps-range {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  outline: none;
+}
+
+/* Track — WebKit / Blink */
+.ps-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--tug-base-element-global-border-normal-muted-rest, rgba(128, 128, 128, 0.3));
+}
+
+/* Track — Firefox */
+.ps-range::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--tug-base-element-global-border-normal-muted-rest, rgba(128, 128, 128, 0.3));
+}
+
+/* Thumb — WebKit / Blink */
+.ps-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tug-base-element-global-fill-normal-accent-rest, #4a90e2);
+  cursor: pointer;
+  margin-top: -4.5px;
+  border: none;
+}
+
+/* Thumb — Firefox */
+.ps-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tug-base-element-global-fill-normal-accent-rest, #4a90e2);
+  cursor: pointer;
+  border: none;
+}
+
+/* Focus styling */
+.ps-range:focus-visible {
+  outline: none;
+}
+
+.ps-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--tug-base-element-global-fill-normal-accent-rest, #4a90e2);
+}
+
+.ps-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 2px var(--tug-base-element-global-fill-normal-accent-rest, #4a90e2);
+}
