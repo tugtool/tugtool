@@ -20,10 +20,10 @@ import "./setup-rtl";
 
 import { describe, it, expect } from "bun:test";
 
+import { DARK_FORMULAS } from "@/components/tugways/formula-constants";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
-  DARK_FORMULAS,
   generateResolvedCssExport,
   resolveHueSlots,
   computeTones,

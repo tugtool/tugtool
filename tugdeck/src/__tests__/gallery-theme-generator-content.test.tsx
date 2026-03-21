@@ -28,7 +28,8 @@ import {
 } from "@/components/tugways/cards/gallery-card";
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
-import { deriveTheme, EXAMPLE_RECIPES, DARK_FORMULAS, LIGHT_FORMULAS } from "@/components/tugways/theme-derivation-engine";
+import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
+import { DARK_FORMULAS, LIGHT_FORMULAS } from "@/components/tugways/formula-constants";
 import { compileRecipe, defaultParameters } from "@/components/tugways/recipe-parameters";
 import { PARAMETER_METADATA } from "@/components/tugways/parameter-slider";
 import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";

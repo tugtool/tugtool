@@ -238,7 +238,6 @@
  * @module components/tugways/theme-derivation-engine
  */
 
-export { DARK_FORMULAS, LIGHT_FORMULAS } from "./formula-constants";
 import { DARK_FORMULAS, LIGHT_FORMULAS } from "./formula-constants";
 
 import {

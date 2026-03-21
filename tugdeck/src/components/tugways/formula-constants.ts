@@ -405,8 +405,8 @@ export const LIGHT_FORMULAS: DerivationFormulas = {
 
   // ===== Card Frame Style =====
   // Light mode: bright tones (vs dark's dim tones 15-18). Frames sit just below canvas.
-  cardFrameActiveIntensity: 10, // strong chroma: active title bar shows vivid hue to clearly signal focus
-  cardFrameActiveTone: 40, // mid-light tone: darker than surface-default (90) so the header reads as a distinct active band, not just bright
+  cardFrameActiveIntensity: 35, // strong chroma: active title bar shows vivid hue to clearly signal focus
+  cardFrameActiveTone: 85, // mid-light tone: darker than surface-default (90) so the header reads as a distinct active band, not just bright
   cardFrameInactiveIntensity: 5, // near-neutral: inactive frames recede without competing with active card
   cardFrameInactiveTone: 90, // matches surface-default: inactive frame blends with content, active frame pops by contrast
 

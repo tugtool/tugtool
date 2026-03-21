@@ -36,8 +36,6 @@ import {
   deriveTheme,
   EXAMPLE_RECIPES,
   generateResolvedCssExport,
-  DARK_FORMULAS,
-  LIGHT_FORMULAS,
   type DerivationFormulas,
   type ThemeRecipe,
   type ThemeOutput,
@@ -45,6 +43,7 @@ import {
   type ContrastDiagnostic,
   type CVDWarning,
 } from "@/components/tugways/theme-derivation-engine";
+import { DARK_FORMULAS, LIGHT_FORMULAS } from "@/components/tugways/formula-constants";
 import {
   defaultParameters,
   compileRecipe,
