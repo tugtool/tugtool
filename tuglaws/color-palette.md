@@ -221,10 +221,10 @@ Components consume base and component tokens. The palette tier provides the raw 
 
 ## Theme Derivation
 
-The `ThemeRecipe` specifies hue names (or hyphenated pairs) for each semantic slot:
+The `ThemeRecipe` specifies hue names (or hyphenated pairs) for 15 semantic slots:
 
 - **Surface hues:** canvas, card
 - **Element hues:** content, control, display, informational, decorative, border
-- **Role hues:** action, accent, success, caution, destructive, agent, data
+- **Role hues:** action, accent, success, caution, danger, agent, data
 
-Three mood knobs modulate derivation: `surfaceContrast` (surface layering depth), `signalIntensity` (signal color saturation), `warmth` (hue-angle bias toward warm tones). The engine resolves hue slots, applies warmth bias, snaps to the nearest named hue or hyphenated pair, and derives all `--tug-base-*` tokens through 23 formula groups. [D70, D80, D82, D83]
+A theme recipe defines rules that express relationships between surfaces, elements, and roles — for example, "content text tone = find a tone that passes contrast 75 against the canvas." The theme engine resolves hue slots, expands recipe rules into formula fields, and derives all `--tug-base-*` tokens through the evaluation pipeline. [D70, D80, D82, D83]
