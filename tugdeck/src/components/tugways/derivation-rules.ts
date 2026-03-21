@@ -29,7 +29,6 @@ import type {
   DerivationRule,
   Expr,
   DerivationFormulas,
-  ComputedTones,
   ChromaticRule,
 } from "./theme-engine";
 
@@ -53,18 +52,18 @@ function lit(n: number): () => number {
  * surface — chromatic rule for a surface token.
  * hueSlot: formulas-mediated slot name (e.g. "surfaceApp", "surfaceSunken")
  * iField: keyof F for the intensity formula field
- * toneKey: keyof ComputedTones for the computed tone
+ * toneKey: keyof F for the pre-computed surface tone field
  */
 function surface(
   hueSlot: string,
   iField: keyof F,
-  toneKey: keyof ComputedTones,
+  toneKey: keyof F,
 ): ChromaticRule {
   return {
     type: "chromatic",
     hueSlot,
     intensityExpr: (formulas) => formulas[iField] as number,
-    toneExpr: (_f, _k, computed) => computed[toneKey] as number,
+    toneExpr: (formulas) => formulas[toneKey] as number,
   };
 }
 
@@ -102,7 +101,7 @@ function borderRamp(offset: number): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalIntensity + offset),
+    intensityExpr: (formulas) => Math.min(90, formulas.signalIntensity + offset),
     toneExpr: (f: F) => f.borderSignalTone,
   });
 }
@@ -146,7 +145,7 @@ function semanticTone(alpha?: number): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: (f: F) => f.semanticSignalTone,
     ...(alpha !== undefined ? { alphaExpr: lit(alpha) } : {}),
   });
@@ -180,7 +179,7 @@ function signalRamp(offset: number): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalIntensity + offset),
+    intensityExpr: (formulas) => Math.min(90, formulas.signalIntensity + offset),
     toneExpr: lit(50),
   });
 }
@@ -196,7 +195,7 @@ function signalRampAlpha(
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (_f, _k, computed) => Math.min(90, computed.signalIntensity + offset),
+    intensityExpr: (formulas) => Math.min(90, formulas.signalIntensity + offset),
     toneExpr: lit(50),
     alphaExpr: lit(alpha),
   });
@@ -205,19 +204,19 @@ function signalRampAlpha(
 /**
  * outlinedBg — outlined bg-hover/active rule.
  * hueSlot is the sentinel (e.g. "outlinedSurfaceHover"/"outlinedSurfaceActive").
- * iField: formula intensity, toneKey: computed tone, alphaField: formula alpha.
+ * iField: formula intensity, toneKey: formula tone field (pre-computed), alphaField: formula alpha.
  * Returns a function (hueSlot) => ChromaticRule.
  */
 function outlinedBg(
   iField: keyof F,
-  toneKey: keyof ComputedTones,
+  toneKey: keyof F,
   alphaField: keyof F,
 ): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
     intensityExpr: (formulas) => formulas[iField] as number,
-    toneExpr: (_f, _k, computed) => computed[toneKey] as number,
+    toneExpr: (formulas) => formulas[toneKey] as number,
     alphaExpr: (formulas) => formulas[alphaField] as number,
   });
 }
@@ -377,7 +376,7 @@ const BORDER_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-global-border-normal-accent-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 
@@ -385,7 +384,7 @@ const BORDER_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-global-border-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 
@@ -394,7 +393,7 @@ const BORDER_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "borderTint",
     intensityExpr: (formulas) => formulas.dividerDefaultIntensity,
-    toneExpr: (_f, _k, computed) => computed.dividerDefault,
+    toneExpr: (formulas) => formulas.dividerDefault,
   },
 
   // divider-muted: hueSlot "dividerMuted" -> "borderTintBareBase" dark | "borderTint" light
@@ -402,7 +401,7 @@ const BORDER_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "dividerMuted",
     intensityExpr: (formulas) => formulas.dividerMutedIntensity,
-    toneExpr: (_f, _k, computed) => computed.dividerMuted,
+    toneExpr: (formulas) => formulas.dividerMuted,
   },
 };
 
@@ -558,7 +557,7 @@ const ACCENT_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-global-fill-normal-accent-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (_p, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 
@@ -569,7 +568,7 @@ const ACCENT_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-global-fill-normal-accentSubtle-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (_p, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: (f: F) => f.accentSubtleTone,
     alphaExpr: lit(10),
   },
@@ -623,7 +622,7 @@ const SEMANTIC_TONE_RULES: Record<string, DerivationRule> = {
   "--tug-base-surface-tone-primary-normal-caution-rest": {
     type: "chromatic",
     hueSlot: "caution",
-    intensityExpr: (_f: F, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas: F) => formulas.signalIntensity,
     toneExpr: (f: F) => f.cautionSurfaceTone,
     alphaExpr: lit(8),
   },
@@ -712,7 +711,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
   "--tug-base-surface-highlight-primary-normal-flash-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (_p, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
     alphaExpr: lit(35),
   },
@@ -810,7 +809,7 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "disabledSurface",
     intensityExpr: (formulas) => formulas.disabledSurfaceIntensity,
-    toneExpr: (_f, _k, computed) => computed.disabledSurfaceTone,
+    toneExpr: (formulas) => formulas.disabledSurfaceTone,
   },
 
   // disabled-fg: fgDisabled hue at subtleTextIntensity, disabledTextTone
@@ -818,7 +817,7 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "fgDisabled",
     intensityExpr: (formulas) => formulas.subtleTextIntensity,
-    toneExpr: (_f, _k, computed) => computed.disabledTextTone,
+    toneExpr: (formulas) => formulas.disabledTextToneComputed,
   },
 
   // disabled-border: atm hue at disabledBorderIntensity, disabledBorderTone
@@ -826,7 +825,7 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.disabledBorderIntensity,
-    toneExpr: (_f, _k, computed) => computed.disabledBorderTone,
+    toneExpr: (formulas) => formulas.disabledBorderTone,
   },
 
   // disabled-icon: same as disabled-fg
@@ -834,7 +833,7 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "fgDisabled",
     intensityExpr: (formulas) => formulas.subtleTextIntensity,
-    toneExpr: (_f, _k, computed) => computed.disabledTextTone,
+    toneExpr: (formulas) => formulas.disabledTextToneComputed,
   },
 
   // disabled-shadow: structural "none"
@@ -1195,7 +1194,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-field-border-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 
@@ -1203,7 +1202,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-field-border-normal-success-rest": {
     type: "chromatic",
     hueSlot: "success",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 
@@ -1212,7 +1211,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmosphereBorderIntensity,
-    toneExpr: (_f, _k, computed) => computed.dividerTone,
+    toneExpr: (formulas) => formulas.dividerTone,
   },
 
   // field-border-readOnly: atm hue at atmosphereBorderIntensity, dividerTone
@@ -1220,7 +1219,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmosphereBorderIntensity,
-    toneExpr: (_f, _k, computed) => computed.dividerTone,
+    toneExpr: (formulas) => formulas.dividerTone,
   },
 
   // field-fg-label: control hue at contentTextIntensity, contentTextTone (field labels are control text)
@@ -1235,7 +1234,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-field-text-normal-required-rest": {
     type: "chromatic",
     hueSlot: "destructive",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 
@@ -1243,7 +1242,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-field-fill-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 
@@ -1251,7 +1250,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-field-fill-normal-caution-rest": {
     type: "chromatic",
     hueSlot: "caution",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 
@@ -1259,7 +1258,7 @@ const FIELD_RULES: Record<string, DerivationRule> = {
   "--tug-base-element-field-fill-normal-success-rest": {
     type: "chromatic",
     hueSlot: "success",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(50),
   },
 };
@@ -1274,7 +1273,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmosphereBorderIntensity,
-    toneExpr: (_f, _k, computed) => computed.toggleTrackOffTone,
+    toneExpr: (formulas) => formulas.toggleTrackOffTone,
   },
 
   // toggle-track-off-hover: atm hue at min(atmosphereBorderIntensity+4,100), min(toggleTrackOffTone+8,100)
@@ -1282,14 +1281,14 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => Math.min(formulas.atmosphereBorderIntensity + 4, 100),
-    toneExpr: (_f, _k, computed) => Math.min(computed.toggleTrackOffTone + 8, 100),
+    toneExpr: (formulas) => Math.min(formulas.toggleTrackOffTone + 8, 100),
   },
 
   // toggle-track-on: accent hue at signalIntensity, t:42 (muted preset)
   "--tug-base-surface-toggle-track-normal-on-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (_f, _k, computed) => computed.signalIntensity,
+    intensityExpr: (formulas) => formulas.signalIntensity,
     toneExpr: lit(42),
   },
 
@@ -1297,7 +1296,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
   "--tug-base-surface-toggle-track-normal-on-hover": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (_f, _k, computed) => Math.min(computed.signalIntensity + 5, 100),
+    intensityExpr: (formulas) => Math.min(formulas.signalIntensity + 5, 100),
     toneExpr: (formulas) => formulas.toggleTrackOnHoverTone,
   },
 
@@ -1306,7 +1305,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "toggleTrackDisabled",
     intensityExpr: (formulas) => formulas.toggleTrackDisabledIntensity,
-    toneExpr: (_f, _k, computed) => computed.toggleDisabledTone,
+    toneExpr: (formulas) => formulas.toggleDisabledTone,
   },
 
   // toggle-track-mixed: fgSubtle hue at subtleTextIntensity, subtleTextTone
@@ -1386,7 +1385,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     type: "chromatic",
     hueSlot: "atm",
     intensityExpr: (formulas) => formulas.atmosphereBorderIntensity,
-    toneExpr: (_f, _k, computed) => computed.toggleTrackOffTone,
+    toneExpr: (formulas) => formulas.toggleTrackOffTone,
   },
 
 };

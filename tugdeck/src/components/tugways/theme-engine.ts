@@ -6,17 +6,14 @@
  *   - `tokens`: all 373 token values as `--tug-color()` strings (for CSS export)
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
  *
- * The derivation uses a three-step pipeline:
+ * The derivation uses a two-step pipeline:
  *   Layer 1 — resolveHueSlots(): recipe → ResolvedHueSlots
  *             Resolves all per-tier hue variants (fg-muted, surfBareBase, etc.)
  *             using palette angles verbatim — no warmth bias applied.
- *   Layer 2 — computeTones(): DerivationFormulas + MoodKnobs → ComputedTones
- *             Pre-computes all derived tone values. surfaceContrast is fixed at 50
- *             (scaling neutralized by compiled formulas); signalIntensity is derived
- *             from formulas.signalIntensityValue. [D04]
- *   Layer 3 — evaluateRules(): RULES table → tokens + resolved maps
+ *   Layer 2 — evaluateRules(): RULES table → tokens + resolved maps
  *             Iterates the declarative rule table in derivation-rules.ts, calling
- *             the appropriate helper for each token type.
+ *             the appropriate helper for each token type. Pre-computed tone values
+ *             are read directly from DerivationFormulas (set by recipe functions). [D04]
  *
  * Mode differences (dark vs light) are expressed entirely as data in
  * the recipe functions (darkRecipe / lightRecipe) and the RULES table —
@@ -1045,14 +1042,63 @@ export interface DerivationFormulas {
   selectionSurfaceInactiveAlpha: number;
 
   // ===== Signal Intensity Value =====
-  // Compiled signal intensity for computeTones() derivation.
+  // Compiled signal intensity value (0-100). Set directly by recipe functions.
   /**
    * @semantic signal-tone — compiled signal intensity value (0-100).
-   * Interpolated by P6: Signal Strength. Read by computeTones() to populate
-   * computed.signalIntensity. Replaces the MoodKnobs.signalIntensity passthrough.
+   * Interpolated by P6: Signal Strength.
    * Dark reference: 50. Light reference: 50.
    */
   signalIntensityValue: number;
+
+  // ===== Computed Surface Tones =====
+  // Pre-computed surface tone values, set directly by recipe functions.
+  // Set directly by recipe functions; read by Expr lambdas in derivation-rules.ts. [D04]
+  /** @semantic computed-surface-tone — computed tone for the app background surface */
+  surfaceApp: number;
+  /** @semantic computed-surface-tone — computed tone for the canvas background surface */
+  surfaceCanvas: number;
+  /** @semantic computed-surface-tone — computed tone for sunken surfaces */
+  surfaceSunken: number;
+  /** @semantic computed-surface-tone — computed tone for the default card/panel surface */
+  surfaceDefault: number;
+  /** @semantic computed-surface-tone — computed tone for raised surfaces */
+  surfaceRaised: number;
+  /** @semantic computed-surface-tone — computed tone for overlay surfaces */
+  surfaceOverlay: number;
+  /** @semantic computed-surface-tone — computed tone for inset surfaces */
+  surfaceInset: number;
+  /** @semantic computed-surface-tone — computed tone for content surfaces (same as surfaceInset) */
+  surfaceContent: number;
+  /** @semantic computed-surface-tone — computed tone for screen surfaces */
+  surfaceScreen: number;
+
+  // ===== Computed Divider Tones =====
+  /** @semantic computed-divider-tone — computed tone for default divider lines */
+  dividerDefault: number;
+  /** @semantic computed-divider-tone — computed tone for muted divider lines */
+  dividerMuted: number;
+  /** @semantic computed-divider-tone — shared reference tone for disabled/toggle/separator tokens */
+  dividerTone: number;
+
+  // ===== Computed Control Tones =====
+  /** @semantic computed-control-tone — computed tone for disabled surface (control bg) */
+  disabledSurfaceTone: number;
+  /** @semantic computed-control-tone — computed tone for disabled border */
+  disabledBorderTone: number;
+  /** @semantic computed-control-tone — computed tone for outlined control bg at rest */
+  outlinedSurfaceRestTone: number;
+  /** @semantic computed-control-tone — computed tone for outlined control bg at hover */
+  outlinedSurfaceHoverTone: number;
+  /** @semantic computed-control-tone — computed tone for outlined control bg at active */
+  outlinedSurfaceActiveTone: number;
+  /** @semantic computed-control-tone — computed tone for toggle track off state */
+  toggleTrackOffTone: number;
+  /** @semantic computed-control-tone — computed tone for toggle disabled state */
+  toggleDisabledTone: number;
+
+  // ===== Computed Signal Intensity =====
+  /** @semantic computed-signal — computed signal intensity value (0-100), = Math.round(signalIntensityValue) */
+  signalIntensity: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1437,209 +1483,16 @@ export function resolveHueSlots(
 }
 
 // ---------------------------------------------------------------------------
-// MoodKnobs — normalized mood knob values (Spec S04)
-// ---------------------------------------------------------------------------
-
-/**
- * Normalized mood knob values passed to computeTones() and rule expressions.
- * surfaceContrast is fixed at 50 — scaling expressions in computeTones() are
- * neutralized by setting scale formula fields to 0 in compiled formulas. [D04]
- * Spec S04.
- */
-export interface MoodKnobs {
-  /** Surface contrast knob. Fixed at 50 to neutralize computeTones() scaling. */
-  surfaceContrast: number;
-}
-
-// ---------------------------------------------------------------------------
-// ComputedTones — pre-computed tone values for rule evaluation (Spec S03)
-// ---------------------------------------------------------------------------
-
-/**
- * All derived tone values, pre-computed from DerivationFormulas + MoodKnobs before
- * the rule evaluation loop. Rules reference `computed.*` rather than
- * re-deriving inline, preventing redundant computation and ensuring
- * consistency across all tokens that share the same derived tone.
- *
- * This is Layer 2 output of the three-layer derivation pipeline (Spec S01).
- * Produced by computeTones(); consumed by the rule evaluator.
- *
- * Spec S03.
- */
-export interface ComputedTones {
-  // Surface tones (derived from preset tone anchors + surfaceContrast)
-  surfaceApp: number;
-  surfaceCanvas: number;
-  surfaceSunken: number;
-  surfaceDefault: number;
-  surfaceRaised: number;
-  surfaceOverlay: number;
-  surfaceInset: number;
-  surfaceContent: number;
-  surfaceScreen: number;
-  // Divider tones
-  dividerDefault: number;
-  dividerMuted: number;
-  /** Shared reference tone for disabled/toggle/separator tokens (= dividerDefault). */
-  dividerTone: number;
-  // Control/field derived tones
-  disabledSurfaceTone: number;
-  disabledTextTone: number;
-  disabledBorderTone: number;
-  outlinedSurfaceRestTone: number;
-  outlinedSurfaceHoverTone: number;
-  outlinedSurfaceActiveTone: number;
-  toggleTrackOffTone: number;
-  toggleDisabledTone: number;
-  // Signal intensity (derived from formulas.signalIntensityValue — P6: Signal Strength) [D04]
-  signalIntensity: number;
-}
-
-// ---------------------------------------------------------------------------
-// computeTones — Layer 2: preset + knobs -> ComputedTones (Spec S03)
-// ---------------------------------------------------------------------------
-
-/**
- * Pre-compute all derived tone values from a DerivationFormulas and MoodKnobs.
- *
- * This is Layer 2 of the three-layer derivation pipeline (Spec S01).
- * Called by deriveTheme() as Layer 2 of the pipeline. The output ComputedTones
- * is referenced by rule expressions in the RULES table (Layer 3).
- *
- * surfaceContrast is fixed at 50 in MoodKnobs — scaling expressions are neutralized
- * by compiled formula scale fields set to 0. [D04]
- * signalIntensity on ComputedTones is derived from formulas.signalIntensityValue
- * (set by the recipe function via P6: Signal Strength), not from MoodKnobs. [D04]
- *
- * All formulas are verified against Brio dark-mode ground truth by T-TONES-DARK.
- *
- * Mode-branching is eliminated: computed-tone override fields on formulas use the
- * `number | null` convention — a number means "use this flat value", null means
- * "derive from the formula". Spec S03.
- *
- * @param formulas - Recipe formula constants (DerivationFormulas)
- * @param knobs    - Mood knobs (surfaceContrast fixed at 50 in production)
- */
-export function computeTones(formulas: DerivationFormulas, knobs: MoodKnobs): ComputedTones {
-  const sc = knobs.surfaceContrast;
-
-  // ---------------------------------------------------------------------------
-  // Surface tones — each anchored at formulas tone at sc=50, scaled around it.
-  // ---------------------------------------------------------------------------
-
-  // bg-app: anchored at formulas.surfaceAppTone at sc=50, ±8 units at extremes
-  const surfaceApp = formulas.surfaceAppTone + ((sc - 50) / 50) * 8;
-
-  // bg-canvas: formula parameters from compiled formulas. When using recipe functions,
-  // surfaceCanvasToneScale is set to 0 and surfaceCanvasToneCenter to 50, so (sc-50)/50 * 0 = 0
-  // and the formula passes through surfaceCanvasToneBase directly. [D04]
-  const surfaceCanvas = Math.round(
-    formulas.surfaceCanvasToneBase +
-      ((sc - formulas.surfaceCanvasToneCenter) /
-        (formulas.surfaceCanvasToneCenter === 0 ? 100 : 50)) *
-        formulas.surfaceCanvasToneScale,
-  );
-
-  // surface-sunken: anchored at formulas.surfaceSunkenTone at sc=50, ±5 units
-  const surfaceSunken = Math.round(formulas.surfaceSunkenTone + ((sc - 50) / 50) * 5);
-
-  // surface-default: anchored at formulas.surfaceDefaultTone at sc=50, ±3 units
-  const surfaceDefault = Math.round(formulas.surfaceDefaultTone + ((sc - 50) / 50) * 3);
-
-  // surface-raised: anchored at formulas.surfaceRaisedTone at sc=50, ±5 units
-  const surfaceRaised = Math.round(formulas.surfaceRaisedTone + ((sc - 50) / 50) * 5);
-
-  // surface-overlay: anchored at formulas.surfaceOverlayTone at sc=50, ±5 units
-  const surfaceOverlay = Math.round(formulas.surfaceOverlayTone + ((sc - 50) / 50) * 5);
-
-  // surface-inset: anchored at formulas.surfaceInsetTone at sc=50, ±7 units
-  const surfaceInset = Math.round(formulas.surfaceInsetTone + ((sc - 50) / 50) * 7);
-
-  // surface-content: matches inset (code blocks, inline content areas)
-  const surfaceContent = surfaceInset;
-
-  // surface-screen: anchored at formulas.surfaceScreenTone at sc=50, ±13 units
-  const surfaceScreen = Math.round(formulas.surfaceScreenTone + ((sc - 50) / 50) * 13);
-
-  // ---------------------------------------------------------------------------
-  // Divider tones — override fields per Spec S03 [D04]
-  // number = flat value; null = derive from surfaceOverlay formula.
-  // ---------------------------------------------------------------------------
-  const dividerDefault = formulas.dividerDefaultToneOverride ??
-    Math.round(surfaceOverlay - 2);
-  const dividerMuted = formulas.dividerMutedToneOverride ??
-    Math.round(surfaceOverlay);
-  const dividerTone = dividerDefault;
-
-  // ---------------------------------------------------------------------------
-  // Control/field derived tones — override fields per Spec S03 [D04]
-  // ---------------------------------------------------------------------------
-
-  // disabled-bg: uses formulas fields (unchanged from before)
-  const disabledSurfaceTone = Math.round(
-    formulas.disabledSurfaceToneBase + (sc / 100) * formulas.disabledSurfaceToneScale,
-  );
-
-  // disabled-fg: flat value from formulas.disabledTextToneComputed [D04]
-  const disabledTextTone = formulas.disabledTextToneComputed;
-
-  // disabled-border: number = flat; null = Math.round(dividerTone) [D04]
-  const disabledBorderTone = formulas.disabledBorderToneOverride ??
-    Math.round(dividerTone);
-
-  // outlined bg tones — number = flat; null = derived [D04]
-  const outlinedSurfaceRestTone = formulas.outlinedSurfaceRestToneOverride ??
-    Math.round(surfaceInset + 2);
-  const outlinedSurfaceHoverTone = formulas.outlinedSurfaceHoverToneOverride ??
-    Math.round(surfaceRaised + 1);
-  const outlinedSurfaceActiveTone = formulas.outlinedSurfaceActiveToneOverride ??
-    Math.round(surfaceOverlay);
-
-  // toggle track off and disabled tones — number = flat; null = derived [D04]
-  const toggleTrackOffTone = formulas.toggleTrackOffToneOverride ??
-    Math.round(dividerTone);
-  const toggleDisabledTone = formulas.toggleDisabledToneOverride ??
-    Math.round(surfaceOverlay);
-
-  // Signal intensity: derived from compiled formula field signalIntensityValue.
-  // Recipe functions set signalIntensityValue from P6: Signal Strength.
-  // The 18+ rule expressions in derivation-rules.ts read computed.signalIntensity unchanged. [D04]
-  const signalIntensity = Math.round(formulas.signalIntensityValue);
-
-  return {
-    surfaceApp: Math.round(surfaceApp),
-    surfaceCanvas,
-    surfaceSunken,
-    surfaceDefault,
-    surfaceRaised,
-    surfaceOverlay,
-    surfaceInset,
-    surfaceContent,
-    surfaceScreen,
-    dividerDefault,
-    dividerMuted,
-    dividerTone,
-    disabledSurfaceTone,
-    disabledTextTone,
-    disabledBorderTone,
-    outlinedSurfaceRestTone,
-    outlinedSurfaceHoverTone,
-    outlinedSurfaceActiveTone,
-    toggleTrackOffTone,
-    toggleDisabledTone,
-    signalIntensity,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // DerivationRule — type union for the rule table (Spec S04)
 // ---------------------------------------------------------------------------
 
 /**
- * Shared expression type: a function of (formulas, knobs, computed) -> number.
+ * Shared expression type: a function of (formulas) -> number.
  * Used for intensity, tone, and alpha fields in chromatic rules. Spec S05.
  */
-export type Expr = (formulas: DerivationFormulas, knobs: MoodKnobs, computed: ComputedTones) => number;
+export type Expr = (formulas: DerivationFormulas) => number;
 
 /**
  * Chromatic rule — produces a `--tug-color(hue, i, t [,a])` token.
@@ -1684,14 +1537,10 @@ export interface StructuralRule {
   type: "structural";
   valueExpr: (
     formulas: DerivationFormulas,
-    knobs: MoodKnobs,
-    computed: ComputedTones,
     resolvedSlots: ResolvedHueSlots,
   ) => string;
   resolvedExpr?: (
     formulas: DerivationFormulas,
-    knobs: MoodKnobs,
-    computed: ComputedTones,
   ) => ResolvedColor;
 }
 
@@ -1859,9 +1708,7 @@ function buildElementPairingLookup(
  *
  * @param rules            Named rule table (token name → DerivationRule)
  * @param resolvedSlots    Output of resolveHueSlots()
- * @param formulas         Active DerivationFormulas for this recipe
- * @param knobs            Normalized mood knobs
- * @param computed         Output of computeTones()
+ * @param formulas         Active DerivationFormulas for this recipe (includes pre-computed tone fields)
  * @param tokens           Output map for CSS token strings (mutated in place)
  * @param resolved         Output map for OKLCH resolved colors (mutated in place)
  * @param makeShadow       Internal helper: build compact black-a string
@@ -1892,8 +1739,6 @@ export function evaluateRules(
   rules: Record<string, DerivationRule>,
   resolvedSlots: ResolvedHueSlots,
   formulas: DerivationFormulas,
-  knobs: MoodKnobs,
-  computed: ComputedTones,
   tokens: Record<string, string>,
   resolved: Record<string, ResolvedColor>,
   makeShadow: (alpha: number) => string,
@@ -1934,23 +1779,23 @@ export function evaluateRules(
         break;
 
       case "shadow": {
-        const alpha = Math.round(rule.alphaExpr(formulas, knobs, computed));
+        const alpha = Math.round(rule.alphaExpr(formulas));
         tokens[tokenName] = makeShadow(alpha);
         resolved[tokenName] = { ...blackResolved, alpha: alpha / 100 };
         break;
       }
 
       case "highlight": {
-        const alpha = Math.round(rule.alphaExpr(formulas, knobs, computed));
+        const alpha = Math.round(rule.alphaExpr(formulas));
         tokens[tokenName] = makeHighlight(alpha);
         resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
         break;
       }
 
       case "structural": {
-        tokens[tokenName] = rule.valueExpr(formulas, knobs, computed, resolvedSlots);
+        tokens[tokenName] = rule.valueExpr(formulas, resolvedSlots);
         if (rule.resolvedExpr) {
-          resolved[tokenName] = rule.resolvedExpr(formulas, knobs, computed);
+          resolved[tokenName] = rule.resolvedExpr(formulas);
         }
         break;
       }
@@ -1974,19 +1819,19 @@ export function evaluateRules(
           break;
         }
         if (effectiveSlot === "__highlight") {
-          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas, knobs, computed));
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas));
           tokens[tokenName] = makeHighlight(alpha);
           resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
           break;
         }
         if (effectiveSlot === "__shadow") {
-          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas, knobs, computed));
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas));
           tokens[tokenName] = makeShadow(alpha);
           resolved[tokenName] = { ...blackResolved, alpha: alpha / 100 };
           break;
         }
         if (effectiveSlot === "__verboseHighlight") {
-          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas, knobs, computed));
+          const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas));
           tokens[tokenName] = makeVerboseHighlight(alpha);
           resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
           break;
@@ -1995,9 +1840,9 @@ export function evaluateRules(
         // Chromatic resolution
         const slot = resolvedSlots[effectiveSlot as keyof ResolvedHueSlots];
         if (!slot) break; // unknown slot key — skip
-        const i = Math.round(rule.intensityExpr(formulas, knobs, computed));
-        let t = Math.round(rule.toneExpr(formulas, knobs, computed));
-        const a = rule.alphaExpr ? Math.round(rule.alphaExpr(formulas, knobs, computed)) : 100;
+        const i = Math.round(rule.intensityExpr(formulas));
+        let t = Math.round(rule.toneExpr(formulas));
+        const a = rule.alphaExpr ? Math.round(rule.alphaExpr(formulas)) : 100;
 
         // Contrast floor enforcement (Spec S03, D04):
         // Only apply to fully-opaque chromatic tokens that have pairing entries.
@@ -2398,10 +2243,10 @@ function resolvedEntryAlpha(
  *     and CVD simulation); structural and invariant tokens are absent [D09]
  *   - `contrastResults` / `cvdWarnings`: empty arrays (populated in later steps)
  *
- * Three-layer declarative pipeline (Spec S01):
- *   Layer 1 — resolveHueSlots(): recipe              -> ResolvedHueSlots
- *   Layer 2 — computeTones():    formulas + knobs   -> ComputedTones
- *   Layer 3 — evaluateRules():   RULES table        -> tokens + resolved maps
+ * Two-layer declarative pipeline (Spec S01):
+ *   Layer 1 — resolveHueSlots(): recipe           -> ResolvedHueSlots
+ *   Layer 2 — evaluateRules():   RULES table      -> tokens + resolved maps
+ *             Pre-computed tone values are read from DerivationFormulas directly. [D04]
  */
 export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
@@ -2422,26 +2267,14 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   }
 
   // -------------------------------------------------------------------------
-  // 2. Mood knob — surfaceContrast fixed at 50 to neutralize computeTones() scaling [D04]
-  // signalIntensity and warmth removed from MoodKnobs (warmth removed in Step 2,
-  // signalIntensity now derived from formulas.signalIntensityValue in computeTones).
-  // -------------------------------------------------------------------------
-  const knobs: MoodKnobs = { surfaceContrast: 50 };
-
-  // -------------------------------------------------------------------------
-  // 3. Layer 1 — resolve all hue slots (Spec S02)
+  // 2. Layer 1 — resolve all hue slots (Spec S02)
   // -------------------------------------------------------------------------
   const resolvedSlots = resolveHueSlots(recipe, formulas);
-
-  // -------------------------------------------------------------------------
-  // 4. Layer 2 — pre-compute derived tone values (Spec S03)
-  // -------------------------------------------------------------------------
-  const computedTones = computeTones(formulas, knobs);
   const tokens: Record<string, string> = {};
   const resolved: Record<string, ResolvedColor> = {};
 
   // =========================================================================
-  // 5. Layer 3 — evaluate rule table to produce all tokens
+  // 3. Layer 2 — evaluate rule table to produce all tokens
   // =========================================================================
 
   // Build element pairing lookup for contrast floor enforcement (D04).
@@ -2454,8 +2287,6 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     RULES,
     resolvedSlots,
     formulas,
-    knobs,
-    computedTones,
     tokens,
     resolved,
     makeShadowToken,

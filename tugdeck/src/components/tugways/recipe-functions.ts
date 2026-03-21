@@ -192,9 +192,8 @@ export const defaultDarkControls: RecipeControls = {
  * Dark theme recipe function. (Spec S01, [D01])
  *
  * Rules are expressed as offsets from controls + contrastSearch calls + constants.
- * All computeTones-era fields are populated with passthrough/neutralizing values
- * (scale=0, center=50, base=desired tone) so the still-existing computeTones()
- * pipeline produces correct results.
+ * Pre-computed tone fields (surfaceApp, signalIntensity, etc.) are set directly
+ * by this function. [D04]
  *
  * Derived from DARK_FORMULAS offset analysis via compute-offsets.ts [D07]:
  *   canvasTone = 5 (base)
@@ -466,18 +465,42 @@ export function darkRecipe(controls: RecipeControls): DerivationFormulas {
     toggleDisabledToneOverride: c + 17,
     borderStrongToneComputed: Math.round(primaryTextTone - 57), // matches subtleTextTone: 37
 
-    // ===== computeTones-era passthrough fields =====
-    // surfaceContrast is fixed at 50 in deriveTheme(), so these values neutralize
-    // any modulation: scale=0 means zero adjustment; base=desired final tone.
-    // surfaceCanvasToneBase/Center/Scale: at scale=8 and center=50 with knob=50:
-    //   computedCanvas = base + scale*(knob-center)/50 = base + 8*(50-50)/50 = base
-    // So base=c reproduces canvasTone correctly.
+    // ===== Legacy passthrough fields (retained for schema compatibility) =====
     surfaceCanvasToneBase: c,
     surfaceCanvasToneCenter: 50,
     surfaceCanvasToneScale: 8,
-    // disabledSurfaceToneBase: at scale=0, computedDisabled = base = desired value
     disabledSurfaceToneBase: c + 17,
     disabledSurfaceToneScale: 0,
+
+    // ===== Computed Surface Tones =====
+    // Directly assigned by recipe function. Read by Expr lambdas in derivation-rules.ts. [D04]
+    // At surfaceContrast=50, all surface tones equal their input tone fields.
+    surfaceApp: c,
+    surfaceCanvas: c,
+    surfaceSunken: c + 6,
+    surfaceDefault: c + 7,
+    surfaceRaised: c + 6,
+    surfaceOverlay: c + 9,
+    surfaceInset: c + 1,
+    surfaceContent: c + 1,
+    surfaceScreen: c + 11,
+
+    // ===== Computed Divider Tones =====
+    dividerDefault: c + 12,
+    dividerMuted: c + 10,
+    dividerTone: c + 12, // = dividerDefault
+
+    // ===== Computed Control Tones =====
+    disabledSurfaceTone: c + 17,
+    disabledBorderTone: c + 23,
+    outlinedSurfaceRestTone: c + 3,  // surfaceInset + 2 = (c+1) + 2 = c+3 → dark: 8
+    outlinedSurfaceHoverTone: c + 7,  // surfaceRaised + 1 = (c+6) + 1 = c+7 → dark: 12
+    outlinedSurfaceActiveTone: c + 9, // surfaceOverlay = c+9 → dark: 14
+    toggleTrackOffTone: c + 23,
+    toggleDisabledTone: c + 17, // = disabledSurfaceTone
+
+    // ===== Computed Signal Intensity =====
+    signalIntensity: Math.round(controls.roleIntensity),
 
     // ===== Hue Name Dispatch =====
     // Dark mode: indigo screen bg, bare-primary muted, indigo-cobalt subtle/disabled
@@ -791,13 +814,41 @@ export function lightRecipe(controls: RecipeControls): DerivationFormulas {
     toggleDisabledToneOverride: c - 15, // 80 in LIGHT_FORMULAS
     borderStrongToneComputed: c - 55, // 40 in LIGHT_FORMULAS: matches borderSignalTone
 
-    // ===== computeTones-era passthrough fields =====
-    // At scale=8, center=50, knob=50: computedCanvas = base + 8*(50-50)/50 = base = c
+    // ===== Legacy passthrough fields (retained for schema compatibility) =====
     surfaceCanvasToneBase: c,
     surfaceCanvasToneCenter: 50,
     surfaceCanvasToneScale: 8,
     disabledSurfaceToneBase: c - 17, // 78 in LIGHT_FORMULAS
     disabledSurfaceToneScale: 0,
+
+    // ===== Computed Surface Tones =====
+    // Directly assigned by recipe function. Read by Expr lambdas in derivation-rules.ts. [D04]
+    surfaceApp: c,
+    surfaceCanvas: c,
+    surfaceSunken: c - 7,  // 88 in LIGHT_FORMULAS
+    surfaceDefault: c - 5, // 90 in LIGHT_FORMULAS
+    surfaceRaised: c - 3,  // 92 in LIGHT_FORMULAS
+    surfaceOverlay: c - 2, // 93 in LIGHT_FORMULAS
+    surfaceInset: c - 9,   // 86 in LIGHT_FORMULAS
+    surfaceContent: c - 9, // 86 in LIGHT_FORMULAS (matches inset)
+    surfaceScreen: c - 10, // 85 in LIGHT_FORMULAS
+
+    // ===== Computed Divider Tones =====
+    dividerDefault: c - 17, // 78 in LIGHT_FORMULAS
+    dividerMuted: c - 13,   // 82 in LIGHT_FORMULAS
+    dividerTone: c - 17,    // = dividerDefault = 78
+
+    // ===== Computed Control Tones =====
+    disabledSurfaceTone: c - 17, // 78 in LIGHT_FORMULAS (= disabledSurfaceToneBase at sc=50, scale=0)
+    disabledBorderTone: c - 23,  // 72 in LIGHT_FORMULAS
+    outlinedSurfaceRestTone: c - 7,  // surfaceInset + 2 = (c-9) + 2 = c-7 → 88
+    outlinedSurfaceHoverTone: c - 2, // surfaceRaised + 1 = (c-3) + 1 = c-2 → 93
+    outlinedSurfaceActiveTone: c - 2, // surfaceOverlay = c-2 → 93
+    toggleTrackOffTone: c - 23,  // 72 in LIGHT_FORMULAS
+    toggleDisabledTone: c - 15,  // 80 in LIGHT_FORMULAS
+
+    // ===== Computed Signal Intensity =====
+    signalIntensity: Math.round(controls.roleIntensity),
 
     // ===== Hue Name Dispatch =====
     // Light mode: cobalt screen bg (vs dark's indigo), atm placeholder (vs dark's fgMuted)

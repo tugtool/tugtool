@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-21T19:24:00Z
+---
+
+## step-6: Eliminated computeTones pipeline layer. Extended DerivationFormulas with ComputedTones fields populated directly by recipe functions. Simplified Expr from 3-param to 1-param. Updated 32+ expressions in derivation-rules.ts. Deleted MoodKnobs, ComputedTones, computeTones. All 1869 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-workflow.md
+
+---
+
+---
 step: step-5
 date: 2025-03-21T18:38:35Z
 ---

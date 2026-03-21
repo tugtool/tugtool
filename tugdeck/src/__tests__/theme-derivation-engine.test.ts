@@ -9,7 +9,7 @@
  * - Recipe contrast validation (parameterized loop): one test case per EXAMPLE_RECIPES entry;
  *   adding a recipe automatically adds it to contrast validation [D02], Spec S04
  * - T-RESOLVED-CSS: generateResolvedCssExport() produces valid resolved oklch() CSS
- * - resolveHueSlots / computeTones / evaluateRules unit and integration tests
+ * - resolveHueSlots / evaluateRules unit and integration tests
  * - Contrast floor enforcement and composited contrast enforcement tests
  *
  * Run with: cd tugdeck && bun test --grep "derivation-engine"
@@ -25,13 +25,10 @@ import {
   EXAMPLE_RECIPES,
   generateResolvedCssExport,
   resolveHueSlots,
-  computeTones,
   evaluateRules,
   enforceContrastFloor,
   primaryColorName,
   type DerivationFormulas,
-  type MoodKnobs,
-  type ComputedTones,
   type ResolvedHueSlots,
   type ResolvedHueSlot,
   type ResolvedColor,
@@ -942,164 +939,12 @@ describe("resolveHueSlots — Step 3", () => {
 });
 
 // =============================================================================
-// Step 4: computeTones() tests
+// Step 5 tests: T-RULES-SURFACES, T-RULES-FG, T-RULES-INVARIANT
+// These verify that CORE_VISUAL_RULES + evaluateRules() produce the same
+// output as the imperative deriveTheme() code for section A tokens.
 // =============================================================================
 
-describe("computeTones — Step 4", () => {
-  // Standard knobs shared across tests
-  const DARK_KNOBS_50: MoodKnobs = { surfaceContrast: 50 };
-  const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50 };
-
-  // ---------------------------------------------------------------------------
-  // T-TONES-DARK: computeTones(DARK_FORMULAS, sc=50) matches Brio dark ground truth.
-  //
-  // Brio dark ground truth (surfaceContrast=50, from T-BRIO-MATCH fixture):
-  //   bg-app=5, bg-canvas=5, sunken=11, default=12, raised=11, overlay=14, inset=6, content=6, screen=16
-  //   divider-default=17, divider-muted=15, divider-tone=17
-  //   disabled-bg=22, disabled-fg=38, disabled-border=28
-  //   outlined-bg-rest=8 (inset+2=8), outlined-bg-hover=12 (raised+1=12), outlined-bg-active=14 (overlay=14)
-  //   toggle-track-off=28, toggle-disabled=22
-  //   signalIntensity=50
-  // ---------------------------------------------------------------------------
-  it("T-TONES-DARK: Brio dark at sc=50 matches ground-truth tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_FORMULAS, DARK_KNOBS_50);
-
-    // Surface tones (Brio ground truth)
-    expect(ct.surfaceApp).toBe(5);
-    expect(ct.surfaceCanvas).toBe(5);
-    expect(ct.surfaceSunken).toBe(11);
-    expect(ct.surfaceDefault).toBe(12);
-    expect(ct.surfaceRaised).toBe(11);
-    expect(ct.surfaceOverlay).toBe(14);
-    expect(ct.surfaceInset).toBe(6);
-    expect(ct.surfaceContent).toBe(6);
-    expect(ct.surfaceScreen).toBe(16);
-
-    // Divider tones
-    expect(ct.dividerDefault).toBe(17);
-    expect(ct.dividerMuted).toBe(15);
-    expect(ct.dividerTone).toBe(17);
-
-    // Control/field derived tones
-    expect(ct.disabledSurfaceTone).toBe(22);
-    expect(ct.disabledTextTone).toBe(38);
-    expect(ct.disabledBorderTone).toBe(28);
-
-    // Outlined bg: inset+2=8, raised+1=12, overlay=14
-    expect(ct.outlinedSurfaceRestTone).toBe(8);
-    expect(ct.outlinedSurfaceHoverTone).toBe(12);
-    expect(ct.outlinedSurfaceActiveTone).toBe(14);
-
-    // Toggle
-    expect(ct.toggleTrackOffTone).toBe(28);
-    expect(ct.toggleDisabledTone).toBe(22);
-
-    // Signal intensity
-    expect(ct.signalIntensity).toBe(50);
-  });
-
-  // T-TONES-LIGHT deleted in step 6: computeTones takes DerivationFormulas;
-  // no light-mode DerivationFormulas exists yet. [D06]
-
-  // ---------------------------------------------------------------------------
-  // T-TONES-SC: surfaceContrast=0 and surfaceContrast=100 produce expected extremes.
-  //
-  // Dark mode extreme values (derived from DARK_FORMULAS):
-  //   sc=0:   surfaceApp = round(5 + (0-50)/50 * 8) = round(5 - 8) = round(-3) = -3
-  //           (clamping is not applied by computeTones; rules/deriveTheme clamp)
-  //   sc=100: surfaceApp = round(5 + (100-50)/50 * 8) = round(5 + 8) = 13
-  //   surfaceSunken sc=0: round(11 + (0-50)/50*5) = round(11-5) = 6
-  //   surfaceSunken sc=100: round(11 + (100-50)/50*5) = round(11+5) = 16
-  // ---------------------------------------------------------------------------
-  it("T-TONES-SC: dark mode surfaceContrast=0 produces minimum tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 0 });
-
-    // surfaceApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
-    expect(ct.surfaceApp).toBe(-3);
-    // surfaceSunken: 11 + (0-50)/50 * 5 = 11 - 5 = 6
-    expect(ct.surfaceSunken).toBe(6);
-    // surfaceDefault: 12 + (0-50)/50 * 3 = 12 - 3 = 9
-    expect(ct.surfaceDefault).toBe(9);
-    // surfaceOverlay: 14 + (0-50)/50 * 5 = 14 - 5 = 9
-    expect(ct.surfaceOverlay).toBe(9);
-    // signalIntensity: derived from DARK_FORMULAS.signalIntensityValue (=50)
-    expect(ct.signalIntensity).toBe(50);
-  });
-
-  it("T-TONES-SC: dark mode surfaceContrast=100 produces maximum tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 100 });
-
-    // surfaceApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
-    expect(ct.surfaceApp).toBe(13);
-    // surfaceSunken: 11 + (100-50)/50 * 5 = 11 + 5 = 16
-    expect(ct.surfaceSunken).toBe(16);
-    // surfaceDefault: 12 + (100-50)/50 * 3 = 12 + 3 = 15
-    expect(ct.surfaceDefault).toBe(15);
-    // surfaceScreen: 16 + (100-50)/50 * 13 = 16 + 13 = 29
-    expect(ct.surfaceScreen).toBe(29);
-  });
-
-  it("T-TONES-SC: signal intensity derived from formulas.signalIntensityValue", () => {
-    // After Step 3, signalIntensity on ComputedTones is derived from
-    // formulas.signalIntensityValue (a P6 formula field), not from MoodKnobs.
-    const ct0 = computeTones({ ...DARK_FORMULAS, signalIntensityValue: 0 }, { surfaceContrast: 50 });
-    const ct100 = computeTones({ ...DARK_FORMULAS, signalIntensityValue: 100 }, { surfaceContrast: 50 });
-    expect(ct0.signalIntensity).toBe(0);
-    expect(ct100.signalIntensity).toBe(100);
-  });
-
-  // ---------------------------------------------------------------------------
-  // T-TONES-MATCH: computeTones output matches existing inline deriveTheme values
-  // for Brio at sc=50. Verifies the parallel computation is consistent.
-  // ---------------------------------------------------------------------------
-  it("T-TONES-MATCH: deriveTheme(brio) output unchanged after adding computeTones call", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
-
-    // Token count must remain 374
-    expect(Object.keys(output.tokens).length).toBe(374);
-
-    // Surface tokens spot-check (from T-BRIO-MATCH fixture)
-    expect(output.tokens["--tug-base-surface-global-primary-normal-app-rest"]).toBe("--tug-color(indigo-violet, i: 2, t: 5)");
-    expect(output.tokens["--tug-base-surface-global-primary-normal-sunken-rest"]).toBe("--tug-color(violet, i: 5, t: 11)");
-    expect(output.tokens["--tug-base-surface-global-primary-normal-default-rest"]).toBe("--tug-color(violet, i: 5, t: 12)");
-    expect(output.tokens["--tug-base-surface-global-primary-normal-overlay-rest"]).toBe("--tug-color(violet, i: 4, t: 14)");
-    expect(output.tokens["--tug-base-surface-global-primary-normal-inset-rest"]).toBe("--tug-color(indigo-violet, i: 5, t: 6)");
-
-    // Divider tokens
-    expect(output.tokens["--tug-base-element-global-divider-normal-default-rest"]).toBe("--tug-color(indigo-violet, i: 6, t: 17)");
-    expect(output.tokens["--tug-base-element-global-divider-normal-muted-rest"]).toBe("--tug-color(violet, i: 4, t: 15)");
-
-    // Disabled control
-    expect(output.tokens["--tug-base-surface-control-primary-normal-plain-disabled"]).toBeDefined();
-  });
-
-  // ---------------------------------------------------------------------------
-  // T-TONES-INTERFACE: ComputedTones has all required fields (type completeness).
-  // ---------------------------------------------------------------------------
-  it("T-TONES-INTERFACE: computeTones returns all required ComputedTones fields", () => {
-    const ct: ComputedTones = computeTones(DARK_FORMULAS, DARK_KNOBS_50);
-
-    // All fields from Spec S03 must be present and be numbers
-    const requiredFields: (keyof ComputedTones)[] = [
-      "surfaceApp", "surfaceCanvas", "surfaceSunken", "surfaceDefault", "surfaceRaised",
-      "surfaceOverlay", "surfaceInset", "surfaceContent", "surfaceScreen",
-      "dividerDefault", "dividerMuted", "dividerTone",
-      "disabledSurfaceTone", "disabledTextTone", "disabledBorderTone",
-      "outlinedSurfaceRestTone", "outlinedSurfaceHoverTone", "outlinedSurfaceActiveTone",
-      "toggleTrackOffTone", "toggleDisabledTone",
-      "signalIntensity",
-    ];
-    for (const field of requiredFields) {
-      expect(typeof ct[field]).toBe("number");
-    }
-  });
-
-  // ---------------------------------------------------------------------------
-  // Step 5 tests: T-RULES-SURFACES, T-RULES-FG, T-RULES-INVARIANT
-  // These verify that CORE_VISUAL_RULES + evaluateRules() produce the same
-  // output as the imperative deriveTheme() code for section A tokens.
-  // ---------------------------------------------------------------------------
-
+describe("derivation-engine step-5 rules", () => {
   /** Run evaluateRules for CORE_VISUAL_RULES against the given recipe. */
   function runCoreRules(recipe: typeof EXAMPLE_RECIPES.brio): {
     ruleTokens: Record<string, string>;
@@ -1118,10 +963,8 @@ describe("computeTones — Step 4", () => {
         ? registryEntry.fn(recipe.controls ?? registryEntry.defaults)
         : darkRecipeFn(defaultDarkControls);
     }
-    const knobs: MoodKnobs = { surfaceContrast: 50 };
     // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch. [Step 4]
     const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
-    const computed = computeTones(recipeFormulas, knobs);
 
     const ruleTokens: Record<string, string> = {};
     const ruleResolved: Record<string, ResolvedColor> = {};
@@ -1131,8 +974,6 @@ describe("computeTones — Step 4", () => {
       CORE_VISUAL_RULES,
       resolvedSlots,
       recipeFormulas,
-      knobs,
-      computed,
       ruleTokens,
       ruleResolved,
       (alpha) => `--tug-color(black, i: 0, t: 0, a: ${Math.round(alpha)})`,
@@ -1307,10 +1148,8 @@ describe("derivation-engine step-6 rules", () => {
         ? registryEntry.fn(recipe.controls ?? registryEntry.defaults)
         : darkRecipeFn(defaultDarkControls);
     }
-    const knobs: MoodKnobs = { surfaceContrast: 50 };
     // Pass recipeFormulas so resolveHueSlots uses the correct hue dispatch. [Step 4]
     const resolvedSlots = resolveHueSlots(recipe, recipeFormulas);
-    const computed = computeTones(recipeFormulas, knobs);
 
     const ruleTokens: Record<string, string> = {};
     const ruleResolved: Record<string, ResolvedColor> = {};
@@ -1320,8 +1159,6 @@ describe("derivation-engine step-6 rules", () => {
       RULES,
       resolvedSlots,
       recipeFormulas,
-      knobs,
-      computed,
       ruleTokens,
       ruleResolved,
       (alpha) => `--tug-color(black, i: 0, t: 0, a: ${Math.round(alpha)})`,
