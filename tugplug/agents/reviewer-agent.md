@@ -63,14 +63,25 @@ If resumed with updated coder output after a REVISE recommendation, re-check the
 
 ### Resume (Next Step)
 
+```json
+{
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "step_anchor": "step-2"
+}
 ```
-Review step step-1.
-```
+
+Same fields as initial spawn. Use the provided `worktree_path` and `plan_path` — do not rely on remembering them from prior invocations.
 
 ### Resume (Re-review After Revision)
 
-```
-Coder has addressed the issues. Re-review.
+```json
+{
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "step_anchor": "step-N",
+  "re_review": true
+}
 ```
 
 **IMPORTANT: File Path Handling**

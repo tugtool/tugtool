@@ -56,7 +56,7 @@ You do NOT need to recreate the PR — you already have the PR URL from your ini
   "branch_name": "tugplan/name-timestamp",
   "base_branch": "main",
   "plan_title": "Phase D: Post-Loop Quality Gates",
-  "plan_path": ".tugtool/tugplan-N.md",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
   "repo": "owner/repo"
 }
 ```
@@ -73,9 +73,16 @@ You do NOT need to recreate the PR — you already have the PR URL from your ini
 
 ### Resume (Re-push and Re-check)
 
+```json
+{
+  "worktree_path": "/abs/path/to/.tugtree/tug__name-timestamp",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "re_push": true,
+  "pr_url": "https://github.com/owner/repo/pull/123"
+}
 ```
-Fixup committed. Re-push and re-check CI. PR: <pr_url>.
-```
+
+Use the provided `worktree_path` — do not rely on remembering it from the initial invocation.
 
 **IMPORTANT: File Path Handling**
 

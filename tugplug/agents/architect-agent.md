@@ -53,7 +53,7 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
-  "plan_path": ".tugtool/tugplan-N.md",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
   "step_anchor": "step-1",
   "all_steps": ["step-1", "step-2", "step-3"]
 }
@@ -68,14 +68,26 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 
 ### Resume (Next Step)
 
+```json
+{
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "step_anchor": "step-2",
+  "previous_step_summary": "<summary of what previous step accomplished>"
+}
 ```
-Plan strategy for step step-1. Previous step accomplished: <summary>.
-```
+
+Same fields as initial spawn, plus `previous_step_summary`. Use the provided `worktree_path` and `plan_path` — do not rely on remembering them from prior invocations.
 
 ### Resume (Revision Feedback)
 
-```
-Revision needed for step step-N. Feedback: <issues>. Adjust your strategy.
+```json
+{
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "step_anchor": "step-N",
+  "revision": "<feedback about issues to address>"
+}
 ```
 
 **IMPORTANT: File Path Handling**

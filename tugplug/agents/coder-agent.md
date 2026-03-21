@@ -50,7 +50,7 @@ If resumed with reviewer feedback, fix the identified issues. You retain full co
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
-  "plan_path": ".tugtool/tugplan-N.md",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
   "step_anchor": "step-1"
 }
 ```
@@ -63,14 +63,25 @@ If resumed with reviewer feedback, fix the identified issues. You retain full co
 
 ### Resume (Next Step)
 
+```json
+{
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "step_anchor": "step-2"
+}
 ```
-Implement step step-1.
-```
+
+Same fields as initial spawn. Use the provided `worktree_path` and `plan_path` — do not rely on remembering them from prior invocations.
 
 ### Resume (Revision Feedback)
 
-```
-Reviewer found issues. Fix these: <failed tasks> <issues array>. Then return updated output.
+```json
+{
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "step_anchor": "step-N",
+  "revision": "Reviewer found issues. Fix these: <failed tasks> <issues array>. Then return updated output."
+}
 ```
 
 **IMPORTANT: File Path Handling**

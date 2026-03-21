@@ -50,7 +50,7 @@ You do NOT need to re-read the entire plan or re-explore the entire codebase fro
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__name-timestamp",
-  "plan_path": ".tugtool/tugplan-N.md"
+  "plan_path": ".tugtool/tugplan-<slug>.md"
 }
 ```
 
@@ -61,9 +61,16 @@ You do NOT need to re-read the entire plan or re-explore the entire codebase fro
 
 ### Resume (Re-audit After Fixes)
 
+```json
+{
+  "worktree_path": "/abs/path/to/.tugtree/tug__name-timestamp",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "re_audit": true,
+  "previous_issues": [{"description": "...", "priority": "P0"}]
+}
 ```
-Re-audit after coder fixes. Previous issues: <issues_json>.
-```
+
+Same fields as initial spawn, plus `re_audit` and `previous_issues`. Use the provided `worktree_path` and `plan_path` — do not rely on remembering them from prior invocations.
 
 **IMPORTANT: File Path Handling**
 

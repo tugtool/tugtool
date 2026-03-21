@@ -414,7 +414,12 @@ Task(
 Task(
   subagent_type: "tugplug:architect-agent",
   resume: "<architect_id>",
-  prompt: 'Plan strategy for step {step_anchor}. Previous step accomplished: <step_summary>.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<path>",
+    "step_anchor": "{step_anchor}",
+    "previous_step_summary": "<step_summary>"
+  }',
   description: "Plan strategy for step N"
 )
 ```
@@ -457,7 +462,11 @@ Task(
 Task(
   subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
-  prompt: 'Implement step {step_anchor}.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<path>",
+    "step_anchor": "{step_anchor}"
+  }',
   description: "Implement step N"
 )
 ```
@@ -500,7 +509,12 @@ Evaluate `drift_assessment.drift_severity` from coder output:
 Task(
   subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
-  prompt: 'Revision needed. Feedback: <drift_assessment details>. Adjust your implementation to stay within expected scope.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<path>",
+    "step_anchor": "{step_anchor}",
+    "revision": "Feedback: <drift_assessment details>. Adjust your implementation to stay within expected scope."
+  }',
   description: "Revise implementation for step N"
 )
 ```
@@ -537,7 +551,11 @@ Task(
 Task(
   subagent_type: "tugplug:reviewer-agent",
   resume: "<reviewer_id>",
-  prompt: 'Review step {step_anchor}.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<path>",
+    "step_anchor": "{step_anchor}"
+  }',
   description: "Verify step N completion"
 )
 ```
@@ -602,7 +620,12 @@ Increment `reviewer_attempts`. If `reviewer_attempts >= 3`, ESCALATE to user.
 Task(
   subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
-  prompt: 'Reviewer found issues. Fix these: <failed tasks from plan_conformance> <issues array>. Then return updated output.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<path>",
+    "step_anchor": "{step_anchor}",
+    "revision": "Reviewer found issues. Fix these: <failed tasks from plan_conformance> <issues array>. Then return updated output."
+  }',
   description: "Fix reviewer issues for step N"
 )
 ```
@@ -621,7 +644,12 @@ Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_pat
 Task(
   subagent_type: "tugplug:reviewer-agent",
   resume: "<reviewer_id>",
-  prompt: 'Coder has addressed the issues. Re-review.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<path>",
+    "step_anchor": "{step_anchor}",
+    "re_review": true
+  }',
   description: "Re-review step N"
 )
 ```
@@ -774,7 +802,11 @@ AskUserQuestion: "Auditor retry limit reached (3 attempts). Issues: <issues>. Op
 Task(
   subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
-  prompt: 'Auditor found issues. Fix these: <issues array with P0/P1 priority>. Then return updated output.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<path>",
+    "revision": "Auditor found issues. Fix these: <issues array with P0/P1 priority>. Then return updated output."
+  }',
   description: "Fix auditor issues"
 )
 ```
@@ -809,7 +841,12 @@ Output the Committer fixup post-call message.
 Task(
   subagent_type: "tugplug:auditor-agent",
   resume: "<auditor_id>",
-  prompt: 'Re-audit after coder fixes. Previous issues: <issues_json>.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<plan_path>",
+    "re_audit": true,
+    "previous_issues": <issues_json>
+  }',
   description: "Re-audit after fixes"
 )
 ```
@@ -872,7 +909,11 @@ AskUserQuestion: "Integrator retry limit reached (3 attempts). CI status: <ci_st
 Task(
   subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
-  prompt: 'CI checks failed. Status: <ci_status>. Details: <ci_details array>. Fix the failures and return updated output.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<path>",
+    "revision": "CI checks failed. Status: <ci_status>. Details: <ci_details array>. Fix the failures and return updated output."
+  }',
   description: "Fix CI failures"
 )
 ```
@@ -907,7 +948,12 @@ Output the Committer fixup post-call message.
 Task(
   subagent_type: "tugplug:integrator-agent",
   resume: "<integrator_id>",
-  prompt: 'Fixup committed. Re-push and re-check CI. PR: <pr_url>.',
+  prompt: '{
+    "worktree_path": "<worktree_path>",
+    "plan_path": "<plan_path>",
+    "re_push": true,
+    "pr_url": "<pr_url>"
+  }',
   description: "Re-push and re-check CI"
 )
 ```

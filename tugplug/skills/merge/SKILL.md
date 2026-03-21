@@ -20,10 +20,10 @@ Parse the user's input to extract the plan path:
 
 | Input Pattern | Example |
 |---------------|---------|
-| `.tugtool/tugplan-N.md` | `.tugtool/tugplan-12.md` |
-| `tugplan-N.md` | `tugplan-12.md` (prepend `.tugtool/`) |
+| `.tugtool/tugplan-<slug>.md` | `.tugtool/tugplan-my-feature.md` |
+| `tugplan-<slug>.md` | `tugplan-my-feature.md` (prepend `.tugtool/`) |
 
-If no plan path is provided, search for plans with `ls .tugtool/tugplan-*.md`. If exactly one plan exists, use it. Otherwise halt with: "Usage: /tugplug:merge .tugtool/tugplan-N.md"
+If no plan path is provided, search for plans with `ls .tugtool/tugplan-*.md`. If exactly one plan exists, use it. Otherwise halt with: "Usage: /tugplug:merge .tugtool/tugplan-<slug>.md"
 
 ---
 
