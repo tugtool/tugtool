@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-22T20:04:44Z
+---
+
+## step-6: Extracted CSS generation into theme-css-generator.ts, refactored generate-tug-tokens.ts for glob discovery, added theme JSON hot reload to vite.config.ts
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-5
 date: 2025-03-22T19:55:19Z
 ---

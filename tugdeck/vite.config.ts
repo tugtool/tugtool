@@ -67,6 +67,12 @@ function controlTokenHotReload(): VitePlugin {
     handleHotUpdate({ file }) {
       if (file.endsWith("theme-engine.ts")) {
         regenerate();
+        return;
+      }
+      // Regenerate when any shipped theme JSON changes
+      const themesJsonDir = path.resolve(__dirname, "themes");
+      if (file.startsWith(themesJsonDir) && file.endsWith(".json")) {
+        regenerate();
       }
     },
   };
