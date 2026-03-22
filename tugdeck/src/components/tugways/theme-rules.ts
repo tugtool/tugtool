@@ -20,7 +20,7 @@
  *     mode-independent, resolved directly from resolvedSlots.
  *   - Formulas-mediated names (e.g., "surfaceApp", "surfaceSunken") ->
  *     formulas[name + "HueSlot"] yields the actual ResolvedHueSlots key.
- * Sentinel values [D07]: "__white" | "highlight" | "__shadow" | "highlightVerbose"
+ * Sentinel values [D07]: "white" | "highlight" | "shadow" | "highlightVerbose"
  *
  * @module components/tugways/theme-rules
  */
@@ -568,7 +568,7 @@ const ACCENT_RULES: Record<string, DerivationRule> = {
   // accent-subtle: accent hue at roleIntensity, accentSubtleTone, a:10
   // tone driven by formula field: dark=30 (darker orange so composited surface over dark parent
   // gives fg-default contrast ≥75), light=50 (standard mid-tone, easily passes on bright bg).
-  // alpha kept at 10 (reduced from 15) as an additional contribution. [phase-3-bug B04]
+  // alpha kept at 10 (reduced from 15) as an additional contribution.
   "--tug-element-global-fill-normal-accentSubtle-rest": {
     type: "chromatic",
     hueSlot: "accent",
@@ -622,7 +622,7 @@ const SEMANTIC_TONE_RULES: Record<string, DerivationRule> = {
   // tone-caution-bg uses formula field cautionSurfaceTone instead of semanticRoleTone.
   // Dark: cautionSurfaceTone=30 (darker yellow so fg-default achieves contrast ≥75 composited over
   // dark parent surface at low alpha). Light: cautionSurfaceTone=35 (matches semanticRoleTone).
-  // Override spreads the family first, then overrides only the bg rule. [phase-3-bug B05]
+  // Override spreads the family first, then overrides only the bg rule.
   "--tug-surface-tone-primary-normal-caution-rest": {
     type: "chromatic",
     hueSlot: "caution",
@@ -665,7 +665,7 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.contentTextTone,
   },
 
-  // highlight-hover: "highlightVerbose" dark (i:0, t:100, a:5) | "__shadow" light (a:4)
+  // highlight-hover: "highlightVerbose" dark (i:0, t:100, a:5) | "shadow" light (a:4)
   // Formulas-mediated via highlightHoverHueSlot
   "--tug-surface-highlight-primary-normal-hover-rest": {
     type: "chromatic",
@@ -750,7 +750,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.cardFrameInactiveTone,
   },
 
-  // tab-bg-hover: "highlight" dark (a:8) | "__shadow" light (a:6)
+  // tab-bg-hover: "highlight" dark (a:8) | "shadow" light (a:6)
   // Formulas-mediated via tabSurfaceHoverHueSlot
   "--tug-surface-tab-primary-normal-plain-hover": {
     type: "chromatic",
@@ -784,7 +784,7 @@ const TAB_CHROME_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.tabTextActiveTone,
   },
 
-  // tab-close-bg-hover: "highlight" dark (a:12) | "__shadow" light (a:10)
+  // tab-close-bg-hover: "highlight" dark (a:12) | "shadow" light (a:10)
   // Formulas-mediated via tabCloseSurfaceHoverHueSlot
   "--tug-surface-tabClose-primary-normal-plain-hover": {
     type: "chromatic",
@@ -1210,20 +1210,20 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     toneExpr: lit(50),
   },
 
-  // field-border-disabled: frame hue at atmosphereBorderIntensity, dividerTone
+  // field-border-disabled: frame hue at atmosphereBorderIntensity, dividerDefault
   "--tug-element-field-border-normal-plain-disabled": {
     type: "chromatic",
     hueSlot: "frame",
     intensityExpr: (formulas) => formulas.atmosphereBorderIntensity,
-    toneExpr: (formulas) => formulas.dividerTone,
+    toneExpr: (formulas) => formulas.dividerDefault,
   },
 
-  // field-border-readOnly: frame hue at atmosphereBorderIntensity, dividerTone
+  // field-border-readOnly: frame hue at atmosphereBorderIntensity, dividerDefault
   "--tug-element-field-border-normal-plain-readOnly": {
     type: "chromatic",
     hueSlot: "frame",
     intensityExpr: (formulas) => formulas.atmosphereBorderIntensity,
-    toneExpr: (formulas) => formulas.dividerTone,
+    toneExpr: (formulas) => formulas.dividerDefault,
   },
 
   // field-fg-label: control hue at contentTextIntensity, contentTextTone (field labels are control text)
@@ -1328,7 +1328,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => Math.min(formulas.subtleTextTone + 6, 100),
   },
 
-  // toggle-thumb: hueSlot "toggleThumb" -> "textInverse" dark | "__white" light
+  // toggle-thumb: hueSlot "toggleThumb" -> "textInverse" dark | "white" light
   "--tug-element-toggle-thumb-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "toggleThumb",
@@ -1360,7 +1360,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.mutedTextTone,
   },
 
-  // checkmark-fg: hueSlot "checkmark" -> "textInverse" dark | "__white" light
+  // checkmark-fg: hueSlot "checkmark" -> "textInverse" dark | "white" light
   "--tug-element-checkmark-icon-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "checkmark",
@@ -1376,7 +1376,7 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.mutedTextTone,
   },
 
-  // radio-dot: hueSlot "radioDot" -> "textInverse" dark | "__white" light
+  // radio-dot: hueSlot "radioDot" -> "textInverse" dark | "white" light
   "--tug-element-radio-dot-normal-plain-rest": {
     type: "chromatic",
     hueSlot: "radioDot",

@@ -267,7 +267,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     filledSurfaceActiveTone: Math.max(0, Math.min(100, recipe.role.tone + 10)),
 
     // ===== Outlined Control Style =====
-    // Dark: fg is near-white (100), legacy light counterparts are pure black (0)
+    // Dark: fg is near-white (100); light counterparts are pure black (0)
     outlinedTextRestTone: 100,
     outlinedTextHoverTone: 100,
     outlinedTextActiveTone: 100,
@@ -292,7 +292,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     outlinedSurfaceActiveAlpha: 20,
 
     // ===== Ghost Control Style =====
-    // Dark: fg is near-white (100), legacy light counterparts are pure black (0)
+    // Dark: fg is near-white (100); light counterparts are pure black (0)
     ghostTextRestTone: 100,
     ghostTextHoverTone: 100,
     ghostTextActiveTone: 100,
@@ -357,9 +357,9 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     disabledBorderIntensity: 6,
 
     // ===== Signal / Accent Tones =====
-    // accentSubtleTone: darker (canvas+25=30) so fg-default achieves contrast ≥75 [phase-3-bug B04]
+    // accentSubtleTone: darker (canvas+25=30) so fg-default achieves contrast ≥75
     accentSubtleTone: canvasTone + 25,
-    cautionSurfaceTone: canvasTone + 25, // same rationale [phase-3-bug B05]
+    cautionSurfaceTone: canvasTone + 25, // same rationale
 
     // ===== Hue Slot Dispatch =====
     // These are mode-independent routing decisions; same as DARK_FORMULAS
@@ -420,23 +420,11 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
 
     // ===== Computed Tone Override =====
     // Dividers sit just above surfaceScreen
-    dividerDefaultToneOverride: canvasTone + 12,
-    dividerMutedToneOverride: canvasTone + 10,
     disabledTextToneComputed: primaryTextTone - 56, // slightly above subtleTextTone: 38
     disabledBorderToneOverride: canvasTone + 23,
-    outlinedSurfaceRestToneOverride: null,
-    outlinedSurfaceHoverToneOverride: null,
-    outlinedSurfaceActiveToneOverride: null,
     toggleTrackOffToneOverride: canvasTone + 23,
     toggleDisabledToneOverride: canvasTone + 17,
     borderStrongToneComputed: Math.round(primaryTextTone - 57), // matches subtleTextTone: 37
-
-    // ===== Legacy passthrough fields (retained for schema compatibility) =====
-    surfaceCanvasToneBase: canvasTone,
-    surfaceCanvasToneCenter: 50,
-    surfaceCanvasToneScale: 8,
-    disabledSurfaceToneBase: canvasTone + 17,
-    disabledSurfaceToneScale: 0,
 
     // ===== Computed Surface Tones =====
     // Directly assigned by recipe function. Read by Expr lambdas in theme-rules.ts. [D04]
@@ -456,7 +444,6 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Computed Divider Tones =====
     dividerDefault: canvasTone + 12,
     dividerMuted: canvasTone + 10,
-    dividerTone: canvasTone + 12, // = dividerDefault
 
     // ===== Computed Control Tones =====
     disabledSurfaceTone: canvasTone + 17,
@@ -473,7 +460,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Hue Name Dispatch =====
     // Dark mode: indigo screen bg, bare-primary muted, indigo-cobalt subtle/disabled
     surfaceScreenHueExpression: "indigo",
-    mutedTextHueExpression: "__bare_primary",
+    mutedTextHueExpression: "barePrimary",
     subtleTextHueExpression: "indigo-cobalt",
     disabledTextHueExpression: "indigo-cobalt",
     inverseTextHueExpression: "sapphire-cobalt",
@@ -765,23 +752,11 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     ghostDangerSurfaceActiveAlpha: 20,
 
     // ===== Computed Tone Override =====
-    dividerDefaultToneOverride: canvasTone - 17, // 78 in LIGHT_FORMULAS
-    dividerMutedToneOverride: canvasTone - 13, // 82 in LIGHT_FORMULAS
     disabledTextToneComputed: primaryTextTone + 54, // 62 in LIGHT_FORMULAS
     disabledBorderToneOverride: canvasTone - 23, // 72 in LIGHT_FORMULAS
-    outlinedSurfaceRestToneOverride: null,
-    outlinedSurfaceHoverToneOverride: null,
-    outlinedSurfaceActiveToneOverride: null,
     toggleTrackOffToneOverride: canvasTone - 23, // 72 in LIGHT_FORMULAS
     toggleDisabledToneOverride: canvasTone - 15, // 80 in LIGHT_FORMULAS
     borderStrongToneComputed: canvasTone - 55, // 40 in LIGHT_FORMULAS: matches borderRoleTone
-
-    // ===== Legacy passthrough fields (retained for schema compatibility) =====
-    surfaceCanvasToneBase: canvasTone,
-    surfaceCanvasToneCenter: 50,
-    surfaceCanvasToneScale: 8,
-    disabledSurfaceToneBase: canvasTone - 17, // 78 in LIGHT_FORMULAS
-    disabledSurfaceToneScale: 0,
 
     // ===== Computed Surface Tones =====
     // Directly assigned by recipe function. Read by Expr lambdas in theme-rules.ts. [D04]
@@ -800,10 +775,9 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Computed Divider Tones =====
     dividerDefault: canvasTone - 17, // 78 in LIGHT_FORMULAS
     dividerMuted: canvasTone - 13,   // 82 in LIGHT_FORMULAS
-    dividerTone: canvasTone - 17,    // = dividerDefault = 78
 
     // ===== Computed Control Tones =====
-    disabledSurfaceTone: canvasTone - 17, // 78 in LIGHT_FORMULAS (= disabledSurfaceToneBase at sc=50, scale=0)
+    disabledSurfaceTone: canvasTone - 17, // 78 in LIGHT_FORMULAS
     disabledBorderTone: canvasTone - 23,  // 72 in LIGHT_FORMULAS
     outlinedSurfaceRestTone: canvasTone - 7,  // surfaceInset + 2 = (canvasTone-9) + 2 = canvasTone-7 → 88
     outlinedSurfaceHoverTone: canvasTone - 2, // surfaceRaised + 1 = (canvasTone-3) + 1 = canvasTone-2 → 93
@@ -817,7 +791,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Hue Name Dispatch =====
     // Light mode: cobalt screen bg (vs dark's indigo), frame placeholder (vs dark's textMuted)
     surfaceScreenHueExpression: "cobalt",
-    mutedTextHueExpression: "__bare_primary",
+    mutedTextHueExpression: "barePrimary",
     subtleTextHueExpression: "indigo-cobalt",
     disabledTextHueExpression: "indigo-cobalt",
     inverseTextHueExpression: "sapphire-cobalt",

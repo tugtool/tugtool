@@ -28,7 +28,7 @@
  * [D02] Emphasis x role token naming: --tug-control-{emphasis}-{role}-{property}-{state}
  * [D04] ThemeRecipe interface from proposal
  * [D06] HueSlot resolution — Layer 1 of the pipeline
- * [D07] __white/highlight/highlightVerbose/__shadow sentinels
+ * [D07] white/highlight/highlightVerbose/shadow sentinels
  * [D08] Scope: --tug-* tokens only
  * [D09] Dual output: string tokens + resolved OKLCH map
  *
@@ -202,17 +202,11 @@
  * computed-tone-override   Flat-value overrides for tones that otherwise derive
  *                          from formulas, plus formula parameters for canvas and
  *                          disabled-bg tone computations.
- *                          Fields: dividerDefaultToneOverride,
- *                                  dividerMutedToneOverride, disabledTextToneComputed,
+ *                          Fields: disabledTextToneComputed,
  *                                  disabledBorderToneOverride,
- *                                  outlinedSurfaceRestToneOverride,
- *                                  outlinedSurfaceHoverToneOverride,
- *                                  outlinedSurfaceActiveToneOverride,
  *                                  toggleTrackOffToneOverride,
  *                                  toggleDisabledToneOverride,
- *                                  surfaceCanvasToneBase, surfaceCanvasToneCenter,
- *                                  surfaceCanvasToneScale, disabledSurfaceToneBase,
- *                                  disabledSurfaceToneScale, borderStrongToneComputed
+ *                                  borderStrongToneComputed
  *
  * hue-name-dispatch        Named hue values used in resolveHueSlots() to eliminate
  *                          runtime mode branches. These string fields directly name
@@ -606,14 +600,14 @@ export interface DerivationFormulas {
    * @semantic role-tone — tone for the accent-subtle tinted background.
    * Dark: lower tone (e.g. 30) so fg-default achieves content contrast 75 when composited
    * over a dark parent surface at low alpha. Light: 50 (standard mid-tone orange tint).
-   * [phase-3-bug B04] calibrated from 50→30 in dark mode.
+   * Calibrated from 50→30 in dark mode.
    */
   accentSubtleTone: number;
   /**
    * @semantic role-tone — tone for the tone-caution-bg semantic background tint.
    * Dark: lower tone (e.g. 30) so fg-default achieves content contrast 75 when composited
    * over a dark parent surface at low alpha. Light: matches semanticRoleTone (35).
-   * [phase-3-bug B05] calibrated via independent tone field rather than alpha reduction.
+   * Calibrated via independent tone field rather than alpha reduction.
    */
   cautionSurfaceTone: number;
 
@@ -937,60 +931,25 @@ export interface DerivationFormulas {
   // ===== Computed Tone Override =====
   // Flat-value overrides for computed tones and formula parameters. number or null.
   /**
-   * @semantic computed-tone-override — flat tone for divider-default.
-   * null = Math.round(surfaceOverlay - 2). Dark: 17.
-   */
-  dividerDefaultToneOverride: number | null;
-  /**
-   * @semantic computed-tone-override — flat tone for divider-muted.
-   * null = Math.round(surfaceOverlay). Dark: 15.
-   */
-  dividerMutedToneOverride: number | null;
-  /**
    * @semantic computed-tone-override — flat tone for disabled-fg.
    * Always a number (dark: 38; future light uses disabledTextTone).
    */
   disabledTextToneComputed: number;
   /**
    * @semantic computed-tone-override — flat tone for disabled-border.
-   * null = Math.round(dividerTone). Dark: 28.
+   * Dark: 28.
    */
   disabledBorderToneOverride: number | null;
   /**
-   * @semantic computed-tone-override — flat tone for outlined-bg-rest.
-   * null = Math.round(surfaceInset + 2). Dark: null (derives from formula).
-   */
-  outlinedSurfaceRestToneOverride: number | null;
-  /**
-   * @semantic computed-tone-override — flat tone for outlined-bg-hover.
-   * null = Math.round(surfaceRaised + 1). Dark: null (derives from formula).
-   */
-  outlinedSurfaceHoverToneOverride: number | null;
-  /**
-   * @semantic computed-tone-override — flat tone for outlined-bg-active.
-   * null = Math.round(surfaceOverlay). Dark: null (derives from formula).
-   */
-  outlinedSurfaceActiveToneOverride: number | null;
-  /**
    * @semantic computed-tone-override — flat tone for toggle-track-off.
-   * null = Math.round(dividerTone). Dark: 28.
+   * Dark: 28.
    */
   toggleTrackOffToneOverride: number | null;
   /**
    * @semantic computed-tone-override — flat tone for toggle-disabled.
-   * null = Math.round(surfaceOverlay). Dark: 22.
+   * Dark: 22.
    */
   toggleDisabledToneOverride: number | null;
-  /** @semantic computed-tone-override — base tone for canvas surface formula (surfaceContrast-scaled) */
-  surfaceCanvasToneBase: number;
-  /** @semantic computed-tone-override — surfaceContrast midpoint for canvas tone formula */
-  surfaceCanvasToneCenter: number;
-  /** @semantic computed-tone-override — scale factor for canvas tone formula */
-  surfaceCanvasToneScale: number;
-  /** @semantic computed-tone-override — base tone for disabled-bg formula */
-  disabledSurfaceToneBase: number;
-  /** @semantic computed-tone-override — scale factor for disabled-bg formula */
-  disabledSurfaceToneScale: number;
   /**
    * @semantic computed-tone-override — border-strong tone unified field.
    * Dark: subtleTextTone (37).
@@ -1006,7 +965,7 @@ export interface DerivationFormulas {
   surfaceScreenHueExpression: string;
   /**
    * @semantic hue-name-dispatch — expression for the textMuted derived slot hue.
-   * "__bare_primary" = use the bare primary segment of textHue (e.g. "cobalt" from "indigo-cobalt").
+   * "barePrimary" = use the bare primary segment of textHue (e.g. "cobalt" from "indigo-cobalt").
    * Any other value = treat as a literal hue name.
    */
   mutedTextHueExpression: string;
@@ -1103,8 +1062,6 @@ export interface DerivationFormulas {
   dividerDefault: number;
   /** @semantic computed-divider-tone — computed tone for muted divider lines */
   dividerMuted: number;
-  /** @semantic computed-divider-tone — shared reference tone for disabled/toggle/separator tokens */
-  dividerTone: number;
 
   // ===== Computed Control Tones =====
   /** @semantic computed-control-tone — computed tone for disabled surface (control bg) */
@@ -1136,7 +1093,7 @@ export interface DerivationFormulas {
  * Generator card. The first entry (brio) is the default dark theme;
  * harmony is the built-in light peer.
  *
- * Both use the nested surface/element/role structure from Phase 3.5B [D03][D04].
+ * Both use the nested surface/element/role structure [D03][D04].
  * Both use the recipe function path via controls (darkRecipe / lightRecipe). [D01]
  */
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
@@ -1427,9 +1384,9 @@ export function resolveHueSlots(
     : slotFromAngle(resolveHueAngle(formulas.surfaceScreenHueExpression));
 
   // textMuted: driven by formulas.mutedTextHueExpression. [D03]
-  // "__bare_primary" → bare primary of textHue (dark-mode default).
+  // "barePrimary" → bare primary of textHue (dark-mode default).
   // Any other value → treat as a literal hue name.
-  const textMutedHueName = formulas.mutedTextHueExpression === "__bare_primary"
+  const textMutedHueName = formulas.mutedTextHueExpression === "barePrimary"
     ? (() => {
         const primary = primaryColorName(textHue);
         return primary in HUE_FAMILIES ? primary : textHue;
@@ -1541,7 +1498,7 @@ export type Expr = (formulas: DerivationFormulas) => number;
  * hueSlot resolution follows dual-path per [D09]:
  *   1. Direct key: if hueSlot is a key in ResolvedHueSlots, use it directly.
  *   2. Preset-mediated: otherwise read preset[hueSlot + "HueSlot"] for the key.
- * Sentinel values per [D07]: "__white" | "highlight" | "__shadow" | "highlightVerbose"
+ * Sentinel values per [D07]: "white" | "highlight" | "shadow" | "highlightVerbose"
  * trigger non-chromatic dispatch and bypass intensity/tone expressions.
  */
 export interface ChromaticRule {
@@ -1742,9 +1699,9 @@ function buildElementPairingLookup(
  *   1. If hueSlot is a key of resolvedSlots → use it directly.
  *   2. Otherwise read formulas[hueSlot + "HueSlot"] to get the key (formulas-mediated).
  * Sentinel dispatch per [D07]:
- *   "__white"          → setChromatic-style white; fills resolved.
+ *   "white"            → setChromatic-style white; fills resolved.
  *   "highlight"        → compact white-a token; fills resolved.
- *   "__shadow"         → compact black-a token; fills resolved.
+ *   "shadow"           → compact black-a token; fills resolved.
  *   "highlightVerbose" → verbose white form with explicit i:0 t:100; fills resolved.
  *
  * @param rules            Named rule table (token name → DerivationRule)
@@ -1854,7 +1811,7 @@ export function evaluateRules(
 
         // Sentinel check [D07]: sentinel tokens are structurally fixed (white/black/alpha)
         // and are not eligible for contrast floor enforcement.
-        if (effectiveSlot === "__white") {
+        if (effectiveSlot === "white") {
           tokens[tokenName] = "--tug-color(white)";
           resolved[tokenName] = { ...whiteResolved };
           break;
@@ -1865,7 +1822,7 @@ export function evaluateRules(
           resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
           break;
         }
-        if (effectiveSlot === "__shadow") {
+        if (effectiveSlot === "shadow") {
           const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas));
           tokens[tokenName] = makeShadow(alpha);
           resolved[tokenName] = { ...blackResolved, alpha: alpha / 100 };
