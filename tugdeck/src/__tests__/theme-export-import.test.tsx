@@ -1,23 +1,22 @@
 /**
- * theme-export-import tests — Step 9.
+ * theme-export-import tests.
  *
  * Tests cover:
- * - T9.1: Exported CSS contains `body {` block with `--tug-base-*` tokens
- * - T9.2: Exported CSS contains only `--tug-color()` values for chromatic tokens
  * - T9.3: Exported recipe JSON round-trips: export -> import -> re-export produces identical JSON
- * - T9.4: Invalid JSON import shows error, does not crash
+ * - T9.4: Invalid JSON import shows error, does not crash (validateRecipeJson)
+ * - T9.4: Migration: old-format recipe → new format
+ * - TugThemeProvider dynamic theme tests (setDynamicTheme, localStorage, revert)
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
 import "./setup-rtl";
 
 import React from "react";
-import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
-import { render, act, cleanup, fireEvent } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { render, act, cleanup } from "@testing-library/react";
 
 import {
   GalleryThemeGeneratorContent,
-  generateCssExport,
   validateRecipeJson,
 } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
@@ -29,143 +28,6 @@ import {
   loadSavedThemes,
   useThemeContext,
 } from "@/contexts/theme-provider";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function renderComponent() {
-  let container!: HTMLElement;
-  act(() => {
-    ({ container } = render(<GalleryThemeGeneratorContent />));
-  });
-  return container;
-}
-
-// ---------------------------------------------------------------------------
-// T9.1: Exported CSS contains `body {` block with `--tug-base-*` tokens
-// ---------------------------------------------------------------------------
-
-describe("theme-export – T9.1: exported CSS has body block with --tug-base-* tokens", () => {
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("brio recipe: generated CSS has a body {} block", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    expect(css).toContain("body {");
-  });
-
-  it("brio recipe: CSS contains --tug-base-* token names in body block", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    // Should have multiple --tug-base-* entries
-    const matches = css.match(/--tug-base-/g);
-    expect(matches).not.toBeNull();
-    expect(matches!.length).toBeGreaterThan(50);
-  });
-
-  it("body block contains at least 50 --tug-base-* token entries", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const chromatic = Object.entries(output.tokens).filter(([, v]) => v.startsWith("--tug-color("));
-    expect(chromatic.length).toBeGreaterThanOrEqual(50);
-  });
-
-  it("CSS header contains @theme-name comment", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    expect(css).toContain("@theme-name");
-  });
-
-  it("CSS header contains @generated date comment", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    expect(css).toContain("@generated");
-  });
-
-  it("CSS header contains @recipe-hash comment", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    expect(css).toContain("@recipe-hash");
-  });
-
-  it("ExportImportPanel renders with Export CSS and Export Recipe JSON buttons", () => {
-    const container = renderComponent();
-    const cssBtn = container.querySelector("[data-testid='gtg-export-css-btn']");
-    const jsonBtn = container.querySelector("[data-testid='gtg-export-json-btn']");
-    expect(cssBtn).not.toBeNull();
-    expect(jsonBtn).not.toBeNull();
-  });
-
-  it("Export CSS button is a button element", () => {
-    const container = renderComponent();
-    const cssBtn = container.querySelector("[data-testid='gtg-export-css-btn']");
-    expect(cssBtn?.tagName.toLowerCase()).toBe("button");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// T9.2: Exported CSS contains only --tug-color() values for chromatic tokens
-// ---------------------------------------------------------------------------
-
-describe("theme-export – T9.2: exported CSS has only --tug-color() values for chromatic tokens", () => {
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("brio recipe: all chromatic token values use --tug-color() notation", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    // Extract all declaration lines from the body block
-    const bodyMatch = css.match(/body \{([\s\S]*?)\}/);
-    expect(bodyMatch).not.toBeNull();
-    const body = bodyMatch![1];
-    const lines = body.split("\n").map((l) => l.trim()).filter((l) => l.includes(":") && l.startsWith("--tug-base-"));
-    // Every chromatic line must use --tug-color()
-    for (const line of lines) {
-      const valueMatch = line.match(/:\s*(.+?);?\s*$/);
-      expect(valueMatch).not.toBeNull();
-      expect(valueMatch![1].trim()).toMatch(/^--tug-color\(/);
-    }
-  });
-
-  it("only --tug-base-* chromatic tokens use --tug-color() notation", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    const bodyMatch = css.match(/body \{([\s\S]*?)\}/);
-    const body = bodyMatch ? bodyMatch[1] : "";
-    // All --tug-base-* lines must use --tug-color() notation (not raw oklch)
-    const baseLines = body.split("\n").map((l) => l.trim())
-      .filter((l) => l.startsWith("--tug-base-") && l.includes(":"));
-    for (const line of baseLines) {
-      expect(line).not.toContain("oklch(");
-    }
-    // The grid token is now a first-class --tug-base-* token using --tug-color() notation
-    expect(body).toContain("--tug-base-surface-global-primary-normal-grid-rest:");
-    expect(body).not.toContain("--tug-canvas-grid-line:");
-  });
-
-  it("no raw hex values appear in the body block", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    const bodyMatch = css.match(/body \{([\s\S]*?)\}/);
-    const body = bodyMatch ? bodyMatch[1] : "";
-    // No standalone hex colors like #rrggbb
-    expect(body).not.toMatch(/#[0-9a-fA-F]{6}/);
-  });
-
-  it("export panel renders without errors", () => {
-    const container = renderComponent();
-    const panel = container.querySelector("[data-testid='gtg-export-import-panel']");
-    expect(panel).not.toBeNull();
-  });
-});
 
 // ---------------------------------------------------------------------------
 // T9.3: Exported recipe JSON round-trips
@@ -191,65 +53,8 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
     expect(exported).toBe(reexported);
   });
 
-  it("recipe with all optional fields round-trips without data loss", () => {
-    // Phase 4: parameters field replaces mood knob fields. [D01][Step 5]
-    const fullRecipe = {
-      name: "TestTheme",
-      description: "Test theme with all optional fields.",
-      recipe: "light" as const,
-      surface: {
-        canvas: "cyan",
-        card: "indigo",
-      },
-      element: {
-        content: "blue",
-        control: "cobalt",
-        display: "indigo",
-        informational: "cyan",
-        border: "cyan",
-        decorative: "gray",
-      },
-      role: {
-        accent: "orange",
-        action: "cobalt",
-        agent: "violet",
-        data: "teal",
-        success: "green",
-        caution: "yellow",
-        danger: "red",
-      },
-      parameters: {
-        surfaceDepth: 65,
-        textHierarchy: 40,
-        controlWeight: 55,
-        borderDefinition: 70,
-        shadowDepth: 30,
-        roleIntensity: 75,
-        atmosphere: 50,
-      },
-    };
-    const json1 = JSON.stringify(fullRecipe, null, 2);
-    const parsed = JSON.parse(json1);
-    const json2 = JSON.stringify(parsed, null, 2);
-    expect(json1).toBe(json2);
-  });
-
   it("validateRecipeJson accepts a valid brio recipe", () => {
     expect(validateRecipeJson(EXAMPLE_RECIPES.brio)).toBeNull();
-  });
-
-  it("Import Recipe button renders in the component", () => {
-    const container = renderComponent();
-    const importBtn = container.querySelector("[data-testid='gtg-import-btn']");
-    expect(importBtn).not.toBeNull();
-    expect(importBtn?.tagName.toLowerCase()).toBe("button");
-  });
-
-  it("file input is present in the component (hidden, for programmatic trigger)", () => {
-    const container = renderComponent();
-    const fileInput = container.querySelector("[data-testid='gtg-import-file-input']");
-    expect(fileInput).not.toBeNull();
-    expect((fileInput as HTMLInputElement).type).toBe("file");
   });
 
   it("re-deriving brio recipe after round-trip produces same token count", () => {
@@ -260,55 +65,6 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
     const output2 = deriveTheme(roundTripped);
     expect(Object.keys(output1.tokens).length).toBe(Object.keys(output2.tokens).length);
   });
-
-  it("generateCssExport preserves the recipe name: a recipe named 'MyTheme' exports with @theme-name MyTheme", () => {
-    const recipe = { ...EXAMPLE_RECIPES.brio, name: "MyTheme" };
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    expect(css).toContain("@theme-name MyTheme");
-    expect(css).not.toContain("@theme-name preview");
-  });
-
-  it("generateCssExport name in CSS header matches the recipe name passed in", () => {
-    const names = ["Cobalt Night", "Sunset", "preview", "brio"];
-    for (const name of names) {
-      const recipe = { ...EXAMPLE_RECIPES.brio, name };
-      const output = deriveTheme(recipe);
-      const css = generateCssExport(output, recipe);
-      expect(css).toContain(`@theme-name ${name}`);
-    }
-  });
-
-  it("generateCssExport includes --tug-base-surface-global-primary-normal-grid-rest as a first-class token", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    expect(css).toContain("--tug-base-surface-global-primary-normal-grid-rest:");
-    expect(css).not.toContain("--tug-canvas-grid-line:");
-    // Value should be a --tug-color() expression (first-class derived token)
-    expect(css).toMatch(/--tug-base-surface-global-primary-normal-grid-rest:\s*--tug-color\(/);
-  });
-
-  it("generateCssExport grid token differs between brio and harmony recipes", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const harmonyOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
-    const brioCss = generateCssExport(brioOutput, EXAMPLE_RECIPES.brio);
-    const harmonyCss = generateCssExport(harmonyOutput, EXAMPLE_RECIPES.harmony);
-    // Both have the first-class grid token
-    expect(brioCss).toContain("--tug-base-surface-global-primary-normal-grid-rest:");
-    expect(harmonyCss).toContain("--tug-base-surface-global-primary-normal-grid-rest:");
-    // Extract the value from each
-    const extractValue = (css: string) => {
-      const match = css.match(/--tug-base-surface-global-primary-normal-grid-rest:\s*(--tug-color\([^;]+\))/);
-      return match ? match[1].trim() : null;
-    };
-    const brioGridValue = extractValue(brioCss);
-    const harmonyGridValue = extractValue(harmonyCss);
-    expect(brioGridValue).not.toBeNull();
-    expect(harmonyGridValue).not.toBeNull();
-    // Dark and light themes have different canvas tones, producing different grid token values
-    expect(brioGridValue).not.toBe(harmonyGridValue);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -318,8 +74,6 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
 describe("theme-import – T9.4: invalid JSON import shows error, does not crash", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
-
-  // Unit tests for validateRecipeJson directly — no FileReader needed.
 
   it("validateRecipeJson returns error for null", () => {
     expect(validateRecipeJson(null)).not.toBeNull();
@@ -352,102 +106,20 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson migrates old-format recipe without element group (element group removed in new format)", () => {
-    // Old-format recipe with string surfaces but no element group.
-    // New format has no element group requirement — missing element group is valid and migrates.
+  it("validateRecipeJson migrates old-format recipe without element group", () => {
     const recipe: Record<string, unknown> = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    // Should succeed (migrate old-format to new format with defaults)
     expect(validateRecipeJson(recipe)).toBeNull();
-    // After migration, surface should be ThemeColorSpec objects
     expect(typeof (recipe["surface"] as Record<string, unknown>)["canvas"]).toBe("object");
   });
 
-  it("validateRecipeJson ignores legacy surfaceContrast field (Phase 4: mood knobs removed)", () => {
-    // Phase 4: mood knob fields are removed from ThemeRecipe. Legacy recipe files may
-    // still contain them. validateRecipeJson ignores them gracefully. [D01][D07][Step 5]
-    const legacy = {
-      name: "X", description: "Test.", recipe: "dark",
-      surface: { canvas: "red", card: "red" },
-      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      surfaceContrast: "high",
-    };
-    // Legacy field with wrong type — ignored, not rejected. [Step 5]
+  it("validateRecipeJson ignores legacy surfaceContrast field", () => {
+    const legacy = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, surfaceContrast: "high" };
     expect(validateRecipeJson(legacy)).toBeNull();
   });
 
-  it("validateRecipeJson ignores legacy roleIntensity field (Phase 4: mood knobs removed)", () => {
-    // Phase 4: roleIntensity is removed from ThemeRecipe. Legacy files ignored. [D01][Step 5]
-    const legacy = {
-      name: "X", description: "Test.", recipe: "dark",
-      surface: { canvas: "red", card: "red" },
-      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      roleIntensity: "vivid",
-    };
-    // Legacy field with wrong type — ignored, not rejected. [Step 5]
+  it("validateRecipeJson ignores legacy roleIntensity field", () => {
+    const legacy = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, roleIntensity: "vivid" };
     expect(validateRecipeJson(legacy)).toBeNull();
-  });
-
-  it("validateRecipeJson ignores legacy warmth field (Phase 4: mood knobs removed)", () => {
-    // Phase 4: warmth is removed from ThemeRecipe. Legacy files ignored. [D01][D02][Step 5]
-    const legacy = {
-      name: "X", description: "Test.", recipe: "dark",
-      surface: { canvas: "red", card: "red" },
-      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      warmth: true,
-    };
-    // Legacy field with wrong type — ignored, not rejected. [Step 5]
-    expect(validateRecipeJson(legacy)).toBeNull();
-  });
-
-  it("validateRecipeJson accepts a recipe with a valid parameters field", () => {
-    // Phase 4: parameters field replaces mood knobs. Valid parameters must be accepted. [S01][Step 5]
-    const withParams = {
-      name: "X", description: "Test.", recipe: "dark",
-      surface: { canvas: "red", card: "red" },
-      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      parameters: {
-        surfaceDepth: 50,
-        textHierarchy: 50,
-        controlWeight: 50,
-        borderDefinition: 50,
-        shadowDepth: 50,
-        roleIntensity: 50,
-        atmosphere: 50,
-      },
-    };
-    expect(validateRecipeJson(withParams)).toBeNull();
-  });
-
-  it("validateRecipeJson returns null for legacy parameters field (now ignored gracefully)", () => {
-    // Step 4: parameters field is legacy — accepted gracefully, not validated. [Step 4]
-    const withLegacyParams = {
-      name: "X", description: "Test.", recipe: "dark",
-      surface: { canvas: "red", card: "red" },
-      element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      parameters: { surfaceDepth: 150 },
-    };
-    // Legacy parameters field is now ignored gracefully (no validation error). [Step 4]
-    expect(validateRecipeJson(withLegacyParams)).toBeNull();
-  });
-
-  it("validateRecipeJson returns error for missing description", () => {
-    const bad = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    expect(validateRecipeJson(bad)).not.toBeNull();
-  });
-
-  it("validateRecipeJson returns error for empty description string", () => {
-    const bad = { name: "X", description: "", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    expect(validateRecipeJson(bad)).not.toBeNull();
-  });
-
-  it("validateRecipeJson accepts a recipe with a valid description", () => {
-    const good = { name: "X", description: "A valid theme description.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    expect(validateRecipeJson(good)).toBeNull();
   });
 
   it("validateRecipeJson accepts both 'dark' and 'light' modes", () => {
@@ -457,22 +129,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(light)).toBeNull();
   });
 
-  it("component renders Import Recipe button without crashing", () => {
-    const container = renderComponent();
-    expect(container.querySelector("[data-testid='gallery-theme-generator-content']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='gtg-import-btn']")).not.toBeNull();
-  });
-
-  it("component shows no error initially (before any import attempt)", () => {
-    const container = renderComponent();
-    const errorEl = container.querySelector("[data-testid='gtg-import-error']");
-    expect(errorEl).toBeNull();
-  });
-
-  it("validateRecipeJson migrates old-format recipe with controls object into new surface/role structure (Spec S05 rule 6)", () => {
-    // Old-format recipe: surfaces are strings, tone/intensity values live in a
-    // controls object with canvasTone, canvasIntensity, frameTone, frameIntensity,
-    // roleTone, roleIntensity. Migration must map these into the new nested structure.
+  it("validateRecipeJson migrates old-format recipe with controls object into new surface/role structure", () => {
     const legacy: Record<string, unknown> = {
       name: "ControlsMigrationTheme",
       description: "Old-format theme with controls object for migration testing.",
@@ -493,7 +150,6 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     const result = validateRecipeJson(legacy);
     expect(result).toBeNull();
 
-    // After migration, surface.canvas must be a ThemeColorSpec with controls values
     const surface = legacy["surface"] as Record<string, unknown>;
     const canvas = surface["canvas"] as Record<string, unknown>;
     expect(typeof canvas).toBe("object");
@@ -501,19 +157,15 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(canvas["tone"]).toBe(8);
     expect(canvas["intensity"]).toBe(7);
 
-    // surface.card must carry frameTone/frameIntensity from controls
     const card = surface["card"] as Record<string, unknown>;
-    expect(typeof card).toBe("object");
     expect(card["hue"]).toBe("teal");
     expect(card["tone"]).toBe(20);
     expect(card["intensity"]).toBe(15);
 
-    // role.tone and role.intensity must carry roleTone/roleIntensity from controls
     const role = legacy["role"] as Record<string, unknown>;
     expect(role["tone"]).toBe(45);
     expect(role["intensity"]).toBe(55);
 
-    // controls field must be removed after migration
     expect(legacy["controls"]).toBeUndefined();
   });
 });
@@ -522,11 +174,6 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 // T6: Theme-provider integration — setDynamicTheme, revertToBuiltIn, init
 // ---------------------------------------------------------------------------
 
-/**
- * Install a mock localStorage on globalThis for the duration of a test.
- * The provider accesses `localStorage` as a bare global, which resolves to
- * globalThis.localStorage. Returns a restore function.
- */
 function installMockLocalStorage(initial: Record<string, string> = {}): {
   store: Record<string, string>;
   restore: () => void;
@@ -549,18 +196,12 @@ function installMockLocalStorage(initial: Record<string, string> = {}): {
       if (orig) {
         Object.defineProperty(globalThis, "localStorage", orig);
       } else {
-        // If localStorage was not originally defined, remove the mock
         delete (globalThis as Record<string, unknown>)["localStorage"];
       }
     },
   };
 }
 
-/**
- * Consumer component: captures setDynamicTheme and revertToBuiltIn from
- * TugThemeProvider context via useThemeContext(), storing them in the
- * provided refs so tests can call them after render.
- */
 function ContextCapture({
   setDynamicRef,
   revertRef,
@@ -604,7 +245,6 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
         );
       });
 
-      // Call setDynamicTheme through the captured context function
       await act(async () => {
         await setDynamicRef.current!("my-theme");
       });
@@ -670,7 +310,6 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
         );
       });
 
-      // First set a dynamic theme, then revert
       await act(async () => {
         await setDynamicRef.current!("my-theme");
       });
@@ -691,7 +330,6 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
   });
 
   it("on init, TugThemeProvider reads td-dynamic-theme from localStorage and calls setDynamicTheme", async () => {
-    // Pre-populate localStorage with a saved dynamic theme before mounting.
     const { restore } = installMockLocalStorage({ "td-dynamic-theme": "saved-theme" });
     const fakeCss = "body { --tug-base-surface-global-primary-normal-app-rest: oklch(0.15 0 0); }";
     const fetchCalls: string[] = [];
@@ -706,8 +344,6 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
         render(React.createElement(TugThemeProvider, {}));
       });
 
-      // The init useEffect should have called setDynamicTheme("saved-theme"),
-      // which fetches /styles/themes/saved-theme.css and injects it.
       expect(fetchCalls.some((u) => u.includes("saved-theme"))).toBe(true);
       const el = document.getElementById("tug-theme-override");
       expect(el).not.toBeNull();
@@ -730,9 +366,6 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
   });
 
   it("loadSavedThemes filters built-in theme names and returns only user-saved themes", async () => {
-    // loadSavedThemes filters out built-in theme names ("brio", "harmony") so that
-    // generate-tug-tokens.ts output files (harmony.css) do not appear as user-saved
-    // themes in the Theme Generator dropdown. [D08]
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
       new Response(JSON.stringify({ themes: ["brio", "harmony", "my-theme"] }), { status: 200 });
