@@ -587,6 +587,7 @@
    Role shared tone/intensity strips
    ========================================================================= */
 
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .gtg-role-shared-strips {
   display: flex;
   flex-direction: column;

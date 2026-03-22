@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-22T20:22:55Z
+---
+
+## step-8: Verification checkpoint: fixed pre-existing audit:tokens lint violation in gallery-theme-generator-content.css; confirmed generate:tokens, audit:tokens, and bun test all pass
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-7
 date: 2025-03-22T20:16:20Z
 ---
