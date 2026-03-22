@@ -14,6 +14,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var restartMenuItem: NSMenuItem?
     private var relaunchMenuItem: NSMenuItem?
 
+    // Theme menu state
+    private var themeMenu: NSMenu!
+    private var cachedThemes: [ThemeEntry] = []
+    private var activeThemeName: String?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check tmux availability
         if !ProcessManager.checkTmux() {
@@ -171,13 +176,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(settingsItem)
         appMenu.addItem(NSMenuItem.separator())
 
-        // Theme submenu
+        // Theme submenu — populated dynamically via NSMenuDelegate
         let themeMenuItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
-        let themeMenu = NSMenu(title: "Theme")
-        themeMenuItem.submenu = themeMenu
-        themeMenu.addItem(NSMenuItem(title: "Brio", action: #selector(setThemeBrio(_:)), keyEquivalent: ""))
-        themeMenu.addItem(NSMenuItem(title: "Bluenote", action: #selector(setThemeBluenote(_:)), keyEquivalent: ""))
-        themeMenu.addItem(NSMenuItem(title: "Harmony", action: #selector(setThemeHarmony(_:)), keyEquivalent: ""))
+        let dynamicThemeMenu = NSMenu(title: "Theme")
+        dynamicThemeMenu.delegate = self
+        themeMenuItem.submenu = dynamicThemeMenu
+        self.themeMenu = dynamicThemeMenu
         appMenu.addItem(themeMenuItem)
         appMenu.addItem(NSMenuItem.separator())
 
@@ -300,16 +304,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("show-card", params: ["component": "about"])
     }
 
-    @objc private func setThemeBrio(_ sender: Any) {
-        sendControl("set-theme", params: ["theme": "brio"])
-    }
-
-    @objc private func setThemeBluenote(_ sender: Any) {
-        sendControl("set-theme", params: ["theme": "bluenote"])
-    }
-
-    @objc private func setThemeHarmony(_ sender: Any) {
-        sendControl("set-theme", params: ["theme": "harmony"])
+    @objc private func selectTheme(_ sender: NSMenuItem) {
+        let name = sender.representedObject as? String ?? sender.title
+        activeThemeName = name
+        sendControl("set-theme", params: ["theme": name])
     }
 
     @objc func openProjectHome(_ sender: Any?) {
@@ -517,6 +515,15 @@ extension AppDelegate: BridgeDelegate {
         window.updateBackgroundColor(color)
     }
 
+    func bridgeThemeListUpdated(themes: [ThemeEntry], activeTheme: String?) {
+        DispatchQueue.main.async {
+            self.cachedThemes = themes
+            if let name = activeTheme {
+                self.activeThemeName = name
+            }
+        }
+    }
+
     func bridgeDevBadge(backend: Bool, app: Bool) {
         let diamond = "◆ "
         if let item = restartMenuItem {
@@ -541,6 +548,53 @@ extension AppDelegate: BridgeDelegate {
                 }
             }
         }
+    }
+}
+
+// MARK: - NSMenuDelegate (dynamic Theme menu)
+
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === themeMenu else { return }
+        menu.removeAllItems()
+
+        // Shipped themes first (Brio at the top), then authored themes
+        let shipped = cachedThemes.filter { $0.source == "shipped" }
+        let authored = cachedThemes.filter { $0.source == "authored" }
+
+        // Sort: Brio always first, then alphabetical within each group
+        let sortedShipped = shipped.sorted { a, b in
+            if a.name.lowercased() == "brio" { return true }
+            if b.name.lowercased() == "brio" { return false }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+        let sortedAuthored = authored.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+
+        for entry in sortedShipped {
+            menu.addItem(makeThemeItem(entry))
+        }
+        if !sortedShipped.isEmpty && !sortedAuthored.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+        for entry in sortedAuthored {
+            menu.addItem(makeThemeItem(entry))
+        }
+
+        // If no themes cached yet, show a placeholder
+        if menu.items.isEmpty {
+            let placeholder = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
+            placeholder.isEnabled = false
+            menu.addItem(placeholder)
+        }
+    }
+
+    private func makeThemeItem(_ entry: ThemeEntry) -> NSMenuItem {
+        let item = NSMenuItem(title: entry.name.capitalized, action: #selector(selectTheme(_:)), keyEquivalent: "")
+        item.representedObject = entry.name
+        item.state = (entry.name == activeThemeName) ? .on : .off
+        return item
     }
 }
 

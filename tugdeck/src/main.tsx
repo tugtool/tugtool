@@ -204,9 +204,22 @@ export let cachedActiveRecipe: ThemeRecipe | null = null;
   };
 
   // Signal frontend readiness to native app (enables menu items).
+  // Also push the theme list fetched during startup so the Swift Theme menu
+  // is populated on first launch without waiting for a user save. [D10]
   connection.onOpen(() => {
-    const webkit = (window as unknown as { webkit?: { messageHandlers?: { frontendReady?: { postMessage: (v: unknown) => void } } } }).webkit;
+    const webkit = (window as unknown as {
+      webkit?: {
+        messageHandlers?: {
+          frontendReady?: { postMessage: (v: unknown) => void };
+          themeListUpdated?: { postMessage: (v: unknown) => void };
+        };
+      };
+    }).webkit;
     webkit?.messageHandlers?.frontendReady?.postMessage({});
+    if (themeListRes !== null) {
+      const themes = (themeListRes as { themes?: unknown[] }).themes ?? [];
+      webkit?.messageHandlers?.themeListUpdated?.postMessage({ themes });
+    }
   });
 
   // Connect to the server.

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-13
+date: 2025-03-22T22:05:50Z
+---
+
+## step-13: Removed hardcoded setThemeBrio/setThemeBluenote/setThemeHarmony, added NSMenuDelegate with dynamic menu from themeListUpdated bridge, single selectTheme handler, theme list push on launch
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-12
 date: 2025-03-22T21:53:55Z
 ---
