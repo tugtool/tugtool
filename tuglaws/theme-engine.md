@@ -6,13 +6,35 @@
 
 ---
 
+## Architecture Overview
+
+Themes are JSON data files, not TypeScript constants. [D01]
+
+| Storage | Location | Use |
+|---------|----------|-----|
+| **Shipped themes** | `tugdeck/themes/*.json` | Version-controlled, read-only |
+| **Authored themes** | `~/.tugtool/themes/*.json` | User data, not in repo |
+
+Theme names are unique across both directories — a theme exists in exactly one location. [D02]
+
+**Brio** is the base theme. Its tokens are the baseline CSS in `styles/tug-base-generated.css`. Switching to Brio removes the override `<style>` element; all other themes work as cascade overrides on top of Brio. [D03]
+
+### Theme Loading Flow
+
+1. `generate-tug-tokens.ts` reads `tugdeck/themes/*.json`, runs `deriveTheme()` on each, and writes CSS output
+2. Brio output goes to `styles/tug-base-generated.css` (imported by `tug-base.css`)
+3. Other themes write to `styles/themes/<name>.css`
+4. Runtime: theme provider fetches CSS via Vite middleware (`GET /__themes/<name>.css`) and injects a `<style>` element [D88]
+
+---
+
 ## Pipeline
 
 ```
-ThemeRecipe
+ThemeRecipe (from .json file)
     │
     ▼
-Step 0: compileRecipe()     → DerivationFormulas (interpolate 7 design parameters into ~202 formula fields)
+Step 0: compileRecipe()     → DerivationFormulas (interpolate design parameters into ~202 formula fields)
     │
     ▼
 Layer 1: resolveHueSlots()  → ResolvedHueSlots   (resolve recipe hue names to palette angles)
@@ -24,11 +46,20 @@ Layer 2: computeTones()     → ComputedTones       (derive surface/control tone
 Layer 3: evaluateRules()    → CSS tokens          (declarative RULES table produces all --tug-* tokens)
 ```
 
+`deriveTheme()` returns a `ThemeOutput` containing:
+
+| Field | Contents |
+|-------|----------|
+| `css` | Full CSS string of all 373 tokens |
+| `formulas` | The `DerivationFormulas` used to produce the output |
+
+The `formulas` field enables callers to extract derived values (such as `surfaceCanvasIntensity`) without re-running derivation. This is used for runtime canvas color computation. [D89]
+
 ---
 
 ## ThemeRecipe
 
-The author-facing interface. Three required groups plus two optional overrides.
+The author-facing interface. Three required groups plus two optional overrides. Theme JSON files (`tugdeck/themes/*.json`) conform to this structure.
 
 ### Surface Specs
 
@@ -74,6 +105,25 @@ Shared tone and intensity apply to all seven role hues.
 | `display?.intensity` | Display text saturation | — |
 | `border?.hue` | Border hue | `surface.canvas.hue` |
 | `border?.intensity` | Border saturation | — |
+
+### Recipe Field
+
+The `recipe` field selects the derivation formula set (`"dark"` or `"light"`). It is set once at theme creation time and is immutable. [D90]
+
+---
+
+## RECIPE_REGISTRY
+
+`RECIPE_REGISTRY` maps recipe names to their formula functions. It is exported from `theme-engine.ts`.
+
+```typescript
+export const RECIPE_REGISTRY: Record<string, { fn: (recipe: ThemeRecipe) => DerivationFormulas }> = {
+  dark: { fn: darkRecipe },
+  light: { fn: lightRecipe },
+};
+```
+
+`compileRecipe()` dispatches through this registry. To add a new recipe variant, register a new entry. The registry is the only derivation path — there is no `formulas` escape hatch. [D04, D86]
 
 ---
 
@@ -209,4 +259,31 @@ Layer 1 resolves every hue reference in the recipe to a `ResolvedHueSlot` with f
 | Surface layering direction | Lighter = elevated | Darker = recessed |
 | Filled control states | Lighten on hover/active | Lighten on hover/active |
 
-`deriveTheme()` receives a formula set and never branches on mode. A recipe's `mode` field selects which formula set `compileRecipe()` starts from.
+`deriveTheme()` receives a formula set and never branches on mode. A recipe's `recipe` field (`"dark"` or `"light"`) selects which formula set `compileRecipe()` starts from.
+
+---
+
+## Canvas Color
+
+Canvas color (sent to the Swift host via bridge) is derived at runtime from the `DerivationFormulas` output. [D89]
+
+The caller runs `deriveTheme()` on the loaded theme JSON and extracts `surfaceCanvasIntensity`, `surfaceCanvasTone`, and the resolved canvas hue slot from `ThemeOutput.formulas`. These derived values are passed to `canvasColorHex()` in `canvas-color.ts`.
+
+**Important:** The raw theme JSON `surface.canvas.intensity` differs from the derived `surfaceCanvasIntensity`. The recipe functions adjust canvas surface intensity independently from the input. Always use the derived values from `ThemeOutput.formulas`, not the raw JSON.
+
+---
+
+## Generator Card — Mac-Style Document Model
+
+The theme generator card follows Mac document conventions. [D87]
+
+| Operation | Behavior |
+|-----------|----------|
+| **New** | Prototype pattern: copies an existing theme JSON to `~/.tugtool/themes/` |
+| **Open** | Loads a theme from either directory; shipped themes open read-only |
+| **Auto-save** | 500ms debounce writes JSON + regenerated CSS to `~/.tugtool/themes/` |
+| **Apply** | Injects the theme CSS app-wide via the theme provider |
+
+Shipped themes (`tugdeck/themes/`) are read-only. The generator card tracks whether the current theme is authored or shipped and disables editing for shipped themes.
+
+The recipe field is immutable after creation. Dark and light are chosen at New time by selecting the prototype. [D90]
