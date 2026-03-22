@@ -1,16 +1,17 @@
+/* @tug-pairings {
+  --tug-element-toggle-thumb-normal-plain-rest     |  --tug-surface-toggle-track-normal-off-rest      | control
+  --tug-element-toggle-thumb-normal-plain-rest     |  --tug-surface-toggle-track-normal-off-hover     | control
+  --tug-element-toggle-thumb-normal-plain-rest     |  --tug-surface-toggle-track-normal-on-rest       | control
+  --tug-element-toggle-thumb-normal-plain-rest     |  --tug-surface-toggle-track-normal-on-hover      | control
+  --tug-element-toggle-thumb-normal-plain-disabled |  --tug-surface-toggle-track-normal-plain-disabled | control
+  --tug-element-field-text-normal-label-rest       |  --tug-surface-global-primary-normal-default-rest | content
+} */
 
 /* ============================================================================
-   Switch Root (the track)
+   Switch Root (.tug-switch)
    ========================================================================= */
 
-/**
- * @tug-pairings
- * | Element                                          | Surface                                          | Role         | Context                              |
- * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-switch-label (color)            |
- */
-
-
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tug-switch {
   display: inline-flex;
   flex-shrink: 0;
@@ -38,8 +39,9 @@
   width: 2.75rem;   /* 44px */
 }
 
-/* ---- Hover (unchecked) ---- */
+/* ---- States: rest → hover → active → focus → disabled ---- */
 
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tug-switch:hover:not(:disabled):not([data-disabled]) {
   background-color: var(--tug-surface-toggle-track-normal-off-hover);
 }
@@ -50,14 +52,21 @@
   background-color: var(--tug-toggle-on-color, var(--tug-surface-toggle-track-normal-on-rest));
 }
 
-/* Default hover (no role) — uses pre-computed hover token [Spec S02] */
+/* Default hover (no role) — uses pre-computed hover token */
 .tug-switch[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
   background-color: var(--tug-surface-toggle-track-normal-on-hover);
 }
 
-/* Role hover — uses injected color-mix value [Spec S02] */
+/* Role hover — uses injected color-mix value */
 .tug-switch[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) {
   background-color: var(--tug-toggle-on-hover-color);
+}
+
+/* ---- Focus ---- */
+
+.tug-switch:focus-visible {
+  outline: 2px solid var(--tug-element-global-fill-normal-accentCool-rest);
+  outline-offset: 2px;
 }
 
 /* ---- Disabled ---- */
@@ -69,17 +78,11 @@
   opacity: var(--tug-control-disabled-opacity);
 }
 
-/* ---- Focus ---- */
-
-.tug-switch:focus-visible {
-  outline: 2px solid var(--tug-element-global-fill-normal-accentCool-rest);
-  outline-offset: 2px;
-}
-
 /* ============================================================================
-   Thumb (the sliding circle)
+   Thumb (.tug-switch-thumb)
    ========================================================================= */
 
+/* @tug-renders-on: --tug-surface-toggle-track-normal-off-rest */
 .tug-switch-thumb {
   display: block;
   border-radius: 9999px;
@@ -121,13 +124,14 @@
 
 /* Disabled thumb */
 
+/* @tug-renders-on: --tug-surface-toggle-track-normal-plain-disabled */
 .tug-switch:disabled .tug-switch-thumb,
 .tug-switch[data-disabled] .tug-switch-thumb {
   background-color: var(--tug-element-toggle-thumb-normal-plain-disabled);
 }
 
 /* ============================================================================
-   Wrapper (switch + label layout)
+   Wrapper (.tug-switch-wrapper)
    ========================================================================= */
 
 .tug-switch-wrapper {

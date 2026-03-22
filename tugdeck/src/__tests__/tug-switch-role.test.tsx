@@ -10,7 +10,6 @@
  *
  * [D03] Selection control role via inline CSS custom property injection
  * [D06] TugCheckbox and TugSwitch default to role='option'
- * [Spec S01] Inline CSS Custom Property Injection
  */
 import "./setup-rtl";
 
