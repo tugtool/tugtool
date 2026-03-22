@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-22T00:40:18Z
+---
+
+## step-6: Final integration checkpoint: all 4 automated checkpoints pass (build, generate:tokens, audit:tokens verify, test with 1908 passing). 7 manual browser verification tasks deferred.
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
+step: step-5
+date: 2025-03-22T00:33:33Z
+---
+
+## step-5: Added themeColorSpecToOklch helper converting ThemeColorSpec to oklch() CSS string. Wired grid line color into Theme Generator preview, tug-dock.css fallback, theme-provider setTheme/applyInitialTheme, and CSS export. Added unit and integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
+step: step-4
+date: 2025-03-22T00:17:26Z
+---
+
+## step-4: Replaced CompactHuePicker instances with TugHueStrip + TugToneStrip + TugIntensityStrip for surfaces, TugHueStrip + TugIntensityStrip for text, shared tone/intensity strips for roles. Added useState hooks for all new fields. Updated recipe construction, loadPreset, handleRecipeImported, and tests.
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
+step: step-3
+date: 2025-03-21T23:57:34Z
+---
+
+## step-3: Created TugToneStrip and TugIntensityStrip components with oklch gradient strips, pointer event handling for click/drag interaction, thumb indicator, and comprehensive unit tests
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
+step: step-2
+date: 2025-03-21T23:42:14Z
+---
+
+## step-2: Updated darkRecipe/lightRecipe to accept ThemeRecipe, replacing hardcoded tone/intensity constants with recipe spec reads. Updated RECIPE_REGISTRY type, deriveTheme and resolveHueSlots call sites, and test call sites.
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
+step: step-1
+date: 2025-03-21T23:25:59Z
+---
+
+## step-1: Defined ThemeColorSpec interface, restructured ThemeRecipe (surface uses ThemeColorSpec objects, element group removed, text/grid added, role gains tone/intensity, optional display/border), updated EXAMPLE_RECIPES, resolveHueSlots, validateRecipeJson with legacy migration, and all test files
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
 step: step-7
 date: 2025-03-21T19:36:34Z
 ---

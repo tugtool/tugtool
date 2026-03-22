@@ -26,6 +26,7 @@ import React, {
 import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
 import { canvasColorHex } from "../canvas-color";
+import { themeColorSpecToOklch, EXAMPLE_RECIPES } from "../components/tugways/theme-engine";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -104,6 +105,20 @@ export function removeThemeCSS(): void {
   }
 }
 
+/**
+ * Set --tug-canvas-grid-line on document.body for a built-in theme. [D06]
+ *
+ * Computes the oklch() value from the theme's EXAMPLE_RECIPES.surface.grid spec
+ * and sets it imperatively via style.setProperty. This overrides the static
+ * fallback in tug-dock.css without touching the token/rule pipeline.
+ */
+export function setGridLineColor(themeName: ThemeName): void {
+  const recipe = EXAMPLE_RECIPES[themeName];
+  if (!recipe) return;
+  const value = themeColorSpecToOklch(recipe.surface.grid);
+  document.body.style.setProperty("--tug-canvas-grid-line", value);
+}
+
 // ---------------------------------------------------------------------------
 // Swift bridge helpers (copied verbatim from use-theme.ts)
 // ---------------------------------------------------------------------------
@@ -130,12 +145,14 @@ export function sendCanvasColor(theme: ThemeName): void {
  *
  * For brio (the default), this is a no-op — tug-base.css defaults are already active.
  * For harmony, injects the pre-fetched CSS from themeCSSMap when non-null. [D07]
+ * Sets --tug-canvas-grid-line on document.body from the theme's grid spec. [D06]
  */
 export function applyInitialTheme(themeName: ThemeName): void {
   const cssText = themeCSSMap[themeName];
   if (cssText) {
     injectThemeCSS(themeName, cssText);
   }
+  setGridLineColor(themeName);
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +255,8 @@ export function TugThemeProvider({
     putTheme(newTheme);
     // Sync canvas color to Swift bridge after injection
     sendCanvasColor(newTheme);
+    // Set grid line color from the theme's surface.grid spec [D06]
+    setGridLineColor(newTheme);
   };
 
   /**
@@ -282,6 +301,8 @@ export function TugThemeProvider({
       // Brio: removing the override lets tug-base.css defaults take over.
       removeThemeCSS();
     }
+    // Restore grid line color for the reverted built-in theme [D06]
+    setGridLineColor(theme);
     setDynamicThemeName(null);
     try {
       localStorage.removeItem(DYNAMIC_THEME_KEY);

@@ -31,8 +31,8 @@ body {
   --tug-dock-button-insertIndicator: var(--tug-base-element-global-icon-normal-active-rest);
 
   /* --- Canvas / Grid --- */
-  /* --tug-canvas-grid-line: Brio default grid line opacity */
-  --tug-canvas-grid-line: var(--tug-base-surface-highlight-primary-normal-hover-rest);
+  /* --tug-canvas-grid-line: static dark fallback; overridden imperatively by theme-provider [D06] */
+  --tug-canvas-grid-line: oklch(0.15 0.01 280);
   --tug-canvas-grid-emphasis: --tug-color(white, i: 0, t: 100, a: 10);
 
   /* --- Snap / Sash / Flash --- */

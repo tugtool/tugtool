@@ -133,13 +133,21 @@ describe("theme-export – T9.2: exported CSS has only --tug-color() values for 
     }
   });
 
-  it("no raw oklch() values appear in the body block", () => {
+  it("only --tug-base-* chromatic tokens use --tug-color() notation; --tug-canvas-grid-line uses oklch() [D06]", () => {
     const recipe = EXAMPLE_RECIPES.brio;
     const output = deriveTheme(recipe);
     const css = generateCssExport(output, recipe);
     const bodyMatch = css.match(/body \{([\s\S]*?)\}/);
     const body = bodyMatch ? bodyMatch[1] : "";
-    expect(body).not.toContain("oklch(");
+    // All --tug-base-* lines must use --tug-color() notation (not raw oklch)
+    const baseLines = body.split("\n").map((l) => l.trim())
+      .filter((l) => l.startsWith("--tug-base-") && l.includes(":"));
+    for (const line of baseLines) {
+      expect(line).not.toContain("oklch(");
+    }
+    // The --tug-canvas-grid-line entry IS allowed to use oklch() [D06]
+    expect(body).toContain("--tug-canvas-grid-line:");
+    expect(body).toMatch(/--tug-canvas-grid-line:\s*oklch\(/);
   });
 
   it("no raw hex values appear in the body block", () => {
@@ -270,6 +278,36 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
       expect(css).toContain(`@theme-name ${name}`);
     }
   });
+
+  it("generateCssExport embeds --tug-canvas-grid-line in the body block for dynamic theme loading [D06]", () => {
+    const recipe = EXAMPLE_RECIPES.brio;
+    const output = deriveTheme(recipe);
+    const css = generateCssExport(output, recipe);
+    expect(css).toContain("--tug-canvas-grid-line:");
+    // Value should be an oklch() string
+    expect(css).toMatch(/--tug-canvas-grid-line:\s*oklch\(/);
+  });
+
+  it("generateCssExport --tug-canvas-grid-line differs between brio and harmony recipes", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const harmonyOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
+    const brioCss = generateCssExport(brioOutput, EXAMPLE_RECIPES.brio);
+    const harmonyCss = generateCssExport(harmonyOutput, EXAMPLE_RECIPES.harmony);
+    // Both have the property
+    expect(brioCss).toContain("--tug-canvas-grid-line:");
+    expect(harmonyCss).toContain("--tug-canvas-grid-line:");
+    // Extract the value from each
+    const extractValue = (css: string) => {
+      const match = css.match(/--tug-canvas-grid-line:\s*(oklch\([^;]+\))/);
+      return match ? match[1].trim() : null;
+    };
+    const brioGridValue = extractValue(brioCss);
+    const harmonyGridValue = extractValue(harmonyCss);
+    expect(brioGridValue).not.toBeNull();
+    expect(harmonyGridValue).not.toBeNull();
+    // Different grid specs should produce different oklch() values
+    expect(brioGridValue).not.toBe(harmonyGridValue);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -313,9 +351,14 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for missing element group", () => {
-    const bad = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    expect(validateRecipeJson(bad)).not.toBeNull();
+  it("validateRecipeJson migrates old-format recipe without element group (element group removed in new format)", () => {
+    // Old-format recipe with string surfaces but no element group.
+    // New format has no element group requirement — missing element group is valid and migrates.
+    const recipe: Record<string, unknown> = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    // Should succeed (migrate old-format to new format with defaults)
+    expect(validateRecipeJson(recipe)).toBeNull();
+    // After migration, surface should be ThemeColorSpec objects
+    expect(typeof (recipe["surface"] as Record<string, unknown>)["canvas"]).toBe("object");
   });
 
   it("validateRecipeJson ignores legacy surfaceContrast field (Phase 4: mood knobs removed)", () => {
@@ -443,6 +486,54 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     // Migration shim should have renamed the field in-place
     expect(legacy["signalIntensity"]).toBe(75);
     expect(legacy[LEGACY_KEY]).toBeUndefined();
+  });
+
+  it("validateRecipeJson migrates old-format recipe with controls object into new surface/role structure (Spec S05 rule 6)", () => {
+    // Old-format recipe: surfaces are strings, tone/intensity values live in a
+    // controls object with canvasTone, canvasIntensity, frameTone, frameIntensity,
+    // roleTone, roleIntensity. Migration must map these into the new nested structure.
+    const legacy: Record<string, unknown> = {
+      name: "ControlsMigrationTheme",
+      description: "Old-format theme with controls object for migration testing.",
+      recipe: "dark",
+      surface: { canvas: "teal", card: "teal" },
+      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "teal", border: "teal", decorative: "gray" },
+      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      controls: {
+        canvasTone: 8,
+        canvasIntensity: 7,
+        frameTone: 20,
+        frameIntensity: 15,
+        roleTone: 45,
+        roleIntensity: 55,
+      },
+    };
+
+    const result = validateRecipeJson(legacy);
+    expect(result).toBeNull();
+
+    // After migration, surface.canvas must be a ThemeColorSpec with controls values
+    const surface = legacy["surface"] as Record<string, unknown>;
+    const canvas = surface["canvas"] as Record<string, unknown>;
+    expect(typeof canvas).toBe("object");
+    expect(canvas["hue"]).toBe("teal");
+    expect(canvas["tone"]).toBe(8);
+    expect(canvas["intensity"]).toBe(7);
+
+    // surface.card must carry frameTone/frameIntensity from controls
+    const card = surface["card"] as Record<string, unknown>;
+    expect(typeof card).toBe("object");
+    expect(card["hue"]).toBe("teal");
+    expect(card["tone"]).toBe(20);
+    expect(card["intensity"]).toBe(15);
+
+    // role.tone and role.intensity must carry roleTone/roleIntensity from controls
+    const role = legacy["role"] as Record<string, unknown>;
+    expect(role["tone"]).toBe(45);
+    expect(role["intensity"]).toBe(55);
+
+    // controls field must be removed after migration
+    expect(legacy["controls"]).toBeUndefined();
   });
 });
 

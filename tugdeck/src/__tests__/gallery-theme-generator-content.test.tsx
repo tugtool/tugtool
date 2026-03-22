@@ -41,8 +41,8 @@ import {
 // ---------------------------------------------------------------------------
 // Reference formula constants (replaces deleted formula-constants.ts)
 // ---------------------------------------------------------------------------
-const DARK_FORMULAS = darkRecipeFn();
-const LIGHT_FORMULAS = lightRecipeFn();
+const DARK_FORMULAS = darkRecipeFn(EXAMPLE_RECIPES.brio);
+const LIGHT_FORMULAS = lightRecipeFn(EXAMPLE_RECIPES.harmony);
 
 // ---------------------------------------------------------------------------
 // Known-exception sets shared by T10.3 and T-ACC-1
@@ -387,10 +387,13 @@ const CHM_NOVEL_RECIPE = {
   name: "CHM Mood",
   description: "CHM acceptance test recipe — industrial warmth with amber atmosphere.",
   recipe: "dark" as const,
-  surface: { canvas: "amber", card: "amber" },
-  element: { content: "sand", control: "sand", display: "indigo", informational: "amber", border: "amber", decorative: "gray" },
-  role: { accent: "flame", action: "cobalt", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-  // Phase 4: mood knob fields removed; recipe uses parameters (defaultParameters at 50). [D01][Step 5]
+  surface: {
+    canvas: { hue: "amber", tone: 5, intensity: 5 },
+    grid: { hue: "amber", tone: 12, intensity: 4 },
+    card: { hue: "amber", tone: 16, intensity: 12 },
+  },
+  text: { hue: "sand", intensity: 3 },
+  role: { tone: 50, intensity: 50, accent: "flame", action: "cobalt", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
@@ -614,10 +617,13 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
       name: "GreenRed",
       description: "CVD test recipe with explicit green/red pairing.",
       recipe: "dark" as const,
-      surface: { canvas: "slate", card: "slate" },
-      element: { content: "slate", control: "slate", display: "indigo", informational: "slate", border: "slate", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      // Phase 4: mood knob fields removed; recipe uses parameters (defaultParameters). [D01][Step 5]
+      surface: {
+        canvas: { hue: "slate", tone: 5, intensity: 5 },
+        grid: { hue: "slate", tone: 12, intensity: 4 },
+        card: { hue: "slate", tone: 16, intensity: 12 },
+      },
+      text: { hue: "slate", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const output = deriveTheme(greenRedRecipe);
     const warnings = checkCVDDistinguishability(output.resolved, CVD_SEMANTIC_PAIRS);
@@ -636,16 +642,18 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders 15 hue pickers (2 surface + 6 element + 7 role) in the preview section", () => {
+  it("renders 11 hue pickers (3 surface + 1 text + 7 role) in the preview section", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
     const preview = container.querySelector("[data-testid='gtg-role-hues']");
     expect(preview).not.toBeNull();
-    // All pickers use the same CompactHuePicker component (gtg-compact-hue-row)
+    // Surface pickers (FullColorPicker) and text picker (HueIntensityPicker) and role hue
+    // pickers (CompactHuePicker) all render a button with class gtg-compact-hue-row.
+    // 3 surface (canvas, grid, card) + 1 text + 7 role = 11
     const pickers = preview!.querySelectorAll(".gtg-compact-hue-row");
-    expect(pickers.length).toBe(15);
+    expect(pickers.length).toBe(11);
   });
 
   it("each role hue picker button has the correct data-testid", () => {
@@ -677,9 +685,13 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       name: "brio",
       description: "Explicit default role hues test recipe.",
       recipe: "dark",
-      surface: { canvas: "indigo-violet", card: "indigo-violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: {
+        canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
+        grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
+        card: { hue: "indigo-violet", tone: 16, intensity: 12 },
+      },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const implicit = deriveTheme(EXAMPLE_RECIPES.brio);
     // tone tokens should match between explicit defaults and recipe defaults
@@ -703,17 +715,17 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       name: "test",
       description: "Test recipe with red destructive hue.",
       recipe: "dark",
-      surface: { canvas: "violet", card: "violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, card: { hue: "violet", tone: 16, intensity: 12 } },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
       name: "test",
       description: "Test recipe with pink destructive hue.",
       recipe: "dark",
-      surface: { canvas: "violet", card: "violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
+      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, card: { hue: "violet", tone: 16, intensity: 12 } },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
     });
     expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
       withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
@@ -912,15 +924,15 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
     // is a CSS cascade effect invisible to JSDOM.
     const withRed = deriveTheme({
       name: "test", description: "Test recipe with red destructive hue.", recipe: "dark",
-      surface: { canvas: "violet", card: "violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, card: { hue: "violet", tone: 16, intensity: 12 } },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
       name: "test", description: "Test recipe with pink destructive hue.", recipe: "dark",
-      surface: { canvas: "violet", card: "violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "violet", border: "violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
+      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, card: { hue: "violet", tone: 16, intensity: 12 } },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
     });
     expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
       withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
@@ -1150,18 +1162,18 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "test-dark",
       description: "Dark formulas test",
       recipe: "dark",
-      surface: { canvas: "indigo", card: "indigo" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: { canvas: { hue: "indigo", tone: 5, intensity: 5 }, grid: { hue: "indigo", tone: 12, intensity: 4 }, card: { hue: "indigo", tone: 16, intensity: 12 } },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: DARK_FORMULAS,
     });
     const lightOutput = deriveTheme({
       name: "test-light",
       description: "Light formulas test",
       recipe: "light",
-      surface: { canvas: "indigo", card: "indigo" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: { canvas: { hue: "indigo", tone: 95, intensity: 6 }, grid: { hue: "indigo", tone: 88, intensity: 5 }, card: { hue: "indigo", tone: 85, intensity: 35 } },
+      text: { hue: "cobalt", intensity: 4 },
+      role: { tone: 55, intensity: 60, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: LIGHT_FORMULAS,
     });
     // The semantic tone tokens should differ because semanticSignalTone differs (50 vs 35)
@@ -1185,9 +1197,9 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "light-test",
       description: "Light formulas round-trip test",
       recipe: "light" as const,
-      surface: { canvas: "indigo", card: "indigo" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: { canvas: { hue: "indigo", tone: 95, intensity: 6 }, grid: { hue: "indigo", tone: 88, intensity: 5 }, card: { hue: "indigo", tone: 85, intensity: 35 } },
+      text: { hue: "cobalt", intensity: 4 },
+      role: { tone: 55, intensity: 60, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: LIGHT_FORMULAS,
     };
     const serialized = JSON.stringify(recipe);
@@ -1209,17 +1221,17 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       name: "no-formulas",
       description: "No formulas field",
       recipe: "dark",
-      surface: { canvas: "indigo", card: "indigo" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: { canvas: { hue: "indigo", tone: 5, intensity: 5 }, grid: { hue: "indigo", tone: 12, intensity: 4 }, card: { hue: "indigo", tone: 16, intensity: 12 } },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const darkFormulas = deriveTheme({
       name: "dark-formulas",
       description: "Explicit DARK_FORMULAS",
       recipe: "dark",
-      surface: { canvas: "indigo", card: "indigo" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo", border: "indigo", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: { canvas: { hue: "indigo", tone: 5, intensity: 5 }, grid: { hue: "indigo", tone: 12, intensity: 4 }, card: { hue: "indigo", tone: 16, intensity: 12 } },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: DARK_FORMULAS,
     });
     expect(noFormulas.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).toBe(darkFormulas.tokens["--tug-base-element-tone-fill-normal-accent-rest"]);
@@ -1476,9 +1488,13 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
       name: "bare",
       description: "No formulas field",
       recipe: "dark" as const,
-      surface: { canvas: "indigo-violet", card: "indigo-violet" },
-      element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "indigo-violet", border: "indigo-violet", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
+      surface: {
+        canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
+        grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
+        card: { hue: "indigo-violet", tone: 16, intensity: 12 },
+      },
+      text: { hue: "cobalt", intensity: 3 },
+      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     };
     const noFormulasOutput = deriveTheme(bareRecipe);
     const darkFormulasOutput = deriveTheme({ ...bareRecipe, formulas: DARK_FORMULAS });
@@ -1486,6 +1502,123 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
       darkFormulasOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"],
     );
     expect(Object.keys(noFormulasOutput.tokens).length).toBe(374);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 4: Fully-specified color pickers — tone/intensity state and UI
+// ---------------------------------------------------------------------------
+
+describe("GalleryThemeGeneratorContent – step 4 fully-specified color pickers", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders the canvas surface picker with data-testid gtg-canvas-hue", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-canvas-hue']")).not.toBeNull();
+  });
+
+  it("renders the grid surface picker with data-testid gtg-grid-hue", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-grid-hue']")).not.toBeNull();
+  });
+
+  it("renders the card surface picker with data-testid gtg-card-hue", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-card-hue']")).not.toBeNull();
+  });
+
+  it("renders the content/text picker with data-testid gtg-content-hue", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-content-hue']")).not.toBeNull();
+  });
+
+  it("renders the shared role tone/intensity strip container", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-role-shared-strips']")).not.toBeNull();
+  });
+
+  it("renders the role tone strip with data-testid gtg-role-tone-strip", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-role-tone-strip']")).not.toBeNull();
+  });
+
+  it("renders the role intensity strip with data-testid gtg-role-intensity-strip", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-role-intensity-strip']")).not.toBeNull();
+  });
+
+  it("loading brio preset sets correct tone/intensity values in derived theme", () => {
+    // After loading brio preset, the derived tokens should match direct deriveTheme(EXAMPLE_RECIPES.brio)
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    // Load brio preset
+    const brioBtn = container.querySelector("[data-testid='gtg-preset-brio']") as HTMLElement;
+    act(() => { fireEvent.click(brioBtn); });
+    // The token grid shows derived tokens; check one role fill token matches
+    const grid = container.querySelector("[data-testid='gtg-token-grid']");
+    expect(grid).not.toBeNull();
+    const tokenNames = Array.from(grid!.querySelectorAll(".gtg-token-name")).map((el) => el.textContent?.trim() ?? "");
+    expect(tokenNames).toContain("--tug-base-element-tone-fill-normal-accent-rest");
+    // Verify the derived theme produces the same token count as direct deriveTheme call
+    const swatches = grid!.querySelectorAll(".gtg-token-swatch");
+    expect(swatches.length).toBe(Object.keys(brioOutput.tokens).length);
+  });
+
+  it("loading harmony preset switches to light mode with correct tone values", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const harmonyBtn = container.querySelector("[data-testid='gtg-preset-harmony']") as HTMLElement;
+    act(() => { fireEvent.click(harmonyBtn); });
+    // After loading harmony (light mode), the Light button should be filled
+    const lightBtn = container.querySelector("[data-testid='gtg-mode-light']");
+    expect(lightBtn!.classList.contains("tug-button-filled-action")).toBe(true);
+  });
+
+  it("currentRecipe export includes tone/intensity fields for all surfaces", () => {
+    // Export the current recipe as JSON and verify it has ThemeColorSpec surface objects
+    const recipe = EXAMPLE_RECIPES.brio;
+    const json = JSON.stringify(recipe, null, 2);
+    const parsed = JSON.parse(json) as typeof recipe;
+    // Verify surface is ThemeColorSpec objects
+    expect(typeof parsed.surface.canvas).toBe("object");
+    expect(typeof parsed.surface.canvas.tone).toBe("number");
+    expect(typeof parsed.surface.canvas.intensity).toBe("number");
+    expect(typeof parsed.surface.grid).toBe("object");
+    expect(typeof parsed.surface.grid.tone).toBe("number");
+    expect(typeof parsed.surface.card).toBe("object");
+    expect(typeof parsed.surface.card.tone).toBe("number");
+    // Text has intensity
+    expect(typeof parsed.text.intensity).toBe("number");
+    // Role has shared tone/intensity
+    expect(typeof parsed.role.tone).toBe("number");
+    expect(typeof parsed.role.intensity).toBe("number");
   });
 });
 

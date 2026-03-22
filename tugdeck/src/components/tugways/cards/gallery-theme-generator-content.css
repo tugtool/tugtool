@@ -517,6 +517,91 @@
 }
 
 /* ============================================================================
+   Full color picker popover (hue + tone + intensity)
+   ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                                    | Surface                                                    | Role         | Context                                      |
+ * |------------------------------------------------------------|------------------------------------------------------------|--------------|--------------------------------------------- |
+ * | --tug-base-element-global-border-normal-default-rest       | --tug-base-surface-global-primary-normal-raised-rest       | informational | .gtg-full-color-popover (border)            |
+ * | --tug-base-element-global-text-normal-muted-rest           | --tug-base-surface-global-primary-normal-raised-rest       | informational | .gtg-full-color-strip-label (color)         |
+ */
+
+.gtg-full-color-popover {
+  width: 320px;
+  padding: 10px;
+  background-color: var(--tug-base-surface-global-primary-normal-raised-rest);
+  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
+  border-radius: var(--tug-base-radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  z-index: 100;
+}
+
+.gtg-full-color-popover-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gtg-full-color-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* @tug-renders-on: --tug-base-surface-global-primary-normal-raised-rest */
+.gtg-full-color-strip-label {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-element-global-text-normal-muted-rest);
+  width: 50px;
+  flex-shrink: 0;
+  text-align: right;
+  user-select: none;
+}
+
+.gtg-full-color-strip-track {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Inside the full color popover, wrap the hue swatches into multiple rows */
+.gtg-full-color-popover .tug-hue-strip {
+  flex-wrap: wrap;
+  padding-bottom: 4px;
+}
+
+/* Hide rotated labels inside the full color popover */
+.gtg-full-color-popover .tug-hue-strip__label {
+  display: none;
+}
+
+/* Reduce swatch size inside the popover */
+.gtg-full-color-popover .tug-hue-strip__swatch {
+  width: 14px;
+  height: 20px;
+}
+
+/* ============================================================================
+   Role shared tone/intensity strips
+   ========================================================================= */
+
+.gtg-role-shared-strips {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--tug-base-element-global-divider-normal-default-rest);
+  margin-bottom: 2px;
+}
+
+/* Widen the roles sidebar to accommodate shared strips */
+.gtg-hue-sidebar--roles {
+  width: 200px;
+}
+
+/* ============================================================================
    Mood sliders
    ========================================================================= */
 

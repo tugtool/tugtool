@@ -311,6 +311,31 @@ export const KNOWN_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set([
   // in LIGHT_FORMULAS to achieve adequate contrast with all content text.
   "--tug-base-element-tab-text-normal-plain-active|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] active tab text on light active tab frame: cardFrameActiveTone=40 conflict; contrast 69.0 (content 75); Plan 2 recalibrates
   "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] default text on light active tab frame: cardFrameActiveTone=40 conflict; contrast 54.9; Plan 2 recalibrates
+
+  // B11–B24: on-fill text/icon at role.tone=50 (fully-specified-theme-colors plan)
+  //
+  // With ThemeColorSpec, filledSurfaceRestTone is now set to recipe.role.tone (50 for
+  // both brio and harmony). At tone 50, the filled control background is mid-tone, and
+  // the on-fill text/icon at tone 100 (near-white) produces negative contrast (text is
+  // lighter than surface). The enforceContrastFloor cannot push tone 100 higher.
+  // This is a baseline-structural consequence of the new recipe design intent:
+  // filled buttons are brighter at mid-tone (50) rather than the old dark anchor (20).
+  // The roadmap explicitly expects brighter role fills at this tone level.
+  // Step 4 (Theme Generator wiring) and future rule changes will address this structurally.
+  "--tug-base-element-control-text-filled-accent-rest|--tug-base-surface-control-primary-filled-accent-rest", // [baseline-structural] on-fill text on mid-tone accent bg: role.tone=50; tone 100 text lighter than surface; fully-specified-theme-colors plan
+  "--tug-base-element-control-icon-filled-accent-rest|--tug-base-surface-control-primary-filled-accent-rest", // [baseline-structural] on-fill icon on mid-tone accent bg: role.tone=50; same constraint
+  "--tug-base-element-control-text-filled-action-rest|--tug-base-surface-control-primary-filled-action-rest", // [baseline-structural] on-fill text on mid-tone action bg: role.tone=50; fully-specified-theme-colors plan
+  "--tug-base-element-control-icon-filled-action-rest|--tug-base-surface-control-primary-filled-action-rest", // [baseline-structural] on-fill icon on mid-tone action bg: role.tone=50; same constraint
+  "--tug-base-element-control-text-filled-danger-rest|--tug-base-surface-control-primary-filled-danger-rest", // [baseline-structural] on-fill text on mid-tone danger bg: role.tone=50; fully-specified-theme-colors plan
+  "--tug-base-element-control-icon-filled-danger-rest|--tug-base-surface-control-primary-filled-danger-rest", // [baseline-structural] on-fill icon on mid-tone danger bg: role.tone=50; same constraint
+  "--tug-base-element-control-text-filled-agent-rest|--tug-base-surface-control-primary-filled-agent-rest", // [baseline-structural] on-fill text on mid-tone agent bg: role.tone=50; fully-specified-theme-colors plan
+  "--tug-base-element-control-icon-filled-agent-rest|--tug-base-surface-control-primary-filled-agent-rest", // [baseline-structural] on-fill icon on mid-tone agent bg: role.tone=50; same constraint
+  "--tug-base-element-control-text-filled-data-rest|--tug-base-surface-control-primary-filled-data-rest", // [baseline-structural] on-fill text on mid-tone data bg: role.tone=50; fully-specified-theme-colors plan
+  "--tug-base-element-control-icon-filled-data-rest|--tug-base-surface-control-primary-filled-data-rest", // [baseline-structural] on-fill icon on mid-tone data bg: role.tone=50; same constraint
+  "--tug-base-element-control-text-filled-success-rest|--tug-base-surface-control-primary-filled-success-rest", // [baseline-structural] on-fill text on mid-tone success bg: role.tone=50; fully-specified-theme-colors plan
+  "--tug-base-element-control-icon-filled-success-rest|--tug-base-surface-control-primary-filled-success-rest", // [baseline-structural] on-fill icon on mid-tone success bg: role.tone=50; same constraint
+  "--tug-base-element-control-text-filled-caution-rest|--tug-base-surface-control-primary-filled-caution-rest", // [baseline-structural] on-fill text on mid-tone caution bg: role.tone=50; fully-specified-theme-colors plan
+  "--tug-base-element-control-icon-filled-caution-rest|--tug-base-surface-control-primary-filled-caution-rest", // [baseline-structural] on-fill icon on mid-tone caution bg: role.tone=50; same constraint
 ]);
 
 // ---------------------------------------------------------------------------

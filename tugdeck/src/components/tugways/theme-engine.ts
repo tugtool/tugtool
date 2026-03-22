@@ -262,13 +262,26 @@ import type { ElementSurfacePairing } from "./element-surface-pairing-map";
 // ---------------------------------------------------------------------------
 
 /**
- * Compact recipe input — nested surface/element/role groups. Spec S01.
+ * Fully-specified color pick: hue name, tone (0-100), and intensity (0-100).
+ * Surfaces use all three values; the designer controls lightness and chromaticity
+ * directly rather than relying on hardcoded recipe-function constants. [D01]
+ */
+export interface ThemeColorSpec {
+  /** Named hue: "blue", "indigo-violet", etc. */
+  hue: string;
+  /** Lightness (0 = black, 100 = white). */
+  tone: number;
+  /** Chroma/saturation (0 = achromatic, 100 = fully vivid). */
+  intensity: number;
+}
+
+/**
+ * Compact recipe input — fully-specified color picks for surfaces, text, and roles.
  *
- * Surface group: hues for background planes.
- * Element group: hues for foreground elements (text, icons, borders).
- *   - `cardFrame` is derived from `element.border` (same hue, formulas control tone/intensity)
- *   - `link`/`interactive` hue is derived from `role.action` directly
- * Role group: vivid semantic signal hues.
+ * Surface group: ThemeColorSpec objects for background planes.
+ * Text group: hue + intensity (tone is derived via contrastSearch for legibility).
+ * Role group: shared tone + intensity + 7 vivid signal hues.
+ * Optional overrides: display and border hue overrides (default to text.hue / canvas.hue).
  */
 export interface ThemeRecipe {
   name: string;
@@ -277,28 +290,26 @@ export interface ThemeRecipe {
   recipe: "dark" | "light";
 
   surface: {
-    /** Hue for bg-canvas and bg-app backgrounds. */
-    canvas: string;
-    /** Hue for card surfaces (atmosphere hue). */
-    card: string;
+    /** App background: hue + tone + intensity. */
+    canvas: ThemeColorSpec;
+    /** Grid lines on canvas: hue + tone + intensity. */
+    grid: ThemeColorSpec;
+    /** Card title bar: hue + tone + intensity (atmosphere hue). */
+    card: ThemeColorSpec;
   };
 
-  element: {
-    /** Hue for primary prose/body text. Contrast role: content (75). */
-    content: string;
-    /** Hue for interactive element labels (buttons, tabs, menus). Contrast role: control (60). */
-    control: string;
-    /** Hue for titles, headers, card titles. Contrast role: display (60). */
-    display: string;
-    /** Hue for muted/metadata/placeholder text. Contrast role: informational (60). */
-    informational: string;
-    /** Hue for borders and dividers. cardFrame is derived from this hue. */
-    border: string;
-    /** Hue for non-text ornamental marks. Contrast role: decorative (15). */
-    decorative: string;
+  text: {
+    /** Body text hue (tone is derived for legibility, not designer-specified). */
+    hue: string;
+    /** Body text chromaticity (0-100). */
+    intensity: number;
   };
 
   role: {
+    /** Shared tone for all role fills (0-100). */
+    tone: number;
+    /** Shared intensity for all role colors (0-100). */
+    intensity: number;
     /** Vivid accent hue (orange by default). */
     accent: string;
     /** Action/active/interactive hue — also drives link/interactive hue. */
@@ -314,6 +325,11 @@ export interface ThemeRecipe {
     /** Danger/destructive signal hue. */
     danger: string;
   };
+
+  /** Optional display hue override (defaults to text.hue when absent). */
+  display?: { hue: string; intensity: number };
+  /** Optional border hue override (defaults to surface.canvas.hue when absent). */
+  border?: { hue: string; intensity: number };
 
   /** All formula constants for this recipe. When provided, used directly instead of calling the recipe function. [D06] */
   formulas?: DerivationFormulas;
@@ -1113,20 +1129,16 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     description: "Deep, immersive dark theme. Very dark surfaces with subtle layering. Near-white text with wide hierarchy spread. Filled controls are prominent with vivid accent backgrounds and white text. Borders are subtle. Shadows are moderate. Industrial warmth with muted chassis and vivid signals.",
     recipe: "dark",
     surface: {
-      canvas: "indigo-violet", // bg-canvas, bg-app
-      card: "indigo-violet",   // card surfaces (atmosphere hue)
+      canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
+      grid:   { hue: "indigo-violet", tone: 12, intensity: 4 },
+      card:   { hue: "indigo-violet", tone: 16, intensity: 12 },
     },
-    element: {
-      content: "cobalt",         // primary prose/body text
-      control: "cobalt",         // interactive element labels (matches content by default)
-      display: "indigo",         // titles/headers — indigo at 260°, +10° warmer than cobalt at 250°
-      informational: "indigo-violet", // muted/metadata text — matches canvas hue
-      border: "indigo-violet",   // borders and dividers; cardFrame derived from this
-      decorative: "gray",        // non-text ornamental marks — near-neutral
-    },
+    text: { hue: "cobalt", intensity: 3 },
+    display: { hue: "indigo", intensity: 3 },
     role: {
+      tone: 50, intensity: 50,
       accent: "orange",
-      action: "blue",            // link/interactive hue is derived from this
+      action: "blue",
       agent: "violet",
       data: "teal",
       success: "green",
@@ -1139,20 +1151,15 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     description: "Bright, open canvas with crisp surfaces. Dark text for maximum readability with clear hierarchy. Filled controls use vivid accent backgrounds with white text. Borders are crisp and visible. Shadows are light. Industrial warmth with muted chassis and vivid signals — the same palette as Brio, seen in daylight.",
     recipe: "light",
     surface: {
-      canvas: "indigo-violet", // same palette as brio — light near-white canvas
-      card: "indigo-violet",   // same palette as brio
+      canvas: { hue: "indigo-violet", tone: 95, intensity: 6 },
+      grid:   { hue: "indigo-violet", tone: 88, intensity: 5 },
+      card:   { hue: "indigo-violet", tone: 85, intensity: 35 },
     },
-    element: {
-      content: "cobalt",         // same palette as brio
-      control: "cobalt",         // same palette as brio
-      display: "indigo",         // same palette as brio — indigo title bars
-      informational: "indigo-violet", // same palette as brio
-      border: "indigo-violet",   // same palette as brio — crisp indigo-violet borders
-      decorative: "gray",        // same palette as brio
-    },
+    text: { hue: "cobalt", intensity: 4 },
     role: {
+      tone: 55, intensity: 60,
       accent: "orange",
-      action: "blue",            // same palette as brio
+      action: "blue",
       agent: "violet",
       data: "teal",
       success: "green",
@@ -1255,6 +1262,35 @@ export function primaryColorName(hueExpr: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// themeColorSpecToOklch — convert a ThemeColorSpec to an oklch() CSS string
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a ThemeColorSpec to an `oklch(L C H)` CSS string.
+ *
+ * Uses the same OKLCH math as the palette engine:
+ *   - Hue angle: resolved from HUE_FAMILIES (supports compound names like "indigo-violet")
+ *   - L: computed via toneToL() using the primary color name (for DEFAULT_CANONICAL_L lookup)
+ *   - C: (MAX_CHROMA_FOR_HUE[primaryName] ?? 0.022) * PEAK_C_SCALE * (intensity / 100)
+ *
+ * The primary color name (first segment of a hyphenated expression) is used for
+ * DEFAULT_CANONICAL_L and MAX_CHROMA_FOR_HUE lookups because those tables are
+ * indexed by single-word hue names.
+ *
+ * Exported for use in theme-provider.tsx and gallery-theme-generator-content.tsx. [D06]
+ */
+export function themeColorSpecToOklch(spec: ThemeColorSpec): string {
+  const primaryName = primaryColorName(spec.hue);
+  const angle = resolveHueAngle(spec.hue);
+  const L = toneToL(spec.tone, primaryName);
+  const maxC = MAX_CHROMA_FOR_HUE[primaryName] ?? MAX_CHROMA_FOR_HUE[spec.hue] ?? 0.022;
+  const C = maxC * PEAK_C_SCALE * (spec.intensity / 100);
+  const Lf = parseFloat(L.toFixed(4));
+  const Cf = parseFloat(C.toFixed(4));
+  return `oklch(${Lf} ${Cf} ${angle})`;
+}
+
+// ---------------------------------------------------------------------------
 // resolveHueSlots — Layer 1: recipe -> ResolvedHueSlots (Spec S02)
 // ---------------------------------------------------------------------------
 
@@ -1266,19 +1302,19 @@ export function primaryColorName(hueExpr: string): string {
  * The output `ResolvedHueSlots` is the canonical source for all hue angles
  * and refs used in token derivation.
  *
- * Recipe field mapping (nested structure from Phase 3.5B):
- *   - atm         ← recipe.surface.card
- *   - txt         ← recipe.element.content
- *   - canvas      ← recipe.surface.canvas
- *   - cardFrame   ← derived from recipe.element.border (same hue)
- *   - borderTint  ← recipe.element.border
+ * Recipe field mapping (fully-specified ThemeColorSpec structure):
+ *   - atm         ← recipe.surface.card.hue
+ *   - txt         ← recipe.text.hue
+ *   - canvas      ← recipe.surface.canvas.hue
+ *   - cardFrame   ← recipe.surface.card.hue (card hue drives card frame)
+ *   - borderTint  ← recipe.border?.hue ?? recipe.surface.canvas.hue
  *   - interactive ← derived from recipe.role.action (not a separate field)
  *   - active      ← recipe.role.action
  *   - accent      ← recipe.role.accent
- *   - control     ← recipe.element.control (new semantic slot)
- *   - display     ← recipe.element.display (new semantic slot)
- *   - informational ← recipe.element.informational (new semantic slot)
- *   - decorative  ← recipe.element.decorative (new semantic slot)
+ *   - control     ← recipe.text.hue (defaults to text hue)
+ *   - display     ← recipe.display?.hue ?? recipe.text.hue
+ *   - informational ← recipe.surface.canvas.hue (defaults to canvas hue)
+ *   - decorative  ← "gray" (hardcoded — non-text ornamental marks)
  *
  * Per-tier derived hue slots (surfScreen, fgMuted, fgSubtle, fgDisabled,
  * fgInverse, fgPlaceholder, selectionInactive) are driven by
@@ -1286,11 +1322,11 @@ export function primaryColorName(hueExpr: string): string {
  * all runtime mode branches from the formula path. [D03]
  *
  * @param recipe  - The theme recipe
- * @param formulas - Formula constants; defaults to recipe.formulas ?? darkRecipe()
+ * @param formulas - Formula constants; defaults to recipe.formulas ?? darkRecipe(recipe)
  */
 export function resolveHueSlots(
   recipe: ThemeRecipe,
-  formulas: DerivationFormulas = recipe.formulas ?? darkRecipe(),
+  formulas: DerivationFormulas = recipe.formulas ?? darkRecipe(recipe),
 ): ResolvedHueSlots {
   /** Build a ResolvedHueSlot from a hue name. Hue angle used verbatim. */
   function resolveSlot(hueName: string): ResolvedHueSlot {
@@ -1310,14 +1346,15 @@ export function resolveHueSlots(
   }
 
   // -------------------------------------------------------------------------
-  // Recipe hues
+  // Recipe hues — derived from new ThemeColorSpec structure
   // -------------------------------------------------------------------------
-  const atmHue = recipe.surface.card;
-  const txtHue = recipe.element.content;
-  const canvasHue = recipe.surface.canvas;
-  // cardFrame is derived from element.border (same hue; formulas control tone/intensity)
-  const cardFrameHue = recipe.element.border;
-  const borderTintHue = recipe.element.border;
+  const atmHue = recipe.surface.card.hue;
+  const txtHue = recipe.text.hue;
+  const canvasHue = recipe.surface.canvas.hue;
+  // cardFrame is driven by the card hue (tone/intensity come from formulas)
+  const cardFrameHue = recipe.surface.card.hue;
+  // borderTint: optional override, defaults to canvas hue
+  const borderTintHue = recipe.border?.hue ?? recipe.surface.canvas.hue;
   // interactive/link hue is derived from role.action directly (not a separate recipe field)
   const interactiveHue = recipe.role.action;
   const activeHue = recipe.role.action;
@@ -1332,11 +1369,11 @@ export function resolveHueSlots(
   const active = resolveSlot(activeHue);
   const accent = resolveSlot(accentHue);
 
-  // Element hues — new semantic slots for foreground element types
-  const control = resolveSlot(recipe.element.control);
-  const display = resolveSlot(recipe.element.display);
-  const informational = resolveSlot(recipe.element.informational);
-  const decorative = resolveSlot(recipe.element.decorative);
+  // Element hues — derived from new structure (element group removed)
+  const control = resolveSlot(recipe.text.hue);
+  const display = resolveSlot(recipe.display?.hue ?? recipe.text.hue);
+  const informational = resolveSlot(recipe.surface.canvas.hue);
+  const decorative = resolveSlot("gray");
 
   // Semantic hues — vivid signal hues
   const destructive = resolveSlot(recipe.role.danger);
@@ -2250,7 +2287,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     formulas = recipe.formulas;
   } else {
     const registryEntry = RECIPE_REGISTRY[recipe.recipe];
-    formulas = registryEntry ? registryEntry.fn() : darkRecipe();
+    formulas = registryEntry ? registryEntry.fn(recipe) : darkRecipe(recipe);
   }
 
   // -------------------------------------------------------------------------
