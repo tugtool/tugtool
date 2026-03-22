@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-22T19:33:08Z
+---
+
+## step-3: Removed formulas? from ThemeRecipe, added formulas to ThemeOutput, simplified deriveTheme() to always use RECIPE_REGISTRY, added test for output.formulas
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-2
 date: 2025-03-22T19:20:42Z
 ---

@@ -1787,10 +1787,8 @@ export function GalleryThemeGeneratorContent() {
   // means the user has explicitly provided formulas (escape hatch path per [D06]).
   // A synchronous ref mirrors the state so runDerive() can read the latest value
   // without threading formulas through its parameter signature. [D01]
-  const [formulas, setFormulas] = useState<DerivationFormulas | null>(
-    DEFAULT_RECIPE.formulas ?? null,
-  );
-  const formulasRef = useRef<DerivationFormulas | null>(DEFAULT_RECIPE.formulas ?? null);
+  const [formulas, setFormulas] = useState<DerivationFormulas | null>(null);
+  const formulasRef = useRef<DerivationFormulas | null>(null);
 
   /**
    * Update both the formulas state and the ref synchronously.
@@ -1943,7 +1941,6 @@ export function GalleryThemeGeneratorContent() {
         },
         text: { hue: content, intensity: tIntensity },
         role: { tone: rTone, intensity: rIntensity, accent, action: active, agent, data, success, caution, danger },
-        ...(formulasRef.current !== null ? { formulas: formulasRef.current } : {}),
       };
       setThemeOutput(deriveTheme(recipe));
     },
@@ -2012,7 +2009,7 @@ export function GalleryThemeGeneratorContent() {
       setDangerHue(r.role.danger);
       // When loading a formulas-based recipe (escape hatch [D06]), set formulas directly.
       // Otherwise set formulas to null so deriveTheme() uses recipe defaults. [D01]
-      setFormulasAndRef(r.formulas ?? null);
+      setFormulasAndRef(null);
       setThemeOutput(deriveTheme(r));
     },
     // setFormulasAndRef is a stable plain function defined in component scope — no dependency needed.
@@ -2046,7 +2043,6 @@ export function GalleryThemeGeneratorContent() {
       },
       text: { hue: contentHue, intensity: textIntensity },
       role: { tone: roleTone, intensity: roleIntensity, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-      ...(formulas !== null ? { formulas } : {}),
     }),
     [
       recipeName, mode,
@@ -2057,7 +2053,6 @@ export function GalleryThemeGeneratorContent() {
       contentHue, textIntensity,
       roleTone, roleIntensity,
       accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
-      formulas,
     ],
   );
 
@@ -2097,7 +2092,7 @@ export function GalleryThemeGeneratorContent() {
       setSuccessHue(r.role.success);
       setCautionHue(r.role.caution);
       setDangerHue(r.role.danger);
-      setFormulasAndRef(r.formulas ?? null);
+      setFormulasAndRef(null);
       setThemeOutput(deriveTheme(r));
     },
     // setFormulasAndRef is a stable plain function defined in component scope — no dependency needed.

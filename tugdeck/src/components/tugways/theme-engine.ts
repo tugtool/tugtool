@@ -325,9 +325,6 @@ export interface ThemeRecipe {
   display?: { hue: string; intensity: number };
   /** Optional border hue override (defaults to surface.canvas.hue when absent). */
   border?: { hue: string; intensity: number };
-
-  /** All formula constants for this recipe. When provided, used directly instead of calling the recipe function. [D06] */
-  formulas?: DerivationFormulas;
 }
 
 /**
@@ -399,6 +396,7 @@ export interface ThemeOutput {
   contrastResults: ContrastResult[];
   cvdWarnings: CVDWarning[];
   diagnostics: ContrastDiagnostic[];
+  formulas: DerivationFormulas;
 }
 
 // ---------------------------------------------------------------------------
@@ -2000,7 +1998,7 @@ export function themeColorSpecToOklch(spec: ThemeColorSpec): string {
  * `formulas` fields, eliminating all runtime mode branches from the formula path. [D03]
  *
  * @param recipe  - The theme recipe
- * @param formulas - Formula constants; defaults to darkRecipe(recipe)
+ * @param formulas - Formula constants produced by a recipe function; defaults to darkRecipe(recipe). Callers (e.g., deriveTheme) always pass this explicitly.
  */
 export function resolveHueSlots(
   recipe: ThemeRecipe,
@@ -2943,6 +2941,7 @@ function resolvedEntryAlpha(
  *     invariant value (for export / display)
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking
  *     and CVD simulation); structural and invariant tokens are absent [D09]
+ *   - `formulas`: the DerivationFormulas used to compute this theme (available to callers for runtime derivation)
  *   - `contrastResults` / `cvdWarnings`: empty arrays (populated in later steps)
  *
  * Two-layer declarative pipeline (Spec S01):
@@ -2953,17 +2952,10 @@ function resolvedEntryAlpha(
 export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 1. Resolve formula constants [D01] [D06]
-  // Precedence:
-  //   1. recipe.formulas — use directly (escape hatch)
-  //   2. RECIPE_REGISTRY[recipe.recipe] — call the registered recipe function
+  // Dispatch to the registered recipe function via RECIPE_REGISTRY.
   // -------------------------------------------------------------------------
-  let formulas: DerivationFormulas;
-  if (recipe.formulas) {
-    formulas = recipe.formulas;
-  } else {
-    const registryEntry = RECIPE_REGISTRY[recipe.recipe];
-    formulas = registryEntry ? registryEntry.fn(recipe) : darkRecipe(recipe);
-  }
+  const registryEntry = RECIPE_REGISTRY[recipe.recipe];
+  const formulas: DerivationFormulas = registryEntry ? registryEntry.fn(recipe) : darkRecipe(recipe);
 
   // -------------------------------------------------------------------------
   // 2. Layer 1 — resolve all hue slots (Spec S02)
@@ -3020,6 +3012,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     contrastResults: [],
     cvdWarnings: [],
     diagnostics,
+    formulas,
   };
 }
 

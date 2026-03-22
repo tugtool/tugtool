@@ -19,6 +19,7 @@ import {
   enforceContrastFloor,
   primaryColorName,
   type ResolvedColor,
+  type DerivationFormulas,
 } from "@/components/tugways/theme-engine";
 
 import {
@@ -184,6 +185,21 @@ describe("derivation-engine", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     expect(brio.name).toBe("brio");
     expect(brio.recipe).toBe("dark");
+  });
+
+  it("step-3: deriveTheme() output includes formulas field of type DerivationFormulas", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    // formulas must be present and non-null
+    expect(output.formulas).toBeDefined();
+    expect(output.formulas).not.toBeNull();
+    // Verify it has the shape of DerivationFormulas by checking a representative
+    // subset of required numeric fields from the interface.
+    const f = output.formulas as DerivationFormulas;
+    expect(typeof f.surfaceAppTone).toBe("number");
+    expect(typeof f.surfaceCanvasTone).toBe("number");
+    expect(typeof f.surfaceDefaultTone).toBe("number");
+    expect(typeof f.surfaceRaisedTone).toBe("number");
+    expect(typeof f.surfaceOverlayTone).toBe("number");
   });
 
   it("T2.7a: deriveTheme(EXAMPLE_RECIPES.brio) produces a token for '--tug-element-cardTitle-text-normal-plain-rest'", () => {
