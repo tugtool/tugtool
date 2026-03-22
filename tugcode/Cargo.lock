@@ -2196,7 +2196,7 @@ dependencies = [
 
 [[package]]
 name = "tugbank"
-version = "0.7.41"
+version = "0.7.42"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -2209,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "tugbank-core"
-version = "0.7.41"
+version = "0.7.42"
 dependencies = [
  "rusqlite",
  "serde",
@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "tugcode"
-version = "0.7.41"
+version = "0.7.42"
 dependencies = [
  "anyhow",
  "clap",
@@ -2289,7 +2289,7 @@ dependencies = [
 
 [[package]]
 name = "tugrelaunch"
-version = "0.7.41"
+version = "0.7.42"
 dependencies = [
  "clap",
  "libc",
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool"
-version = "0.7.41"
+version = "0.7.42"
 dependencies = [
  "clap",
  "libc",
@@ -2314,7 +2314,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool-core"
-version = "0.7.41"
+version = "0.7.42"
 dependencies = [
  "regex",
  "rusqlite",
