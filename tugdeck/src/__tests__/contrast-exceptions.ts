@@ -92,22 +92,22 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
   "--tug-base-element-control-icon-ghost-danger-active", // [design-choice] danger hue active icon; same structural constraint
 
   // D — semantic tone tokens (status/informational colors — medium visual weight by design)
-  "--tug-base-element-tone-text-normal-accent-rest", // [design-choice] semantic signal token; mid-tone hue for visual weight, not primary text contrast
-  "--tug-base-element-tone-text-normal-active-rest", // [design-choice] semantic signal token; mid-tone hue
-  "--tug-base-element-tone-text-normal-agent-rest", // [design-choice] semantic signal token; mid-tone hue
-  "--tug-base-element-tone-text-normal-data-rest", // [design-choice] semantic signal token; mid-tone hue
-  "--tug-base-element-tone-text-normal-success-rest", // [design-choice] semantic signal token; mid-tone hue
-  "--tug-base-element-tone-text-normal-caution-rest", // [design-choice] semantic signal token; mid-tone hue
-  "--tug-base-element-tone-text-normal-danger-rest", // [design-choice] semantic signal token; mid-tone hue
-  "--tug-base-element-tone-icon-normal-accent-rest", // [design-choice] semantic signal icon; mid-tone hue
-  "--tug-base-element-tone-icon-normal-active-rest", // [design-choice] semantic signal icon; mid-tone hue
-  "--tug-base-element-tone-icon-normal-agent-rest", // [design-choice] semantic signal icon; mid-tone hue
-  "--tug-base-element-tone-icon-normal-data-rest", // [design-choice] semantic signal icon; mid-tone hue
-  "--tug-base-element-tone-icon-normal-success-rest", // [design-choice] semantic signal icon; mid-tone hue
-  "--tug-base-element-tone-icon-normal-caution-rest", // [design-choice] semantic signal icon; mid-tone hue
-  "--tug-base-element-tone-icon-normal-danger-rest", // [design-choice] semantic signal icon; mid-tone hue
+  "--tug-base-element-tone-text-normal-accent-rest", // [design-choice] semantic role token; mid-tone hue for visual weight, not primary text contrast
+  "--tug-base-element-tone-text-normal-active-rest", // [design-choice] semantic role token; mid-tone hue
+  "--tug-base-element-tone-text-normal-agent-rest", // [design-choice] semantic role token; mid-tone hue
+  "--tug-base-element-tone-text-normal-data-rest", // [design-choice] semantic role token; mid-tone hue
+  "--tug-base-element-tone-text-normal-success-rest", // [design-choice] semantic role token; mid-tone hue
+  "--tug-base-element-tone-text-normal-caution-rest", // [design-choice] semantic role token; mid-tone hue
+  "--tug-base-element-tone-text-normal-danger-rest", // [design-choice] semantic role token; mid-tone hue
+  "--tug-base-element-tone-icon-normal-accent-rest", // [design-choice] semantic role icon; mid-tone hue
+  "--tug-base-element-tone-icon-normal-active-rest", // [design-choice] semantic role icon; mid-tone hue
+  "--tug-base-element-tone-icon-normal-agent-rest", // [design-choice] semantic role icon; mid-tone hue
+  "--tug-base-element-tone-icon-normal-data-rest", // [design-choice] semantic role icon; mid-tone hue
+  "--tug-base-element-tone-icon-normal-success-rest", // [design-choice] semantic role icon; mid-tone hue
+  "--tug-base-element-tone-icon-normal-caution-rest", // [design-choice] semantic role icon; mid-tone hue
+  "--tug-base-element-tone-icon-normal-danger-rest", // [design-choice] semantic role icon; mid-tone hue
 
-  // D2 — bare tone-danger: chromatic danger signal; gamut ceiling prevents reaching contrast 75
+  // D2 — bare tone-danger: chromatic danger role color; gamut ceiling prevents reaching contrast 75
   // The red hue at high intensity clips in sRGB at high tones, reducing the effective OKLab-L
   // below what the contrast floor targets. An independent gamut-mapping derivation path is
   // required to fix this; that is engine-level work deferred to Phase 4.
@@ -123,22 +123,22 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
 
   // E2 — muted / disabled element tokens below perceptual contrast thresholds
   "--tug-base-element-global-icon-normal-muted-rest", // [design-choice] muted icon: intentionally lower-contrast for visual hierarchy
-  "--tug-base-element-global-text-normal-plain-disabled", // [design-choice] disabled state: intentionally low contrast to signal inactive
+  "--tug-base-element-global-text-normal-plain-disabled", // [design-choice] disabled state: intentionally low contrast to indicate inactive
   "--tug-base-element-global-icon-normal-plain-disabled", // [design-choice] disabled state icon
   "--tug-base-element-field-text-normal-plain-disabled", // [design-choice] disabled field text: intentionally low contrast
 
-  // E3 — semantic signal field tokens below threshold by design
+  // E3 — semantic role field tokens below threshold by design
   // These use semantic hue tones for state communication; hue recognition takes precedence over max contrast
-  "--tug-base-element-field-text-normal-required-rest", // [design-choice] required field asterisk: semantic signal color; contrast ~54-55 below informational 60
-  "--tug-base-element-field-border-normal-danger-rest", // [design-choice] danger field border: semantic red signal; contrast ~57 below control 60 on field bg
+  "--tug-base-element-field-text-normal-required-rest", // [design-choice] required field asterisk: semantic role color; contrast ~54-55 below informational 60
+  "--tug-base-element-field-border-normal-danger-rest", // [design-choice] danger field border: semantic red role color; contrast ~57 below control 60 on field bg
 
   // F — Badge tinted text/icon tokens: composited contrast ~40-55, below informational threshold 60
-  // Badge tinted text uses mid-tone hues for semantic signal identity; the tinted bg (alpha 15%)
+  // Badge tinted text uses mid-tone hues for semantic role identity; the tinted bg (alpha 15%)
   // is composited over surface-default. The resulting contrast is ~45-55, below the informational
   // threshold (60). These are informational semantic indicators, not primary readable text.
   // Reclassified from ui-component (30) to informational (60) per D05; the design intent of
-  // badge tinted text is colorimetric signal, not WCAG-level contrast for primary prose.
-  "--tug-base-element-badge-text-tinted-accent-rest", // [design-choice] badge tinted text: mid-tone signal color; composited contrast ~45, below informational 60
+  // badge tinted text is colorimetric role indicator, not WCAG-level contrast for primary prose.
+  "--tug-base-element-badge-text-tinted-accent-rest", // [design-choice] badge tinted text: mid-tone role color; composited contrast ~45, below informational 60
   "--tug-base-element-badge-text-tinted-action-rest", // [design-choice] badge tinted text; same rationale as accent
   "--tug-base-element-badge-text-tinted-agent-rest", // [design-choice] badge tinted text; same rationale
   "--tug-base-element-badge-text-tinted-data-rest", // [design-choice] badge tinted text; same rationale
@@ -166,7 +166,7 @@ export const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS: ReadonlySet<string> = new Set
   "--tug-base-element-tab-text-normal-plain-hover", // [design-choice] tab hover state: below contrast 75 content in both dark and light
 
   // H — Non-text component visibility tokens below contrast 30 by design
-  "--tug-base-surface-toggle-track-normal-off-rest", // [design-choice] inactive toggle track: intentionally lower-contrast to signal off state
+  "--tug-base-surface-toggle-track-normal-off-rest", // [design-choice] inactive toggle track: intentionally lower-contrast to indicate off state
   "--tug-base-surface-toggle-track-normal-mixed-rest", // [design-choice] mixed-state toggle track: intentionally subdued
   "--tug-base-surface-toggle-track-normal-off-hover", // [design-choice] hover on inactive toggle track
   "--tug-base-surface-toggle-track-normal-mixed-hover", // [design-choice] hover on mixed-state toggle track
@@ -289,7 +289,7 @@ export const KNOWN_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set([
   "--tug-base-element-global-text-normal-onSuccess-rest|--tug-base-element-tone-fill-normal-success-rest", // [design-choice] on-success-fill text: green hue ceiling; contrast ~38 below control 60
 
   // Required field marker on surface-default
-  "--tug-base-element-field-text-normal-required-rest|--tug-base-surface-global-primary-normal-default-rest", // [design-choice] required field asterisk: semantic signal color; contrast ~54-55 below informational 60
+  "--tug-base-element-field-text-normal-required-rest|--tug-base-surface-global-primary-normal-default-rest", // [design-choice] required field asterisk: semantic role color; contrast ~54-55 below informational 60
 
   // Tab overflow badge: surface-default token used as text color on accent fill
   // The CSS uses var(--tug-base-surface-global-primary-normal-default-rest) as text color directly
@@ -441,31 +441,31 @@ export const ENDPOINT_CONSTRAINT_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set(
   "--tug-base-element-tab-text-normal-plain-rest|--tug-base-surface-global-primary-normal-sunken-rest", // [endpoint-constraint] tab rest text on sunken surface at borderDefinition=0: informational threshold; Plan 2 constrains low endpoint
 
   // -------------------------------------------------------------------------
-  // F — signalStrength=100 dark: signal fills and toggle track
+  // F — roleIntensity=100 dark: role fills and toggle track
   //
-  // At signalStrength=100, the signalIntensityValue reaches 100, making semantic
+  // At roleIntensity=100, the roleIntensityValue reaches 100, making semantic
   // fills (accent, tone-fill-accent, toggle-track-on-hover) maximally vivid.
-  // Some vivid signal colors hit OKLab-L values similar to surface-default,
+  // Some vivid role colors hit OKLab-L values similar to surface-default,
   // reducing the effective contrast below the informational/control thresholds.
   // -------------------------------------------------------------------------
-  "--tug-base-element-tone-fill-normal-accent-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] accent fill at signalStrength=100: maximal signal intensity; OKLab-L approaches surface-default; Plan 2 caps signalIntensityValue high endpoint
-  "--tug-base-surface-toggle-track-normal-on-hover|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] toggle track hover at signalStrength=100/surfaceDepth=100: vivid track approaches surface-default L; Plan 2 constrains
-  "--tug-base-surface-toggle-track-normal-on-hover|--tug-base-surface-global-primary-normal-raised-rest", // [endpoint-constraint] toggle track hover at signalStrength=100/surfaceDepth=100: vivid track approaches surface-raised L
-  "--tug-base-element-global-text-normal-default-rest|--tug-base-element-global-fill-normal-accentSubtle-rest", // [endpoint-constraint] default text on accent-subtle at signalStrength=100/surfaceDepth=100: accent-subtle L approaches content text L; Plan 2 constrains accentSubtleTone or signalIntensityValue
-  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tone-primary-normal-caution-rest", // [endpoint-constraint] default text on caution surface at signalStrength=100/surfaceDepth=100: vivid caution surface approaches content text L
+  "--tug-base-element-tone-fill-normal-accent-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] accent fill at roleIntensity=100: maximal role intensity; OKLab-L approaches surface-default; Plan 2 caps roleIntensityValue high endpoint
+  "--tug-base-surface-toggle-track-normal-on-hover|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] toggle track hover at roleIntensity=100/surfaceDepth=100: vivid track approaches surface-default L; Plan 2 constrains
+  "--tug-base-surface-toggle-track-normal-on-hover|--tug-base-surface-global-primary-normal-raised-rest", // [endpoint-constraint] toggle track hover at roleIntensity=100/surfaceDepth=100: vivid track approaches surface-raised L
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-element-global-fill-normal-accentSubtle-rest", // [endpoint-constraint] default text on accent-subtle at roleIntensity=100/surfaceDepth=100: accent-subtle L approaches content text L; Plan 2 constrains accentSubtleTone or roleIntensityValue
+  "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tone-primary-normal-caution-rest", // [endpoint-constraint] default text on caution surface at roleIntensity=100/surfaceDepth=100: vivid caution surface approaches content text L
   "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-global-primary-normal-overlay-rest", // [endpoint-constraint] default text on overlay surface at surfaceDepth=100: overlay becomes very dark; Plan 2 constrains surfaceOverlayTone high endpoint
   "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-global-primary-normal-screen-rest", // [endpoint-constraint] default text on screen surface at surfaceDepth=100: screen diverges from content text at extreme depth; Plan 2 constrains
 
   // -------------------------------------------------------------------------
-  // G — signalStrength=0 dark: active icon on default/tab surfaces
+  // G — roleIntensity=0 dark: active icon on default/tab surfaces
   //
-  // At signalStrength=0, iconActiveTone reaches its low endpoint (40). The
+  // At roleIntensity=0, iconActiveTone reaches its low endpoint (40). The
   // active icon hue at tone 40 on dark surfaces approaches the OKLab-L of the
   // surface, reducing contrast below control/informational thresholds.
   // -------------------------------------------------------------------------
-  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] active icon at signalStrength=0: low tone endpoint; Plan 2 constrains iconActiveTone low endpoint
-  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-tab-primary-normal-plain-active", // [endpoint-constraint] active icon at signalStrength=0/borderDefinition=100: informational threshold
-  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-global-primary-normal-default-rest", // duplicate guard (same pair listed above for signalStrength=0 and surfaceDepth=100 separately)
+  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] active icon at roleIntensity=0: low tone endpoint; Plan 2 constrains iconActiveTone low endpoint
+  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-tab-primary-normal-plain-active", // [endpoint-constraint] active icon at roleIntensity=0/borderDefinition=100: informational threshold
+  "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-global-primary-normal-default-rest", // duplicate guard (same pair listed above for roleIntensity=0 and surfaceDepth=100 separately)
 
   // -------------------------------------------------------------------------
   // H — surfaceDepth=100 dark: active icon on default surface
@@ -477,23 +477,23 @@ export const ENDPOINT_CONSTRAINT_PAIR_EXCEPTIONS: ReadonlySet<string> = new Set(
   // -------------------------------------------------------------------------
 
   // -------------------------------------------------------------------------
-  // I — signalStrength=100 light: signal fills below informational threshold
+  // I — roleIntensity=100 light: role fills below informational threshold
   //
-  // At signalStrength=100 in light mode, tone-fill-success and tone-fill-data
+  // At roleIntensity=100 in light mode, tone-fill-success and tone-fill-data
   // become vivid enough that their OKLab-L approaches the near-white surface-
   // default, reducing contrast below informational 60.
   // -------------------------------------------------------------------------
-  "--tug-base-element-tone-fill-normal-success-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] success fill at signalStrength=100 light: vivid signal approaches surface-default L; Plan 2 constrains
-  "--tug-base-element-tone-fill-normal-data-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] data fill at signalStrength=100 light: teal hue at max signal; Plan 2 constrains
+  "--tug-base-element-tone-fill-normal-success-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] success fill at roleIntensity=100 light: vivid role approaches surface-default L; Plan 2 constrains
+  "--tug-base-element-tone-fill-normal-data-rest|--tug-base-surface-global-primary-normal-default-rest", // [endpoint-constraint] data fill at roleIntensity=100 light: teal hue at max role intensity; Plan 2 constrains
 
   // -------------------------------------------------------------------------
-  // J — signalStrength=100 light: field border success on field rest surface
+  // J — roleIntensity=100 light: field border success on field rest surface
   //
-  // At signalStrength=100, field-border-success becomes maximally vivid. The
-  // green hue at high signal approaches the light field surface OKLab-L,
+  // At roleIntensity=100, field-border-success becomes maximally vivid. The
+  // green hue at high role intensity approaches the light field surface OKLab-L,
   // reducing control contrast below 60.
   // -------------------------------------------------------------------------
-  "--tug-base-element-field-border-normal-success-rest|--tug-base-surface-field-primary-normal-plain-rest", // [endpoint-constraint] success field border at signalStrength=100 light: vivid green approaches field surface L; Plan 2 constrains
+  "--tug-base-element-field-border-normal-success-rest|--tug-base-surface-field-primary-normal-plain-rest", // [endpoint-constraint] success field border at roleIntensity=100 light: vivid green approaches field surface L; Plan 2 constrains
 
   // -------------------------------------------------------------------------
   // K — atmosphere=0 light: field fill caution on field rest surface

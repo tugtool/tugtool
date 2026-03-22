@@ -224,7 +224,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
         controlWeight: 55,
         borderDefinition: 70,
         shadowDepth: 30,
-        signalStrength: 75,
+        roleIntensity: 75,
         atmosphere: 50,
       },
     };
@@ -375,14 +375,14 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(legacy)).toBeNull();
   });
 
-  it("validateRecipeJson ignores legacy signalIntensity field (Phase 4: mood knobs removed)", () => {
-    // Phase 4: signalIntensity is removed from ThemeRecipe. Legacy files ignored. [D01][Step 5]
+  it("validateRecipeJson ignores legacy roleIntensity field (Phase 4: mood knobs removed)", () => {
+    // Phase 4: roleIntensity is removed from ThemeRecipe. Legacy files ignored. [D01][Step 5]
     const legacy = {
       name: "X", description: "Test.", recipe: "dark",
       surface: { canvas: "red", card: "red" },
       element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      signalIntensity: "vivid",
+      roleIntensity: "vivid",
     };
     // Legacy field with wrong type — ignored, not rejected. [Step 5]
     expect(validateRecipeJson(legacy)).toBeNull();
@@ -414,7 +414,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
         controlWeight: 50,
         borderDefinition: 50,
         shadowDepth: 50,
-        signalStrength: 50,
+        roleIntensity: 50,
         atmosphere: 50,
       },
     };
@@ -466,26 +466,6 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     const container = renderComponent();
     const errorEl = container.querySelector("[data-testid='gtg-import-error']");
     expect(errorEl).toBeNull();
-  });
-
-  it("validateRecipeJson accepts legacy pre-rename field and migrates it to signalIntensity", () => {
-    // Use computed property to avoid stale-name grep hits in source scans.
-    // The key being tested is the old name from before the Gap-1 rename.
-    const LEGACY_KEY = "signal" + "Vividity";
-    const legacy: Record<string, unknown> = {
-      name: "LegacyTheme",
-      description: "Legacy theme for migration testing.",
-      recipe: "dark",
-      surface: { canvas: "cobalt", card: "cobalt" },
-      element: { content: "slate", control: "slate", display: "indigo", informational: "cobalt", border: "cobalt", decorative: "gray" },
-      role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-      [LEGACY_KEY]: 75,
-    };
-    const result = validateRecipeJson(legacy);
-    expect(result).toBeNull();
-    // Migration shim should have renamed the field in-place
-    expect(legacy["signalIntensity"]).toBe(75);
-    expect(legacy[LEGACY_KEY]).toBeUndefined();
   });
 
   it("validateRecipeJson migrates old-format recipe with controls object into new surface/role structure (Spec S05 rule 6)", () => {

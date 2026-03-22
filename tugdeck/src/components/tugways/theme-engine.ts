@@ -280,7 +280,7 @@ export interface ThemeColorSpec {
  *
  * Surface group: ThemeColorSpec objects for background planes.
  * Text group: hue + intensity (tone is derived via contrastSearch for legibility).
- * Role group: shared tone + intensity + 7 vivid signal hues.
+ * Role group: shared tone + intensity + 7 vivid role hues.
  * Optional overrides: display and border hue overrides (default to text.hue / canvas.hue).
  */
 export interface ThemeRecipe {
@@ -318,11 +318,11 @@ export interface ThemeRecipe {
     agent: string;
     /** Data visualization hue. */
     data: string;
-    /** Success/positive signal hue. */
+    /** Success/positive role hue. */
     success: string;
-    /** Caution/warning signal hue. */
+    /** Caution/warning role hue. */
     caution: string;
-    /** Danger/destructive signal hue. */
+    /** Danger/destructive role hue. */
     danger: string;
   };
 
@@ -432,7 +432,7 @@ export interface ResolvedHueSlot {
  * Slots are grouped into:
  *   - Recipe hues (atm, txt, canvas, cardFrame, borderTint, interactive, active, accent)
  *   - Element hues (control, display, informational, decorative) — derived from element group
- *   - Semantic hues (destructive, success, caution, agent, data) — vivid signal hues
+ *   - Semantic hues (destructive, success, caution, agent, data) — vivid role hues
  *   - Per-tier derived hues (surfBareBase, surfScreen, fgMuted, fgSubtle, fgDisabled,
  *     fgInverse, fgPlaceholder, selectionInactive, borderTintBareBase, borderStrong)
  */
@@ -451,7 +451,7 @@ export interface ResolvedHueSlots {
   display: ResolvedHueSlot;       // title/header hue (element.display)
   informational: ResolvedHueSlot; // muted/metadata/placeholder hue (element.informational)
   decorative: ResolvedHueSlot;    // non-text ornamental hue (element.decorative)
-  // Semantic hues (vivid signal hues)
+  // Semantic hues (vivid role hues)
   destructive: ResolvedHueSlot;
   success: ResolvedHueSlot;
   caution: ResolvedHueSlot;
@@ -590,21 +590,21 @@ export interface DerivationFormulas {
   dividerDefaultIntensity: number;
   /** @semantic border-visibility — chroma intensity for muted divider lines */
   dividerMutedIntensity: number;
-  /** @semantic signal-tone — tone for role-colored signal borders (borderRamp). Dark: 50. Light: lower to avoid neon glow. */
-  borderSignalTone: number;
-  /** @semantic signal-tone — tone for semantic tone tokens (semanticTone). Dark: 50. Light: lower to avoid neon glow. */
-  semanticSignalTone: number;
+  /** @semantic role-tone — tone for role-colored role borders (borderRamp). Dark: 50. Light: lower to avoid neon glow. */
+  borderRoleTone: number;
+  /** @semantic role-tone — tone for semantic tone tokens (semanticTone). Dark: 50. Light: lower to avoid neon glow. */
+  semanticRoleTone: number;
   /**
-   * @semantic signal-tone — tone for the accent-subtle tinted background.
+   * @semantic role-tone — tone for the accent-subtle tinted background.
    * Dark: lower tone (e.g. 30) so fg-default achieves content contrast 75 when composited
    * over a dark parent surface at low alpha. Light: 50 (standard mid-tone orange tint).
    * [phase-3-bug B04] calibrated from 50→30 in dark mode.
    */
   accentSubtleTone: number;
   /**
-   * @semantic signal-tone — tone for the tone-caution-bg semantic background tint.
+   * @semantic role-tone — tone for the tone-caution-bg semantic background tint.
    * Dark: lower tone (e.g. 30) so fg-default achieves content contrast 75 when composited
-   * over a dark parent surface at low alpha. Light: matches semanticSignalTone (35).
+   * over a dark parent surface at low alpha. Light: matches semanticRoleTone (35).
    * [phase-3-bug B05] calibrated via independent tone field rather than alpha reduction.
    */
   cautionSurfaceTone: number;
@@ -1052,13 +1052,13 @@ export interface DerivationFormulas {
   selectionSurfaceInactiveAlpha: number;
 
   // ===== Signal Intensity Value =====
-  // Compiled signal intensity value (0-100). Set directly by recipe functions.
+  // Compiled role intensity value (0-100). Set directly by recipe functions.
   /**
-   * @semantic signal-tone — compiled signal intensity value (0-100).
+   * @semantic role-tone — compiled role intensity value (0-100).
    * Interpolated by P6: Signal Strength.
    * Dark reference: 50. Light reference: 50.
    */
-  signalIntensityValue: number;
+  roleIntensityValue: number;
 
   // ===== Computed Surface Tones =====
   // Pre-computed surface tone values, set directly by recipe functions.
@@ -1107,8 +1107,8 @@ export interface DerivationFormulas {
   toggleDisabledTone: number;
 
   // ===== Computed Signal Intensity =====
-  /** @semantic computed-signal — computed signal intensity value (0-100), = Math.round(signalIntensityValue) */
-  signalIntensity: number;
+  /** @semantic computed-role — computed role intensity value (0-100), = Math.round(roleIntensityValue) */
+  roleIntensity: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1126,7 +1126,7 @@ export interface DerivationFormulas {
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
     name: "brio",
-    description: "Deep, immersive dark theme. Very dark surfaces with subtle layering. Near-white text with wide hierarchy spread. Filled controls are prominent with vivid accent backgrounds and white text. Borders are subtle. Shadows are moderate. Industrial warmth with muted chassis and vivid signals.",
+    description: "Deep, immersive dark theme. Very dark surfaces with subtle layering. Near-white text with wide hierarchy spread. Filled controls are prominent with vivid accent backgrounds and white text. Borders are subtle. Shadows are moderate. Industrial warmth with muted chassis and vivid role colors.",
     recipe: "dark",
     surface: {
       canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
@@ -1148,7 +1148,7 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   },
   harmony: {
     name: "harmony",
-    description: "Bright, open canvas with crisp surfaces. Dark text for maximum readability with clear hierarchy. Filled controls use vivid accent backgrounds with white text. Borders are crisp and visible. Shadows are light. Industrial warmth with muted chassis and vivid signals — the same palette as Brio, seen in daylight.",
+    description: "Bright, open canvas with crisp surfaces. Dark text for maximum readability with clear hierarchy. Filled controls use vivid accent backgrounds with white text. Borders are crisp and visible. Shadows are light. Industrial warmth with muted chassis and vivid role colors — the same palette as Brio, seen in daylight.",
     recipe: "light",
     surface: {
       canvas: { hue: "indigo-violet", tone: 95, intensity: 6 },
@@ -1375,7 +1375,7 @@ export function resolveHueSlots(
   const informational = resolveSlot(recipe.surface.canvas.hue);
   const decorative = resolveSlot("gray");
 
-  // Semantic hues — vivid signal hues
+  // Semantic hues — vivid role hues
   const destructive = resolveSlot(recipe.role.danger);
   const success = resolveSlot(recipe.role.success);
   const caution = resolveSlot(recipe.role.caution);

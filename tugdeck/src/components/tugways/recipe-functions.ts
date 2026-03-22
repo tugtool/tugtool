@@ -146,7 +146,7 @@ export function contrastSearch(
  * Dark theme recipe function. [D01]
  *
  * Rules are expressed as offsets + contrastSearch calls + constants.
- * Pre-computed tone fields (surfaceApp, signalIntensity, etc.) are set directly
+ * Pre-computed tone fields (surfaceApp, roleIntensity, etc.) are set directly
  * by this function. [D04]
  *
  * Derived from DARK_FORMULAS offset analysis via compute-offsets.ts [D07]:
@@ -154,12 +154,12 @@ export function contrastSearch(
  *   surface tiers: +1 to +11 above canvas
  *   text: canvas+89 for primary (near-white design intent), -28/-57/-71 offsets for hierarchy
  *   frame: frameTone=16 / frameIntensity=12
- *   signals: roleTone=50 for filled controls and signal tones
+ *   roles: roleTone=50 for filled controls and role tones
  *
  * Note: contentTextTone uses canvas+89 (a design intent offset) rather than
  * contrastSearch, because the design calls for near-white (tone~94) text on dark
  * backgrounds — significantly above the minimum contrast-passing tone (~58).
- * contrastSearch is used for frameTone-relative values and signals where
+ * contrastSearch is used for frameTone-relative values and roles where
  * the minimum-passing tone is the right choice.
  */
 export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
@@ -236,8 +236,8 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     borderStrongTone: primaryTextTone - 54,
     dividerDefaultIntensity: 6,
     dividerMutedIntensity: 4,
-    borderSignalTone: roleTone, // signal borders use role tone
-    semanticSignalTone: roleTone,
+    borderRoleTone: roleTone, // role borders use role tone
+    semanticRoleTone: roleTone,
 
     // ===== Card Frame Style =====
     cardFrameActiveIntensity: frameIntensity,
@@ -459,7 +459,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     toggleDisabledTone: c + 17, // = disabledSurfaceTone
 
     // ===== Computed Signal Intensity =====
-    signalIntensity: Math.round(roleIntensity),
+    roleIntensity: Math.round(roleIntensity),
 
     // ===== Hue Name Dispatch =====
     // Dark mode: indigo screen bg, bare-primary muted, indigo-cobalt subtle/disabled
@@ -478,7 +478,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     selectionSurfaceInactiveAlpha: 25,
 
     // ===== Signal Intensity Value =====
-    signalIntensityValue: roleIntensity,
+    roleIntensityValue: roleIntensity,
   };
 }
 
@@ -573,8 +573,8 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     borderStrongTone: primaryTextTone + 44, // matches subtleTextTone: 52
     dividerDefaultIntensity: 7,
     dividerMutedIntensity: 5,
-    borderSignalTone: c - 55, // 40 in LIGHT_FORMULAS: darker signal tones on light bg
-    semanticSignalTone: c - 60, // 35 in LIGHT_FORMULAS
+    borderRoleTone: c - 55, // 40 in LIGHT_FORMULAS: darker role tones on light bg
+    semanticRoleTone: c - 60, // 35 in LIGHT_FORMULAS
 
     // ===== Card Frame Style =====
     cardFrameActiveIntensity: frameIntensity,
@@ -659,7 +659,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     badgeTintedSurfaceTone: c - 15, // light bg: 80 in LIGHT_FORMULAS
     badgeTintedSurfaceAlpha: 20,
     badgeTintedBorderIntensity: 50,
-    badgeTintedBorderTone: c - 55, // matches borderSignalTone: 40
+    badgeTintedBorderTone: c - 55, // matches borderRoleTone: 40
     badgeTintedBorderAlpha: 40,
 
     // ===== Icon Style =====
@@ -691,7 +691,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
 
     // ===== Signal / Accent Tones =====
     accentSubtleTone: roleTone, // 50 in LIGHT_FORMULAS
-    cautionSurfaceTone: c - 60, // 35 in LIGHT_FORMULAS: matches semanticSignalTone
+    cautionSurfaceTone: c - 60, // 35 in LIGHT_FORMULAS: matches semanticRoleTone
 
     // ===== Hue Slot Dispatch =====
     // Mode-independent routing (same as DARK_FORMULAS)
@@ -758,7 +758,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     outlinedSurfaceActiveToneOverride: null,
     toggleTrackOffToneOverride: c - 23, // 72 in LIGHT_FORMULAS
     toggleDisabledToneOverride: c - 15, // 80 in LIGHT_FORMULAS
-    borderStrongToneComputed: c - 55, // 40 in LIGHT_FORMULAS: matches borderSignalTone
+    borderStrongToneComputed: c - 55, // 40 in LIGHT_FORMULAS: matches borderRoleTone
 
     // ===== Legacy passthrough fields (retained for schema compatibility) =====
     surfaceCanvasToneBase: c,
@@ -794,7 +794,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     toggleDisabledTone: c - 15,  // 80 in LIGHT_FORMULAS
 
     // ===== Computed Signal Intensity =====
-    signalIntensity: Math.round(roleIntensity),
+    roleIntensity: Math.round(roleIntensity),
 
     // ===== Hue Name Dispatch =====
     // Light mode: cobalt screen bg (vs dark's indigo), atm placeholder (vs dark's fgMuted)
@@ -813,7 +813,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     selectionSurfaceInactiveAlpha: 30,
 
     // ===== Signal Intensity Value =====
-    signalIntensityValue: roleIntensity,
+    roleIntensityValue: roleIntensity,
   };
 }
 

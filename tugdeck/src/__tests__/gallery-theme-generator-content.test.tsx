@@ -199,10 +199,10 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    // Mood sliders (surface-contrast, signal-intensity, warmth) were removed in
+    // Mood sliders (surface-contrast, role-intensity, warmth) were removed in
     // Phase 4 Plan 1 Step 4 when EXAMPLE_RECIPES migrated to parameters. [D01]
     const sc = container.querySelector("[data-testid='gtg-slider-surface-contrast']");
-    const sv = container.querySelector("[data-testid='gtg-slider-signal-intensity']");
+    const sv = container.querySelector("[data-testid='gtg-slider-role-intensity']");
     const w = container.querySelector("[data-testid='gtg-slider-warmth']");
     expect(sc).toBeNull();
     expect(sv).toBeNull();
@@ -1144,15 +1144,15 @@ describe("deriveTheme – Harmony preset produces correct light-mode output (Ste
     }
   });
 
-  it("LIGHT_FORMULAS.borderSignalTone is 40 (different from DARK_FORMULAS.borderSignalTone=50)", () => {
+  it("LIGHT_FORMULAS.borderRoleTone is 40 (different from DARK_FORMULAS.borderRoleTone=50)", () => {
     // LIGHT_FORMULAS and DARK_FORMULAS are retained as reference fixtures / escape-hatch constants.
-    expect(LIGHT_FORMULAS.borderSignalTone).toBe(40);
-    expect(DARK_FORMULAS.borderSignalTone).toBe(50);
+    expect(LIGHT_FORMULAS.borderRoleTone).toBe(40);
+    expect(DARK_FORMULAS.borderRoleTone).toBe(50);
   });
 
-  it("LIGHT_FORMULAS.semanticSignalTone is 35 (different from DARK_FORMULAS.semanticSignalTone=50)", () => {
-    expect(LIGHT_FORMULAS.semanticSignalTone).toBe(35);
-    expect(DARK_FORMULAS.semanticSignalTone).toBe(50);
+  it("LIGHT_FORMULAS.semanticRoleTone is 35 (different from DARK_FORMULAS.semanticRoleTone=50)", () => {
+    expect(LIGHT_FORMULAS.semanticRoleTone).toBe(35);
+    expect(DARK_FORMULAS.semanticRoleTone).toBe(50);
   });
 });
 
@@ -1176,11 +1176,11 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
       role: { tone: 55, intensity: 60, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
       formulas: LIGHT_FORMULAS,
     });
-    // The semantic tone tokens should differ because semanticSignalTone differs (50 vs 35)
+    // The semantic tone tokens should differ because semanticRoleTone differs (50 vs 35)
     expect(darkOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"]).not.toBe(lightOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"]);
   });
 
-  it("DARK_FORMULAS.borderSignalTone=50 preserves existing brio dark border-accent value", () => {
+  it("DARK_FORMULAS.borderRoleTone=50 preserves existing brio dark border-accent value", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const darkOutput = deriveTheme({
       ...EXAMPLE_RECIPES.brio,
@@ -1205,8 +1205,8 @@ describe("deriveTheme – formulas field controls border and semantic tone (Step
     const serialized = JSON.stringify(recipe);
     const parsed = JSON.parse(serialized) as typeof recipe;
     expect(parsed.formulas).toBeDefined();
-    expect(parsed.formulas!.borderSignalTone).toBe(40);
-    expect(parsed.formulas!.semanticSignalTone).toBe(35);
+    expect(parsed.formulas!.borderRoleTone).toBe(40);
+    expect(parsed.formulas!.semanticRoleTone).toBe(35);
     // Re-deriving from parsed recipe produces same output as original
     const original = deriveTheme(recipe);
     const roundTrip = deriveTheme(parsed);

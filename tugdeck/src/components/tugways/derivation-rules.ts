@@ -94,29 +94,29 @@ function outlinedFg(iField: keyof F, toneField: keyof F): ChromaticRule {
 }
 
 /**
- * borderRamp — higher-order builder for role-colored signal borders.
- * Returns a function (hueSlot) => ChromaticRule at signalIntensity+offset, borderSignalTone.
+ * borderRamp — higher-order builder for role-colored role borders.
+ * Returns a function (hueSlot) => ChromaticRule at roleIntensity+offset, borderRoleTone.
  */
 function borderRamp(offset: number): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (formulas) => Math.min(90, formulas.signalIntensity + offset),
-    toneExpr: (f: F) => f.borderSignalTone,
+    intensityExpr: (formulas) => Math.min(90, formulas.roleIntensity + offset),
+    toneExpr: (f: F) => f.borderRoleTone,
   });
 }
 
-/** borderRest — borderRamp(5): signal border at rest state */
+/** borderRest — borderRamp(5): role border at rest state */
 const borderRest = borderRamp(5);
-/** borderHover — borderRamp(15): signal border at hover state */
+/** borderHover — borderRamp(15): role border at hover state */
 const borderHover = borderRamp(15);
-/** borderActive — borderRamp(25): signal border at active state (for outlined) */
+/** borderActive — borderRamp(25): role border at active state (for outlined) */
 const borderActive = borderRamp(25);
 
 /**
  * filledBg — higher-order builder for filled-control background rules.
- * Returns a function (hueSlot) => ChromaticRule at signalIntensity+offset, formula tone.
- * Intensity is driven by recipe.role.intensity (via signalIntensity) so the
+ * Returns a function (hueSlot) => ChromaticRule at roleIntensity+offset, formula tone.
+ * Intensity is driven by recipe.role.intensity (via roleIntensity) so the
  * Roles intensity slider controls button fill chroma.
  */
 function filledBg(
@@ -126,20 +126,20 @@ function filledBg(
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (formulas) => Math.min(90, formulas.signalIntensity + intensityOffset),
+    intensityExpr: (formulas) => Math.min(90, formulas.roleIntensity + intensityOffset),
     toneExpr: (formulas) => formulas[toneField] as number,
   });
 }
 
-/** filledBgRest — filledBg(0, "filledSurfaceRestTone") — intensity at signalIntensity */
+/** filledBgRest — filledBg(0, "filledSurfaceRestTone") — intensity at roleIntensity */
 const filledBgRest = filledBg(0, "filledSurfaceRestTone");
-/** filledBgHover — filledBg(5, "filledSurfaceHoverTone") — intensity at signalIntensity+5 */
+/** filledBgHover — filledBg(5, "filledSurfaceHoverTone") — intensity at roleIntensity+5 */
 const filledBgHover = filledBg(5, "filledSurfaceHoverTone");
-/** filledBgActive — filledBg(40, "filledSurfaceActiveTone") — intensity at signalIntensity+40 */
+/** filledBgActive — filledBg(40, "filledSurfaceActiveTone") — intensity at roleIntensity+40 */
 const filledBgActive = filledBg(40, "filledSurfaceActiveTone");
 
 /**
- * semanticTone — semantic signal rule at signalIntensity, semanticSignalTone.
+ * semanticTone — semantic role rule at roleIntensity, semanticRoleTone.
  * alpha?: optional fixed alpha (e.g. 15 for -bg tokens).
  * Returns a function (hueSlot) => ChromaticRule.
  */
@@ -147,8 +147,8 @@ function semanticTone(alpha?: number): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (formulas) => formulas.signalIntensity,
-    toneExpr: (f: F) => f.semanticSignalTone,
+    intensityExpr: (formulas) => formulas.roleIntensity,
+    toneExpr: (f: F) => f.semanticRoleTone,
     ...(alpha !== undefined ? { alphaExpr: lit(alpha) } : {}),
   });
 }
@@ -174,30 +174,30 @@ function badgeTinted(
 }
 
 /**
- * signalRamp — signalIntensity+offset at role hue, t:50 (no alpha).
+ * roleRamp — roleIntensity+offset at role hue, t:50 (no alpha).
  * Returns a function (hueSlot) => ChromaticRule.
  */
-function signalRamp(offset: number): (hueSlot: string) => ChromaticRule {
+function roleRamp(offset: number): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (formulas) => Math.min(90, formulas.signalIntensity + offset),
+    intensityExpr: (formulas) => Math.min(90, formulas.roleIntensity + offset),
     toneExpr: lit(50),
   });
 }
 
 /**
- * signalRampAlpha — signalIntensity+offset at role hue, t:50, fixed alpha.
+ * roleRampAlpha — roleIntensity+offset at role hue, t:50, fixed alpha.
  * Returns a function (hueSlot) => ChromaticRule.
  */
-function signalRampAlpha(
+function roleRampAlpha(
   offset: number,
   alpha: number,
 ): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: (formulas) => Math.min(90, formulas.signalIntensity + offset),
+    intensityExpr: (formulas) => Math.min(90, formulas.roleIntensity + offset),
     toneExpr: lit(50),
     alphaExpr: lit(alpha),
   });
@@ -374,19 +374,19 @@ const BORDER_RULES: Record<string, DerivationRule> = {
   // border-inverse: txt hue at contentTextIntensity, contentTextTone
   "--tug-base-element-global-border-normal-inverse-rest": formulaField("txt", "contentTextIntensity", "contentTextTone"),
 
-  // border-accent: accent hue at signalIntensity, t:50 (direct key — mode-independent)
+  // border-accent: accent hue at roleIntensity, t:50 (direct key — mode-independent)
   "--tug-base-element-global-border-normal-accent-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 
-  // border-danger: destructive hue at signalIntensity, t:50 (direct key — mode-independent)
+  // border-danger: destructive hue at roleIntensity, t:50 (direct key — mode-independent)
   "--tug-base-element-global-border-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 
@@ -555,22 +555,22 @@ export const CORE_VISUAL_RULES: Record<string, DerivationRule> = {
 // ---------------------------------------------------------------------------
 
 const ACCENT_RULES: Record<string, DerivationRule> = {
-  // accent-default: accent hue at signalIntensity, t:50
+  // accent-default: accent hue at roleIntensity, t:50
   "--tug-base-element-global-fill-normal-accent-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 
-  // accent-subtle: accent hue at signalIntensity, accentSubtleTone, a:10
+  // accent-subtle: accent hue at roleIntensity, accentSubtleTone, a:10
   // tone driven by formula field: dark=30 (darker orange so composited surface over dark parent
   // gives fg-default contrast ≥75), light=50 (standard mid-tone, easily passes on bright bg).
   // alpha kept at 10 (reduced from 15) as an additional contribution. [phase-3-bug B04]
   "--tug-base-element-global-fill-normal-accentSubtle-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: (f: F) => f.accentSubtleTone,
     alphaExpr: lit(10),
   },
@@ -617,14 +617,14 @@ const SEMANTIC_TONE_RULES: Record<string, DerivationRule> = {
   ...semanticToneFamilyRules("data", "data", 15),
   ...semanticToneFamilyRules("success", "success", 15),
   ...semanticToneFamilyRules("caution", "caution", 8),
-  // tone-caution-bg uses formula field cautionSurfaceTone instead of semanticSignalTone.
+  // tone-caution-bg uses formula field cautionSurfaceTone instead of semanticRoleTone.
   // Dark: cautionSurfaceTone=30 (darker yellow so fg-default achieves contrast ≥75 composited over
-  // dark parent surface at low alpha). Light: cautionSurfaceTone=35 (matches semanticSignalTone).
+  // dark parent surface at low alpha). Light: cautionSurfaceTone=35 (matches semanticRoleTone).
   // Override spreads the family first, then overrides only the bg rule. [phase-3-bug B05]
   "--tug-base-surface-tone-primary-normal-caution-rest": {
     type: "chromatic",
     hueSlot: "caution",
-    intensityExpr: (formulas: F) => formulas.signalIntensity,
+    intensityExpr: (formulas: F) => formulas.roleIntensity,
     toneExpr: (f: F) => f.cautionSurfaceTone,
     alphaExpr: lit(8),
   },
@@ -709,11 +709,11 @@ const SELECTION_RULES: Record<string, DerivationRule> = {
     alphaExpr: lit(50),
   },
 
-  // highlight-flash: accent hue at signalIntensity, t:50, a:35
+  // highlight-flash: accent hue at roleIntensity, t:50, a:35
   "--tug-base-surface-highlight-primary-normal-flash-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
     alphaExpr: lit(35),
   },
@@ -863,8 +863,8 @@ const DISABLED_RULES: Record<string, DerivationRule> = {
  *   all states: txt at Math.max(1, contentTextIntensity-1), t:100
  *
  * border formula:
- *   rest:   hueSlot at Math.min(90, signalIntensity+5), t:50
- *   hover:  hueSlot at Math.min(90, signalIntensity+15), t:50
+ *   rest:   hueSlot at Math.min(90, roleIntensity+5), t:50
+ *   hover:  hueSlot at Math.min(90, roleIntensity+15), t:50
  *   active: hueSlot at i:90, t:filledSurfaceActiveTone  (same as filledBgActive)
  */
 function filledRoleRules(role: string, hueSlot: string): Record<string, DerivationRule> {
@@ -904,7 +904,7 @@ const FILLED_RULES: Record<string, DerivationRule> = {
 // bg-rest: transparent (structural)
 // bg-hover/active: preset-mediated "outlinedBgHover/Active" sentinel or chromatic
 // fg/icon: mode-dependent via preset fields
-// border: role hue at signalIntensity+5/+15/+25
+// border: role hue at roleIntensity+5/+15/+25
 // ---------------------------------------------------------------------------
 
 /**
@@ -918,7 +918,7 @@ const FILLED_RULES: Record<string, DerivationRule> = {
  *   outlinedFg{Rest,Hover,Active}Tone, outlinedTextIntensity (fg)
  *   outlinedIcon{Rest,Hover,Active}Tone, outlinedIconIntensity (icon)
  *
- * border: roleHueSlot at Math.min(90, signalIntensity+{5,15,25}), t:50
+ * border: roleHueSlot at Math.min(90, roleIntensity+{5,15,25}), t:50
  */
 function outlinedFgRules(role: string, hueSlot: string): Record<string, DerivationRule> {
   return {
@@ -1022,29 +1022,29 @@ function ghostFgRules(
 /**
  * Build ghost-danger rules.
  * bg-rest/border-rest: transparent
- * bg-hover/active: destructive hue at signalIntensity+5, t:50, a: ghostDangerSurfaceHoverAlpha/ActiveAlpha
- * fg/icon: destructive hue at signalIntensity+5/+15/+25, t:50
- * border-hover/active: destructive hue at signalIntensity+5, t:50, a:40/60
+ * bg-hover/active: destructive hue at roleIntensity+5, t:50, a: ghostDangerSurfaceHoverAlpha/ActiveAlpha
+ * fg/icon: destructive hue at roleIntensity+5/+15/+25, t:50
+ * border-hover/active: destructive hue at roleIntensity+5, t:50, a:40/60
  */
 function ghostDangerRules(): Record<string, DerivationRule> {
   return {
     // bg (surface)
     "--tug-base-surface-control-primary-ghost-danger-rest": { type: "structural", valueExpr: () => "transparent" },
-    // bg-hover/active: signalIntensity+5 at destructive hue, t:50, formula-driven alpha
-    "--tug-base-surface-control-primary-ghost-danger-hover": { ...signalRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerSurfaceHoverAlpha },
-    "--tug-base-surface-control-primary-ghost-danger-active": { ...signalRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerSurfaceActiveAlpha },
+    // bg-hover/active: roleIntensity+5 at destructive hue, t:50, formula-driven alpha
+    "--tug-base-surface-control-primary-ghost-danger-hover": { ...roleRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerSurfaceHoverAlpha },
+    "--tug-base-surface-control-primary-ghost-danger-active": { ...roleRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerSurfaceActiveAlpha },
     // fg (element text)
-    "--tug-base-element-control-text-ghost-danger-rest": signalRamp(5)("destructive"),
-    "--tug-base-element-control-text-ghost-danger-hover": signalRamp(15)("destructive"),
-    "--tug-base-element-control-text-ghost-danger-active": signalRamp(25)("destructive"),
+    "--tug-base-element-control-text-ghost-danger-rest": roleRamp(5)("destructive"),
+    "--tug-base-element-control-text-ghost-danger-hover": roleRamp(15)("destructive"),
+    "--tug-base-element-control-text-ghost-danger-active": roleRamp(25)("destructive"),
     // border (element border)
     "--tug-base-element-control-border-ghost-danger-rest": { type: "structural", valueExpr: () => "transparent" },
-    "--tug-base-element-control-border-ghost-danger-hover": signalRampAlpha(5, 40)("destructive"),
-    "--tug-base-element-control-border-ghost-danger-active": signalRampAlpha(5, 60)("destructive"),
+    "--tug-base-element-control-border-ghost-danger-hover": roleRampAlpha(5, 40)("destructive"),
+    "--tug-base-element-control-border-ghost-danger-active": roleRampAlpha(5, 60)("destructive"),
     // icon (element icon)
-    "--tug-base-element-control-icon-ghost-danger-rest": signalRamp(5)("destructive"),
-    "--tug-base-element-control-icon-ghost-danger-hover": signalRamp(15)("destructive"),
-    "--tug-base-element-control-icon-ghost-danger-active": signalRamp(25)("destructive"),
+    "--tug-base-element-control-icon-ghost-danger-rest": roleRamp(5)("destructive"),
+    "--tug-base-element-control-icon-ghost-danger-hover": roleRamp(15)("destructive"),
+    "--tug-base-element-control-icon-ghost-danger-active": roleRamp(25)("destructive"),
   };
 }
 
@@ -1192,19 +1192,19 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     toneExpr: lit(50),
   },
 
-  // field-border-danger: destructive hue at signalIntensity, t:50
+  // field-border-danger: destructive hue at roleIntensity, t:50
   "--tug-base-element-field-border-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 
-  // field-border-success: success hue at signalIntensity, t:50
+  // field-border-success: success hue at roleIntensity, t:50
   "--tug-base-element-field-border-normal-success-rest": {
     type: "chromatic",
     hueSlot: "success",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 
@@ -1232,35 +1232,35 @@ const FIELD_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => formulas.contentTextTone,
   },
 
-  // field-fg-required: destructive hue at signalIntensity, t:50
+  // field-fg-required: destructive hue at roleIntensity, t:50
   "--tug-base-element-field-text-normal-required-rest": {
     type: "chromatic",
     hueSlot: "destructive",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 
-  // field-tone-danger: destructive hue at signalIntensity, t:50
+  // field-tone-danger: destructive hue at roleIntensity, t:50
   "--tug-base-element-field-fill-normal-danger-rest": {
     type: "chromatic",
     hueSlot: "destructive",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 
-  // field-tone-caution: caution hue at signalIntensity, t:50
+  // field-tone-caution: caution hue at roleIntensity, t:50
   "--tug-base-element-field-fill-normal-caution-rest": {
     type: "chromatic",
     hueSlot: "caution",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 
-  // field-tone-success: success hue at signalIntensity, t:50
+  // field-tone-success: success hue at roleIntensity, t:50
   "--tug-base-element-field-fill-normal-success-rest": {
     type: "chromatic",
     hueSlot: "success",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(50),
   },
 };
@@ -1286,19 +1286,19 @@ const TOGGLE_RULES: Record<string, DerivationRule> = {
     toneExpr: (formulas) => Math.min(formulas.toggleTrackOffTone + 8, 100),
   },
 
-  // toggle-track-on: accent hue at signalIntensity, t:42 (muted preset)
+  // toggle-track-on: accent hue at roleIntensity, t:42 (muted preset)
   "--tug-base-surface-toggle-track-normal-on-rest": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (formulas) => formulas.signalIntensity,
+    intensityExpr: (formulas) => formulas.roleIntensity,
     toneExpr: lit(42),
   },
 
-  // toggle-track-on-hover: accent hue at min(signalIntensity+5,100), toggleTrackOnHoverTone
+  // toggle-track-on-hover: accent hue at min(roleIntensity+5,100), toggleTrackOnHoverTone
   "--tug-base-surface-toggle-track-normal-on-hover": {
     type: "chromatic",
     hueSlot: "accent",
-    intensityExpr: (formulas) => Math.min(formulas.signalIntensity + 5, 100),
+    intensityExpr: (formulas) => Math.min(formulas.roleIntensity + 5, 100),
     toneExpr: (formulas) => formulas.toggleTrackOnHoverTone,
   },
 

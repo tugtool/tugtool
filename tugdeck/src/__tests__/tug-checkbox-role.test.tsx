@@ -79,7 +79,7 @@ describe("TugCheckbox role prop", () => {
   it('role="option": injects --tug-toggle-on-color: var(--tug-base-element-global-text-normal-muted-rest)', () => {
     // The option role uses fg-muted directly rather than a --tug-base-tone-*
     // token. This is intentional: option is neutral/achromatic and does not
-    // have a dedicated signal hue in the tone system. [D06]
+    // have a dedicated role hue in the tone system. [D06]
     const { getByRole } = render(<TugCheckbox role="option" aria-label="test" />);
     const checkbox = getByRole("checkbox");
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe(

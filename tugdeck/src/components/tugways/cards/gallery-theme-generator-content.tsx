@@ -1124,12 +1124,6 @@ export function validateRecipeJson(value: unknown): string | null {
     delete obj["element"];
     // Remove controls field (now migrated into surface/role)
     delete obj["controls"];
-    // Legacy field rename shim (applied to old-format too): signalVividity -> signalIntensity
-    const LEGACY_FIELD_OLD = "signal" + "Vividity";
-    if (LEGACY_FIELD_OLD in obj && !("signalIntensity" in obj)) {
-      obj.signalIntensity = obj[LEGACY_FIELD_OLD];
-      delete obj[LEGACY_FIELD_OLD];
-    }
     return null;
   }
 
@@ -1170,15 +1164,6 @@ export function validateRecipeJson(value: unknown): string | null {
     }
   }
 
-  // Legacy migration shim: handle recipe files saved before the Gap-1 field rename.
-  // The old field name is constructed from parts to avoid stale-name grep hits. [Risk R01]
-  const LEGACY_FIELD = "signal" + "Vividity";
-  if (LEGACY_FIELD in obj && !("signalIntensity" in obj)) {
-    obj.signalIntensity = obj[LEGACY_FIELD];
-    delete obj[LEGACY_FIELD];
-  }
-  // Legacy mood knob fields (surfaceContrast, signalIntensity, warmth) and legacy
-  // `parameters` field are ignored gracefully — do not reject recipes that contain them.
   return null;
 }
 

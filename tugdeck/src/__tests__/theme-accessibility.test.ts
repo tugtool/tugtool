@@ -952,7 +952,7 @@ describe("cvd-simulation", () => {
   // T5.1: simulateCVD with pure gray returns nearly unchanged values for all types
   //
   // A neutral gray has equal R, G, B channels. Because the Machado matrices
-  // are designed for chromatic signals, applying them to an achromatic input
+  // are designed for chromatic role colors, applying them to an achromatic input
   // should leave the result nearly unchanged (each row sums to ~1.0).
   // -------------------------------------------------------------------------
   it("T5.1: simulateCVD with pure gray returns nearly unchanged values for all types", () => {
@@ -1227,11 +1227,11 @@ describe("compositeOverSurface", () => {
   // Integration test: badge-tinted-accent-bg has alpha=0.15 in the Brio theme.
   // After compositing over surface-default, the resulting background is measurable.
   //
-  // Design note: badge tinted text uses mid-tone hues for semantic signal identity.
+  // Design note: badge tinted text uses mid-tone hues for semantic role identity.
   // The tinted bg (alpha 15%) composited over surface-default produces contrast ~45-55,
   // which is BELOW the informational threshold (60). This is a [design-choice] exception
   // documented in KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS (section F of contrast-exceptions.ts):
-  // badge tinted text is a colorimetric signal, not WCAG-level contrast primary prose.
+  // badge tinted text is a colorimetric role indicator, not WCAG-level contrast primary prose.
   //
   // This test validates that the compositing pipeline produces a measurable contrast
   // score (contrast > 0), not that it passes the informational threshold.
@@ -1266,9 +1266,9 @@ describe("compositeOverSurface", () => {
     expect(Math.abs(lc)).toBeGreaterThan(0);
 
     // Badge tinted tokens are [design-choice] exceptions below informational threshold (60):
-    // mid-tone hue signals produce contrast ~45-55. Document the known range.
+    // mid-tone hue role indicators produce contrast ~45-55. Document the known range.
     // This is NOT a threshold assertion — it documents the structural constraint.
-    expect(Math.abs(lc)).toBeGreaterThan(30); // measurable signal
+    expect(Math.abs(lc)).toBeGreaterThan(30); // measurable contrast
     expect(Math.abs(lc)).toBeLessThan(CONTRAST_THRESHOLDS["informational"]); // below threshold by design
   });
 });

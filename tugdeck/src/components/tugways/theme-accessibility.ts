@@ -963,9 +963,9 @@ const ALL_CVD_TYPES: CVDType[] = [
  * accent/atmosphere] following the plan spec.
  */
 export const CVD_SEMANTIC_PAIRS: [string, string][] = [
-  // Status signals: success (green-family) vs caution (yellow-family)
+  // Status roles: success (green-family) vs caution (yellow-family)
   ["--tug-base-element-tone-fill-normal-success-rest", "--tug-base-element-tone-fill-normal-caution-rest"],
-  // Status signals: success (green) vs danger/destructive (red-family)
+  // Status roles: success (green) vs danger/destructive (red-family)
   ["--tug-base-element-tone-fill-normal-success-rest", "--tug-base-element-tone-fill-normal-danger-rest"],
   // Primary action vs destructive action (button colours)
   ["--tug-base-element-global-fill-normal-accent-rest", "--tug-base-element-tone-fill-normal-danger-rest"],

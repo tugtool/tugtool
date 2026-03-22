@@ -1335,7 +1335,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // =========================================================================
   // Validation border visibility — border against field-bg-rest (Step 3)
-  // Danger and success validation borders use vivid signal colors that pass contrast 30.
+  // Danger and success validation borders use vivid role colors that pass contrast 30.
   // =========================================================================
   {
     element: "--tug-base-element-field-border-normal-danger-rest",
@@ -1593,7 +1593,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
   // tone-danger (chromatic) as fg on surface-overlay: danger menu item text (tug-menu.css)
   // Classified as content: the user must read this label to understand the destructive
-  // action; it is readable label text regardless of the chromatic signal intent.
+  // action; it is readable label text regardless of the chromatic role intent.
   {
     element: "--tug-base-element-tone-fill-normal-danger-rest",
     surface: "--tug-base-surface-global-primary-normal-overlay-rest",

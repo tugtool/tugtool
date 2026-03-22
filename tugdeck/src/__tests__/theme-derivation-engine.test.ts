@@ -314,7 +314,7 @@ describe("derivation-engine", () => {
   it("T2.6: non-override chromatic tokens resolve to valid sRGB colors and use recipe seed hues", () => {
     // T2.6 per plan: sanity check that non-overridden tokens are reasonable.
     // All chromatic tokens should resolve to valid sRGB gamut colors.
-    // Note: at signalIntensity=50, signalIntensity=55. Since PEAK_C_SCALE=2, the engine
+    // Note: at roleIntensity=50, roleIntensity=55. Since PEAK_C_SCALE=2, the engine
     // can produce colors with C = (55/100) * maxChroma * 2, which may slightly
     // exceed the sRGB gamut for some hues. Allow up to 30% out-of-gamut
     // since MAX_CHROMA_FOR_HUE was derived for intensity=50 (sRGB safe), and
@@ -683,7 +683,7 @@ describe("resolveHueSlots — Step 3", () => {
     // accent: "orange" (default)
     expect(slots.accent.ref).toBe("orange");
 
-    // Semantic hues (vivid signal hues)
+    // Semantic hues (vivid role hues)
     expect(slots.destructive.ref).toBe("red");
     expect(slots.success.ref).toBe("green");
     expect(slots.caution.ref).toBe("yellow");
