@@ -8,7 +8,7 @@
  *
  * The derivation uses a two-step pipeline:
  *   Layer 1 — resolveHueSlots(): recipe → ResolvedHueSlots
- *             Resolves all per-tier hue variants (fg-muted, surfBareBase, etc.)
+ *             Resolves all per-tier hue variants (textMuted, canvasBase, etc.)
  *             using palette angles verbatim — no warmth bias applied.
  *   Layer 2 — evaluateRules(): RULES table → tokens + resolved maps
  *             Iterates the declarative rule table in theme-rules.ts, calling
@@ -28,7 +28,7 @@
  * [D02] Emphasis x role token naming: --tug-control-{emphasis}-{role}-{property}-{state}
  * [D04] ThemeRecipe interface from proposal
  * [D06] HueSlot resolution — Layer 1 of the pipeline
- * [D07] __white/__highlight/__shadow/__verboseHighlight sentinels
+ * [D07] __white/highlight/highlightVerbose/__shadow sentinels
  * [D08] Scope: --tug-* tokens only
  * [D09] Dual output: string tokens + resolved OKLCH map
  *
@@ -180,7 +180,7 @@
  *                                  tabSurfaceActiveHueSlot, tabSurfaceInactiveHueSlot
  *
  * sentinel-hue-dispatch    Which sentinel hue slot hover/active interactive
- *                          backgrounds use (__highlight, __verboseHighlight, etc.).
+ *                          backgrounds use (highlight, highlightVerbose, etc.).
  *                          Fields: outlinedSurfaceHoverHueSlot, outlinedSurfaceActiveHueSlot,
  *                                  ghostActionSurfaceHoverHueSlot,
  *                                  ghostActionSurfaceActiveHueSlot,
@@ -216,8 +216,8 @@
  *
  * hue-name-dispatch        Named hue values used in resolveHueSlots() to eliminate
  *                          runtime mode branches. These string fields directly name
- *                          the hue family for derived slots (surfScreen, fgMuted,
- *                          fgSubtle, etc.).
+ *                          the hue family for derived slots (canvasScreen, textMuted,
+ *                          textSubtle, etc.).
  *                          Fields: surfaceScreenHueExpression, mutedTextHueExpression, subtleTextHueExpression,
  *                                  disabledTextHueExpression, inverseTextHueExpression, placeholderTextHueExpression,
  *                                  selectionInactiveHueExpression
@@ -433,22 +433,20 @@ export interface ResolvedHueSlot {
  * Produced by resolveHueSlots(); consumed by the rule evaluator. Spec S02.
  *
  * Slots are grouped into:
- *   - Recipe hues (atm, txt, canvas, frame, card, borderTint, interactive, active, accent)
+ *   - Recipe hues (text, canvas, frame, card, borderTint, action, accent)
  *   - Element hues (control, display, informational, decorative) — derived from element group
  *   - Semantic hues (destructive, success, caution, agent, data) — vivid role hues
- *   - Per-tier derived hues (surfBareBase, surfScreen, fgMuted, fgSubtle, fgDisabled,
- *     fgInverse, fgPlaceholder, selectionInactive, borderTintBareBase, borderStrong)
+ *   - Per-tier derived hues (canvasBase, canvasScreen, textMuted, textSubtle, textDisabled,
+ *     textInverse, textPlaceholder, selectionInactive, borderBase, borderStrong)
  */
 export interface ResolvedHueSlots {
   // Recipe hues
-  atm: ResolvedHueSlot;         // atmosphere (surface.frame hue)
-  txt: ResolvedHueSlot;         // content text hue (element.content)
+  text: ResolvedHueSlot;        // content text hue (recipe.text.hue)
   canvas: ResolvedHueSlot;      // canvas hue (bg-app, bg-canvas)
-  frame: ResolvedHueSlot;       // card title bar / tab frame hue (surface.frame)
+  frame: ResolvedHueSlot;       // card title bar / tab frame / atmosphere hue (surface.frame)
   card: ResolvedHueSlot;        // card body surface hue (surface.card)
   borderTint: ResolvedHueSlot;  // border/divider tint hue (element.border)
-  interactive: ResolvedHueSlot; // link/selection hue — derived from role.action [D05]
-  active: ResolvedHueSlot;      // active state hue (role.action)
+  action: ResolvedHueSlot;      // action/link/interactive hue — derived from role.action [D05]
   accent: ResolvedHueSlot;      // accent hue (role.accent)
   // Element hues — new semantic slots for foreground element types
   control: ResolvedHueSlot;       // interactive element label hue (element.control)
@@ -462,16 +460,16 @@ export interface ResolvedHueSlots {
   agent: ResolvedHueSlot;
   data: ResolvedHueSlot;
   // Per-tier derived hues
-  surfBareBase: ResolvedHueSlot;      // bare base of atm hue (last segment of hyphenated name)
-  surfScreen: ResolvedHueSlot;        // screen surface hue (dark: "indigo"; light: txt)
-  fgMuted: ResolvedHueSlot;           // fg-muted tier hue (dark: bare primary of txt; light: txt)
-  fgSubtle: ResolvedHueSlot;          // fg-subtle tier hue (dark: "indigo-cobalt"; light: txt)
-  fgDisabled: ResolvedHueSlot;        // fg-disabled tier hue (dark: "indigo-cobalt"; light: txt)
-  fgInverse: ResolvedHueSlot;         // fg-inverse tier hue (dark: "sapphire-cobalt"; light: txt)
-  fgPlaceholder: ResolvedHueSlot;     // fg-placeholder tier hue (dark: same as fgMuted; light: atm)
-  selectionInactive: ResolvedHueSlot; // selection-bg-inactive hue (dark: "yellow"; light: atmBaseAngle-20)
-  borderTintBareBase: ResolvedHueSlot; // bare base of borderTint hue (same logic as surfBareBase)
-  borderStrong: ResolvedHueSlot;       // borderTint shifted -5° for contrast distinction
+  canvasBase: ResolvedHueSlot;        // bare base of frame hue (last segment of hyphenated name)
+  canvasScreen: ResolvedHueSlot;      // screen surface hue (dark: "indigo"; light: text)
+  textMuted: ResolvedHueSlot;         // fg-muted tier hue (dark: bare primary of text; light: text)
+  textSubtle: ResolvedHueSlot;        // fg-subtle tier hue (dark: "indigo-cobalt"; light: text)
+  textDisabled: ResolvedHueSlot;      // fg-disabled tier hue (dark: "indigo-cobalt"; light: text)
+  textInverse: ResolvedHueSlot;       // fg-inverse tier hue (dark: "sapphire-cobalt"; light: text)
+  textPlaceholder: ResolvedHueSlot;   // fg-placeholder tier hue (dark: same as textMuted; light: frame)
+  selectionInactive: ResolvedHueSlot; // selection-bg-inactive hue (dark: "yellow"; light: frameBaseAngle-20)
+  borderBase: ResolvedHueSlot;        // bare base of borderTint hue (same logic as canvasBase)
+  borderStrong: ResolvedHueSlot;      // borderTint shifted -5° for contrast distinction
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,35 +1000,35 @@ export interface DerivationFormulas {
   // ===== Hue Name Dispatch =====
   // Named hue values for resolveHueSlots() branch elimination. String hue names.
   /**
-   * @semantic hue-name-dispatch — hue name for the surfScreen derived slot.
+   * @semantic hue-name-dispatch — hue name for the canvasScreen derived slot.
    * Dark: "indigo".
    */
   surfaceScreenHueExpression: string;
   /**
-   * @semantic hue-name-dispatch — expression for the fgMuted derived slot hue.
-   * "__bare_primary" = use the bare primary segment of txtHue (e.g. "cobalt" from "indigo-cobalt").
+   * @semantic hue-name-dispatch — expression for the textMuted derived slot hue.
+   * "__bare_primary" = use the bare primary segment of textHue (e.g. "cobalt" from "indigo-cobalt").
    * Any other value = treat as a literal hue name.
    */
   mutedTextHueExpression: string;
   /**
-   * @semantic hue-name-dispatch — hue name for the fgSubtle derived slot.
+   * @semantic hue-name-dispatch — hue name for the textSubtle derived slot.
    * Dark: "indigo-cobalt".
    */
   subtleTextHueExpression: string;
   /**
-   * @semantic hue-name-dispatch — hue name for the fgDisabled derived slot.
+   * @semantic hue-name-dispatch — hue name for the textDisabled derived slot.
    * Dark: "indigo-cobalt".
    */
   disabledTextHueExpression: string;
   /**
-   * @semantic hue-name-dispatch — hue name for the fgInverse derived slot.
+   * @semantic hue-name-dispatch — hue name for the textInverse derived slot.
    * Dark: "sapphire-cobalt".
    */
   inverseTextHueExpression: string;
   /**
-   * @semantic hue-name-dispatch — source for the fgPlaceholder derived slot.
-   * "fgMuted" = copy from fgMuted slot.
-   * "atm"     = copy from atm slot.
+   * @semantic hue-name-dispatch — source for the textPlaceholder derived slot.
+   * "textMuted" = copy from textMuted slot.
+   * "frame"     = copy from frame slot.
    */
   placeholderTextHueExpression: string;
   /**
@@ -1323,22 +1321,20 @@ export function themeColorSpecToOklch(spec: ThemeColorSpec): string {
  * and refs used in token derivation.
  *
  * Recipe field mapping (fully-specified ThemeColorSpec structure):
- *   - atm         ← recipe.surface.frame.hue
- *   - txt         ← recipe.text.hue
+ *   - text        ← recipe.text.hue
  *   - canvas      ← recipe.surface.canvas.hue
- *   - frame       ← recipe.surface.frame.hue (frame hue drives card title bar / tab frame)
+ *   - frame       ← recipe.surface.frame.hue (frame hue drives card title bar / tab frame / atmosphere)
  *   - card        ← recipe.surface.card.hue (card body surface hue)
  *   - borderTint  ← recipe.border?.hue ?? recipe.surface.canvas.hue
- *   - interactive ← derived from recipe.role.action (not a separate field)
- *   - active      ← recipe.role.action
+ *   - action      ← recipe.role.action (link/selection/interactive hue)
  *   - accent      ← recipe.role.accent
  *   - control     ← recipe.text.hue (defaults to text hue)
  *   - display     ← recipe.display?.hue ?? recipe.text.hue
  *   - informational ← recipe.surface.canvas.hue (defaults to canvas hue)
  *   - decorative  ← "gray" (hardcoded — non-text ornamental marks)
  *
- * Per-tier derived hue slots (surfScreen, fgMuted, fgSubtle, fgDisabled,
- * fgInverse, fgPlaceholder, selectionInactive) are driven by
+ * Per-tier derived hue slots (canvasScreen, textMuted, textSubtle, textDisabled,
+ * textInverse, textPlaceholder, selectionInactive) are driven by
  * `formulas` fields when `recipe.formulas` is present, eliminating
  * all runtime mode branches from the formula path. [D03]
  *
@@ -1369,33 +1365,28 @@ export function resolveHueSlots(
   // -------------------------------------------------------------------------
   // Recipe hues — derived from new ThemeColorSpec structure
   // -------------------------------------------------------------------------
-  const atmHue = recipe.surface.frame.hue;
-  const txtHue = recipe.text.hue;
+  const frameHue = recipe.surface.frame.hue; // frame / atmosphere hue
+  const textHue = recipe.text.hue;
   const canvasHue = recipe.surface.canvas.hue;
-  // frame is driven by the frame hue (tone/intensity come from formulas)
-  const frameHue = recipe.surface.frame.hue;
   // card body surface hue
   const cardBodyHue = recipe.surface.card.hue;
   // borderTint: optional override, defaults to canvas hue
   const borderTintHue = recipe.border?.hue ?? recipe.surface.canvas.hue;
-  // interactive/link hue is derived from role.action directly (not a separate recipe field)
-  const interactiveHue = recipe.role.action;
-  const activeHue = recipe.role.action;
+  // action/link hue is derived from role.action directly (not a separate recipe field)
+  const actionHue = recipe.role.action;
   const accentHue = recipe.role.accent;
 
-  const atm = resolveSlot(atmHue);
-  const txt = resolveSlot(txtHue);
+  const text = resolveSlot(textHue);
   const canvas = resolveSlot(canvasHue);
   const frame = resolveSlot(frameHue);
   const card = resolveSlot(cardBodyHue);
   const borderTint = resolveSlot(borderTintHue);
-  const interactive = resolveSlot(interactiveHue);
-  const active = resolveSlot(activeHue);
+  const action = resolveSlot(actionHue);
   const accent = resolveSlot(accentHue);
 
   // Element hues — derived from new structure (element group removed)
-  const control = resolveSlot(recipe.text.hue);
-  const display = resolveSlot(recipe.display?.hue ?? recipe.text.hue);
+  const control = resolveSlot(textHue);
+  const display = resolveSlot(recipe.display?.hue ?? textHue);
   const informational = resolveSlot(recipe.surface.canvas.hue);
   const decorative = resolveSlot("gray");
 
@@ -1410,79 +1401,79 @@ export function resolveHueSlots(
   // Per-tier derived hues
   // -------------------------------------------------------------------------
 
-  // surfBareBase: bare base of atm hue (last segment of hyphenated name).
+  // canvasBase: bare base of frame hue (last segment of hyphenated name).
   // "indigo-violet" -> "violet"; "cobalt" -> "cobalt"
-  const atmBareBaseName = (() => {
-    const hyphenIdx = atmHue.lastIndexOf("-");
+  const frameBaseName = (() => {
+    const hyphenIdx = frameHue.lastIndexOf("-");
     if (hyphenIdx > 0) {
-      const lastSeg = atmHue.slice(hyphenIdx + 1);
+      const lastSeg = frameHue.slice(hyphenIdx + 1);
       if (lastSeg in HUE_FAMILIES) return lastSeg;
     }
-    return closestHueName(resolveHueAngle(atmHue));
+    return closestHueName(resolveHueAngle(frameHue));
   })();
-  const surfBareBaseAngle = HUE_FAMILIES[atmBareBaseName] ?? resolveHueAngle(atmHue);
-  const surfBareBase: ResolvedHueSlot = {
-    angle: surfBareBaseAngle,
-    name: closestHueName(surfBareBaseAngle),
-    ref: atmBareBaseName, // direct named reference (matches existing deriveTheme logic)
-    primaryName: atmBareBaseName,
+  const canvasBaseAngle = HUE_FAMILIES[frameBaseName] ?? resolveHueAngle(frameHue);
+  const canvasBase: ResolvedHueSlot = {
+    angle: canvasBaseAngle,
+    name: closestHueName(canvasBaseAngle),
+    ref: frameBaseName, // direct named reference (matches existing deriveTheme logic)
+    primaryName: frameBaseName,
   };
 
-  // surfScreen: driven by formulas.surfaceScreenHueExpression. [D03]
-  // When surfaceScreenHueExpression equals txtHue, copy the txt slot (light-mode equivalent);
+  // canvasScreen: driven by formulas.surfaceScreenHueExpression. [D03]
+  // When surfaceScreenHueExpression equals textHue, copy the text slot (light-mode equivalent);
   // otherwise resolve it as a named hue directly.
-  const surfScreen: ResolvedHueSlot = formulas.surfaceScreenHueExpression === txtHue
-    ? { ...txt }
+  const canvasScreen: ResolvedHueSlot = formulas.surfaceScreenHueExpression === textHue
+    ? { ...text }
     : slotFromAngle(resolveHueAngle(formulas.surfaceScreenHueExpression));
 
-  // fgMuted: driven by formulas.mutedTextHueExpression. [D03]
-  // "__bare_primary" → bare primary of txtHue (dark-mode default).
+  // textMuted: driven by formulas.mutedTextHueExpression. [D03]
+  // "__bare_primary" → bare primary of textHue (dark-mode default).
   // Any other value → treat as a literal hue name.
-  const fgMutedHueName = formulas.mutedTextHueExpression === "__bare_primary"
+  const textMutedHueName = formulas.mutedTextHueExpression === "__bare_primary"
     ? (() => {
-        const primary = primaryColorName(txtHue);
-        return primary in HUE_FAMILIES ? primary : txtHue;
+        const primary = primaryColorName(textHue);
+        return primary in HUE_FAMILIES ? primary : textHue;
       })()
     : formulas.mutedTextHueExpression;
-  const fgMutedAngle = resolveHueAngle(fgMutedHueName);
-  const fgMutedName = closestHueName(fgMutedAngle);
-  const fgMuted: ResolvedHueSlot = {
-    angle: fgMutedAngle,
-    name: fgMutedName,
+  const textMutedAngle = resolveHueAngle(textMutedHueName);
+  const textMutedName = closestHueName(textMutedAngle);
+  const textMuted: ResolvedHueSlot = {
+    angle: textMutedAngle,
+    name: textMutedName,
     // ref: use bare name directly when it's a known family (matches existing logic)
-    ref: fgMutedHueName in HUE_FAMILIES ? fgMutedHueName : fgMutedName,
-    primaryName: primaryColorName(fgMutedName),
+    ref: textMutedHueName in HUE_FAMILIES ? textMutedHueName : textMutedName,
+    primaryName: primaryColorName(textMutedName),
   };
 
-  // fgSubtle: driven by formulas.subtleTextHueExpression. [D03]
-  const fgSubtleHueName = formulas.subtleTextHueExpression;
-  const fgSubtle = slotFromAngle(resolveHueAngle(fgSubtleHueName));
+  // textSubtle: driven by formulas.subtleTextHueExpression. [D03]
+  const textSubtleHueName = formulas.subtleTextHueExpression;
+  const textSubtle = slotFromAngle(resolveHueAngle(textSubtleHueName));
 
-  // fgDisabled: driven by formulas.disabledTextHueExpression. [D03]
-  const fgDisabledHueName = formulas.disabledTextHueExpression;
-  const fgDisabled = slotFromAngle(resolveHueAngle(fgDisabledHueName));
+  // textDisabled: driven by formulas.disabledTextHueExpression. [D03]
+  const textDisabledHueName = formulas.disabledTextHueExpression;
+  const textDisabled = slotFromAngle(resolveHueAngle(textDisabledHueName));
 
-  // fgInverse: driven by formulas.inverseTextHueExpression. [D03]
-  const fgInverseHueName = formulas.inverseTextHueExpression;
-  const fgInverse = slotFromAngle(resolveHueAngle(fgInverseHueName));
+  // textInverse: driven by formulas.inverseTextHueExpression. [D03]
+  const textInverseHueName = formulas.inverseTextHueExpression;
+  const textInverse = slotFromAngle(resolveHueAngle(textInverseHueName));
 
-  // fgPlaceholder: driven by formulas.placeholderTextHueExpression. [D03]
-  // "fgMuted" → copy fgMuted slot; "atm" → copy atm slot.
-  const fgPlaceholder: ResolvedHueSlot =
-    formulas.placeholderTextHueExpression === "atm" ? { ...atm } : { ...fgMuted };
+  // textPlaceholder: driven by formulas.placeholderTextHueExpression. [D03]
+  // "textMuted" → copy textMuted slot; "frame" → copy frame slot.
+  const textPlaceholder: ResolvedHueSlot =
+    formulas.placeholderTextHueExpression === "frame" ? { ...frame } : { ...textMuted };
 
   // selectionInactive: driven by formulas.selectionInactiveSemanticMode. [D03]
   // true  → resolveSlot(selectionInactiveHueExpression) — named hue (dark default)
-  // false → compute atm offset: atmBaseAngle - 20° verbatim (light-mode style)
+  // false → compute frame offset: frameBaseAngle - 20° verbatim (light-mode style)
   const selectionInactive: ResolvedHueSlot = formulas.selectionInactiveSemanticMode
     ? resolveSlot(formulas.selectionInactiveHueExpression)
     : (() => {
-        const atmBaseAngle = resolveHueAngle(atmHue);
-        return slotFromAngle((atmBaseAngle - 20 + 360) % 360);
+        const frameBaseAngle = resolveHueAngle(frameHue);
+        return slotFromAngle((frameBaseAngle - 20 + 360) % 360);
       })();
 
-  // borderTintBareBase: same logic as surfBareBase but for borderTint hue.
-  const borderTintBareBaseName = (() => {
+  // borderBase: same logic as canvasBase but for borderTint hue.
+  const borderBaseName = (() => {
     const hyphenIdx = borderTintHue.lastIndexOf("-");
     if (hyphenIdx > 0) {
       const lastSeg = borderTintHue.slice(hyphenIdx + 1);
@@ -1490,12 +1481,12 @@ export function resolveHueSlots(
     }
     return closestHueName(resolveHueAngle(borderTintHue));
   })();
-  const borderTintBareAngle = HUE_FAMILIES[borderTintBareBaseName] ?? resolveHueAngle(borderTintHue);
-  const borderTintBareBase: ResolvedHueSlot = {
-    angle: borderTintBareAngle,
-    name: closestHueName(borderTintBareAngle),
-    ref: borderTintBareBaseName,
-    primaryName: borderTintBareBaseName,
+  const borderBaseAngle = HUE_FAMILIES[borderBaseName] ?? resolveHueAngle(borderTintHue);
+  const borderBase: ResolvedHueSlot = {
+    angle: borderBaseAngle,
+    name: closestHueName(borderBaseAngle),
+    ref: borderBaseName,
+    primaryName: borderBaseName,
   };
 
   // borderStrong: borderTint shifted -5° for contrast distinction.
@@ -1503,14 +1494,12 @@ export function resolveHueSlots(
   const borderStrong = slotFromAngle((borderTintRawAngle - 5 + 360) % 360);
 
   return {
-    atm,
-    txt,
+    text,
     canvas,
     frame,
     card,
     borderTint,
-    interactive,
-    active,
+    action,
     accent,
     control,
     display,
@@ -1521,15 +1510,15 @@ export function resolveHueSlots(
     caution,
     agent,
     data,
-    surfBareBase,
-    surfScreen,
-    fgMuted,
-    fgSubtle,
-    fgDisabled,
-    fgInverse,
-    fgPlaceholder,
+    canvasBase,
+    canvasScreen,
+    textMuted,
+    textSubtle,
+    textDisabled,
+    textInverse,
+    textPlaceholder,
     selectionInactive,
-    borderTintBareBase,
+    borderBase,
     borderStrong,
   };
 }
@@ -1552,7 +1541,7 @@ export type Expr = (formulas: DerivationFormulas) => number;
  * hueSlot resolution follows dual-path per [D09]:
  *   1. Direct key: if hueSlot is a key in ResolvedHueSlots, use it directly.
  *   2. Preset-mediated: otherwise read preset[hueSlot + "HueSlot"] for the key.
- * Sentinel values per [D07]: "__white" | "__highlight" | "__shadow" | "__verboseHighlight"
+ * Sentinel values per [D07]: "__white" | "highlight" | "__shadow" | "highlightVerbose"
  * trigger non-chromatic dispatch and bypass intensity/tone expressions.
  */
 export interface ChromaticRule {
@@ -1753,10 +1742,10 @@ function buildElementPairingLookup(
  *   1. If hueSlot is a key of resolvedSlots → use it directly.
  *   2. Otherwise read formulas[hueSlot + "HueSlot"] to get the key (formulas-mediated).
  * Sentinel dispatch per [D07]:
- *   "__white"            → setChromatic-style white; fills resolved.
- *   "__highlight"        → compact white-a token; fills resolved.
- *   "__shadow"           → compact black-a token; fills resolved.
- *   "__verboseHighlight" → verbose white form with explicit i:0 t:100; fills resolved.
+ *   "__white"          → setChromatic-style white; fills resolved.
+ *   "highlight"        → compact white-a token; fills resolved.
+ *   "__shadow"         → compact black-a token; fills resolved.
+ *   "highlightVerbose" → verbose white form with explicit i:0 t:100; fills resolved.
  *
  * @param rules            Named rule table (token name → DerivationRule)
  * @param resolvedSlots    Output of resolveHueSlots()
@@ -1870,7 +1859,7 @@ export function evaluateRules(
           resolved[tokenName] = { ...whiteResolved };
           break;
         }
-        if (effectiveSlot === "__highlight") {
+        if (effectiveSlot === "highlight") {
           const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas));
           tokens[tokenName] = makeHighlight(alpha);
           resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
@@ -1882,7 +1871,7 @@ export function evaluateRules(
           resolved[tokenName] = { ...blackResolved, alpha: alpha / 100 };
           break;
         }
-        if (effectiveSlot === "__verboseHighlight") {
+        if (effectiveSlot === "highlightVerbose") {
           const alpha = Math.round((rule.alphaExpr ?? (() => 100))(formulas));
           tokens[tokenName] = makeVerboseHighlight(alpha);
           resolved[tokenName] = { ...whiteResolved, alpha: alpha / 100 };
