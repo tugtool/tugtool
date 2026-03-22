@@ -194,8 +194,8 @@ describe("contrast-diagnostics – T8.3: panel renders diagnostic output", () =>
       const detailSpan = item.querySelector("[class*='gtg-diag-detail']") as HTMLElement | null;
       expect(tokenSpan).not.toBeNull();
       expect(detailSpan).not.toBeNull();
-      // Token name should start with --tug-base-
-      expect(tokenSpan!.textContent ?? "").toMatch(/--tug-base-/);
+      // Token name should start with --tug-
+      expect(tokenSpan!.textContent ?? "").toMatch(/--tug-/);
       // Detail should contain tone arrow (→)
       expect(detailSpan!.textContent ?? "").toContain("→");
     }

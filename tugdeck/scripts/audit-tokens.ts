@@ -3,7 +3,7 @@
  * audit-tokens.ts — Mechanical token audit tooling for the tugways design system.
  *
  * Subcommands:
- *   tokens      Extract all --tug-base-* tokens from tug-base-generated.css and
+ *   tokens      Extract all --tug-* tokens from tug-base-generated.css and
  *               classify each as element / surface / non-color.
  *   pairings    Parse all component CSS files and extract every
  *               foreground-on-background pairing (color/fill on background-color).
@@ -107,9 +107,9 @@ function classifyToken(shortName: string): TokenClass {
 // ---------------------------------------------------------------------------
 
 interface TokenEntry {
-  /** Full CSS custom property name, e.g., --tug-base-fg-default */
+  /** Full CSS custom property name, e.g., --tug-fg-default */
   fullName: string;
-  /** Short name after --tug-base- prefix, e.g., fg-default */
+  /** Short name after --tug- prefix, e.g., fg-default */
   shortName: string;
   /** The raw CSS value */
   value: string;
@@ -120,11 +120,11 @@ interface TokenEntry {
 function extractTokens(): TokenEntry[] {
   const css = fs.readFileSync(GENERATED_CSS, "utf-8");
   const tokens: TokenEntry[] = [];
-  const re = /^\s*(--tug-base-[\w-]+)\s*:\s*(.+?)\s*;/gm;
+  const re = /^\s*(--tug-[\w-]+)\s*:\s*(.+?)\s*;/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(css)) !== null) {
     const fullName = m[1];
-    const shortName = fullName.replace("--tug-base-", "");
+    const shortName = fullName.replace("--tug-", "");
     tokens.push({
       fullName,
       shortName,
@@ -173,7 +173,7 @@ function cmdTokens(): void {
 // ---------------------------------------------------------------------------
 
 interface AliasMap {
-  /** Maps component alias (e.g., --tug-card-bg) → resolved --tug-base-* name */
+  /** Maps component alias (e.g., --tug-card-bg) → resolved --tug-* name */
   [alias: string]: string;
 }
 
@@ -186,9 +186,9 @@ interface CssPairing {
   elementRaw: string;
   /** The surface (background) token as used in the CSS */
   surfaceRaw: string;
-  /** Resolved element --tug-base-* token (or raw if not resolvable) */
+  /** Resolved element --tug-* token (or raw if not resolvable) */
   elementResolved: string;
-  /** Resolved surface --tug-base-* token (or raw if not resolvable) */
+  /** Resolved surface --tug-* token (or raw if not resolvable) */
   surfaceResolved: string;
   /** CSS property for the element (color, fill, border-color) */
   elementProperty: string;
@@ -197,14 +197,14 @@ interface CssPairing {
 /**
  * Parse body {} blocks in a CSS file to extract component alias → token mappings.
  * Handles both direct base refs and alias-to-alias chains:
- *   --tug-card-bg: var(--tug-base-surface-overlay);       (direct)
+ *   --tug-card-bg: var(--tug-surface-overlay);       (direct)
  *   --tug-tab-bar-bg: var(--tug-card-title-bar-bg-inactive);  (alias chain)
  */
 function extractAliases(css: string): AliasMap {
   const aliases: AliasMap = {};
   const bodyBlocks = extractBodyBlocks(css);
   for (const block of bodyBlocks) {
-    // Match any var() reference, not just --tug-base-*
+    // Match any var() reference, not just --tug-*
     const re = /^\s*(--tug-[\w-]+)\s*:\s*var\((--tug-[\w-]+)\)\s*;/gm;
     let m: RegExpExecArray | null;
     while ((m = re.exec(block)) !== null) {
@@ -242,7 +242,7 @@ function extractBodyBlocks(css: string): string[] {
 function resolveToken(token: string, aliases: AliasMap): string {
   const visited = new Set<string>();
   let current = token;
-  while (!current.startsWith("--tug-base-") && !visited.has(current)) {
+  while (!current.startsWith("--tug-") && !visited.has(current)) {
     visited.add(current);
     const next = aliases[current];
     if (!next) break;
@@ -286,7 +286,7 @@ const SURFACE_PROPERTIES = new Set(["background-color", "background"]);
 /**
  * Explicit allowlist of compat alias chains exempt from the 1-hop alias rule.
  * Each entry is the alias token (source) that is allowed to point to an intermediate
- * component alias rather than directly to a --tug-base-* token.
+ * component alias rather than directly to a --tug-* token.
  *
  * Currently: --tug-dropdown-* -> --tug-menu-* compat layer (14 entries).
  * [D02] Alias chain flattening.
@@ -359,11 +359,11 @@ function parseRules(css: string): CssRule[] {
  * Parse @tug-renders-on annotations from raw CSS text (before comment stripping).
  *
  * Annotation format (Spec S01):
- *   /* @tug-renders-on: --tug-base-surface-default *\/
+ *   /* @tug-renders-on: --tug-surface-default *\/
  *   .selector { ... }
  *
  * Multi-surface variant:
- *   /* @tug-renders-on: --tug-base-tab-bg-active, --tug-base-tab-bg-inactive *\/
+ *   /* @tug-renders-on: --tug-tab-bg-active, --tug-tab-bg-inactive *\/
  *
  * Rules:
  * - The annotation comment must be immediately followed by whitespace-only lines
@@ -386,7 +386,7 @@ function parseRendersOnAnnotations(css: string): Map<string, string[]> {
     const surfaces = m[1]
       .split(",")
       .map((s) => s.trim())
-      .filter((s) => s.startsWith("--tug-base-"));
+      .filter((s) => s.startsWith("--tug-"));
 
     if (surfaces.length === 0) continue;
 
@@ -578,8 +578,8 @@ function cmdPairings(): void {
   for (const [file, pairings] of byFile) {
     console.log(`--- ${file} (${pairings.length} pairings) ---`);
     for (const p of pairings) {
-      const resolvedEl = p.elementResolved.replace("--tug-base-", "");
-      const resolvedSf = p.surfaceResolved.replace("--tug-base-", "");
+      const resolvedEl = p.elementResolved.replace("--tug-", "");
+      const resolvedSf = p.surfaceResolved.replace("--tug-", "");
       console.log(
         `  ${p.elementProperty.padEnd(16)} ${resolvedEl.padEnd(45)} on  ${resolvedSf}`,
       );
@@ -608,7 +608,7 @@ function cmdPairings(): void {
       // Self-referential pairings (element === surface) are border-matches-background
       // decorative pairings. Dynamic CSS custom properties injected at runtime
       // (e.g. --tug-toggle-on-color) fall into this category — they cannot be
-      // represented in the pairing map (which only tracks --tug-base-* tokens).
+      // represented in the pairing map (which only tracks --tug-* tokens).
       if (p.elementResolved === p.surfaceResolved) continue;
       const key = `${p.elementResolved}||${p.surfaceResolved}`;
       if (!mapKeys.has(key)) gaps.push(p);
@@ -624,7 +624,7 @@ function cmdPairings(): void {
     console.log(`Pairings in CSS but NOT in pairing map (gaps): ${gaps.length}`);
     for (const g of gaps) {
       console.log(
-        `  ${g.elementResolved.replace("--tug-base-", "").padEnd(45)} on  ${g.surfaceResolved.replace("--tug-base-", "")}  [${g.file}]`,
+        `  ${g.elementResolved.replace("--tug-", "").padEnd(45)} on  ${g.surfaceResolved.replace("--tug-", "")}  [${g.file}]`,
       );
     }
 
@@ -634,14 +634,14 @@ function cmdPairings(): void {
     if (orphans.length > 0 && orphans.length <= 20) {
       for (const o of orphans) {
         console.log(
-          `  ${o.element.replace("--tug-base-", "").padEnd(45)} on  ${o.surface.replace("--tug-base-", "")}`,
+          `  ${o.element.replace("--tug-", "").padEnd(45)} on  ${o.surface.replace("--tug-", "")}`,
         );
       }
     } else if (orphans.length > 20) {
       console.log(`  (showing first 20)`);
       for (const o of orphans.slice(0, 20)) {
         console.log(
-          `  ${o.element.replace("--tug-base-", "").padEnd(45)} on  ${o.surface.replace("--tug-base-", "")}`,
+          `  ${o.element.replace("--tug-", "").padEnd(45)} on  ${o.surface.replace("--tug-", "")}`,
         );
       }
     }
@@ -649,8 +649,8 @@ function cmdPairings(): void {
     // Flag the known critical gap
     const criticalGap = gaps.find(
       (g) =>
-        g.elementResolved === "--tug-base-fg-default" &&
-        g.surfaceResolved === "--tug-base-tab-bg-active",
+        g.elementResolved === "--tug-fg-default" &&
+        g.surfaceResolved === "--tug-tab-bg-active",
     );
     if (criticalGap) {
       console.log(
@@ -680,7 +680,7 @@ function loadPairingMap(): { element: string; surface: string }[] | null {
   if (!fs.existsSync(PAIRING_MAP_PATH)) return null;
   const src = fs.readFileSync(PAIRING_MAP_PATH, "utf-8");
   const entries: { element: string; surface: string }[] = [];
-  const re = /element:\s*"(--tug-base-[\w-]+)"[\s\S]*?surface:\s*"(--tug-base-[\w-]+)"/g;
+  const re = /element:\s*"(--tug-[\w-]+)"[\s\S]*?surface:\s*"(--tug-[\w-]+)"/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
     entries.push({ element: m[1], surface: m[2] });
@@ -694,7 +694,7 @@ function loadPairingMap(): { element: string; surface: string }[] | null {
 
 /**
  * Recursively discover all .ts, .tsx, .css files under tugdeck/ that contain
- * --tug-base- references. Excludes node_modules/, dist/, .git/, scripts/audit-tokens.ts,
+ * --tug- references. Excludes node_modules/, dist/, .git/, scripts/audit-tokens.ts,
  * and scripts/seed-rename-map.ts (these contain token names as map keys/constants,
  * not as references to rename). Generated CSS files and scripts/generate-tug-tokens.ts
  * are included so dry-run/stats output reflects the full blast radius.
@@ -702,7 +702,7 @@ function loadPairingMap(): { element: string; surface: string }[] | null {
  * Results are sorted alphabetically by relative path for deterministic output.
  */
 function discoverTokenFiles(): string[] {
-  const TOKEN_REFERENCE = "--tug-base-";
+  const TOKEN_REFERENCE = "--tug-";
   const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git"]);
   const EXCLUDED_FILES = new Set([
     path.join(TUGDECK, "scripts/audit-tokens.ts"),
@@ -842,7 +842,7 @@ function cmdRename(opts: RenameOptions): void {
         // Skip identity mappings
         if (oldShort === newShort) continue;
 
-        const oldFull = `--tug-base-${oldShort}`;
+        const oldFull = `--tug-${oldShort}`;
         const escapedOld = oldFull.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const cssRegex = new RegExp(`${escapedOld}(?=[^\\w-]|$)`, "g");
 
@@ -896,7 +896,7 @@ function cmdRename(opts: RenameOptions): void {
       let count = 0;
 
       for (const [oldShort] of renameEntries) {
-        const oldFull = `--tug-base-${oldShort}`;
+        const oldFull = `--tug-${oldShort}`;
         const escapedOld = oldFull.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const cssRegex = new RegExp(`${escapedOld}(?=[^\\w-]|$)`, "g");
         const cssMatches = content.match(cssRegex);
@@ -944,9 +944,9 @@ function cmdRename(opts: RenameOptions): void {
     let count = 0;
 
     for (const [oldShort, newShort] of Object.entries(activeMap)) {
-      // Replace in CSS custom property names: --tug-base-{old}
-      const oldFull = `--tug-base-${oldShort}`;
-      const newFull = `--tug-base-${newShort}`;
+      // Replace in CSS custom property names: --tug-{old}
+      const oldFull = `--tug-${oldShort}`;
+      const newFull = `--tug-${newShort}`;
 
       // Use word-boundary-aware replacement to avoid partial matches.
       // In CSS/TS, token names are delimited by: `, ;, ), :, whitespace, or end-of-string
@@ -966,7 +966,7 @@ function cmdRename(opts: RenameOptions): void {
 
       // Also replace in TS map keys where the token name appears as a bare string
       // e.g., in derivation-rules.ts: "field-fg": { ... }
-      // or in the pairing map: element: "--tug-base-field-fg"
+      // or in the pairing map: element: "--tug-field-fg"
       const escapedOldShort = oldShort.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const bareRegex = new RegExp(
         `"${escapedOldShort}"(?=\\s*:)`,
@@ -1096,9 +1096,9 @@ function cmdInject(apply: boolean): void {
     );
     for (const p of pairings) {
       const elAlias = p.elementRaw;
-      const elBase = p.elementResolved.replace("--tug-base-", "");
+      const elBase = p.elementResolved.replace("--tug-", "");
       const sfAlias = p.surfaceRaw;
-      const sfBase = p.surfaceResolved.replace("--tug-base-", "");
+      const sfBase = p.surfaceResolved.replace("--tug-", "");
       const role = guessRole(elBase, p.elementProperty);
       const context = `${p.selector} (${p.elementProperty})`;
 
@@ -1249,8 +1249,8 @@ function cmdVerify(): void {
       if (elShort.startsWith("-") || sfShort.startsWith("-")) continue;
       if (elShort === "hardcoded" || sfShort === "hardcoded") continue;
       cssPairings.push({
-        element: `--tug-base-${elShort}`,
-        surface: `--tug-base-${sfShort}`,
+        element: `--tug-${elShort}`,
+        surface: `--tug-${sfShort}`,
         file: basename,
       });
     }
@@ -1274,7 +1274,7 @@ function cmdVerify(): void {
     console.log(`\n⚠ GAPS: ${gaps.length} pairings in CSS but NOT in pairing map:`);
     for (const g of gaps) {
       console.log(
-        `  ${g.element.replace("--tug-base-", "").padEnd(45)} on  ${g.surface.replace("--tug-base-", "")}  [${g.file}]`,
+        `  ${g.element.replace("--tug-", "").padEnd(45)} on  ${g.surface.replace("--tug-", "")}  [${g.file}]`,
       );
     }
   }
@@ -1379,7 +1379,7 @@ function checkAnnotationCompleteness(
 /**
  * Lint check 2: alias chain depth.
  *
- * Every alias in body {} blocks must resolve to --tug-base-* in exactly 1 hop,
+ * Every alias in body {} blocks must resolve to --tug-* in exactly 1 hop,
  * unless the alias is in COMPAT_ALIAS_ALLOWLIST.
  * Violation: MULTI_HOP_ALIAS: {file}: {alias} resolves through {count} hops (max 1)
  */
@@ -1397,14 +1397,14 @@ function checkAliasChainDepth(
     // Skip compat allowlist entries
     if (COMPAT_ALIAS_ALLOWLIST.has(alias)) continue;
 
-    // Target must be a --tug-base-* token (1-hop rule)
-    if (!target.startsWith("--tug-base-")) {
+    // Target must be a --tug-* token (1-hop rule)
+    if (!target.startsWith("--tug-")) {
       // Count hops: follow the chain to find total depth
       const globalAliases = buildGlobalAliases();
       let hops = 0;
       let current = alias;
       const visited = new Set<string>();
-      while (!current.startsWith("--tug-base-") && !visited.has(current)) {
+      while (!current.startsWith("--tug-") && !visited.has(current)) {
         visited.add(current);
         const next = globalAliases[current];
         if (!next) break;
@@ -1760,7 +1760,7 @@ switch (command) {
     console.log(`Usage: bun run audit:tokens <command> [flags]
 
 Commands:
-  tokens                              Extract and classify all --tug-base-* tokens
+  tokens                              Extract and classify all --tug-* tokens
   pairings                            Audit component CSS files for foreground-on-background pairings
   rename [flags]                      Bulk-rename tokens across auto-discovered files (dry run by default)
     --apply                             Write changes to disk (default: dry run)

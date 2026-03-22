@@ -10,7 +10,7 @@
  *   Compound CSS class: tug-badge-{emphasis}-{role}
  *
  * Token strategy (Spec S08, S09):
- *   Tier 1 (8 Table T01 combos): reference --tug-base-control-{emphasis}-{role}-*-rest directly
+ *   Tier 1 (8 Table T01 combos): reference --tug-control-{emphasis}-{role}-*-rest directly
  *   Tier 2 (success, caution): derive from tone families and fg-on{Role} tokens
  *   Non-T01 combos (7 remaining): derive from tone families per Spec S09
  *

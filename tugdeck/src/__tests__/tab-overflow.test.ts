@@ -72,8 +72,8 @@ describe("ICON_ONLY_TAB_WIDTH", () => {
    * T10a: Assert the constant equals 30 to enforce the CSS dependency chain.
    *
    * CSS dependency chain (tug-tab-bar.css):
-   *   - `.tug-tab` padding: var(--tug-base-space-md) = 8px each side
-   *   - `.tug-tab-icon` width: var(--tug-base-icon-size-sm) = 14px
+   *   - `.tug-tab` padding: var(--tug-space-md) = 8px each side
+   *   - `.tug-tab-icon` width: var(--tug-icon-size-sm) = 14px
    *   Total:                      30px
    *
    * `.tug-tab-title` and `.tug-tab-close` are hidden with `display: none` in

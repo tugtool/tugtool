@@ -33,7 +33,7 @@ describe("handleThemesSave", () => {
     };
 
     const result = handleThemesSave(
-      { name: "My Theme", css: "body { --tug-base-bg: oklch(0.2 0 0); }", recipe: '{"name":"My Theme"}' },
+      { name: "My Theme", css: "body { --tug-bg: oklch(0.2 0 0); }", recipe: '{"name":"My Theme"}' },
       mockFs,
       FAKE_THEMES_DIR,
     );
@@ -44,7 +44,7 @@ describe("handleThemesSave", () => {
     // Name is sanitized to kebab-case
     expect(body.name).toBe("my-theme");
     // Both files were written
-    expect(written["my-theme.css"]).toBe("body { --tug-base-bg: oklch(0.2 0 0); }");
+    expect(written["my-theme.css"]).toBe("body { --tug-bg: oklch(0.2 0 0); }");
     expect(written["my-theme-recipe.json"]).toBe('{"name":"My Theme"}');
   });
 

@@ -14,7 +14,7 @@
  *
  * function MyComponent() {
  *   const ref = useRef<HTMLDivElement>(null);
- *   useCSSVar(ref, "--tug-base-element-global-fill-normal-accent-rest", isActive ? "var(--tug-base-element-global-fill-normal-accent-rest)" : "var(--tug-base-element-global-fill-normal-accentCool-rest)");
+ *   useCSSVar(ref, "--tug-element-global-fill-normal-accent-rest", isActive ? "var(--tug-element-global-fill-normal-accent-rest)" : "var(--tug-element-global-fill-normal-accentCool-rest)");
  *   useDOMClass(ref, "is-highlighted", isHighlighted);
  *   useDOMStyle(ref, "border-width", isThick ? "3px" : "1px");
  *   return <div ref={ref} />;

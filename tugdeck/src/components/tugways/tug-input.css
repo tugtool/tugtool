@@ -7,18 +7,18 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-field-text-normal-plain-rest (element-field-text-normal-plain-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | content      | .tug-input (color)                   |
- * | --tug-base-element-field-border-normal-plain-rest (element-field-border-normal-plain-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input (border)                  |
- * | --tug-base-element-field-text-normal-placeholder-rest (element-field-text-normal-placeholder-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input::placeholder (color)      |
- * | --tug-base-element-field-border-normal-plain-hover (element-field-border-normal-plain-hover) | --tug-base-surface-field-primary-normal-plain-hover (surface-field-primary-normal-plain-hover) | informational | .tug-input:hover:not(:disabled):not(:read-only):not(:focus) (border-color) |
- * | --tug-base-element-field-border-normal-plain-active (element-field-border-normal-plain-active) | --tug-base-surface-field-primary-normal-plain-focus (surface-field-primary-normal-plain-focus) | informational | .tug-input:focus (border-color)      |
- * | --tug-base-element-field-text-normal-plain-disabled (element-field-text-normal-plain-disabled) | --tug-base-surface-field-primary-normal-plain-disabled (surface-field-primary-normal-plain-disabled) | informational | .tug-input:disabled (color)          |
- * | --tug-base-element-field-border-normal-plain-disabled (element-field-border-normal-plain-disabled) | --tug-base-surface-field-primary-normal-plain-disabled (surface-field-primary-normal-plain-disabled) | informational | .tug-input:disabled (border-color)   |
- * | --tug-base-element-field-text-normal-plain-readOnly (element-field-text-normal-plain-readOnly) | --tug-base-surface-field-primary-normal-plain-readOnly (surface-field-primary-normal-plain-readOnly) | informational | .tug-input:read-only:not(:disabled) (color) |
- * | --tug-base-element-field-border-normal-plain-readOnly (element-field-border-normal-plain-readOnly) | --tug-base-surface-field-primary-normal-plain-readOnly (surface-field-primary-normal-plain-readOnly) | informational | .tug-input:read-only:not(:disabled) (border-color) |
- * | --tug-base-element-field-border-normal-danger-rest (element-field-border-normal-danger-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-invalid:not(:focus) (border-color) |
- * | --tug-base-element-field-border-normal-success-rest (element-field-border-normal-success-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-valid:not(:focus) (border-color) |
- * | --tug-base-element-field-fill-normal-caution-rest (element-field-fill-normal-caution-rest) | --tug-base-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-warning:not(:focus) (border-color) |
+ * | --tug-element-field-text-normal-plain-rest (element-field-text-normal-plain-rest) | --tug-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | content      | .tug-input (color)                   |
+ * | --tug-element-field-border-normal-plain-rest (element-field-border-normal-plain-rest) | --tug-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input (border)                  |
+ * | --tug-element-field-text-normal-placeholder-rest (element-field-text-normal-placeholder-rest) | --tug-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input::placeholder (color)      |
+ * | --tug-element-field-border-normal-plain-hover (element-field-border-normal-plain-hover) | --tug-surface-field-primary-normal-plain-hover (surface-field-primary-normal-plain-hover) | informational | .tug-input:hover:not(:disabled):not(:read-only):not(:focus) (border-color) |
+ * | --tug-element-field-border-normal-plain-active (element-field-border-normal-plain-active) | --tug-surface-field-primary-normal-plain-focus (surface-field-primary-normal-plain-focus) | informational | .tug-input:focus (border-color)      |
+ * | --tug-element-field-text-normal-plain-disabled (element-field-text-normal-plain-disabled) | --tug-surface-field-primary-normal-plain-disabled (surface-field-primary-normal-plain-disabled) | informational | .tug-input:disabled (color)          |
+ * | --tug-element-field-border-normal-plain-disabled (element-field-border-normal-plain-disabled) | --tug-surface-field-primary-normal-plain-disabled (surface-field-primary-normal-plain-disabled) | informational | .tug-input:disabled (border-color)   |
+ * | --tug-element-field-text-normal-plain-readOnly (element-field-text-normal-plain-readOnly) | --tug-surface-field-primary-normal-plain-readOnly (surface-field-primary-normal-plain-readOnly) | informational | .tug-input:read-only:not(:disabled) (color) |
+ * | --tug-element-field-border-normal-plain-readOnly (element-field-border-normal-plain-readOnly) | --tug-surface-field-primary-normal-plain-readOnly (surface-field-primary-normal-plain-readOnly) | informational | .tug-input:read-only:not(:disabled) (border-color) |
+ * | --tug-element-field-border-normal-danger-rest (element-field-border-normal-danger-rest) | --tug-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-invalid:not(:focus) (border-color) |
+ * | --tug-element-field-border-normal-success-rest (element-field-border-normal-success-rest) | --tug-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-valid:not(:focus) (border-color) |
+ * | --tug-element-field-fill-normal-caution-rest (element-field-fill-normal-caution-rest) | --tug-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-warning:not(:focus) (border-color) |
  */
 
 
@@ -31,49 +31,49 @@
   line-height: 1.4;
   letter-spacing: 0.01em;
 
-  background-color: var(--tug-base-surface-field-primary-normal-plain-rest);
-  color: var(--tug-base-element-field-text-normal-plain-rest);
-  border: 1px solid var(--tug-base-element-field-border-normal-plain-rest);
+  background-color: var(--tug-surface-field-primary-normal-plain-rest);
+  color: var(--tug-element-field-text-normal-plain-rest);
+  border: 1px solid var(--tug-element-field-border-normal-plain-rest);
   border-radius: 0.375rem; /* 6px — matches tug-button md */
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
-/* @tug-renders-on: --tug-base-surface-field-primary-normal-plain-rest */
+/* @tug-renders-on: --tug-surface-field-primary-normal-plain-rest */
 .tug-input::placeholder {
-  color: var(--tug-base-element-field-text-normal-placeholder-rest);
+  color: var(--tug-element-field-text-normal-placeholder-rest);
 }
 
 /* ---- Hover ---- */
 
 .tug-input:hover:not(:disabled):not(:read-only):not(:focus) {
-  background-color: var(--tug-base-surface-field-primary-normal-plain-hover);
-  border-color: var(--tug-base-element-field-border-normal-plain-hover);
+  background-color: var(--tug-surface-field-primary-normal-plain-hover);
+  border-color: var(--tug-element-field-border-normal-plain-hover);
 }
 
 /* ---- Focus ---- */
 
 .tug-input:focus {
-  background-color: var(--tug-base-surface-field-primary-normal-plain-focus);
-  border-color: var(--tug-base-element-field-border-normal-plain-active);
+  background-color: var(--tug-surface-field-primary-normal-plain-focus);
+  border-color: var(--tug-element-field-border-normal-plain-active);
   outline: none;
 }
 
 /* ---- Disabled ---- */
 
 .tug-input:disabled {
-  background-color: var(--tug-base-surface-field-primary-normal-plain-disabled);
-  color: var(--tug-base-element-field-text-normal-plain-disabled);
-  border-color: var(--tug-base-element-field-border-normal-plain-disabled);
+  background-color: var(--tug-surface-field-primary-normal-plain-disabled);
+  color: var(--tug-element-field-text-normal-plain-disabled);
+  border-color: var(--tug-element-field-border-normal-plain-disabled);
   cursor: not-allowed;
-  opacity: var(--tug-base-control-disabled-opacity);
+  opacity: var(--tug-control-disabled-opacity);
 }
 
 /* ---- Read-only ---- */
 
 .tug-input:read-only:not(:disabled) {
-  background-color: var(--tug-base-surface-field-primary-normal-plain-readOnly);
-  color: var(--tug-base-element-field-text-normal-plain-readOnly);
-  border-color: var(--tug-base-element-field-border-normal-plain-readOnly);
+  background-color: var(--tug-surface-field-primary-normal-plain-readOnly);
+  color: var(--tug-element-field-text-normal-plain-readOnly);
+  border-color: var(--tug-element-field-border-normal-plain-readOnly);
   cursor: default;
 }
 
@@ -108,17 +108,17 @@
  * When focused, the focus border takes precedence (user is actively editing).
  */
 
-/* @tug-renders-on: --tug-base-surface-field-primary-normal-plain-rest */
+/* @tug-renders-on: --tug-surface-field-primary-normal-plain-rest */
 .tug-input-invalid:not(:focus) {
-  border-color: var(--tug-base-element-field-border-normal-danger-rest);
+  border-color: var(--tug-element-field-border-normal-danger-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-field-primary-normal-plain-rest */
+/* @tug-renders-on: --tug-surface-field-primary-normal-plain-rest */
 .tug-input-valid:not(:focus) {
-  border-color: var(--tug-base-element-field-border-normal-success-rest);
+  border-color: var(--tug-element-field-border-normal-success-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-field-primary-normal-plain-rest */
+/* @tug-renders-on: --tug-surface-field-primary-normal-plain-rest */
 .tug-input-warning:not(:focus) {
-  border-color: var(--tug-base-element-field-fill-normal-caution-rest);
+  border-color: var(--tug-element-field-fill-normal-caution-rest);
 }

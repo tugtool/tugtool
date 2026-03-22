@@ -66,11 +66,11 @@ describe("derivation-engine", () => {
 
     function toTokenName(emphasis: string, role: string, property: string, state: string): string {
       switch (property) {
-        case "bg":     return `--tug-base-surface-control-primary-${emphasis}-${role}-${state}`;
-        case "fg":     return `--tug-base-element-control-text-${emphasis}-${role}-${state}`;
-        case "border": return `--tug-base-element-control-border-${emphasis}-${role}-${state}`;
-        case "icon":   return `--tug-base-element-control-icon-${emphasis}-${role}-${state}`;
-        default:       return `--tug-base-control-${emphasis}-${role}-${property}-${state}`;
+        case "bg":     return `--tug-surface-control-primary-${emphasis}-${role}-${state}`;
+        case "fg":     return `--tug-element-control-text-${emphasis}-${role}-${state}`;
+        case "border": return `--tug-element-control-border-${emphasis}-${role}-${state}`;
+        case "icon":   return `--tug-element-control-icon-${emphasis}-${role}-${state}`;
+        default:       return `--tug-control-${emphasis}-${role}-${property}-${state}`;
       }
     }
 
@@ -89,24 +89,24 @@ describe("derivation-engine", () => {
     expect(missingTokens).toEqual([]);
   });
 
-  it("T2.1d: --tug-base-surface-global-primary-normal-control-rest alias is present in deriveTheme output", () => {
+  it("T2.1d: --tug-surface-global-primary-normal-control-rest alias is present in deriveTheme output", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(output.tokens["--tug-base-surface-global-primary-normal-control-rest"]).toBe(
-      "var(--tug-base-surface-control-primary-outlined-action-rest)",
+    expect(output.tokens["--tug-surface-global-primary-normal-control-rest"]).toBe(
+      "var(--tug-surface-control-primary-outlined-action-rest)",
     );
   });
 
   it("T2.1e: control token names match emphasis x role pattern", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
     const surfaceControlPattern =
-      /^--tug-base-surface-control-primary-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/;
+      /^--tug-surface-control-primary-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/;
     const elementControlPattern =
-      /^--tug-base-element-control-(text|border|icon)-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/;
+      /^--tug-element-control-(text|border|icon)-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/;
 
     const controlTokens = Object.keys(output.tokens).filter(
       (k) =>
-        (k.startsWith("--tug-base-surface-control-primary-") ||
-          k.startsWith("--tug-base-element-control-")) &&
+        (k.startsWith("--tug-surface-control-primary-") ||
+          k.startsWith("--tug-element-control-")) &&
         k.match(/(filled|outlined|ghost)/),
     );
 
@@ -159,14 +159,14 @@ describe("derivation-engine", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
     const STRUCTURAL = [
-      "--tug-base-surface-control-primary-ghost-action-rest",
-      "--tug-base-element-control-border-ghost-action-rest",
-      "--tug-base-surface-control-primary-ghost-danger-rest",
-      "--tug-base-element-control-border-ghost-danger-rest",
-      "--tug-base-control-disabled-opacity",
-      "--tug-base-element-control-shadow-normal-plain-disabled",
-      "--tug-base-scrollbar-track",
-      "--tug-base-surface-global-primary-normal-control-rest",
+      "--tug-surface-control-primary-ghost-action-rest",
+      "--tug-element-control-border-ghost-action-rest",
+      "--tug-surface-control-primary-ghost-danger-rest",
+      "--tug-element-control-border-ghost-danger-rest",
+      "--tug-control-disabled-opacity",
+      "--tug-element-control-shadow-normal-plain-disabled",
+      "--tug-scrollbar-track",
+      "--tug-surface-global-primary-normal-control-rest",
     ];
     for (const token of STRUCTURAL) {
       expect(output.resolved[token]).toBeUndefined();
@@ -185,10 +185,10 @@ describe("derivation-engine", () => {
     expect(brio.recipe).toBe("dark");
   });
 
-  it("T2.7a: deriveTheme(EXAMPLE_RECIPES.brio) produces a token for '--tug-base-element-cardTitle-text-normal-plain-rest'", () => {
+  it("T2.7a: deriveTheme(EXAMPLE_RECIPES.brio) produces a token for '--tug-element-cardTitle-text-normal-plain-rest'", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(output.tokens["--tug-base-element-cardTitle-text-normal-plain-rest"]).toBeDefined();
-    expect(output.tokens["--tug-base-element-cardTitle-text-normal-plain-rest"]).toMatch(/--tug-color\(/);
+    expect(output.tokens["--tug-element-cardTitle-text-normal-plain-rest"]).toBeDefined();
+    expect(output.tokens["--tug-element-cardTitle-text-normal-plain-rest"]).toMatch(/--tug-color\(/);
   });
 
   it("primaryColorName extracts first segment from hyphenated names", () => {
@@ -216,10 +216,10 @@ describe("recipe contrast validation", () => {
       // Core readability: fg-default must pass content on primary surfaces
       const coreFailures = results.filter(
         (r) =>
-          r.fg === "--tug-base-element-global-text-normal-default-rest" &&
-          (r.bg === "--tug-base-surface-global-primary-normal-default-rest" ||
-            r.bg === "--tug-base-surface-global-primary-normal-inset-rest" ||
-            r.bg === "--tug-base-surface-global-primary-normal-content-rest") &&
+          r.fg === "--tug-element-global-text-normal-default-rest" &&
+          (r.bg === "--tug-surface-global-primary-normal-default-rest" ||
+            r.bg === "--tug-surface-global-primary-normal-inset-rest" ||
+            r.bg === "--tug-surface-global-primary-normal-content-rest") &&
           !r.contrastPass,
       );
       expect(coreFailures.map((f) => `[${name}] ${f.fg} on ${f.bg}: contrast ${f.contrast.toFixed(1)}`)).toEqual([]);
@@ -276,7 +276,7 @@ describe("derivation-engine step-4 contrast floor", () => {
     expect(Array.isArray(output.diagnostics)).toBe(true);
     for (const diag of output.diagnostics) {
       expect(typeof diag.token).toBe("string");
-      expect(diag.token.startsWith("--tug-base-")).toBe(true);
+      expect(diag.token.startsWith("--tug-")).toBe(true);
       expect(["floor-applied", "floor-applied-composited", "structurally-fixed", "composite-dependent"]).toContain(diag.reason);
       expect(Array.isArray(diag.surfaces)).toBe(true);
       expect(typeof diag.initialTone).toBe("number");
@@ -304,8 +304,8 @@ describe("derivation-engine step-4 contrast floor", () => {
     // Structural ceiling surfaces: overlay and screen surfaces have luminance ceilings
     // that prevent the threshold from being reached regardless of tone adjustment.
     const STRUCTURAL_CEILING_SURFACES = new Set([
-      "--tug-base-surface-global-primary-normal-overlay-rest",
-      "--tug-base-surface-global-primary-normal-screen-rest",
+      "--tug-surface-global-primary-normal-overlay-rest",
+      "--tug-surface-global-primary-normal-screen-rest",
     ]);
 
     // The expectation is that floor-enforced content tokens pass,
@@ -348,8 +348,8 @@ describe("derivation-engine step-4 contrast floor", () => {
 
     // Structural ceiling surfaces: luminance ceilings prevent reaching threshold.
     const STRUCTURAL_CEILING_SURFACES = new Set([
-      "--tug-base-surface-global-primary-normal-overlay-rest",
-      "--tug-base-surface-global-primary-normal-screen-rest",
+      "--tug-surface-global-primary-normal-overlay-rest",
+      "--tug-surface-global-primary-normal-screen-rest",
     ]);
 
     const reconciliationFailures: string[] = [];
@@ -415,7 +415,7 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
     for (const diag of output.diagnostics) {
       expect(["floor-applied", "floor-applied-composited"]).toContain(diag.reason);
       expect(typeof diag.token).toBe("string");
-      expect(diag.token.startsWith("--tug-base-")).toBe(true);
+      expect(diag.token.startsWith("--tug-")).toBe(true);
       expect(diag.finalTone).not.toBe(diag.initialTone);
     }
   });

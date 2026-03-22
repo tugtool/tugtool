@@ -1699,7 +1699,7 @@ export function flashSetPerimeter(
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", svgPath);
   path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "var(--tug-base-element-global-fill-normal-accent-rest)");
+  path.setAttribute("stroke", "var(--tug-element-global-fill-normal-accent-rest)");
   path.setAttribute("stroke-width", "3");
   path.setAttribute("filter", `url(#set-flash-glow-${uid})`);
   svg.appendChild(path);
@@ -1710,7 +1710,7 @@ export function flashSetPerimeter(
   // glacial = 500ms, preserving the original 0.5s flash duration.
   // WAAPI animate() works on SVG elements for the opacity property. [Spec S03]
   animate(svg, [{ opacity: 1 }, { opacity: 0 }], {
-    duration: "--tug-base-motion-duration-glacial",
+    duration: "--tug-motion-duration-glacial",
     easing: "ease-out",
     fill: "forwards",
   }).finished.then(() => {
@@ -1741,7 +1741,7 @@ export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
   // Drive opacity fade via TugAnimator; self-remove on animate().finished.
   // glacial = 500ms, preserving the original 0.5s flash duration.
   animate(overlay, [{ opacity: 1 }, { opacity: 0 }], {
-    duration: "--tug-base-motion-duration-glacial",
+    duration: "--tug-motion-duration-glacial",
     easing: "ease-out",
     fill: "forwards",
   }).finished.then(() => {

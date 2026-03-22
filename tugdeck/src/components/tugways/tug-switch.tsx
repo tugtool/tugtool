@@ -2,7 +2,7 @@
  * TugSwitch -- tugways public API for toggle switches.
  *
  * Wraps @radix-ui/react-switch for accessible on/off toggling.
- * All visual states driven by --tug-base-toggle-track-* and --tug-base-element-toggle-thumb-normal-plain-rest
+ * All visual states driven by --tug-toggle-track-* and --tug-element-toggle-thumb-normal-plain-rest
  * tokens — theme switches update CSS variables with no React re-renders.
  *
  * Features:
@@ -14,7 +14,7 @@
  *
  * [D03] Role color via inline CSS custom property injection
  * [D04] Token-driven control state model
- * [D05] Component token naming: --tug-base-toggle-*, --tug-base-element-toggle-thumb-normal-plain-rest
+ * [D05] Component token naming: --tug-toggle-*, --tug-element-toggle-thumb-normal-plain-rest
  */
 
 import React from "react";
@@ -49,7 +49,7 @@ export type TugSwitchRole =
 /**
  * Maps non-option, non-accent role prop values to tone token suffixes.
  * Necessary because the prop API uses "action" but tone tokens use "active"
- * (i.e., --tug-base-element-tone-fill-normal-active-rest, not --tug-base-tone-action).
+ * (i.e., --tug-element-tone-fill-normal-active-rest, not --tug-tone-action).
  * [D03, Table T04]
  */
 const ROLE_TONE_MAP: Record<string, string> = {
@@ -92,8 +92,8 @@ export interface TugSwitchProps {
    * Injects --tug-toggle-on-color and --tug-toggle-on-hover-color via inline
    * CSS custom properties; the CSS falls back to global tokens when not set.
    *
-   * "option" uses --tug-base-element-global-text-normal-muted-rest directly (neutral/achromatic — no signal
-   * hue chroma) rather than a --tug-base-tone-* token. This provides calm
+   * "option" uses --tug-element-global-text-normal-muted-rest directly (neutral/achromatic — no signal
+   * hue chroma) rather than a --tug-tone-* token. This provides calm
    * configuration-control styling appropriate for switches. [D06]
    *
    * "accent" suppresses injection entirely and falls back to the CSS default
@@ -126,11 +126,11 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     // Three-branch role injection logic. [D03, D06, Spec S01]
     //
     // Branch 1 — "option": inject fg-muted directly (neutral/achromatic).
-    //   The option role does not map to any --tug-base-tone-* token; it uses
-    //   --tug-base-element-global-text-normal-muted-rest for a calm, unchromatic on-state color. [D06]
+    //   The option role does not map to any --tug-tone-* token; it uses
+    //   --tug-element-global-text-normal-muted-rest for a calm, unchromatic on-state color. [D06]
     //
     // Branch 2 — other non-accent roles (action/agent/data/success/caution/danger):
-    //   inject the corresponding --tug-base-tone-* token via ROLE_TONE_MAP.
+    //   inject the corresponding --tug-tone-* token via ROLE_TONE_MAP.
     //
     // Branch 3 — "accent" (explicit): no injection; accent is the CSS-default
     //   fallback and does not need inline style override.
@@ -139,15 +139,15 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
 
     if (role === "option") {
       roleStyle = {
-        "--tug-toggle-on-color": "var(--tug-base-element-global-text-normal-muted-rest)",
-        "--tug-toggle-on-hover-color": "var(--tug-base-element-global-text-normal-subtle-rest)",
+        "--tug-toggle-on-color": "var(--tug-element-global-text-normal-muted-rest)",
+        "--tug-toggle-on-hover-color": "var(--tug-element-global-text-normal-subtle-rest)",
       } as React.CSSProperties;
       dataRole = "option";
     } else if (role !== "accent" && ROLE_TONE_MAP[role] !== undefined) {
       const toneSuffix = ROLE_TONE_MAP[role];
       roleStyle = {
-        "--tug-toggle-on-color": `var(--tug-base-element-tone-fill-normal-${toneSuffix}-rest)`,
-        "--tug-toggle-on-hover-color": `color-mix(in oklch, var(--tug-base-element-tone-fill-normal-${toneSuffix}-rest), white 15%)`,
+        "--tug-toggle-on-color": `var(--tug-element-tone-fill-normal-${toneSuffix}-rest)`,
+        "--tug-toggle-on-hover-color": `color-mix(in oklch, var(--tug-element-tone-fill-normal-${toneSuffix}-rest), white 15%)`,
       } as React.CSSProperties;
       dataRole = role;
     }

@@ -17,32 +17,32 @@
  */
 
 body {
-  --tug-inspector-panel-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
-  --tug-inspector-panel-border: var(--tug-base-element-global-divider-normal-default-rest);
-  --tug-inspector-panel-bg-pinned: var(--tug-base-surface-global-primary-normal-default-rest);
-  --tug-inspector-section-bg: var(--tug-base-surface-global-primary-normal-control-rest);
-  --tug-inspector-field-bg: var(--tug-base-surface-field-primary-normal-plain-focus);
-  --tug-inspector-field-border: var(--tug-base-element-global-divider-normal-default-rest);
-  --tug-inspector-field-readOnly: var(--tug-base-surface-global-primary-normal-sunken-rest);
+  --tug-inspector-panel-bg: var(--tug-surface-global-primary-normal-sunken-rest);
+  --tug-inspector-panel-border: var(--tug-element-global-divider-normal-default-rest);
+  --tug-inspector-panel-bg-pinned: var(--tug-surface-global-primary-normal-default-rest);
+  --tug-inspector-section-bg: var(--tug-surface-global-primary-normal-control-rest);
+  --tug-inspector-field-bg: var(--tug-surface-field-primary-normal-plain-focus);
+  --tug-inspector-field-border: var(--tug-element-global-divider-normal-default-rest);
+  --tug-inspector-field-readOnly: var(--tug-surface-global-primary-normal-sunken-rest);
   --tug-inspector-field-inherited: --tug-color(cyan, i: 50, t: 50, a: 8);
   --tug-inspector-field-default: --tug-color(violet, i: 5, t: 11);
   --tug-inspector-field-preview: --tug-color(orange, i: 50, t: 50, a: 10);
   --tug-inspector-field-cancelled: --tug-color(red, i: 50, t: 50, a: 10);
-  --tug-inspector-target-outline: var(--tug-base-element-global-icon-normal-active-rest);
-  --tug-inspector-preview-outline: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-inspector-target-outline: var(--tug-element-global-icon-normal-active-rest);
+  --tug-inspector-preview-outline: var(--tug-element-global-fill-normal-accent-rest);
   --tug-inspector-source-token: --tug-color(violet);
   --tug-inspector-source-class: --tug-color(green);
   --tug-inspector-source-inline: --tug-color(yellow);
   --tug-inspector-source-preview: --tug-color(coral-muted);
-  --tug-inspector-emptyState-fg: var(--tug-base-element-global-text-normal-subtle-rest);
-  --tug-inspector-emptyState-icon: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-inspector-swatch-border: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-inspector-scrub-track: var(--tug-base-element-global-divider-normal-separator-rest);
-  --tug-inspector-scrub-thumb: var(--tug-base-element-global-text-normal-subtle-rest);
-  --tug-inspector-scrub-active: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-inspector-emptyState-fg: var(--tug-element-global-text-normal-subtle-rest);
+  --tug-inspector-emptyState-icon: var(--tug-element-global-border-normal-default-rest);
+  --tug-inspector-swatch-border: var(--tug-element-global-border-normal-default-rest);
+  --tug-inspector-scrub-track: var(--tug-element-global-divider-normal-separator-rest);
+  --tug-inspector-scrub-thumb: var(--tug-element-global-text-normal-subtle-rest);
+  --tug-inspector-scrub-active: var(--tug-element-global-fill-normal-accent-rest);
   --tug-dev-overlay-bg: --tug-color(indigo-violet, i: 4, t: 7, a: 92);
-  --tug-dev-overlay-fg: var(--tug-base-element-global-text-normal-default-rest);
-  --tug-dev-overlay-border: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-dev-overlay-fg: var(--tug-element-global-text-normal-default-rest);
+  --tug-dev-overlay-border: var(--tug-element-global-border-normal-default-rest);
   --tug-dev-overlay-targetHighlight: --tug-color(cyan, i: 50, t: 50, a: 30);
   --tug-dev-overlay-targetDim: --tug-color(black, i: 0, t: 0, a: 50);
 }

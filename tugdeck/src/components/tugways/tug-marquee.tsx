@@ -17,7 +17,7 @@
  * infinite). JS measures overflow and orchestrates the pause/scroll cycle
  * via direct DOM class/style manipulation — no React state drives appearance.
  *
- * [D04] Token-driven: --tug-base-field-* tokens
+ * [D04] Token-driven: --tug-field-* tokens
  * [D08, D09] Appearance through CSS/DOM, not React state
  */
 

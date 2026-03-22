@@ -2,7 +2,7 @@
  * TugLabel -- tugways public API for labels.
  *
  * Wraps Radix Label for click-to-focus behavior on associated controls.
- * All visual states driven by --tug-base-field-* tokens.
+ * All visual states driven by --tug-field-* tokens.
  *
  * Features:
  *   - Multiline text: wraps at component width, up to `maxLines`
@@ -12,7 +12,7 @@
  *   - Size variants matching TugInput
  *
  * [D04] Token-driven control state model
- * [D05] Component token naming: --tug-base-field-*
+ * [D05] Component token naming: --tug-field-*
  */
 
 import React, { useRef, useLayoutEffect, useState, useCallback } from "react";

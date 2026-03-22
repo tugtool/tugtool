@@ -7,40 +7,40 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-card-border (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
- * | --tug-card-title-fg (element-cardTitle-text-normal-plain-rest) | --tug-base-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | display      | .tugcard-title (color)               |
- * | --tug-card-title-fg (element-cardTitle-text-normal-plain-rest) | --tug-base-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | display      | .tugcard-title (color)               |
- * | --tug-card-title-bar-icon-active (element-global-icon-normal-active-rest) | --tug-base-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
- * | --tug-card-title-bar-icon-inactive (element-global-text-normal-subtle-rest) | --tug-base-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | informational | .card-frame[data-focused="false"] .tugcard-icon (color) |
- * | --tug-base-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug-base-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
- * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
+ * | --tug-card-border (element-global-border-normal-default-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
+ * | --tug-card-title-fg (element-cardTitle-text-normal-plain-rest) | --tug-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | display      | .tugcard-title (color)               |
+ * | --tug-card-title-fg (element-cardTitle-text-normal-plain-rest) | --tug-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | display      | .tugcard-title (color)               |
+ * | --tug-card-title-bar-icon-active (element-global-icon-normal-active-rest) | --tug-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
+ * | --tug-card-title-bar-icon-inactive (element-global-text-normal-subtle-rest) | --tug-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | informational | .card-frame[data-focused="false"] .tugcard-icon (color) |
+ * | --tug-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
+ * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
  */
 
 
 body {
   /* --- Card --- */
-  --tug-card-bg: var(--tug-base-surface-global-primary-normal-overlay-rest);
-  --tug-card-border: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-card-bg: var(--tug-surface-global-primary-normal-overlay-rest);
+  --tug-card-border: var(--tug-element-global-border-normal-default-rest);
   --tug-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 40);
   --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 20);
   --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 15);
 
   /* --- Card Title Bar --- */
-  --tug-card-title-bar-bg-active: var(--tug-base-surface-tab-primary-normal-plain-active);
-  --tug-card-title-bar-bg-inactive: var(--tug-base-surface-tab-primary-normal-plain-inactive);
-  --tug-card-title-bar-bg-collapsed: var(--tug-base-surface-tab-primary-normal-plain-collapsed);
-  --tug-card-title-bar-fg: var(--tug-base-element-global-text-normal-default-rest);
-  --tug-card-title-fg: var(--tug-base-element-cardTitle-text-normal-plain-rest);
-  --tug-card-title-bar-icon-active: var(--tug-base-element-global-icon-normal-active-rest);
-  --tug-card-title-bar-icon-inactive: var(--tug-base-element-global-text-normal-subtle-rest);
-  --tug-card-title-bar-icon-hover: var(--tug-base-element-global-text-normal-muted-rest);
-  --tug-card-title-bar-divider: var(--tug-base-element-global-divider-normal-default-rest);
+  --tug-card-title-bar-bg-active: var(--tug-surface-tab-primary-normal-plain-active);
+  --tug-card-title-bar-bg-inactive: var(--tug-surface-tab-primary-normal-plain-inactive);
+  --tug-card-title-bar-bg-collapsed: var(--tug-surface-tab-primary-normal-plain-collapsed);
+  --tug-card-title-bar-fg: var(--tug-element-global-text-normal-default-rest);
+  --tug-card-title-fg: var(--tug-element-cardTitle-text-normal-plain-rest);
+  --tug-card-title-bar-icon-active: var(--tug-element-global-icon-normal-active-rest);
+  --tug-card-title-bar-icon-inactive: var(--tug-element-global-text-normal-subtle-rest);
+  --tug-card-title-bar-icon-hover: var(--tug-element-global-text-normal-muted-rest);
+  --tug-card-title-bar-divider: var(--tug-element-global-divider-normal-default-rest);
 
   /* --- Card Accessory / Findbar --- */
-  --tug-card-accessory-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
-  --tug-card-accessory-border: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-card-findbar-bg: var(--tug-base-surface-field-primary-normal-plain-focus);
-  --tug-card-findbar-border: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-card-accessory-bg: var(--tug-surface-global-primary-normal-sunken-rest);
+  --tug-card-accessory-border: var(--tug-element-global-border-normal-default-rest);
+  --tug-card-findbar-bg: var(--tug-surface-field-primary-normal-plain-focus);
+  --tug-card-findbar-border: var(--tug-element-global-border-normal-default-rest);
   --tug-card-findbar-match: --tug-color(yellow, i: 50, t: 50, a: 30);
   --tug-card-findbar-match-active: --tug-color(orange, i: 50, t: 50, a: 50);
 }
@@ -54,9 +54,9 @@ body {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
   border: 1px solid var(--tug-card-border);
-  border-radius: var(--tug-base-radius-md);
+  border-radius: var(--tug-radius-md);
   overflow: hidden;
 }
 
@@ -111,9 +111,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--tug-base-chrome-height);
-  min-height: var(--tug-base-chrome-height);
-  padding: 0 var(--tug-base-space-md);
+  height: var(--tug-chrome-height);
+  min-height: var(--tug-chrome-height);
+  padding: 0 var(--tug-space-md);
   background-color: var(--tug-card-title-bar-bg-inactive);
   cursor: grab;
   user-select: none;
@@ -149,13 +149,13 @@ body {
    Title bar title
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-inactive, --tug-base-surface-tab-primary-normal-plain-active */
+/* @tug-renders-on: --tug-surface-tab-primary-normal-plain-inactive, --tug-surface-tab-primary-normal-plain-active */
 .tugcard-title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--tug-base-font-size-sm);
+  font-size: var(--tug-font-size-sm);
   font-weight: 500;
   color: var(--tug-card-title-fg);
   pointer-events: none;
@@ -169,10 +169,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--tug-base-icon-size-md);
-  height: var(--tug-base-icon-size-md);
+  width: var(--tug-icon-size-md);
+  height: var(--tug-icon-size-md);
   flex-shrink: 0;
-  margin-right: var(--tug-base-space-sm);
+  margin-right: var(--tug-space-sm);
 }
 
 /* Lucide SVGs inside the icon container inherit size from the container */
@@ -181,12 +181,12 @@ body {
   height: 100%;
 }
 
-/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-active */
+/* @tug-renders-on: --tug-surface-tab-primary-normal-plain-active */
 .card-frame[data-focused="true"] .tugcard-icon {
   color: var(--tug-card-title-bar-icon-active);
 }
 
-/* @tug-renders-on: --tug-base-surface-tab-primary-normal-plain-inactive */
+/* @tug-renders-on: --tug-surface-tab-primary-normal-plain-inactive */
 .card-frame[data-focused="false"] .tugcard-icon {
   color: var(--tug-card-title-bar-icon-inactive);
 }
@@ -204,7 +204,7 @@ body {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  margin-left: var(--tug-base-space-xs);
+  margin-left: var(--tug-space-xs);
 }
 
 /* ============================================================================
@@ -217,7 +217,7 @@ body {
  */
 .tugcard-accessory {
   flex-shrink: 0;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
   border-bottom: 1px solid var(--tug-card-border);
 }
 
@@ -232,7 +232,7 @@ body {
 .tugcard-content {
   flex: 1;
   overflow: auto;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
   min-height: 0; /* needed for flex children to allow scroll */
   user-select: text;
   overscroll-behavior: contain;
@@ -262,8 +262,8 @@ body {
  * every selectionchange event. This is the ONLY visible selection rendering.
  */
 ::highlight(card-selection) {
-  background-color: var(--tug-base-surface-selection-primary-normal-plain-rest);
-  color: var(--tug-base-element-selection-text-normal-plain-rest);
+  background-color: var(--tug-surface-selection-primary-normal-plain-rest);
+  color: var(--tug-element-selection-text-normal-plain-rest);
 }
 
 /*
@@ -275,7 +275,7 @@ body {
  * delete/add — no intermediate empty state, no flash.
  */
 ::highlight(inactive-selection) {
-  background-color: var(--tug-base-surface-selection-primary-normal-plain-inactive);
+  background-color: var(--tug-surface-selection-primary-normal-plain-inactive);
   color: inherit;
 }
 
@@ -291,12 +291,12 @@ body {
    Loading placeholder (Phase 5 -- feeds not yet wired)
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tugcard-loading {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
-  font-size: var(--tug-base-font-size-sm);
+  color: var(--tug-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-sm);
 }

@@ -30,7 +30,7 @@ export interface TugSkeletonProps {
   width?: string;
   /** Height in pixels. Default: 14 */
   height?: number;
-  /** Border radius override. Default: uses --tug-base-radius-sm token via CSS class */
+  /** Border radius override. Default: uses --tug-radius-sm token via CSS class */
   radius?: string;
   /** Additional CSS class names */
   className?: string;
@@ -58,7 +58,7 @@ export interface TugSkeletonGroupProps {
  * Renders a div with the `tug-skeleton` CSS class, which applies the
  * td-shimmer animation and background-attachment: fixed. Width and height
  * are applied as inline styles. Border radius defaults to the
- * --tug-base-radius-sm token via CSS; pass `radius` to override.
+ * --tug-radius-sm token via CSS; pass `radius` to override.
  */
 export function TugSkeleton({
   width = "100%",

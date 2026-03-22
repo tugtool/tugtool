@@ -1,7 +1,7 @@
 /**
  * gallery-theme-generator-content.tsx — Theme Generator gallery card.
  *
- * Interactive tool for deriving complete 264-token --tug-base-* themes from a
+ * Interactive tool for deriving complete 264-token --tug-* themes from a
  * compact ThemeRecipe: atmosphere + text hue selectors, dark|light recipe
  * toggle, token preview grid, contrast dashboard, CVD preview strip, and
  * contrast diagnostics.
@@ -88,31 +88,31 @@ function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): s
  * These are the representative tokens whose color best illustrates what the hue controls.
  */
 const SURFACE_TOKENS: Record<string, string> = {
-  card: "--tug-base-surface-global-primary-normal-default-rest",
-  canvas: "--tug-base-surface-global-primary-normal-canvas-rest",
+  card: "--tug-surface-global-primary-normal-default-rest",
+  canvas: "--tug-surface-global-primary-normal-canvas-rest",
 };
 
 /**
  * Token names used to sample the actual resolved color for each element hue.
  */
 const ELEMENT_TOKENS: Record<string, string> = {
-  content: "--tug-base-element-global-text-normal-default-rest",
-  control: "--tug-base-element-global-icon-normal-default-rest",
+  content: "--tug-element-global-text-normal-default-rest",
+  control: "--tug-element-global-icon-normal-default-rest",
   // display: card title token added in Step 6; use global default as placeholder
-  display: "--tug-base-element-global-text-normal-default-rest",
-  informational: "--tug-base-element-global-text-normal-muted-rest",
-  border: "--tug-base-element-global-border-normal-default-rest",
-  decorative: "--tug-base-element-global-border-normal-muted-rest",
+  display: "--tug-element-global-text-normal-default-rest",
+  informational: "--tug-element-global-text-normal-muted-rest",
+  border: "--tug-element-global-border-normal-default-rest",
+  decorative: "--tug-element-global-border-normal-muted-rest",
 };
 
 const ROLE_TOKENS: Record<string, string> = {
-  accent: "--tug-base-element-tone-fill-normal-accent-rest",
-  action: "--tug-base-element-tone-fill-normal-active-rest",
-  agent: "--tug-base-element-tone-fill-normal-agent-rest",
-  data: "--tug-base-element-tone-fill-normal-data-rest",
-  success: "--tug-base-element-tone-fill-normal-success-rest",
-  caution: "--tug-base-element-tone-fill-normal-caution-rest",
-  danger: "--tug-base-element-tone-fill-normal-danger-rest",
+  accent: "--tug-element-tone-fill-normal-accent-rest",
+  action: "--tug-element-tone-fill-normal-active-rest",
+  agent: "--tug-element-tone-fill-normal-agent-rest",
+  data: "--tug-element-tone-fill-normal-data-rest",
+  success: "--tug-element-tone-fill-normal-success-rest",
+  caution: "--tug-element-tone-fill-normal-caution-rest",
+  danger: "--tug-element-tone-fill-normal-danger-rest",
 };
 
 // ---------------------------------------------------------------------------
@@ -551,7 +551,7 @@ function ContrastDashboard({
           {passCount}/{checkedCount}
         </span>
         <span>pairs pass contrast</span>
-        <span style={{ color: "var(--tug-base-element-global-text-normal-muted-rest)", marginLeft: "4px" }}>
+        <span style={{ color: "var(--tug-element-global-text-normal-muted-rest)", marginLeft: "4px" }}>
           ({contrastResults.length} total pairs, {contrastResults.length - checkedCount} decorative)
         </span>
       </div>
@@ -654,13 +654,13 @@ const CVD_TYPE_LABELS: Record<CVDType, string> = {
  * Ordered: accent, active, agent, data, success, caution, danger.
  */
 const CVD_SEMANTIC_TOKENS: Array<{ token: string; label: string }> = [
-  { token: "--tug-base-element-tone-fill-normal-accent-rest",   label: "Accent" },
-  { token: "--tug-base-element-tone-fill-normal-active-rest",   label: "Active" },
-  { token: "--tug-base-element-tone-fill-normal-agent-rest",    label: "Agent" },
-  { token: "--tug-base-element-tone-fill-normal-data-rest",     label: "Data" },
-  { token: "--tug-base-element-tone-fill-normal-success-rest",  label: "Success" },
-  { token: "--tug-base-element-tone-fill-normal-caution-rest",  label: "Caution" },
-  { token: "--tug-base-element-tone-fill-normal-danger-rest",   label: "Danger" },
+  { token: "--tug-element-tone-fill-normal-accent-rest",   label: "Accent" },
+  { token: "--tug-element-tone-fill-normal-active-rest",   label: "Active" },
+  { token: "--tug-element-tone-fill-normal-agent-rest",    label: "Agent" },
+  { token: "--tug-element-tone-fill-normal-data-rest",     label: "Data" },
+  { token: "--tug-element-tone-fill-normal-success-rest",  label: "Success" },
+  { token: "--tug-element-tone-fill-normal-caution-rest",  label: "Caution" },
+  { token: "--tug-element-tone-fill-normal-danger-rest",   label: "Danger" },
 ];
 
 /**
@@ -926,7 +926,7 @@ function simpleHash(str: string): string {
  *
  * Produces a complete CSS file in the same format as tug-base.css overrides:
  * - Header comment with @theme-name, @theme-description, date, recipe hash
- * - `body { }` block with all `--tug-base-*` overrides as `--tug-color()` values
+ * - `body { }` block with all `--tug-*` overrides as `--tug-color()` values
  *
  * Per [D01]: export format matches existing theme file conventions.
  *
@@ -947,7 +947,7 @@ export function generateCssExport(
     ` * @generated ${dateStr}`,
     ` * @recipe-hash ${hash}`,
     " *",
-    " * Generated by Theme Generator. Contains --tug-base-* overrides as --tug-color() values.",
+    " * Generated by Theme Generator. Contains --tug-* overrides as --tug-color() values.",
     " * Spacing, radius, typography, stroke, icon-size are theme-invariant and not overridden.",
     " */",
   ].join("\n");
@@ -1200,7 +1200,7 @@ function triggerDownload(content: string, filename: string, mimeType: string): v
 
 /**
  * ExportImportPanel renders:
- *   - "Export CSS" button: downloads a complete theme CSS file as --tug-base-* overrides
+ *   - "Export CSS" button: downloads a complete theme CSS file as --tug-* overrides
  *   - "Export Recipe JSON" button: downloads the current recipe as formatted JSON
  *   - "Import Recipe" button: opens a file picker to load a JSON recipe
  *
@@ -1833,7 +1833,7 @@ export function GalleryThemeGeneratorContent() {
   // tokens map. Appearance changes through CSS, not React state. [D08, D09]
   const liveTokenStyle = useMemo<React.CSSProperties>(() => {
     const style: Record<string, string> = {};
-    // Resolved colors → oklch() values (keys already have --tug-base- prefix)
+    // Resolved colors → oklch() values (keys already have --tug- prefix)
     const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
     for (const [token, color] of Object.entries(themeOutput.resolved)) {
       const { L, C, h, alpha } = color;
@@ -1841,7 +1841,7 @@ export function GalleryThemeGeneratorContent() {
       style[token] = `oklch(${fmt(L)} ${fmt(C)} ${h}${alphaSuffix})`;
     }
     // Structural tokens → var() references, "transparent", plain values
-    // (keys already have --tug-base- prefix; skip --tug-color() build-time values
+    // (keys already have --tug- prefix; skip --tug-color() build-time values
     // and tokens already resolved above)
     for (const [token, value] of Object.entries(themeOutput.tokens)) {
       if (token in style) continue; // already set from resolved
@@ -1849,31 +1849,31 @@ export function GalleryThemeGeneratorContent() {
       style[token] = value;
     }
     // Component-level token aliases: these are defined on body with var() references
-    // to --tug-base-* tokens. CSS resolves var() at the definition site (body), not
+    // to --tug-* tokens. CSS resolves var() at the definition site (body), not
     // the use site, so overriding base tokens on a descendant doesn't cascade through
     // body-level aliases. We must override the component tokens directly.
     const COMPONENT_ALIASES: Record<string, string> = {
-      "--tug-card-title-bar-bg-active": "--tug-base-surface-tab-primary-normal-plain-active",
-      "--tug-card-title-bar-bg-inactive": "--tug-base-surface-tab-primary-normal-plain-inactive",
-      "--tug-card-title-bar-bg-collapsed": "--tug-base-surface-tab-primary-normal-plain-collapsed",
-      "--tug-card-title-fg": "--tug-base-element-cardTitle-text-normal-plain-rest",
-      "--tug-card-title-bar-fg": "--tug-base-element-global-text-normal-default-rest",
-      "--tug-card-title-bar-icon-active": "--tug-base-element-global-icon-normal-active-rest",
-      "--tug-card-title-bar-icon-inactive": "--tug-base-element-global-text-normal-subtle-rest",
-      "--tug-card-title-bar-icon-hover": "--tug-base-element-global-text-normal-muted-rest",
-      "--tug-card-title-bar-divider": "--tug-base-element-global-divider-normal-default-rest",
-      "--tug-card-border": "--tug-base-element-global-border-normal-default-rest",
-      "--tug-card-accessory-bg": "--tug-base-surface-global-primary-normal-sunken-rest",
-      "--tug-card-accessory-border": "--tug-base-element-global-border-normal-default-rest",
-      "--tug-card-bg": "--tug-base-surface-global-primary-normal-overlay-rest",
-      "--tug-card-findbar-bg": "--tug-base-surface-field-primary-normal-plain-focus",
-      "--tug-card-findbar-border": "--tug-base-element-global-border-normal-default-rest",
-      "--tug-tab-bar-bg": "--tug-base-surface-tab-primary-normal-plain-inactive",
-      "--tug-tab-bg-active": "--tug-base-surface-tab-primary-normal-plain-active",
-      "--tug-tab-bg-hover": "--tug-base-surface-tab-primary-normal-plain-hover",
-      "--tug-tab-fg-rest": "--tug-base-element-tab-text-normal-plain-rest",
-      "--tug-tab-fg-active": "--tug-base-element-tab-text-normal-plain-active",
-      "--tug-tab-fg-hover": "--tug-base-element-tab-text-normal-plain-hover",
+      "--tug-card-title-bar-bg-active": "--tug-surface-tab-primary-normal-plain-active",
+      "--tug-card-title-bar-bg-inactive": "--tug-surface-tab-primary-normal-plain-inactive",
+      "--tug-card-title-bar-bg-collapsed": "--tug-surface-tab-primary-normal-plain-collapsed",
+      "--tug-card-title-fg": "--tug-element-cardTitle-text-normal-plain-rest",
+      "--tug-card-title-bar-fg": "--tug-element-global-text-normal-default-rest",
+      "--tug-card-title-bar-icon-active": "--tug-element-global-icon-normal-active-rest",
+      "--tug-card-title-bar-icon-inactive": "--tug-element-global-text-normal-subtle-rest",
+      "--tug-card-title-bar-icon-hover": "--tug-element-global-text-normal-muted-rest",
+      "--tug-card-title-bar-divider": "--tug-element-global-divider-normal-default-rest",
+      "--tug-card-border": "--tug-element-global-border-normal-default-rest",
+      "--tug-card-accessory-bg": "--tug-surface-global-primary-normal-sunken-rest",
+      "--tug-card-accessory-border": "--tug-element-global-border-normal-default-rest",
+      "--tug-card-bg": "--tug-surface-global-primary-normal-overlay-rest",
+      "--tug-card-findbar-bg": "--tug-surface-field-primary-normal-plain-focus",
+      "--tug-card-findbar-border": "--tug-element-global-border-normal-default-rest",
+      "--tug-tab-bar-bg": "--tug-surface-tab-primary-normal-plain-inactive",
+      "--tug-tab-bg-active": "--tug-surface-tab-primary-normal-plain-active",
+      "--tug-tab-bg-hover": "--tug-surface-tab-primary-normal-plain-hover",
+      "--tug-tab-fg-rest": "--tug-element-tab-text-normal-plain-rest",
+      "--tug-tab-fg-active": "--tug-element-tab-text-normal-plain-active",
+      "--tug-tab-fg-hover": "--tug-element-tab-text-normal-plain-hover",
     };
     for (const [comp, base] of Object.entries(COMPONENT_ALIASES)) {
       if (base in style) {

@@ -138,33 +138,33 @@ const COMP_FAMILY_TOKENS: Record<string, string[]> = {
  */
 const BASE_TOKEN_FALLBACKS: Record<string, string[]> = {
   "background-color": [
-    "--tug-base-surface-global-primary-normal-default-rest",
-    "--tug-base-surface-global-primary-normal-raised-rest",
-    "--tug-base-surface-global-primary-normal-overlay-rest",
-    "--tug-base-element-global-fill-normal-accent-rest",
-    "--tug-base-element-global-fill-normal-accentCool-rest",
-    "--tug-base-surface-control-primary-filled-accent-rest",
-    "--tug-base-surface-control-primary-outlined-action-rest",
+    "--tug-surface-global-primary-normal-default-rest",
+    "--tug-surface-global-primary-normal-raised-rest",
+    "--tug-surface-global-primary-normal-overlay-rest",
+    "--tug-element-global-fill-normal-accent-rest",
+    "--tug-element-global-fill-normal-accentCool-rest",
+    "--tug-surface-control-primary-filled-accent-rest",
+    "--tug-surface-control-primary-outlined-action-rest",
     "--tug-tab-bar-bg",
     "--tug-card-bg",
     "--tug-tab-active-bg",
     "--tug-tab-rest-bg",
   ],
   color: [
-    "--tug-base-element-global-text-normal-default-rest",
-    "--tug-base-element-global-text-normal-muted-rest",
-    "--tug-base-element-global-text-normal-subtle-rest",
-    "--tug-base-element-global-fill-normal-accent-rest",
-    "--tug-base-element-control-text-filled-accent-rest",
-    "--tug-base-element-control-text-outlined-action-rest",
+    "--tug-element-global-text-normal-default-rest",
+    "--tug-element-global-text-normal-muted-rest",
+    "--tug-element-global-text-normal-subtle-rest",
+    "--tug-element-global-fill-normal-accent-rest",
+    "--tug-element-control-text-filled-accent-rest",
+    "--tug-element-control-text-outlined-action-rest",
     "--tug-tab-active-fg",
     "--tug-tab-rest-fg",
     "--tug-card-title-bar-fg",
   ],
   "border-color": [
-    "--tug-base-element-global-border-normal-default-rest",
-    "--tug-base-element-global-border-normal-muted-rest",
-    "--tug-base-element-global-fill-normal-accent-rest",
+    "--tug-element-global-border-normal-default-rest",
+    "--tug-element-global-border-normal-muted-rest",
+    "--tug-element-global-fill-normal-accent-rest",
     "--tug-tab-active-border",
     "--tug-tab-bar-border",
     "--tug-card-border",
@@ -469,15 +469,15 @@ export class StyleInspectorOverlay {
     const cssToken = this.findTokenFromCSSRules(el, property);
     if (cssToken) {
       result.originToken = cssToken;
-      // Check if it's a component-level token (--tug-<component>-* but not --tug-base-*)
+      // Check if it's a component-level token (--tug-<component>-* but not --tug-*)
       const isComponentToken =
         cssToken.startsWith("--tug-") &&
-        !cssToken.startsWith("--tug-base-") &&
+        !cssToken.startsWith("--tug-") &&
         !PALETTE_VAR_REGEX.test(cssToken);
       if (isComponentToken) {
         result.originLayer = "comp";
       } else if (
-        cssToken.startsWith("--tug-base-") ||
+        cssToken.startsWith("--tug-") ||
         PALETTE_VAR_REGEX.test(cssToken)
       ) {
         result.originLayer = "base";
@@ -686,7 +686,7 @@ export class StyleInspectorOverlay {
    * Matches any var(--*) reference, not just --tug-* tokens, so that
    * Tailwind/shadcn variables (e.g. --color-secondary-foreground) are also found.
    *
-   * Returns the custom property name (e.g. '--tug-base-element-global-fill-normal-accentCool-rest'
+   * Returns the custom property name (e.g. '--tug-element-global-fill-normal-accentCool-rest'
    * or '--color-secondary-foreground') or null.
    */
   private findTokenFromCSSRules(

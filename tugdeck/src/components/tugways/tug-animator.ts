@@ -12,7 +12,7 @@
  * Callers: import { animate, group } from './tug-animator'
  *
  * Cross-reference: DURATION_TOKEN_MAP values must stay in sync with
- * tug-base.css --tug-base-motion-duration-* definitions.
+ * tug-base.css --tug-motion-duration-* definitions.
  *
  * Re-exports physics solvers for convenience.
  */
@@ -25,7 +25,7 @@ export { SpringSolver, GravitySolver, FrictionSolver } from "./physics";
 // ---------------------------------------------------------------------------
 
 /**
- * Maps --tug-base-motion-duration-* token names to their unscaled base ms values.
+ * Maps --tug-motion-duration-* token names to their unscaled base ms values.
  * Mirrors tug-base.css. Must be updated if new duration tokens are added there.
  *
  * These are base (unscaled) values. getTugTiming() is applied at call time to
@@ -33,11 +33,11 @@ export { SpringSolver, GravitySolver, FrictionSolver } from "./physics";
  * animations without double-scaling.
  */
 export const DURATION_TOKEN_MAP: Record<string, number> = {
-  "--tug-base-motion-duration-instant": 0,
-  "--tug-base-motion-duration-fast": 100,
-  "--tug-base-motion-duration-moderate": 200,
-  "--tug-base-motion-duration-slow": 350,
-  "--tug-base-motion-duration-glacial": 500,
+  "--tug-motion-duration-instant": 0,
+  "--tug-motion-duration-fast": 100,
+  "--tug-motion-duration-moderate": 200,
+  "--tug-motion-duration-slow": 350,
+  "--tug-motion-duration-glacial": 500,
 };
 
 // ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ type CancelMode = "snap-to-end" | "hold-at-current" | "reverse-from-current";
 
 /** Options for animate(). */
 export interface AnimateOptions {
-  /** Duration token name (e.g. '--tug-base-motion-duration-moderate') or raw ms. Default: 200ms. */
+  /** Duration token name (e.g. '--tug-motion-duration-moderate') or raw ms. Default: 200ms. */
   duration?: string | number;
   /** Raw CSS easing string. Passed directly to WAAPI. Default: 'ease'. */
   easing?: string;
@@ -295,7 +295,7 @@ export function animate(
 
   if (!isTugMotionEnabled() && hasSpatialProperties(keyframes)) {
     resolvedKeyframes = stripSpatialAndFade(keyframes);
-    resolvedDuration = resolveDuration("--tug-base-motion-duration-fast");
+    resolvedDuration = resolveDuration("--tug-motion-duration-fast");
   } else {
     resolvedDuration = resolveDuration(duration);
   }

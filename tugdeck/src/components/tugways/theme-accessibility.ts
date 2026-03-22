@@ -964,13 +964,13 @@ const ALL_CVD_TYPES: CVDType[] = [
  */
 export const CVD_SEMANTIC_PAIRS: [string, string][] = [
   // Status roles: success (green-family) vs caution (yellow-family)
-  ["--tug-base-element-tone-fill-normal-success-rest", "--tug-base-element-tone-fill-normal-caution-rest"],
+  ["--tug-element-tone-fill-normal-success-rest", "--tug-element-tone-fill-normal-caution-rest"],
   // Status roles: success (green) vs danger/destructive (red-family)
-  ["--tug-base-element-tone-fill-normal-success-rest", "--tug-base-element-tone-fill-normal-danger-rest"],
+  ["--tug-element-tone-fill-normal-success-rest", "--tug-element-tone-fill-normal-danger-rest"],
   // Primary action vs destructive action (button colours)
-  ["--tug-base-element-global-fill-normal-accent-rest", "--tug-base-element-tone-fill-normal-danger-rest"],
+  ["--tug-element-global-fill-normal-accent-rest", "--tug-element-tone-fill-normal-danger-rest"],
   // Accent vs atmosphere (theme identity colours)
-  ["--tug-base-element-global-fill-normal-accent-rest", "--tug-base-surface-global-primary-normal-app-rest"],
+  ["--tug-element-global-fill-normal-accent-rest", "--tug-surface-global-primary-normal-app-rest"],
 ];
 
 /**

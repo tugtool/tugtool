@@ -29,11 +29,11 @@ import type { TugAnimation } from "@/components/tugways/tug-animator";
 // ---------------------------------------------------------------------------
 
 const TOKEN_LABELS: { token: string; label: string }[] = [
-  { token: "--tug-base-motion-duration-instant", label: "Instant (0ms)" },
-  { token: "--tug-base-motion-duration-fast", label: "Fast (100ms)" },
-  { token: "--tug-base-motion-duration-moderate", label: "Moderate (200ms)" },
-  { token: "--tug-base-motion-duration-slow", label: "Slow (350ms)" },
-  { token: "--tug-base-motion-duration-glacial", label: "Glacial (500ms)" },
+  { token: "--tug-motion-duration-instant", label: "Instant (0ms)" },
+  { token: "--tug-motion-duration-fast", label: "Fast (100ms)" },
+  { token: "--tug-motion-duration-moderate", label: "Moderate (200ms)" },
+  { token: "--tug-motion-duration-slow", label: "Slow (350ms)" },
+  { token: "--tug-motion-duration-glacial", label: "Glacial (500ms)" },
 ];
 
 /** Size of the animated dot in px (matches CSS .cg-anim-dot width/height). */
@@ -294,7 +294,7 @@ function DurationTokensDemo() {
       <div className="cg-anim-token-legend">
         {Object.entries(DURATION_TOKEN_MAP).map(([token, ms]) => (
           <div key={token} className="cg-anim-token-entry">
-            <code>{token.replace("--tug-base-motion-duration-", "")}</code>
+            <code>{token.replace("--tug-motion-duration-", "")}</code>
             <span>{ms}ms</span>
           </div>
         ))}
@@ -432,7 +432,7 @@ function NamedSlotsDemo() {
     const a = animate(
       boxRef.current,
       [{ transform: `translateX(${range}px)` }],
-      { duration: "--tug-base-motion-duration-slow", key: "slot-demo" }
+      { duration: "--tug-motion-duration-slow", key: "slot-demo" }
     );
     animsRef.current.push(a);
     setLastAction("animate \u2192 right (key: slot-demo)");
@@ -443,7 +443,7 @@ function NamedSlotsDemo() {
     const a = animate(
       boxRef.current,
       [{ transform: "translateX(0)" }],
-      { duration: "--tug-base-motion-duration-slow", key: "slot-demo" }
+      { duration: "--tug-motion-duration-slow", key: "slot-demo" }
     );
     animsRef.current.push(a);
     setLastAction("animate \u2192 left (key: slot-demo, cancels previous)");
@@ -456,7 +456,7 @@ function NamedSlotsDemo() {
     const a = animate(
       boxRef.current,
       [{ opacity: 0.3 }, { opacity: 1 }],
-      { duration: "--tug-base-motion-duration-moderate", key: "opacity-slot" }
+      { duration: "--tug-motion-duration-moderate", key: "opacity-slot" }
     );
     animsRef.current.push(a);
     setLastAction("animate opacity (key: opacity-slot, coexists)");

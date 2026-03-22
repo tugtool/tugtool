@@ -67,16 +67,16 @@ export function GalleryLabelContent() {
         <div className="cg-section-title">With Icons</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugLabel icon={<Tag />}>Default icon color</TugLabel>
-          <TugLabel icon={<Info />} iconColor="var(--tug-base-element-global-fill-normal-accentCool-rest)">
+          <TugLabel icon={<Info />} iconColor="var(--tug-element-global-fill-normal-accentCool-rest)">
             Accent-colored icon
           </TugLabel>
-          <TugLabel icon={<AlertTriangle />} iconColor="var(--tug-base-element-field-fill-normal-caution-rest)">
+          <TugLabel icon={<AlertTriangle />} iconColor="var(--tug-element-field-fill-normal-caution-rest)">
             Warning-colored icon
           </TugLabel>
-          <TugLabel icon={<Star />} iconColor="var(--tug-base-element-field-fill-normal-danger-rest)">
+          <TugLabel icon={<Star />} iconColor="var(--tug-element-field-fill-normal-danger-rest)">
             Error-colored icon
           </TugLabel>
-          <TugLabel icon={<Folder />} iconColor="var(--tug-base-element-field-fill-normal-success-rest)">
+          <TugLabel icon={<Folder />} iconColor="var(--tug-element-field-fill-normal-success-rest)">
             Success-colored icon
           </TugLabel>
         </div>
@@ -165,7 +165,7 @@ export function GalleryLabelContent() {
             <TugInput id="demo-name" placeholder="Enter your name" />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <TugLabel htmlFor="demo-email" icon={<Info />} iconColor="var(--tug-base-element-global-fill-normal-accentCool-rest)">
+            <TugLabel htmlFor="demo-email" icon={<Info />} iconColor="var(--tug-element-global-fill-normal-accentCool-rest)">
               Email address
             </TugLabel>
             <TugInput id="demo-email" type="email" placeholder="you@example.com" />

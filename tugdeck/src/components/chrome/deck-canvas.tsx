@@ -361,7 +361,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
     const overlay = document.getElementById("deck-startup-overlay");
     if (!overlay) return;
     const anim = animate(overlay, { opacity: [1, 0] }, {
-      duration: "--tug-base-motion-duration-slow",
+      duration: "--tug-motion-duration-slow",
       easing: "cubic-bezier(0, 0, 0, 1)",
     });
     anim.finished.then(() => overlay.remove());

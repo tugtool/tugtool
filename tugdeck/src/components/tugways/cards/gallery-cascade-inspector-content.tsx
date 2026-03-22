@@ -4,10 +4,10 @@
  * Interactive demo tab for the StyleInspectorOverlay cascade inspector.
  * Provides a set of sample elements that exercise all token chain depths:
  *
- *   (a) TugPopupButton -- full three-layer chain: --tug-dropdown-* -> --tug-base-* -> palette
- *   (b) TugButton -- two-layer chain: --tug-base-* -> palette (no comp token)
- *   (c) Colored div using --tug-base-element-global-fill-normal-accent-rest -- base -> palette chain
- *   (d) Div using --tug-base-surface-global-primary-normal-raised-rest -- non-chromatic base token, terminal hex
+ *   (a) TugPopupButton -- full three-layer chain: --tug-dropdown-* -> --tug-* -> palette
+ *   (b) TugButton -- two-layer chain: --tug-* -> palette (no comp token)
+ *   (c) Colored div using --tug-element-global-fill-normal-accent-rest -- base -> palette chain
+ *   (d) Div using --tug-surface-global-primary-normal-raised-rest -- non-chromatic base token, terminal hex
  *   (e) Div with direct palette var -- var(--tug-orange-light), direct TugColor provenance
  *
  * Rules of Tugways compliance:
@@ -73,14 +73,14 @@ export function GalleryCascadeInspectorContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- (a) TugPopupButton: three-layer chain --tug-dropdown-* -> --tug-base-* -> palette ---- */}
+      {/* ---- (a) TugPopupButton: three-layer chain --tug-dropdown-* -> --tug-* -> palette ---- */}
       <div className="cg-section">
         <div className="cg-section-title">
           (a) TugPopupButton — three-layer chain
         </div>
         <p className="cg-description">
           <code>--tug-dropdown-*</code> →{" "}
-          <code>--tug-base-*</code> → palette variable
+          <code>--tug-*</code> → palette variable
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-dropdown">
           <TugPopupButton
@@ -99,14 +99,14 @@ export function GalleryCascadeInspectorContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- (b) TugButton: two-layer chain --tug-base-* -> palette (no comp token) ---- */}
+      {/* ---- (b) TugButton: two-layer chain --tug-* -> palette (no comp token) ---- */}
       <div className="cg-section">
         <div className="cg-section-title">
           (b) TugButton — two-layer chain (no comp token)
         </div>
         <p className="cg-description">
-          <code>--tug-base-surface-control-primary-filled-accent-rest</code> → palette variable.
-          TugButton CSS references <code>--tug-base-*</code> directly — no{" "}
+          <code>--tug-surface-control-primary-filled-accent-rest</code> → palette variable.
+          TugButton CSS references <code>--tug-*</code> directly — no{" "}
           <code>--tug-button-*</code> tokens are wired yet.
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-button">
@@ -127,27 +127,27 @@ export function GalleryCascadeInspectorContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- (c) Colored div: --tug-base-element-global-fill-normal-accent-rest -> palette ---- */}
+      {/* ---- (c) Colored div: --tug-element-global-fill-normal-accent-rest -> palette ---- */}
       <div className="cg-section">
         <div className="cg-section-title">
-          (c) Base accent token — <code>--tug-base-element-global-fill-normal-accent-rest</code>
+          (c) Base accent token — <code>--tug-element-global-fill-normal-accent-rest</code>
         </div>
         <p className="cg-description">
-          Background uses <code>var(--tug-base-element-global-fill-normal-accent-rest)</code> → palette variable.
+          Background uses <code>var(--tug-element-global-fill-normal-accent-rest)</code> → palette variable.
           Two-layer chain: base token → palette variable → TugColor provenance.
         </p>
         <div
           data-testid="inspector-sample-accent"
           style={{
-            background: "var(--tug-base-element-global-fill-normal-accent-rest)",
+            background: "var(--tug-element-global-fill-normal-accent-rest)",
             padding: "16px 20px",
             borderRadius: "6px",
-            color: "var(--tug-base-element-global-text-normal-default-rest)",
+            color: "var(--tug-element-global-text-normal-default-rest)",
             fontFamily: "ui-monospace, monospace",
             fontSize: "12px",
           }}
         >
-          background: var(--tug-base-element-global-fill-normal-accent-rest)
+          background: var(--tug-element-global-fill-normal-accent-rest)
         </div>
       </div>
 
@@ -156,26 +156,26 @@ export function GalleryCascadeInspectorContent() {
       {/* ---- (d) Surface-raised div: non-chromatic base token, terminal hex ---- */}
       <div className="cg-section">
         <div className="cg-section-title">
-          (d) Surface raised token — <code>--tug-base-surface-global-primary-normal-raised-rest</code>
+          (d) Surface raised token — <code>--tug-surface-global-primary-normal-raised-rest</code>
         </div>
         <p className="cg-description">
-          Background uses <code>var(--tug-base-surface-global-primary-normal-raised-rest)</code>.
+          Background uses <code>var(--tug-surface-global-primary-normal-raised-rest)</code>.
           Non-chromatic base token: chain terminates at a literal hex value (not a
           palette variable), so no TugColor provenance is shown.
         </p>
         <div
           data-testid="inspector-sample-surface"
           style={{
-            background: "var(--tug-base-surface-global-primary-normal-raised-rest)",
+            background: "var(--tug-surface-global-primary-normal-raised-rest)",
             padding: "16px 20px",
             borderRadius: "6px",
-            color: "var(--tug-base-element-global-text-normal-default-rest)",
-            border: "1px solid var(--tug-base-element-global-border-normal-default-rest)",
+            color: "var(--tug-element-global-text-normal-default-rest)",
+            border: "1px solid var(--tug-element-global-border-normal-default-rest)",
             fontFamily: "ui-monospace, monospace",
             fontSize: "12px",
           }}
         >
-          background: var(--tug-base-surface-global-primary-normal-raised-rest)
+          background: var(--tug-surface-global-primary-normal-raised-rest)
         </div>
       </div>
 
@@ -197,7 +197,7 @@ export function GalleryCascadeInspectorContent() {
             background: "var(--tug-orange-light)",
             padding: "16px 20px",
             borderRadius: "6px",
-            color: "var(--tug-base-element-global-text-normal-default-rest)",
+            color: "var(--tug-element-global-text-normal-default-rest)",
             fontFamily: "ui-monospace, monospace",
             fontSize: "12px",
           }}

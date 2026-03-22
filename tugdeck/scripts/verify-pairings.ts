@@ -5,7 +5,7 @@
  * Cross-check verification script for the token audit pairing convention.
  *
  * Parses every @tug-pairings block from the 23 component CSS files in
- * tugways/ and tugways/cards/, extracts the resolved --tug-base-* token pairs,
+ * tugways/ and tugways/cards/, extracts the resolved --tug-* token pairs,
  * then compares against element-surface-pairing-map.ts.
  *
  * Reports:
@@ -98,13 +98,13 @@ function collectCssFiles(): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a raw cell value from the @tug-pairings table to a --tug-base-* token.
+ * Resolve a raw cell value from the @tug-pairings table to a --tug-* token.
  *
  * Rules:
- * 1. If the cell starts with --tug-base-, extract that token directly.
+ * 1. If the cell starts with --tug-, extract that token directly.
  *    Strip any trailing whitespace or parenthetical annotation.
  * 2. If the cell starts with --tug- (component alias), extract the resolved
- *    name from the parenthetical "(resolved-name)" and prepend --tug-base-.
+ *    name from the parenthetical "(resolved-name)" and prepend --tug-.
  * 3. If the cell contains oklch(...) or is a hardcoded value, return null (skip).
  * 4. If the cell is "parent surface", "transparent", "ambient", etc., return null.
  *
@@ -130,8 +130,8 @@ function resolveToken(raw: string): string | null {
   if (!baseTokenMatch) return null;
   const tokenName = baseTokenMatch[1];
 
-  // If it is already a --tug-base-* token, use it directly
-  if (tokenName.startsWith("--tug-base-")) {
+  // If it is already a --tug-* token, use it directly
+  if (tokenName.startsWith("--tug-")) {
     return tokenName;
   }
 
@@ -147,13 +147,13 @@ function resolveToken(raw: string): string | null {
   const resolvedRaw = parenMatch[1].split(",")[0].trim();
 
   // The resolved name is a short name like "fg-default" or "tab-bg-active"
-  // Prepend --tug-base- to get the full base token name
+  // Prepend --tug- to get the full base token name
   if (!resolvedRaw || resolvedRaw.includes(" ")) {
     // Multi-word descriptions like "ambient" — not a token short name
     return null;
   }
 
-  return `--tug-base-${resolvedRaw}`;
+  return `--tug-${resolvedRaw}`;
 }
 
 /**

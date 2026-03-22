@@ -267,7 +267,7 @@ describe("convertCSSFile(): hex values in CSS comments are not modified", () => 
     const css = [
       "/* accent-muted: #c46020 is darker orange needed for contrast */",
       "body {",
-      "  --tug-base-accent-muted: #c46020;",
+      "  --tug-accent-muted: #c46020;",
       "  /* another comment with #8a7200 */",
       "}",
     ].join("\n");
@@ -281,8 +281,8 @@ describe("convertCSSFile(): hex values in CSS comments are not modified", () => 
     expect(result).toContain("/* accent-muted: #c46020 is darker orange needed for contrast */");
     expect(result).toContain("/* another comment with #8a7200 */");
     // Declaration must be converted
-    expect(result).not.toContain("--tug-base-accent-muted: #c46020;");
-    expect(result).toContain("--tug-base-accent-muted: --tug-color(");
+    expect(result).not.toContain("--tug-accent-muted: #c46020;");
+    expect(result).toContain("--tug-accent-muted: --tug-color(");
   });
 });
 
@@ -291,10 +291,10 @@ describe("convertCSSFile(): structure preservation", () => {
     const tmpFile = join(os.tmpdir(), `test-preserve-${Date.now()}.css`);
     const css = [
       "body {",
-      "  --tug-base-bg: #3f474c;",
-      "  --tug-base-shadow: rgba(0, 0, 0, 0.3);",
-      "  --tug-base-accent: var(--tug-blue);",
-      "  --tug-base-gradient: linear-gradient(to right, currentColor 20%, transparent);",
+      "  --tug-bg: #3f474c;",
+      "  --tug-shadow: rgba(0, 0, 0, 0.3);",
+      "  --tug-accent: var(--tug-blue);",
+      "  --tug-gradient: linear-gradient(to right, currentColor 20%, transparent);",
       "}",
     ].join("\n");
 
@@ -305,7 +305,7 @@ describe("convertCSSFile(): structure preservation", () => {
 
     // Hex must be converted
     expect(result).not.toContain("#3f474c");
-    expect(result).toContain("--tug-base-bg: --tug-color(");
+    expect(result).toContain("--tug-bg: --tug-color(");
 
     // rgba is now converted to --tug-color with alpha
     expect(result).toContain("--tug-color(black, 0, 0,");
@@ -316,7 +316,7 @@ describe("convertCSSFile(): structure preservation", () => {
 
   it("#ffffff → var(--tug-white) through the full file conversion pipeline", () => {
     const tmpFile = join(os.tmpdir(), `test-white-${Date.now()}.css`);
-    const css = "body { --tug-base-element-toggle-thumb-normal-plain-rest: #ffffff; }";
+    const css = "body { --tug-element-toggle-thumb-normal-plain-rest: #ffffff; }";
 
     writeFileSync(tmpFile, css, "utf8");
     convertCSSFile(tmpFile);
@@ -336,7 +336,7 @@ describe("convertCSSFile(): structure preservation", () => {
     const css = [
       "@font-face { font-family: 'Test'; src: url('/font.woff2'); }",
       ":root { --tug-scale: 1; }",
-      "body { --tug-base-bg: #3f474c; }",
+      "body { --tug-bg: #3f474c; }",
     ].join("\n");
 
     writeFileSync(tmpFile, css, "utf8");
@@ -346,7 +346,7 @@ describe("convertCSSFile(): structure preservation", () => {
 
     expect(result).toContain("@font-face { font-family: 'Test'; src: url('/font.woff2'); }");
     expect(result).toContain(":root { --tug-scale: 1; }");
-    expect(result).toContain("--tug-base-bg: --tug-color(");
+    expect(result).toContain("--tug-bg: --tug-color(");
   });
 });
 
@@ -390,7 +390,7 @@ describe("validateRoundTrip()", () => {
     // Use a hex value that round-trips cleanly: cobalt at some known TugColor coords.
     // We pick a simple case: convert a CSS, then validate.
     const tmpFile = join(os.tmpdir(), `test-roundtrip-${Date.now()}.css`);
-    const css = "body { --tug-base-bg: #3f474c; }";
+    const css = "body { --tug-bg: #3f474c; }";
 
     writeFileSync(tmpFile, css, "utf8");
     const convertedSource = convertCSSFile(tmpFile);

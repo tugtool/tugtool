@@ -24,7 +24,7 @@
 body {
   /* --- Syntax ---
      Accent-derived tokens: palette var() references per Phase 5d5e.
-     Text-derived tokens: var() references to --tug-base-fg-* per [D09] — these do NOT
+     Text-derived tokens: var() references to --tug-fg-* per [D09] — these do NOT
      need per-theme overrides since they inherit from the already-overridden fg tokens. */
   --tug-syntax-keyword: --tug-color(cyan);
   --tug-syntax-string: --tug-color(coral-muted);
@@ -33,22 +33,22 @@ body {
   --tug-syntax-type: --tug-color(green);
   --tug-syntax-variable: --tug-color(cyan);
   /* text-derived — inherits per-theme via fg-muted override */
-  --tug-syntax-comment: var(--tug-base-element-global-text-normal-muted-rest);
+  --tug-syntax-comment: var(--tug-element-global-text-normal-muted-rest);
   /* text-derived — inherits per-theme via fg-default override */
-  --tug-syntax-operator: var(--tug-base-element-global-text-normal-default-rest);
-  --tug-syntax-punctuation: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-syntax-operator: var(--tug-element-global-text-normal-default-rest);
+  --tug-syntax-punctuation: var(--tug-element-global-text-normal-default-rest);
   --tug-syntax-constant: --tug-color(cyan);
   --tug-syntax-decorator: --tug-color(violet);
   --tug-syntax-tag: --tug-color(cyan);
   --tug-syntax-attribute: --tug-color(cyan);
 
   /* --- Terminal --- */
-  --tug-terminal-bg: var(--tug-base-surface-global-primary-normal-inset-rest);
-  --tug-terminal-fg: var(--tug-base-element-global-text-normal-default-rest);
-  --tug-terminal-fg-muted: var(--tug-base-element-global-text-normal-muted-rest);
-  --tug-terminal-cursor: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-terminal-bg: var(--tug-surface-global-primary-normal-inset-rest);
+  --tug-terminal-fg: var(--tug-element-global-text-normal-default-rest);
+  --tug-terminal-fg-muted: var(--tug-element-global-text-normal-muted-rest);
+  --tug-terminal-cursor: var(--tug-element-global-fill-normal-accent-rest);
   --tug-terminal-selection-bg: --tug-color(cyan, i: 50, t: 50, a: 30);
-  --tug-terminal-border: var(--tug-base-element-global-divider-normal-default-rest);
+  --tug-terminal-border: var(--tug-element-global-divider-normal-default-rest);
   /* ANSI color palette — palette var() references per Phase 5d5e */
   --tug-terminal-ansi-black: --tug-color(violet, i: 5, t: 12);
   --tug-terminal-ansi-red: --tug-color(red);
@@ -60,44 +60,44 @@ body {
   --tug-terminal-ansi-white: --tug-color(cobalt, i: 3, t: 94);
 
   /* --- Conversation / Chat / Code Block --- */
-  --tug-chat-transcript-bg: var(--tug-base-surface-field-primary-normal-plain-focus);
-  --tug-chat-message-user-bg: var(--tug-base-surface-global-primary-normal-default-rest);
-  --tug-chat-message-assistant-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
+  --tug-chat-transcript-bg: var(--tug-surface-field-primary-normal-plain-focus);
+  --tug-chat-message-user-bg: var(--tug-surface-global-primary-normal-default-rest);
+  --tug-chat-message-assistant-bg: var(--tug-surface-global-primary-normal-sunken-rest);
   --tug-chat-message-system-bg: --tug-color(cyan, i: 50, t: 50, a: 7);
-  --tug-chat-message-border: var(--tug-base-element-global-divider-normal-default-rest);
-  --tug-chat-composer-bg: var(--tug-base-surface-global-primary-normal-default-rest);
-  --tug-chat-composer-border: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-chat-attachment-bg: var(--tug-base-surface-global-primary-normal-overlay-rest);
-  --tug-chat-attachment-border: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-chat-attachment-fg: var(--tug-base-element-global-text-normal-muted-rest);
-  --tug-codeBlock-bg: var(--tug-base-surface-global-primary-normal-control-rest);
-  --tug-codeBlock-border: var(--tug-base-element-global-divider-normal-default-rest);
-  --tug-codeBlock-header-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
-  --tug-codeBlock-header-fg: var(--tug-base-element-global-text-normal-subtle-rest);
+  --tug-chat-message-border: var(--tug-element-global-divider-normal-default-rest);
+  --tug-chat-composer-bg: var(--tug-surface-global-primary-normal-default-rest);
+  --tug-chat-composer-border: var(--tug-element-global-border-normal-default-rest);
+  --tug-chat-attachment-bg: var(--tug-surface-global-primary-normal-overlay-rest);
+  --tug-chat-attachment-border: var(--tug-element-global-border-normal-default-rest);
+  --tug-chat-attachment-fg: var(--tug-element-global-text-normal-muted-rest);
+  --tug-codeBlock-bg: var(--tug-surface-global-primary-normal-control-rest);
+  --tug-codeBlock-border: var(--tug-element-global-divider-normal-default-rest);
+  --tug-codeBlock-header-bg: var(--tug-surface-global-primary-normal-sunken-rest);
+  --tug-codeBlock-header-fg: var(--tug-element-global-text-normal-subtle-rest);
 
   /* --- Files / Git / Tree --- */
   --tug-tree-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-tree-row-bg-selected: var(--tug-base-surface-control-primary-normal-highlighted-rest);
+  --tug-tree-row-bg-selected: var(--tug-surface-control-primary-normal-highlighted-rest);
   --tug-tree-row-bg-current: --tug-color(cyan, i: 50, t: 50, a: 10);
-  --tug-tree-row-fg: var(--tug-base-element-global-text-normal-default-rest);
-  --tug-tree-chevron: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-file-status-added: var(--tug-base-element-tone-fill-normal-success-rest);
-  --tug-file-status-modified: var(--tug-base-element-tone-fill-normal-caution-rest);
-  --tug-file-status-deleted: var(--tug-base-element-tone-fill-normal-danger-rest);
-  --tug-file-status-renamed: var(--tug-base-element-tone-fill-normal-active-rest);
+  --tug-tree-row-fg: var(--tug-element-global-text-normal-default-rest);
+  --tug-tree-chevron: var(--tug-element-global-border-normal-default-rest);
+  --tug-file-status-added: var(--tug-element-tone-fill-normal-success-rest);
+  --tug-file-status-modified: var(--tug-element-tone-fill-normal-caution-rest);
+  --tug-file-status-deleted: var(--tug-element-tone-fill-normal-danger-rest);
+  --tug-file-status-renamed: var(--tug-element-tone-fill-normal-active-rest);
   --tug-diff-addition-bg: --tug-color(green, i: 50, t: 50, a: 12);
-  --tug-diff-addition-fg: var(--tug-base-element-tone-fill-normal-success-rest);
+  --tug-diff-addition-fg: var(--tug-element-tone-fill-normal-success-rest);
   --tug-diff-deletion-bg: --tug-color(red, i: 50, t: 50, a: 12);
-  --tug-diff-deletion-fg: var(--tug-base-element-tone-fill-normal-danger-rest);
+  --tug-diff-deletion-fg: var(--tug-element-tone-fill-normal-danger-rest);
 
   /* --- Workflow / Feed Progress --- */
-  --tug-feed-bg: var(--tug-base-surface-field-primary-normal-plain-focus);
-  --tug-feed-border: var(--tug-base-element-global-divider-normal-default-rest);
-  --tug-feed-step-bg: var(--tug-base-surface-global-primary-normal-sunken-rest);
-  --tug-feed-step-fg: var(--tug-base-element-global-text-normal-muted-rest);
-  --tug-feed-step-active: var(--tug-base-element-global-fill-normal-accent-rest);
-  --tug-feed-step-complete: var(--tug-base-element-tone-fill-normal-success-rest);
-  --tug-feed-step-error: var(--tug-base-element-tone-fill-normal-danger-rest);
-  --tug-feed-stream-cursor: var(--tug-base-element-global-fill-normal-accent-rest);
-  --tug-feed-handoff: var(--tug-base-element-tone-fill-normal-active-rest);
+  --tug-feed-bg: var(--tug-surface-field-primary-normal-plain-focus);
+  --tug-feed-border: var(--tug-element-global-divider-normal-default-rest);
+  --tug-feed-step-bg: var(--tug-surface-global-primary-normal-sunken-rest);
+  --tug-feed-step-fg: var(--tug-element-global-text-normal-muted-rest);
+  --tug-feed-step-active: var(--tug-element-global-fill-normal-accent-rest);
+  --tug-feed-step-complete: var(--tug-element-tone-fill-normal-success-rest);
+  --tug-feed-step-error: var(--tug-element-tone-fill-normal-danger-rest);
+  --tug-feed-stream-cursor: var(--tug-element-global-fill-normal-accent-rest);
+  --tug-feed-handoff: var(--tug-element-tone-fill-normal-active-rest);
 }

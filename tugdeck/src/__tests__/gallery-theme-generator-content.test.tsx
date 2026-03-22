@@ -234,10 +234,10 @@ describe("T10.3 – novel recipe end-to-end: derive → validate → export → 
     expect(Object.keys(output.tokens).length).toBeGreaterThan(0);
   });
 
-  it("all token keys start with --tug-base-", () => {
+  it("all token keys start with --tug-", () => {
     const output = deriveTheme(CHM_NOVEL_RECIPE);
     for (const key of Object.keys(output.tokens)) {
-      expect(key.startsWith("--tug-base-")).toBe(true);
+      expect(key.startsWith("--tug-")).toBe(true);
     }
   });
 
@@ -386,8 +386,8 @@ describe("GalleryThemeGeneratorContent – role hue selectors", () => {
       text: { hue: "cobalt", intensity: 3 },
       role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
     });
-    expect(withRed.tokens["--tug-base-element-tone-fill-normal-danger-rest"]).not.toBe(
-      withPink.tokens["--tug-base-element-tone-fill-normal-danger-rest"],
+    expect(withRed.tokens["--tug-element-tone-fill-normal-danger-rest"]).not.toBe(
+      withPink.tokens["--tug-element-tone-fill-normal-danger-rest"],
     );
   });
 
@@ -593,8 +593,8 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
 
     act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-mode-light']") as HTMLElement); });
     const lightTokens = readRenderedTokens(container);
-    expect(lightTokens["--tug-base-surface-global-primary-normal-app-rest"]).not.toBe(
-      initialBrioTokens["--tug-base-surface-global-primary-normal-app-rest"],
+    expect(lightTokens["--tug-surface-global-primary-normal-app-rest"]).not.toBe(
+      initialBrioTokens["--tug-surface-global-primary-normal-app-rest"],
     );
 
     act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-mode-dark']") as HTMLElement); });

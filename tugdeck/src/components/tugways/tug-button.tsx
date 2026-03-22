@@ -189,7 +189,7 @@ function Spinner() {
  *   emphasis: "filled" | "outlined" | "ghost" (default: "outlined")
  *   role:     "accent" | "action" | "data" | "danger" (default: "action")
  *
- * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
+ * All colors use var(--tug-*) semantic tokens for zero-re-render theme switching.
  *
  * Implemented as React.forwardRef so that refs from Radix composition (asChild)
  * reach the underlying DOM button element.

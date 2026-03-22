@@ -41,7 +41,7 @@ function paletteHotReload(): VitePlugin {
 /**
  * Vite plugin: regenerate tokens when theme-engine.ts changes.
  *
- * The derivation engine is the single source of truth for all --tug-base-* tokens.
+ * The derivation engine is the single source of truth for all --tug-* tokens.
  * When it changes, we re-run generate-tug-tokens.ts to update the
  * generated section of tug-base.css, then CSS HMR picks up the change.
  *

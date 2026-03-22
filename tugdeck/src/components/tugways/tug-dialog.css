@@ -21,30 +21,30 @@
 
 body {
   /* --- Dialog / Sheet / Toast / Alert --- */
-  --tug-dialog-bg: var(--tug-base-surface-global-primary-normal-overlay-rest);
-  --tug-dialog-fg: var(--tug-base-element-global-text-normal-default-rest);
-  --tug-dialog-border: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-sheet-bg: var(--tug-base-surface-global-primary-normal-overlay-rest);
-  --tug-sheet-fg: var(--tug-base-element-global-text-normal-default-rest);
-  --tug-sheet-border: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-toast-info-bg: var(--tug-base-surface-global-primary-normal-default-rest);
-  --tug-toast-info-fg: var(--tug-base-element-global-text-normal-default-rest);
-  --tug-alert-bg: var(--tug-base-surface-global-primary-normal-default-rest);
-  --tug-alert-fg: var(--tug-base-element-global-text-normal-default-rest);
+  --tug-dialog-bg: var(--tug-surface-global-primary-normal-overlay-rest);
+  --tug-dialog-fg: var(--tug-element-global-text-normal-default-rest);
+  --tug-dialog-border: var(--tug-element-global-border-normal-default-rest);
+  --tug-sheet-bg: var(--tug-surface-global-primary-normal-overlay-rest);
+  --tug-sheet-fg: var(--tug-element-global-text-normal-default-rest);
+  --tug-sheet-border: var(--tug-element-global-border-normal-default-rest);
+  --tug-toast-info-bg: var(--tug-surface-global-primary-normal-default-rest);
+  --tug-toast-info-fg: var(--tug-element-global-text-normal-default-rest);
+  --tug-alert-bg: var(--tug-surface-global-primary-normal-default-rest);
+  --tug-alert-fg: var(--tug-element-global-text-normal-default-rest);
 
   /* --- Status / Badge / Progress / Skeleton / Banner --- */
-  --tug-badge-neutral-bg: var(--tug-base-element-global-divider-normal-default-rest);
-  --tug-badge-neutral-fg: var(--tug-base-element-global-text-normal-muted-rest);
+  --tug-badge-neutral-bg: var(--tug-element-global-divider-normal-default-rest);
+  --tug-badge-neutral-fg: var(--tug-element-global-text-normal-muted-rest);
   --tug-badge-accent-bg: --tug-color(orange, i: 50, t: 50, a: 20);
-  --tug-badge-accent-fg: var(--tug-base-element-global-fill-normal-accent-rest);
-  --tug-progress-track: var(--tug-base-element-global-divider-normal-separator-rest);
-  --tug-progress-fill: var(--tug-base-element-global-fill-normal-accent-rest);
-  --tug-spinner: var(--tug-base-element-global-fill-normal-accent-rest);
+  --tug-badge-accent-fg: var(--tug-element-global-fill-normal-accent-rest);
+  --tug-progress-track: var(--tug-element-global-divider-normal-separator-rest);
+  --tug-progress-fill: var(--tug-element-global-fill-normal-accent-rest);
+  --tug-spinner: var(--tug-element-global-fill-normal-accent-rest);
   --tug-skeleton-base: --tug-color(violet, i: 5, t: 20);
   --tug-skeleton-highlight: --tug-color(indigo, i: 7, t: 28);
-  --tug-emptyState-fg: var(--tug-base-element-global-text-normal-subtle-rest);
-  --tug-emptyState-icon: var(--tug-base-element-global-border-normal-default-rest);
-  --tug-kbd-bg: var(--tug-base-surface-global-primary-normal-default-rest);
-  --tug-kbd-fg: var(--tug-base-element-global-text-normal-muted-rest);
-  --tug-kbd-border: var(--tug-base-element-global-border-normal-default-rest);
+  --tug-emptyState-fg: var(--tug-element-global-text-normal-subtle-rest);
+  --tug-emptyState-icon: var(--tug-element-global-border-normal-default-rest);
+  --tug-kbd-bg: var(--tug-surface-global-primary-normal-default-rest);
+  --tug-kbd-fg: var(--tug-element-global-text-normal-muted-rest);
+  --tug-kbd-border: var(--tug-element-global-border-normal-default-rest);
 }

@@ -2,7 +2,7 @@
 /**
  * generate-tug-tokens.ts
  *
- * Generates ALL --tug-base-* tokens for every built-in theme recipe.
+ * Generates ALL --tug-* tokens for every built-in theme recipe.
  *
  * Brio (default dark):
  *   styles/tug-base-generated.css — imported by tug-base.css via @import.
@@ -42,9 +42,9 @@ const STATE_ORDER = ["rest", "hover", "active"];
 const PLANE_ORDER = ["surface", "element"];
 
 // Matches control tokens with emphasis (filled|outlined|ghost) in the new six-slot format:
-// --tug-base-(element|surface)-control-<constituent>-(filled|outlined|ghost)-<role>-<state>
+// --tug-(element|surface)-control-<constituent>-(filled|outlined|ghost)-<role>-<state>
 const EMPHASIS_ROLE_PATTERN =
-  /^--tug-base-(element|surface)-control-\w+-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-/;
+  /^--tug-(element|surface)-control-\w+-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-/;
 
 function parseControlToken(name: string): {
   plane: string;
@@ -54,7 +54,7 @@ function parseControlToken(name: string): {
   state: string;
 } | null {
   const m = name.match(
-    /^--tug-base-(element|surface)-control-(\w+)-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/,
+    /^--tug-(element|surface)-control-(\w+)-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/,
   );
   if (!m) return null;
   return { plane: m[1], constituent: m[2], emphasis: m[3], role: m[4], state: m[5] };
@@ -96,7 +96,7 @@ function capitalize(s: string): string {
 type TokenEntry = [string, string];
 
 function getGroup(name: string): string {
-  const rest = name.replace("--tug-base-", "");
+  const rest = name.replace("--tug-", "");
 
   // Non-color structural tokens — unaffected by the rename
   if (rest.startsWith("motion-")) return "motion";
@@ -109,7 +109,7 @@ function getGroup(name: string): string {
   // Legacy non-color structural token with identity mapping (not renamed)
   if (rest.startsWith("control-disabled-")) return "control-disabled";
 
-  // Six-slot tokens: route by plane + component (slots 1-2 after stripping --tug-base-)
+  // Six-slot tokens: route by plane + component (slots 1-2 after stripping --tug-)
   // element-global-* sub-routing by constituent (slot 3)
   if (rest.startsWith("element-global-text-")) return "fg";
   if (rest.startsWith("element-global-icon-")) return "icon";

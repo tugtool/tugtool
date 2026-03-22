@@ -7,9 +7,9 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-hue-strip__swatch:hover (border-color) |
- * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-hue-strip__label (color)        |
- * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-hue-strip__item--selected .tug-hue-strip__label (color) |
+ * | --tug-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-hue-strip__swatch:hover (border-color) |
+ * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-hue-strip__label (color)        |
+ * | --tug-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-hue-strip__item--selected .tug-hue-strip__label (color) |
  */
 
 
@@ -35,7 +35,7 @@
 }
 
 .tug-hue-strip__item--selected .tug-hue-strip__swatch {
-  outline: 2px solid var(--tug-base-element-global-fill-normal-accent-rest);
+  outline: 2px solid var(--tug-element-global-fill-normal-accent-rest);
   outline-offset: 1px;
 }
 
@@ -51,23 +51,23 @@
   box-sizing: border-box;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tug-hue-strip__swatch:hover {
-  border-color: var(--tug-base-element-global-border-normal-default-rest);
+  border-color: var(--tug-element-global-border-normal-default-rest);
 }
 
 /* ============================================================================
    Rotated label
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tug-hue-strip__label {
   position: absolute;
   top: 100%;
   left: 60%;
   font-size: 9px;
-  font-family: var(--tug-base-font-family-mono);
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-family-mono);
+  color: var(--tug-element-global-text-normal-muted-rest);
   user-select: none;
   white-space: nowrap;
   transform: rotate(62deg);
@@ -75,8 +75,8 @@
   margin-top: 4px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tug-hue-strip__item--selected .tug-hue-strip__label {
-  color: var(--tug-base-element-global-fill-normal-accent-rest);
+  color: var(--tug-element-global-fill-normal-accent-rest);
   font-weight: 600;
 }

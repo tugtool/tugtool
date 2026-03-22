@@ -84,7 +84,7 @@ export interface TugPopupMenuProps {
  * TugPopupMenu -- headless popup menu component.
  *
  * Renders a Radix-based dropdown via @radix-ui/react-dropdown-menu primitives
- * directly (no shadcn wrapper). Uses `--tug-base-*` semantic tokens for all
+ * directly (no shadcn wrapper). Uses `--tug-*` semantic tokens for all
  * visual properties via tug-menu.css. The content renders into a Radix portal
  * (document root), avoiding z-index conflicts with CardFrame and other stacked
  * elements.
@@ -129,16 +129,16 @@ export function TugPopupMenu({
     // directly, so we must resolve to concrete color values. [D01]
     const computed = getComputedStyle(target);
     const blinkBg = computed
-      .getPropertyValue("--tug-base-surface-control-primary-filled-action-active")
+      .getPropertyValue("--tug-surface-control-primary-filled-action-active")
       .trim() || "transparent";
     const blinkFg = computed
-      .getPropertyValue("--tug-base-element-control-text-filled-action-active")
+      .getPropertyValue("--tug-element-control-text-filled-action-active")
       .trim() || "inherit";
 
     // Read the standard easing value at runtime -- WAAPI does not resolve
     // var() references in easing strings. [D01]
     const easing = computed
-      .getPropertyValue("--tug-base-motion-easing-standard")
+      .getPropertyValue("--tug-motion-easing-standard")
       .trim() || "cubic-bezier(0.2, 0, 0, 1)";
 
     // Double-blink keyframes: highlight -> transparent -> highlight -> highlight.
@@ -160,7 +160,7 @@ export function TugPopupMenu({
     // the menu. Without this guard, blinkingRef would stay true permanently
     // and all subsequent selections would be silently swallowed.
     animate(target, blinkKeyframes, {
-      duration: "--tug-base-motion-duration-slow",
+      duration: "--tug-motion-duration-slow",
       easing,
     }).finished.then(() => {
       blinkingRef.current = false;

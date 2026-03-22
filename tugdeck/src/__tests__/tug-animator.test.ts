@@ -310,7 +310,7 @@ describe("animate() duration resolution", () => {
     document.documentElement.style.setProperty("--tug-timing", "2");
     const el = document.createElement("div");
     animate(el, [{ opacity: "0" }, { opacity: "1" }], {
-      duration: "--tug-base-motion-duration-moderate",
+      duration: "--tug-motion-duration-moderate",
     });
     const mock = getMock();
     // moderate=200ms * timing=2 => 400ms
@@ -329,7 +329,7 @@ describe("animate() duration resolution", () => {
     const el = document.createElement("div");
     expect(() =>
       animate(el, [{ opacity: "0" }], {
-        duration: "--tug-base-motion-duration-nonexistent",
+        duration: "--tug-motion-duration-nonexistent",
       })
     ).toThrow();
   });
@@ -691,7 +691,7 @@ describe("group()", () => {
   });
 
   it("per-animation options override group defaults", () => {
-    const g = group({ duration: "--tug-base-motion-duration-slow", easing: "ease-in" });
+    const g = group({ duration: "--tug-motion-duration-slow", easing: "ease-in" });
     const el = document.createElement("div");
     // Override duration for this specific animation.
     g.animate(el, [{ opacity: "0" }, { opacity: "1" }], { duration: 50, easing: "linear" });
@@ -704,7 +704,7 @@ describe("group()", () => {
 
   it("group animate() uses group defaults when no per-animation override", () => {
     document.documentElement.style.setProperty("--tug-timing", "2");
-    const g = group({ duration: "--tug-base-motion-duration-fast", easing: "ease-out" });
+    const g = group({ duration: "--tug-motion-duration-fast", easing: "ease-out" });
     const el = document.createElement("div");
     g.animate(el, [{ opacity: "0" }, { opacity: "1" }]);
 

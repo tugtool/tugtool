@@ -6,8 +6,8 @@
  * See plan Decision [D03] for rationale.
  *
  * **CSS dependency:** ICON_ONLY_TAB_WIDTH = 30 is derived from:
- *   - `.tug-tab` padding: var(--tug-base-space-md) = 8px each side
- *   - `.tug-tab-icon` width: var(--tug-base-icon-size-sm) = 14px
+ *   - `.tug-tab` padding: var(--tug-space-md) = 8px each side
+ *   - `.tug-tab-icon` width: var(--tug-icon-size-sm) = 14px
  *   Total: 30px (gap contributes 0px because `.tug-tab-title` and
  *   `.tug-tab-close` are hidden with `display: none` in collapsed mode,
  *   leaving only `.tug-tab-icon` as a flex child).
@@ -25,8 +25,8 @@
 /**
  * Fixed width (px) of a tab in icon-only (Stage 1 collapsed) mode.
  *
- * CSS dependency chain: `.tug-tab` padding (--tug-base-space-md × 2 = 16px)
- * + `.tug-tab-icon` width (--tug-base-icon-size-sm = 14px) = 30px.
+ * CSS dependency chain: `.tug-tab` padding (--tug-space-md × 2 = 16px)
+ * + `.tug-tab-icon` width (--tug-icon-size-sm = 14px) = 30px.
  * When `.tug-tab-title` and `.tug-tab-close` are hidden
  * via `display: none`, CSS flex `gap` applies 0px between flex children
  * (only one child remains: `.tug-tab-icon`).

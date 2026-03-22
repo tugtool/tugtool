@@ -12,7 +12,7 @@
  * - brio.css is unmodified (no --tug-color() calls).
  * - Zero standalone hex values remain in tug-base.css body{} block.
  *
- * Note: --tug-base-* tokens now live in tug-base-generated.css, which is
+ * Note: --tug-* tokens now live in tug-base-generated.css, which is
  * @imported by tug-base.css inside body {}. Both files are read for checks
  * that involve the token declarations.
  */

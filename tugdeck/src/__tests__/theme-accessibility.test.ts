@@ -52,7 +52,7 @@ function extractChromaticTokens(css: string): {
   if (!bodyMatch) return { fg: fgTokens, bg: bgTokens };
   const bodyContent = bodyMatch[1];
 
-  const declRegex = /(--tug-base-[a-zA-Z0-9_-]+)\s*:\s*([^;]+);/g;
+  const declRegex = /(--tug-[a-zA-Z0-9_-]+)\s*:\s*([^;]+);/g;
   let m: RegExpExecArray | null;
   while ((m = declRegex.exec(bodyContent)) !== null) {
     const name = m[1];
@@ -135,34 +135,34 @@ describe("pairing-map", () => {
   it("T1.1b: contains entries for all chromatic bg tokens in tug-base.css", () => {
     const mappedBgTokens = new Set(ELEMENT_SURFACE_PAIRING_MAP.map((p) => p.surface));
     const EXCLUDED_BG_TOKENS = new Set([
-      "--tug-base-surface-control-primary-normal-selected-disabled",
-      "--tug-base-surface-overlay-primary-normal-dim-rest",
-      "--tug-base-surface-overlay-primary-normal-scrim-rest",
-      "--tug-base-surface-overlay-primary-normal-highlight-rest",
-      "--tug-base-surface-highlight-primary-normal-hover-rest",
-      "--tug-base-surface-highlight-primary-normal-dropTarget-rest",
-      "--tug-base-surface-highlight-primary-normal-preview-rest",
-      "--tug-base-surface-highlight-primary-normal-inspectorTarget-rest",
-      "--tug-base-surface-highlight-primary-normal-snapGuide-rest",
-      "--tug-base-surface-highlight-primary-normal-flash-rest",
-      "--tug-base-element-global-fill-normal-accentSubtle-rest",
-      "--tug-base-surface-selection-primary-normal-plain-inactive",
-      "--tug-base-surface-control-primary-ghost-action-hover",
-      "--tug-base-surface-control-primary-ghost-action-active",
-      "--tug-base-surface-control-primary-ghost-danger-hover",
-      "--tug-base-surface-control-primary-ghost-danger-active",
-      "--tug-base-surface-control-primary-outlined-option-hover",
-      "--tug-base-surface-control-primary-outlined-option-active",
-      "--tug-base-surface-control-primary-ghost-option-hover",
-      "--tug-base-surface-control-primary-ghost-option-active",
-      "--tug-base-surface-control-primary-normal-selected-hover",
-      "--tug-base-surface-field-primary-normal-plain-disabled",
-      "--tug-base-element-global-fill-normal-accentCool-rest",
-      "--tug-base-surface-tab-primary-normal-plain-hover",
-      "--tug-base-surface-tabClose-primary-normal-plain-hover",
-      "--tug-base-surface-tab-primary-normal-plain-inactive",
-      "--tug-base-surface-tab-primary-normal-plain-collapsed",
-      "--tug-base-surface-global-primary-normal-grid-rest",
+      "--tug-surface-control-primary-normal-selected-disabled",
+      "--tug-surface-overlay-primary-normal-dim-rest",
+      "--tug-surface-overlay-primary-normal-scrim-rest",
+      "--tug-surface-overlay-primary-normal-highlight-rest",
+      "--tug-surface-highlight-primary-normal-hover-rest",
+      "--tug-surface-highlight-primary-normal-dropTarget-rest",
+      "--tug-surface-highlight-primary-normal-preview-rest",
+      "--tug-surface-highlight-primary-normal-inspectorTarget-rest",
+      "--tug-surface-highlight-primary-normal-snapGuide-rest",
+      "--tug-surface-highlight-primary-normal-flash-rest",
+      "--tug-element-global-fill-normal-accentSubtle-rest",
+      "--tug-surface-selection-primary-normal-plain-inactive",
+      "--tug-surface-control-primary-ghost-action-hover",
+      "--tug-surface-control-primary-ghost-action-active",
+      "--tug-surface-control-primary-ghost-danger-hover",
+      "--tug-surface-control-primary-ghost-danger-active",
+      "--tug-surface-control-primary-outlined-option-hover",
+      "--tug-surface-control-primary-outlined-option-active",
+      "--tug-surface-control-primary-ghost-option-hover",
+      "--tug-surface-control-primary-ghost-option-active",
+      "--tug-surface-control-primary-normal-selected-hover",
+      "--tug-surface-field-primary-normal-plain-disabled",
+      "--tug-element-global-fill-normal-accentCool-rest",
+      "--tug-surface-tab-primary-normal-plain-hover",
+      "--tug-surface-tabClose-primary-normal-plain-hover",
+      "--tug-surface-tab-primary-normal-plain-inactive",
+      "--tug-surface-tab-primary-normal-plain-collapsed",
+      "--tug-surface-global-primary-normal-grid-rest",
     ]);
 
     const missingBgTokens: string[] = [];
@@ -244,8 +244,8 @@ describe("theme-accessibility", () => {
   });
 
   it("T3.4: autoAdjustContrast fixes a deliberately failing pair and reaches contrast >= 75", () => {
-    const fgToken = "--tug-base-element-global-text-normal-default-rest";
-    const bgToken = "--tug-base-surface-global-primary-normal-app-rest";
+    const fgToken = "--tug-element-global-text-normal-default-rest";
+    const bgToken = "--tug-surface-global-primary-normal-app-rest";
 
     const fgL = 0.708 + (38 * (0.96 - 0.708)) / 50;
     const bgL = 0.15 + (15 * (0.708 - 0.15)) / 50;
@@ -324,7 +324,7 @@ describe("contrast-calibration-baseline", () => {
     expect(passes + failures).toBe(results.length);
 
     const fgDefaultPair = results.find(
-      (r) => r.fg === "--tug-base-element-global-text-normal-default-rest" && r.bg === "--tug-base-surface-global-primary-normal-app-rest",
+      (r) => r.fg === "--tug-element-global-text-normal-default-rest" && r.bg === "--tug-surface-global-primary-normal-app-rest",
     );
     expect(fgDefaultPair).toBeDefined();
     expect(fgDefaultPair!.contrastPass).toBe(true);
@@ -375,7 +375,7 @@ describe("contrast-calibration-baseline", () => {
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     const anchorPair = results.find(
-      (r) => r.fg === "--tug-base-element-global-text-normal-default-rest" && r.bg === "--tug-base-surface-global-primary-normal-app-rest",
+      (r) => r.fg === "--tug-element-global-text-normal-default-rest" && r.bg === "--tug-surface-global-primary-normal-app-rest",
     );
     expect(anchorPair).toBeDefined();
     expect(anchorPair!.contrastPass).toBe(true);

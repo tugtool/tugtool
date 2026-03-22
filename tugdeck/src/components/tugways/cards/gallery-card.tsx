@@ -443,7 +443,7 @@ export function GalleryChainActionsContent() {
  * without further React reconciliation.
  *
  * Hooks used:
- * - useCSSVar: swaps --demo-bg between two --tug-base-* color tokens
+ * - useCSSVar: swaps --demo-bg between two --tug-* color tokens
  * - useDOMClass: adds/removes the "demo-highlighted" class
  * - useDOMStyle: swaps border-width between "1px" and "3px"
  *
@@ -457,7 +457,7 @@ export function MutationModelDemo() {
   const [classOn, setClassOn] = useState(false);
   const [styleOn, setStyleOn] = useState(false);
 
-  useCSSVar(boxRef, "--demo-bg", varOn ? "var(--tug-base-element-global-fill-normal-accent-rest)" : "var(--tug-base-surface-global-primary-normal-default-rest)");
+  useCSSVar(boxRef, "--demo-bg", varOn ? "var(--tug-element-global-fill-normal-accent-rest)" : "var(--tug-surface-global-primary-normal-default-rest)");
   useDOMClass(boxRef, "demo-highlighted", classOn);
   useDOMStyle(boxRef, "border-width", styleOn ? "3px" : "1px");
 
@@ -863,8 +863,8 @@ export function GalleryTitleBarContent() {
         <div className="cg-section-title">CardTitleBar — Live Demo</div>
         <div
           style={{
-            border: "1px solid var(--tug-base-card-border)",
-            borderRadius: "var(--tug-base-radius-md)",
+            border: "1px solid var(--tug-card-border)",
+            borderRadius: "var(--tug-radius-md)",
             overflow: "hidden",
             background: "var(--tug-card-title-bar-bg-inactive)",
           }}
@@ -882,9 +882,9 @@ export function GalleryTitleBarContent() {
             <div
               style={{
                 padding: "12px",
-                background: "var(--tug-base-surface-global-primary-normal-default-rest)",
+                background: "var(--tug-surface-global-primary-normal-default-rest)",
                 fontSize: "12px",
-                color: "var(--tug-base-element-global-text-normal-muted-rest)",
+                color: "var(--tug-element-global-text-normal-muted-rest)",
                 minHeight: "48px",
               }}
             >

@@ -228,7 +228,7 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
   });
 
   it("setDynamicTheme (via context) fetches CSS and injects it into the DOM", async () => {
-    const fakeCss = "body { --tug-base-surface-global-primary-normal-app-rest: oklch(0.2 0 0); }";
+    const fakeCss = "body { --tug-surface-global-primary-normal-app-rest: oklch(0.2 0 0); }";
     const fetchCalls: string[] = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (input: RequestInfo | URL) => {
@@ -299,7 +299,7 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
   it("revertToBuiltIn (via context) removes theme override and clears td-dynamic-theme from localStorage", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
-      new Response("body { --tug-base-surface-global-primary-normal-app-rest: oklch(0.2 0 0); }", { status: 200 });
+      new Response("body { --tug-surface-global-primary-normal-app-rest: oklch(0.2 0 0); }", { status: 200 });
 
     const { store, restore } = installMockLocalStorage();
     const setDynamicRef: { current: ((name: string) => void) | null } = { current: null };
@@ -337,7 +337,7 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
 
   it("on init, TugThemeProvider reads td-dynamic-theme from localStorage and calls setDynamicTheme", async () => {
     const { restore } = installMockLocalStorage({ "td-dynamic-theme": "saved-theme" });
-    const fakeCss = "body { --tug-base-surface-global-primary-normal-app-rest: oklch(0.15 0 0); }";
+    const fakeCss = "body { --tug-surface-global-primary-normal-app-rest: oklch(0.15 0 0); }";
     const fetchCalls: string[] = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (input: RequestInfo | URL) => {
@@ -386,7 +386,7 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
   });
 
   it("injectThemeCSS + removeThemeCSS DOM contract: injected CSS is accessible and removal is clean", () => {
-    const fakeCss = "body { --tug-base-surface-global-primary-normal-app-rest: oklch(0.15 0 0); }";
+    const fakeCss = "body { --tug-surface-global-primary-normal-app-rest: oklch(0.15 0 0); }";
     injectThemeCSS("saved-theme", fakeCss);
 
     const el = document.getElementById("tug-theme-override");

@@ -2,7 +2,7 @@
  * seed-rename-map.ts — Complete 373-entry seed map for Phase 3.5A (post-rename).
  *
  * This file contains SEED_RENAME_MAP, a Record<string, string> mapping every
- * --tug-base-{name} short name to itself. After the Phase 3.5A rename was applied
+ * --tug-{name} short name to itself. After the Phase 3.5A rename was applied
  * (Step 7), all tokens are now at their final six-slot names. All entries are
  * identity mappings (name === name) confirming rename completion.
  *

@@ -14,16 +14,16 @@ describe("debug: step-7 contrast calibration check", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
     const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
     const bugPairs = [
-      "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tab-primary-normal-plain-active",
-      "--tug-base-element-global-text-normal-default-rest|--tug-base-element-global-fill-normal-accentSubtle-rest",
-      "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tone-primary-normal-caution-rest",
+      "--tug-element-global-text-normal-default-rest|--tug-surface-tab-primary-normal-plain-active",
+      "--tug-element-global-text-normal-default-rest|--tug-element-global-fill-normal-accentSubtle-rest",
+      "--tug-element-global-text-normal-default-rest|--tug-surface-tone-primary-normal-caution-rest",
     ];
     const summary = bugPairs.map((pair) => {
       const [fg, bg] = pair.split("|");
       const r = results.find((res) => res.fg === fg && res.bg === bg);
       if (!r) return `${pair}: NOT FOUND`;
       const threshold = CONTRAST_THRESHOLDS[r.role] ?? 0;
-      return `${fg.replace("--tug-base-", "")} | ${bg.replace("--tug-base-", "")}: contrast=${r.contrast.toFixed(1)}, threshold=${threshold}, pass=${Math.abs(r.contrast) >= threshold}`;
+      return `${fg.replace("--tug-", "")} | ${bg.replace("--tug-", "")}: contrast=${r.contrast.toFixed(1)}, threshold=${threshold}, pass=${Math.abs(r.contrast) >= threshold}`;
     });
     // Expect all to pass
     const failing = summary.filter((s) => s.includes("pass=false"));

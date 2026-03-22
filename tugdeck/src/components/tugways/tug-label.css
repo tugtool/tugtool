@@ -7,12 +7,12 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-label (color)                   |
- * | --tug-base-element-field-text-normal-required-rest (element-field-text-normal-required-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-label-required (color)          |
+ * | --tug-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-label (color)                   |
+ * | --tug-element-field-text-normal-required-rest (element-field-text-normal-required-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-label-required (color)          |
  */
 
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tug-label {
   display: inline-flex;
   align-items: flex-start;
@@ -22,7 +22,7 @@
   font-weight: 500;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-base-element-field-text-normal-label-rest);
+  color: var(--tug-element-field-text-normal-label-rest);
   cursor: default;
 }
 
@@ -102,9 +102,9 @@
    Required Indicator
    ========================================================================= */
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tug-label-required {
-  color: var(--tug-base-element-field-text-normal-required-rest);
+  color: var(--tug-element-field-text-normal-required-rest);
   margin-left: 0.125rem;
 }
 
@@ -113,6 +113,6 @@
    ========================================================================= */
 
 .tug-label-disabled {
-  opacity: var(--tug-base-control-disabled-opacity);
+  opacity: var(--tug-control-disabled-opacity);
   cursor: not-allowed;
 }

@@ -190,7 +190,7 @@ export function GalleryScaleTimingContent() {
             step={0.1}
             value={timing}
             onChange={setTiming}
-            note="Scales all --tug-base-motion-duration-* tokens"
+            note="Scales all --tug-motion-duration-* tokens"
           />
           <div className="cg-control-group cg-st-slider-row">
             <input

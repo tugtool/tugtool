@@ -7,14 +7,14 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-base-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-section-title (color)            |
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-controls (border)                |
- * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .cg-control-select (color)           |
- * | --tug-base-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select (border)          |
- * | --tug-base-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug-base-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select:focus (border-color) |
- * | --tug-base-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-mutation-box (border)            |
- * | --tug-base-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-demo-status code (color)         |
- * | --tug-base-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-base-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-cascade-source (color)           |
+ * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-section-title (color)            |
+ * | --tug-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-controls (border)                |
+ * | --tug-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .cg-control-select (color)           |
+ * | --tug-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select (border)          |
+ * | --tug-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select:focus (border-color) |
+ * | --tug-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-mutation-box (border)            |
+ * | --tug-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-demo-status code (color)         |
+ * | --tug-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-cascade-source (color)           |
  */
 
 
@@ -36,13 +36,13 @@
   gap: 16px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-section-title {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   user-select: none;
 }
 
@@ -55,9 +55,9 @@
   align-items: center;
   gap: 16px;
   padding: 10px 14px;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
   flex-wrap: wrap;
 }
 
@@ -67,35 +67,35 @@
   gap: 6px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-control-label {
   font-size: 11px;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   user-select: none;
   white-space: nowrap;
 }
 
 .cg-control-select {
   font-size: 12px;
-  font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-element-global-text-normal-default-rest);
-  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-xs);
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug-element-global-text-normal-default-rest);
+  background-color: var(--tug-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-xs);
   padding: 2px 6px;
   cursor: pointer;
   outline: none;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-control-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-control-rest */
 .cg-control-select:focus {
-  border-color: var(--tug-base-element-global-fill-normal-accentCool-rest);
+  border-color: var(--tug-element-global-fill-normal-accentCool-rest);
 }
 
 .cg-control-checkbox {
   width: 14px;
   height: 14px;
-  accent-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  accent-color: var(--tug-element-global-fill-normal-accent-rest);
   cursor: pointer;
 }
 
@@ -116,11 +116,11 @@
   gap: 8px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-subtype-label {
   font-size: 11px;
   font-weight: 500;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   font-style: italic;
   user-select: none;
 }
@@ -132,10 +132,10 @@
   flex-wrap: wrap;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-variant-label {
   font-size: 10px;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   width: 76px;
   flex-shrink: 0;
   user-select: none;
@@ -153,7 +153,7 @@
 
 .cg-divider {
   height: 1px;
-  background-color: var(--tug-base-element-global-border-normal-default-rest);
+  background-color: var(--tug-element-global-border-normal-default-rest);
   margin: 4px 0;
 }
 
@@ -168,7 +168,7 @@
 }
 
 /**
- * Demo box: base styling uses --tug-base-* semantic tokens exclusively.
+ * Demo box: base styling uses --tug-* semantic tokens exclusively.
  * --demo-bg is set by useCSSVar (appearance-zone hook) to swap background.
  * .demo-highlighted is toggled by useDOMClass to add a highlight outline.
  * border-width is set by useDOMStyle to swap between 1px and 3px.
@@ -176,13 +176,13 @@
 .cg-mutation-box {
   width: 120px;
   height: 60px;
-  background-color: var(--demo-bg, var(--tug-base-surface-global-primary-normal-default-rest));
-  border: 1px solid var(--tug-base-element-global-fill-normal-accentCool-rest);
-  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--demo-bg, var(--tug-surface-global-primary-normal-default-rest));
+  border: 1px solid var(--tug-element-global-fill-normal-accentCool-rest);
+  border-radius: var(--tug-radius-sm);
 }
 
 .cg-mutation-box.demo-highlighted {
-  outline: 2px solid var(--tug-base-element-global-fill-normal-accent-rest);
+  outline: 2px solid var(--tug-element-global-fill-normal-accent-rest);
   outline-offset: 2px;
 }
 
@@ -210,11 +210,11 @@
 /* Trigger button for the TugPopupButton demo -- styled to match the gallery aesthetic */
 .cg-demo-trigger {
   font-size: 12px;
-  font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-element-global-text-normal-default-rest);
-  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug-element-global-text-normal-default-rest);
+  background-color: var(--tug-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
   padding: 5px 12px;
   cursor: pointer;
   user-select: none;
@@ -222,23 +222,23 @@
 
 .cg-demo-trigger:hover,
 .cg-demo-trigger[data-state="open"] {
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
 }
 
 /* Shared status line for both demos */
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-demo-status {
   font-size: 11px;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   user-select: none;
 }
 
 .cg-demo-status code {
-  font-family: var(--tug-base-font-family-mono);
-  color: var(--tug-base-element-global-text-normal-default-rest);
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-xs);
+  font-family: var(--tug-font-family-mono);
+  color: var(--tug-element-global-text-normal-default-rest);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-xs);
   padding: 1px 5px;
 }
 
@@ -251,9 +251,9 @@
   position: relative;
   width: 100%;
   height: 140px;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
   overflow: hidden;
 }
 
@@ -262,7 +262,7 @@
   position: absolute;
   width: 80px;
   height: 50px;
-  border-radius: var(--tug-base-radius-sm);
+  border-radius: var(--tug-radius-sm);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   cursor: default;
   user-select: none;
@@ -280,18 +280,18 @@
   width: 40px;
   height: 28px;
   padding: 2px;
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-xs);
-  background: var(--tug-base-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-xs);
+  background: var(--tug-surface-global-primary-normal-control-rest);
   cursor: pointer;
 }
 
 /* Hue swatch: draggable strip showing a full-spectrum gradient. */
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-hue-swatch {
   width: 200px;
   height: 28px;
-  border-radius: var(--tug-base-radius-xs);
+  border-radius: var(--tug-radius-xs);
   background: linear-gradient(
     to right,
     hsl(0, 70%, 60%),
@@ -303,7 +303,7 @@
     hsl(360, 70%, 60%)
   );
   cursor: ew-resize;
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
   touch-action: none;
   user-select: none;
 }
@@ -319,49 +319,49 @@
 .cg-position-slider {
   width: 180px;
   cursor: pointer;
-  accent-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  accent-color: var(--tug-element-global-fill-normal-accent-rest);
 }
 
 /* Cascade reader display table. */
 .cg-cascade-table {
   border-collapse: collapse;
   font-size: 11px;
-  font-family: var(--tug-base-font-family-mono);
+  font-family: var(--tug-font-family-mono);
   width: 100%;
   max-width: 420px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-cascade-table tr + tr td {
-  border-top: 1px solid var(--tug-base-element-global-border-normal-default-rest);
+  border-top: 1px solid var(--tug-element-global-border-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-cascade-prop {
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   padding: 4px 10px 4px 0;
   width: 140px;
   user-select: none;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-cascade-source {
-  color: var(--tug-base-element-global-fill-normal-accent-rest);
+  color: var(--tug-element-global-fill-normal-accent-rest);
   padding: 4px 10px;
   width: 80px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-cascade-value {
-  color: var(--tug-base-element-global-text-normal-default-rest);
+  color: var(--tug-element-global-text-normal-default-rest);
   padding: 4px 0;
 }
 
 /* Small description text used in demo sections. */
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-description {
   font-size: 11px;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   line-height: 1.5;
   margin: 0;
 }
@@ -388,29 +388,29 @@
 .cg-st-slider-label {
   width: 200px;
   flex-shrink: 0;
-  font-family: var(--tug-base-font-family-mono);
+  font-family: var(--tug-font-family-mono);
   font-size: 11px;
 }
 
 .cg-st-range {
   flex: 0 0 180px;
   cursor: pointer;
-  accent-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  accent-color: var(--tug-element-global-fill-normal-accent-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-st-value {
   flex: 0 0 36px;
   font-size: 11px;
-  font-family: var(--tug-base-font-family-mono);
-  color: var(--tug-base-element-global-text-normal-default-rest);
+  font-family: var(--tug-font-family-mono);
+  color: var(--tug-element-global-text-normal-default-rest);
   text-align: right;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-st-note {
   font-size: 10px;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   font-style: italic;
   flex: 1;
   min-width: 0;
@@ -425,10 +425,10 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 14px;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
-  font-family: var(--tug-base-font-family-mono);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  font-family: var(--tug-font-family-mono);
   font-size: 11px;
 }
 
@@ -438,16 +438,16 @@
   gap: 16px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-st-readout-fn {
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   width: 200px;
   flex-shrink: 0;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-st-readout-value {
-  color: var(--tug-base-element-global-fill-normal-accentCool-rest);
+  color: var(--tug-element-global-fill-normal-accentCool-rest);
   font-weight: 600;
 }
 
@@ -457,9 +457,9 @@
   flex-direction: column;
   gap: 32px;
   padding: 16px;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
 }
 
 .cg-st-preview-row {
@@ -513,8 +513,8 @@
   height: 0.5em;
   border-radius: 50%;
   background-color: var(--tug-spinner, currentColor);
-  animation: tug-petals-fade calc(800ms * var(--tug-timing, 1)) var(--tug-base-motion-easing-standard) infinite,
-             tug-petals-scale calc(800ms * var(--tug-timing, 1)) var(--tug-base-motion-easing-standard) infinite;
+  animation: tug-petals-fade calc(800ms * var(--tug-timing, 1)) var(--tug-motion-easing-standard) infinite,
+             tug-petals-scale calc(800ms * var(--tug-timing, 1)) var(--tug-motion-easing-standard) infinite;
 }
 
 /* Ring placement: each petal rotated 45deg apart, offset outward by 0.5em */
@@ -606,9 +606,9 @@
   gap: 12px;
   padding: 16px;
   min-width: 120px;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
 }
@@ -619,10 +619,10 @@
   gap: 12px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-anim-physics-label {
   font-size: 10px;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   width: 50px;
   flex-shrink: 0;
   user-select: none;
@@ -633,8 +633,8 @@
   flex: 1;
   min-width: 0;
   height: 24px;
-  border-radius: var(--tug-base-radius-xs);
-  background-color: var(--tug-base-surface-global-primary-normal-control-rest);
+  border-radius: var(--tug-radius-xs);
+  background-color: var(--tug-surface-global-primary-normal-control-rest);
   overflow: hidden;
 }
 
@@ -652,16 +652,16 @@
 }
 
 .cg-anim-dot-spring {
-  background-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  background-color: var(--tug-element-global-fill-normal-accent-rest);
 }
 
 .cg-anim-dot-gravity {
-  background-color: var(--tug-base-element-global-fill-normal-accentCool-rest);
+  background-color: var(--tug-element-global-fill-normal-accentCool-rest);
   top: 0;
 }
 
 .cg-anim-dot-friction {
-  background-color: var(--tug-base-accent-warm-default, var(--tug-base-element-global-fill-normal-accent-rest));
+  background-color: var(--tug-accent-warm-default, var(--tug-element-global-fill-normal-accent-rest));
 }
 
 /* --- Duration Tokens --- */
@@ -671,9 +671,9 @@
   height: 40px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
 }
@@ -681,19 +681,19 @@
 .cg-anim-token-box {
   width: 24px;
   height: 24px;
-  border-radius: var(--tug-base-radius-xs);
-  background-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  border-radius: var(--tug-radius-xs);
+  background-color: var(--tug-element-global-fill-normal-accent-rest);
   margin-left: 8px;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-anim-token-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
   font-size: 10px;
-  font-family: var(--tug-base-font-family-mono);
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-family-mono);
+  color: var(--tug-element-global-text-normal-muted-rest);
 }
 
 .cg-anim-token-entry {
@@ -702,14 +702,14 @@
   align-items: center;
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-anim-token-entry code {
-  color: var(--tug-base-element-global-text-normal-default-rest);
+  color: var(--tug-element-global-text-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-anim-token-entry span {
-  color: var(--tug-base-element-global-fill-normal-accentCool-rest);
+  color: var(--tug-element-global-fill-normal-accentCool-rest);
   font-weight: 600;
 }
 
@@ -720,9 +720,9 @@
   height: 48px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
 }
@@ -730,8 +730,8 @@
 .cg-anim-cancel-box {
   width: 32px;
   height: 32px;
-  border-radius: var(--tug-base-radius-sm);
-  background-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  border-radius: var(--tug-radius-sm);
+  background-color: var(--tug-element-global-fill-normal-accent-rest);
   margin-left: 8px;
 }
 
@@ -742,9 +742,9 @@
   height: 48px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug-base-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-base-element-global-border-normal-default-rest);
-  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
 }
@@ -753,33 +753,33 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background-color: var(--tug-base-element-global-fill-normal-accentCool-rest);
+  background-color: var(--tug-element-global-fill-normal-accentCool-rest);
   margin-left: 8px;
 }
 
 /* --- Shared: percentage slider control row --- */
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-anim-pct-row {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 10px;
-  color: var(--tug-base-element-global-text-normal-muted-rest);
+  color: var(--tug-element-global-text-normal-muted-rest);
   user-select: none;
 }
 
 .cg-anim-pct-range {
   width: 100px;
   cursor: pointer;
-  accent-color: var(--tug-base-element-global-fill-normal-accent-rest);
+  accent-color: var(--tug-element-global-fill-normal-accent-rest);
 }
 
-/* @tug-renders-on: --tug-base-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .cg-anim-pct-value {
-  font-family: var(--tug-base-font-family-mono);
+  font-family: var(--tug-font-family-mono);
   font-size: 10px;
-  color: var(--tug-base-element-global-text-normal-default-rest);
+  color: var(--tug-element-global-text-normal-default-rest);
   width: 32px;
   text-align: right;
 }

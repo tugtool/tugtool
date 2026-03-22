@@ -2,7 +2,7 @@
  * TugInput -- tugways public API for text inputs.
  *
  * Wraps a plain <input> element (not a Radix primitive). All visual states
- * are driven by --tug-base-field-* tokens — theme switches update CSS
+ * are driven by --tug-field-* tokens — theme switches update CSS
  * variables at the DOM level with no React re-renders.
  *
  * States: rest, hover, focus, disabled, readOnly.
@@ -10,7 +10,7 @@
  * Sizes: sm (28px), md (32px), lg (36px) — matching TugButton heights.
  *
  * [D04] Token-driven control state model
- * [D05] Component token naming: --tug-base-field-*
+ * [D05] Component token naming: --tug-field-*
  */
 
 import React from "react";

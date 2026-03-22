@@ -38,7 +38,7 @@
  * ## CardTitleBar
  *
  * Title bar with control buttons and window-shade collapse.
- * Height is driven by --tug-base-chrome-height (defined in tug-base.css).
+ * Height is driven by --tug-chrome-height (defined in tug-base.css).
  * Icon sizes are CSS-driven via .tugcard-icon and .tug-button svg rules.
  *
  * - Control buttons: close, collapse (chevron), menu (horizontal ellipsis)
@@ -86,7 +86,7 @@ import "./tug-card.css";
 // ---------------------------------------------------------------------------
 
 /**
- * Height of the card title bar in pixels. Must match --tug-base-chrome-height.
+ * Height of the card title bar in pixels. Must match --tug-chrome-height.
  * Used for collapsed-height calculation in CardFrame.
  */
 export const CARD_TITLE_BAR_HEIGHT = 36;

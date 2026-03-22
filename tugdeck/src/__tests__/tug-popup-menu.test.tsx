@@ -104,7 +104,7 @@ describe("TugPopupMenu – blink-then-select logic", () => {
         { backgroundColor: "oklch(50% 0 0)" },
         { backgroundColor: "oklch(50% 0 0)" },
       ], {
-        duration: "--tug-base-motion-duration-slow",
+        duration: "--tug-motion-duration-slow",
         easing: "cubic-bezier(0.2, 0, 0, 1)",
       }).finished.then(() => {
         selectFired = true;
@@ -142,7 +142,7 @@ describe("TugPopupMenu – blink-then-select logic", () => {
         { backgroundColor: "oklch(50% 0 0)" },
         { backgroundColor: "oklch(50% 0 0)" },
       ], {
-        duration: "--tug-base-motion-duration-slow",
+        duration: "--tug-motion-duration-slow",
         easing: "cubic-bezier(0.2, 0, 0, 1)",
       });
     });
@@ -174,7 +174,7 @@ describe("TugPopupMenu – blink-then-select logic", () => {
         { backgroundColor: "transparent" },
         { backgroundColor: "transparent" },
         { backgroundColor: "transparent" },
-      ], { duration: "--tug-base-motion-duration-slow" })
+      ], { duration: "--tug-motion-duration-slow" })
         .finished.then(() => {
           blinkingRef.current = false;
           onSelect("copy");
