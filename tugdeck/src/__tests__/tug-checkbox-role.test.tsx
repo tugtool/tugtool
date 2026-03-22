@@ -4,13 +4,12 @@
  * Tests cover:
  * - role="danger" injects --tug-toggle-on-color and sets data-role
  * - role="action" maps to tone-active via ROLE_TONE_MAP
- * - no role prop: injects option-role fg-muted style and sets data-role="option" (new default)
+ * - no role prop: injects option-role fg-muted style and sets data-role="option" (default)
  * - role="option": injects --tug-toggle-on-color: var(--tug-element-global-text-normal-muted-rest) and sets data-role="option"
  * - role="accent" (explicit): no inline style injected, no data-role attribute
  *
- * [D03] Selection control role via inline CSS custom property injection
- * [D06] TugCheckbox and TugSwitch default to role='option'
- * [Spec S01] Inline CSS Custom Property Injection
+ * Laws: [L06] appearance via CSS, [L19] component authoring guide
+ * Decisions: [D03] appearance via stylesheet injection, [D06] components/tugways public API
  */
 import "./setup-rtl";
 
