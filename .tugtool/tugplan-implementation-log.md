@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-22T19:20:42Z
+---
+
+## step-2: Moved contrastSearch, darkRecipe, lightRecipe, RECIPE_REGISTRY into theme-engine.ts; deleted theme-recipes.ts; updated module header
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-1
 date: 2025-03-22T19:10:03Z
 ---
