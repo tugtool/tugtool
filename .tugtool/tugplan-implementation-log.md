@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-22T00:40:18Z
+---
+
+## step-6: Final integration checkpoint: all 4 automated checkpoints pass (build, generate:tokens, audit:tokens verify, test with 1908 passing). 7 manual browser verification tasks deferred.
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
 step: step-5
 date: 2025-03-22T00:33:33Z
 ---
