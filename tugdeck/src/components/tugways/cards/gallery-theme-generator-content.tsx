@@ -2114,17 +2114,17 @@ export function GalleryThemeGeneratorContent() {
 
   /**
    * Select a saved dynamic theme by name.
-   * Calls setDynamicTheme() to inject the CSS, then fetches the recipe JSON
-   * from /styles/themes/<name>-recipe.json and loads it into generator state.
-   * No-ops silently if theme context is unavailable (e.g. outside provider).
+   * Calls setTheme() to fetch and inject the CSS via the middleware, then
+   * fetches the recipe JSON from /__themes/<name>.json and loads it into
+   * generator state. No-ops silently if theme context is unavailable.
    */
   const handleSelectSavedTheme = useCallback(
     (name: string) => {
       if (themeCtx) {
-        void themeCtx.setDynamicTheme(name);
+        themeCtx.setTheme(name);
       }
       // Fetch the recipe JSON and load parameters into generator state
-      void fetch(`/styles/themes/${encodeURIComponent(name)}-recipe.json`)
+      void fetch(`/__themes/${encodeURIComponent(name)}.json`)
         .then((res) => {
           if (!res.ok) return null;
           return res.json() as Promise<unknown>;
@@ -2144,13 +2144,13 @@ export function GalleryThemeGeneratorContent() {
 
   /**
    * Revert to the built-in Brio theme.
-   * Calls revertToBuiltIn() to remove the dynamic CSS override and clears
-   * localStorage. Resets generator to the default Brio recipe.
+   * Calls setTheme("brio") which removes the override stylesheet and restores
+   * tug-base.css defaults. Resets generator to the default Brio recipe.
    * No-ops silently if theme context is unavailable.
    */
   const handleSelectBuiltIn = useCallback(() => {
     if (themeCtx) {
-      themeCtx.revertToBuiltIn();
+      themeCtx.setTheme("brio");
     }
     loadPreset("brio");
   }, [themeCtx, loadPreset]);

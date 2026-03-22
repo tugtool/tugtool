@@ -26,8 +26,6 @@ import {
   resolveHyphenatedHue,
 } from "./components/tugways/palette-engine";
 
-import type { ThemeName } from "./contexts/theme-provider";
-
 // ---------------------------------------------------------------------------
 // Canvas background TugColor params
 //
@@ -36,11 +34,15 @@ import type { ThemeName } from "./contexts/theme-provider";
 //   brio    (tug-base.css): --tug-color(indigo-violet, i: 2, t: 5)   [263.3°]
 //   harmony (harmony.css):  --tug-color(indigo-violet, i: 3, t: 95)  [263.3°]
 // [D05] Harmony canvas color is indigo-violet I:3 T:95
+//
+// Note: ThemeName is now `string`. Dynamically-loaded themes may not be present
+// in CANVAS_COLORS. canvasColorHex() returns null for unknown themes.
+// Step 10 replaces this entire lookup table with runtime derivation from ThemeRecipe.
 // ---------------------------------------------------------------------------
 
 type TugColorParams = { hue: string; intensity: number; tone: number };
 
-const CANVAS_COLORS: Record<ThemeName, TugColorParams> = {
+const CANVAS_COLORS: Record<string, TugColorParams> = {
   brio:    { hue: "indigo-violet", intensity: 2, tone: 5 },
   harmony: { hue: "indigo-violet", intensity: 3, tone: 95 },
 };
@@ -50,9 +52,17 @@ const CANVAS_COLORS: Record<ThemeName, TugColorParams> = {
  *
  * Uses the same TugColor → oklch → hex pipeline as the PostCSS plugin, ensuring
  * the native window color always matches the web content.
+ *
+ * Returns null if the theme name is not present in CANVAS_COLORS (e.g. a
+ * dynamically-loaded theme). Callers must check for null and skip the bridge call.
+ * This guard is temporary: Step 10 replaces CANVAS_COLORS with runtime derivation.
  */
-export function canvasColorHex(theme: ThemeName): string {
-  const { hue, intensity, tone } = CANVAS_COLORS[theme];
+export function canvasColorHex(theme: string): string | null {
+  const params = CANVAS_COLORS[theme];
+  if (!params) {
+    return null;
+  }
+  const { hue, intensity, tone } = params;
 
   // Resolve hue angle: handle bare names and hyphenated adjacency (A-B).
   let h: number;

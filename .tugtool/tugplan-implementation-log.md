@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-22T20:37:47Z
+---
+
+## step-9: Widened ThemeName to string, replaced static themeCSSMap with dynamic Map, removed dynamicThemeName/setDynamicTheme/revertToBuiltIn, updated main.tsx for dynamic theme fetch, updated action-dispatch and all consumers/tests
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-8
 date: 2025-03-22T20:22:55Z
 ---

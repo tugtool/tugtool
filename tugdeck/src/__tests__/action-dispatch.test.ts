@@ -311,7 +311,7 @@ describe("initActionDispatch: set-theme", () => {
     expect(received).toEqual(["brio"]);
   });
 
-  it("warns and does not throw when theme is invalid", () => {
+  it("accepts arbitrary theme name strings and delegates to the theme provider", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -319,8 +319,11 @@ describe("initActionDispatch: set-theme", () => {
     const received: string[] = [];
     registerThemeSetter((theme) => received.push(theme));
 
-    expect(() => dispatchAction({ action: "set-theme", theme: "dark-mode" })).not.toThrow();
-    expect(received.length).toBe(0);
+    // Arbitrary custom theme strings should be passed through to the theme provider
+    dispatchAction({ action: "set-theme", theme: "my-custom-theme" });
+    dispatchAction({ action: "set-theme", theme: "dark-forest" });
+
+    expect(received).toEqual(["my-custom-theme", "dark-forest"]);
   });
 
   it("warns and does not throw when theme field is missing", () => {
