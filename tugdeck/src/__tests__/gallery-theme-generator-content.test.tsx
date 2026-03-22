@@ -28,7 +28,12 @@ import {
 } from "@/components/tugways/cards/gallery-card";
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import brioJson from "../../themes/brio.json";
+import harmonyJson from "../../themes/harmony.json";
+
+const brio = brioJson as ThemeRecipe;
+const harmony = harmonyJson as ThemeRecipe;
 import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
 import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
@@ -565,7 +570,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     expect(readRenderedTokenCount(container)).toBe(darkCount);
   });
 
-  it("Harmony preset rendered tokens match deriveTheme(EXAMPLE_RECIPES.harmony) token-for-token", () => {
+  it("Harmony preset rendered tokens match deriveTheme(harmony) token-for-token", () => {
     let container!: HTMLElement;
     act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
     act(() => {
@@ -573,7 +578,7 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
     });
 
     const rendered = readRenderedTokens(container);
-    const expected = deriveTheme(EXAMPLE_RECIPES.harmony).tokens;
+    const expected = deriveTheme(harmony).tokens;
 
     expect(Object.keys(rendered).length).toBe(Object.keys(expected).length);
 
@@ -610,9 +615,9 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
   });
 
   it("importing Harmony recipe JSON round-trips correctly", () => {
-    const harmonyJson = JSON.stringify(EXAMPLE_RECIPES.harmony);
-    const parsedHarmony = JSON.parse(harmonyJson) as typeof EXAMPLE_RECIPES.harmony;
-    const directOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
+    const harmonyJsonStr = JSON.stringify(harmony);
+    const parsedHarmony = JSON.parse(harmonyJsonStr) as ThemeRecipe;
+    const directOutput = deriveTheme(harmony);
     const importedOutput = deriveTheme(parsedHarmony);
     expect(Object.keys(importedOutput.tokens).length).toBeGreaterThan(0);
     const mismatches: string[] = [];

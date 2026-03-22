@@ -25,9 +25,10 @@
 import path from "path";
 import {
   deriveTheme,
-  EXAMPLE_RECIPES,
   type ThemeRecipe,
 } from "../src/components/tugways/theme-engine";
+import brioJson from "../themes/brio.json";
+import harmonyJson from "../themes/harmony.json";
 
 // ---------------------------------------------------------------------------
 // Token grouping — ordered by prefix per six-slot convention
@@ -298,7 +299,10 @@ function buildTokenCssLines(tokens: Record<string, string>): string[] {
 
 const tugdeckDir = path.resolve(import.meta.dir, "..");
 
-const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+const brio = brioJson as ThemeRecipe;
+const harmony = harmonyJson as ThemeRecipe;
+
+const brioOutput = deriveTheme(brio);
 const brioTokens = brioOutput.tokens;
 const brioTokenCount = Object.keys(brioTokens).length;
 
@@ -316,16 +320,14 @@ console.log(
 );
 
 // ---------------------------------------------------------------------------
-// Generate standalone override CSS for each non-brio recipe in EXAMPLE_RECIPES
+// Generate standalone override CSS for each non-brio shipped theme.
 // [D01] Each file is a complete 373-token body {} override — injecting it after
 // tug-base.css overrides all brio defaults via the CSS cascade.
 // ---------------------------------------------------------------------------
 
 const themesDir = path.join(tugdeckDir, "styles", "themes");
 
-for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES) as [string, ThemeRecipe][]) {
-  if (name === "brio") continue; // brio is the default; its tokens live in tug-base-generated.css
-
+for (const recipe of [harmony] as ThemeRecipe[]) {
   const themeOutput = deriveTheme(recipe);
   const themeTokens = themeOutput.tokens;
   const themeTokenCount = Object.keys(themeTokens).length;
@@ -337,7 +339,7 @@ for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES) as [string, ThemeRe
   themeLines.push(...buildTokenCssLines(themeTokens));
   themeLines.push(`}`);
 
-  const themeCssPath = path.join(themesDir, `${name}.css`);
+  const themeCssPath = path.join(themesDir, `${recipe.name}.css`);
   await Bun.write(themeCssPath, themeLines.join("\n") + "\n");
   console.log(
     `[generate-tug-tokens] wrote ${themeTokenCount} tokens to ${themeCssPath}`,

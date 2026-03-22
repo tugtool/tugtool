@@ -19,7 +19,10 @@ import {
   GalleryThemeGeneratorContent,
   validateRecipeJson,
 } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import brioJson from "../../themes/brio.json";
+
+const brio = brioJson as ThemeRecipe;
 import { _resetForTest } from "@/card-registry";
 import {
   TugThemeProvider,
@@ -38,7 +41,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   afterEach(() => { _resetForTest(); cleanup(); });
 
   it("JSON.stringify(recipe) -> JSON.parse -> JSON.stringify produces identical JSON", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
+    const recipe = brio;
     const json1 = JSON.stringify(recipe, null, 2);
     const parsed = JSON.parse(json1) as typeof recipe;
     const json2 = JSON.stringify(parsed, null, 2);
@@ -46,7 +49,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   });
 
   it("import brio recipe: re-exported JSON matches original", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
+    const recipe = brio;
     const exported = JSON.stringify(recipe, null, 2);
     const reimported = JSON.parse(exported);
     const reexported = JSON.stringify(reimported, null, 2);
@@ -54,11 +57,11 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   });
 
   it("validateRecipeJson accepts a valid brio recipe", () => {
-    expect(validateRecipeJson(EXAMPLE_RECIPES.brio)).toBeNull();
+    expect(validateRecipeJson(brio)).toBeNull();
   });
 
   it("re-deriving brio recipe after round-trip produces same token count", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
+    const recipe = brio;
     const json = JSON.stringify(recipe, null, 2);
     const roundTripped = JSON.parse(json);
     const output1 = deriveTheme(recipe);

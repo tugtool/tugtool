@@ -31,7 +31,6 @@ import * as Popover from "@radix-ui/react-popover";
 import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
-  EXAMPLE_RECIPES,
   generateResolvedCssExport,
   type DerivationFormulas,
   type ThemeRecipe,
@@ -40,6 +39,15 @@ import {
   type ContrastDiagnostic,
   type CVDWarning,
 } from "@/components/tugways/theme-engine";
+import brioJson from "../../../../themes/brio.json";
+import harmonyJson from "../../../../themes/harmony.json";
+
+const SHIPPED_BRIO = brioJson as ThemeRecipe;
+const SHIPPED_HARMONY = harmonyJson as ThemeRecipe;
+const SHIPPED_RECIPES: Record<string, ThemeRecipe> = {
+  brio: SHIPPED_BRIO,
+  harmony: SHIPPED_HARMONY,
+};
 import {
   validateThemeContrast,
   checkCVDDistinguishability,
@@ -74,7 +82,7 @@ const HUE_NAMES: readonly string[] = ADJACENCY_RING;
 /**
  * Default recipe used on initial mount — matches Brio (default dark theme).
  */
-const DEFAULT_RECIPE: ThemeRecipe = EXAMPLE_RECIPES.brio;
+const DEFAULT_RECIPE: ThemeRecipe = SHIPPED_BRIO;
 
 /** Convert a ResolvedColor to an oklch() CSS string. */
 function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): string {
@@ -1980,8 +1988,8 @@ export function GalleryThemeGeneratorContent() {
   // ---------------------------------------------------------------------------
 
   const loadPreset = useCallback(
-    (presetKey: keyof typeof EXAMPLE_RECIPES) => {
-      const r = EXAMPLE_RECIPES[presetKey];
+    (presetKey: keyof typeof SHIPPED_RECIPES) => {
+      const r = SHIPPED_RECIPES[presetKey];
       setRecipeName(r.name);
       setMode(r.recipe);
       setFrameHue(r.surface.frame.hue);
@@ -2166,7 +2174,7 @@ export function GalleryThemeGeneratorContent() {
           aria-label="Theme name"
         />
         <div className="gtg-preset-row">
-          {(Object.keys(EXAMPLE_RECIPES) as Array<keyof typeof EXAMPLE_RECIPES>).map((name) => (
+          {(Object.keys(SHIPPED_RECIPES) as Array<keyof typeof SHIPPED_RECIPES>).map((name) => (
             <TugButton
               key={name}
               emphasis="outlined"

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-22T19:47:59Z
+---
+
+## step-4: Removed EXAMPLE_RECIPES from theme-engine.ts; updated generate-tug-tokens.ts, gallery-theme-generator-content.tsx, and 7 test files to import from brio.json/harmony.json
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-3
 date: 2025-03-22T19:33:08Z
 ---

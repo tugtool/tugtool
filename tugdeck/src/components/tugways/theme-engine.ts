@@ -1787,65 +1787,6 @@ export const RECIPE_REGISTRY: Record<string, { fn: (recipe: ThemeRecipe) => Deri
   light: { fn: lightRecipe },
 };
 
-// ---------------------------------------------------------------------------
-// EXAMPLE_RECIPES — built-in theme recipes
-// ---------------------------------------------------------------------------
-
-/**
- * Built-in theme recipes. Keys become preset button labels in the Theme
- * Generator card. The first entry (brio) is the default dark theme;
- * harmony is the built-in light peer.
- *
- * Both use the nested surface/element/role structure [D03][D04].
- * Both use the recipe function path via controls (darkRecipe / lightRecipe). [D01]
- */
-export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
-  brio: {
-    name: "brio",
-    description: "Deep, immersive dark theme. Very dark surfaces with subtle layering. Near-white text with wide hierarchy spread. Filled controls are prominent with vivid accent backgrounds and white text. Borders are subtle. Shadows are moderate. Industrial warmth with muted chassis and vivid role colors.",
-    recipe: "dark",
-    surface: {
-      canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
-      grid:   { hue: "indigo-violet", tone: 12, intensity: 4 },
-      frame:  { hue: "indigo-violet", tone: 16, intensity: 12 },
-      card:   { hue: "indigo-violet", tone: 12, intensity: 5 },
-    },
-    text: { hue: "cobalt", intensity: 3 },
-    display: { hue: "indigo", intensity: 3 },
-    role: {
-      tone: 50, intensity: 50,
-      accent: "orange",
-      action: "blue",
-      agent: "violet",
-      data: "teal",
-      success: "green",
-      caution: "yellow",
-      danger: "red",
-    },
-  },
-  harmony: {
-    name: "harmony",
-    description: "Bright, open canvas with crisp surfaces. Dark text for maximum readability with clear hierarchy. Filled controls use vivid accent backgrounds with white text. Borders are crisp and visible. Shadows are light. Industrial warmth with muted chassis and vivid role colors — the same palette as Brio, seen in daylight.",
-    recipe: "light",
-    surface: {
-      canvas: { hue: "indigo-violet", tone: 95, intensity: 6 },
-      grid:   { hue: "indigo-violet", tone: 88, intensity: 5 },
-      frame:  { hue: "indigo-violet", tone: 85, intensity: 35 },
-      card:   { hue: "indigo-violet", tone: 90, intensity: 6 },
-    },
-    text: { hue: "cobalt", intensity: 4 },
-    role: {
-      tone: 55, intensity: 60,
-      accent: "orange",
-      action: "blue",
-      agent: "violet",
-      data: "teal",
-      success: "green",
-      caution: "yellow",
-      danger: "red",
-    },
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Internal helpers

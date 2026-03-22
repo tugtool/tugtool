@@ -17,7 +17,10 @@ import { render, act, cleanup } from "@testing-library/react";
 import { GalleryThemeGeneratorContent } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
 import { validateThemeContrast } from "@/components/tugways/theme-accessibility";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import brioJson from "../../themes/brio.json";
+
+const brio = brioJson as ThemeRecipe;
 import { _resetForTest } from "@/card-registry";
 
 // ---------------------------------------------------------------------------
@@ -55,7 +58,7 @@ describe("contrast-dashboard – T7.1: renders correct number of pairs", () => {
 
     // Compute expected count: pairs in the pairing map that validateThemeContrast
     // would include (both fg and bg present in Brio resolved map).
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
     const expectedCount = results.length;
 
@@ -69,7 +72,7 @@ describe("contrast-dashboard – T7.1: renders correct number of pairs", () => {
 
   it("renders fg and bg swatches for each evaluated pair", () => {
     const container = renderDashboard();
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
     const expectedCount = results.length;
 
@@ -86,7 +89,7 @@ describe("contrast-dashboard – T7.1: renders correct number of pairs", () => {
 
 describe("contrast-dashboard – T7.2: Brio body-text pairs pass", () => {
   it("Brio content role failures are bounded (design-choice exceptions only)", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     const contentResults = results.filter((r) => r.role === "content");

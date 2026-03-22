@@ -3,7 +3,7 @@
  *
  * Covers behavioral properties:
  * - Token structure and structural invariants (no exact values)
- * - Recipe contrast validation (all EXAMPLE_RECIPES, no exception lists)
+ * - Recipe contrast validation (all shipped themes, no exception lists)
  * - Contrast floor enforcement (T-FLOOR-1 through T-FLOOR-7)
  * - Pass-2 composited contrast enforcement (T-COMP tests)
  *
@@ -15,12 +15,18 @@ import { describe, it, expect } from "bun:test";
 
 import {
   deriveTheme,
-  EXAMPLE_RECIPES,
   enforceContrastFloor,
   primaryColorName,
+  type ThemeRecipe,
   type ResolvedColor,
   type DerivationFormulas,
 } from "@/components/tugways/theme-engine";
+import brioJson from "../../themes/brio.json";
+import harmonyJson from "../../themes/harmony.json";
+
+const brio = brioJson as ThemeRecipe;
+const harmony = harmonyJson as ThemeRecipe;
+const SHIPPED_RECIPES: Record<string, ThemeRecipe> = { brio, harmony };
 
 import {
   validateThemeContrast,
@@ -43,7 +49,7 @@ import { oklchToHex } from "@/components/tugways/palette-engine";
 
 describe("derivation-engine", () => {
   it("T2.1c: all emphasis x role control tokens present in deriveTheme output", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
 
     const emphases = ["filled", "outlined", "ghost"] as const;
     const roles = ["accent", "action", "option", "agent", "data", "danger"] as const;
@@ -92,14 +98,14 @@ describe("derivation-engine", () => {
   });
 
   it("T2.1d: --tug-surface-global-primary-normal-control-rest alias is present in deriveTheme output", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     expect(output.tokens["--tug-surface-global-primary-normal-control-rest"]).toBe(
       "var(--tug-surface-control-primary-outlined-action-rest)",
     );
   });
 
   it("T2.1e: control token names match emphasis x role pattern", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     const surfaceControlPattern =
       /^--tug-surface-control-primary-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(rest|hover|active)$/;
     const elementControlPattern =
@@ -120,7 +126,7 @@ describe("derivation-engine", () => {
   });
 
   it("T2.4: all resolved tokens have --tug-color() values", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     const TUG_COLOR_RE = /^--tug-color\(/;
 
     const badTokens: string[] = [];
@@ -135,7 +141,7 @@ describe("derivation-engine", () => {
   });
 
   it("T2.6: non-override chromatic tokens resolve to valid sRGB colors", () => {
-    for (const [recipeName, recipe] of Object.entries(EXAMPLE_RECIPES)) {
+    for (const [recipeName, recipe] of Object.entries(SHIPPED_RECIPES)) {
       const output = deriveTheme(recipe);
       const malformed: string[] = [];
       for (const [token, color] of Object.entries(output.resolved)) {
@@ -158,7 +164,7 @@ describe("derivation-engine", () => {
   });
 
   it("resolved map contains only chromatic tokens (no invariant/structural)", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
 
     const STRUCTURAL = [
       "--tug-surface-control-primary-ghost-action-rest",
@@ -176,19 +182,19 @@ describe("derivation-engine", () => {
   });
 
   it("contrastResults and cvdWarnings are empty arrays (populated in later steps)", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     expect(output.contrastResults).toEqual([]);
     expect(output.cvdWarnings).toEqual([]);
   });
 
   it("ThemeOutput.name and recipe match the recipe", () => {
-    const brio = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(brio.name).toBe("brio");
-    expect(brio.recipe).toBe("dark");
+    const brioOutput = deriveTheme(brio);
+    expect(brioOutput.name).toBe("brio");
+    expect(brioOutput.recipe).toBe("dark");
   });
 
   it("step-3: deriveTheme() output includes formulas field of type DerivationFormulas", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     // formulas must be present and non-null
     expect(output.formulas).toBeDefined();
     expect(output.formulas).not.toBeNull();
@@ -202,8 +208,8 @@ describe("derivation-engine", () => {
     expect(typeof f.surfaceOverlayTone).toBe("number");
   });
 
-  it("T2.7a: deriveTheme(EXAMPLE_RECIPES.brio) produces a token for '--tug-element-cardTitle-text-normal-plain-rest'", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+  it("T2.7a: deriveTheme(brio) produces a token for '--tug-element-cardTitle-text-normal-plain-rest'", () => {
+    const output = deriveTheme(brio);
     expect(output.tokens["--tug-element-cardTitle-text-normal-plain-rest"]).toBeDefined();
     expect(output.tokens["--tug-element-cardTitle-text-normal-plain-rest"]).toMatch(/--tug-color\(/);
   });
@@ -225,7 +231,7 @@ describe("derivation-engine", () => {
 // ---------------------------------------------------------------------------
 
 describe("recipe contrast validation", () => {
-  for (const [name, recipe] of Object.entries(EXAMPLE_RECIPES)) {
+  for (const [name, recipe] of Object.entries(SHIPPED_RECIPES)) {
     it(`${name}: fg-default passes content threshold on canonical surfaces`, () => {
       const output = deriveTheme(recipe);
       const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
@@ -289,7 +295,7 @@ describe("derivation-engine step-4 contrast floor", () => {
   });
 
   it("T-FLOOR-4: ThemeOutput.diagnostics is populated for floor-clamped tokens", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     expect(Array.isArray(output.diagnostics)).toBe(true);
     for (const diag of output.diagnostics) {
       expect(typeof diag.token).toBe("string");
@@ -309,7 +315,7 @@ describe("derivation-engine step-4 contrast floor", () => {
   });
 
   it("T-FLOOR-5: validateThemeContrast after deriveTheme reports 0 unexpected failures for floor-clamped tokens", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     const floorApplied = new Set(
@@ -341,7 +347,7 @@ describe("derivation-engine step-4 contrast floor", () => {
   });
 
   it("T-FLOOR-6: structurally fixed tokens (alpha < 1) are not in floor diagnostics", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     const floorApplied = output.diagnostics.filter(
       (d) => d.reason === "floor-applied" || d.reason === "floor-applied-composited",
     );
@@ -354,7 +360,7 @@ describe("derivation-engine step-4 contrast floor", () => {
   });
 
   it("T-FLOOR-7: reconciliation — every floor-applied content token passes via hex-path validation", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     const floorApplied = new Map(
@@ -427,7 +433,7 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
   });
 
   it("T-COMP-5: pass-2 enforcement produces structurally valid diagnostics", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     expect(Array.isArray(output.diagnostics)).toBe(true);
     for (const diag of output.diagnostics) {
       expect(["floor-applied", "floor-applied-composited"]).toContain(diag.reason);
@@ -438,7 +444,7 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
   });
 
   it("T-COMP-6: tokens CSS string and resolved L are consistent after pass-2 adjustments", () => {
-    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const output = deriveTheme(brio);
     for (const tokenName of Object.keys(output.resolved)) {
       const tokenStr = output.tokens[tokenName];
       if (!tokenStr) continue;

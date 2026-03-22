@@ -23,7 +23,10 @@ import {
   buildIntensityGradient,
   valueFromPointerX,
 } from "@/components/tugways/tug-color-strip";
-import { themeColorSpecToOklch, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
+import { themeColorSpecToOklch, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import brioJson from "../../themes/brio.json";
+
+const brio = brioJson as ThemeRecipe;
 
 // ---------------------------------------------------------------------------
 // buildToneGradient / buildIntensityGradient — format tests only
@@ -184,7 +187,7 @@ describe("themeColorSpecToOklch – oklch() CSS string from ThemeColorSpec", () 
   });
 
   it("brio grid spec produces a valid oklch() string without NaN", () => {
-    const result = themeColorSpecToOklch(EXAMPLE_RECIPES.brio.surface.grid);
+    const result = themeColorSpecToOklch(brio.surface.grid);
     expect(result).toMatch(/^oklch\(/);
     expect(result).not.toContain("NaN");
   });
