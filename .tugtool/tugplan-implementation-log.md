@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-22T19:55:19Z
+---
+
+## step-5: Verification-only checkpoint: confirmed EXAMPLE_RECIPES removed, theme-recipes.ts deleted, golden CSS diffs identical, all 1767 tests pass
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-4
 date: 2025-03-22T19:47:59Z
 ---
