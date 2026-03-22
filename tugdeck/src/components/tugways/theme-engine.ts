@@ -11,7 +11,7 @@
  *             Resolves all per-tier hue variants (fg-muted, surfBareBase, etc.)
  *             using palette angles verbatim — no warmth bias applied.
  *   Layer 2 — evaluateRules(): RULES table → tokens + resolved maps
- *             Iterates the declarative rule table in derivation-rules.ts, calling
+ *             Iterates the declarative rule table in theme-rules.ts, calling
  *             the appropriate helper for each token type. Pre-computed tone values
  *             are read directly from DerivationFormulas (set by recipe functions). [D04]
  *
@@ -232,7 +232,7 @@
  * @module components/tugways/theme-engine
  */
 
-import { RECIPE_REGISTRY, darkRecipe } from "./recipe-functions";
+import { RECIPE_REGISTRY, darkRecipe } from "./theme-recipes";
 
 import {
   HUE_FAMILIES,
@@ -245,7 +245,7 @@ import {
   ADJACENCY_RING,
   resolveHyphenatedHue,
 } from "./palette-engine";
-import { RULES } from "./derivation-rules";
+import { RULES } from "./theme-rules";
 import {
   toneToL,
   CONTRAST_SCALE,
@@ -255,8 +255,8 @@ import {
   compositeOverSurface,
   hexToOkLabL,
 } from "./theme-accessibility";
-import { ELEMENT_SURFACE_PAIRING_MAP } from "./element-surface-pairing-map";
-import type { ElementSurfacePairing } from "./element-surface-pairing-map";
+import { ELEMENT_SURFACE_PAIRING_MAP } from "./theme-pairings";
+import type { ElementSurfacePairing } from "./theme-pairings";
 
 // ---------------------------------------------------------------------------
 // Public interfaces — Spec S01 / S02
@@ -1076,7 +1076,7 @@ export interface DerivationFormulas {
 
   // ===== Computed Surface Tones =====
   // Pre-computed surface tone values, set directly by recipe functions.
-  // Set directly by recipe functions; read by Expr lambdas in derivation-rules.ts. [D04]
+  // Set directly by recipe functions; read by Expr lambdas in theme-rules.ts. [D04]
   /** @semantic computed-surface-tone — computed tone for the app background surface */
   surfaceApp: number;
   /** @semantic computed-surface-tone — computed tone for the canvas background surface */

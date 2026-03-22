@@ -16,7 +16,7 @@
  *   "informational" — contrast 60 / 3:1 WCAG AA (status, metadata, secondary/muted text)
  *   "decorative"    — no minimum (structural dividers, decorative accents)
  *
- * @module components/tugways/element-surface-pairing-map
+ * @module components/tugways/theme-pairings
  */
 
 export type ContrastRole =

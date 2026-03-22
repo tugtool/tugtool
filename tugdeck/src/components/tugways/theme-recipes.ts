@@ -20,7 +20,7 @@
  * a clean implementation, [D03] Light recipe is independent, Spec S02, Spec S03,
  * (#contrast-search-spec, #recipe-registry)
  *
- * @module components/tugways/recipe-functions
+ * @module components/tugways/theme-recipes
  */
 
 import { DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
@@ -37,7 +37,7 @@ import type { DerivationFormulas, ThemeRecipe } from "./theme-engine";
  *
  * This is the same piecewise formula used by enforceContrastFloor and toneToL
  * in theme-accessibility.ts. Duplicated here to avoid a circular import
- * (recipe-functions.ts -> theme-engine.ts -> recipe-functions.ts).
+ * (theme-recipes.ts -> theme-engine.ts -> theme-recipes.ts).
  * Both implementations use the same math. [D02]
  */
 function toneToLLocal(tone: number, hueName?: string): number {
@@ -439,7 +439,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     disabledSurfaceToneScale: 0,
 
     // ===== Computed Surface Tones =====
-    // Directly assigned by recipe function. Read by Expr lambdas in derivation-rules.ts. [D04]
+    // Directly assigned by recipe function. Read by Expr lambdas in theme-rules.ts. [D04]
     // At surfaceContrast=50, all surface tones equal their input tone fields.
     surfaceApp: c,
     surfaceCanvas: c,
@@ -784,7 +784,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     disabledSurfaceToneScale: 0,
 
     // ===== Computed Surface Tones =====
-    // Directly assigned by recipe function. Read by Expr lambdas in derivation-rules.ts. [D04]
+    // Directly assigned by recipe function. Read by Expr lambdas in theme-rules.ts. [D04]
     surfaceApp: c,
     surfaceCanvas: c,
     surfaceGrid: c - 3, // light mode: slightly darker than canvas (-3) for a barely visible grid line

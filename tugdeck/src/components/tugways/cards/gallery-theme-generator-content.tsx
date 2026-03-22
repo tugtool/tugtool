@@ -50,7 +50,7 @@ import {
   CONTRAST_MARGINAL_DELTA,
   type CVDType,
 } from "@/components/tugways/theme-accessibility";
-import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
+import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
 import { TugButton } from "@/components/tugways/tug-button";
 import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
 import { TugToneStrip, TugIntensityStrip } from "@/components/tugways/tug-color-strip";

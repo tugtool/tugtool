@@ -31,7 +31,7 @@ import {
 
 import {
   ELEMENT_SURFACE_PAIRING_MAP,
-} from "@/components/tugways/element-surface-pairing-map";
+} from "@/components/tugways/theme-pairings";
 
 import { oklchToHex } from "@/components/tugways/palette-engine";
 

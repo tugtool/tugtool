@@ -22,7 +22,7 @@
  *     formulas[name + "HueSlot"] yields the actual ResolvedHueSlots key.
  * Sentinel values [D07]: "__white" | "__highlight" | "__shadow" | "__verboseHighlight"
  *
- * @module components/tugways/derivation-rules
+ * @module components/tugways/theme-rules
  */
 
 import type {

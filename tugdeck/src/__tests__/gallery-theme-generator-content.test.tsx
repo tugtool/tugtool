@@ -30,7 +30,7 @@ import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tu
 import { getRegistration, _resetForTest } from "@/card-registry";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
 import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
-import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
+import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
 import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
 
 // ---------------------------------------------------------------------------

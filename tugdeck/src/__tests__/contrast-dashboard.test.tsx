@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { GalleryThemeGeneratorContent } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
+import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
 import { validateThemeContrast } from "@/components/tugways/theme-accessibility";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
 import { _resetForTest } from "@/card-registry";

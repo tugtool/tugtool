@@ -19,7 +19,7 @@
 
 import { oklchToHex, oklchToLinearSRGB, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
 import type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-engine";
-import type { ElementSurfacePairing } from "./element-surface-pairing-map";
+import type { ElementSurfacePairing } from "./theme-pairings";
 
 // ---------------------------------------------------------------------------
 // Re-export PairingEntry alias for compatibility with plan spec.

@@ -12,7 +12,7 @@
  *   rename-map  Generate the complete old->new rename map for all 373 tokens.
  *               Flags: --json (machine-readable JSON vs. human-readable report)
  *   inject      Generate and insert @tug-pairings comment blocks into CSS files.
- *   verify      Cross-check @tug-pairings blocks against element-surface-pairing-map.ts.
+ *   verify      Cross-check @tug-pairings blocks against theme-pairings.ts.
  *   lint        Hard-fail on annotation completeness, alias chain depth,
  *               missing @tug-pairings blocks, and unresolved pairings.
  *
@@ -37,7 +37,7 @@ import { SEED_RENAME_MAP } from "./seed-rename-map";
 const TUGDECK = path.resolve(import.meta.dir, "..");
 const GENERATED_CSS = path.join(TUGDECK, "styles/tug-base-generated.css");
 const TUGWAYS = path.join(TUGDECK, "src/components/tugways");
-const PAIRING_MAP_PATH = path.join(TUGWAYS, "element-surface-pairing-map.ts");
+const PAIRING_MAP_PATH = path.join(TUGWAYS, "theme-pairings.ts");
 
 /** All 23 component CSS files in scope for audit. */
 const COMPONENT_CSS_FILES = [
@@ -675,7 +675,7 @@ function cmdPairings(): void {
   }
 }
 
-/** Load the existing pairing map entries from element-surface-pairing-map.ts. */
+/** Load the existing pairing map entries from theme-pairings.ts. */
 function loadPairingMap(): { element: string; surface: string }[] | null {
   if (!fs.existsSync(PAIRING_MAP_PATH)) return null;
   const src = fs.readFileSync(PAIRING_MAP_PATH, "utf-8");
@@ -965,7 +965,7 @@ function cmdRename(opts: RenameOptions): void {
       }
 
       // Also replace in TS map keys where the token name appears as a bare string
-      // e.g., in derivation-rules.ts: "field-fg": { ... }
+      // e.g., in theme-rules.ts: "field-fg": { ... }
       // or in the pairing map: element: "--tug-field-fg"
       const escapedOldShort = oldShort.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const bareRegex = new RegExp(
@@ -1215,7 +1215,7 @@ function cmdVerify(): void {
   // Load pairing map
   const mapPairings = loadPairingMap();
   if (!mapPairings) {
-    console.error("ERROR: Could not load element-surface-pairing-map.ts");
+    console.error("ERROR: Could not load theme-pairings.ts");
     process.exit(1);
   }
 

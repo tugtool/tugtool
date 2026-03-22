@@ -20,7 +20,7 @@
 /**
  * @tug-pairings
  * This file uses hardcoded oklch values exclusively — no --tug-* tokens are used.
- * All pairings are outside the token system and are NOT tracked in element-surface-pairing-map.ts.
+ * All pairings are outside the token system and are NOT tracked in theme-pairings.ts.
  * These are fixed at authoring time so the overlay remains legible regardless of active theme.
  *
  * Logical pairings (hardcoded oklch, not tracked by contrast engine):

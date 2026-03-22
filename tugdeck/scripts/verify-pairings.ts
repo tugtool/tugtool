@@ -6,15 +6,15 @@
  *
  * Parses every @tug-pairings block from the 23 component CSS files in
  * tugways/ and tugways/cards/, extracts the resolved --tug-* token pairs,
- * then compares against element-surface-pairing-map.ts.
+ * then compares against theme-pairings.ts.
  *
  * Reports:
  *   GAPS    — pairings declared in a CSS @tug-pairings block that have no
- *             corresponding entry in element-surface-pairing-map.ts.
+ *             corresponding entry in theme-pairings.ts.
  *             These are accessibility coverage holes — the contrast engine
  *             never checks these pairs. GAPS cause exit code 1.
  *
- *   ORPHANS — entries in element-surface-pairing-map.ts that are not
+ *   ORPHANS — entries in theme-pairings.ts that are not
  *             traceable to any @tug-pairings block. These are informational:
  *             many legitimate map entries predate the CSS comment convention
  *             or are added from design intent rather than direct CSS observation.
@@ -44,7 +44,7 @@ const CSS_DIRS = [
 ];
 const PAIRING_MAP_PATH = join(
   TUGDECK_ROOT,
-  "src/components/tugways/element-surface-pairing-map.ts"
+  "src/components/tugways/theme-pairings.ts"
 );
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ function parsePairingsFromFile(filePath: string): CssPairing[] {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3: Load the pairing map from element-surface-pairing-map.ts
+// Step 3: Load the pairing map from theme-pairings.ts
 //
 // The file is TypeScript, not JSON, so we parse it with regex rather than
 // importing it (which would require a full TS execution context with all
@@ -262,7 +262,7 @@ function pairingKey(element: string, surface: string): string {
 }
 
 function runCrossCheck(): void {
-  console.log("verify-pairings: cross-checking @tug-pairings CSS blocks against element-surface-pairing-map.ts\n");
+  console.log("verify-pairings: cross-checking @tug-pairings CSS blocks against theme-pairings.ts\n");
 
   // Collect CSS files
   const cssFiles = collectCssFiles();
@@ -316,7 +316,7 @@ function runCrossCheck(): void {
   if (gaps.length === 0) {
     console.log("  GAPS: none — all CSS-declared pairings are covered by the map.");
   } else {
-    console.log(`  GAPS (${gaps.length}) — CSS pairings NOT in element-surface-pairing-map.ts:`);
+    console.log(`  GAPS (${gaps.length}) — CSS pairings NOT in theme-pairings.ts:`);
     for (const g of gaps) {
       console.log(`    [GAP] ${g.element} | ${g.surface} (${g.role}) — ${g.sourceFile}`);
     }
@@ -349,7 +349,7 @@ function runCrossCheck(): void {
     process.exit(0);
   } else {
     console.log(
-      `  Result: FAIL — ${gaps.length} gap(s) found. Add the missing pairings to element-surface-pairing-map.ts.`
+      `  Result: FAIL — ${gaps.length} gap(s) found. Add the missing pairings to theme-pairings.ts.`
     );
     process.exit(1);
   }

@@ -10,7 +10,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, it, expect } from "bun:test";
 
-import { ELEMENT_SURFACE_PAIRING_MAP, ContrastRole } from "@/components/tugways/element-surface-pairing-map";
+import { ELEMENT_SURFACE_PAIRING_MAP, ContrastRole } from "@/components/tugways/theme-pairings";
 import {
   computeWcagContrast,
   computePerceptualContrast,
