@@ -17,7 +17,7 @@
  * @module components/tugways/theme-accessibility
  */
 
-import { oklchToHex, oklchToLinearSRGB, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
+import { oklchToHex, oklchToLinearSRGB, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, toneToL } from "./palette-engine";
 import type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-engine";
 import type { ElementSurfacePairing } from "./theme-pairings";
 
@@ -344,28 +344,8 @@ function lToTone(L: number, hueName: string): number {
   return Math.max(0, Math.min(100, tone));
 }
 
-/**
- * Compute the OKLCH lightness from a tone value and hue name.
- *
- * Forward formula matching the derivation engine's resolveOklch():
- *   L = L_DARK + min(tone,50)*(canonL-L_DARK)/50 + max(tone-50,0)*(L_LIGHT-canonL)/50
- *
- * Used by enforceContrastFloor in theme-engine.ts for the binary
- * search in tone space — avoids a hex round-trip when both element and surface L
- * values are already known.
- *
- * @param tone - Tone value in [0, 100]
- * @param hueName - Hue name for canonical L lookup (e.g. "cobalt", "violet")
- * @returns OKLCH lightness value in [L_DARK, L_LIGHT]
- */
-export function toneToL(tone: number, hueName: string): number {
-  const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.77;
-  return (
-    L_DARK +
-    (Math.min(tone, 50) * (canonL - L_DARK)) / 50 +
-    (Math.max(tone - 50, 0) * (L_LIGHT - canonL)) / 50
-  );
-}
+// toneToL is defined in palette-engine.ts and re-exported here for compatibility.
+export { toneToL } from "./palette-engine";
 
 /**
  * Parsed components of a --tug-color() token string.

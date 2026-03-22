@@ -1,55 +1,25 @@
 /**
- * Recipe Functions — Theme Recipe Function System
+ * Theme Recipes
  *
- * Provides recipe functions that express design relationships via rules
- * and `contrastSearch`, replacing the bag-of-constants approach of
- * DARK_FORMULAS / LIGHT_FORMULAS. [D01]
+ * Recipe functions that produce DerivationFormulas from a ThemeRecipe.
+ * Each recipe reads tone/intensity values from the recipe's surface, text,
+ * and role specs, then computes all formula fields needed by the derivation
+ * engine. Dark and light are independent recipes — no mode branching.
  *
- * Architecture:
- *   - `contrastSearch` — binary search in tone space for a contrast threshold (Spec S02)
- *   - `darkRecipe` — dark theme: rules + contrastSearch calls -> DerivationFormulas
- *   - `lightRecipe` — light theme: independent rules, not derived from dark (D03)
- *   - `RECIPE_REGISTRY` — map of recipe name -> fn (Spec S03)
- *
- * `contrastSearch` uses `toneToL` with the generic fallback (DEFAULT_CANONICAL_L lookup
- * returning 0.77 when hueName is omitted). The downstream `enforceContrastFloor` in
- * `evaluateRules` provides exact hue-aware correction, so recipe-level search results
- * are approximate starting points that the safety net refines. [D02]
- *
- * References: [D01] Recipe functions replace constant bags, [D02] contrastSearch is
- * a clean implementation, [D03] Light recipe is independent, Spec S02, Spec S03,
- * (#contrast-search-spec, #recipe-registry)
+ * - contrastSearch: binary search for a tone that meets a contrast threshold
+ * - darkRecipe: produces formulas for dark themes
+ * - lightRecipe: produces formulas for light themes
+ * - RECIPE_REGISTRY: maps recipe name to function
  *
  * @module components/tugways/theme-recipes
  */
 
-import { DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
+import { toneToL } from "./palette-engine";
 import type { DerivationFormulas, ThemeRecipe } from "./theme-engine";
 
 // ---------------------------------------------------------------------------
-// contrastSearch — Spec S02
+// contrastSearch
 // ---------------------------------------------------------------------------
-
-/**
- * Convert a tone value (0-100) to OKLab L, using optional hue name for
- * canonical-L lookup. Falls back to 0.77 (violet canonical L) when hueName
- * is not provided or not in DEFAULT_CANONICAL_L.
- *
- * This is the same piecewise formula used by enforceContrastFloor and toneToL
- * in theme-accessibility.ts. Duplicated here to avoid a circular import
- * (theme-recipes.ts -> theme-engine.ts -> theme-recipes.ts).
- * Both implementations use the same math. [D02]
- */
-function toneToLLocal(tone: number, hueName?: string): number {
-  // Generic fallback: 0.77 matches the "violet" canonical L.
-  // enforceContrastFloor provides exact hue-aware correction downstream.
-  const canonL = (hueName !== undefined ? DEFAULT_CANONICAL_L[hueName] : undefined) ?? 0.77;
-  return (
-    L_DARK +
-    (Math.min(tone, 50) * (canonL - L_DARK)) / 50 +
-    (Math.max(tone - 50, 0) * (L_LIGHT - canonL)) / 50
-  );
-}
 
 /**
  * Compute perceptual contrast between element at elementL and surface at surfaceL.
@@ -69,15 +39,17 @@ function contrastFromL(elementL: number, surfaceL: number): number {
 
 /**
  * Binary-search in tone space (0-100) for a tone that achieves `threshold`
- * perceptual contrast against `surfaceTone`. (Spec S02)
+ * perceptual contrast against `surfaceTone`.
+ *
+ * Uses toneToL with the generic fallback (canonL=0.77) when hueName is omitted.
+ * enforceContrastFloor in the engine provides hue-aware correction downstream,
+ * so recipe-level results are approximate starting points that the safety net refines.
  *
  * @param surfaceTone - Surface tone (0-100)
  * @param threshold   - Required contrast magnitude (e.g. 75 for content role)
  * @param direction   - "lighter" | "darker" | "auto" (default "auto")
  *                      auto: dark surfaces (tone < 50) -> lighter; light surfaces -> darker
- * @param hueName     - Optional element hue name for more accurate L conversion.
- *                      When omitted, uses generic fallback canonL=0.77 (violet).
- *                      enforceContrastFloor provides hue-aware correction downstream.
+ * @param hueName     - Optional element hue name for more accurate L conversion
  * @returns Found tone, rounded to nearest integer, clamped to [0, 100]
  */
 export function contrastSearch(
@@ -93,11 +65,10 @@ export function contrastSearch(
         ? "lighter"
         : "darker";
 
-  const surfaceL = toneToLLocal(surfaceTone);
+  const surfaceL = toneToL(surfaceTone);
 
-  // Check if the extreme already meets threshold
   const extremeTone = resolvedDirection === "lighter" ? 100 : 0;
-  const extremeL = toneToLLocal(extremeTone, hueName);
+  const extremeL = toneToL(extremeTone, hueName);
   const extremeContrast = Math.abs(contrastFromL(extremeL, surfaceL));
 
   if (extremeContrast < threshold) {
@@ -112,7 +83,7 @@ export function contrastSearch(
 
   for (let iter = 0; iter < 20; iter++) {
     const mid = (lo + hi) / 2;
-    const midL = toneToLLocal(mid, hueName);
+    const midL = toneToL(mid, hueName);
     const midContrast = Math.abs(contrastFromL(midL, surfaceL));
 
     if (midContrast >= threshold) {
@@ -139,31 +110,19 @@ export function contrastSearch(
 }
 
 // ---------------------------------------------------------------------------
-// darkRecipe — Dark theme recipe function [D01]
+// darkRecipe
 // ---------------------------------------------------------------------------
 
 /**
- * Dark theme recipe function. [D01]
+ * Produces DerivationFormulas for a dark theme recipe.
  *
- * Rules are expressed as offsets + contrastSearch calls + constants.
- * Pre-computed tone fields (surfaceApp, roleIntensity, etc.) are set directly
- * by this function. [D04]
- *
- * Derived from DARK_FORMULAS offset analysis via compute-offsets.ts [D07]:
- *   canvasTone = 5 (base)
- *   surface tiers: +1 to +11 above canvas
- *   text: canvas+89 for primary (near-white design intent), -28/-57/-71 offsets for hierarchy
- *   frame: frameTone=16 / frameIntensity=12
- *   roles: roleTone=50 for filled controls and role tones
- *
- * Note: contentTextTone uses canvas+89 (a design intent offset) rather than
- * contrastSearch, because the design calls for near-white (tone~94) text on dark
- * backgrounds — significantly above the minimum contrast-passing tone (~58).
- * contrastSearch is used for frameTone-relative values and roles where
- * the minimum-passing tone is the right choice.
+ * All fields are computed from recipe inputs via tone offsets and constants.
+ * contentTextTone uses canvas+89 (a design intent offset → ~94, near-white)
+ * rather than contrastSearch: the design calls for near-white text on dark
+ * backgrounds, well above the minimum contrast-passing tone.
  */
 export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
-  const canvasTone = recipe.surface.canvas.tone; // canvasTone from recipe
+  const canvasTone = recipe.surface.canvas.tone;
   const canvasIntensity = recipe.surface.canvas.intensity;
   const frameTone = recipe.surface.frame.tone;
   const frameIntensity = recipe.surface.frame.intensity;
@@ -172,9 +131,9 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
   const roleTone = recipe.role.tone;
   const roleIntensity = recipe.role.intensity;
 
-  // Text brightness: design offset from canvas — near-white on dark (canvas+89 → ~94)
-  // Not using contrastSearch here because the design intent is maximum legibility
-  // (near-white), not just minimum-passing contrast.
+  // Design intent: near-white text on dark background (canvas+89 → ~94).
+  // Using an offset rather than contrastSearch so the result is near-white,
+  // not just minimum-passing contrast.
   const primaryTextTone = canvasTone + 89;
 
   return {
@@ -183,7 +142,6 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     surfaceCanvasTone: canvasTone,
 
     // ===== Surface Layering =====
-    // Offsets from DARK_FORMULAS at canvasTone=5: +6, +7, +6, +9, +1, +1, +11
     surfaceSunkenTone: canvasTone + 6,
     surfaceDefaultTone: canvasTone + 7,
     surfaceRaisedTone: canvasTone + 6,
@@ -193,11 +151,10 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     surfaceScreenTone: canvasTone + 11,
 
     // ===== Surface Coloring =====
-    // Intensity constants — atmosphere hue at moderate chroma
     atmosphereIntensity: canvasIntensity,
     surfaceAppIntensity: 2,
     surfaceCanvasIntensity: 2,
-    surfaceGridIntensity: 2, // very subtle: barely visible grid line on canvas
+    surfaceGridIntensity: 2,
     surfaceDefaultIntensity: 5,
     surfaceRaisedIntensity: 5,
     surfaceOverlayIntensity: 4,
@@ -209,14 +166,10 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     cardBodyIntensity,
 
     // ===== Text Brightness =====
-    // canvas+89 → ~94 (near-white); pure white for inverse on filled controls
     contentTextTone: primaryTextTone,
-    inverseTextTone: 100, // pure white: inverse text on filled controls
+    inverseTextTone: 100,
 
     // ===== Text Hierarchy =====
-    // Offsets from DARK_FORMULAS at primaryTextTone=94:
-    //   mutedTextTone=66 (−28), subtleTextTone=37 (−57),
-    //   disabledTextTone=23 (−71), placeholderTextTone=30 (−64)
     mutedTextTone: primaryTextTone - 28,
     subtleTextTone: primaryTextTone - 57,
     disabledTextTone: primaryTextTone - 71,
@@ -234,14 +187,13 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Border Visibility =====
     borderBaseIntensity: 6,
     borderStrongIntensity: 7,
-    // borderMutedTone=37 (matches subtleTextTone: primaryTextTone−57)
     borderMutedTone: primaryTextTone - 57,
     borderMutedIntensity: 7,
-    // borderStrongTone=40 (slightly above muted: primaryTextTone−54)
+    // borderStrongTone sits slightly above muted to create a visible step
     borderStrongTone: primaryTextTone - 54,
     dividerDefaultIntensity: 6,
     dividerMutedIntensity: 4,
-    borderRoleTone: roleTone, // role borders use role tone
+    borderRoleTone: roleTone,
     semanticRoleTone: roleTone,
 
     // ===== Card Frame Style =====
@@ -261,13 +213,11 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     overlayHighlightAlpha: 6,
 
     // ===== Filled Control Prominence =====
-    // Dark mode: rest = recipe.role.tone, hover/active are clamped offsets per D03
     filledSurfaceRestTone: recipe.role.tone,
     filledSurfaceHoverTone: Math.max(0, Math.min(100, recipe.role.tone + 5)),
     filledSurfaceActiveTone: Math.max(0, Math.min(100, recipe.role.tone + 10)),
 
     // ===== Outlined Control Style =====
-    // Dark: fg is near-white (100); light counterparts are pure black (0)
     outlinedTextRestTone: 100,
     outlinedTextHoverTone: 100,
     outlinedTextActiveTone: 100,
@@ -282,17 +232,15 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     outlinedIconRestToneLight: 0,
     outlinedIconHoverToneLight: 0,
     outlinedIconActiveToneLight: 0,
-    // Option border: mid-tone (roleTone=50) and +5/+10 for hover/active
     outlinedOptionBorderRestTone: roleTone,
     outlinedOptionBorderHoverTone: roleTone + 5,
     outlinedOptionBorderActiveTone: roleTone + 10,
-    outlinedSurfaceHoverIntensity: 0, // sentinel path
+    outlinedSurfaceHoverIntensity: 0,
     outlinedSurfaceHoverAlpha: 10,
-    outlinedSurfaceActiveIntensity: 0, // sentinel path
+    outlinedSurfaceActiveIntensity: 0,
     outlinedSurfaceActiveAlpha: 20,
 
     // ===== Ghost Control Style =====
-    // Dark: fg is near-white (100); light counterparts are pure black (0)
     ghostTextRestTone: 100,
     ghostTextHoverTone: 100,
     ghostTextActiveTone: 100,
@@ -306,7 +254,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     ghostIconHoverIntensity: 2,
     ghostIconActiveIntensity: 2,
     ghostBorderIntensity: 20,
-    ghostBorderTone: canvasTone + 55, // mid-bright tone visible on dark surfaces (=60)
+    ghostBorderTone: canvasTone + 55,
     ghostTextRestToneLight: 0,
     ghostTextHoverToneLight: 0,
     ghostTextActiveToneLight: 0,
@@ -319,34 +267,30 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     ghostIconActiveIntensityLight: 0,
 
     // ===== Badge Style =====
-    // Dark: bright fg (85 = primaryTextTone−9) on dark tinted bg (60 = canvasTone+55), mid-tone border (50)
     badgeTintedTextIntensity: 72,
-    badgeTintedTextTone: primaryTextTone - 9, // ~85: near-white fg on dark tinted bg
+    badgeTintedTextTone: primaryTextTone - 9,
     badgeTintedSurfaceIntensity: 65,
-    badgeTintedSurfaceTone: canvasTone + 55, // matches ghostBorderTone: 60
+    badgeTintedSurfaceTone: canvasTone + 55,
     badgeTintedSurfaceAlpha: 15,
     badgeTintedBorderIntensity: 50,
-    badgeTintedBorderTone: roleTone, // 50
+    badgeTintedBorderTone: roleTone,
     badgeTintedBorderAlpha: 35,
 
     // ===== Icon Style =====
-    // iconActiveTone=80 (primaryTextTone−14): vivid but below primary to avoid blending
+    // iconActiveTone is vivid but below primaryTextTone to avoid blending with text
     iconActiveTone: primaryTextTone - 14,
     iconMutedIntensity: 7,
-    // iconMutedTone=37 (matches subtleTextTone: primaryTextTone−57)
     iconMutedTone: primaryTextTone - 57,
 
     // ===== Tab Style =====
-    // tabTextActiveTone=90 (primaryTextTone−4): near-white, clearly above inactive
     tabTextActiveTone: primaryTextTone - 4,
 
     // ===== Toggle Style =====
-    toggleTrackOnHoverTone: canvasTone + 40, // mid-tone hover track: 45
-    toggleThumbDisabledTone: canvasTone + 35, // dim thumb when disabled: 40
+    toggleTrackOnHoverTone: canvasTone + 40,
+    toggleThumbDisabledTone: canvasTone + 35,
     toggleTrackDisabledIntensity: 5,
 
     // ===== Field Style =====
-    // Field bg tones are offsets from canvas (DARK_FORMULAS: +3, +6, +2, +1, +6)
     fieldSurfaceRestTone: canvasTone + 3,
     fieldSurfaceHoverTone: canvasTone + 6,
     fieldSurfaceFocusTone: canvasTone + 2,
@@ -357,15 +301,14 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     disabledBorderIntensity: 6,
 
     // ===== Signal / Accent Tones =====
-    // accentSubtleTone: darker (canvas+25=30) so fg-default achieves contrast ≥75
+    // Kept darker (canvas+25) so fg-default achieves contrast >=75 against these surfaces
     accentSubtleTone: canvasTone + 25,
-    cautionSurfaceTone: canvasTone + 25, // same rationale
+    cautionSurfaceTone: canvasTone + 25,
 
     // ===== Hue Slot Dispatch =====
-    // These are mode-independent routing decisions; same as DARK_FORMULAS
     surfaceAppHueSlot: "canvas",
     surfaceCanvasHueSlot: "canvas",
-    surfaceGridHueSlot: "canvas", // grid line uses the canvas hue at a slightly offset tone
+    surfaceGridHueSlot: "canvas",
     surfaceSunkenHueSlot: "canvasBase",
     surfaceDefaultHueSlot: "canvasBase",
     surfaceRaisedHueSlot: "frame",
@@ -419,19 +362,16 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     ghostDangerSurfaceActiveAlpha: 20,
 
     // ===== Computed Tone Override =====
-    // Dividers sit just above surfaceScreen
-    disabledTextToneComputed: primaryTextTone - 56, // slightly above subtleTextTone: 38
+    disabledTextToneComputed: primaryTextTone - 56,
     disabledBorderToneOverride: canvasTone + 23,
     toggleTrackOffToneOverride: canvasTone + 23,
     toggleDisabledToneOverride: canvasTone + 17,
-    borderStrongToneComputed: Math.round(primaryTextTone - 57), // matches subtleTextTone: 37
+    borderStrongToneComputed: Math.round(primaryTextTone - 57),
 
     // ===== Computed Surface Tones =====
-    // Directly assigned by recipe function. Read by Expr lambdas in theme-rules.ts. [D04]
-    // At surfaceContrast=50, all surface tones equal their input tone fields.
     surfaceApp: canvasTone,
     surfaceCanvas: canvasTone,
-    surfaceGrid: canvasTone + 3, // dark mode: slightly lighter than canvas (+3) for a barely visible grid line
+    surfaceGrid: canvasTone + 3,
     surfaceSunken: canvasTone + 6,
     surfaceDefault: canvasTone + 7,
     surfaceRaised: canvasTone + 6,
@@ -448,17 +388,16 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Computed Control Tones =====
     disabledSurfaceTone: canvasTone + 17,
     disabledBorderTone: canvasTone + 23,
-    outlinedSurfaceRestTone: canvasTone + 3,  // surfaceInset + 2 = (canvasTone+1) + 2 = canvasTone+3 → dark: 8
-    outlinedSurfaceHoverTone: canvasTone + 7,  // surfaceRaised + 1 = (canvasTone+6) + 1 = canvasTone+7 → dark: 12
-    outlinedSurfaceActiveTone: canvasTone + 9, // surfaceOverlay = canvasTone+9 → dark: 14
+    outlinedSurfaceRestTone: canvasTone + 3,
+    outlinedSurfaceHoverTone: canvasTone + 7,
+    outlinedSurfaceActiveTone: canvasTone + 9,
     toggleTrackOffTone: canvasTone + 23,
-    toggleDisabledTone: canvasTone + 17, // = disabledSurfaceTone
+    toggleDisabledTone: canvasTone + 17,
 
     // ===== Computed Signal Intensity =====
     roleIntensity: Math.round(roleIntensity),
 
     // ===== Hue Name Dispatch =====
-    // Dark mode: indigo screen bg, bare-primary muted, indigo-cobalt subtle/disabled
     surfaceScreenHueExpression: "indigo",
     mutedTextHueExpression: "barePrimary",
     subtleTextHueExpression: "indigo-cobalt",
@@ -479,28 +418,19 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
 }
 
 // ---------------------------------------------------------------------------
-// lightRecipe — Light theme recipe function [D01] [D03]
+// lightRecipe
 // ---------------------------------------------------------------------------
 
 /**
- * Light theme recipe function. Independent from darkRecipe — not derived by
- * inverting parameters. (D03)
+ * Produces DerivationFormulas for a light theme recipe.
  *
- * Light tone dynamics are inverted: surfaces descend from near-white (~95),
- * text ascends from near-black (~8). contrastSearch direction is "darker"
- * for element tones on light surfaces.
- *
- * Derived from LIGHT_FORMULAS offset analysis via compute-offsets.ts [D07]:
- *   canvasTone = 95 (base)
- *   surface tiers: -2 to -10 below canvas
- *   text: canvas-87 for primary (near-black design intent), +26/+44/+60 offsets for hierarchy
- *   frame: frameTone=85 / frameIntensity=35
- *
- * Note: contentTextTone uses canvas-87 (a design intent offset → ~8) rather than
- * contrastSearch, because the design calls for near-black text on light backgrounds.
+ * Independent from darkRecipe — not derived by inverting parameters.
+ * Surfaces descend from near-white (~95); text ascends from near-black (~8).
+ * contentTextTone uses canvas-87 (a design intent offset → ~8) rather than
+ * contrastSearch: the design calls for near-black text on light backgrounds.
  */
 export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
-  const canvasTone = recipe.surface.canvas.tone; // canvasTone from recipe
+  const canvasTone = recipe.surface.canvas.tone;
   const canvasIntensity = recipe.surface.canvas.intensity;
   const frameTone = recipe.surface.frame.tone;
   const frameIntensity = recipe.surface.frame.intensity;
@@ -509,7 +439,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
   const roleTone = recipe.role.tone;
   const roleIntensity = recipe.role.intensity;
 
-  // Text brightness: design offset from canvas — near-black on light (canvas-87 → ~8)
+  // Design intent: near-black text on light background (canvas-87 → ~8).
   const primaryTextTone = canvasTone - 87;
 
   return {
@@ -518,7 +448,6 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     surfaceCanvasTone: canvasTone,
 
     // ===== Surface Layering =====
-    // Offsets from LIGHT_FORMULAS at canvasTone=95: -7, -5, -3, -2, -9, -9, -10
     surfaceSunkenTone: canvasTone - 7,
     surfaceDefaultTone: canvasTone - 5,
     surfaceRaisedTone: canvasTone - 3,
@@ -531,7 +460,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     atmosphereIntensity: canvasIntensity,
     surfaceAppIntensity: 3,
     surfaceCanvasIntensity: 3,
-    surfaceGridIntensity: 2, // very subtle: barely visible grid line on canvas
+    surfaceGridIntensity: 2,
     surfaceDefaultIntensity: 6,
     surfaceRaisedIntensity: 6,
     surfaceOverlayIntensity: 5,
@@ -543,14 +472,10 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     cardBodyIntensity,
 
     // ===== Text Brightness =====
-    // canvas-87 → ~8 (near-black); near-white for inverse on filled controls
     contentTextTone: primaryTextTone,
-    inverseTextTone: 94, // near-white: inverse text on filled controls stays near-white
+    inverseTextTone: 94,
 
     // ===== Text Hierarchy =====
-    // Offsets from LIGHT_FORMULAS at primaryTextTone=8:
-    //   mutedTextTone=34 (+26), subtleTextTone=52 (+44),
-    //   disabledTextTone=68 (+60), placeholderTextTone=60 (+52)
     mutedTextTone: primaryTextTone + 26,
     subtleTextTone: primaryTextTone + 44,
     disabledTextTone: primaryTextTone + 60,
@@ -568,20 +493,21 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Border Visibility =====
     borderBaseIntensity: 8,
     borderStrongIntensity: 10,
-    // borderMutedTone=62 (primaryTextTone+54), borderStrongTone=52 (primaryTextTone+44=subtleTextTone)
     borderMutedTone: primaryTextTone + 54,
     borderMutedIntensity: 8,
-    borderStrongTone: primaryTextTone + 44, // matches subtleTextTone: 52
+    // borderStrongTone aligns with subtleTextTone to match hierarchy
+    borderStrongTone: primaryTextTone + 44,
     dividerDefaultIntensity: 7,
     dividerMutedIntensity: 5,
-    borderRoleTone: canvasTone - 55, // 40 in LIGHT_FORMULAS: darker role tones on light bg
-    semanticRoleTone: canvasTone - 60, // 35 in LIGHT_FORMULAS
+    // borderRoleTone is shifted darker on light backgrounds to maintain role contrast
+    borderRoleTone: canvasTone - 55,
+    semanticRoleTone: canvasTone - 60,
 
     // ===== Card Frame Style =====
     cardFrameActiveIntensity: frameIntensity,
     cardFrameActiveTone: frameTone,
     cardFrameInactiveIntensity: 5,
-    cardFrameInactiveTone: canvasTone - 5, // matches surfaceDefaultTone: 90
+    cardFrameInactiveTone: canvasTone - 5,
 
     // ===== Shadow Depth =====
     shadowXsAlpha: 10,
@@ -594,14 +520,12 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     overlayHighlightAlpha: 4,
 
     // ===== Filled Control Prominence =====
-    // Light mode: rest = recipe.role.tone, hover/active are clamped offsets per D03
-    // Light mode darkens on hover/active, so offsets are negative.
+    // Light mode darkens on hover/active (negative offsets)
     filledSurfaceRestTone: recipe.role.tone,
     filledSurfaceHoverTone: Math.max(0, Math.min(100, recipe.role.tone - 5)),
     filledSurfaceActiveTone: Math.max(0, Math.min(100, recipe.role.tone - 10)),
 
     // ===== Outlined Control Style =====
-    // Light: fg is near-dark (primaryTextTone=8)
     outlinedTextRestTone: primaryTextTone,
     outlinedTextHoverTone: primaryTextTone,
     outlinedTextActiveTone: primaryTextTone,
@@ -616,9 +540,9 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     outlinedIconRestToneLight: 0,
     outlinedIconHoverToneLight: 0,
     outlinedIconActiveToneLight: 0,
-    outlinedOptionBorderRestTone: roleTone, // 50
-    outlinedOptionBorderHoverTone: roleTone + 5, // 55
-    outlinedOptionBorderActiveTone: roleTone + 10, // 60
+    outlinedOptionBorderRestTone: roleTone,
+    outlinedOptionBorderHoverTone: roleTone + 5,
+    outlinedOptionBorderActiveTone: roleTone + 10,
     // Light mode: direct chroma path, fully opaque
     outlinedSurfaceHoverIntensity: 4,
     outlinedSurfaceHoverAlpha: 100,
@@ -626,7 +550,6 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     outlinedSurfaceActiveAlpha: 100,
 
     // ===== Ghost Control Style =====
-    // Light: fg is near-dark (primaryTextTone=8)
     ghostTextRestTone: primaryTextTone,
     ghostTextHoverTone: primaryTextTone,
     ghostTextActiveTone: primaryTextTone,
@@ -640,7 +563,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     ghostIconHoverIntensity: 4,
     ghostIconActiveIntensity: 4,
     ghostBorderIntensity: 20,
-    ghostBorderTone: canvasTone - 60, // 35 in LIGHT_FORMULAS: darker border on light surfaces
+    ghostBorderTone: canvasTone - 60,
     ghostTextRestToneLight: 0,
     ghostTextHoverToneLight: 0,
     ghostTextActiveToneLight: 0,
@@ -653,34 +576,30 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     ghostIconActiveIntensityLight: 0,
 
     // ===== Badge Style =====
-    // Light: dark fg (primaryTextTone+7=15) on light tinted bg (canvasTone-15=80), mid-dark border (canvasTone-55=40)
     badgeTintedTextIntensity: 72,
-    badgeTintedTextTone: primaryTextTone + 7, // ~15: near-dark fg on light tinted bg
+    badgeTintedTextTone: primaryTextTone + 7,
     badgeTintedSurfaceIntensity: 65,
-    badgeTintedSurfaceTone: canvasTone - 15, // light bg: 80 in LIGHT_FORMULAS
+    badgeTintedSurfaceTone: canvasTone - 15,
     badgeTintedSurfaceAlpha: 20,
     badgeTintedBorderIntensity: 50,
-    badgeTintedBorderTone: canvasTone - 55, // matches borderRoleTone: 40
+    badgeTintedBorderTone: canvasTone - 55,
     badgeTintedBorderAlpha: 40,
 
     // ===== Icon Style =====
-    // iconActiveTone=20 (primaryTextTone+12): near-dark, vivid on light bg
+    // iconActiveTone is vivid but below primaryTextTone to avoid blending with text
     iconActiveTone: primaryTextTone + 12,
     iconMutedIntensity: 7,
-    // iconMutedTone=52 (matches subtleTextTone: primaryTextTone+44)
     iconMutedTone: primaryTextTone + 44,
 
     // ===== Tab Style =====
-    // tabTextActiveTone=10 (primaryTextTone+2): near-black active tab label
     tabTextActiveTone: primaryTextTone + 2,
 
     // ===== Toggle Style =====
-    toggleTrackOnHoverTone: canvasTone - 60, // 35 in LIGHT_FORMULAS
-    toggleThumbDisabledTone: canvasTone - 30, // 65 in LIGHT_FORMULAS
+    toggleTrackOnHoverTone: canvasTone - 60,
+    toggleThumbDisabledTone: canvasTone - 30,
     toggleTrackDisabledIntensity: 5,
 
     // ===== Field Style =====
-    // Field bg tones are offsets from canvas (LIGHT_FORMULAS: -4, -7, -3, -1, -7)
     fieldSurfaceRestTone: canvasTone - 4,
     fieldSurfaceHoverTone: canvasTone - 7,
     fieldSurfaceFocusTone: canvasTone - 3,
@@ -691,14 +610,14 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     disabledBorderIntensity: 6,
 
     // ===== Signal / Accent Tones =====
-    accentSubtleTone: roleTone, // 50 in LIGHT_FORMULAS
-    cautionSurfaceTone: canvasTone - 60, // 35 in LIGHT_FORMULAS: matches semanticRoleTone
+    accentSubtleTone: roleTone,
+    // cautionSurfaceTone aligns with semanticRoleTone to maintain role-color contrast
+    cautionSurfaceTone: canvasTone - 60,
 
     // ===== Hue Slot Dispatch =====
-    // Mode-independent routing (same as DARK_FORMULAS)
     surfaceAppHueSlot: "canvas",
     surfaceCanvasHueSlot: "canvas",
-    surfaceGridHueSlot: "canvas", // grid line uses the canvas hue at a slightly offset tone
+    surfaceGridHueSlot: "canvas",
     surfaceSunkenHueSlot: "canvasBase",
     surfaceDefaultHueSlot: "canvasBase",
     surfaceRaisedHueSlot: "frame",
@@ -752,44 +671,43 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     ghostDangerSurfaceActiveAlpha: 20,
 
     // ===== Computed Tone Override =====
-    disabledTextToneComputed: primaryTextTone + 54, // 62 in LIGHT_FORMULAS
-    disabledBorderToneOverride: canvasTone - 23, // 72 in LIGHT_FORMULAS
-    toggleTrackOffToneOverride: canvasTone - 23, // 72 in LIGHT_FORMULAS
-    toggleDisabledToneOverride: canvasTone - 15, // 80 in LIGHT_FORMULAS
-    borderStrongToneComputed: canvasTone - 55, // 40 in LIGHT_FORMULAS: matches borderRoleTone
+    disabledTextToneComputed: primaryTextTone + 54,
+    disabledBorderToneOverride: canvasTone - 23,
+    toggleTrackOffToneOverride: canvasTone - 23,
+    toggleDisabledToneOverride: canvasTone - 15,
+    borderStrongToneComputed: canvasTone - 55,
 
     // ===== Computed Surface Tones =====
-    // Directly assigned by recipe function. Read by Expr lambdas in theme-rules.ts. [D04]
     surfaceApp: canvasTone,
     surfaceCanvas: canvasTone,
-    surfaceGrid: canvasTone - 3, // light mode: slightly darker than canvas (-3) for a barely visible grid line
-    surfaceSunken: canvasTone - 7,  // 88 in LIGHT_FORMULAS
-    surfaceDefault: canvasTone - 5, // 90 in LIGHT_FORMULAS
-    surfaceRaised: canvasTone - 3,  // 92 in LIGHT_FORMULAS
-    surfaceOverlay: canvasTone - 2, // 93 in LIGHT_FORMULAS
-    surfaceInset: canvasTone - 9,   // 86 in LIGHT_FORMULAS
-    surfaceContent: canvasTone - 9, // 86 in LIGHT_FORMULAS (matches inset)
-    surfaceScreen: canvasTone - 10, // 85 in LIGHT_FORMULAS
+    surfaceGrid: canvasTone - 3,
+    surfaceSunken: canvasTone - 7,
+    surfaceDefault: canvasTone - 5,
+    surfaceRaised: canvasTone - 3,
+    surfaceOverlay: canvasTone - 2,
+    surfaceInset: canvasTone - 9,
+    surfaceContent: canvasTone - 9,
+    surfaceScreen: canvasTone - 10,
     surfaceCardBody: cardBodyTone,
 
     // ===== Computed Divider Tones =====
-    dividerDefault: canvasTone - 17, // 78 in LIGHT_FORMULAS
-    dividerMuted: canvasTone - 13,   // 82 in LIGHT_FORMULAS
+    dividerDefault: canvasTone - 17,
+    dividerMuted: canvasTone - 13,
 
     // ===== Computed Control Tones =====
-    disabledSurfaceTone: canvasTone - 17, // 78 in LIGHT_FORMULAS
-    disabledBorderTone: canvasTone - 23,  // 72 in LIGHT_FORMULAS
-    outlinedSurfaceRestTone: canvasTone - 7,  // surfaceInset + 2 = (canvasTone-9) + 2 = canvasTone-7 → 88
-    outlinedSurfaceHoverTone: canvasTone - 2, // surfaceRaised + 1 = (canvasTone-3) + 1 = canvasTone-2 → 93
-    outlinedSurfaceActiveTone: canvasTone - 2, // surfaceOverlay = canvasTone-2 → 93
-    toggleTrackOffTone: canvasTone - 23,  // 72 in LIGHT_FORMULAS
-    toggleDisabledTone: canvasTone - 15,  // 80 in LIGHT_FORMULAS
+    disabledSurfaceTone: canvasTone - 17,
+    disabledBorderTone: canvasTone - 23,
+    outlinedSurfaceRestTone: canvasTone - 7,
+    outlinedSurfaceHoverTone: canvasTone - 2,
+    outlinedSurfaceActiveTone: canvasTone - 2,
+    toggleTrackOffTone: canvasTone - 23,
+    toggleDisabledTone: canvasTone - 15,
 
     // ===== Computed Signal Intensity =====
     roleIntensity: Math.round(roleIntensity),
 
     // ===== Hue Name Dispatch =====
-    // Light mode: cobalt screen bg (vs dark's indigo), frame placeholder (vs dark's textMuted)
+    // Light mode uses cobalt screen bg and frame placeholder (dark mode uses indigo and textMuted)
     surfaceScreenHueExpression: "cobalt",
     mutedTextHueExpression: "barePrimary",
     subtleTextHueExpression: "indigo-cobalt",
@@ -800,8 +718,8 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
 
     // ===== Selection Mode =====
     selectionInactiveSemanticMode: false,
-    selectionSurfaceInactiveIntensity: 8, // light mode: uses chroma for inactive selection
-    selectionSurfaceInactiveTone: canvasTone - 15, // 80 in LIGHT_FORMULAS
+    selectionSurfaceInactiveIntensity: 8,
+    selectionSurfaceInactiveTone: canvasTone - 15,
     selectionSurfaceInactiveAlpha: 30,
 
     // ===== Signal Intensity Value =====
@@ -810,12 +728,12 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
 }
 
 // ---------------------------------------------------------------------------
-// RECIPE_REGISTRY — Spec S03
+// RECIPE_REGISTRY
 // ---------------------------------------------------------------------------
 
 /**
  * Built-in recipe registry. Maps recipe name to its recipe function.
- * Used by deriveTheme() to produce DerivationFormulas. (Spec S03)
+ * Used by deriveTheme() to produce DerivationFormulas.
  */
 export const RECIPE_REGISTRY: Record<string, { fn: (recipe: ThemeRecipe) => DerivationFormulas }> = {
   dark: { fn: darkRecipe },

@@ -341,6 +341,33 @@ export const DEFAULT_CANONICAL_L: Record<string, number> = Object.fromEntries(
   Object.entries(tugColorCanonical.hues).map(([hue, data]) => [hue, data.canonical_l]),
 );
 
+// ---------------------------------------------------------------------------
+// toneToL — tone → OKLab L conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a tone value (0-100) to OKLab perceptual lightness L.
+ *
+ * Uses the piecewise linear formula anchored at L_DARK (tone=0), the
+ * per-hue canonical L (tone=50), and L_LIGHT (tone=100):
+ *   L = L_DARK + min(tone,50)*(canonL-L_DARK)/50 + max(tone-50,0)*(L_LIGHT-canonL)/50
+ *
+ * When hueName is omitted or not found in DEFAULT_CANONICAL_L, falls back
+ * to 0.77 (the violet canonical L, a reasonable generic midpoint).
+ *
+ * @param tone    - Tone value in [0, 100]
+ * @param hueName - Optional hue name for canonical L lookup (e.g. "cobalt", "violet")
+ * @returns OKLCH lightness value in [L_DARK, L_LIGHT]
+ */
+export function toneToL(tone: number, hueName?: string): number {
+  const canonL = (hueName !== undefined ? DEFAULT_CANONICAL_L[hueName] : undefined) ?? 0.77;
+  return (
+    L_DARK +
+    (Math.min(tone, 50) * (canonL - L_DARK)) / 50 +
+    (Math.max(tone - 50, 0) * (L_LIGHT - canonL)) / 50
+  );
+}
+
 /**
  * Five convenience presets per hue. Each preset maps a name to {intensity, tone}.
  * These are labeled reference points in the continuous 100×100 intensity/tone space.

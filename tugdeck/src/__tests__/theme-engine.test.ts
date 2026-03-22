@@ -24,10 +24,11 @@ import {
 import {
   validateThemeContrast,
   CONTRAST_THRESHOLDS,
-  toneToL,
   compositeOverSurface,
   hexToOkLabL,
 } from "@/components/tugways/theme-accessibility";
+
+import { toneToL } from "@/components/tugways/palette-engine";
 
 import {
   ELEMENT_SURFACE_PAIRING_MAP,
