@@ -1,6 +1,6 @@
 # Token Naming
 
-*Every `--tug-base-*` token follows a six-slot naming convention that makes classification, parsing, and contrast pairing mechanical.*
+*Every `--tug-*` token follows a six-slot naming convention that makes classification, parsing, and contrast pairing mechanical.*
 
 *Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [laws-of-tug.md](laws-of-tug.md).*
 
@@ -9,7 +9,7 @@
 ## The Six Slots
 
 ```
---tug-base-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
+--tug-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
 ```
 
 All six slots are always present. No shortcuts, no omissions.
@@ -33,8 +33,8 @@ Two values. Any tool can determine element/surface classification by reading slo
 
 | Value | Meaning | [L18] |
 |-------|---------|-------|
-| `element` | Visible marks: text, icons, borders, shadows, dividers, fills | `--tug-base-element-*` |
-| `surface` | Fields behind elements: backgrounds, tracks | `--tug-base-surface-*` |
+| `element` | Visible marks: text, icons, borders, shadows, dividers, fills | `--tug-element-*` |
+| `surface` | Fields behind elements: backgrounds, tracks | `--tug-surface-*` |
 
 ### Component
 
@@ -142,4 +142,4 @@ surface-highlight-primary-normal-flash-rest   ← flash highlight
 
 ## Contrast Pairing
 
-A contrast pairing is an element token rendered on a surface token. The six-slot convention makes pairing extraction mechanical — split on `-`, read slot 1, and classify as element or surface. `audit-tokens pairings` validates all pairings against contrast thresholds. [L16, L18, D81, D83]
+A contrast pairing is an element token rendered on a surface token. The six-slot convention makes pairing extraction mechanical — split on `-`, read slot 1, and classify as element or surface. Every `--tug-*` element token has a corresponding surface token it renders on. `audit-tokens pairings` validates all pairings against contrast thresholds. [L16, L18, D81, D83]

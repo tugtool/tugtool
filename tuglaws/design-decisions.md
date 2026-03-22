@@ -16,7 +16,7 @@
 
 **D70.** Color palette is OKLCH-based. 24 hue families with intensity/tone axes, 5 convenience presets per hue, neutral ramp, P3 gamut support, pure CSS formulas. [L15]
 
-**D71.** Three-tier token naming: `--tug-{hue}[-preset]` (palette), `--tug-base-*` (semantic base), `--tug-<component>-*` (component alias). [L17, L18]
+**D71.** Three-tier token naming: `--tug-{hue}[-preset]` (palette), `--tug-*` (semantic surface and element tokens), `--tug-<component>-*` (component alias). [L17, L18]
 
 **D72.** Global dimension scale via `--tug-zoom` multiplier on `:root`.
 
@@ -28,7 +28,7 @@
 
 **D81.** Token pairings are machine-auditable. Every foreground-on-background relationship is extractable from CSS — either via same-rule `background-color` or via `@tug-renders-on` annotation. `audit-tokens lint` enforces zero violations. [L16]
 
-**D82.** Four semantic text types govern element-plane hue selection: `content` (prose), `control` (interactive labels), `display` (titles), `informational` (status/metadata). Each maps to a dedicated element hue slot and contrast role. [L15, L18]
+**D82.** Four semantic contrast roles govern text legibility: `content` (75), `control` (60), `display` (60), `informational` (60). Each role maps to a hue slot derived from the recipe's text and display specs. The pairing map assigns every foreground token a contrast role for threshold enforcement. [L15, L18]
 
 **D83.** Five contrast roles with minimum thresholds: `content` (75), `control` (60), `display` (60), `informational` (60), `decorative` (15). All readable text >= 60. [L16]
 

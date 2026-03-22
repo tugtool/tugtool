@@ -212,7 +212,7 @@ Each hue has independently derived sRGB and P3 chroma caps — binary-searched a
 ## Three-Tier Token Architecture
 
 1. **Palette tier** — `--tug-{hue}-*` per-hue constants and `--tug-gray-*` named grays. Theme-independent.
-2. **Base tier** — `--tug-base-*` semantic tokens. Theme-specific chromatic choices live here. [D71, L17]
+2. **Base tier** — `--tug-*` semantic tokens (surface and element). Theme-specific chromatic choices live here. [D71, L17]
 3. **Component tier** — `--tug-<component>-*` aliases. Resolve to base tier in one hop. [D71, L17]
 
 Components consume base and component tokens. The palette tier provides the raw materials that the theme derivation engine uses to produce base tokens.
@@ -221,10 +221,10 @@ Components consume base and component tokens. The palette tier provides the raw 
 
 ## Theme Derivation
 
-The `ThemeRecipe` specifies hue names (or hyphenated pairs) for 15 semantic slots:
+The `ThemeRecipe` groups inputs into three sections:
 
-- **Surface hues:** canvas, card
-- **Element hues:** content, control, display, informational, decorative, border
-- **Role hues:** action, accent, success, caution, danger, agent, data
+- **Surface specs:** four `ThemeColorSpec` objects — `canvas`, `grid`, `frame`, `card` — each with explicit hue, tone, and intensity.
+- **Text spec:** `text.hue` and `text.intensity`; tone is derived by the engine for legibility. Optional `display` and `border` overrides default to `text.hue` and `surface.canvas.hue` respectively.
+- **Role spec:** shared `tone` and `intensity` plus seven vivid role hues — `action`, `accent`, `success`, `caution`, `danger`, `agent`, `data`.
 
-A theme recipe defines rules that express relationships between surfaces, elements, and roles — for example, "content text tone = find a tone that passes contrast 75 against the canvas." The theme engine resolves hue slots, expands recipe rules into formula fields, and derives all `--tug-base-*` tokens through the evaluation pipeline. [D70, D80, D82, D83]
+The theme engine resolves hue slots from these inputs, expands them into formula fields, and derives all 373 `--tug-*` tokens through the evaluation pipeline. [D70, D80, D82, D83]

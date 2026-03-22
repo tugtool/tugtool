@@ -1,6 +1,6 @@
 # Theme Engine
 
-*The theme engine transforms a `ThemeRecipe` into ~373 `--tug-base-*` CSS tokens through a four-step data-driven pipeline. Dark and light are separate recipes — no mode branching in code.*
+*The theme engine transforms a `ThemeRecipe` into 373 `--tug-*` CSS tokens through a four-step data-driven pipeline. Dark and light are separate recipes — no mode branching in code.*
 
 *Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [laws-of-tug.md](laws-of-tug.md).*
 
@@ -15,43 +15,49 @@ ThemeRecipe
 Step 0: compileRecipe()     → DerivationFormulas (interpolate 7 design parameters into ~202 formula fields)
     │
     ▼
-Layer 1: resolveHueSlots()  → ResolvedHueSlots   (resolve recipe hue names to angles, apply warmth)
+Layer 1: resolveHueSlots()  → ResolvedHueSlots   (resolve recipe hue names to palette angles)
     │
     ▼
-Layer 2: computeTones()     → ComputedTones       (derive surface/control tones from formulas + knobs)
+Layer 2: computeTones()     → ComputedTones       (derive surface/control tones from formula fields)
     │
     ▼
-Layer 3: evaluateRules()    → CSS tokens          (declarative RULES table produces all --tug-base-* tokens)
+Layer 3: evaluateRules()    → CSS tokens          (declarative RULES table produces all --tug-* tokens)
 ```
 
 ---
 
 ## ThemeRecipe
 
-The author-facing interface. Three groups of hue inputs plus three mood knobs.
+The author-facing interface. Three required groups plus two optional overrides.
 
-### Surface Hues
+### Surface Specs
+
+Each field is a `ThemeColorSpec` with `hue`, `tone`, and `intensity`.
 
 | Field | Purpose |
 |-------|---------|
 | `surface.canvas` | App and canvas backgrounds |
-| `surface.card` | Card surfaces (atmosphere hue) |
+| `surface.grid` | Canvas grid line texture |
+| `surface.frame` | Card title bar and tab frame |
+| `surface.card` | Card body surfaces |
 
-### Element Hues
+### Text Spec
 
-| Field | Purpose | Contrast Role |
-|-------|---------|---------------|
-| `element.content` | Prose, body text | `content` (75) |
-| `element.control` | Interactive labels (buttons, tabs) | `control` (60) |
-| `element.display` | Titles, headers, card titles | `display` (60) |
-| `element.informational` | Metadata, placeholders, muted text | `informational` (60) |
-| `element.border` | Borders, dividers; card frame derived from this | — |
-| `element.decorative` | Non-text ornamental marks | `decorative` (15) |
-
-### Role Hues
+Tone is derived by the engine for legibility; designers specify hue and chroma only.
 
 | Field | Purpose |
 |-------|---------|
+| `text.hue` | Prose and body text hue |
+| `text.intensity` | Text chroma saturation |
+
+### Role Spec
+
+Shared tone and intensity apply to all seven role hues.
+
+| Field | Purpose |
+|-------|---------|
+| `role.tone` | Shared tone for filled controls and role colors |
+| `role.intensity` | Shared intensity for role saturation |
 | `role.accent` | Brand accent (orange) |
 | `role.action` | Interactive signals, links, selection (blue) |
 | `role.success` | Positive outcomes (green) |
@@ -60,13 +66,14 @@ The author-facing interface. Three groups of hue inputs plus three mood knobs.
 | `role.agent` | AI activity (violet) |
 | `role.data` | Measurements, metrics (teal) |
 
-### Mood Knobs
+### Optional Overrides
 
-| Knob | Range | Effect |
-|------|-------|--------|
-| `surfaceContrast` | 0–100 | Scales surface tone layering depth |
-| `signalIntensity` | 0–100 | Scales signal role saturation |
-| `warmth` | 0–100 | Biases resolved hue angles toward warm tones |
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `display?.hue` | Title/header text hue | `text.hue` |
+| `display?.intensity` | Display text saturation | — |
+| `border?.hue` | Border hue | `surface.canvas.hue` |
+| `border?.intensity` | Border saturation | — |
 
 ---
 
@@ -139,34 +146,34 @@ Examples: `filledSurfaceHoverTone`, `outlinedTextRestIntensity`, `ghostIconActiv
 
 | Group | Controls | Key Fields |
 |-------|----------|------------|
-| **hue-slot-dispatch** | Maps surface/element groups to hue slots | `surfaceAppHueSlot`, `surfaceCanvasHueSlot`, `mutedTextHueSlot`, `subtleTextHueSlot`, `fieldSurfaceHoverHueSlot`, and others |
-| **sentinel-hue-dispatch** | Hue slots for hover/active highlight surfaces | `outlinedSurfaceHoverHueSlot`, `ghostActionSurfaceHoverHueSlot`, `highlightHoverHueSlot`, and others |
-| **hue-name-dispatch** | Direct hue name expressions (bypass slot resolution) | `surfaceScreenHueExpression`, `mutedTextHueExpression`, `selectionInactiveHueExpression` |
+| **hue-slot-dispatch** | Maps surface/element groups to hue slots | `surfaceAppHueSlot`, `surfaceCanvasHueSlot`, `mutedTextHueSlot`, `subtleTextHueSlot`, `fieldSurfaceHoverHueSlot`, `disabledSurfaceHueSlot`, and others |
+| **sentinel-hue-dispatch** | Hue slots for hover/active highlight surfaces | `outlinedSurfaceHoverHueSlot`, `ghostActionSurfaceHoverHueSlot`, `highlightHoverHueSlot`, `tabSurfaceHoverHueSlot`, and others |
+| **hue-name-dispatch** | Direct hue name expressions (bypass slot resolution) | `surfaceScreenHueExpression`, `mutedTextHueExpression`, `subtleTextHueExpression`, `selectionInactiveHueExpression` |
 
 **System-level:**
 
 | Group | Controls | Key Fields |
 |-------|----------|------------|
 | **sentinel-alpha** | Alpha values for translucent highlights | `tabSurfaceHoverAlpha`, `ghostActionSurfaceHoverAlpha`, `highlightHoverAlpha` |
-| **computed-tone-override** | Override values for `computeTones()` derived tones | `dividerDefaultToneOverride`, `outlinedSurfaceRestToneOverride`, `surfaceCanvasToneBase`, `surfaceCanvasToneScale` |
+| **computed-tone-override** | Override values for `computeTones()` derived tones | `dividerDefaultToneOverride`, `outlinedSurfaceRestToneOverride`, `disabledTextToneComputed`, `borderStrongToneComputed` |
 | **selection-mode** | Inactive selection appearance | `selectionInactiveSemanticMode`, `selectionSurfaceInactiveTone`, `selectionSurfaceInactiveAlpha` |
-| **signal-intensity** | Signal role saturation scaling | `signalIntensityValue` |
+| **role-intensity** | Role color saturation scaling | `roleIntensityValue` |
 
 ---
 
 ## ComputedTones
 
-Pre-computed tone values derived from `DerivationFormulas` + `MoodKnobs`. Each surface tone is anchored at its formula value when `surfaceContrast=50`, then scales with the knob.
+Pre-computed tone values derived from `DerivationFormulas`. Each tone is anchored at its formula value and may be clamped or overridden by computed-tone-override fields.
 
 | Field | Derived From |
 |-------|-------------|
-| `surfaceApp`, `surfaceCanvas` | Base tone + surfaceContrast scaling |
-| `surfaceSunken` through `surfaceScreen` | Each surface tier, independently scaled |
-| `dividerDefault`, `dividerMuted`, `dividerTone` | Override field or derived from surfaceOverlay |
+| `surfaceApp`, `surfaceCanvas` | Formula tone values |
+| `surfaceSunken` through `surfaceScreen` | Each surface tier from formula fields |
+| `dividerDefault`, `dividerMuted` | Override field or derived from surfaceOverlay |
 | `disabledSurfaceTone`, `disabledTextTone`, `disabledBorderTone` | Override fields or derived from divider tones |
 | `outlinedSurfaceRestTone` through `outlinedSurfaceActiveTone` | Override fields or derived from surface tiers |
 | `toggleTrackOffTone`, `toggleDisabledTone` | Override fields or derived from divider/overlay tones |
-| `signalIntensity` | Direct from `signalIntensityValue` |
+| `roleIntensity` | Direct from `roleIntensityValue` |
 
 ---
 
@@ -176,18 +183,18 @@ Layer 1 resolves every hue reference in the recipe to a `ResolvedHueSlot` with f
 
 | Property | Purpose |
 |----------|---------|
-| `angle` | Warmth-biased hue angle in degrees |
+| `angle` | Raw palette hue angle in degrees (no warmth bias) |
 | `name` | Closest hue family name (e.g., `"violet"`) |
-| `ref` | Formatted `--tug-color()` reference (e.g., `"indigo-cobalt"`) |
+| `ref` | Formatted hue ref for `--tug-color()` (e.g., `"indigo-cobalt"`) |
 | `primaryName` | Primary color for canonical-L / max-chroma lookup |
 
-**Recipe slots** (8): `atm`, `txt`, `canvas`, `cardFrame`, `borderTint`, `interactive`, `active`, `accent`
+**Recipe slots** (7): `text`, `canvas`, `frame`, `card`, `borderTint`, `action`, `accent`
 
 **Element slots** (4): `control`, `display`, `informational`, `decorative`
 
-**Semantic slots** (5): `destructive`, `success`, `caution`, `agent`, `data` — these are not biased by warmth
+**Semantic slots** (5): `destructive`, `success`, `caution`, `agent`, `data`
 
-**Derived slots** (10): `surfBareBase`, `surfScreen`, `fgMuted`, `fgSubtle`, `fgDisabled`, `fgInverse`, `fgPlaceholder`, `selectionInactive`, `borderTintBareBase`, `borderStrong`
+**Derived slots** (10): `canvasBase`, `canvasScreen`, `textMuted`, `textSubtle`, `textDisabled`, `textInverse`, `textPlaceholder`, `selectionInactive`, `borderBase`, `borderStrong`
 
 ---
 

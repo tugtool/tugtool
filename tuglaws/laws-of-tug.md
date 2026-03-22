@@ -52,10 +52,10 @@
 
 ## Token System
 
-**L15. Interactive controls use token-driven control states; content areas stay static.** Every interactive control uses the six-slot token convention: `--tug-base-<plane>-control-<constituent>-<emphasis>-<role>-<state>`. States lighten progressively (rest darkest, hover, active lightest). Content areas have no state transitions. No box-shadow elevation, no translateY press-down, no gradients — color transitions provide all interaction feedback. [D04, D70, D82]
+**L15. Interactive controls use token-driven control states; content areas stay static.** Every interactive control uses the six-slot token convention: `--tug-<plane>-control-<constituent>-<emphasis>-<role>-<state>`. States lighten progressively (rest darkest, hover, active lightest). Content areas have no state transitions. No box-shadow elevation, no translateY press-down, no gradients — color transitions provide all interaction feedback. [D04, D70, D82]
 
 **L16. Every color-setting rule declares its rendering surface.** If a CSS rule sets `color`, `fill`, or `border-color` without setting `background-color` in the same rule, it must include a `@tug-renders-on` annotation naming its surface token. Rules that set both foreground and background are self-documenting. `audit-tokens lint` enforces this. [D81, D83]
 
-**L17. Component alias tokens resolve to `--tug-base-*` in one hop.** No alias-to-alias chains. Every component alias must point directly to its `--tug-base-*` target. `audit-tokens lint` flags multi-hop chains. [D71]
+**L17. Component alias tokens resolve to `--tug-*` in one hop.** No alias-to-alias chains. Every component alias must point directly to its `--tug-*` target. `audit-tokens lint` flags multi-hop chains. [D71]
 
-**L18. Use element/surface as the canonical vocabulary.** Tokens producing visible marks (text, icons, borders) are *elements* (`--tug-base-element-*`). Tokens defining the field behind them are *surfaces* (`--tug-base-surface-*`). Contrast pairing means an element token rendered on a surface token. [D71, D82]
+**L18. Use element/surface as the canonical vocabulary.** Tokens producing visible marks (text, icons, borders) are *elements* (`--tug-element-*`). Tokens defining the field behind them are *surfaces* (`--tug-surface-*`). Contrast pairing means an element token rendered on a surface token. [D71, D82]
