@@ -218,7 +218,7 @@ export let cachedActiveRecipe: ThemeRecipe | null = null;
     webkit?.messageHandlers?.frontendReady?.postMessage({});
     if (themeListRes !== null) {
       const themes = (themeListRes as { themes?: unknown[] }).themes ?? [];
-      webkit?.messageHandlers?.themeListUpdated?.postMessage({ themes });
+      webkit?.messageHandlers?.themeListUpdated?.postMessage({ themes, activeTheme: initialTheme });
     }
   });
 

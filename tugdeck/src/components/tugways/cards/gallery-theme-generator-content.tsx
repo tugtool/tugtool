@@ -1759,10 +1759,11 @@ function OpenThemeDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * After a theme save, push the updated theme list to the Swift bridge so it
- * can refresh its cached menu. [D10]
+ * After a theme save or theme switch, push the updated theme list to the Swift
+ * bridge so it can refresh its cached menu. Pass the currently active theme
+ * name so the Swift handler can update activeThemeName in the same call. [D10]
  */
-async function pushThemeListToSwift(): Promise<void> {
+async function pushThemeListToSwift(activeTheme?: string): Promise<void> {
   try {
     const res = await fetch("/__themes/list");
     if (!res.ok) return;
@@ -1782,13 +1783,15 @@ async function pushThemeListToSwift(): Promise<void> {
         }
       }
     }
+    const payload: { themes: typeof themes; activeTheme?: string } = { themes };
+    if (activeTheme !== undefined) payload.activeTheme = activeTheme;
     (window as unknown as {
       webkit?: {
         messageHandlers?: {
           themeListUpdated?: { postMessage: (v: unknown) => void };
         };
       };
-    }).webkit?.messageHandlers?.themeListUpdated?.postMessage({ themes });
+    }).webkit?.messageHandlers?.themeListUpdated?.postMessage(payload);
   } catch {
     // Bridge unavailable (tests, non-Mac) — ignore
   }
@@ -1896,9 +1899,11 @@ export function GalleryThemeGeneratorContent() {
       }
     };
     void doLoad();
-    // Only run on mount
+    // Re-run whenever the active theme changes (e.g. set-theme from Swift menu).
+    // loadRecipeIntoState is intentionally omitted: it is declared after this
+    // useEffect (useCallback below) and its deps are [] so it is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [themeCtx?.theme]);
 
   // ---------------------------------------------------------------------------
   // Load recipe into local state fields
@@ -2002,8 +2007,8 @@ export function GalleryThemeGeneratorContent() {
       if (res.ok) {
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus("idle"), 2000);
-        // Push updated theme list to Swift bridge [D10]
-        void pushThemeListToSwift();
+        // Push updated theme list to Swift bridge with active theme name [D10]
+        void pushThemeListToSwift(recipe.name);
       } else {
         setSaveStatus("error");
       }
@@ -2059,7 +2064,7 @@ export function GalleryThemeGeneratorContent() {
     const css = generateResolvedCssExport(output, recipe);
     injectThemeCSS(name, css);
     if (themeCtx) themeCtx.setTheme(name);
-    void pushThemeListToSwift();
+    void pushThemeListToSwift(name);
   }, [loadRecipeIntoState, themeCtx]);
 
   const handleOpenSelected = useCallback((name: string, recipe: ThemeRecipe, shipped: boolean) => {

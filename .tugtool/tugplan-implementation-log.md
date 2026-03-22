@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-14
+date: 2025-03-22T22:19:36Z
+---
+
+## step-14: Verification checkpoint: fixed pushThemeListToSwift to include activeTheme, added themeCtx.theme to generator card useEffect deps for reactive reloading on external theme switches
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-13
 date: 2025-03-22T22:05:50Z
 ---
