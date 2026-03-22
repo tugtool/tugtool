@@ -1,17 +1,17 @@
 /**
- * canvas-color.ts — Compute the canvas background hex for built-in themes.
+ * canvas-color.ts — Compute the canvas background hex from theme surface params.
  *
  * Uses the palette engine (same source of truth as PostCSS and tug-palette.css)
- * to convert each theme's --tug-surface-global-primary-normal-canvas-rest TugColor value to a hex string.
+ * to convert a theme's --tug-surface-global-primary-normal-canvas-rest TugColor value to a hex string.
  * This feeds the Swift bridge so the native window background matches the
  * web content on cold start.
  *
- * Built-in theme canvas colors:
- *   brio    — indigo-violet I:2 T:5  (near-black dark canvas)   [D05]
- *   harmony — indigo-violet I:3 T:95 (near-white light canvas)  [D05]
+ * Canvas params come from ThemeOutput.formulas after running deriveTheme():
+ *   - hue:       resolved from recipe.surface.canvas.hue via the surfaceCanvasHueSlot
+ *   - tone:      themeOutput.formulas.surfaceCanvasTone
+ *   - intensity: themeOutput.formulas.surfaceCanvasIntensity (the DERIVED value)
  *
- * When the canvas color changes in tug-base.css or harmony.css, update the
- * TugColor params here to match.
+ * [D08] Canvas color derived from theme JSON at runtime.
  */
 
 import {
@@ -26,33 +26,32 @@ import {
   resolveHyphenatedHue,
 } from "./components/tugways/palette-engine";
 
-import type { ThemeName } from "./contexts/theme-provider";
-
 // ---------------------------------------------------------------------------
-// Canvas background TugColor params
-//
-// Mirrors the --tug-surface-global-primary-normal-canvas-rest value in tug-base.css (brio) and
-// harmony.css (harmony):
-//   brio    (tug-base.css): --tug-color(indigo-violet, i: 2, t: 5)   [263.3°]
-//   harmony (harmony.css):  --tug-color(indigo-violet, i: 3, t: 95)  [263.3°]
-// [D05] Harmony canvas color is indigo-violet I:3 T:95
+// Types
 // ---------------------------------------------------------------------------
 
-type TugColorParams = { hue: string; intensity: number; tone: number };
+/** Canvas color params derived from ThemeOutput.formulas. */
+export type CanvasColorParams = { hue: string; tone: number; intensity: number };
 
-const CANVAS_COLORS: Record<ThemeName, TugColorParams> = {
-  brio:    { hue: "indigo-violet", intensity: 2, tone: 5 },
-  harmony: { hue: "indigo-violet", intensity: 3, tone: 95 },
-};
+// ---------------------------------------------------------------------------
+// canvasColorHex
+// ---------------------------------------------------------------------------
 
 /**
- * Compute the canvas background as a 6-digit hex string for the given theme.
+ * Compute the canvas background as a 6-digit hex string from derived surface params.
  *
  * Uses the same TugColor → oklch → hex pipeline as the PostCSS plugin, ensuring
  * the native window color always matches the web content.
+ *
+ * Callers obtain params by running deriveTheme() and extracting:
+ *   - hue:       recipe.surface.canvas.hue (resolved via formulas.surfaceCanvasHueSlot)
+ *   - tone:      themeOutput.formulas.surfaceCanvasTone
+ *   - intensity: themeOutput.formulas.surfaceCanvasIntensity (DERIVED, not raw JSON)
+ *
+ * [D08] Canvas color derived from theme JSON at runtime, Spec S04.
  */
-export function canvasColorHex(theme: ThemeName): string {
-  const { hue, intensity, tone } = CANVAS_COLORS[theme];
+export function canvasColorHex(params: CanvasColorParams): string {
+  const { hue, intensity, tone } = params;
 
   // Resolve hue angle: handle bare names and hyphenated adjacency (A-B).
   let h: number;

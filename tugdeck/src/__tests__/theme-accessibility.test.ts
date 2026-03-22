@@ -26,9 +26,12 @@ import {
 } from "@/components/tugways/theme-accessibility";
 import {
   deriveTheme,
-  EXAMPLE_RECIPES,
+  type ThemeRecipe,
   type ResolvedColor,
 } from "@/components/tugways/theme-engine";
+import brioJson from "../../themes/brio.json";
+
+const brio = brioJson as ThemeRecipe;
 import { oklchToHex } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -292,7 +295,7 @@ describe("theme-accessibility", () => {
   });
 
   it("T3.DEP: autoAdjustContrast (deprecated) is still callable and returns correct shape", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const result = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, [], []);
 
     expect(result).toHaveProperty("tokens");
@@ -309,7 +312,7 @@ describe("theme-accessibility", () => {
 
 describe("contrast-calibration-baseline", () => {
   it("CB1: captures all Brio pair contrast scores and verifies baseline structural invariants", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     for (const result of results) {
@@ -331,7 +334,7 @@ describe("contrast-calibration-baseline", () => {
   });
 
   it("CB2: non-zero contrast scores have correct sign relative to OKLab L ordering", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const polarityViolations: string[] = [];
 
     for (const pairing of ELEMENT_SURFACE_PAIRING_MAP) {
@@ -371,7 +374,7 @@ describe("contrast-calibration-baseline", () => {
   });
 
   it("CB5: fg-default / bg-app anchor pair passes content threshold with calibrated constants", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     const anchorPair = results.find(
@@ -383,7 +386,7 @@ describe("contrast-calibration-baseline", () => {
   });
 
   it("CB6: OKLab metric produces a sensible, self-consistent pass/fail distribution for all Brio pairs", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     // Internal consistency: contrastPass flag must match score vs threshold

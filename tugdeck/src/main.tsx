@@ -10,8 +10,12 @@ import {
   applyInitialTheme,
   sendCanvasColor,
   registerThemeCSS,
-  type ThemeName,
+  registerInitialCanvasParams,
+  deriveCanvasParams,
 } from "./contexts/theme-provider";
+import type { ThemeRecipe } from "./components/tugways/theme-engine";
+import brioJsonRaw from "../themes/brio.json";
+const BRIO_RECIPE = brioJsonRaw as ThemeRecipe;
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
@@ -31,6 +35,14 @@ if (!container) {
   throw new Error("deck-container element not found");
 }
 
+/**
+ * Cached ThemeRecipe for the active theme at startup.
+ * Populated by the async IIFE when the theme is non-brio and its JSON can be
+ * fetched from GET /__themes/<name>.json. Used by sendCanvasColor() in Step 10
+ * to derive canvas params synchronously at startup. [D07]
+ */
+export let cachedActiveRecipe: ThemeRecipe | null = null;
+
 // Async IIFE: fetch settings before constructing DeckManager so the pre-fetched
 // layout and theme are applied before React renders.
 //
@@ -42,28 +54,77 @@ if (!container) {
 //            Tab state fetch depends on tab IDs from the deserialized layout,
 //            so it cannot be parallelized with the layout fetch itself.
 (async () => {
-  // Phase 1: parallel fetch of layout, theme, focused card ID, and harmony CSS.
-  // Harmony CSS is pre-fetched here so setTheme("harmony") and applyInitialTheme("harmony")
-  // remain synchronous — they read from the already-populated themeCSSMap. [D07]
-  const [layout, theme, focusedCardId, harmonyCSS] = await Promise.all([
+  // Phase 1: parallel fetch of layout, theme, focused card ID, and theme list.
+  // The theme list is fetched here so we can pre-fetch CSS for the active theme
+  // and populate themeCSSMap before applyInitialTheme(). [D07]
+  const [layout, theme, focusedCardId, themeListRes] = await Promise.all([
     fetchLayoutWithRetry(),
     fetchThemeWithRetry(),
     fetchDeckStateWithRetry(),
-    fetch("/styles/themes/harmony.css").then((r) => (r.ok ? r.text() : null)).catch(() => null),
+    fetch("/__themes/list").then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
 
-  // Register harmony CSS before applyInitialTheme so the pre-fetched string is
-  // available synchronously when applyInitialTheme reads themeCSSMap. [D07]
-  if (harmonyCSS) registerThemeCSS("harmony", harmonyCSS);
+  const initialTheme = (theme as string) ?? "brio";
+
+  // Parse theme list and pre-fetch CSS for the active theme (if non-brio).
+  // Also register harmony CSS if it is available via the middleware. [D07]
+  if (themeListRes !== null) {
+    const entries = (themeListRes as { themes?: unknown[] }).themes ?? [];
+    // Build a set of all known theme names from the list
+    const knownNames = new Set<string>(
+      entries
+        .map((e) => (typeof e === "string" ? e : typeof e === "object" && e !== null ? (e as Record<string, unknown>).name : null))
+        .filter((n): n is string => typeof n === "string")
+    );
+
+    // Pre-fetch CSS for the active theme if it is non-brio and in the list
+    if (initialTheme !== "brio" && knownNames.has(initialTheme)) {
+      const cssResult = await fetch(`/__themes/${encodeURIComponent(initialTheme)}.css`)
+        .then((r) => (r.ok ? r.text() : null))
+        .catch(() => null);
+      if (cssResult) {
+        registerThemeCSS(initialTheme, cssResult);
+      }
+
+      // Fetch the active theme's JSON recipe and cache it for Step 10 canvas color derivation
+      const jsonResult = await fetch(`/__themes/${encodeURIComponent(initialTheme)}.json`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      if (jsonResult !== null) {
+        cachedActiveRecipe = jsonResult as ThemeRecipe;
+      }
+    }
+
+    // Pre-fetch harmony CSS if not already the active theme
+    if (initialTheme !== "harmony" && knownNames.has("harmony")) {
+      const harmonyCSSResult = await fetch("/__themes/harmony.css")
+        .then((r) => (r.ok ? r.text() : null))
+        .catch(() => null);
+      if (harmonyCSSResult) {
+        registerThemeCSS("harmony", harmonyCSSResult);
+      }
+    }
+  }
 
   // Apply the initial theme via stylesheet injection before DeckManager construction
   // so the correct colors are visible before React renders.
-  const initialTheme = (theme as ThemeName) ?? "brio";
   applyInitialTheme(initialTheme);
+
+  // Derive canvas color params from the active theme recipe. For brio (the default),
+  // use the statically imported recipe. For non-brio themes, use the cached recipe
+  // fetched above. Run deriveTheme() to get the DERIVED surfaceCanvasIntensity value.
+  // [D08] Canvas color derived from theme JSON at runtime, Spec S04.
+  const activeRecipe: ThemeRecipe = initialTheme === "brio"
+    ? BRIO_RECIPE
+    : (cachedActiveRecipe ?? BRIO_RECIPE);
+  const canvasParams = deriveCanvasParams(activeRecipe);
+
+  // Register canvas params for TugThemeProvider's on-mount effect.
+  registerInitialCanvasParams(canvasParams);
 
   // Sync canvas color to Swift bridge so UserDefaults gets the correct
   // background color on startup before the user switches themes.
-  sendCanvasColor(initialTheme);
+  sendCanvasColor(canvasParams);
 
   // Initialize motion observer early so data-tug-motion attribute is set before
   // DeckManager construction. The cleanup function is intentionally not stored
@@ -143,9 +204,22 @@ if (!container) {
   };
 
   // Signal frontend readiness to native app (enables menu items).
+  // Also push the theme list fetched during startup so the Swift Theme menu
+  // is populated on first launch without waiting for a user save. [D10]
   connection.onOpen(() => {
-    const webkit = (window as unknown as { webkit?: { messageHandlers?: { frontendReady?: { postMessage: (v: unknown) => void } } } }).webkit;
+    const webkit = (window as unknown as {
+      webkit?: {
+        messageHandlers?: {
+          frontendReady?: { postMessage: (v: unknown) => void };
+          themeListUpdated?: { postMessage: (v: unknown) => void };
+        };
+      };
+    }).webkit;
     webkit?.messageHandlers?.frontendReady?.postMessage({});
+    if (themeListRes !== null) {
+      const themes = (themeListRes as { themes?: unknown[] }).themes ?? [];
+      webkit?.messageHandlers?.themeListUpdated?.postMessage({ themes, activeTheme: initialTheme });
+    }
   });
 
   // Connect to the server.

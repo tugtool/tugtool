@@ -1,6 +1,12 @@
 import Cocoa
 import WebKit
 
+/// A cached theme entry pushed from the web view.
+struct ThemeEntry {
+    let name: String
+    let source: String  // "shipped" or "authored"
+}
+
 /// Protocol for bridge callbacks from WebKit to AppDelegate
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
@@ -10,6 +16,7 @@ protocol BridgeDelegate: AnyObject {
     func bridgeDevModeError(message: String)
     func bridgeSetTheme(color: String)
     func bridgeDevBadge(backend: Bool, app: Bool)
+    func bridgeThemeListUpdated(themes: [ThemeEntry], activeTheme: String?)
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
@@ -33,6 +40,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "frontendReady")
         contentController.add(self, name: "setTheme")
         contentController.add(self, name: "devBadge")
+        contentController.add(self, name: "themeListUpdated")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -109,6 +117,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "frontendReady")
         contentController.removeScriptMessageHandler(forName: "setTheme")
         contentController.removeScriptMessageHandler(forName: "devBadge")
+        contentController.removeScriptMessageHandler(forName: "themeListUpdated")
         bridgeCleaned = true
     }
 
@@ -255,6 +264,16 @@ extension MainWindow: WKScriptMessageHandler {
             let backend = body["backend"] as? Bool ?? false
             let app = body["app"] as? Bool ?? false
             bridgeDelegate?.bridgeDevBadge(backend: backend, app: app)
+        case "themeListUpdated":
+            guard let body = message.body as? [String: Any],
+                  let rawThemes = body["themes"] as? [[String: Any]] else { return }
+            let themes: [ThemeEntry] = rawThemes.compactMap { entry in
+                guard let name = entry["name"] as? String,
+                      let source = entry["source"] as? String else { return nil }
+                return ThemeEntry(name: name, source: source)
+            }
+            let activeTheme = body["activeTheme"] as? String
+            bridgeDelegate?.bridgeThemeListUpdated(themes: themes, activeTheme: activeTheme)
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
         }

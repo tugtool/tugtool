@@ -1,11 +1,12 @@
 /**
- * theme-export-import tests.
+ * theme-export-import tests — new save model (Step 12).
  *
  * Tests cover:
- * - T9.3: Exported recipe JSON round-trips: export -> import -> re-export produces identical JSON
+ * - T9.3: Exported recipe JSON round-trips: export → import → re-export produces identical JSON
  * - T9.4: Invalid JSON import shows error, does not crash (validateRecipeJson)
  * - T9.4: Migration: old-format recipe → new format
- * - TugThemeProvider dynamic theme tests (setDynamicTheme, localStorage, revert)
+ * - TugThemeProvider context interface tests ({ theme, setTheme }, localStorage, dynamic themes)
+ * - New save model: POST /__themes/save with name + css + recipe fields
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -19,7 +20,10 @@ import {
   GalleryThemeGeneratorContent,
   validateRecipeJson,
 } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
+import { deriveTheme, generateResolvedCssExport, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import brioJson from "../../themes/brio.json";
+
+const brio = brioJson as ThemeRecipe;
 import { _resetForTest } from "@/card-registry";
 import {
   TugThemeProvider,
@@ -38,7 +42,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   afterEach(() => { _resetForTest(); cleanup(); });
 
   it("JSON.stringify(recipe) -> JSON.parse -> JSON.stringify produces identical JSON", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
+    const recipe = brio;
     const json1 = JSON.stringify(recipe, null, 2);
     const parsed = JSON.parse(json1) as typeof recipe;
     const json2 = JSON.stringify(parsed, null, 2);
@@ -46,7 +50,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   });
 
   it("import brio recipe: re-exported JSON matches original", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
+    const recipe = brio;
     const exported = JSON.stringify(recipe, null, 2);
     const reimported = JSON.parse(exported);
     const reexported = JSON.stringify(reimported, null, 2);
@@ -54,11 +58,11 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   });
 
   it("validateRecipeJson accepts a valid brio recipe", () => {
-    expect(validateRecipeJson(EXAMPLE_RECIPES.brio)).toBeNull();
+    expect(validateRecipeJson(brio)).toBeNull();
   });
 
   it("re-deriving brio recipe after round-trip produces same token count", () => {
-    const recipe = EXAMPLE_RECIPES.brio;
+    const recipe = brio;
     const json = JSON.stringify(recipe, null, 2);
     const roundTripped = JSON.parse(json);
     const output1 = deriveTheme(recipe);
@@ -177,7 +181,67 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 });
 
 // ---------------------------------------------------------------------------
-// T6: Theme-provider integration — setDynamicTheme, revertToBuiltIn, init
+// New save model: POST /__themes/save with name + css + recipe
+// ---------------------------------------------------------------------------
+
+describe("theme-save – new save model (POST /__themes/save)", () => {
+  it("POST /__themes/save receives name, css (resolved oklch), and recipe (JSON string)", async () => {
+    const recipe = brio;
+    const output = deriveTheme(recipe);
+    const css = generateResolvedCssExport(output, recipe);
+
+    const capturedBody: Record<string, unknown>[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/__themes/save") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        capturedBody.push(body);
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+
+    try {
+      const res = await fetch("/__themes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
+      });
+      expect(res.ok).toBe(true);
+      expect(capturedBody.length).toBe(1);
+      const body = capturedBody[0];
+      expect(typeof body["name"]).toBe("string");
+      expect(typeof body["css"]).toBe("string");
+      expect(typeof body["recipe"]).toBe("string");
+      // CSS should contain resolved oklch() values, not --tug-color() build-time values
+      expect(body["css"] as string).not.toContain("--tug-color(");
+      // recipe JSON should parse back to a valid ThemeRecipe
+      const parsedRecipe = JSON.parse(body["recipe"] as string) as unknown;
+      expect(validateRecipeJson(parsedRecipe)).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("generateResolvedCssExport produces CSS with oklch() values for saved themes", () => {
+    const recipe = brio;
+    const output = deriveTheme(recipe);
+    const css = generateResolvedCssExport(output, recipe);
+    expect(css).toContain("oklch(");
+    expect(css).not.toContain("--tug-color(");
+  });
+
+  it("saved CSS contains body {} block", () => {
+    const recipe = brio;
+    const output = deriveTheme(recipe);
+    const css = generateResolvedCssExport(output, recipe);
+    expect(css).toContain("body {");
+    expect(css).toContain("}");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T6: Theme-provider integration — simplified { theme, setTheme } context
 // ---------------------------------------------------------------------------
 
 function installMockLocalStorage(initial: Record<string, string> = {}): {
@@ -209,25 +273,88 @@ function installMockLocalStorage(initial: Record<string, string> = {}): {
 }
 
 function ContextCapture({
-  setDynamicRef,
-  revertRef,
+  setThemeRef,
+  themeRef,
 }: {
-  setDynamicRef: { current: ((name: string) => void) | null };
-  revertRef: { current: (() => void) | null };
+  setThemeRef: { current: ((name: string) => void) | null };
+  themeRef: { current: string | null };
 }): null {
-  const { setDynamicTheme, revertToBuiltIn } = useThemeContext();
-  setDynamicRef.current = setDynamicTheme;
-  revertRef.current = revertToBuiltIn;
+  const { setTheme, theme } = useThemeContext();
+  setThemeRef.current = setTheme;
+  themeRef.current = theme;
   return null;
 }
 
-describe("TugThemeProvider – dynamic theme (T6)", () => {
+describe("TugThemeProvider – simplified context (T6)", () => {
   afterEach(() => {
     cleanup();
     removeThemeCSS();
   });
 
-  it("setDynamicTheme (via context) fetches CSS and injects it into the DOM", async () => {
+  it("context exposes { theme, setTheme } interface", () => {
+    const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
+    const themeRef: { current: string | null } = { current: null };
+    const { restore } = installMockLocalStorage();
+
+    try {
+      act(() => {
+        render(
+          React.createElement(
+            TugThemeProvider,
+            {},
+            React.createElement(ContextCapture, { setThemeRef, themeRef }),
+          ),
+        );
+      });
+
+      expect(typeof setThemeRef.current).toBe("function");
+      expect(themeRef.current).toBe("brio");
+    } finally {
+      restore();
+    }
+  });
+
+  it("setTheme('brio') removes the override stylesheet", async () => {
+    injectThemeCSS("harmony", "body { --tug-surface-global-primary-normal-app-rest: oklch(0.9 0 0); }");
+    expect(document.getElementById("tug-theme-override")).not.toBeNull();
+
+    const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
+    const themeRef: { current: string | null } = { current: null };
+    const { restore } = installMockLocalStorage();
+
+    // Mock fetch for brio.json
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+      if (String(input).includes("brio.json")) {
+        return new Response(JSON.stringify(brioJson), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+
+    try {
+      act(() => {
+        render(
+          React.createElement(
+            TugThemeProvider,
+            { initialTheme: "harmony" },
+            React.createElement(ContextCapture, { setThemeRef, themeRef }),
+          ),
+        );
+      });
+
+      act(() => {
+        setThemeRef.current!("brio");
+      });
+
+      expect(document.getElementById("tug-theme-override")).toBeNull();
+      expect(themeRef.current).toBe("brio");
+    } finally {
+      restore();
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("setTheme with a dynamic name fetches CSS and injects it", async () => {
     const fakeCss = "body { --tug-surface-global-primary-normal-app-rest: oklch(0.2 0 0); }";
     const fetchCalls: string[] = [];
     const originalFetch = globalThis.fetch;
@@ -236,9 +363,9 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
       return new Response(fakeCss, { status: 200 });
     };
 
+    const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
+    const themeRef: { current: string | null } = { current: null };
     const { restore } = installMockLocalStorage();
-    const setDynamicRef: { current: ((name: string) => void) | null } = { current: null };
-    const revertRef: { current: (() => void) | null } = { current: null };
 
     try {
       act(() => {
@@ -246,13 +373,14 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
           React.createElement(
             TugThemeProvider,
             {},
-            React.createElement(ContextCapture, { setDynamicRef, revertRef }),
+            React.createElement(ContextCapture, { setThemeRef, themeRef }),
           ),
         );
       });
 
       await act(async () => {
-        await setDynamicRef.current!("my-theme");
+        setThemeRef.current!("my-theme");
+        await new Promise((r) => setTimeout(r, 0));
       });
 
       expect(fetchCalls.some((u) => u.includes("my-theme"))).toBe(true);
@@ -266,96 +394,33 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
     }
   });
 
-  it("setDynamicTheme (via context) persists dynamic theme name to localStorage under td-dynamic-theme", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response("body {}", { status: 200 });
-
+  it("setTheme persists theme name to localStorage under td-theme", async () => {
     const { store, restore } = installMockLocalStorage();
-    const setDynamicRef: { current: ((name: string) => void) | null } = { current: null };
-    const revertRef: { current: (() => void) | null } = { current: null };
 
     try {
       act(() => {
-        render(
-          React.createElement(
-            TugThemeProvider,
-            {},
-            React.createElement(ContextCapture, { setDynamicRef, revertRef }),
-          ),
-        );
-      });
-
-      await act(async () => {
-        await setDynamicRef.current!("brio-dark");
-      });
-
-      expect(store["td-dynamic-theme"]).toBe("brio-dark");
-    } finally {
-      globalThis.fetch = originalFetch;
-      restore();
-    }
-  });
-
-  it("revertToBuiltIn (via context) removes theme override and clears td-dynamic-theme from localStorage", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () =>
-      new Response("body { --tug-surface-global-primary-normal-app-rest: oklch(0.2 0 0); }", { status: 200 });
-
-    const { store, restore } = installMockLocalStorage();
-    const setDynamicRef: { current: ((name: string) => void) | null } = { current: null };
-    const revertRef: { current: (() => void) | null } = { current: null };
-
-    try {
-      act(() => {
-        render(
-          React.createElement(
-            TugThemeProvider,
-            {},
-            React.createElement(ContextCapture, { setDynamicRef, revertRef }),
-          ),
-        );
-      });
-
-      await act(async () => {
-        await setDynamicRef.current!("my-theme");
-      });
-
-      expect(document.getElementById("tug-theme-override")).not.toBeNull();
-      expect(store["td-dynamic-theme"]).toBe("my-theme");
-
-      act(() => {
-        revertRef.current!();
-      });
-
-      expect(document.getElementById("tug-theme-override")).toBeNull();
-      expect(store["td-dynamic-theme"]).toBeUndefined();
-    } finally {
-      globalThis.fetch = originalFetch;
-      restore();
-    }
-  });
-
-  it("on init, TugThemeProvider reads td-dynamic-theme from localStorage and calls setDynamicTheme", async () => {
-    const { restore } = installMockLocalStorage({ "td-dynamic-theme": "saved-theme" });
-    const fakeCss = "body { --tug-surface-global-primary-normal-app-rest: oklch(0.15 0 0); }";
-    const fetchCalls: string[] = [];
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (input: RequestInfo | URL) => {
-      fetchCalls.push(String(input));
-      return new Response(fakeCss, { status: 200 });
-    };
-
-    try {
-      await act(async () => {
         render(React.createElement(TugThemeProvider, {}));
       });
 
-      expect(fetchCalls.some((u) => u.includes("saved-theme"))).toBe(true);
-      const el = document.getElementById("tug-theme-override");
-      expect(el).not.toBeNull();
-      expect(el!.textContent).toBe(fakeCss);
+      const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
+      const themeRef: { current: string | null } = { current: null };
+      cleanup();
+      act(() => {
+        render(
+          React.createElement(
+            TugThemeProvider,
+            {},
+            React.createElement(ContextCapture, { setThemeRef, themeRef }),
+          ),
+        );
+      });
+
+      act(() => {
+        setThemeRef.current!("brio");
+      });
+
+      expect(store["td-theme"]).toBe("brio");
     } finally {
-      globalThis.fetch = originalFetch;
       restore();
     }
   });
@@ -371,7 +436,25 @@ describe("TugThemeProvider – dynamic theme (T6)", () => {
     }
   });
 
-  it("loadSavedThemes filters built-in theme names and returns only user-saved themes", async () => {
+  it("loadSavedThemes filters built-in theme names from new { name, recipe, source } format", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ themes: [
+        { name: "brio", recipe: "dark", source: "shipped" },
+        { name: "harmony", recipe: "light", source: "shipped" },
+        { name: "my-theme", recipe: "dark", source: "authored" },
+      ] }), { status: 200 });
+    try {
+      const themes = await loadSavedThemes();
+      expect(themes).not.toContain("brio");
+      expect(themes).not.toContain("harmony");
+      expect(themes).toContain("my-theme");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("loadSavedThemes also accepts legacy string[] format", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
       new Response(JSON.stringify({ themes: ["brio", "harmony", "my-theme"] }), { status: 200 });

@@ -5,14 +5,18 @@
  *
  * Built-in themes:
  *   - brio    (default dark)  — palette defined as body {} defaults in tug-base.css.
- *                               themeCSSMap entry is null; no override stylesheet needed.
+ *                               No override stylesheet needed.
  *   - harmony (built-in light) — full 373-token override file at /styles/themes/harmony.css.
  *                               Pre-fetched in main.tsx before React mounts via
  *                               registerThemeCSS(). [D07]
  *
+ * With ThemeName widened to `string`, dynamically-loaded themes are handled identically
+ * to built-in non-brio themes: their CSS is fetched via GET /__themes/<name>.css and
+ * injected via injectThemeCSS(). The built-in vs. dynamic distinction is removed. [D07][D11]
+ *
  * Spec S02 (#s02-injection-contract), Spec S03 (#s03-theme-provider),
- * [D02] First-class static ThemeName, [D03] Stylesheet injection,
- * [D07] Pre-fetch harmony CSS, [D08] TugThemeProvider
+ * [D03] Brio is the base theme, [D07] Dynamic theme loading through middleware,
+ * [D11] Remove Bluenote
  */
 
 import React, {
@@ -21,25 +25,22 @@ import React, {
   useState,
   useEffect,
   useRef,
-  useCallback,
 } from "react";
 import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
-import { canvasColorHex } from "../canvas-color";
+import { canvasColorHex, type CanvasColorParams } from "../canvas-color";
+import { deriveTheme, type ThemeRecipe } from "../components/tugways/theme-engine";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/** Built-in theme names. Widened as new permanent themes are added. [D02] */
-export type ThemeName = "brio" | "harmony";
+/** Theme name — widened to string to support dynamically-loaded themes. [D07] */
+export type ThemeName = string;
 
 interface ThemeContextValue {
-  theme: ThemeName;
-  setTheme: (theme: ThemeName) => void;
-  dynamicThemeName: string | null;
-  setDynamicTheme: (name: string) => void;
-  revertToBuiltIn: () => void;
+  theme: string;
+  setTheme: (theme: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,24 +48,46 @@ interface ThemeContextValue {
 // ---------------------------------------------------------------------------
 
 /**
- * Pre-fetched CSS string for each built-in theme.
+ * Cache of pre-fetched or previously-fetched CSS strings keyed by theme name.
  * - brio:    null — uses tug-base.css body {} defaults; no override needed.
  * - harmony: null until populated by registerThemeCSS() in main.tsx before mount. [D07]
+ * - dynamic: null until fetched on first setTheme() call for that name.
  */
-const themeCSSMap: Record<ThemeName, string | null> = {
-  brio: null,
-  harmony: null,
-};
+const themeCSSMap = new Map<string, string | null>();
+themeCSSMap.set("brio", null);
 
 /**
- * Populate a built-in theme's CSS before applyInitialTheme() is called.
+ * Populate a theme's CSS before applyInitialTheme() is called.
  *
- * Called from main.tsx's async IIFE after the harmony CSS fetch resolves.
+ * Called from main.tsx's async IIFE after a theme CSS fetch resolves.
  * Must be called before applyInitialTheme() and before React mounts so that
  * the initial theme injection is synchronous. [D07]
  */
-export function registerThemeCSS(name: ThemeName, css: string): void {
-  themeCSSMap[name] = css;
+export function registerThemeCSS(name: string, css: string): void {
+  themeCSSMap.set(name, css);
+}
+
+// ---------------------------------------------------------------------------
+// Initial canvas params cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Pre-derived canvas params for the initial theme at startup.
+ * Set by main.tsx (via registerInitialCanvasParams) after running deriveTheme()
+ * on the initial theme's recipe. Read by TugThemeProvider's on-mount effect
+ * to sync the Swift bridge with the correct canvas color. [D08]
+ */
+let initialCanvasParams: CanvasColorParams | null = null;
+
+/**
+ * Store pre-derived canvas params for the initial theme.
+ *
+ * Called from main.tsx before React mounts, after deriveTheme() has been run
+ * on the initial theme's recipe. The params are consumed by the on-mount
+ * useEffect in TugThemeProvider to send the initial canvas color to Swift. [D08]
+ */
+export function registerInitialCanvasParams(params: CanvasColorParams): void {
+  initialCanvasParams = params;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,20 +128,44 @@ export function removeThemeCSS(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Swift bridge helpers (copied verbatim from use-theme.ts)
+// Swift bridge helpers
 // ---------------------------------------------------------------------------
 
 /**
  * Post the canvas background hex to the Swift bridge.
  *
- * Computes the hex from the palette engine's TugColor constants — same source
- * of truth as PostCSS and tug-palette.css. No getComputedStyle, no browser
- * color format parsing, no drift.
+ * Accepts pre-derived canvas params from ThemeOutput.formulas. The caller is
+ * responsible for running deriveTheme() and extracting:
+ *   - hue:       recipe.surface.canvas.hue (resolved via formulas.surfaceCanvasHueSlot)
+ *   - tone:      themeOutput.formulas.surfaceCanvasTone
+ *   - intensity: themeOutput.formulas.surfaceCanvasIntensity (DERIVED, not raw JSON)
+ *
+ * Uses the same TugColor → oklch → hex pipeline as PostCSS and tug-palette.css.
+ * No getComputedStyle, no browser color format parsing, no drift. [D08]
  */
-export function sendCanvasColor(theme: ThemeName): void {
-  const hex = canvasColorHex(theme);
+export function sendCanvasColor(params: CanvasColorParams): void {
+  const hex = canvasColorHex(params);
   (window as unknown as { webkit?: { messageHandlers?: { setTheme?: { postMessage: (v: unknown) => void } } } })
     .webkit?.messageHandlers?.setTheme?.postMessage({ color: hex });
+}
+
+/**
+ * Derive canvas color params from a ThemeRecipe.
+ *
+ * Runs deriveTheme() and extracts:
+ *   - hue:       recipe.surface.canvas.hue (the surfaceCanvasHueSlot is always "canvas")
+ *   - tone:      themeOutput.formulas.surfaceCanvasTone
+ *   - intensity: themeOutput.formulas.surfaceCanvasIntensity (DERIVED value)
+ *
+ * [D08] Canvas color derived from theme JSON at runtime, Spec S04.
+ */
+export function deriveCanvasParams(recipe: ThemeRecipe): CanvasColorParams {
+  const themeOutput = deriveTheme(recipe);
+  return {
+    hue: recipe.surface.canvas.hue,
+    tone: themeOutput.formulas.surfaceCanvasTone,
+    intensity: themeOutput.formulas.surfaceCanvasIntensity,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -129,20 +176,14 @@ export function sendCanvasColor(theme: ThemeName): void {
  * Apply the initial theme via stylesheet injection before React mounts.
  *
  * For brio (the default), this is a no-op — tug-base.css defaults are already active.
- * For harmony, injects the pre-fetched CSS from themeCSSMap when non-null. [D07]
+ * For harmony and other pre-fetched themes, injects the CSS from themeCSSMap when non-null. [D07]
  */
-export function applyInitialTheme(themeName: ThemeName): void {
-  const cssText = themeCSSMap[themeName];
+export function applyInitialTheme(themeName: string): void {
+  const cssText = themeCSSMap.get(themeName);
   if (cssText) {
     injectThemeCSS(themeName, cssText);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Dynamic theme persistence key
-// ---------------------------------------------------------------------------
-
-const DYNAMIC_THEME_KEY = "td-dynamic-theme";
 
 // ---------------------------------------------------------------------------
 // loadSavedThemes — query middleware for available saved themes
@@ -155,21 +196,37 @@ const DYNAMIC_THEME_KEY = "td-dynamic-theme";
  * these names prevents harmony from appearing as both a built-in preset
  * and a user-saved theme in the Theme Generator dropdown.
  */
-const BUILT_IN_THEME_NAMES: ReadonlySet<string> = new Set<ThemeName>(["brio", "harmony"]);
+const BUILT_IN_THEME_NAMES: ReadonlySet<string> = new Set<string>(["brio", "harmony"]);
 
 /**
  * Fetch the list of saved dynamic themes from the Vite dev middleware.
  * Returns an empty array if the endpoint is unavailable (e.g. in production).
  * Filters out built-in theme names so harmony.css does not appear as both
- * a built-in preset and a user-saved theme. [D08]
+ * a built-in preset and a user-saved theme.
+ *
+ * Parses the new middleware response format: { themes: [{ name, recipe, source }] }
+ * [D07][D08]
  */
 export async function loadSavedThemes(): Promise<string[]> {
   try {
     const res = await fetch("/__themes/list");
     if (!res.ok) return [];
-    const data = (await res.json()) as { themes?: string[] };
-    const themes = Array.isArray(data.themes) ? data.themes : [];
-    return themes.filter((name) => !BUILT_IN_THEME_NAMES.has(name));
+    const data = (await res.json()) as { themes?: unknown[] };
+    if (!Array.isArray(data.themes)) return [];
+    const names: string[] = [];
+    for (const entry of data.themes) {
+      if (typeof entry === "string") {
+        // Legacy format: string[] — still accept for backward compat
+        if (!BUILT_IN_THEME_NAMES.has(entry)) names.push(entry);
+      } else if (entry !== null && typeof entry === "object") {
+        // New format: { name, recipe, source }
+        const name = (entry as Record<string, unknown>).name;
+        if (typeof name === "string" && !BUILT_IN_THEME_NAMES.has(name)) {
+          names.push(name);
+        }
+      }
+    }
+    return names;
   } catch {
     return [];
   }
@@ -192,124 +249,111 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
  * `setTheme` via React context. Registers a stable setter wrapper with
  * the action-dispatch system so the set-theme control frame can update the
  * theme from the Mac menu.
+ *
+ * The `setTheme` implementation:
+ *   - brio: removes the override stylesheet so tug-base.css defaults take over.
+ *   - all others: fetches CSS via GET /__themes/<name>.css and injects it.
+ *     On 404, logs a warning and does not change the active theme. [D07]
  */
 export function TugThemeProvider({
   children,
   initialTheme = "brio",
 }: {
   children?: React.ReactNode;
-  initialTheme?: ThemeName;
+  initialTheme?: string;
 }): React.JSX.Element {
-  const [theme, setThemeState] = useState<ThemeName>(initialTheme);
-
-  // Dynamic theme state — tracks the active saved theme name without widening ThemeName.
-  // null means no dynamic theme is active (built-in theme is used). [D07]
-  const [dynamicThemeName, setDynamicThemeName] = useState<string | null>(null);
+  const [theme, setThemeState] = useState<string>(initialTheme);
 
   // Stable ref always pointing at the latest setTheme function.
   // The action-dispatch handler captures this ref once on mount and reads
   // the current value on every call, preventing stale closures.
-  const setThemeRef = useRef<(t: ThemeName) => void>(() => {});
+  const setThemeRef = useRef<(t: string) => void>(() => {});
 
-  const setTheme = (newTheme: ThemeName): void => {
-    // Inject or remove the override stylesheet synchronously. [D07]
-    const cssText = themeCSSMap[newTheme];
-    if (cssText) {
-      injectThemeCSS(newTheme, cssText);
-    } else {
+  const setTheme = (newTheme: string): void => {
+    if (newTheme === "brio") {
       // brio: remove override so tug-base.css defaults take over
       removeThemeCSS();
-    }
-    // Clear any stale dynamic theme so it cannot override the user's built-in
-    // selection on next page load (mount-time check reads td-dynamic-theme first).
-    // React 19 batches these state updates automatically. [D02]
-    setDynamicThemeName(null);
-    try {
-      localStorage.removeItem(DYNAMIC_THEME_KEY);
-    } catch {
-      // localStorage may be unavailable
-    }
-    setThemeState(newTheme);
-    try {
-      localStorage.setItem("td-theme", newTheme);
-    } catch {
-      // localStorage may be unavailable in some contexts
-    }
-    putTheme(newTheme);
-    // Sync canvas color to Swift bridge after injection
-    sendCanvasColor(newTheme);
-  };
-
-  /**
-   * Activate a saved dynamic theme by name.
-   * Fetches resolved CSS from /styles/themes/<name>.css, injects it via DOM
-   * (not React state — Rules of Tugways [D08, D09]), persists to localStorage.
-   * Does not touch themeCSSMap, sendCanvasColor(), or putTheme().
-   */
-  const setDynamicTheme = useCallback(async (name: string): Promise<void> => {
-    try {
-      const res = await fetch(`/styles/themes/${encodeURIComponent(name)}.css`);
-      if (!res.ok) return;
-      const css = await res.text();
-      injectThemeCSS(name, css);
-      setDynamicThemeName(name);
-      try {
-        localStorage.setItem(DYNAMIC_THEME_KEY, name);
-      } catch {
-        // localStorage may be unavailable
-      }
-    } catch {
-      // Network error — silently ignore
-    }
-  }, []);
-
-  /**
-   * Revert to the active built-in theme by removing the dynamic theme override.
-   *
-   * - For brio: remove the override stylesheet so tug-base.css defaults take over.
-   * - For harmony: remove the dynamic override and re-inject harmony's CSS from
-   *   themeCSSMap so the built-in light theme is restored correctly. [D02]
-   *
-   * React 19 batches the setDynamicThemeName(null) state update with any parent
-   * re-renders, so no intermediate flash occurs.
-   */
-  const revertToBuiltIn = useCallback((): void => {
-    const cssText = themeCSSMap[theme];
-    if (cssText) {
-      // Non-brio built-in (e.g. harmony): re-inject its CSS after clearing dynamic override.
-      injectThemeCSS(theme, cssText);
+      setThemeState(newTheme);
+      try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
+      putTheme(newTheme);
+      // Fetch brio.json and derive canvas params at runtime. [D08]
+      void fetch("/__themes/brio.json")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json: unknown) => {
+          if (json !== null) {
+            sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
+          }
+        })
+        .catch((err: unknown) => {
+          console.warn("setTheme: failed to fetch brio.json for canvas color", err);
+        });
     } else {
-      // Brio: removing the override lets tug-base.css defaults take over.
-      removeThemeCSS();
+      const cached = themeCSSMap.get(newTheme);
+      if (cached !== undefined) {
+        // CSS already fetched (or null sentinel for brio — handled above)
+        if (cached !== null) {
+          injectThemeCSS(newTheme, cached);
+        }
+        setThemeState(newTheme);
+        try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
+        putTheme(newTheme);
+        // Fetch JSON and derive canvas params at runtime. [D08]
+        void fetch(`/__themes/${encodeURIComponent(newTheme)}.json`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((json: unknown) => {
+            if (json !== null) {
+              sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
+            }
+          })
+          .catch((err: unknown) => {
+            console.warn(`setTheme: failed to fetch ${newTheme}.json for canvas color`, err);
+          });
+      } else {
+        // Fetch CSS from middleware, then inject
+        void fetch(`/__themes/${encodeURIComponent(newTheme)}.css`)
+          .then((res) => {
+            if (!res.ok) {
+              console.warn(`setTheme: theme "${newTheme}" not found (${res.status}), not changing theme`);
+              return;
+            }
+            return res.text().then((css) => {
+              themeCSSMap.set(newTheme, css);
+              injectThemeCSS(newTheme, css);
+              setThemeState(newTheme);
+              try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
+              putTheme(newTheme);
+              // Fetch JSON and derive canvas params at runtime. [D08]
+              void fetch(`/__themes/${encodeURIComponent(newTheme)}.json`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((json: unknown) => {
+                  if (json !== null) {
+                    sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
+                  }
+                })
+                .catch((err: unknown) => {
+                  console.warn(`setTheme: failed to fetch ${newTheme}.json for canvas color`, err);
+                });
+            });
+          })
+          .catch((err: unknown) => {
+            console.warn(`setTheme: failed to fetch CSS for theme "${newTheme}"`, err);
+          });
+      }
     }
-    setDynamicThemeName(null);
-    try {
-      localStorage.removeItem(DYNAMIC_THEME_KEY);
-    } catch {
-      // localStorage may be unavailable
-    }
-  }, [theme]);
+  };
 
   // Keep ref current on every render so the stable wrapper always calls the latest setter.
   useEffect(() => {
     setThemeRef.current = setTheme;
   });
 
-  // On mount: check localStorage for a saved dynamic theme and re-apply it.
-  // Dynamic theme check runs before built-in theme check (td-theme). [D04]
+  // On mount: sync canvas color to Swift bridge using pre-derived params registered
+  // by main.tsx before React mounted. If params are unavailable (e.g. in tests),
+  // skip the bridge call gracefully. [D08]
   useEffect(() => {
-    try {
-      const savedDynamic = localStorage.getItem(DYNAMIC_THEME_KEY);
-      if (savedDynamic) {
-        void setDynamicTheme(savedDynamic);
-        return;
-      }
-    } catch {
-      // localStorage may be unavailable
+    if (initialCanvasParams !== null) {
+      sendCanvasColor(initialCanvasParams);
     }
-    // Apply initial theme on mount. Brio is always active via tug-base.css defaults.
-    // Sync canvas color to Swift bridge on mount.
-    sendCanvasColor(initialTheme);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -317,13 +361,13 @@ export function TugThemeProvider({
   // The wrapper reads from setThemeRef so it always calls the latest setter.
   useEffect(() => {
     registerThemeSetter((themeName: string) => {
-      setThemeRef.current(themeName as ThemeName);
+      setThemeRef.current(themeName);
     });
   }, []);
 
   return React.createElement(
     ThemeContext.Provider,
-    { value: { theme, setTheme, dynamicThemeName, setDynamicTheme, revertToBuiltIn } },
+    { value: { theme, setTheme } },
     children
   );
 }

@@ -6,13 +6,27 @@
 
 ## Theme & Token Architecture
 
-**D01.** Theme format is CSS custom properties, not JSON. Themes are `.css` files injected via `<style>` element. [L06]
+**D01.** Theme definitions (color choices + recipe reference) are stored as `.json` files in `tugdeck/themes/` (shipped) and `~/.tugtool/themes/` (authored), not as TypeScript constants. Enables runtime loading without rebuilding and the Prototype pattern for new theme authoring. [L06]
 
-**D02.** Token prefix is `--tug-`.
+**D02.** Two-directory storage with unique names. Shipped themes in `tugdeck/themes/` (version-controlled, read-only). Authored themes in `~/.tugtool/themes/` (user data, not in repo). Names are unique across both directories — middleware checks authored first, then shipped, but uniqueness means no shadowing.
 
-**D03.** Theme application uses stylesheet injection (`<style id="tug-theme-override">`), not body class toggling. [L06]
+**D03.** Brio is the base theme. Its tokens are the baseline CSS in `styles/tug-base-generated.css`. Switching to Brio removes the override `<style>` element. All other themes work as cascade overrides on top of Brio. There is no `styles/themes/brio.css` file. [L06]
 
-**D04.** Optional palette entries use `var()` fallbacks so themes can omit slots gracefully.
+**D04.** `contrastSearch()`, `darkRecipe()`, `lightRecipe()`, and `RECIPE_REGISTRY` are defined in `theme-engine.ts`. `RECIPE_REGISTRY` is the only derivation dispatch path — all `deriveTheme()` calls route through it.
+
+**D86.** The `formulas?: DerivationFormulas` escape hatch is removed from `ThemeRecipe`. The recipe function is the only derivation path. `RECIPE_REGISTRY` is the extension point for new recipe variants.
+
+**D87.** The theme generator card follows Mac document conventions: New (Prototype pattern, copy existing theme), Open (load from available themes), auto-save (500ms debounce to disk), Apply (inject CSS app-wide). Shipped themes open read-only. No explicit Save button.
+
+**D88.** All theme loading goes through the Vite dev middleware. `ThemeName` is a plain `string` (not a hardcoded union). `themeCSSMap` is populated dynamically at startup via `GET /__themes/list`. Supports arbitrary authored themes without code changes.
+
+**D89.** `canvasColorHex()` accepts derived canvas surface params (`hue`, `tone`, `intensity`) extracted from `ThemeOutput.formulas` after running `deriveTheme()`. The raw JSON `surface.canvas.intensity` differs from the derived `surfaceCanvasIntensity`; callers must use the derived value. The `CANVAS_COLORS` lookup table is removed.
+
+**D90.** A theme's `recipe` field (`"dark"` or `"light"`) is set once at theme creation (copied from the prototype) and is immutable. The generator card displays recipe as a read-only label, not a toggle.
+
+**D91.** The Swift Theme submenu uses `NSMenuDelegate.menuNeedsUpdate(_:)` to populate items dynamically from a cached theme list. The web view pushes updated theme lists to Swift via the `themeListUpdated` bridge message. Eliminates hardcoded menu items and per-theme `@objc` handlers.
+
+**D92.** Bluenote is removed from the entire codebase — Swift menu, action dispatch, theme provider, and any CSS files.
 
 **D70.** Color palette is OKLCH-based. 24 hue families with intensity/tone axes, 5 convenience presets per hue, neutral ramp, P3 gamut support, pure CSS formulas. [L15]
 
@@ -31,6 +45,10 @@
 **D82.** Four semantic contrast roles govern text legibility: `content` (75), `control` (60), `display` (60), `informational` (60). Each role maps to a hue slot derived from the recipe's text and display specs. The pairing map assigns every foreground token a contrast role for threshold enforcement. [L15, L18]
 
 **D83.** Five contrast roles with minimum thresholds: `content` (75), `control` (60), `display` (60), `informational` (60), `decorative` (15). All readable text >= 60. [L16]
+
+**D84.** Theme application uses stylesheet injection (`<style id="tug-theme-override">`), not body class toggling. [L06]
+
+**D85.** Optional palette entries use `var()` fallbacks so themes can omit slots gracefully. [L15]
 
 ---
 

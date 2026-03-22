@@ -16,7 +16,10 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { GalleryThemeGeneratorContent } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import brioJson from "../../themes/brio.json";
+
+const brio = brioJson as ThemeRecipe;
 import { _resetForTest } from "@/card-registry";
 
 // ---------------------------------------------------------------------------
@@ -165,7 +168,7 @@ describe("contrast-diagnostics – T8.3: panel renders diagnostic output", () =>
   it("diagnostics panel content matches ThemeOutput.diagnostics from deriveTheme", () => {
     // Pure logic test: verify the engine produces the same diagnostics that the UI
     // would display. This catches any mismatch between render path and engine output.
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const floorApplied = brioOutput.diagnostics.filter((d) => d.reason === "floor-applied");
 
     const container = renderComponent();
@@ -180,7 +183,7 @@ describe("contrast-diagnostics – T8.3: panel renders diagnostic output", () =>
   });
 
   it("each floor-applied item shows token name and tone delta", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const brioOutput = deriveTheme(brio);
     const floorApplied = brioOutput.diagnostics.filter((d) => d.reason === "floor-applied");
 
     if (floorApplied.length === 0) return; // nothing to verify
