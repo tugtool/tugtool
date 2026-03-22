@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-16
+date: 2025-03-22T22:42:23Z
+---
+
+## step-16: Final verification: 1792 tests pass, generate:tokens succeeds, audit:tokens lint clean, all obsolete code removed (EXAMPLE_RECIPES, Bluenote, theme-recipes.ts, formulas escape hatch, ExportImportPanel)
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-15
 date: 2025-03-22T22:36:04Z
 ---
