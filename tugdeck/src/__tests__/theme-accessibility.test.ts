@@ -257,6 +257,9 @@ describe("pairing-map", () => {
       // (text contrast is covered via tab-fg-rest / card-title-bar-fg)
       "--tug-base-surface-tab-primary-normal-plain-inactive",
       "--tug-base-surface-tab-primary-normal-plain-collapsed",
+      // grid-rest is a decorative stroke used in background-image, not a surface
+      // on which fg text sits — no fg-over-bg pairing applies; contrast is irrelevant
+      "--tug-base-surface-global-primary-normal-grid-rest",
     ]);
 
     const missingBgTokens: string[] = [];

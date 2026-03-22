@@ -224,8 +224,8 @@
   border-radius: var(--tug-base-radius-sm);
   padding: 16px;
   background-image:
-    linear-gradient(var(--tug-canvas-grid-line, rgba(255,255,255,0.05)) 1px, transparent 1px),
-    linear-gradient(90deg, var(--tug-canvas-grid-line, rgba(255,255,255,0.05)) 1px, transparent 1px);
+    linear-gradient(var(--tug-base-surface-global-primary-normal-grid-rest) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tug-base-surface-global-primary-normal-grid-rest) 1px, transparent 1px);
   background-size: 24px 24px;
   margin-bottom: 24px;
 }

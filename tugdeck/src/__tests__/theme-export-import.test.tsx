@@ -133,7 +133,7 @@ describe("theme-export – T9.2: exported CSS has only --tug-color() values for 
     }
   });
 
-  it("only --tug-base-* chromatic tokens use --tug-color() notation; --tug-canvas-grid-line uses oklch() [D06]", () => {
+  it("only --tug-base-* chromatic tokens use --tug-color() notation", () => {
     const recipe = EXAMPLE_RECIPES.brio;
     const output = deriveTheme(recipe);
     const css = generateCssExport(output, recipe);
@@ -145,9 +145,9 @@ describe("theme-export – T9.2: exported CSS has only --tug-color() values for 
     for (const line of baseLines) {
       expect(line).not.toContain("oklch(");
     }
-    // The --tug-canvas-grid-line entry IS allowed to use oklch() [D06]
-    expect(body).toContain("--tug-canvas-grid-line:");
-    expect(body).toMatch(/--tug-canvas-grid-line:\s*oklch\(/);
+    // The grid token is now a first-class --tug-base-* token using --tug-color() notation
+    expect(body).toContain("--tug-base-surface-global-primary-normal-grid-rest:");
+    expect(body).not.toContain("--tug-canvas-grid-line:");
   });
 
   it("no raw hex values appear in the body block", () => {
@@ -279,33 +279,34 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
     }
   });
 
-  it("generateCssExport embeds --tug-canvas-grid-line in the body block for dynamic theme loading [D06]", () => {
+  it("generateCssExport includes --tug-base-surface-global-primary-normal-grid-rest as a first-class token", () => {
     const recipe = EXAMPLE_RECIPES.brio;
     const output = deriveTheme(recipe);
     const css = generateCssExport(output, recipe);
-    expect(css).toContain("--tug-canvas-grid-line:");
-    // Value should be an oklch() string
-    expect(css).toMatch(/--tug-canvas-grid-line:\s*oklch\(/);
+    expect(css).toContain("--tug-base-surface-global-primary-normal-grid-rest:");
+    expect(css).not.toContain("--tug-canvas-grid-line:");
+    // Value should be a --tug-color() expression (first-class derived token)
+    expect(css).toMatch(/--tug-base-surface-global-primary-normal-grid-rest:\s*--tug-color\(/);
   });
 
-  it("generateCssExport --tug-canvas-grid-line differs between brio and harmony recipes", () => {
+  it("generateCssExport grid token differs between brio and harmony recipes", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
     const harmonyOutput = deriveTheme(EXAMPLE_RECIPES.harmony);
     const brioCss = generateCssExport(brioOutput, EXAMPLE_RECIPES.brio);
     const harmonyCss = generateCssExport(harmonyOutput, EXAMPLE_RECIPES.harmony);
-    // Both have the property
-    expect(brioCss).toContain("--tug-canvas-grid-line:");
-    expect(harmonyCss).toContain("--tug-canvas-grid-line:");
+    // Both have the first-class grid token
+    expect(brioCss).toContain("--tug-base-surface-global-primary-normal-grid-rest:");
+    expect(harmonyCss).toContain("--tug-base-surface-global-primary-normal-grid-rest:");
     // Extract the value from each
     const extractValue = (css: string) => {
-      const match = css.match(/--tug-canvas-grid-line:\s*(oklch\([^;]+\))/);
+      const match = css.match(/--tug-base-surface-global-primary-normal-grid-rest:\s*(--tug-color\([^;]+\))/);
       return match ? match[1].trim() : null;
     };
     const brioGridValue = extractValue(brioCss);
     const harmonyGridValue = extractValue(harmonyCss);
     expect(brioGridValue).not.toBeNull();
     expect(harmonyGridValue).not.toBeNull();
-    // Different grid specs should produce different oklch() values
+    // Dark and light themes have different canvas tones, producing different grid token values
     expect(brioGridValue).not.toBe(harmonyGridValue);
   });
 });

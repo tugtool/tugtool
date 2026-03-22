@@ -2,7 +2,7 @@
  * Theme Derivation Engine tests.
  *
  * Covers:
- * - T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 374 entries
+ * - T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 375 entries
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
  * - T2.5: Theme-invariant tokens are correct for Brio
  * - T2.6: Non-override tokens resolve to valid sRGB gamut colors
@@ -173,9 +173,9 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 374 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 375 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(Object.keys(output.tokens).length).toBe(374);
+    expect(Object.keys(output.tokens).length).toBe(375);
   });
 
   // -------------------------------------------------------------------------
@@ -458,9 +458,9 @@ describe("recipe contrast validation", () => {
       const output = deriveTheme(recipe);
       const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
-      // Token count must be 374 for every recipe (tokens includes invariant tokens
+      // Token count must be 375 for every recipe (tokens includes invariant tokens
       // absent from resolved; tokens and resolved differ by design) [step-3 task]
-      expect(Object.keys(output.tokens).length).toBe(374);
+      expect(Object.keys(output.tokens).length).toBe(375);
 
       // Consistency check: every chromatic token must have a --tug-color() string [D09]
       let tokensAndResolvedConsistent = true;
@@ -911,8 +911,8 @@ describe("resolveHueSlots — Step 3", () => {
   it("T-RESOLVE-MATCH: deriveTheme(brio) output is unchanged after adding resolveHueSlots call", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
-    // Token count must remain 374
-    expect(Object.keys(output.tokens).length).toBe(374);
+    // Token count must remain 375
+    expect(Object.keys(output.tokens).length).toBe(375);
 
     // Key Brio dark token spot-checks (from T-BRIO-MATCH fixture)
     // bg-app: indigo-violet i:2 t:5
@@ -1172,7 +1172,7 @@ describe("derivation-engine step-5 rules", () => {
 
 // ---------------------------------------------------------------------------
 // Step 6 tests: T-RULES-COMPLETE, T-RULES-DARK-MATCH
-// These verify that the full RULES table covers all 374 tokens and that
+// These verify that the full RULES table covers all 375 tokens and that
 // evaluateRules(RULES, ...) matches imperative dark-mode output.
 // T-RULES-LIGHT-MATCH deleted (clean break per D06 — deferred to light-formulas step).
 // ---------------------------------------------------------------------------
@@ -1248,10 +1248,10 @@ describe("derivation-engine step-6 rules", () => {
   }
 
   // -------------------------------------------------------------------------
-  // T-RULES-COMPLETE: RULES table has exactly 374 entries
+  // T-RULES-COMPLETE: RULES table has exactly 375 entries
   // -------------------------------------------------------------------------
-  it("T-RULES-COMPLETE: RULES table has exactly 374 entries", () => {
-    expect(Object.keys(RULES).length).toBe(374);
+  it("T-RULES-COMPLETE: RULES table has exactly 375 entries", () => {
+    expect(Object.keys(RULES).length).toBe(375);
   });
 
   // -------------------------------------------------------------------------
@@ -1276,7 +1276,7 @@ describe("derivation-engine step-6 rules", () => {
 
 // ---------------------------------------------------------------------------
 // Step 3 tests: recipe function path in deriveTheme (Spec S04)
-// T3.1: deriveTheme with controls produces 374 tokens
+// T3.1: deriveTheme with controls produces 375 tokens
 // T3.2: deriveTheme with formulas escape hatch still works
 // T3.3: deriveTheme with no controls and no formulas uses registry defaults
 // ---------------------------------------------------------------------------
@@ -1284,22 +1284,22 @@ describe("derivation-engine step-6 rules", () => {
 describe("derivation-engine step-3 recipe-function integration", () => {
   const minimalDarkRecipe = EXAMPLE_RECIPES.brio;
 
-  it("T3.1: deriveTheme with no controls and no formulas produces 374 tokens", () => {
+  it("T3.1: deriveTheme with no controls and no formulas produces 375 tokens", () => {
     const recipe = { ...minimalDarkRecipe, formulas: undefined };
     const output = deriveTheme(recipe);
-    expect(Object.keys(output.tokens).length).toBe(374);
+    expect(Object.keys(output.tokens).length).toBe(375);
   });
 
   it("T3.2: deriveTheme with formulas escape hatch still works (backward compat)", () => {
     const recipe = { ...minimalDarkRecipe, formulas: DARK_FORMULAS };
     const output = deriveTheme(recipe);
-    expect(Object.keys(output.tokens).length).toBe(374);
+    expect(Object.keys(output.tokens).length).toBe(375);
   });
 
-  it("T3.3: deriveTheme with no formulas uses registry defaults (374 tokens)", () => {
+  it("T3.3: deriveTheme with no formulas uses registry defaults (375 tokens)", () => {
     const recipe = { ...minimalDarkRecipe, formulas: undefined };
     const output = deriveTheme(recipe);
-    expect(Object.keys(output.tokens).length).toBe(374);
+    expect(Object.keys(output.tokens).length).toBe(375);
   });
 });
 
@@ -1655,8 +1655,8 @@ describe("step-2 pass-2 composited contrast enforcement", () => {
     );
     expect(coreFailures).toEqual([]);
 
-    // Token count must still be 374
-    expect(Object.keys(output.tokens).length).toBe(374);
+    // Token count must still be 375
+    expect(Object.keys(output.tokens).length).toBe(375);
   });
 });
 

@@ -46,6 +46,16 @@ export interface ElementSurfacePairing {
  */
 export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
+  // Canvas grid line — decorative stroke on canvas surface
+  // =========================================================================
+  {
+    // grid-rest is a derived token used as a background-image stroke (barely visible grid)
+    // drawn over the canvas surface. Role is "decorative" — no contrast minimum.
+    element: "--tug-base-surface-global-primary-normal-grid-rest",
+    surface: "--tug-base-surface-global-primary-normal-canvas-rest",
+    role: "decorative",
+  },
+  // =========================================================================
   // Core surface / text pairings
   // Body text on all primary surfaces
   // =========================================================================

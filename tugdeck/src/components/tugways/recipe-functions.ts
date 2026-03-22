@@ -195,6 +195,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     atmosphereIntensity: canvasIntensity,
     surfaceAppIntensity: 2,
     surfaceCanvasIntensity: 2,
+    surfaceGridIntensity: 2, // very subtle: barely visible grid line on canvas
     surfaceDefaultIntensity: 5,
     surfaceRaisedIntensity: 5,
     surfaceOverlayIntensity: 4,
@@ -360,6 +361,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // These are mode-independent routing decisions; same as DARK_FORMULAS
     surfaceAppHueSlot: "canvas",
     surfaceCanvasHueSlot: "canvas",
+    surfaceGridHueSlot: "canvas", // grid line uses the canvas hue at a slightly offset tone
     surfaceSunkenHueSlot: "surfBareBase",
     surfaceDefaultHueSlot: "surfBareBase",
     surfaceRaisedHueSlot: "atm",
@@ -436,6 +438,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // At surfaceContrast=50, all surface tones equal their input tone fields.
     surfaceApp: c,
     surfaceCanvas: c,
+    surfaceGrid: c + 3, // dark mode: slightly lighter than canvas (+3) for a barely visible grid line
     surfaceSunken: c + 6,
     surfaceDefault: c + 7,
     surfaceRaised: c + 6,
@@ -533,6 +536,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     atmosphereIntensity: canvasIntensity,
     surfaceAppIntensity: 3,
     surfaceCanvasIntensity: 3,
+    surfaceGridIntensity: 2, // very subtle: barely visible grid line on canvas
     surfaceDefaultIntensity: 6,
     surfaceRaisedIntensity: 6,
     surfaceOverlayIntensity: 5,
@@ -697,6 +701,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // Mode-independent routing (same as DARK_FORMULAS)
     surfaceAppHueSlot: "canvas",
     surfaceCanvasHueSlot: "canvas",
+    surfaceGridHueSlot: "canvas", // grid line uses the canvas hue at a slightly offset tone
     surfaceSunkenHueSlot: "surfBareBase",
     surfaceDefaultHueSlot: "surfBareBase",
     surfaceRaisedHueSlot: "atm",
@@ -771,6 +776,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // Directly assigned by recipe function. Read by Expr lambdas in derivation-rules.ts. [D04]
     surfaceApp: c,
     surfaceCanvas: c,
+    surfaceGrid: c - 3, // light mode: slightly darker than canvas (-3) for a barely visible grid line
     surfaceSunken: c - 7,  // 88 in LIGHT_FORMULAS
     surfaceDefault: c - 5, // 90 in LIGHT_FORMULAS
     surfaceRaised: c - 3,  // 92 in LIGHT_FORMULAS

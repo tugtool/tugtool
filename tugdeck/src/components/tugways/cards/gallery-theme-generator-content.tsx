@@ -33,7 +33,6 @@ import {
   deriveTheme,
   EXAMPLE_RECIPES,
   generateResolvedCssExport,
-  themeColorSpecToOklch,
   type DerivationFormulas,
   type ThemeRecipe,
   type ThemeOutput,
@@ -957,11 +956,7 @@ export function generateCssExport(
     .filter(([, v]) => v.startsWith("--tug-color("))
     .map(([name, value]) => `  ${name}: ${value};`);
 
-  // Embed --tug-canvas-grid-line so setDynamicTheme() gets it from CSS alone. [D06]
-  const gridLineValue = themeColorSpecToOklch(recipe.surface.grid);
-  const gridLineEntry = `  --tug-canvas-grid-line: ${gridLineValue};`;
-
-  const body = ["body {", ...entries, gridLineEntry, "}"].join("\n");
+  const body = ["body {", ...entries, "}"].join("\n");
 
   return `${header}\n${body}\n`;
 }
@@ -1866,10 +1861,8 @@ export function GalleryThemeGeneratorContent() {
         style[comp] = style[base];
       }
     }
-    // Set --tug-canvas-grid-line from the current grid ThemeColorSpec. [D06]
-    style["--tug-canvas-grid-line"] = themeColorSpecToOklch({ hue: gridHue, tone: gridTone, intensity: gridIntensity });
     return style as React.CSSProperties;
-  }, [themeOutput, gridHue, gridTone, gridIntensity]);
+  }, [themeOutput]);
 
   /** Look up the actual resolved CSS color for a surface, element, or role hue key. */
   const resolvedColor = useCallback(

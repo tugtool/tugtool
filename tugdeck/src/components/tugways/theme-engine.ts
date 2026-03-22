@@ -538,6 +538,8 @@ export interface DerivationFormulas {
    * Dark: surfaceAppIntensity (2). Light: atmosphereIntensity.
    */
   surfaceAppBaseIntensity: number;
+  /** @semantic surface-coloring — chroma intensity for the canvas grid line (very subtle) */
+  surfaceGridIntensity: number;
 
   // ===== Text Brightness =====
   // How bright primary and inverse text is. Dark: near 100. Light: near 0.
@@ -821,6 +823,8 @@ export interface DerivationFormulas {
   surfaceAppHueSlot: string;
   /** @semantic hue-slot-dispatch — hue slot for the canvas background */
   surfaceCanvasHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for the canvas grid line (derived from canvas hue) */
+  surfaceGridHueSlot: string;
   /** @semantic hue-slot-dispatch — hue slot for sunken surfaces */
   surfaceSunkenHueSlot: string;
   /** @semantic hue-slot-dispatch — hue slot for the default card surface */
@@ -1067,6 +1071,8 @@ export interface DerivationFormulas {
   surfaceApp: number;
   /** @semantic computed-surface-tone — computed tone for the canvas background surface */
   surfaceCanvas: number;
+  /** @semantic computed-surface-tone — computed tone for the canvas grid line (canvas tone ± small offset) */
+  surfaceGrid: number;
   /** @semantic computed-surface-tone — computed tone for sunken surfaces */
   surfaceSunken: number;
   /** @semantic computed-surface-tone — computed tone for the default card/panel surface */

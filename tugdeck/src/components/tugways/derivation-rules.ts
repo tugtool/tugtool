@@ -264,6 +264,8 @@ const SURFACE_RULES: Record<string, DerivationRule> = {
   "--tug-base-surface-global-primary-normal-app-rest": surface("surfaceApp", "surfaceAppBaseIntensity", "surfaceApp"),
   // bg-canvas: hueSlot "surfaceCanvas" -> formulas.surfaceCanvasHueSlot ("canvas" dark | "atm" light)
   "--tug-base-surface-global-primary-normal-canvas-rest": surface("surfaceCanvas", "surfaceCanvasIntensity", "surfaceCanvas"),
+  // grid-rest: canvas hue at canvas tone ± 3 offset, very low intensity — barely visible grid lines
+  "--tug-base-surface-global-primary-normal-grid-rest": surface("surfaceGrid", "surfaceGridIntensity", "surfaceGrid"),
   // surface-sunken: hueSlot "surfaceSunken" -> "surfBareBase" dark | "atm" light
   "--tug-base-surface-global-primary-normal-sunken-rest": surface("surfaceSunken", "atmosphereIntensity", "surfaceSunken"),
   // surface-default: hueSlot "surfaceDefault" -> "surfBareBase" dark | "atm" light

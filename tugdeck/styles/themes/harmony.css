@@ -66,6 +66,7 @@ body {
   --tug-base-surface-global-primary-normal-content-rest: --tug-color(indigo-violet, i: 6, t: 86);
   --tug-base-surface-global-primary-normal-control-rest: var(--tug-base-surface-control-primary-outlined-action-rest);
   --tug-base-surface-global-primary-normal-default-rest: --tug-color(violet, i: 6, t: 90);
+  --tug-base-surface-global-primary-normal-grid-rest: --tug-color(indigo-violet, i: 2, t: 71);
   --tug-base-surface-global-primary-normal-inset-rest: --tug-color(indigo-violet, i: 6, t: 86);
   --tug-base-surface-global-primary-normal-overlay-rest: --tug-color(violet, i: 5, t: 93);
   --tug-base-surface-global-primary-normal-raised-rest: --tug-color(indigo-violet, i: 6, t: 92);
