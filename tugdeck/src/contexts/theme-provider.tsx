@@ -28,7 +28,8 @@ import React, {
 } from "react";
 import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
-import { canvasColorHex } from "../canvas-color";
+import { canvasColorHex, type CanvasColorParams } from "../canvas-color";
+import { deriveTheme, type ThemeRecipe } from "../components/tugways/theme-engine";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,6 +65,29 @@ themeCSSMap.set("brio", null);
  */
 export function registerThemeCSS(name: string, css: string): void {
   themeCSSMap.set(name, css);
+}
+
+// ---------------------------------------------------------------------------
+// Initial canvas params cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Pre-derived canvas params for the initial theme at startup.
+ * Set by main.tsx (via registerInitialCanvasParams) after running deriveTheme()
+ * on the initial theme's recipe. Read by TugThemeProvider's on-mount effect
+ * to sync the Swift bridge with the correct canvas color. [D08]
+ */
+let initialCanvasParams: CanvasColorParams | null = null;
+
+/**
+ * Store pre-derived canvas params for the initial theme.
+ *
+ * Called from main.tsx before React mounts, after deriveTheme() has been run
+ * on the initial theme's recipe. The params are consumed by the on-mount
+ * useEffect in TugThemeProvider to send the initial canvas color to Swift. [D08]
+ */
+export function registerInitialCanvasParams(params: CanvasColorParams): void {
+  initialCanvasParams = params;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,22 +134,38 @@ export function removeThemeCSS(): void {
 /**
  * Post the canvas background hex to the Swift bridge.
  *
- * Computes the hex from the palette engine's TugColor constants — same source
- * of truth as PostCSS and tug-palette.css. No getComputedStyle, no browser
- * color format parsing, no drift.
+ * Accepts pre-derived canvas params from ThemeOutput.formulas. The caller is
+ * responsible for running deriveTheme() and extracting:
+ *   - hue:       recipe.surface.canvas.hue (resolved via formulas.surfaceCanvasHueSlot)
+ *   - tone:      themeOutput.formulas.surfaceCanvasTone
+ *   - intensity: themeOutput.formulas.surfaceCanvasIntensity (DERIVED, not raw JSON)
  *
- * If the theme name is not present in CANVAS_COLORS (e.g. a dynamically-loaded
- * theme), logs a warning and skips the bridge call rather than crashing.
- * Step 10 replaces this entire function with runtime derivation. [D07]
+ * Uses the same TugColor → oklch → hex pipeline as PostCSS and tug-palette.css.
+ * No getComputedStyle, no browser color format parsing, no drift. [D08]
  */
-export function sendCanvasColor(theme: string): void {
-  const hex = canvasColorHex(theme);
-  if (hex === null) {
-    console.warn(`sendCanvasColor: no canvas color for theme "${theme}", skipping bridge call`);
-    return;
-  }
+export function sendCanvasColor(params: CanvasColorParams): void {
+  const hex = canvasColorHex(params);
   (window as unknown as { webkit?: { messageHandlers?: { setTheme?: { postMessage: (v: unknown) => void } } } })
     .webkit?.messageHandlers?.setTheme?.postMessage({ color: hex });
+}
+
+/**
+ * Derive canvas color params from a ThemeRecipe.
+ *
+ * Runs deriveTheme() and extracts:
+ *   - hue:       recipe.surface.canvas.hue (the surfaceCanvasHueSlot is always "canvas")
+ *   - tone:      themeOutput.formulas.surfaceCanvasTone
+ *   - intensity: themeOutput.formulas.surfaceCanvasIntensity (DERIVED value)
+ *
+ * [D08] Canvas color derived from theme JSON at runtime, Spec S04.
+ */
+export function deriveCanvasParams(recipe: ThemeRecipe): CanvasColorParams {
+  const themeOutput = deriveTheme(recipe);
+  return {
+    hue: recipe.surface.canvas.hue,
+    tone: themeOutput.formulas.surfaceCanvasTone,
+    intensity: themeOutput.formulas.surfaceCanvasIntensity,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +276,17 @@ export function TugThemeProvider({
       setThemeState(newTheme);
       try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
       putTheme(newTheme);
-      sendCanvasColor(newTheme);
+      // Fetch brio.json and derive canvas params at runtime. [D08]
+      void fetch("/__themes/brio.json")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json: unknown) => {
+          if (json !== null) {
+            sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
+          }
+        })
+        .catch((err: unknown) => {
+          console.warn("setTheme: failed to fetch brio.json for canvas color", err);
+        });
     } else {
       const cached = themeCSSMap.get(newTheme);
       if (cached !== undefined) {
@@ -247,7 +297,17 @@ export function TugThemeProvider({
         setThemeState(newTheme);
         try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
         putTheme(newTheme);
-        sendCanvasColor(newTheme);
+        // Fetch JSON and derive canvas params at runtime. [D08]
+        void fetch(`/__themes/${encodeURIComponent(newTheme)}.json`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((json: unknown) => {
+            if (json !== null) {
+              sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
+            }
+          })
+          .catch((err: unknown) => {
+            console.warn(`setTheme: failed to fetch ${newTheme}.json for canvas color`, err);
+          });
       } else {
         // Fetch CSS from middleware, then inject
         void fetch(`/__themes/${encodeURIComponent(newTheme)}.css`)
@@ -262,7 +322,17 @@ export function TugThemeProvider({
               setThemeState(newTheme);
               try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
               putTheme(newTheme);
-              sendCanvasColor(newTheme);
+              // Fetch JSON and derive canvas params at runtime. [D08]
+              void fetch(`/__themes/${encodeURIComponent(newTheme)}.json`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((json: unknown) => {
+                  if (json !== null) {
+                    sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
+                  }
+                })
+                .catch((err: unknown) => {
+                  console.warn(`setTheme: failed to fetch ${newTheme}.json for canvas color`, err);
+                });
             });
           })
           .catch((err: unknown) => {
@@ -277,12 +347,13 @@ export function TugThemeProvider({
     setThemeRef.current = setTheme;
   });
 
-  // On mount: apply the initial theme's CSS if it is already in the map.
-  // Sync canvas color to Swift bridge on mount.
+  // On mount: sync canvas color to Swift bridge using pre-derived params registered
+  // by main.tsx before React mounted. If params are unavailable (e.g. in tests),
+  // skip the bridge call gracefully. [D08]
   useEffect(() => {
-    // Apply initial theme on mount. Brio is always active via tug-base.css defaults.
-    // Sync canvas color to Swift bridge on mount.
-    sendCanvasColor(initialTheme);
+    if (initialCanvasParams !== null) {
+      sendCanvasColor(initialCanvasParams);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

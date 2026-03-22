@@ -10,8 +10,12 @@ import {
   applyInitialTheme,
   sendCanvasColor,
   registerThemeCSS,
+  registerInitialCanvasParams,
+  deriveCanvasParams,
 } from "./contexts/theme-provider";
 import type { ThemeRecipe } from "./components/tugways/theme-engine";
+import brioJsonRaw from "../themes/brio.json";
+const BRIO_RECIPE = brioJsonRaw as ThemeRecipe;
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
@@ -106,9 +110,21 @@ export let cachedActiveRecipe: ThemeRecipe | null = null;
   // so the correct colors are visible before React renders.
   applyInitialTheme(initialTheme);
 
+  // Derive canvas color params from the active theme recipe. For brio (the default),
+  // use the statically imported recipe. For non-brio themes, use the cached recipe
+  // fetched above. Run deriveTheme() to get the DERIVED surfaceCanvasIntensity value.
+  // [D08] Canvas color derived from theme JSON at runtime, Spec S04.
+  const activeRecipe: ThemeRecipe = initialTheme === "brio"
+    ? BRIO_RECIPE
+    : (cachedActiveRecipe ?? BRIO_RECIPE);
+  const canvasParams = deriveCanvasParams(activeRecipe);
+
+  // Register canvas params for TugThemeProvider's on-mount effect.
+  registerInitialCanvasParams(canvasParams);
+
   // Sync canvas color to Swift bridge so UserDefaults gets the correct
   // background color on startup before the user switches themes.
-  sendCanvasColor(initialTheme);
+  sendCanvasColor(canvasParams);
 
   // Initialize motion observer early so data-tug-motion attribute is set before
   // DeckManager construction. The cleanup function is intentionally not stored

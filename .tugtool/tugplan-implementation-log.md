@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-22T20:56:46Z
+---
+
+## step-10: Refactored canvasColorHex() to accept derived {hue, tone, intensity} params, removed CANVAS_COLORS lookup, updated sendCanvasColor() and main.tsx to derive params from formulas, added canvas-color tests
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-9
 date: 2025-03-22T20:37:47Z
 ---
