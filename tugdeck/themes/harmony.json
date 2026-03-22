@@ -1,0 +1,22 @@
+{
+  "name": "harmony",
+  "description": "Bright, open light theme with the same palette as Brio seen in daylight.",
+  "recipe": "light",
+  "surface": {
+    "canvas": { "hue": "indigo-violet", "tone": 95, "intensity": 6 },
+    "grid":   { "hue": "indigo-violet", "tone": 88, "intensity": 5 },
+    "frame":  { "hue": "indigo-violet", "tone": 85, "intensity": 35 },
+    "card":   { "hue": "indigo-violet", "tone": 90, "intensity": 6 }
+  },
+  "text": { "hue": "cobalt", "intensity": 4 },
+  "role": {
+    "tone": 55, "intensity": 60,
+    "accent": "orange",
+    "action": "blue",
+    "agent": "violet",
+    "data": "teal",
+    "success": "green",
+    "caution": "yellow",
+    "danger": "red"
+  }
+}

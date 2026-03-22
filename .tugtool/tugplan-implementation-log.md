@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-22T19:10:03Z
+---
+
+## step-1: Created tugdeck/themes/brio.json and harmony.json from EXAMPLE_RECIPES; captured golden CSS baselines for diff verification
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-6
 date: 2025-03-22T00:40:18Z
 ---

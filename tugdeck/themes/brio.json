@@ -1,0 +1,23 @@
+{
+  "name": "brio",
+  "description": "Deep, immersive dark theme with industrial warmth.",
+  "recipe": "dark",
+  "surface": {
+    "canvas": { "hue": "indigo-violet", "tone": 5, "intensity": 5 },
+    "grid":   { "hue": "indigo-violet", "tone": 12, "intensity": 4 },
+    "frame":  { "hue": "indigo-violet", "tone": 16, "intensity": 12 },
+    "card":   { "hue": "indigo-violet", "tone": 12, "intensity": 5 }
+  },
+  "text": { "hue": "cobalt", "intensity": 3 },
+  "display": { "hue": "indigo", "intensity": 3 },
+  "role": {
+    "tone": 50, "intensity": 50,
+    "accent": "orange",
+    "action": "blue",
+    "agent": "violet",
+    "data": "teal",
+    "success": "green",
+    "caution": "yellow",
+    "danger": "red"
+  }
+}
