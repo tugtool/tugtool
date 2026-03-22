@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-12
+date: 2025-03-22T21:53:55Z
+---
+
+## step-12: Complete rewrite: Mac-style document model (Idle/Viewing/Editing), New/Open flows, auto-save with 500ms debounce, Apply via CSS injection, removed ExportImportPanel/loadPreset/mode toggle, rewrote tests
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-11
 date: 2025-03-22T21:03:30Z
 ---

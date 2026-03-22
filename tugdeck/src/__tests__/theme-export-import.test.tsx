@@ -1,11 +1,12 @@
 /**
- * theme-export-import tests.
+ * theme-export-import tests — new save model (Step 12).
  *
  * Tests cover:
- * - T9.3: Exported recipe JSON round-trips: export -> import -> re-export produces identical JSON
+ * - T9.3: Exported recipe JSON round-trips: export → import → re-export produces identical JSON
  * - T9.4: Invalid JSON import shows error, does not crash (validateRecipeJson)
  * - T9.4: Migration: old-format recipe → new format
  * - TugThemeProvider context interface tests ({ theme, setTheme }, localStorage, dynamic themes)
+ * - New save model: POST /__themes/save with name + css + recipe fields
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -19,7 +20,7 @@ import {
   GalleryThemeGeneratorContent,
   validateRecipeJson,
 } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import { deriveTheme, generateResolvedCssExport, type ThemeRecipe } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 
 const brio = brioJson as ThemeRecipe;
@@ -180,6 +181,66 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 });
 
 // ---------------------------------------------------------------------------
+// New save model: POST /__themes/save with name + css + recipe
+// ---------------------------------------------------------------------------
+
+describe("theme-save – new save model (POST /__themes/save)", () => {
+  it("POST /__themes/save receives name, css (resolved oklch), and recipe (JSON string)", async () => {
+    const recipe = brio;
+    const output = deriveTheme(recipe);
+    const css = generateResolvedCssExport(output, recipe);
+
+    const capturedBody: Record<string, unknown>[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/__themes/save") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        capturedBody.push(body);
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+
+    try {
+      const res = await fetch("/__themes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
+      });
+      expect(res.ok).toBe(true);
+      expect(capturedBody.length).toBe(1);
+      const body = capturedBody[0];
+      expect(typeof body["name"]).toBe("string");
+      expect(typeof body["css"]).toBe("string");
+      expect(typeof body["recipe"]).toBe("string");
+      // CSS should contain resolved oklch() values, not --tug-color() build-time values
+      expect(body["css"] as string).not.toContain("--tug-color(");
+      // recipe JSON should parse back to a valid ThemeRecipe
+      const parsedRecipe = JSON.parse(body["recipe"] as string) as unknown;
+      expect(validateRecipeJson(parsedRecipe)).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("generateResolvedCssExport produces CSS with oklch() values for saved themes", () => {
+    const recipe = brio;
+    const output = deriveTheme(recipe);
+    const css = generateResolvedCssExport(output, recipe);
+    expect(css).toContain("oklch(");
+    expect(css).not.toContain("--tug-color(");
+  });
+
+  it("saved CSS contains body {} block", () => {
+    const recipe = brio;
+    const output = deriveTheme(recipe);
+    const css = generateResolvedCssExport(output, recipe);
+    expect(css).toContain("body {");
+    expect(css).toContain("}");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T6: Theme-provider integration — simplified { theme, setTheme } context
 // ---------------------------------------------------------------------------
 
@@ -254,13 +315,21 @@ describe("TugThemeProvider – simplified context (T6)", () => {
   });
 
   it("setTheme('brio') removes the override stylesheet", async () => {
-    // First inject an override to simulate a non-brio theme being active
     injectThemeCSS("harmony", "body { --tug-surface-global-primary-normal-app-rest: oklch(0.9 0 0); }");
     expect(document.getElementById("tug-theme-override")).not.toBeNull();
 
     const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
     const themeRef: { current: string | null } = { current: null };
     const { restore } = installMockLocalStorage();
+
+    // Mock fetch for brio.json
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+      if (String(input).includes("brio.json")) {
+        return new Response(JSON.stringify(brioJson), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
 
     try {
       act(() => {
@@ -281,6 +350,7 @@ describe("TugThemeProvider – simplified context (T6)", () => {
       expect(themeRef.current).toBe("brio");
     } finally {
       restore();
+      globalThis.fetch = origFetch;
     }
   });
 
@@ -332,8 +402,6 @@ describe("TugThemeProvider – simplified context (T6)", () => {
         render(React.createElement(TugThemeProvider, {}));
       });
 
-      // brio is the default — td-theme should be set after calling setTheme
-      // We can verify by using context
       const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
       const themeRef: { current: string | null } = { current: null };
       cleanup();

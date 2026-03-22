@@ -1,38 +1,51 @@
 /**
  * gallery-theme-generator-content.tsx — Theme Generator gallery card.
  *
- * Interactive tool for deriving complete 264-token --tug-* themes from a
- * compact ThemeRecipe: atmosphere + text hue selectors, dark|light recipe
- * toggle, token preview grid, contrast dashboard, CVD preview strip, and
- * contrast diagnostics.
+ * Mac-style document model:
+ *   - Idle    — no theme loaded. Shows New / Open buttons.
+ *   - Viewing — a shipped theme is loaded. Controls show values but are disabled.
+ *   - Editing — an authored theme is loaded. Controls enabled. Auto-save fires 500ms
+ *               after last change. Apply injects CSS app-wide after each save. [L06]
  *
- * Wires recipe state to `deriveTheme()`. Runs `validateThemeContrast()` and
- * `checkCVDDistinguishability()` on every derived output. The Contrast
- * Diagnostics panel shows ContrastDiagnostic entries from
- * ThemeOutput.diagnostics (floor-applied and structurally-fixed) and displays
- * CVD hue-shift suggestions for confusable pairs.
+ * On open, loads the currently active app theme via GET /__themes/<name>.json.
+ * Shipped themes (brio, harmony) open read-only (Viewing state).
+ * Authored themes open for editing (Editing state).
+ *
+ * New flow: prompt for name (unique check via GET /__themes/list), select prototype,
+ * copy via POST /__themes/save, enter Editing state. [D06]
+ *
+ * Open flow: list available themes via GET /__themes/list, load selected via
+ * GET /__themes/<name>.json. Shipped=read-only, authored=editable. [D06]
+ *
+ * Auto-save: debounce at 500ms after last change, write JSON + CSS to
+ * ~/.tugtool/themes/ via POST /__themes/save. Only active in Editing state.
+ *
+ * Apply: inject regenerated CSS app-wide via stylesheet injection after each
+ * auto-save. Use deriveTheme() in-browser for immediate preview; disk write
+ * is debounced. Appearance changes go through CSS and DOM, never React state. [L06]
+ *
+ * Recipe locked at creation time — displayed as a read-only label. [D09]
+ *
+ * After save, push updated theme list to Swift via themeListUpdated bridge message. [D10]
  *
  * Rules of Tugways compliance:
  *   - Appearance changes through CSS custom properties on the preview container,
- *     not React state. [D08, D09, L06]
- *   - useState only for local UI state (not external store). [D40]
- *   - No root.render() after initial mount. [D40, D42]
+ *     not React state. [L06]
+ *   - useState only for local UI state (not external store).
+ *   - No root.render() after initial mount.
  *
- * **Authoritative references:** [D04] ThemeRecipe, [D05] CVD matrices,
- * [D06] Gallery tab pattern, [D07] Contrast thresholds, [D03] Pairing map,
- * [D04] ContrastDiagnostic output, Spec S02, Spec S04
+ * **Authoritative references:** [D06] Mac-style document model, [D09] Recipe locked,
+ * [D10] Dynamic Swift Theme menu, Spec S05, (#generator-new-flow)
  *
  * @module components/tugways/cards/gallery-theme-generator-content
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo, useId } from "react";
-import { fetchGeneratorRecipe, putGeneratorRecipe } from "@/settings-api";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
   generateResolvedCssExport,
-  type DerivationFormulas,
   type ThemeRecipe,
   type ThemeOutput,
   type ContrastResult,
@@ -44,10 +57,10 @@ import harmonyJson from "../../../../themes/harmony.json";
 
 const SHIPPED_BRIO = brioJson as ThemeRecipe;
 const SHIPPED_HARMONY = harmonyJson as ThemeRecipe;
-const SHIPPED_RECIPES: Record<string, ThemeRecipe> = {
-  brio: SHIPPED_BRIO,
-  harmony: SHIPPED_HARMONY,
-};
+
+/** Names of shipped (read-only) themes. */
+const SHIPPED_NAMES: ReadonlySet<string> = new Set(["brio", "harmony"]);
+
 import {
   validateThemeContrast,
   checkCVDDistinguishability,
@@ -70,7 +83,7 @@ import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import { TugInput } from "@/components/tugways/tug-input";
-import { loadSavedThemes, useOptionalThemeContext } from "@/contexts/theme-provider";
+import { loadSavedThemes, useOptionalThemeContext, injectThemeCSS } from "@/contexts/theme-provider";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
@@ -78,11 +91,6 @@ import "./gallery-theme-generator-content.css";
 // ---------------------------------------------------------------------------
 
 const HUE_NAMES: readonly string[] = ADJACENCY_RING;
-
-/**
- * Default recipe used on initial mount — matches Brio (default dark theme).
- */
-const DEFAULT_RECIPE: ThemeRecipe = SHIPPED_BRIO;
 
 /** Convert a ResolvedColor to an oklch() CSS string. */
 function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): string {
@@ -93,7 +101,6 @@ function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): s
 
 /**
  * Token names used to sample the actual resolved color for each surface hue.
- * These are the representative tokens whose color best illustrates what the hue controls.
  */
 const SURFACE_TOKENS: Record<string, string> = {
   card: "--tug-surface-global-primary-normal-default-rest",
@@ -106,7 +113,6 @@ const SURFACE_TOKENS: Record<string, string> = {
 const ELEMENT_TOKENS: Record<string, string> = {
   content: "--tug-element-global-text-normal-default-rest",
   control: "--tug-element-global-icon-normal-default-rest",
-  // display: card title token added in Step 6; use global default as placeholder
   display: "--tug-element-global-text-normal-default-rest",
   informational: "--tug-element-global-text-normal-muted-rest",
   border: "--tug-element-global-border-normal-default-rest",
@@ -124,31 +130,28 @@ const ROLE_TOKENS: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// ThemeListEntry — the { name, recipe, source } shape from /__themes/list
+// ---------------------------------------------------------------------------
+
+interface ThemeListEntry {
+  name: string;
+  recipe: string;
+  source: "shipped" | "authored";
+}
+
+// ---------------------------------------------------------------------------
 // CompactHuePicker — compact row with color chip that opens a popover strip
 // ---------------------------------------------------------------------------
 
 /**
  * Compute the canonical-L swatch color for a hue name using tugColor at
  * intensity=50 tone=50 with the hue's canonical L value.
- *
- * This matches the swatch color the TugHueStrip renders for the selected hue.
  */
 function hueSwatchColor(hueName: string): string {
   const canonicalL = DEFAULT_CANONICAL_L[hueName] ?? 0.55;
   return tugColor(hueName, 50, 50, canonicalL);
 }
 
-/**
- * CompactHuePicker — a compact row showing:
- *   - Role label text
- *   - 20x20 color chip swatch (current hue color)
- *   - Current hue name text
- *
- * Clicking the row opens a Radix Popover containing a TugHueStrip.
- * Selecting a hue updates parent state via `onSelect` and closes the popover.
- *
- * Preserves existing `data-testid` so role hue test selectors still work.
- */
 function CompactHuePicker({
   label,
   selectedHue,
@@ -156,15 +159,15 @@ function CompactHuePicker({
   testId,
   actualColor,
   preview,
+  disabled,
 }: {
   label: string;
   selectedHue: string;
   onSelect: (hue: string) => void;
   testId: string;
-  /** Override the chip color with the actual resolved color instead of canonical. */
   actualColor?: string;
-  /** Mini preview element rendered before the label (structural hues only). */
   preview?: React.ReactNode;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
@@ -176,6 +179,27 @@ function CompactHuePicker({
     },
     [onSelect],
   );
+
+  if (disabled) {
+    return (
+      <button
+        className="gtg-compact-hue-row"
+        data-testid={testId}
+        aria-label={`${label}: ${selectedHue} (read-only)`}
+        type="button"
+        disabled
+      >
+        {preview && <span className="gtg-hue-preview" aria-hidden="true">{preview}</span>}
+        <span className="gtg-compact-hue-label">{label}</span>
+        <span
+          className="gtg-compact-hue-chip"
+          style={{ backgroundColor: swatchColor }}
+          aria-hidden="true"
+        />
+        <span className="gtg-compact-hue-name">{selectedHue}</span>
+      </button>
+    );
+  }
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -218,12 +242,6 @@ function CompactHuePicker({
 // FullColorPicker — compact row that opens a popover with hue + tone + intensity strips
 // ---------------------------------------------------------------------------
 
-/**
- * FullColorPicker — a compact row showing label, color chip, and hue name.
- * Clicking opens a Radix Popover with TugHueStrip, TugToneStrip, and TugIntensityStrip.
- *
- * Used for surface picks (canvas, grid, card) where all three values are designer-controlled.
- */
 function FullColorPicker({
   label,
   selectedHue,
@@ -234,6 +252,7 @@ function FullColorPicker({
   onChangeIntensity,
   testId,
   actualColor,
+  disabled,
 }: {
   label: string;
   selectedHue: string;
@@ -244,6 +263,7 @@ function FullColorPicker({
   onChangeIntensity: (intensity: number) => void;
   testId: string;
   actualColor?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
@@ -254,6 +274,26 @@ function FullColorPicker({
     },
     [onSelectHue],
   );
+
+  if (disabled) {
+    return (
+      <button
+        className="gtg-compact-hue-row"
+        data-testid={testId}
+        aria-label={`${label}: ${selectedHue}, tone ${tone}, intensity ${intensity} (read-only)`}
+        type="button"
+        disabled
+      >
+        <span className="gtg-compact-hue-label">{label}</span>
+        <span
+          className="gtg-compact-hue-chip"
+          style={{ backgroundColor: swatchColor }}
+          aria-hidden="true"
+        />
+        <span className="gtg-compact-hue-name">{selectedHue}</span>
+      </button>
+    );
+  }
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -326,12 +366,6 @@ function FullColorPicker({
 // HueIntensityPicker — compact row that opens a popover with hue + intensity strips
 // ---------------------------------------------------------------------------
 
-/**
- * HueIntensityPicker — compact row for text picks (hue + intensity, no tone strip).
- * Clicking opens a Radix Popover with TugHueStrip and TugIntensityStrip.
- *
- * Text tone is derived via contrastSearch — never designer-specified.
- */
 function HueIntensityPicker({
   label,
   selectedHue,
@@ -340,6 +374,7 @@ function HueIntensityPicker({
   onChangeIntensity,
   testId,
   actualColor,
+  disabled,
 }: {
   label: string;
   selectedHue: string;
@@ -348,10 +383,10 @@ function HueIntensityPicker({
   onChangeIntensity: (intensity: number) => void;
   testId: string;
   actualColor?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
-  // Use a representative mid-tone for the intensity strip gradient in text picker
   const REPRESENTATIVE_TONE = 50;
 
   const handleSelectHue = useCallback(
@@ -360,6 +395,26 @@ function HueIntensityPicker({
     },
     [onSelectHue],
   );
+
+  if (disabled) {
+    return (
+      <button
+        className="gtg-compact-hue-row"
+        data-testid={testId}
+        aria-label={`${label}: ${selectedHue}, intensity ${intensity} (read-only)`}
+        type="button"
+        disabled
+      >
+        <span className="gtg-compact-hue-label">{label}</span>
+        <span
+          className="gtg-compact-hue-chip"
+          style={{ backgroundColor: swatchColor }}
+          aria-hidden="true"
+        />
+        <span className="gtg-compact-hue-name">{selectedHue}</span>
+      </button>
+    );
+  }
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -420,11 +475,6 @@ function HueIntensityPicker({
 // TokenPreview — scrollable grid of all 264 tokens
 // ---------------------------------------------------------------------------
 
-/**
- * Convert a ResolvedColor to a CSS `oklch()` string for rendering swatches.
- * Tokens absent from the resolved map (structural, invariant) return a
- * transparent placeholder.
- */
 function resolvedToOklch(resolved: ThemeOutput["resolved"], tokenName: string): string {
   const r = resolved[tokenName];
   if (!r) return "transparent";
@@ -435,12 +485,6 @@ function resolvedToOklch(resolved: ThemeOutput["resolved"], tokenName: string): 
   return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${h.toFixed(1)})`;
 }
 
-/**
- * Scrollable grid showing all 264 tokens: name, color swatch, value string.
- *
- * Appearance: swatch backgroundColor set via inline style (DOM mutation),
- * not React state. [D08, D09]
- */
 function TokenPreview({ output }: { output: ThemeOutput }) {
   const tokenEntries = Object.entries(output.tokens);
 
@@ -473,16 +517,6 @@ function TokenPreview({ output }: { output: ThemeOutput }) {
 // ContrastDashboard — fg/bg pair grid with badges and summary bar
 // ---------------------------------------------------------------------------
 
-/**
- * Determine the badge variant for a ContrastResult row.
- *
- * - "decorative" role → always "decorative" (no minimum requirement)
- * - contrastPass true → "pass"
- * - |contrast| within CONTRAST_MARGINAL_DELTA of threshold → "marginal"
- * - otherwise → "fail"
- *
- * Per [D06]: badge is driven by perceptual contrast (normative); WCAG ratio is informational.
- */
 function badgeVariant(
   result: ContrastResult,
 ): "pass" | "marginal" | "fail" | "decorative" {
@@ -493,17 +527,10 @@ function badgeVariant(
   return "fail";
 }
 
-/**
- * Render the short contrast label for a result row.
- */
 function contrastLabel(result: ContrastResult): string {
   return `Contrast ${result.contrast.toFixed(1)}`;
 }
 
-/**
- * Convert a resolved-map entry to an oklch() CSS string for swatch rendering.
- * Returns "transparent" for tokens not in the resolved map.
- */
 function resolvedSwatchColor(
   resolved: ThemeOutput["resolved"],
   tokenName: string,
@@ -513,23 +540,6 @@ function resolvedSwatchColor(
   return oklchToHex(r.L, r.C, r.h);
 }
 
-/**
- * ContrastDashboard — scrollable grid of all element/surface pairs from ELEMENT_SURFACE_PAIRING_MAP.
- *
- * Renders:
- *   - Summary bar: "N/M pairs pass contrast"
- *   - Grid row per pair: fg swatch, bg swatch, element token name, surface token name,
- *     WCAG ratio (informational), perceptual contrast (normative), pass/fail badge
- *
- * Badge color-coding per [D06]:
- *   - Green (pass)     : contrastPass = true
- *   - Yellow (marginal): failing but within CONTRAST_MARGINAL_DELTA of threshold
- *   - Red (fail)       : failing by more than CONTRAST_MARGINAL_DELTA
- *   - Neutral          : role = "decorative" (no minimum)
- *
- * Lazy rendering: `content-visibility: auto` on each swatch handles off-screen
- * pairs without a JS virtual list, keeping the implementation simple.
- */
 function ContrastDashboard({
   output,
   contrastResults,
@@ -553,7 +563,6 @@ function ContrastDashboard({
 
   return (
     <div data-testid="gtg-contrast-dashboard">
-      {/* Summary bar */}
       <div className="gtg-dash-summary" data-testid="gtg-dash-summary">
         <span className={summaryClass} data-testid="gtg-dash-summary-count">
           {passCount}/{checkedCount}
@@ -564,9 +573,7 @@ function ContrastDashboard({
         </span>
       </div>
 
-      {/* Pair grid */}
       <div className="gtg-dash-grid" data-testid="gtg-dash-grid">
-        {/* Column headers */}
         <div className="gtg-dash-col-header">
           <span title="Foreground color swatch">FG</span>
           <span title="Background color swatch">BG</span>
@@ -577,7 +584,6 @@ function ContrastDashboard({
           <span>Badge</span>
         </div>
 
-        {/* Data rows */}
         {contrastResults.map((result, idx) => {
           const variant = badgeVariant(result);
           const fgSwatchColor = resolvedSwatchColor(output.resolved, result.fg);
@@ -646,10 +652,8 @@ function ContrastDashboard({
 // CVD preview strip constants and helpers
 // ---------------------------------------------------------------------------
 
-/** All four CVD types rendered in the preview strip. */
 const CVD_TYPES: CVDType[] = ["protanopia", "deuteranopia", "tritanopia", "achromatopsia"];
 
-/** Human-readable labels for each CVD type. */
 const CVD_TYPE_LABELS: Record<CVDType, string> = {
   protanopia: "Protanopia",
   deuteranopia: "Deuteranopia",
@@ -657,10 +661,6 @@ const CVD_TYPE_LABELS: Record<CVDType, string> = {
   achromatopsia: "Achromatopsia",
 };
 
-/**
- * The semantic token names shown in each CVD row.
- * Ordered: accent, active, agent, data, success, caution, danger.
- */
 const CVD_SEMANTIC_TOKENS: Array<{ token: string; label: string }> = [
   { token: "--tug-element-tone-fill-normal-accent-rest",   label: "Accent" },
   { token: "--tug-element-tone-fill-normal-active-rest",   label: "Active" },
@@ -671,10 +671,6 @@ const CVD_SEMANTIC_TOKENS: Array<{ token: string; label: string }> = [
   { token: "--tug-element-tone-fill-normal-danger-rest",   label: "Danger" },
 ];
 
-/**
- * Convert a linear-sRGB triplet to a CSS hex string for swatch display.
- * Gamma-encodes using the IEC 61966-2-1 formula.
- */
 function linearSrgbToHex(linear: { r: number; g: number; b: number }): string {
   const enc = (c: number) => {
     const clamped = Math.max(0, Math.min(1, c));
@@ -693,19 +689,6 @@ function linearSrgbToHex(linear: { r: number; g: number; b: number }): string {
 // CvdPreviewStrip — 4-row simulation table
 // ---------------------------------------------------------------------------
 
-/**
- * CvdPreviewStrip — renders 4 rows (one per CVD type), each with 6 simulated
- * semantic color swatches alongside their original colours for comparison.
- *
- * Each row shows:
- *   - CVD type label
- *   - For each semantic token: original swatch + simulated swatch side-by-side
- *
- * A warning badge appears next to the type label when that type has any
- * indistinguishable pair warnings in `cvdWarnings`.
- *
- * Appearance: swatch colors set via inline style (DOM mutation). [D08, D09]
- */
 function CvdPreviewStrip({
   output,
   cvdWarnings,
@@ -713,7 +696,6 @@ function CvdPreviewStrip({
   output: ThemeOutput;
   cvdWarnings: CVDWarning[];
 }) {
-  // Build a set of CVD types that have at least one warning for quick lookup.
   const warnedTypes = useMemo(() => {
     const types = new Set<string>();
     for (const w of cvdWarnings) {
@@ -724,7 +706,6 @@ function CvdPreviewStrip({
 
   return (
     <div className="gtg-cvd-strip" data-testid="gtg-cvd-strip">
-      {/* Column headers */}
       <div className="gtg-cvd-col-headers">
         <div className="gtg-cvd-type-label-cell" />
         {CVD_SEMANTIC_TOKENS.map(({ label }) => (
@@ -734,7 +715,6 @@ function CvdPreviewStrip({
         ))}
       </div>
 
-      {/* One row per CVD type */}
       {CVD_TYPES.map((cvdType) => {
         const hasWarning = warnedTypes.has(cvdType);
         return (
@@ -744,7 +724,6 @@ function CvdPreviewStrip({
             data-testid="gtg-cvd-row"
             data-cvd-type={cvdType}
           >
-            {/* Type label + optional warning badge */}
             <div className="gtg-cvd-type-label-cell">
               <span className="gtg-cvd-type-label">{CVD_TYPE_LABELS[cvdType]}</span>
               {hasWarning && (
@@ -758,7 +737,6 @@ function CvdPreviewStrip({
               )}
             </div>
 
-            {/* Swatch pairs for each semantic token */}
             {CVD_SEMANTIC_TOKENS.map(({ token, label }) => {
               const resolved = output.resolved[token];
               if (!resolved) {
@@ -770,10 +748,7 @@ function CvdPreviewStrip({
                 );
               }
 
-              // Original color as hex
               const origHex = oklchToHex(resolved.L, resolved.C, resolved.h);
-
-              // Simulated: OKLCH → linear sRGB (via CVD matrix) → gamma-encode to hex
               const simLinear = simulateCVDFromOKLCH(resolved.L, resolved.C, resolved.h, cvdType);
               const simHex = linearSrgbToHex(simLinear);
 
@@ -805,22 +780,6 @@ function CvdPreviewStrip({
 // ContrastDiagnosticsPanel — structured contrast diagnostic output
 // ---------------------------------------------------------------------------
 
-/**
- * ContrastDiagnosticsPanel — displays structured ContrastDiagnostic output
- * from ThemeOutput.diagnostics.
- *
- * Replaces the former auto-fix button. The derivation engine now produces
- * contrast-compliant tokens by construction (via enforceContrastFloor in
- * evaluateRules), so there is nothing to "fix" interactively. Instead, this
- * panel shows what the engine did:
- *
- *   - "floor-applied": token tone was raised/lowered to meet the contrast threshold.
- *     Shows token name, initial tone, final tone, and threshold.
- *   - "structurally-fixed": token is black/white/transparent/alpha and is not
- *     adjustable. Shows token name and paired surfaces.
- *
- * CVD hue-shift suggestions from cvdWarnings are shown below the diagnostic list.
- */
 function ContrastDiagnosticsPanel({
   diagnostics,
   cvdWarnings,
@@ -837,7 +796,6 @@ function ContrastDiagnosticsPanel({
     [diagnostics],
   );
 
-  // Unique CVD suggestions (de-duped by suggestion text)
   const suggestions = useMemo(() => {
     const seen = new Set<string>();
     return cvdWarnings.filter((w) => {
@@ -849,7 +807,6 @@ function ContrastDiagnosticsPanel({
 
   return (
     <div className="gtg-autofix-panel" data-testid="gtg-autofix-panel">
-      {/* Floor-applied diagnostics */}
       {floorApplied.length > 0 ? (
         <div className="gtg-diag-section" data-testid="gtg-diag-floor-section">
           <div className="gtg-diag-section-title" data-testid="gtg-diag-floor-title">
@@ -874,7 +831,6 @@ function ContrastDiagnosticsPanel({
         </div>
       )}
 
-      {/* Structurally-fixed diagnostics */}
       {structurallyFixed.length > 0 && (
         <div className="gtg-diag-section" data-testid="gtg-diag-structural-section">
           <div className="gtg-diag-section-title" data-testid="gtg-diag-structural-title">
@@ -893,7 +849,6 @@ function ContrastDiagnosticsPanel({
         </div>
       )}
 
-      {/* CVD hue-shift suggestions */}
       {suggestions.length > 0 && (
         <div className="gtg-autofix-suggestions" data-testid="gtg-cvd-suggestions">
           <div className="gtg-autofix-suggestions-title">CVD hue-shift suggestions</div>
@@ -913,31 +868,23 @@ function ContrastDiagnosticsPanel({
 }
 
 // ---------------------------------------------------------------------------
-// Export / Import helpers
+// Export / download helpers (CSS/JSON file download)
 // ---------------------------------------------------------------------------
 
 /**
  * Compute a simple djb2-style hash of a string for the recipe hash header.
- * Not cryptographic — used only as a human-readable fingerprint in comments.
  */
 function simpleHash(str: string): string {
   let hash = 5381;
   for (let i = 0; i < str.length; i++) {
     hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
-    hash = hash >>> 0; // convert to unsigned 32-bit
+    hash = hash >>> 0;
   }
   return hash.toString(16).padStart(8, "0");
 }
 
 /**
  * Generate the CSS export string for a theme output.
- *
- * Produces a complete CSS file in the same format as tug-base.css overrides:
- * - Header comment with @theme-name, @theme-description, date, recipe hash
- * - `body { }` block with all `--tug-*` overrides as `--tug-color()` values
- *
- * Per [D01]: export format matches existing theme file conventions.
- *
  * Exported for unit testing.
  */
 export function generateCssExport(
@@ -972,11 +919,7 @@ export function generateCssExport(
 /**
  * Validate that a value looks like a ThemeRecipe.
  * Returns an error string if invalid, or null if valid.
- *
  * Exported for unit testing.
- */
-/**
- * Detect if a surface value is the old string format (hue-only) vs new ThemeColorSpec.
  */
 function isThemeColorSpec(v: unknown): v is { hue: string; tone: number; intensity: number } {
   return (
@@ -1005,14 +948,11 @@ export function validateRecipeJson(value: unknown): string | null {
 
   const isDark = obj["recipe"] === "dark";
 
-  // Validate surface group
   if (typeof obj["surface"] !== "object" || obj["surface"] === null) {
     return "Missing or invalid 'surface' field (object required)";
   }
   const surface = obj["surface"] as Record<string, unknown>;
 
-  // Detect old-format recipe: string surface values, element group present, or missing surface.frame
-  // (Old new-format recipes have surface.card as frame; new format has surface.frame + surface.card)
   const isOldFormat =
     typeof surface["canvas"] === "string" ||
     typeof surface["card"] === "string" ||
@@ -1020,8 +960,6 @@ export function validateRecipeJson(value: unknown): string | null {
     !isThemeColorSpec(surface["frame"]);
 
   if (isOldFormat) {
-    // ---- Old-format migration ----
-    // Extract canvas hue (string or ThemeColorSpec)
     let canvasHue: string;
     if (typeof surface["canvas"] === "string") {
       canvasHue = surface["canvas"].trim();
@@ -1032,7 +970,6 @@ export function validateRecipeJson(value: unknown): string | null {
       return "Missing or invalid 'surface.canvas' field (string required)";
     }
 
-    // Extract frame hue: prefer surface.frame (if present), fall back to old surface.card
     let frameHueMigrated: string;
     if (isThemeColorSpec(surface["frame"])) {
       frameHueMigrated = surface["frame"].hue;
@@ -1043,25 +980,21 @@ export function validateRecipeJson(value: unknown): string | null {
     } else if (isThemeColorSpec(surface["card"])) {
       frameHueMigrated = surface["card"].hue;
     } else {
-      // No frame or card source — fall back to canvas hue
       frameHueMigrated = canvasHue;
     }
 
-    // Mode-dependent defaults
     const canvasTone = isDark ? 5 : 95;
     const canvasIntensity = isDark ? 5 : 6;
     const gridTone = isDark ? 12 : 88;
     const gridIntensity = isDark ? 4 : 5;
     const frameTone = isDark ? 16 : 85;
     const frameIntensity = isDark ? 12 : 35;
-    // Card body defaults: matching old canvas-relative surface tiers
     const cardBodyTone = isDark ? 12 : 90;
     const cardBodyIntensity = isDark ? 5 : 6;
     const textIntensity = isDark ? 3 : 4;
     const roleTone = isDark ? 50 : 55;
     const roleIntensity = isDark ? 50 : 60;
 
-    // Extract controls values if present (Spec S05 rule 6)
     let controlsCanvasTone = canvasTone;
     let controlsCanvasIntensity = canvasIntensity;
     let controlsFrameTone = frameTone;
@@ -1078,8 +1011,7 @@ export function validateRecipeJson(value: unknown): string | null {
       if (typeof controls["roleIntensity"] === "number") controlsRoleIntensity = controls["roleIntensity"] as number;
     }
 
-    // Extract element group for text/display mapping
-    let textHue = canvasHue; // fallback
+    let textHue = canvasHue;
     let displayHueOverride: string | undefined;
     if (typeof obj["element"] === "object" && obj["element"] !== null) {
       const element = obj["element"] as Record<string, unknown>;
@@ -1092,7 +1024,6 @@ export function validateRecipeJson(value: unknown): string | null {
       }
     }
 
-    // Validate role group
     if (typeof obj["role"] !== "object" || obj["role"] === null) {
       return "Missing or invalid 'role' field (object required)";
     }
@@ -1103,22 +1034,15 @@ export function validateRecipeJson(value: unknown): string | null {
       }
     }
 
-    // Migrate in-place to new format. New-format fields win over controls values
-    // if both are present (new-format surface already set as ThemeColorSpec above).
-    // In old format: surface.card held frame data; surface.frame didn't exist.
-    // In new format: surface.frame holds frame data; surface.card holds card body data.
     const finalCanvasTone = isThemeColorSpec(surface["canvas"]) ? surface["canvas"].tone : controlsCanvasTone;
     const finalCanvasIntensity = isThemeColorSpec(surface["canvas"]) ? surface["canvas"].intensity : controlsCanvasIntensity;
-    // Old surface.card (if present as ThemeColorSpec) maps to new surface.frame
     const finalFrameTone = isThemeColorSpec(surface["card"]) ? surface["card"].tone : controlsFrameTone;
     const finalFrameIntensity = isThemeColorSpec(surface["card"]) ? surface["card"].intensity : controlsFrameIntensity;
-    // If new-format surface.frame is already set, prefer it
     const finalFrameToneActual = isThemeColorSpec(surface["frame"]) ? surface["frame"].tone : finalFrameTone;
     const finalFrameIntensityActual = isThemeColorSpec(surface["frame"]) ? surface["frame"].intensity : finalFrameIntensity;
     const finalRoleTone = typeof (role as Record<string, unknown>)["tone"] === "number" ? (role as Record<string, unknown>)["tone"] as number : controlsRoleTone;
     const finalRoleIntensity = typeof (role as Record<string, unknown>)["intensity"] === "number" ? (role as Record<string, unknown>)["intensity"] as number : controlsRoleIntensity;
 
-    // Rewrite obj in-place to new format
     obj["surface"] = {
       canvas: { hue: canvasHue, tone: finalCanvasTone, intensity: finalCanvasIntensity },
       grid: isThemeColorSpec(surface["grid"])
@@ -1139,22 +1063,17 @@ export function validateRecipeJson(value: unknown): string | null {
     if (displayHueOverride !== undefined && !obj["display"]) {
       obj["display"] = { hue: displayHueOverride, intensity: textIntensity };
     }
-    // Remove old element group
     delete obj["element"];
-    // Remove controls field (now migrated into surface/role)
     delete obj["controls"];
     return null;
   }
 
-  // ---- New-format validation ----
-  // Validate surface ThemeColorSpec objects
   for (const field of ["canvas", "grid", "frame", "card"] as const) {
     if (!isThemeColorSpec(surface[field])) {
       return `Missing or invalid 'surface.${field}' field (ThemeColorSpec with hue, tone, intensity required)`;
     }
   }
 
-  // Validate text group
   if (typeof obj["text"] !== "object" || obj["text"] === null) {
     return "Missing or invalid 'text' field (object required)";
   }
@@ -1166,7 +1085,6 @@ export function validateRecipeJson(value: unknown): string | null {
     return "Missing or invalid 'text.intensity' field (number required)";
   }
 
-  // Validate role group
   if (typeof obj["role"] !== "object" || obj["role"] === null) {
     return "Missing or invalid 'role' field (object required)";
   }
@@ -1186,285 +1104,81 @@ export function validateRecipeJson(value: unknown): string | null {
   return null;
 }
 
-/**
- * Trigger a file download using Blob + createObjectURL + programmatic click.
- */
-function triggerDownload(content: string, filename: string, mimeType: string): void {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
-
 // ---------------------------------------------------------------------------
-// ExportImportPanel — export CSS / JSON + import recipe
+// EmphasisRolePreview — emphasis x role matrix for buttons, badges, and
+// selection controls
 // ---------------------------------------------------------------------------
 
-/**
- * ExportImportPanel renders:
- *   - "Export CSS" button: downloads a complete theme CSS file as --tug-* overrides
- *   - "Export Recipe JSON" button: downloads the current recipe as formatted JSON
- *   - "Import Recipe" button: opens a file picker to load a JSON recipe
- *
- * Download uses Blob + URL.createObjectURL + programmatic <a> click per spec.
- * Import validates the JSON against ThemeRecipe schema before applying.
- *
- * Per [D01]: export format is --tug-color() notation matching existing theme files.
- * Per [D04]: ThemeRecipe is the import/export serialization format.
- */
-function ExportImportPanel({
-  output,
-  recipe,
-  onRecipeImported,
-  exportDisabled,
-  savedThemes,
-  onSelectSavedTheme,
-  onSelectBuiltIn,
-  onSaveSuccess,
-}: {
-  output: ThemeOutput;
-  recipe: ThemeRecipe;
-  onRecipeImported: (r: ThemeRecipe) => void;
-  exportDisabled: boolean;
-  savedThemes: string[];
-  onSelectSavedTheme: (name: string) => void;
-  onSelectBuiltIn: () => void;
-  onSaveSuccess: () => void;
-}) {
-  const [importError, setImportError] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const fileInputId = useId();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+const BUTTON_EMPHASES: TugButtonEmphasis[] = ["filled", "outlined", "ghost"];
+const BADGE_EMPHASES: TugBadgeEmphasis[] = ["filled", "outlined", "ghost"];
+const BUTTON_ROLES: TugButtonRole[] = ["accent", "action", "data", "danger"];
+const BADGE_ROLES: TugBadgeRole[] = [
+  "accent", "action", "agent", "data", "success", "caution", "danger",
+];
+const SELECTION_ROLES: TugCheckboxRole[] = [
+  "accent", "action", "agent", "data", "success", "caution", "danger",
+];
 
-  const handleExportCss = useCallback(() => {
-    const css = generateCssExport(output, recipe);
-    const safeName = recipe.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
-    triggerDownload(css, `${safeName}.css`, "text/css");
-  }, [output, recipe]);
-
-  const handleExportJson = useCallback(() => {
-    const json = JSON.stringify(recipe, null, 2);
-    const safeName = recipe.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
-    triggerDownload(json, `${safeName}-recipe.json`, "application/json");
-  }, [recipe]);
-
-  const handleSaveTheme = useCallback(async () => {
-    if (exportDisabled) return;
-    setSaveStatus("saving");
-    try {
-      const css = generateResolvedCssExport(output, recipe);
-      const res = await fetch("/__themes/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
-      });
-      if (res.ok) {
-        setSaveStatus("saved");
-        setTimeout(() => setSaveStatus("idle"), 2000);
-        onSaveSuccess();
-      } else {
-        setSaveStatus("error");
-      }
-    } catch {
-      setSaveStatus("error");
-    }
-  }, [output, recipe, exportDisabled, onSaveSuccess]);
-
-  const handleImportClick = useCallback(() => {
-    setImportError(null);
-    fileInputRef.current?.click();
-  }, []);
-
-  const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      // Reset file input so the same file can be re-imported
-      e.target.value = "";
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target?.result;
-        if (typeof text !== "string") {
-          setImportError("Failed to read file");
-          return;
-        }
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          setImportError("Invalid JSON: could not parse file");
-          return;
-        }
-        const validationError = validateRecipeJson(parsed);
-        if (validationError !== null) {
-          setImportError(`Invalid recipe: ${validationError}`);
-          return;
-        }
-        setImportError(null);
-        onRecipeImported(parsed as ThemeRecipe);
-      };
-      reader.onerror = () => {
-        setImportError("Failed to read file");
-      };
-      reader.readAsText(file);
-    },
-    [onRecipeImported],
-  );
-
+function EmphasisRolePreview() {
   return (
-    <div className="gtg-export-import-panel" data-testid="gtg-export-import-panel">
-      {/* Saved-theme selector dropdown */}
-      <div className="gtg-saved-theme-row">
-        <label className="gtg-saved-theme-label" htmlFor="gtg-saved-theme-select">
-          Load saved theme
-        </label>
-        <select
-          id="gtg-saved-theme-select"
-          className="gtg-saved-theme-select"
-          data-testid="gtg-saved-theme-select"
-          defaultValue=""
-          onChange={(e) => {
-            const val = e.target.value;
-            if (val === "__brio__") {
-              onSelectBuiltIn();
-            } else if (val !== "") {
-              onSelectSavedTheme(val);
-            }
-            // Reset to placeholder after selection
-            e.target.value = "";
-          }}
-          aria-label="Load a saved theme"
-        >
-          <option value="" disabled>
-            Select a theme…
-          </option>
-          <option value="__brio__" data-testid="gtg-saved-theme-option-brio">
-            Brio (default)
-          </option>
-          {savedThemes.map((name) => (
-            <option key={name} value={name} data-testid={`gtg-saved-theme-option-${name}`}>
-              {name}
-            </option>
+    <div className="gtg-emphasis-role-preview" data-testid="gtg-emphasis-role-preview">
+      <div className="gtg-erp-subsection">
+        <div className="gtg-erp-subtitle">Buttons (3 emphasis × 4 roles)</div>
+        <div className="gtg-erp-button-grid" data-testid="gtg-erp-button-grid">
+          {BUTTON_EMPHASES.map((emphasis) => (
+            <React.Fragment key={emphasis}>
+              <div className="gtg-erp-row-label">{emphasis}</div>
+              {BUTTON_ROLES.map((role) => (
+                <div key={role} className="gtg-erp-cell">
+                  <TugButton emphasis={emphasis} role={role} size="sm">
+                    {role}
+                  </TugButton>
+                </div>
+              ))}
+            </React.Fragment>
           ))}
-        </select>
+        </div>
       </div>
 
-      {/* Export buttons */}
-      <div className="gtg-export-row">
-        <TugButton
-          emphasis="ghost"
-          role="action"
-          size="sm"
-          onClick={handleExportCss}
-          data-testid="gtg-export-css-btn"
-          title="Download theme as CSS file (--tug-color() notation)"
-          disabled={exportDisabled}
-        >
-          Export CSS
-        </TugButton>
-        <TugButton
-          emphasis="ghost"
-          role="action"
-          size="sm"
-          onClick={handleExportJson}
-          data-testid="gtg-export-json-btn"
-          title="Download current recipe as JSON"
-          disabled={exportDisabled}
-        >
-          Export Recipe JSON
-        </TugButton>
-        <TugButton
-          emphasis="ghost"
-          role="action"
-          size="sm"
-          onClick={() => { void handleSaveTheme(); }}
-          data-testid="gtg-save-theme-btn"
-          title="Save theme to disk for runtime loading"
-          disabled={exportDisabled || saveStatus === "saving"}
-        >
-          {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : "Save Theme"}
-        </TugButton>
+      <div className="gtg-erp-subsection">
+        <div className="gtg-erp-subtitle">Badges (3 emphasis × 7 roles)</div>
+        <div className="gtg-erp-badge-grid" data-testid="gtg-erp-badge-grid">
+          {BADGE_EMPHASES.map((emphasis) => (
+            <React.Fragment key={emphasis}>
+              <div className="gtg-erp-row-label">{emphasis}</div>
+              {BADGE_ROLES.map((role) => (
+                <div key={role} className="gtg-erp-cell">
+                  <TugBadge emphasis={emphasis} role={role}>
+                    {role}
+                  </TugBadge>
+                </div>
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
       </div>
 
-      {/* Import section */}
-      <div className="gtg-import-row">
-        {/* Hidden file input — triggered programmatically */}
-        <input
-          ref={fileInputRef}
-          id={fileInputId}
-          type="file"
-          accept=".json,application/json"
-          className="gtg-import-file-input"
-          onChange={handleFileChange}
-          aria-label="Import recipe JSON file"
-          data-testid="gtg-import-file-input"
-        />
-        <TugButton
-          emphasis="ghost"
-          role="action"
-          size="sm"
-          onClick={handleImportClick}
-          data-testid="gtg-import-btn"
-          title="Load a previously exported recipe JSON file"
-        >
-          Import Recipe
-        </TugButton>
-        {importError !== null && (
-          <span
-            className="gtg-import-error"
-            role="alert"
-            data-testid="gtg-import-error"
-          >
-            {importError}
-          </span>
-        )}
+      <div className="gtg-erp-subsection">
+        <div className="gtg-erp-subtitle">Selection Controls (7 roles, checked)</div>
+        <div className="gtg-erp-selection-row" data-testid="gtg-erp-selection-row">
+          {SELECTION_ROLES.map((role) => (
+            <div key={role} className="gtg-erp-selection-cell">
+              <div className="gtg-erp-col-label">{role}</div>
+              <TugCheckbox role={role} checked aria-label={`checkbox-${role}`} />
+              <TugSwitch role={role as TugSwitchRole} checked aria-label={`switch-${role}`} />
+            </div>
+          ))}
+        </div>
       </div>
+
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// EmphasisRolePreview — emphasis x role matrix for buttons, badges, and
-// selection controls [D05, Step 7]
+// ThemePreviewCard — annotated preview with surface/text/role color pickers
 // ---------------------------------------------------------------------------
 
-/**
- * All emphasis values for TugButton and TugBadge.
- */
-const BUTTON_EMPHASES: TugButtonEmphasis[] = ["filled", "outlined", "ghost"];
-const BADGE_EMPHASES: TugBadgeEmphasis[] = ["filled", "outlined", "ghost"];
-
-/**
- * TugButton supports 4 roles; TugBadge supports all 7. [D02]
- */
-const BUTTON_ROLES: TugButtonRole[] = ["accent", "action", "data", "danger"];
-const BADGE_ROLES: TugBadgeRole[] = [
-  "accent", "action", "agent", "data", "success", "caution", "danger",
-];
-
-/**
- * All 7 roles for TugCheckbox and TugSwitch. [D04, Table T04]
- */
-const SELECTION_ROLES: TugCheckboxRole[] = [
-  "accent", "action", "agent", "data", "success", "caution", "danger",
-];
-
-/**
- * ThemePreviewCard — annotated preview with surface/text/role color pickers.
- *
- * Surface picks (canvas, grid, card) use FullColorPicker (hue + tone + intensity).
- * Text pick uses HueIntensityPicker (hue + intensity; tone is derived).
- * Role section has shared TugToneStrip + TugIntensityStrip plus 7 CompactHuePicker rows.
- *
- * Uses real tugcard/tug-tab CSS classes. [D08, D09]
- */
 function ThemePreviewCard({
   resolvedColor,
   surface,
@@ -1475,6 +1189,7 @@ function ThemePreviewCard({
   onRoleToneChange,
   onRoleIntensityChange,
   liveTokenStyle,
+  disabled,
 }: {
   resolvedColor: (key: string) => string;
   surface: Array<{
@@ -1503,8 +1218,8 @@ function ThemePreviewCard({
   onRoleToneChange: (t: number) => void;
   onRoleIntensityChange: (i: number) => void;
   liveTokenStyle: React.CSSProperties;
+  disabled?: boolean;
 }) {
-  // Representative role hue for the shared tone/intensity strips (use accent hue)
   const roleRepresentativeHue = roles[0]?.hue ?? "blue";
 
   return (
@@ -1548,24 +1263,16 @@ function ThemePreviewCard({
                       <TugBadge emphasis="filled" role="success">pass</TugBadge>
                     </div>
                     <div className="gtg-preview-inline-row">
-                      <TugSwitch role="action" checked aria-label="auto-deploy" />
-                      <span>Auto-deploy</span>
+                      <TugCheckbox role="danger" aria-label="failing" />
+                      <span>Tests failing</span>
+                      <TugBadge emphasis="filled" role="danger">fail</TugBadge>
                     </div>
                   </div>
                   <div className="gtg-preview-divider" />
-                  <div className="gtg-preview-body">
-                    <span className="gtg-preview-link">View documentation</span>
-                  </div>
-                  <div className="gtg-preview-divider" />
-                  <div className="gtg-preview-input-row">
-                    <TugInput placeholder="Add a comment..." size="sm" aria-label="Sample input" readOnly />
-                    <TugButton emphasis="filled" role="action" size="sm">Submit</TugButton>
-                  </div>
-                  <div className="gtg-preview-divider" />
-                  <div className="gtg-preview-actions">
+                  <div className="gtg-preview-action-row">
                     <TugButton emphasis="filled" role="accent" size="sm">Deploy</TugButton>
-                    <TugButton emphasis="outlined" role="action" size="sm">Edit</TugButton>
-                    <TugButton emphasis="ghost" role="danger" size="sm">Delete</TugButton>
+                    <TugButton emphasis="outlined" role="action" size="sm">View Logs</TugButton>
+                    <TugButton emphasis="ghost" role="danger" size="sm">Cancel</TugButton>
                   </div>
                 </div>
               </div>
@@ -1575,289 +1282,825 @@ function ThemePreviewCard({
         </div>
       </div>
 
-      {/* ---- Right: surface / text / role columns ---- */}
-      <div className="gtg-right-panel">
-        <div className="gtg-hue-sidebars">
-          <div className="gtg-hue-sidebar">
-            <div className="gtg-hue-column-title">Surface</div>
-            {surface.map(({ key, label, hue, tone, intensity, setHue, setTone, setIntensity, testId }) => (
-              <FullColorPicker
-                key={testId}
-                label={label}
-                selectedHue={hue}
-                tone={tone}
-                intensity={intensity}
-                onSelectHue={setHue}
-                onChangeTone={setTone}
-                onChangeIntensity={setIntensity}
-                testId={testId}
-                actualColor={resolvedColor(key)}
-              />
-            ))}
-          </div>
-          <div className="gtg-hue-sidebar">
-            <div className="gtg-hue-column-title">Text</div>
-            <HueIntensityPicker
-              label={text.label}
-              selectedHue={text.hue}
-              intensity={text.intensity}
-              onSelectHue={text.setHue}
-              onChangeIntensity={text.setIntensity}
-              testId={text.testId}
-              actualColor={resolvedColor(text.key)}
-            />
-          </div>
-          <div className="gtg-hue-sidebar gtg-hue-sidebar--roles">
-            <div className="gtg-hue-column-title">Roles</div>
-            <div className="gtg-role-shared-strips" data-testid="gtg-role-shared-strips">
-              <div className="gtg-full-color-strip-row">
-                <span className="gtg-full-color-strip-label">Tone</span>
-                <div className="gtg-full-color-strip-track">
-                  <TugToneStrip
-                    hue={roleRepresentativeHue}
-                    intensity={roleIntensity}
-                    value={roleTone}
-                    onChange={onRoleToneChange}
-                    data-testid="gtg-role-tone-strip"
-                  />
-                </div>
-              </div>
-              <div className="gtg-full-color-strip-row">
-                <span className="gtg-full-color-strip-label">Intensity</span>
-                <div className="gtg-full-color-strip-track">
-                  <TugIntensityStrip
-                    hue={roleRepresentativeHue}
-                    tone={roleTone}
-                    value={roleIntensity}
-                    onChange={onRoleIntensityChange}
-                    data-testid="gtg-role-intensity-strip"
-                  />
-                </div>
-              </div>
-            </div>
-            {roles.map(({ key, label, hue, set, testId }) => (
-              <CompactHuePicker key={key} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
-            ))}
-          </div>
+      {/* ---- Right column: color pickers ---- */}
+      <div className="gtg-hue-column">
+
+        {/* Surface pickers */}
+        <div className="gtg-hue-column-title">Surface</div>
+        {surface.map((s) => (
+          <FullColorPicker
+            key={s.key}
+            label={s.label}
+            selectedHue={s.hue}
+            tone={s.tone}
+            intensity={s.intensity}
+            onSelectHue={s.setHue}
+            onChangeTone={s.setTone}
+            onChangeIntensity={s.setIntensity}
+            testId={s.testId}
+            actualColor={resolvedColor(s.key)}
+            disabled={disabled}
+          />
+        ))}
+
+        {/* Text picker */}
+        <div className="gtg-hue-column-title">Text</div>
+        <HueIntensityPicker
+          label={text.label}
+          selectedHue={text.hue}
+          intensity={text.intensity}
+          onSelectHue={text.setHue}
+          onChangeIntensity={text.setIntensity}
+          testId={text.testId}
+          actualColor={resolvedColor(text.key)}
+          disabled={disabled}
+        />
+
+        {/* Role pickers */}
+        <div className="gtg-hue-column-title">Roles</div>
+        <div className="gtg-role-tone-row">
+          <span className="gtg-full-color-strip-label">Tone</span>
+          <TugToneStrip
+            hue={roleRepresentativeHue}
+            intensity={roleIntensity}
+            value={roleTone}
+            onChange={disabled ? () => {} : onRoleToneChange}
+            data-testid="gtg-role-tone-strip"
+          />
         </div>
+        <div className="gtg-role-tone-row">
+          <span className="gtg-full-color-strip-label">Intensity</span>
+          <TugIntensityStrip
+            hue={roleRepresentativeHue}
+            tone={roleTone}
+            value={roleIntensity}
+            onChange={disabled ? () => {} : onRoleIntensityChange}
+            data-testid="gtg-role-intensity-strip"
+          />
+        </div>
+        {roles.map((r) => (
+          <CompactHuePicker
+            key={r.key}
+            label={r.label}
+            selectedHue={r.hue}
+            onSelect={r.set}
+            testId={r.testId}
+            actualColor={resolvedColor(r.key)}
+            disabled={disabled}
+          />
+        ))}
       </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// NewThemeDialog — modal-ish inline dialog for New flow
+// ---------------------------------------------------------------------------
 
 /**
- * EmphasisRolePreview — renders a 3×N button grid, a 3×7 badge grid, and
- * a 1×7 selection control row showing all emphasis x role combinations.
+ * NewThemeDialog — presented as an overlay when the user clicks New.
  *
- * Each cell renders a live component with the current derived theme applied
- * via the inherited CSS custom properties on the preview container.
- *
- * Appearance changes are driven entirely by CSS token cascade — no React
- * state is used for color. [D08, D09]
+ * Step 1: Name entry with uniqueness validation against the live theme list.
+ * Step 2: Prototype picker (shows available themes from GET /__themes/list).
+ * On confirm: POST /__themes/save with copied recipe, then enter Editing state.
  */
-function EmphasisRolePreview() {
+function NewThemeDialog({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (name: string, recipe: ThemeRecipe) => void;
+  onCancel: () => void;
+}) {
+  const [step, setStep] = useState<"name" | "prototype">("name");
+  const [newName, setNewName] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [availableThemes, setAvailableThemes] = useState<ThemeListEntry[]>([]);
+  const [selectedPrototype, setSelectedPrototype] = useState<string>("brio");
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus name input on mount
+  useEffect(() => {
+    nameInputRef.current?.focus();
+  }, []);
+
+  const handleNameSubmit = useCallback(async () => {
+    const trimmed = newName.trim();
+    if (trimmed === "") {
+      setNameError("Name is required");
+      return;
+    }
+    setIsValidating(true);
+    setNameError(null);
+    try {
+      const res = await fetch("/__themes/list");
+      if (res.ok) {
+        const data = (await res.json()) as { themes?: unknown[] };
+        const existingNames = new Set<string>();
+        if (Array.isArray(data.themes)) {
+          for (const entry of data.themes) {
+            if (typeof entry === "string") existingNames.add(entry);
+            else if (entry !== null && typeof entry === "object") {
+              const n = (entry as Record<string, unknown>).name;
+              if (typeof n === "string") existingNames.add(n);
+            }
+          }
+        }
+        if (existingNames.has(trimmed)) {
+          setNameError(`A theme named "${trimmed}" already exists`);
+          setIsValidating(false);
+          return;
+        }
+        // Build prototype list from themes
+        const entries: ThemeListEntry[] = [];
+        if (Array.isArray(data.themes)) {
+          for (const entry of data.themes) {
+            if (typeof entry === "string") {
+              entries.push({ name: entry, recipe: "dark", source: "shipped" });
+            } else if (entry !== null && typeof entry === "object") {
+              const e = entry as Record<string, unknown>;
+              entries.push({
+                name: String(e.name ?? ""),
+                recipe: String(e.recipe ?? "dark"),
+                source: (e.source === "authored" ? "authored" : "shipped") as "shipped" | "authored",
+              });
+            }
+          }
+        }
+        // Ensure brio and harmony are always available as prototypes
+        if (!entries.some((e) => e.name === "brio")) {
+          entries.unshift({ name: "brio", recipe: "dark", source: "shipped" });
+        }
+        if (!entries.some((e) => e.name === "harmony")) {
+          entries.splice(1, 0, { name: "harmony", recipe: "light", source: "shipped" });
+        }
+        setAvailableThemes(entries);
+        setSelectedPrototype("brio");
+        setStep("prototype");
+      } else {
+        // Middleware unavailable — use built-ins only
+        setAvailableThemes([
+          { name: "brio", recipe: "dark", source: "shipped" },
+          { name: "harmony", recipe: "light", source: "shipped" },
+        ]);
+        setSelectedPrototype("brio");
+        setStep("prototype");
+      }
+    } catch {
+      setAvailableThemes([
+        { name: "brio", recipe: "dark", source: "shipped" },
+        { name: "harmony", recipe: "light", source: "shipped" },
+      ]);
+      setSelectedPrototype("brio");
+      setStep("prototype");
+    }
+    setIsValidating(false);
+  }, [newName]);
+
+  const handleCreate = useCallback(async () => {
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      // Fetch prototype JSON
+      const protoRes = await fetch(`/__themes/${encodeURIComponent(selectedPrototype)}.json`);
+      let protoRecipe: ThemeRecipe;
+      if (protoRes.ok) {
+        const raw = (await protoRes.json()) as unknown;
+        const err = validateRecipeJson(raw);
+        if (err !== null) {
+          setCreateError(`Prototype recipe invalid: ${err}`);
+          setIsCreating(false);
+          return;
+        }
+        protoRecipe = raw as ThemeRecipe;
+      } else {
+        // Fall back to in-memory shipped recipe
+        protoRecipe = selectedPrototype === "harmony" ? SHIPPED_HARMONY : SHIPPED_BRIO;
+      }
+
+      // Copy with new name
+      const newRecipe: ThemeRecipe = { ...protoRecipe, name: newName.trim() };
+
+      // Save via POST /__themes/save
+      const output = deriveTheme(newRecipe);
+      const css = generateResolvedCssExport(output, newRecipe);
+      const saveRes = await fetch("/__themes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newRecipe.name, css, recipe: JSON.stringify(newRecipe) }),
+      });
+      if (!saveRes.ok) {
+        const body = (await saveRes.json().catch(() => ({ error: "Save failed" }))) as { error?: string };
+        setCreateError(body.error ?? "Save failed");
+        setIsCreating(false);
+        return;
+      }
+
+      onCreated(newRecipe.name, newRecipe);
+    } catch (err) {
+      setCreateError(String(err));
+      setIsCreating(false);
+    }
+  }, [newName, selectedPrototype, onCreated]);
+
   return (
-    <div className="gtg-erp" data-testid="gtg-emphasis-role-preview">
-
-      {/* ---- Buttons: 3 emphasis × 5 roles ---- */}
-      <div className="gtg-erp-subsection">
-        <div className="gtg-erp-subtitle">Buttons (3 emphasis × 5 roles)</div>
-        <div className="gtg-erp-grid" data-testid="gtg-erp-button-grid" style={{ "--gtg-erp-cols": BUTTON_ROLES.length } as React.CSSProperties}>
-          {/* Role column headers */}
-          <div className="gtg-erp-corner" />
-          {BUTTON_ROLES.map((role) => (
-            <div key={role} className="gtg-erp-col-label">{role}</div>
-          ))}
-          {/* Emphasis rows */}
-          {BUTTON_EMPHASES.map((emphasis) => (
-            <React.Fragment key={emphasis}>
-              <div className="gtg-erp-row-label">{emphasis}</div>
-              {BUTTON_ROLES.map((role) => (
-                <div key={role} className="gtg-erp-cell">
-                  <TugButton emphasis={emphasis} role={role} size="sm">
-                    {role}
-                  </TugButton>
-                </div>
-              ))}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-
-      {/* ---- Badges: 3 emphasis × 7 roles ---- */}
-      <div className="gtg-erp-subsection">
-        <div className="gtg-erp-subtitle">Badges (3 emphasis × 7 roles)</div>
-        <div className="gtg-erp-grid" data-testid="gtg-erp-badge-grid" style={{ "--gtg-erp-cols": BADGE_ROLES.length } as React.CSSProperties}>
-          {/* Role column headers */}
-          <div className="gtg-erp-corner" />
-          {BADGE_ROLES.map((role) => (
-            <div key={role} className="gtg-erp-col-label">{role}</div>
-          ))}
-          {/* Emphasis rows */}
-          {BADGE_EMPHASES.map((emphasis) => (
-            <React.Fragment key={emphasis}>
-              <div className="gtg-erp-row-label">{emphasis}</div>
-              {BADGE_ROLES.map((role) => (
-                <div key={role} className="gtg-erp-cell">
-                  <TugBadge emphasis={emphasis} role={role}>
-                    {role}
-                  </TugBadge>
-                </div>
-              ))}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-
-      {/* ---- Selection controls: TugCheckbox + TugSwitch × 7 roles ---- */}
-      <div className="gtg-erp-subsection">
-        <div className="gtg-erp-subtitle">Selection Controls (7 roles, checked)</div>
-        <div className="gtg-erp-selection-row" data-testid="gtg-erp-selection-row">
-          {SELECTION_ROLES.map((role) => (
-            <div key={role} className="gtg-erp-selection-cell">
-              <div className="gtg-erp-col-label">{role}</div>
-              <TugCheckbox role={role} checked aria-label={`checkbox-${role}`} />
-              <TugSwitch role={role as TugSwitchRole} checked aria-label={`switch-${role}`} />
+    <div className="gtg-dialog-overlay" data-testid="gtg-new-dialog">
+      <div className="gtg-dialog">
+        {step === "name" ? (
+          <>
+            <div className="gtg-dialog-title">New Theme</div>
+            <div className="gtg-dialog-body">
+              <label className="gtg-dialog-label" htmlFor="gtg-new-theme-name">
+                Theme name
+              </label>
+              <TugInput
+                id="gtg-new-theme-name"
+                ref={nameInputRef}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="my-theme"
+                size="sm"
+                data-testid="gtg-new-theme-name-input"
+                aria-label="New theme name"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleNameSubmit();
+                  if (e.key === "Escape") onCancel();
+                }}
+              />
+              {nameError !== null && (
+                <span className="gtg-dialog-error" data-testid="gtg-new-theme-name-error">
+                  {nameError}
+                </span>
+              )}
             </div>
-          ))}
-        </div>
+            <div className="gtg-dialog-actions">
+              <TugButton
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                onClick={onCancel}
+                data-testid="gtg-new-dialog-cancel"
+              >
+                Cancel
+              </TugButton>
+              <TugButton
+                emphasis="filled"
+                role="accent"
+                size="sm"
+                onClick={() => { void handleNameSubmit(); }}
+                disabled={isValidating || newName.trim() === ""}
+                data-testid="gtg-new-dialog-next"
+              >
+                {isValidating ? "Checking…" : "Next"}
+              </TugButton>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="gtg-dialog-title">Choose Prototype</div>
+            <div className="gtg-dialog-body">
+              <div className="gtg-dialog-label">Start from:</div>
+              <div className="gtg-prototype-list" data-testid="gtg-prototype-list">
+                {availableThemes.map((t) => (
+                  <button
+                    key={t.name}
+                    className={`gtg-prototype-item${selectedPrototype === t.name ? " gtg-prototype-item--selected" : ""}`}
+                    type="button"
+                    onClick={() => setSelectedPrototype(t.name)}
+                    data-testid={`gtg-prototype-option-${t.name}`}
+                  >
+                    <span className="gtg-prototype-name">{t.name}</span>
+                    <span className="gtg-prototype-meta">{t.recipe} · {t.source}</span>
+                  </button>
+                ))}
+              </div>
+              {createError !== null && (
+                <span className="gtg-dialog-error" data-testid="gtg-create-error">
+                  {createError}
+                </span>
+              )}
+            </div>
+            <div className="gtg-dialog-actions">
+              <TugButton
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                onClick={() => setStep("name")}
+                data-testid="gtg-new-dialog-back"
+              >
+                Back
+              </TugButton>
+              <TugButton
+                emphasis="filled"
+                role="accent"
+                size="sm"
+                onClick={() => { void handleCreate(); }}
+                disabled={isCreating}
+                data-testid="gtg-new-dialog-create"
+              >
+                {isCreating ? "Creating…" : "Create"}
+              </TugButton>
+            </div>
+          </>
+        )}
       </div>
-
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// OpenThemeDialog — modal-ish inline dialog for Open flow
+// ---------------------------------------------------------------------------
+
+function OpenThemeDialog({
+  onSelected,
+  onCancel,
+}: {
+  onSelected: (name: string, recipe: ThemeRecipe, isShipped: boolean) => void;
+  onCancel: () => void;
+}) {
+  const [themes, setThemes] = useState<ThemeListEntry[]>([]);
+  const [selected, setSelected] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isOpening, setIsOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const doLoad = async () => {
+      try {
+        const res = await fetch("/__themes/list");
+        const entries: ThemeListEntry[] = [];
+        if (res.ok) {
+          const data = (await res.json()) as { themes?: unknown[] };
+          if (Array.isArray(data.themes)) {
+            for (const entry of data.themes) {
+              if (typeof entry === "string") {
+                entries.push({ name: entry, recipe: "dark", source: "shipped" });
+              } else if (entry !== null && typeof entry === "object") {
+                const e = entry as Record<string, unknown>;
+                entries.push({
+                  name: String(e.name ?? ""),
+                  recipe: String(e.recipe ?? "dark"),
+                  source: (e.source === "authored" ? "authored" : "shipped") as "shipped" | "authored",
+                });
+              }
+            }
+          }
+        }
+        // Ensure brio is always first
+        if (!entries.some((e) => e.name === "brio")) {
+          entries.unshift({ name: "brio", recipe: "dark", source: "shipped" });
+        }
+        setThemes(entries);
+        setSelected(entries[0]?.name ?? "brio");
+      } catch {
+        setThemes([
+          { name: "brio", recipe: "dark", source: "shipped" },
+          { name: "harmony", recipe: "light", source: "shipped" },
+        ]);
+        setSelected("brio");
+      }
+      setIsLoading(false);
+    };
+    void doLoad();
+  }, []);
+
+  const handleOpen = useCallback(async () => {
+    if (!selected) return;
+    setIsOpening(true);
+    setError(null);
+    try {
+      const res = await fetch(`/__themes/${encodeURIComponent(selected)}.json`);
+      let recipe: ThemeRecipe;
+      if (res.ok) {
+        const raw = (await res.json()) as unknown;
+        const err = validateRecipeJson(raw);
+        if (err !== null) {
+          setError(`Invalid recipe: ${err}`);
+          setIsOpening(false);
+          return;
+        }
+        recipe = raw as ThemeRecipe;
+      } else {
+        // Fall back to in-memory for shipped themes
+        if (selected === "harmony") recipe = SHIPPED_HARMONY;
+        else recipe = SHIPPED_BRIO;
+      }
+      const shipped = SHIPPED_NAMES.has(selected);
+      onSelected(selected, recipe, shipped);
+    } catch (err) {
+      setError(String(err));
+      setIsOpening(false);
+    }
+  }, [selected, onSelected]);
+
+  return (
+    <div className="gtg-dialog-overlay" data-testid="gtg-open-dialog">
+      <div className="gtg-dialog">
+        <div className="gtg-dialog-title">Open Theme</div>
+        <div className="gtg-dialog-body">
+          {isLoading ? (
+            <div className="gtg-dialog-loading" data-testid="gtg-open-dialog-loading">Loading themes…</div>
+          ) : (
+            <div className="gtg-prototype-list" data-testid="gtg-open-theme-list">
+              {themes.map((t) => (
+                <button
+                  key={t.name}
+                  className={`gtg-prototype-item${selected === t.name ? " gtg-prototype-item--selected" : ""}`}
+                  type="button"
+                  onClick={() => setSelected(t.name)}
+                  data-testid={`gtg-open-theme-option-${t.name}`}
+                >
+                  <span className="gtg-prototype-name">{t.name}</span>
+                  <span className="gtg-prototype-meta">
+                    {t.recipe} · {t.source === "shipped" ? "read-only" : "editable"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {error !== null && (
+            <span className="gtg-dialog-error" data-testid="gtg-open-error">
+              {error}
+            </span>
+          )}
+        </div>
+        <div className="gtg-dialog-actions">
+          <TugButton
+            emphasis="ghost"
+            role="action"
+            size="sm"
+            onClick={onCancel}
+            data-testid="gtg-open-dialog-cancel"
+          >
+            Cancel
+          </TugButton>
+          <TugButton
+            emphasis="filled"
+            role="accent"
+            size="sm"
+            onClick={() => { void handleOpen(); }}
+            disabled={isOpening || isLoading || !selected}
+            data-testid="gtg-open-dialog-open"
+          >
+            {isOpening ? "Opening…" : "Open"}
+          </TugButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// pushThemeListToSwift — push updated theme list via Swift bridge
+// ---------------------------------------------------------------------------
+
+/**
+ * After a theme save, push the updated theme list to the Swift bridge so it
+ * can refresh its cached menu. [D10]
+ */
+async function pushThemeListToSwift(): Promise<void> {
+  try {
+    const res = await fetch("/__themes/list");
+    if (!res.ok) return;
+    const data = (await res.json()) as { themes?: unknown[] };
+    const themes: Array<{ name: string; recipe: string; source: string }> = [];
+    if (Array.isArray(data.themes)) {
+      for (const entry of data.themes) {
+        if (typeof entry === "string") {
+          themes.push({ name: entry, recipe: "dark", source: "shipped" });
+        } else if (entry !== null && typeof entry === "object") {
+          const e = entry as Record<string, unknown>;
+          themes.push({
+            name: String(e.name ?? ""),
+            recipe: String(e.recipe ?? "dark"),
+            source: String(e.source ?? "shipped"),
+          });
+        }
+      }
+    }
+    (window as unknown as {
+      webkit?: {
+        messageHandlers?: {
+          themeListUpdated?: { postMessage: (v: unknown) => void };
+        };
+      };
+    }).webkit?.messageHandlers?.themeListUpdated?.postMessage({ themes });
+  } catch {
+    // Bridge unavailable (tests, non-Mac) — ignore
+  }
+}
 
 // ---------------------------------------------------------------------------
 // GalleryThemeGeneratorContent — main component
 // ---------------------------------------------------------------------------
 
+type GeneratorState = "idle" | "viewing" | "editing";
+
 /**
  * GalleryThemeGeneratorContent — Theme Generator gallery card tab.
  *
- * Manages local recipe state (mode, atmosphere, text hue).
- * Calls `deriveTheme()` on every recipe change.
- * Runs `validateThemeContrast()` and `checkCVDDistinguishability()` on each
- * derived output to populate the contrast dashboard and CVD strip.
- * The Contrast Diagnostics panel displays ThemeOutput.diagnostics entries.
+ * Implements the Mac-style document model per [D06]:
+ *   - Idle:    No theme loaded. Shows New / Open buttons.
+ *   - Viewing: A shipped theme is loaded. Controls show values but are disabled.
+ *   - Editing: An authored theme is loaded. Controls enabled. Auto-save 500ms.
  *
- * **Authoritative reference:** [D06] Gallery tab pattern, [D04] ThemeRecipe,
- * [D07] Contrast thresholds, [D03] Pairing map, [D05] CVD matrices.
+ * On mount, loads the active app theme (if a TugThemeProvider is in scope).
+ * Recipe displayed as a read-only label — no Dark/Light toggle. [D09]
+ *
+ * Preview section updates on color changes via CSS custom properties. [L06]
  */
 export function GalleryThemeGeneratorContent() {
-  // Optional theme context — null when rendered outside a TugThemeProvider (e.g. tests).
   const themeCtx = useOptionalThemeContext();
 
-  // Saved-theme list — populated from the /__themes/list middleware endpoint.
-  const [savedThemes, setSavedThemes] = useState<string[]>([]);
+  // ---------------------------------------------------------------------------
+  // Document model state
+  // ---------------------------------------------------------------------------
 
-  // Load saved theme names on mount and expose a refresh callback.
-  const refreshSavedThemes = useCallback(() => {
-    void loadSavedThemes().then(setSavedThemes);
-  }, []);
+  const [generatorState, setGeneratorState] = useState<GeneratorState>("idle");
+  const [currentThemeName, setCurrentThemeName] = useState<string | null>(null);
+  const [isShipped, setIsShipped] = useState(false);
+  const [showNewDialog, setShowNewDialog] = useState(false);
+  const [showOpenDialog, setShowOpenDialog] = useState(false);
+
+  // Auto-save status
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Recipe field state
+  // ---------------------------------------------------------------------------
+
+  const [recipeName, setRecipeName] = useState<string>("brio");
+  const [recipeMode, setRecipeMode] = useState<"dark" | "light">("dark");
+  const [frameHue, setFrameHue] = useState<string>(SHIPPED_BRIO.surface.frame.hue);
+  const [canvasHue, setCanvasHue] = useState<string>(SHIPPED_BRIO.surface.canvas.hue);
+  const [canvasTone, setCanvasTone] = useState<number>(SHIPPED_BRIO.surface.canvas.tone);
+  const [canvasIntensity, setCanvasIntensity] = useState<number>(SHIPPED_BRIO.surface.canvas.intensity);
+  const [gridHue, setGridHue] = useState<string>(SHIPPED_BRIO.surface.grid.hue);
+  const [gridTone, setGridTone] = useState<number>(SHIPPED_BRIO.surface.grid.tone);
+  const [gridIntensity, setGridIntensity] = useState<number>(SHIPPED_BRIO.surface.grid.intensity);
+  const [frameTone, setFrameTone] = useState<number>(SHIPPED_BRIO.surface.frame.tone);
+  const [frameIntensity, setFrameIntensity] = useState<number>(SHIPPED_BRIO.surface.frame.intensity);
+  const [cardHue, setCardHue] = useState<string>(SHIPPED_BRIO.surface.card.hue);
+  const [cardTone, setCardTone] = useState<number>(SHIPPED_BRIO.surface.card.tone);
+  const [cardIntensity, setCardIntensity] = useState<number>(SHIPPED_BRIO.surface.card.intensity);
+  const [contentHue, setContentHue] = useState<string>(SHIPPED_BRIO.text.hue);
+  const [textIntensity, setTextIntensity] = useState<number>(SHIPPED_BRIO.text.intensity);
+  const [roleTone, setRoleTone] = useState<number>(SHIPPED_BRIO.role.tone);
+  const [roleIntensity, setRoleIntensity] = useState<number>(SHIPPED_BRIO.role.intensity);
+  const [accentHue, setAccentHue] = useState<string>(SHIPPED_BRIO.role.accent);
+  const [activeHue, setActiveHue] = useState<string>(SHIPPED_BRIO.role.action);
+  const [agentHue, setAgentHue] = useState<string>(SHIPPED_BRIO.role.agent);
+  const [dataHue, setDataHue] = useState<string>(SHIPPED_BRIO.role.data);
+  const [successHue, setSuccessHue] = useState<string>(SHIPPED_BRIO.role.success);
+  const [cautionHue, setCautionHue] = useState<string>(SHIPPED_BRIO.role.caution);
+  const [dangerHue, setDangerHue] = useState<string>(SHIPPED_BRIO.role.danger);
+
+  // Derived theme output — updated whenever recipe fields change
+  const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(SHIPPED_BRIO));
+
+  // ---------------------------------------------------------------------------
+  // Load active theme on mount
+  // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    refreshSavedThemes();
-  }, [refreshSavedThemes]);
-
-  const [recipeName, setRecipeName] = useState<string>(DEFAULT_RECIPE.name);
-  const [mode, setModeRaw] = useState<"dark" | "light">(DEFAULT_RECIPE.recipe);
-  const setMode = useCallback((m: "dark" | "light") => {
-    putGeneratorRecipe(m);
-    setModeRaw(m);
+    const themeName = themeCtx?.theme ?? "brio";
+    const doLoad = async () => {
+      try {
+        const res = await fetch(`/__themes/${encodeURIComponent(themeName)}.json`);
+        let recipe: ThemeRecipe;
+        if (res.ok) {
+          const raw = (await res.json()) as unknown;
+          const err = validateRecipeJson(raw);
+          if (err !== null) {
+            // Invalid — show idle
+            return;
+          }
+          recipe = raw as ThemeRecipe;
+        } else {
+          // Fall back to shipped recipes
+          if (themeName === "harmony") recipe = SHIPPED_HARMONY;
+          else recipe = SHIPPED_BRIO;
+        }
+        const shipped = SHIPPED_NAMES.has(themeName);
+        loadRecipeIntoState(recipe);
+        setCurrentThemeName(themeName);
+        setIsShipped(shipped);
+        setGeneratorState(shipped ? "viewing" : "editing");
+      } catch {
+        // Network error — stay idle
+      }
+    };
+    void doLoad();
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Restore persisted recipe from tugbank on mount.
+
+  // ---------------------------------------------------------------------------
+  // Load recipe into local state fields
+  // ---------------------------------------------------------------------------
+
+  const loadRecipeIntoState = useCallback((r: ThemeRecipe) => {
+    setRecipeName(r.name);
+    setRecipeMode(r.recipe);
+    setFrameHue(r.surface.frame.hue);
+    setFrameTone(r.surface.frame.tone);
+    setFrameIntensity(r.surface.frame.intensity);
+    setCardHue(r.surface.card.hue);
+    setCardTone(r.surface.card.tone);
+    setCardIntensity(r.surface.card.intensity);
+    setCanvasHue(r.surface.canvas.hue);
+    setCanvasTone(r.surface.canvas.tone);
+    setCanvasIntensity(r.surface.canvas.intensity);
+    setGridHue(r.surface.grid.hue);
+    setGridTone(r.surface.grid.tone);
+    setGridIntensity(r.surface.grid.intensity);
+    setContentHue(r.text.hue);
+    setTextIntensity(r.text.intensity);
+    setRoleTone(r.role.tone);
+    setRoleIntensity(r.role.intensity);
+    setAccentHue(r.role.accent);
+    setActiveHue(r.role.action);
+    setAgentHue(r.role.agent);
+    setDataHue(r.role.data);
+    setSuccessHue(r.role.success);
+    setCautionHue(r.role.caution);
+    setDangerHue(r.role.danger);
+    setThemeOutput(deriveTheme(r));
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Re-derive theme when any recipe field changes
+  // ---------------------------------------------------------------------------
+
+  const currentRecipe = useMemo<ThemeRecipe>(
+    () => ({
+      name: recipeName,
+      description: `Generated theme (${recipeMode} mode, frame: ${frameHue}, content: ${contentHue})`,
+      recipe: recipeMode,
+      surface: {
+        canvas: { hue: canvasHue, tone: canvasTone, intensity: canvasIntensity },
+        grid: { hue: gridHue, tone: gridTone, intensity: gridIntensity },
+        frame: { hue: frameHue, tone: frameTone, intensity: frameIntensity },
+        card: { hue: cardHue, tone: cardTone, intensity: cardIntensity },
+      },
+      text: { hue: contentHue, intensity: textIntensity },
+      role: { tone: roleTone, intensity: roleIntensity, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
+    }),
+    [
+      recipeName, recipeMode,
+      frameHue, frameTone, frameIntensity,
+      cardHue, cardTone, cardIntensity,
+      canvasHue, canvasTone, canvasIntensity,
+      gridHue, gridTone, gridIntensity,
+      contentHue, textIntensity,
+      roleTone, roleIntensity,
+      accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
+    ],
+  );
+
+  // Re-derive and apply preview on recipe change (Editing state only)
   useEffect(() => {
-    fetchGeneratorRecipe().then((saved) => { if (saved) setModeRaw(saved); });
+    if (generatorState === "idle") return;
+    const output = deriveTheme(currentRecipe);
+    setThemeOutput(output);
+
+    // Apply: inject regenerated CSS app-wide immediately for preview. [L06]
+    if (generatorState === "editing" && currentThemeName !== null) {
+      const css = generateResolvedCssExport(output, currentRecipe);
+      injectThemeCSS(currentRecipe.name, css);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    recipeMode,
+    frameHue, frameTone, frameIntensity,
+    cardHue, cardTone, cardIntensity,
+    canvasHue, canvasTone, canvasIntensity,
+    gridHue, gridTone, gridIntensity,
+    contentHue, textIntensity,
+    roleTone, roleIntensity,
+    accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
+  ]);
+
+  // ---------------------------------------------------------------------------
+  // Auto-save — debounced 500ms after last change, Editing state only
+  // ---------------------------------------------------------------------------
+
+  const performSave = useCallback(async (recipe: ThemeRecipe, output: ThemeOutput) => {
+    setSaveStatus("saving");
+    try {
+      const css = generateResolvedCssExport(output, recipe);
+      const res = await fetch("/__themes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
+      });
+      if (res.ok) {
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2000);
+        // Push updated theme list to Swift bridge [D10]
+        void pushThemeListToSwift();
+      } else {
+        setSaveStatus("error");
+      }
+    } catch {
+      setSaveStatus("error");
+    }
   }, []);
-  // Surface hue state
-  const [frameHue, setFrameHue] = useState<string>(DEFAULT_RECIPE.surface.frame.hue);
-  const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.surface.canvas.hue);
-  // Surface tone and intensity state
-  const [canvasTone, setCanvasTone] = useState<number>(DEFAULT_RECIPE.surface.canvas.tone);
-  const [canvasIntensity, setCanvasIntensity] = useState<number>(DEFAULT_RECIPE.surface.canvas.intensity);
-  const [gridHue, setGridHue] = useState<string>(DEFAULT_RECIPE.surface.grid.hue);
-  const [gridTone, setGridTone] = useState<number>(DEFAULT_RECIPE.surface.grid.tone);
-  const [gridIntensity, setGridIntensity] = useState<number>(DEFAULT_RECIPE.surface.grid.intensity);
-  const [frameTone, setFrameTone] = useState<number>(DEFAULT_RECIPE.surface.frame.tone);
-  const [frameIntensity, setFrameIntensity] = useState<number>(DEFAULT_RECIPE.surface.frame.intensity);
-  const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card.hue);
-  const [cardTone, setCardTone] = useState<number>(DEFAULT_RECIPE.surface.card.tone);
-  const [cardIntensity, setCardIntensity] = useState<number>(DEFAULT_RECIPE.surface.card.intensity);
-  // Text hue state (replaces element.content)
-  const [contentHue, setContentHue] = useState<string>(DEFAULT_RECIPE.text.hue);
-  const [textIntensity, setTextIntensity] = useState<number>(DEFAULT_RECIPE.text.intensity);
-  // Role shared tone and intensity
-  const [roleTone, setRoleTone] = useState<number>(DEFAULT_RECIPE.role.tone);
-  const [roleIntensity, setRoleIntensity] = useState<number>(DEFAULT_RECIPE.role.intensity);
 
-  // Formula state — null means use deriveTheme() defaults; non-null
-  // means the user has explicitly provided formulas (escape hatch path per [D06]).
-  // A synchronous ref mirrors the state so runDerive() can read the latest value
-  // without threading formulas through its parameter signature. [D01]
-  const [formulas, setFormulas] = useState<DerivationFormulas | null>(null);
-  const formulasRef = useRef<DerivationFormulas | null>(null);
+  // Trigger auto-save debounce when recipe changes in editing state
+  useEffect(() => {
+    if (generatorState !== "editing" || currentThemeName === null) return;
 
-  /**
-   * Update both the formulas state and the ref synchronously.
-   * Mutation sites: loadPreset, handleRecipeImported, Dark onClick, Light onClick.
-   * Pass null to use deriveTheme() defaults at derive time. [D01]
-   */
-  function setFormulasAndRef(f: DerivationFormulas | null): void {
-    setFormulas(f);
-    formulasRef.current = f;
-  }
+    // Clear any pending timer
+    if (autoSaveTimerRef.current !== null) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    const output = deriveTheme(currentRecipe);
+    autoSaveTimerRef.current = setTimeout(() => {
+      void performSave(currentRecipe, output);
+    }, 500);
 
-  // Role hue state — one per role in the 7-role system. [D05, Step 6]
-  const [accentHue, setAccentHue] = useState<string>(DEFAULT_RECIPE.role.accent);
-  const [activeHue, setActiveHue] = useState<string>(DEFAULT_RECIPE.role.action);
-  const [agentHue, setAgentHue] = useState<string>(DEFAULT_RECIPE.role.agent);
-  const [dataHue, setDataHue] = useState<string>(DEFAULT_RECIPE.role.data);
-  const [successHue, setSuccessHue] = useState<string>(DEFAULT_RECIPE.role.success);
-  const [cautionHue, setCautionHue] = useState<string>(DEFAULT_RECIPE.role.caution);
-  const [dangerHue, setDangerHue] = useState<string>(DEFAULT_RECIPE.role.danger);
+    return () => {
+      if (autoSaveTimerRef.current !== null) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    generatorState, currentThemeName,
+    recipeMode,
+    frameHue, frameTone, frameIntensity,
+    cardHue, cardTone, cardIntensity,
+    canvasHue, canvasTone, canvasIntensity,
+    gridHue, gridTone, gridIntensity,
+    contentHue, textIntensity,
+    roleTone, roleIntensity,
+    accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
+  ]);
 
-  // The derived theme output — updated whenever the recipe changes.
-  const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(DEFAULT_RECIPE));
+  // ---------------------------------------------------------------------------
+  // New / Open dialog handlers
+  // ---------------------------------------------------------------------------
 
-  // Contrast results — derived from themeOutput via validateThemeContrast().
-  // Computed with useMemo to avoid redundant runs on unrelated re-renders.
+  const handleNewCreated = useCallback((name: string, recipe: ThemeRecipe) => {
+    setShowNewDialog(false);
+    loadRecipeIntoState(recipe);
+    setCurrentThemeName(name);
+    setIsShipped(false);
+    setGeneratorState("editing");
+    setSaveStatus("idle");
+    // Apply CSS immediately
+    const output = deriveTheme(recipe);
+    const css = generateResolvedCssExport(output, recipe);
+    injectThemeCSS(name, css);
+    if (themeCtx) themeCtx.setTheme(name);
+    void pushThemeListToSwift();
+  }, [loadRecipeIntoState, themeCtx]);
+
+  const handleOpenSelected = useCallback((name: string, recipe: ThemeRecipe, shipped: boolean) => {
+    setShowOpenDialog(false);
+    loadRecipeIntoState(recipe);
+    setCurrentThemeName(name);
+    setIsShipped(shipped);
+    setGeneratorState(shipped ? "viewing" : "editing");
+    setSaveStatus("idle");
+    // Apply via theme context if available
+    if (themeCtx) themeCtx.setTheme(name);
+  }, [loadRecipeIntoState, themeCtx]);
+
+  // ---------------------------------------------------------------------------
+  // Derived values for the preview
+  // ---------------------------------------------------------------------------
+
   const contrastResults = useMemo(
     () => validateThemeContrast(themeOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP),
     [themeOutput],
   );
 
-  // CVD distinguishability warnings — computed from the resolved map.
   const cvdWarnings = useMemo<CVDWarning[]>(
     () => checkCVDDistinguishability(themeOutput.resolved, CVD_SEMANTIC_PAIRS),
     [themeOutput],
   );
 
-  // Live CSS custom properties for the preview — injects all derived token values
-  // as inline style so child components inherit live tokens via CSS cascade.
-  // Uses both resolved OKLCH colors and structural token values from the
-  // tokens map. Appearance changes through CSS, not React state. [D08, D09]
+  // Live CSS custom properties for the preview container. [L06]
   const liveTokenStyle = useMemo<React.CSSProperties>(() => {
     const style: Record<string, string> = {};
-    // Resolved colors → oklch() values (keys already have --tug- prefix)
     const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
     for (const [token, color] of Object.entries(themeOutput.resolved)) {
       const { L, C, h, alpha } = color;
       const alphaSuffix = alpha < 1 ? ` / ${fmt(alpha)}` : "";
       style[token] = `oklch(${fmt(L)} ${fmt(C)} ${h}${alphaSuffix})`;
     }
-    // Structural tokens → var() references, "transparent", plain values
-    // (keys already have --tug- prefix; skip --tug-color() build-time values
-    // and tokens already resolved above)
     for (const [token, value] of Object.entries(themeOutput.tokens)) {
-      if (token in style) continue; // already set from resolved
-      if (value.startsWith("--tug-color(")) continue; // build-time only
+      if (token in style) continue;
+      if (value.startsWith("--tug-color(")) continue;
       style[token] = value;
     }
-    // Component-level token aliases: these are defined on body with var() references
-    // to --tug-* tokens. CSS resolves var() at the definition site (body), not
-    // the use site, so overriding base tokens on a descendant doesn't cascade through
-    // body-level aliases. We must override the component tokens directly.
     const COMPONENT_ALIASES: Record<string, string> = {
       "--tug-card-title-bar-bg-active": "--tug-surface-tab-primary-normal-plain-active",
       "--tug-card-title-bar-bg-inactive": "--tug-surface-tab-primary-normal-plain-inactive",
@@ -1889,7 +2132,6 @@ export function GalleryThemeGeneratorContent() {
     return style as React.CSSProperties;
   }, [themeOutput]);
 
-  /** Look up the actual resolved CSS color for a surface, element, or role hue key. */
   const resolvedColor = useCallback(
     (key: string): string => {
       const token = SURFACE_TOKENS[key] ?? ELEMENT_TOKENS[key] ?? ROLE_TOKENS[key];
@@ -1900,260 +2142,7 @@ export function GalleryThemeGeneratorContent() {
     [themeOutput],
   );
 
-  /**
-   * Assemble the current recipe and call deriveTheme(), updating themeOutput.
-   * Must be called with the latest values — no stale state.
-   * Accepts `n` (name) so that hue changes preserve the current recipe
-   * name rather than hardcoding "preview".
-   *
-   * When formulasRef.current is non-null, it is used as the escape-hatch
-   * formulas override (per [D06]). When null, deriveTheme() uses defaults. [D01]
-   */
-  const runDerive = useCallback(
-    (
-      n: string,
-      m: "dark" | "light",
-      frame: string,
-      fTone: number,
-      fIntensity: number,
-      cardBody: string,
-      cbTone: number,
-      cbIntensity: number,
-      canvas: string,
-      cvTone: number,
-      cvIntensity: number,
-      gHue: string,
-      gTone: number,
-      gIntensity: number,
-      content: string,
-      tIntensity: number,
-      rTone: number,
-      rIntensity: number,
-      accent: string,
-      active: string,
-      agent: string,
-      data: string,
-      success: string,
-      caution: string,
-      danger: string,
-    ) => {
-      const recipe: ThemeRecipe = {
-        name: n,
-        description: `Generated theme (${m} mode, frame: ${frame}, content: ${content})`,
-        recipe: m,
-        surface: {
-          canvas: { hue: canvas, tone: cvTone, intensity: cvIntensity },
-          grid: { hue: gHue, tone: gTone, intensity: gIntensity },
-          frame: { hue: frame, tone: fTone, intensity: fIntensity },
-          card: { hue: cardBody, tone: cbTone, intensity: cbIntensity },
-        },
-        text: { hue: content, intensity: tIntensity },
-        role: { tone: rTone, intensity: rIntensity, accent, action: active, agent, data, success, caution, danger },
-      };
-      setThemeOutput(deriveTheme(recipe));
-    },
-    [],
-  );
-
-  /**
-   * Re-derive theme when any recipe field changes.
-   * Hue changes are discrete picks; tone/intensity changes arrive on every drag
-   * frame and derive immediately (no debounce — deriveTheme is synchronous and fast).
-   */
-  useEffect(() => {
-    runDerive(
-      recipeName, mode,
-      frameHue, frameTone, frameIntensity,
-      cardHue, cardTone, cardIntensity,
-      canvasHue, canvasTone, canvasIntensity,
-      gridHue, gridTone, gridIntensity,
-      contentHue, textIntensity,
-      roleTone, roleIntensity,
-      accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    mode, frameHue, frameTone, frameIntensity,
-    cardHue, cardTone, cardIntensity,
-    canvasHue, canvasTone, canvasIntensity,
-    gridHue, gridTone, gridIntensity,
-    contentHue, textIntensity,
-    roleTone, roleIntensity,
-    accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
-    formulas,
-  ]);
-
-  // ---------------------------------------------------------------------------
-  // Preset load helpers
-  // ---------------------------------------------------------------------------
-
-  const loadPreset = useCallback(
-    (presetKey: keyof typeof SHIPPED_RECIPES) => {
-      const r = SHIPPED_RECIPES[presetKey];
-      setRecipeName(r.name);
-      setMode(r.recipe);
-      setFrameHue(r.surface.frame.hue);
-      setFrameTone(r.surface.frame.tone);
-      setFrameIntensity(r.surface.frame.intensity);
-      setCardHue(r.surface.card.hue);
-      setCardTone(r.surface.card.tone);
-      setCardIntensity(r.surface.card.intensity);
-      setCanvasHue(r.surface.canvas.hue);
-      setCanvasTone(r.surface.canvas.tone);
-      setCanvasIntensity(r.surface.canvas.intensity);
-      setGridHue(r.surface.grid.hue);
-      setGridTone(r.surface.grid.tone);
-      setGridIntensity(r.surface.grid.intensity);
-      setContentHue(r.text.hue);
-      setTextIntensity(r.text.intensity);
-      setRoleTone(r.role.tone);
-      setRoleIntensity(r.role.intensity);
-      setAccentHue(r.role.accent);
-      setActiveHue(r.role.action);
-      setAgentHue(r.role.agent);
-      setDataHue(r.role.data);
-      setSuccessHue(r.role.success);
-      setCautionHue(r.role.caution);
-      setDangerHue(r.role.danger);
-      // When loading a formulas-based recipe (escape hatch [D06]), set formulas directly.
-      // Otherwise set formulas to null so deriveTheme() uses recipe defaults. [D01]
-      setFormulasAndRef(null);
-      setThemeOutput(deriveTheme(r));
-    },
-    // setFormulasAndRef is a stable plain function defined in component scope — no dependency needed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  // ---------------------------------------------------------------------------
-  // Current recipe — assembled from local state for export/import
-  // ---------------------------------------------------------------------------
-
-  /**
-   * The current assembled recipe, kept in sync with local state fields.
-   * Used by ExportImportPanel for export and as a round-trip reference.
-   * `recipeName` is preserved across imports so exported filenames and CSS
-   * headers reflect the actual recipe name, not a hardcoded "preview" label.
-   *
-   * When formulas state is null, the recipe uses deriveTheme() defaults.
-   * When formulas state is non-null, the recipe uses the escape-hatch formulas. [D06]
-   */
-  const currentRecipe = useMemo<ThemeRecipe>(
-    () => ({
-      name: recipeName,
-      description: `Generated theme (${mode} mode, frame: ${frameHue}, content: ${contentHue})`,
-      recipe: mode,
-      surface: {
-        canvas: { hue: canvasHue, tone: canvasTone, intensity: canvasIntensity },
-        grid: { hue: gridHue, tone: gridTone, intensity: gridIntensity },
-        frame: { hue: frameHue, tone: frameTone, intensity: frameIntensity },
-        card: { hue: cardHue, tone: cardTone, intensity: cardIntensity },
-      },
-      text: { hue: contentHue, intensity: textIntensity },
-      role: { tone: roleTone, intensity: roleIntensity, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-    }),
-    [
-      recipeName, mode,
-      frameHue, frameTone, frameIntensity,
-      cardHue, cardTone, cardIntensity,
-      canvasHue, canvasTone, canvasIntensity,
-      gridHue, gridTone, gridIntensity,
-      contentHue, textIntensity,
-      roleTone, roleIntensity,
-      accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
-    ],
-  );
-
-  /**
-   * Handle an imported recipe: apply all fields to local state and re-derive.
-   * Sets `recipeName` from the imported recipe so subsequent exports preserve
-   * the original name rather than reverting to "preview".
-   *
-   * When the recipe has explicit formulas, use them (escape hatch [D06]).
-   * When the recipe has controls (or neither), set formulas to null so
-   * deriveTheme() uses defaults at derive time. [D01]
-   */
-  const handleRecipeImported = useCallback(
-    (r: ThemeRecipe) => {
-      setRecipeName(r.name);
-      setMode(r.recipe);
-      setFrameHue(r.surface.frame.hue);
-      setFrameTone(r.surface.frame.tone);
-      setFrameIntensity(r.surface.frame.intensity);
-      setCardHue(r.surface.card.hue);
-      setCardTone(r.surface.card.tone);
-      setCardIntensity(r.surface.card.intensity);
-      setCanvasHue(r.surface.canvas.hue);
-      setCanvasTone(r.surface.canvas.tone);
-      setCanvasIntensity(r.surface.canvas.intensity);
-      setGridHue(r.surface.grid.hue);
-      setGridTone(r.surface.grid.tone);
-      setGridIntensity(r.surface.grid.intensity);
-      setContentHue(r.text.hue);
-      setTextIntensity(r.text.intensity);
-      setRoleTone(r.role.tone);
-      setRoleIntensity(r.role.intensity);
-      setAccentHue(r.role.accent);
-      setActiveHue(r.role.action);
-      setAgentHue(r.role.agent);
-      setDataHue(r.role.data);
-      setSuccessHue(r.role.success);
-      setCautionHue(r.role.caution);
-      setDangerHue(r.role.danger);
-      setFormulasAndRef(null);
-      setThemeOutput(deriveTheme(r));
-    },
-    // setFormulasAndRef is a stable plain function defined in component scope — no dependency needed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  // ---------------------------------------------------------------------------
-  // Saved-theme selection handlers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Select a saved dynamic theme by name.
-   * Calls setTheme() to fetch and inject the CSS via the middleware, then
-   * fetches the recipe JSON from /__themes/<name>.json and loads it into
-   * generator state. No-ops silently if theme context is unavailable.
-   */
-  const handleSelectSavedTheme = useCallback(
-    (name: string) => {
-      if (themeCtx) {
-        themeCtx.setTheme(name);
-      }
-      // Fetch the recipe JSON and load parameters into generator state
-      void fetch(`/__themes/${encodeURIComponent(name)}.json`)
-        .then((res) => {
-          if (!res.ok) return null;
-          return res.json() as Promise<unknown>;
-        })
-        .then((data) => {
-          if (!data) return;
-          const err = validateRecipeJson(data);
-          if (err !== null) return;
-          handleRecipeImported(data as ThemeRecipe);
-        })
-        .catch(() => {
-          // Network or parse error — ignore silently
-        });
-    },
-    [themeCtx, handleRecipeImported],
-  );
-
-  /**
-   * Revert to the built-in Brio theme.
-   * Calls setTheme("brio") which removes the override stylesheet and restores
-   * tug-base.css defaults. Resets generator to the default Brio recipe.
-   * No-ops silently if theme context is unavailable.
-   */
-  const handleSelectBuiltIn = useCallback(() => {
-    if (themeCtx) {
-      themeCtx.setTheme("brio");
-    }
-    loadPreset("brio");
-  }, [themeCtx, loadPreset]);
+  const isReadOnly = generatorState === "viewing" || generatorState === "idle";
 
   // ---------------------------------------------------------------------------
   // Render
@@ -2162,99 +2151,73 @@ export function GalleryThemeGeneratorContent() {
   return (
     <div className="cg-content gtg-content" data-testid="gallery-theme-generator-content">
 
-      {/* ---- Header: name + preset + mode ---- */}
-      <div className="gtg-header-row">
-        <TugInput
-          value={recipeName}
-          onChange={(e) => setRecipeName(e.target.value)}
-          placeholder="Theme name"
-          size="sm"
-          data-testid="gtg-theme-name-input"
-          className="gtg-theme-name-input"
-          aria-label="Theme name"
+      {/* ---- Dialogs (rendered as overlays) ---- */}
+      {showNewDialog && (
+        <NewThemeDialog
+          onCreated={handleNewCreated}
+          onCancel={() => setShowNewDialog(false)}
         />
-        <div className="gtg-preset-row">
-          {(Object.keys(SHIPPED_RECIPES) as Array<keyof typeof SHIPPED_RECIPES>).map((name) => (
-            <TugButton
-              key={name}
-              emphasis="outlined"
-              role="action"
-              size="sm"
-              onClick={() => loadPreset(name)}
-              data-testid={`gtg-preset-${name}`}
+      )}
+      {showOpenDialog && (
+        <OpenThemeDialog
+          onSelected={handleOpenSelected}
+          onCancel={() => setShowOpenDialog(false)}
+        />
+      )}
+
+      {/* ---- Header: document actions + theme info ---- */}
+      <div className="gtg-header-row" data-testid="gtg-doc-header">
+        <div className="gtg-doc-actions">
+          <TugButton
+            emphasis="outlined"
+            role="action"
+            size="sm"
+            onClick={() => setShowNewDialog(true)}
+            data-testid="gtg-new-btn"
+          >
+            New
+          </TugButton>
+          <TugButton
+            emphasis="outlined"
+            role="action"
+            size="sm"
+            onClick={() => setShowOpenDialog(true)}
+            data-testid="gtg-open-btn"
+          >
+            Open
+          </TugButton>
+        </div>
+
+        {generatorState !== "idle" && (
+          <div className="gtg-doc-info" data-testid="gtg-doc-info">
+            <span className="gtg-doc-name" data-testid="gtg-doc-name">
+              {currentThemeName ?? recipeName}
+            </span>
+            <span
+              className="gtg-doc-recipe-label"
+              data-testid="gtg-doc-recipe-label"
+              title="Recipe (dark or light) is set at creation time and cannot be changed"
             >
-              {name.charAt(0).toUpperCase() + name.slice(1)}
-            </TugButton>
-          ))}
-        </div>
-        <div className="gtg-mode-group" data-testid="gtg-mode-group">
-          <TugButton
-            emphasis={mode === "dark" ? "filled" : "outlined"}
-            role="action"
-            size="sm"
-            onClick={() => {
-              setMode("dark");
-              setFormulasAndRef(null);
-              // Reset tone/intensity to dark-mode defaults from brio
-              setCanvasTone(5); setCanvasIntensity(5);
-              setGridTone(12); setGridIntensity(4);
-              setFrameTone(16); setFrameIntensity(12);
-              setCardTone(12); setCardIntensity(5);
-              setTextIntensity(3);
-              setRoleTone(50); setRoleIntensity(50);
-              const recipe: ThemeRecipe = {
-                name: recipeName,
-                description: `Generated theme (dark mode)`,
-                recipe: "dark",
-                surface: {
-                  canvas: { hue: canvasHue, tone: 5, intensity: 5 },
-                  grid: { hue: gridHue, tone: 12, intensity: 4 },
-                  frame: { hue: frameHue, tone: 16, intensity: 12 },
-                  card: { hue: cardHue, tone: 12, intensity: 5 },
-                },
-                text: { hue: contentHue, intensity: 3 },
-                role: { tone: 50, intensity: 50, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-              };
-              setThemeOutput(deriveTheme(recipe));
-            }}
-            data-testid="gtg-mode-dark"
-          >
-            Dark
-          </TugButton>
-          <TugButton
-            emphasis={mode === "light" ? "filled" : "outlined"}
-            role="action"
-            size="sm"
-            onClick={() => {
-              setMode("light");
-              setFormulasAndRef(null);
-              // Reset tone/intensity to light-mode defaults from harmony
-              setCanvasTone(95); setCanvasIntensity(6);
-              setGridTone(88); setGridIntensity(5);
-              setFrameTone(85); setFrameIntensity(35);
-              setCardTone(90); setCardIntensity(6);
-              setTextIntensity(4);
-              setRoleTone(55); setRoleIntensity(60);
-              const recipe: ThemeRecipe = {
-                name: recipeName,
-                description: `Generated theme (light mode)`,
-                recipe: "light",
-                surface: {
-                  canvas: { hue: canvasHue, tone: 95, intensity: 6 },
-                  grid: { hue: gridHue, tone: 88, intensity: 5 },
-                  frame: { hue: frameHue, tone: 85, intensity: 35 },
-                  card: { hue: cardHue, tone: 90, intensity: 6 },
-                },
-                text: { hue: contentHue, intensity: 4 },
-                role: { tone: 55, intensity: 60, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-              };
-              setThemeOutput(deriveTheme(recipe));
-            }}
-            data-testid="gtg-mode-light"
-          >
-            Light
-          </TugButton>
-        </div>
+              {recipeMode}
+            </span>
+            {isShipped && (
+              <span className="gtg-doc-readonly-badge" data-testid="gtg-doc-readonly-badge">
+                read-only
+              </span>
+            )}
+            {generatorState === "editing" && (
+              <span className="gtg-doc-save-status" data-testid="gtg-doc-save-status">
+                {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : saveStatus === "error" ? "Save failed" : ""}
+              </span>
+            )}
+          </div>
+        )}
+
+        {generatorState === "idle" && (
+          <div className="gtg-idle-hint" data-testid="gtg-idle-hint">
+            Click New to create a theme, or Open to edit an existing one.
+          </div>
+        )}
       </div>
 
       {/* ---- Preview + hue pickers ---- */}
@@ -2264,6 +2227,7 @@ export function GalleryThemeGeneratorContent() {
           <ThemePreviewCard
             resolvedColor={resolvedColor}
             liveTokenStyle={liveTokenStyle}
+            disabled={isReadOnly}
             surface={[
               { key: "canvas", label: "Canvas", hue: canvasHue, tone: canvasTone, intensity: canvasIntensity, setHue: setCanvasHue, setTone: setCanvasTone, setIntensity: setCanvasIntensity, testId: "gtg-canvas-hue" },
               { key: "grid", label: "Grid", hue: gridHue, tone: gridTone, intensity: gridIntensity, setHue: setGridHue, setTone: setGridTone, setIntensity: setGridIntensity, testId: "gtg-grid-hue" },
@@ -2337,23 +2301,6 @@ export function GalleryThemeGeneratorContent() {
         <ContrastDiagnosticsPanel
           diagnostics={themeOutput.diagnostics}
           cvdWarnings={cvdWarnings}
-        />
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Export / Import ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Export / Import</div>
-        <ExportImportPanel
-          output={themeOutput}
-          recipe={currentRecipe}
-          onRecipeImported={handleRecipeImported}
-          exportDisabled={recipeName.trim() === ""}
-          savedThemes={savedThemes}
-          onSelectSavedTheme={handleSelectSavedTheme}
-          onSelectBuiltIn={handleSelectBuiltIn}
-          onSaveSuccess={refreshSavedThemes}
         />
       </div>
 
