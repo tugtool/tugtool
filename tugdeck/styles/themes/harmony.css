@@ -190,8 +190,8 @@ body {
   /* Control — Emphasis×Role */
 
   /* Filled Accent */
-  --tug-base-surface-control-primary-filled-accent-rest: --tug-color(orange, t: 55);
-  --tug-base-surface-control-primary-filled-accent-hover: --tug-color(orange, i: 55);
+  --tug-base-surface-control-primary-filled-accent-rest: --tug-color(orange, i: 60, t: 55);
+  --tug-base-surface-control-primary-filled-accent-hover: --tug-color(orange, i: 65);
   --tug-base-surface-control-primary-filled-accent-active: --tug-color(orange, i: 90, t: 45);
   --tug-base-element-control-text-filled-accent-rest: --tug-color(cobalt, i: 3, t: 100);
   --tug-base-element-control-text-filled-accent-hover: --tug-color(cobalt, i: 3, t: 100);
@@ -204,8 +204,8 @@ body {
   --tug-base-element-control-border-filled-accent-active: --tug-color(orange, i: 90, t: 45);
 
   /* Filled Action */
-  --tug-base-surface-control-primary-filled-action-rest: --tug-color(blue, t: 55);
-  --tug-base-surface-control-primary-filled-action-hover: --tug-color(blue, i: 55);
+  --tug-base-surface-control-primary-filled-action-rest: --tug-color(blue, i: 60, t: 55);
+  --tug-base-surface-control-primary-filled-action-hover: --tug-color(blue, i: 65);
   --tug-base-surface-control-primary-filled-action-active: --tug-color(blue, i: 90, t: 45);
   --tug-base-element-control-text-filled-action-rest: --tug-color(cobalt, i: 3, t: 100);
   --tug-base-element-control-text-filled-action-hover: --tug-color(cobalt, i: 3, t: 100);
@@ -218,8 +218,8 @@ body {
   --tug-base-element-control-border-filled-action-active: --tug-color(blue, i: 90, t: 45);
 
   /* Filled Danger */
-  --tug-base-surface-control-primary-filled-danger-rest: --tug-color(red, t: 55);
-  --tug-base-surface-control-primary-filled-danger-hover: --tug-color(red, i: 55);
+  --tug-base-surface-control-primary-filled-danger-rest: --tug-color(red, i: 60, t: 55);
+  --tug-base-surface-control-primary-filled-danger-hover: --tug-color(red, i: 65);
   --tug-base-surface-control-primary-filled-danger-active: --tug-color(red, i: 90, t: 45);
   --tug-base-element-control-text-filled-danger-rest: --tug-color(cobalt, i: 3, t: 100);
   --tug-base-element-control-text-filled-danger-hover: --tug-color(cobalt, i: 3, t: 100);
@@ -232,8 +232,8 @@ body {
   --tug-base-element-control-border-filled-danger-active: --tug-color(red, i: 90, t: 45);
 
   /* Filled Agent */
-  --tug-base-surface-control-primary-filled-agent-rest: --tug-color(violet, t: 55);
-  --tug-base-surface-control-primary-filled-agent-hover: --tug-color(violet, i: 55);
+  --tug-base-surface-control-primary-filled-agent-rest: --tug-color(violet, i: 60, t: 55);
+  --tug-base-surface-control-primary-filled-agent-hover: --tug-color(violet, i: 65);
   --tug-base-surface-control-primary-filled-agent-active: --tug-color(violet, i: 90, t: 45);
   --tug-base-element-control-text-filled-agent-rest: --tug-color(cobalt, i: 3, t: 100);
   --tug-base-element-control-text-filled-agent-hover: --tug-color(cobalt, i: 3, t: 100);
@@ -246,8 +246,8 @@ body {
   --tug-base-element-control-border-filled-agent-active: --tug-color(violet, i: 90, t: 45);
 
   /* Filled Data */
-  --tug-base-surface-control-primary-filled-data-rest: --tug-color(teal, t: 55);
-  --tug-base-surface-control-primary-filled-data-hover: --tug-color(teal, i: 55);
+  --tug-base-surface-control-primary-filled-data-rest: --tug-color(teal, i: 60, t: 55);
+  --tug-base-surface-control-primary-filled-data-hover: --tug-color(teal, i: 65);
   --tug-base-surface-control-primary-filled-data-active: --tug-color(teal, i: 90, t: 45);
   --tug-base-element-control-text-filled-data-rest: --tug-color(cobalt, i: 3, t: 100);
   --tug-base-element-control-text-filled-data-hover: --tug-color(cobalt, i: 3, t: 100);
@@ -260,8 +260,8 @@ body {
   --tug-base-element-control-border-filled-data-active: --tug-color(teal, i: 90, t: 45);
 
   /* Filled Success */
-  --tug-base-surface-control-primary-filled-success-rest: --tug-color(green, t: 55);
-  --tug-base-surface-control-primary-filled-success-hover: --tug-color(green, i: 55);
+  --tug-base-surface-control-primary-filled-success-rest: --tug-color(green, i: 60, t: 55);
+  --tug-base-surface-control-primary-filled-success-hover: --tug-color(green, i: 65);
   --tug-base-surface-control-primary-filled-success-active: --tug-color(green, i: 90, t: 45);
   --tug-base-element-control-text-filled-success-rest: --tug-color(cobalt, i: 3, t: 100);
   --tug-base-element-control-text-filled-success-hover: --tug-color(cobalt, i: 3, t: 100);
@@ -274,8 +274,8 @@ body {
   --tug-base-element-control-border-filled-success-active: --tug-color(green, i: 90, t: 45);
 
   /* Filled Caution */
-  --tug-base-surface-control-primary-filled-caution-rest: --tug-color(yellow, t: 55);
-  --tug-base-surface-control-primary-filled-caution-hover: --tug-color(yellow, i: 55);
+  --tug-base-surface-control-primary-filled-caution-rest: --tug-color(yellow, i: 60, t: 55);
+  --tug-base-surface-control-primary-filled-caution-hover: --tug-color(yellow, i: 65);
   --tug-base-surface-control-primary-filled-caution-active: --tug-color(yellow, i: 90, t: 45);
   --tug-base-element-control-text-filled-caution-rest: --tug-color(cobalt, i: 3, t: 100);
   --tug-base-element-control-text-filled-caution-hover: --tug-color(cobalt, i: 3, t: 100);

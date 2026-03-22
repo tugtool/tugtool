@@ -115,26 +115,28 @@ const borderActive = borderRamp(25);
 
 /**
  * filledBg — higher-order builder for filled-control background rules.
- * Returns a function (hueSlot) => ChromaticRule at literal intensity, formula tone.
+ * Returns a function (hueSlot) => ChromaticRule at signalIntensity+offset, formula tone.
+ * Intensity is driven by recipe.role.intensity (via signalIntensity) so the
+ * Roles intensity slider controls button fill chroma.
  */
 function filledBg(
-  intensity: number,
+  intensityOffset: number,
   toneField: keyof F,
 ): (hueSlot: string) => ChromaticRule {
   return (hueSlot: string): ChromaticRule => ({
     type: "chromatic",
     hueSlot,
-    intensityExpr: lit(intensity),
+    intensityExpr: (formulas) => Math.min(90, formulas.signalIntensity + intensityOffset),
     toneExpr: (formulas) => formulas[toneField] as number,
   });
 }
 
-/** filledBgRest — filledBg(50, "filledSurfaceRestTone") */
-const filledBgRest = filledBg(50, "filledSurfaceRestTone");
-/** filledBgHover — filledBg(55, "filledSurfaceHoverTone") */
-const filledBgHover = filledBg(55, "filledSurfaceHoverTone");
-/** filledBgActive — filledBg(90, "filledSurfaceActiveTone") */
-const filledBgActive = filledBg(90, "filledSurfaceActiveTone");
+/** filledBgRest — filledBg(0, "filledSurfaceRestTone") — intensity at signalIntensity */
+const filledBgRest = filledBg(0, "filledSurfaceRestTone");
+/** filledBgHover — filledBg(5, "filledSurfaceHoverTone") — intensity at signalIntensity+5 */
+const filledBgHover = filledBg(5, "filledSurfaceHoverTone");
+/** filledBgActive — filledBg(40, "filledSurfaceActiveTone") — intensity at signalIntensity+40 */
+const filledBgActive = filledBg(40, "filledSurfaceActiveTone");
 
 /**
  * semanticTone — semantic signal rule at signalIntensity, semanticSignalTone.

@@ -639,6 +639,10 @@ export const RECIPE_PAIR_EXCEPTIONS: Readonly<Record<string, ReadonlySet<string>
     "--tug-base-element-tab-text-normal-plain-active|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] active tab text on active tab frame: cardFrameActiveTone=40 produces OKLab-L conflict with content text; harmony light mode
     "--tug-base-element-global-text-normal-default-rest|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] default text on active tab frame at cardFrameActiveTone=40: contrast 54.9; Plan 2 recalibrates
     "--tug-base-element-global-icon-normal-active-rest|--tug-base-surface-tab-primary-normal-plain-active", // [baseline-structural] active icon on active tab frame at cardFrameActiveTone=40: informational threshold; Plan 2 recalibrates
+
+    // Danger border on danger filled surface in light mode: roleIntensity-driven fill
+    // at intensity 60 produces mid-chroma fill that clashes with border at similar chroma.
+    "--tug-base-element-control-border-filled-danger-rest|--tug-base-surface-control-primary-filled-danger-rest", // [baseline-structural] danger border on danger fill: intensity-driven fill chroma at roleIntensity=60
   ]),
 };
 
