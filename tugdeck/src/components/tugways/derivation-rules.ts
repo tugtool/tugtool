@@ -268,16 +268,16 @@ const SURFACE_RULES: Record<string, DerivationRule> = {
   "--tug-base-surface-global-primary-normal-grid-rest": surface("surfaceGrid", "surfaceGridIntensity", "surfaceGrid"),
   // surface-sunken: hueSlot "surfaceSunken" -> "surfBareBase" dark | "atm" light
   "--tug-base-surface-global-primary-normal-sunken-rest": surface("surfaceSunken", "atmosphereIntensity", "surfaceSunken"),
-  // surface-default: hueSlot "surfaceDefault" -> "surfBareBase" dark | "atm" light
-  "--tug-base-surface-global-primary-normal-default-rest": surface("surfaceDefault", "surfaceDefaultIntensity", "surfaceDefault"),
-  // surface-raised: hueSlot "surfaceRaised" -> "atm" dark | "txt" light
-  "--tug-base-surface-global-primary-normal-raised-rest": surface("surfaceRaised", "surfaceRaisedIntensity", "surfaceRaised"),
-  // surface-overlay: hueSlot "surfaceOverlay" -> "surfBareBase" dark | "atm" light
-  "--tug-base-surface-global-primary-normal-overlay-rest": surface("surfaceOverlay", "surfaceOverlayIntensity", "surfaceOverlay"),
-  // surface-inset: hueSlot "surfaceInset" -> "atm" dark | "atm" light
-  "--tug-base-surface-global-primary-normal-inset-rest": surface("surfaceInset", "surfaceInsetIntensity", "surfaceInset"),
-  // surface-content: same hue slot as surface-inset, same tone
-  "--tug-base-surface-global-primary-normal-content-rest": surface("surfaceContent", "surfaceContentIntensity", "surfaceContent"),
+  // surface-default: card body surface (hueSlot "surfaceCardBody" -> "card")
+  "--tug-base-surface-global-primary-normal-default-rest": surface("surfaceCardBody", "cardBodyIntensity", "surfaceDefault"),
+  // surface-raised: raised within card body (hueSlot "surfaceCardBody" -> "card")
+  "--tug-base-surface-global-primary-normal-raised-rest": surface("surfaceCardBody", "cardBodyIntensity", "surfaceRaised"),
+  // surface-overlay: overlay/modal (hueSlot "surfaceCardBody" -> "card")
+  "--tug-base-surface-global-primary-normal-overlay-rest": surface("surfaceCardBody", "cardBodyIntensity", "surfaceOverlay"),
+  // surface-inset: inset within card body (hueSlot "surfaceCardBody" -> "card")
+  "--tug-base-surface-global-primary-normal-inset-rest": surface("surfaceCardBody", "cardBodyIntensity", "surfaceInset"),
+  // surface-content: content area within card body (hueSlot "surfaceCardBody" -> "card")
+  "--tug-base-surface-global-primary-normal-content-rest": surface("surfaceCardBody", "cardBodyIntensity", "surfaceContent"),
   // surface-screen: hueSlot "surfaceScreen" -> "surfScreen" dark | "txt" light
   "--tug-base-surface-global-primary-normal-screen-rest": surface("surfaceScreen", "surfaceScreenIntensity", "surfaceScreen"),
 };

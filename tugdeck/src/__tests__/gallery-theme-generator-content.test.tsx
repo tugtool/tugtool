@@ -221,7 +221,8 @@ const CHM_NOVEL_RECIPE = {
   surface: {
     canvas: { hue: "amber", tone: 5, intensity: 5 },
     grid: { hue: "amber", tone: 12, intensity: 4 },
-    card: { hue: "amber", tone: 16, intensity: 12 },
+    frame: { hue: "amber", tone: 16, intensity: 12 },
+    card: { hue: "amber", tone: 8, intensity: 5 },
   },
   text: { hue: "sand", intensity: 3 },
   role: { tone: 50, intensity: 50, accent: "flame", action: "cobalt", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -332,7 +333,8 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
       surface: {
         canvas: { hue: "slate", tone: 5, intensity: 5 },
         grid: { hue: "slate", tone: 12, intensity: 4 },
-        card: { hue: "slate", tone: 16, intensity: 12 },
+        frame: { hue: "slate", tone: 16, intensity: 12 },
+        card: { hue: "slate", tone: 8, intensity: 5 },
       },
       text: { hue: "slate", intensity: 3 },
       role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -351,12 +353,12 @@ describe("GalleryThemeGeneratorContent – role hue selectors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders 11 hue pickers (3 surface + 1 text + 7 role) in the preview section", () => {
+  it("renders 12 hue pickers (4 surface + 1 text + 7 role) in the preview section", () => {
     let container!: HTMLElement;
     act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
     const preview = container.querySelector("[data-testid='gtg-role-hues']");
     expect(preview).not.toBeNull();
-    expect(preview!.querySelectorAll(".gtg-compact-hue-row").length).toBe(11);
+    expect(preview!.querySelectorAll(".gtg-compact-hue-row").length).toBe(12);
   });
 
   it("each role hue picker button has the correct data-testid", () => {
@@ -374,13 +376,13 @@ describe("GalleryThemeGeneratorContent – role hue selectors", () => {
   it("changing a role hue updates the derived theme output", () => {
     const withRed = deriveTheme({
       name: "test", description: "Test recipe with red destructive hue.", recipe: "dark",
-      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, card: { hue: "violet", tone: 16, intensity: 12 } },
+      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, frame: { hue: "violet", tone: 16, intensity: 12 }, card: { hue: "violet", tone: 8, intensity: 5 } },
       text: { hue: "cobalt", intensity: 3 },
       role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
       name: "test", description: "Test recipe with pink destructive hue.", recipe: "dark",
-      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, card: { hue: "violet", tone: 16, intensity: 12 } },
+      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, frame: { hue: "violet", tone: 16, intensity: 12 }, card: { hue: "violet", tone: 8, intensity: 5 } },
       text: { hue: "cobalt", intensity: 3 },
       role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
     });

@@ -165,8 +165,10 @@ export function contrastSearch(
 export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
   const c = recipe.surface.canvas.tone; // canvasTone from recipe
   const canvasIntensity = recipe.surface.canvas.intensity;
-  const frameTone = recipe.surface.card.tone;
-  const frameIntensity = recipe.surface.card.intensity;
+  const frameTone = recipe.surface.frame.tone;
+  const frameIntensity = recipe.surface.frame.intensity;
+  const cardBodyTone = recipe.surface.card.tone;
+  const cardBodyIntensity = recipe.surface.card.intensity;
   const roleTone = recipe.role.tone;
   const roleIntensity = recipe.role.intensity;
 
@@ -203,6 +205,8 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     surfaceInsetIntensity: 5,
     surfaceContentIntensity: 5,
     surfaceAppBaseIntensity: 2,
+    cardBodyTone,
+    cardBodyIntensity,
 
     // ===== Text Brightness =====
     // canvas+89 → ~94 (near-white); pure white for inverse on filled controls
@@ -388,8 +392,9 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     toggleThumbHueSlot: "fgInverse",
     checkmarkHueSlot: "fgInverse",
     radioDotHueSlot: "fgInverse",
-    tabSurfaceActiveHueSlot: "cardFrame",
-    tabSurfaceInactiveHueSlot: "cardFrame",
+    tabSurfaceActiveHueSlot: "frame",
+    tabSurfaceInactiveHueSlot: "frame",
+    surfaceCardBodyHueSlot: "card",
 
     // ===== Sentinel Hue Dispatch =====
     outlinedSurfaceHoverHueSlot: "__highlight",
@@ -446,6 +451,7 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     surfaceInset: c + 1,
     surfaceContent: c + 1,
     surfaceScreen: c + 11,
+    surfaceCardBody: cardBodyTone,
 
     // ===== Computed Divider Tones =====
     dividerDefault: c + 12,
@@ -509,8 +515,10 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
 export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
   const c = recipe.surface.canvas.tone; // canvasTone from recipe
   const canvasIntensity = recipe.surface.canvas.intensity;
-  const frameTone = recipe.surface.card.tone;
-  const frameIntensity = recipe.surface.card.intensity;
+  const frameTone = recipe.surface.frame.tone;
+  const frameIntensity = recipe.surface.frame.intensity;
+  const cardBodyTone = recipe.surface.card.tone;
+  const cardBodyIntensity = recipe.surface.card.intensity;
   const roleTone = recipe.role.tone;
   const roleIntensity = recipe.role.intensity;
 
@@ -544,6 +552,8 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     surfaceInsetIntensity: 6,
     surfaceContentIntensity: 6,
     surfaceAppBaseIntensity: 3,
+    cardBodyTone,
+    cardBodyIntensity,
 
     // ===== Text Brightness =====
     // canvas-87 → ~8 (near-black); near-white for inverse on filled controls
@@ -728,8 +738,9 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     toggleThumbHueSlot: "fgInverse",
     checkmarkHueSlot: "fgInverse",
     radioDotHueSlot: "fgInverse",
-    tabSurfaceActiveHueSlot: "cardFrame",
-    tabSurfaceInactiveHueSlot: "cardFrame",
+    tabSurfaceActiveHueSlot: "frame",
+    tabSurfaceInactiveHueSlot: "frame",
+    surfaceCardBodyHueSlot: "card",
 
     // ===== Sentinel Hue Dispatch =====
     outlinedSurfaceHoverHueSlot: "__highlight",
@@ -784,6 +795,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     surfaceInset: c - 9,   // 86 in LIGHT_FORMULAS
     surfaceContent: c - 9, // 86 in LIGHT_FORMULAS (matches inset)
     surfaceScreen: c - 10, // 85 in LIGHT_FORMULAS
+    surfaceCardBody: cardBodyTone,
 
     // ===== Computed Divider Tones =====
     dividerDefault: c - 17, // 78 in LIGHT_FORMULAS

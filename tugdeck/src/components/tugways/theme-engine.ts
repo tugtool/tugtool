@@ -83,7 +83,8 @@
  *
  * card-frame-style         How card title bars and tab bars present. Controls the
  *                          tone and intensity of active and inactive card frames.
- *                          Fields: cardFrameActiveIntensity, cardFrameActiveTone,
+ *                          Fields: frameTone, frameIntensity,
+ *                                  cardFrameActiveIntensity, cardFrameActiveTone,
  *                                  cardFrameInactiveIntensity, cardFrameInactiveTone
  *
  * shadow-depth             How pronounced shadows and overlay tints are. Controls
@@ -294,7 +295,9 @@ export interface ThemeRecipe {
     canvas: ThemeColorSpec;
     /** Grid lines on canvas: hue + tone + intensity. */
     grid: ThemeColorSpec;
-    /** Card title bar: hue + tone + intensity (atmosphere hue). */
+    /** Card title bar / tab frame: hue + tone + intensity (atmosphere hue). */
+    frame: ThemeColorSpec;
+    /** Card body surface: hue + tone + intensity. */
     card: ThemeColorSpec;
   };
 
@@ -430,7 +433,7 @@ export interface ResolvedHueSlot {
  * Produced by resolveHueSlots(); consumed by the rule evaluator. Spec S02.
  *
  * Slots are grouped into:
- *   - Recipe hues (atm, txt, canvas, cardFrame, borderTint, interactive, active, accent)
+ *   - Recipe hues (atm, txt, canvas, frame, card, borderTint, interactive, active, accent)
  *   - Element hues (control, display, informational, decorative) — derived from element group
  *   - Semantic hues (destructive, success, caution, agent, data) — vivid role hues
  *   - Per-tier derived hues (surfBareBase, surfScreen, fgMuted, fgSubtle, fgDisabled,
@@ -438,10 +441,11 @@ export interface ResolvedHueSlot {
  */
 export interface ResolvedHueSlots {
   // Recipe hues
-  atm: ResolvedHueSlot;         // atmosphere (surface.card hue)
+  atm: ResolvedHueSlot;         // atmosphere (surface.frame hue)
   txt: ResolvedHueSlot;         // content text hue (element.content)
   canvas: ResolvedHueSlot;      // canvas hue (bg-app, bg-canvas)
-  cardFrame: ResolvedHueSlot;   // card title bar hue (derived from element.border)
+  frame: ResolvedHueSlot;       // card title bar / tab frame hue (surface.frame)
+  card: ResolvedHueSlot;        // card body surface hue (surface.card)
   borderTint: ResolvedHueSlot;  // border/divider tint hue (element.border)
   interactive: ResolvedHueSlot; // link/selection hue — derived from role.action [D05]
   active: ResolvedHueSlot;      // active state hue (role.action)
@@ -540,6 +544,10 @@ export interface DerivationFormulas {
   surfaceAppBaseIntensity: number;
   /** @semantic surface-coloring — chroma intensity for the canvas grid line (very subtle) */
   surfaceGridIntensity: number;
+  /** @semantic surface-coloring — tone of the card body surface (designer-specified) */
+  cardBodyTone: number;
+  /** @semantic surface-coloring — chroma intensity for card body surfaces */
+  cardBodyIntensity: number;
 
   // ===== Text Brightness =====
   // How bright primary and inverse text is. Dark: near 100. Light: near 0.
@@ -881,6 +889,8 @@ export interface DerivationFormulas {
   tabSurfaceActiveHueSlot: string;
   /** @semantic hue-slot-dispatch — hue slot for inactive tab bar backgrounds */
   tabSurfaceInactiveHueSlot: string;
+  /** @semantic hue-slot-dispatch — hue slot for card body surfaces */
+  surfaceCardBodyHueSlot: string;
 
   // ===== Sentinel Hue Dispatch =====
   // Which sentinel hue slot hover/active backgrounds use. String keys (__highlight, __verboseHighlight, etc.).
@@ -1087,6 +1097,8 @@ export interface DerivationFormulas {
   surfaceContent: number;
   /** @semantic computed-surface-tone — computed tone for screen surfaces */
   surfaceScreen: number;
+  /** @semantic computed-surface-tone — computed tone for card body surfaces */
+  surfaceCardBody: number;
 
   // ===== Computed Divider Tones =====
   /** @semantic computed-divider-tone — computed tone for default divider lines */
@@ -1137,7 +1149,8 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     surface: {
       canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
       grid:   { hue: "indigo-violet", tone: 12, intensity: 4 },
-      card:   { hue: "indigo-violet", tone: 16, intensity: 12 },
+      frame:  { hue: "indigo-violet", tone: 16, intensity: 12 },
+      card:   { hue: "indigo-violet", tone: 12, intensity: 5 },
     },
     text: { hue: "cobalt", intensity: 3 },
     display: { hue: "indigo", intensity: 3 },
@@ -1159,7 +1172,8 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     surface: {
       canvas: { hue: "indigo-violet", tone: 95, intensity: 6 },
       grid:   { hue: "indigo-violet", tone: 88, intensity: 5 },
-      card:   { hue: "indigo-violet", tone: 85, intensity: 35 },
+      frame:  { hue: "indigo-violet", tone: 85, intensity: 35 },
+      card:   { hue: "indigo-violet", tone: 90, intensity: 6 },
     },
     text: { hue: "cobalt", intensity: 4 },
     role: {
@@ -1309,10 +1323,11 @@ export function themeColorSpecToOklch(spec: ThemeColorSpec): string {
  * and refs used in token derivation.
  *
  * Recipe field mapping (fully-specified ThemeColorSpec structure):
- *   - atm         ← recipe.surface.card.hue
+ *   - atm         ← recipe.surface.frame.hue
  *   - txt         ← recipe.text.hue
  *   - canvas      ← recipe.surface.canvas.hue
- *   - cardFrame   ← recipe.surface.card.hue (card hue drives card frame)
+ *   - frame       ← recipe.surface.frame.hue (frame hue drives card title bar / tab frame)
+ *   - card        ← recipe.surface.card.hue (card body surface hue)
  *   - borderTint  ← recipe.border?.hue ?? recipe.surface.canvas.hue
  *   - interactive ← derived from recipe.role.action (not a separate field)
  *   - active      ← recipe.role.action
@@ -1354,11 +1369,13 @@ export function resolveHueSlots(
   // -------------------------------------------------------------------------
   // Recipe hues — derived from new ThemeColorSpec structure
   // -------------------------------------------------------------------------
-  const atmHue = recipe.surface.card.hue;
+  const atmHue = recipe.surface.frame.hue;
   const txtHue = recipe.text.hue;
   const canvasHue = recipe.surface.canvas.hue;
-  // cardFrame is driven by the card hue (tone/intensity come from formulas)
-  const cardFrameHue = recipe.surface.card.hue;
+  // frame is driven by the frame hue (tone/intensity come from formulas)
+  const frameHue = recipe.surface.frame.hue;
+  // card body surface hue
+  const cardBodyHue = recipe.surface.card.hue;
   // borderTint: optional override, defaults to canvas hue
   const borderTintHue = recipe.border?.hue ?? recipe.surface.canvas.hue;
   // interactive/link hue is derived from role.action directly (not a separate recipe field)
@@ -1369,7 +1386,8 @@ export function resolveHueSlots(
   const atm = resolveSlot(atmHue);
   const txt = resolveSlot(txtHue);
   const canvas = resolveSlot(canvasHue);
-  const cardFrame = resolveSlot(cardFrameHue);
+  const frame = resolveSlot(frameHue);
+  const card = resolveSlot(cardBodyHue);
   const borderTint = resolveSlot(borderTintHue);
   const interactive = resolveSlot(interactiveHue);
   const active = resolveSlot(activeHue);
@@ -1488,7 +1506,8 @@ export function resolveHueSlots(
     atm,
     txt,
     canvas,
-    cardFrame,
+    frame,
+    card,
     borderTint,
     interactive,
     active,

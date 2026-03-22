@@ -1003,11 +1003,13 @@ export function validateRecipeJson(value: unknown): string | null {
   }
   const surface = obj["surface"] as Record<string, unknown>;
 
-  // Detect old-format recipe: string surface values or element group present
+  // Detect old-format recipe: string surface values, element group present, or missing surface.frame
+  // (Old new-format recipes have surface.card as frame; new format has surface.frame + surface.card)
   const isOldFormat =
     typeof surface["canvas"] === "string" ||
     typeof surface["card"] === "string" ||
-    (typeof obj["element"] === "object" && obj["element"] !== null);
+    (typeof obj["element"] === "object" && obj["element"] !== null) ||
+    !isThemeColorSpec(surface["frame"]);
 
   if (isOldFormat) {
     // ---- Old-format migration ----
@@ -1022,15 +1024,19 @@ export function validateRecipeJson(value: unknown): string | null {
       return "Missing or invalid 'surface.canvas' field (string required)";
     }
 
-    // Extract card hue (string or ThemeColorSpec)
-    let cardHue: string;
-    if (typeof surface["card"] === "string") {
-      cardHue = surface["card"].trim();
-      if (cardHue === "") return "Missing or invalid 'surface.card' field (string required)";
+    // Extract frame hue: prefer surface.frame (if present), fall back to old surface.card
+    let frameHueMigrated: string;
+    if (isThemeColorSpec(surface["frame"])) {
+      frameHueMigrated = surface["frame"].hue;
+    } else if (typeof surface["card"] === "string") {
+      const h = surface["card"].trim();
+      if (h === "") return "Missing or invalid 'surface.card' field (string required)";
+      frameHueMigrated = h;
     } else if (isThemeColorSpec(surface["card"])) {
-      cardHue = surface["card"].hue;
+      frameHueMigrated = surface["card"].hue;
     } else {
-      return "Missing or invalid 'surface.card' field (string required)";
+      // No frame or card source — fall back to canvas hue
+      frameHueMigrated = canvasHue;
     }
 
     // Mode-dependent defaults
@@ -1038,8 +1044,11 @@ export function validateRecipeJson(value: unknown): string | null {
     const canvasIntensity = isDark ? 5 : 6;
     const gridTone = isDark ? 12 : 88;
     const gridIntensity = isDark ? 4 : 5;
-    const cardTone = isDark ? 16 : 85;
-    const cardIntensity = isDark ? 12 : 35;
+    const frameTone = isDark ? 16 : 85;
+    const frameIntensity = isDark ? 12 : 35;
+    // Card body defaults: matching old canvas-relative surface tiers
+    const cardBodyTone = isDark ? 12 : 90;
+    const cardBodyIntensity = isDark ? 5 : 6;
     const textIntensity = isDark ? 3 : 4;
     const roleTone = isDark ? 50 : 55;
     const roleIntensity = isDark ? 50 : 60;
@@ -1047,16 +1056,16 @@ export function validateRecipeJson(value: unknown): string | null {
     // Extract controls values if present (Spec S05 rule 6)
     let controlsCanvasTone = canvasTone;
     let controlsCanvasIntensity = canvasIntensity;
-    let controlsCardTone = cardTone;
-    let controlsCardIntensity = cardIntensity;
+    let controlsFrameTone = frameTone;
+    let controlsFrameIntensity = frameIntensity;
     let controlsRoleTone = roleTone;
     let controlsRoleIntensity = roleIntensity;
     if (typeof obj["controls"] === "object" && obj["controls"] !== null && !Array.isArray(obj["controls"])) {
       const controls = obj["controls"] as Record<string, unknown>;
       if (typeof controls["canvasTone"] === "number") controlsCanvasTone = controls["canvasTone"] as number;
       if (typeof controls["canvasIntensity"] === "number") controlsCanvasIntensity = controls["canvasIntensity"] as number;
-      if (typeof controls["frameTone"] === "number") controlsCardTone = controls["frameTone"] as number;
-      if (typeof controls["frameIntensity"] === "number") controlsCardIntensity = controls["frameIntensity"] as number;
+      if (typeof controls["frameTone"] === "number") controlsFrameTone = controls["frameTone"] as number;
+      if (typeof controls["frameIntensity"] === "number") controlsFrameIntensity = controls["frameIntensity"] as number;
       if (typeof controls["roleTone"] === "number") controlsRoleTone = controls["roleTone"] as number;
       if (typeof controls["roleIntensity"] === "number") controlsRoleIntensity = controls["roleIntensity"] as number;
     }
@@ -1088,10 +1097,16 @@ export function validateRecipeJson(value: unknown): string | null {
 
     // Migrate in-place to new format. New-format fields win over controls values
     // if both are present (new-format surface already set as ThemeColorSpec above).
+    // In old format: surface.card held frame data; surface.frame didn't exist.
+    // In new format: surface.frame holds frame data; surface.card holds card body data.
     const finalCanvasTone = isThemeColorSpec(surface["canvas"]) ? surface["canvas"].tone : controlsCanvasTone;
     const finalCanvasIntensity = isThemeColorSpec(surface["canvas"]) ? surface["canvas"].intensity : controlsCanvasIntensity;
-    const finalCardTone = isThemeColorSpec(surface["card"]) ? surface["card"].tone : controlsCardTone;
-    const finalCardIntensity = isThemeColorSpec(surface["card"]) ? surface["card"].intensity : controlsCardIntensity;
+    // Old surface.card (if present as ThemeColorSpec) maps to new surface.frame
+    const finalFrameTone = isThemeColorSpec(surface["card"]) ? surface["card"].tone : controlsFrameTone;
+    const finalFrameIntensity = isThemeColorSpec(surface["card"]) ? surface["card"].intensity : controlsFrameIntensity;
+    // If new-format surface.frame is already set, prefer it
+    const finalFrameToneActual = isThemeColorSpec(surface["frame"]) ? surface["frame"].tone : finalFrameTone;
+    const finalFrameIntensityActual = isThemeColorSpec(surface["frame"]) ? surface["frame"].intensity : finalFrameIntensity;
     const finalRoleTone = typeof (role as Record<string, unknown>)["tone"] === "number" ? (role as Record<string, unknown>)["tone"] as number : controlsRoleTone;
     const finalRoleIntensity = typeof (role as Record<string, unknown>)["intensity"] === "number" ? (role as Record<string, unknown>)["intensity"] as number : controlsRoleIntensity;
 
@@ -1101,7 +1116,8 @@ export function validateRecipeJson(value: unknown): string | null {
       grid: isThemeColorSpec(surface["grid"])
         ? surface["grid"]
         : { hue: canvasHue, tone: gridTone, intensity: gridIntensity },
-      card: { hue: cardHue, tone: finalCardTone, intensity: finalCardIntensity },
+      frame: { hue: frameHueMigrated, tone: finalFrameToneActual, intensity: finalFrameIntensityActual },
+      card: { hue: canvasHue, tone: cardBodyTone, intensity: cardBodyIntensity },
     };
     obj["text"] = typeof obj["text"] === "object" && obj["text"] !== null
       ? obj["text"]
@@ -1124,7 +1140,7 @@ export function validateRecipeJson(value: unknown): string | null {
 
   // ---- New-format validation ----
   // Validate surface ThemeColorSpec objects
-  for (const field of ["canvas", "grid", "card"] as const) {
+  for (const field of ["canvas", "grid", "frame", "card"] as const) {
     if (!isThemeColorSpec(surface[field])) {
       return `Missing or invalid 'surface.${field}' field (ThemeColorSpec with hue, tone, intensity required)`;
     }
@@ -1747,7 +1763,7 @@ export function GalleryThemeGeneratorContent() {
     fetchGeneratorRecipe().then((saved) => { if (saved) setModeRaw(saved); });
   }, []);
   // Surface hue state
-  const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card.hue);
+  const [frameHue, setFrameHue] = useState<string>(DEFAULT_RECIPE.surface.frame.hue);
   const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.surface.canvas.hue);
   // Surface tone and intensity state
   const [canvasTone, setCanvasTone] = useState<number>(DEFAULT_RECIPE.surface.canvas.tone);
@@ -1755,6 +1771,9 @@ export function GalleryThemeGeneratorContent() {
   const [gridHue, setGridHue] = useState<string>(DEFAULT_RECIPE.surface.grid.hue);
   const [gridTone, setGridTone] = useState<number>(DEFAULT_RECIPE.surface.grid.tone);
   const [gridIntensity, setGridIntensity] = useState<number>(DEFAULT_RECIPE.surface.grid.intensity);
+  const [frameTone, setFrameTone] = useState<number>(DEFAULT_RECIPE.surface.frame.tone);
+  const [frameIntensity, setFrameIntensity] = useState<number>(DEFAULT_RECIPE.surface.frame.intensity);
+  const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card.hue);
   const [cardTone, setCardTone] = useState<number>(DEFAULT_RECIPE.surface.card.tone);
   const [cardIntensity, setCardIntensity] = useState<number>(DEFAULT_RECIPE.surface.card.intensity);
   // Text hue state (replaces element.content)
@@ -1888,9 +1907,12 @@ export function GalleryThemeGeneratorContent() {
     (
       n: string,
       m: "dark" | "light",
-      card: string,
-      cTone: number,
-      cIntensity: number,
+      frame: string,
+      fTone: number,
+      fIntensity: number,
+      cardBody: string,
+      cbTone: number,
+      cbIntensity: number,
       canvas: string,
       cvTone: number,
       cvIntensity: number,
@@ -1911,12 +1933,13 @@ export function GalleryThemeGeneratorContent() {
     ) => {
       const recipe: ThemeRecipe = {
         name: n,
-        description: `Generated theme (${m} mode, card: ${card}, content: ${content})`,
+        description: `Generated theme (${m} mode, frame: ${frame}, content: ${content})`,
         recipe: m,
         surface: {
           canvas: { hue: canvas, tone: cvTone, intensity: cvIntensity },
           grid: { hue: gHue, tone: gTone, intensity: gIntensity },
-          card: { hue: card, tone: cTone, intensity: cIntensity },
+          frame: { hue: frame, tone: fTone, intensity: fIntensity },
+          card: { hue: cardBody, tone: cbTone, intensity: cbIntensity },
         },
         text: { hue: content, intensity: tIntensity },
         role: { tone: rTone, intensity: rIntensity, accent, action: active, agent, data, success, caution, danger },
@@ -1935,6 +1958,7 @@ export function GalleryThemeGeneratorContent() {
   useEffect(() => {
     runDerive(
       recipeName, mode,
+      frameHue, frameTone, frameIntensity,
       cardHue, cardTone, cardIntensity,
       canvasHue, canvasTone, canvasIntensity,
       gridHue, gridTone, gridIntensity,
@@ -1944,7 +1968,8 @@ export function GalleryThemeGeneratorContent() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    mode, cardHue, cardTone, cardIntensity,
+    mode, frameHue, frameTone, frameIntensity,
+    cardHue, cardTone, cardIntensity,
     canvasHue, canvasTone, canvasIntensity,
     gridHue, gridTone, gridIntensity,
     contentHue, textIntensity,
@@ -1962,6 +1987,9 @@ export function GalleryThemeGeneratorContent() {
       const r = EXAMPLE_RECIPES[presetKey];
       setRecipeName(r.name);
       setMode(r.recipe);
+      setFrameHue(r.surface.frame.hue);
+      setFrameTone(r.surface.frame.tone);
+      setFrameIntensity(r.surface.frame.intensity);
       setCardHue(r.surface.card.hue);
       setCardTone(r.surface.card.tone);
       setCardIntensity(r.surface.card.intensity);
@@ -2008,11 +2036,12 @@ export function GalleryThemeGeneratorContent() {
   const currentRecipe = useMemo<ThemeRecipe>(
     () => ({
       name: recipeName,
-      description: `Generated theme (${mode} mode, card: ${cardHue}, content: ${contentHue})`,
+      description: `Generated theme (${mode} mode, frame: ${frameHue}, content: ${contentHue})`,
       recipe: mode,
       surface: {
         canvas: { hue: canvasHue, tone: canvasTone, intensity: canvasIntensity },
         grid: { hue: gridHue, tone: gridTone, intensity: gridIntensity },
+        frame: { hue: frameHue, tone: frameTone, intensity: frameIntensity },
         card: { hue: cardHue, tone: cardTone, intensity: cardIntensity },
       },
       text: { hue: contentHue, intensity: textIntensity },
@@ -2021,6 +2050,7 @@ export function GalleryThemeGeneratorContent() {
     }),
     [
       recipeName, mode,
+      frameHue, frameTone, frameIntensity,
       cardHue, cardTone, cardIntensity,
       canvasHue, canvasTone, canvasIntensity,
       gridHue, gridTone, gridIntensity,
@@ -2044,6 +2074,9 @@ export function GalleryThemeGeneratorContent() {
     (r: ThemeRecipe) => {
       setRecipeName(r.name);
       setMode(r.recipe);
+      setFrameHue(r.surface.frame.hue);
+      setFrameTone(r.surface.frame.tone);
+      setFrameIntensity(r.surface.frame.intensity);
       setCardHue(r.surface.card.hue);
       setCardTone(r.surface.card.tone);
       setCardIntensity(r.surface.card.intensity);
@@ -2162,7 +2195,8 @@ export function GalleryThemeGeneratorContent() {
               // Reset tone/intensity to dark-mode defaults from brio
               setCanvasTone(5); setCanvasIntensity(5);
               setGridTone(12); setGridIntensity(4);
-              setCardTone(16); setCardIntensity(12);
+              setFrameTone(16); setFrameIntensity(12);
+              setCardTone(12); setCardIntensity(5);
               setTextIntensity(3);
               setRoleTone(50); setRoleIntensity(50);
               const recipe: ThemeRecipe = {
@@ -2172,7 +2206,8 @@ export function GalleryThemeGeneratorContent() {
                 surface: {
                   canvas: { hue: canvasHue, tone: 5, intensity: 5 },
                   grid: { hue: gridHue, tone: 12, intensity: 4 },
-                  card: { hue: cardHue, tone: 16, intensity: 12 },
+                  frame: { hue: frameHue, tone: 16, intensity: 12 },
+                  card: { hue: cardHue, tone: 12, intensity: 5 },
                 },
                 text: { hue: contentHue, intensity: 3 },
                 role: { tone: 50, intensity: 50, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
@@ -2193,7 +2228,8 @@ export function GalleryThemeGeneratorContent() {
               // Reset tone/intensity to light-mode defaults from harmony
               setCanvasTone(95); setCanvasIntensity(6);
               setGridTone(88); setGridIntensity(5);
-              setCardTone(85); setCardIntensity(35);
+              setFrameTone(85); setFrameIntensity(35);
+              setCardTone(90); setCardIntensity(6);
               setTextIntensity(4);
               setRoleTone(55); setRoleIntensity(60);
               const recipe: ThemeRecipe = {
@@ -2203,7 +2239,8 @@ export function GalleryThemeGeneratorContent() {
                 surface: {
                   canvas: { hue: canvasHue, tone: 95, intensity: 6 },
                   grid: { hue: gridHue, tone: 88, intensity: 5 },
-                  card: { hue: cardHue, tone: 85, intensity: 35 },
+                  frame: { hue: frameHue, tone: 85, intensity: 35 },
+                  card: { hue: cardHue, tone: 90, intensity: 6 },
                 },
                 text: { hue: contentHue, intensity: 4 },
                 role: { tone: 55, intensity: 60, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
@@ -2227,6 +2264,7 @@ export function GalleryThemeGeneratorContent() {
             surface={[
               { key: "canvas", label: "Canvas", hue: canvasHue, tone: canvasTone, intensity: canvasIntensity, setHue: setCanvasHue, setTone: setCanvasTone, setIntensity: setCanvasIntensity, testId: "gtg-canvas-hue" },
               { key: "grid", label: "Grid", hue: gridHue, tone: gridTone, intensity: gridIntensity, setHue: setGridHue, setTone: setGridTone, setIntensity: setGridIntensity, testId: "gtg-grid-hue" },
+              { key: "frame", label: "Frame", hue: frameHue, tone: frameTone, intensity: frameIntensity, setHue: setFrameHue, setTone: setFrameTone, setIntensity: setFrameIntensity, testId: "gtg-frame-hue" },
               { key: "card", label: "Card", hue: cardHue, tone: cardTone, intensity: cardIntensity, setHue: setCardHue, setTone: setCardTone, setIntensity: setCardIntensity, testId: "gtg-card-hue" },
             ]}
             text={{

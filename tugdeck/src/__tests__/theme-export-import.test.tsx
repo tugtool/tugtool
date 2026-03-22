@@ -157,10 +157,16 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(canvas["tone"]).toBe(8);
     expect(canvas["intensity"]).toBe(7);
 
+    // Old surface.card (frame data) migrates to surface.frame in new format
+    const frame = surface["frame"] as Record<string, unknown>;
+    expect(frame["hue"]).toBe("teal");
+    expect(frame["tone"]).toBe(20);
+    expect(frame["intensity"]).toBe(15);
+
+    // New surface.card (card body) gets a default value derived from canvas hue
     const card = surface["card"] as Record<string, unknown>;
+    expect(typeof card).toBe("object");
     expect(card["hue"]).toBe("teal");
-    expect(card["tone"]).toBe(20);
-    expect(card["intensity"]).toBe(15);
 
     const role = legacy["role"] as Record<string, unknown>;
     expect(role["tone"]).toBe(45);
