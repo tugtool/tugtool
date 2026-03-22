@@ -109,6 +109,10 @@ Return structured JSON:
   "halted_for_drift": false,
   "files_created": ["path/to/new.rs"],
   "files_modified": ["path/to/existing.rs"],
+  "diff_stats": {
+    "path/to/new.rs": {"added": 45, "removed": 0},
+    "path/to/existing.rs": {"added": 12, "removed": 3}
+  },
   "checklist_status": {
     "tasks": [
       {"ordinal": 0, "status": "completed"},
@@ -152,6 +156,7 @@ Return structured JSON:
 | `halted_for_drift` | True if implementation was halted due to drift |
 | `files_created` | List of new files created (relative paths) |
 | `files_modified` | List of existing files modified (relative paths) |
+| `diff_stats` | Per-file line counts: `{"path": {"added": N, "removed": N}}` for every file in `files_created` and `files_modified` |
 | `checklist_status` | **REQUIRED**: Per-item checklist reporting for tasks and tests only (see below). Non-authoritative progress telemetry. The orchestrator uses this for progress messages only, never for state updates. Accuracy is best-effort. |
 | `checklist_status.tasks` | Array of task status entries with ordinal (0-indexed) and status |
 | `checklist_status.tests` | Array of test status entries with ordinal (0-indexed) and status |
@@ -266,6 +271,16 @@ After running build, tests, lint, and checkpoints, map each plan task and test t
 - For each test in the plan step: create an entry `{"ordinal": N, "status": "completed"}` if the test passed, or `{"ordinal": N, "status": "deferred", "reason": "..."}` if it needs manual review
 
 **IMPORTANT:** Do NOT report checkpoint status in `checklist_status`. Checkpoints are verified by the reviewer and are not part of the coder's output contract.
+
+**5f. Compute diff_stats:**
+
+After all implementation is complete, compute per-file line counts using `git diff --numstat`:
+
+```bash
+git -C {worktree_path} diff --numstat HEAD
+```
+
+This outputs lines like `12\t3\tpath/to/file.rs` (added, removed, path). For each file in `files_created` and `files_modified`, populate the `diff_stats` map with `{"added": N, "removed": N}`. If a file doesn't appear in the numstat output (e.g., already staged), use `git -C {worktree_path} diff --numstat --cached HEAD` instead.
 
 ---
 

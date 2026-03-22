@@ -86,10 +86,10 @@ Output once per step, before the architect call:
 ```
 **tugplug:coder-agent**(Complete)
   Created files ({files_created.length}):
-    - {file1}
-    - {file2}
+    - {file1} (+{added}/-{removed})
+    - {file2} (+{added}/-{removed})
   Modified files ({files_modified.length}):
-    - {file3}
+    - {file3} (+{added}/-{removed})
   Build: {build.exit_code == 0 ? "pass" : "FAIL"} | Tasks: {tasks_completed}/{tasks_total} | Tests: {tests_completed}/{tests_total} | Lint: {lint ? (lint.exit_code == 0 ? "pass" : "FAIL") : "n/a"}
   Drift: {drift_severity} | {drift_budget.yellow_used}/{drift_budget.yellow_max} yellow | {drift_budget.red_used}/{drift_budget.red_max} red
 ```
@@ -1096,6 +1096,7 @@ When you receive an agent response:
   "halted_for_drift": boolean (required),
   "files_created": array (required),
   "files_modified": array (required),
+  "diff_stats": object (required: per-file {"added": N, "removed": N}),
   "checklist_status": object (required: tasks, tests),
   "build_and_test_report": object (required: build, test, lint, checkpoints),
   "drift_assessment": object (required: drift_severity, expected_files, actual_changes, unexpected_changes, drift_budget, qualitative_assessment)
