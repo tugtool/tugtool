@@ -318,6 +318,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-bottom: 32px;
 }
 
 /* Subsection title — lighter than cg-section-title */
@@ -336,19 +337,23 @@
  * --gtg-erp-cols is set inline from JS (5 for buttons, 7 for badges).
  * First column is the row-label column; remaining columns are role cells.
  */
-.gtg-erp-grid {
+/* Buttons: 1 row-label + 4 role columns */
+.gtg-erp-button-grid {
   display: grid;
-  grid-template-columns: 52px repeat(var(--gtg-erp-cols, 5), minmax(48px, 1fr));
+  grid-template-columns: 52px repeat(4, minmax(48px, 1fr));
   gap: 4px;
   overflow-x: auto;
 }
 
-/* Empty top-left corner cell */
-.gtg-erp-corner {
-  /* intentionally empty */
+/* Badges: 1 row-label + 7 role columns */
+.gtg-erp-badge-grid {
+  display: grid;
+  grid-template-columns: 52px repeat(7, minmax(48px, 1fr));
+  gap: 4px;
+  overflow-x: auto;
 }
 
-/* Column header (role name) */
+/* Column header (role name) — used in selection controls row */
 /* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .gtg-erp-col-label {
   font-size: 9px;
@@ -357,10 +362,6 @@
   text-align: center;
   user-select: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  align-self: end;
-  padding-bottom: 2px;
 }
 
 /* Row header (emphasis name) */
