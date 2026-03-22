@@ -22,7 +22,8 @@ import {
   buildIntensityGradient,
   valueFromPointerX,
 } from "@/components/tugways/tug-color-strip";
-import { HUE_FAMILIES, MAX_CHROMA_FOR_HUE, PEAK_C_SCALE } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES, MAX_CHROMA_FOR_HUE, PEAK_C_SCALE, resolveHyphenatedHue } from "@/components/tugways/palette-engine";
+import { themeColorSpecToOklch, EXAMPLE_RECIPES } from "@/components/tugways/theme-engine";
 
 // ---------------------------------------------------------------------------
 // buildToneGradient unit tests
@@ -386,5 +387,71 @@ describe("TugIntensityStrip – render", () => {
       fireEvent.pointerDown(strip, { clientX: 0, pointerId: 1 });
     });
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// themeColorSpecToOklch unit tests [D06]
+// ---------------------------------------------------------------------------
+
+describe("themeColorSpecToOklch – oklch() CSS string from ThemeColorSpec", () => {
+  it("returns a string matching oklch() format for a simple hue name", () => {
+    const result = themeColorSpecToOklch({ hue: "blue", tone: 50, intensity: 50 });
+    expect(result).toMatch(/^oklch\(\d+(\.\d+)? \d+(\.\d+)? \d+(\.\d+)?\)$/);
+  });
+
+  it("uses the correct hue angle from HUE_FAMILIES for 'blue'", () => {
+    const result = themeColorSpecToOklch({ hue: "blue", tone: 50, intensity: 50 });
+    const angle = HUE_FAMILIES["blue"];
+    expect(result).toContain(` ${angle})`);
+  });
+
+  it("intensity 0 produces C = 0 (achromatic)", () => {
+    const result = themeColorSpecToOklch({ hue: "blue", tone: 50, intensity: 0 });
+    const parts = result.replace("oklch(", "").replace(")", "").trim().split(" ");
+    expect(parseFloat(parts[1])).toBe(0);
+  });
+
+  it("intensity 100 produces maximum chroma for the hue", () => {
+    const hue = "blue";
+    const maxC = MAX_CHROMA_FOR_HUE[hue];
+    const expected = maxC * PEAK_C_SCALE;
+    const result = themeColorSpecToOklch({ hue, tone: 50, intensity: 100 });
+    const parts = result.replace("oklch(", "").replace(")", "").trim().split(" ");
+    expect(parseFloat(parts[1])).toBeCloseTo(expected, 3);
+  });
+
+  it("handles compound hue name 'indigo-violet' without throwing", () => {
+    expect(() => themeColorSpecToOklch({ hue: "indigo-violet", tone: 12, intensity: 4 })).not.toThrow();
+  });
+
+  it("compound hue 'indigo-violet' uses the correct blended hue angle", () => {
+    const result = themeColorSpecToOklch({ hue: "indigo-violet", tone: 12, intensity: 4 });
+    // "indigo-violet" blends indigo (260) and violet (270) via resolveHyphenatedHue
+    const expectedAngle = resolveHyphenatedHue("indigo", "violet");
+    expect(result).toContain(` ${expectedAngle})`);
+  });
+
+  it("brio grid spec (indigo-violet, tone 12, intensity 4) produces a valid oklch() string", () => {
+    const spec = EXAMPLE_RECIPES.brio.surface.grid;
+    const result = themeColorSpecToOklch(spec);
+    expect(result).toMatch(/^oklch\(/);
+    expect(result).not.toContain("NaN");
+  });
+
+  it("harmony grid spec (indigo-violet, tone 88, intensity 5) produces a valid oklch() string", () => {
+    const spec = EXAMPLE_RECIPES.harmony.surface.grid;
+    const result = themeColorSpecToOklch(spec);
+    expect(result).toMatch(/^oklch\(/);
+    expect(result).not.toContain("NaN");
+  });
+
+  it("brio grid spec produces a darker color than harmony grid spec (lower L)", () => {
+    const brioResult = themeColorSpecToOklch(EXAMPLE_RECIPES.brio.surface.grid);
+    const harmonyResult = themeColorSpecToOklch(EXAMPLE_RECIPES.harmony.surface.grid);
+    const brioL = parseFloat(brioResult.replace("oklch(", "").split(" ")[0]);
+    const harmonyL = parseFloat(harmonyResult.replace("oklch(", "").split(" ")[0]);
+    // Brio tone 12 should be darker (lower L) than harmony tone 88
+    expect(brioL).toBeLessThan(harmonyL);
   });
 });

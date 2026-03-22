@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-22T00:33:33Z
+---
+
+## step-5: Added themeColorSpecToOklch helper converting ThemeColorSpec to oklch() CSS string. Wired grid line color into Theme Generator preview, tug-dock.css fallback, theme-provider setTheme/applyInitialTheme, and CSS export. Added unit and integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
 step: step-4
 date: 2025-03-22T00:17:26Z
 ---

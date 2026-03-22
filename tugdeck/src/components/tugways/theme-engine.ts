@@ -1262,6 +1262,35 @@ export function primaryColorName(hueExpr: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// themeColorSpecToOklch — convert a ThemeColorSpec to an oklch() CSS string
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a ThemeColorSpec to an `oklch(L C H)` CSS string.
+ *
+ * Uses the same OKLCH math as the palette engine:
+ *   - Hue angle: resolved from HUE_FAMILIES (supports compound names like "indigo-violet")
+ *   - L: computed via toneToL() using the primary color name (for DEFAULT_CANONICAL_L lookup)
+ *   - C: (MAX_CHROMA_FOR_HUE[primaryName] ?? 0.022) * PEAK_C_SCALE * (intensity / 100)
+ *
+ * The primary color name (first segment of a hyphenated expression) is used for
+ * DEFAULT_CANONICAL_L and MAX_CHROMA_FOR_HUE lookups because those tables are
+ * indexed by single-word hue names.
+ *
+ * Exported for use in theme-provider.tsx and gallery-theme-generator-content.tsx. [D06]
+ */
+export function themeColorSpecToOklch(spec: ThemeColorSpec): string {
+  const primaryName = primaryColorName(spec.hue);
+  const angle = resolveHueAngle(spec.hue);
+  const L = toneToL(spec.tone, primaryName);
+  const maxC = MAX_CHROMA_FOR_HUE[primaryName] ?? MAX_CHROMA_FOR_HUE[spec.hue] ?? 0.022;
+  const C = maxC * PEAK_C_SCALE * (spec.intensity / 100);
+  const Lf = parseFloat(L.toFixed(4));
+  const Cf = parseFloat(C.toFixed(4));
+  return `oklch(${Lf} ${Cf} ${angle})`;
+}
+
+// ---------------------------------------------------------------------------
 // resolveHueSlots — Layer 1: recipe -> ResolvedHueSlots (Spec S02)
 // ---------------------------------------------------------------------------
 
