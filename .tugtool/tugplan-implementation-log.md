@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-03-22T21:03:30Z
+---
+
+## step-11: Verification checkpoint: confirmed dynamic theme switching, canvas color derivation, Bluenote removal; 1783 tests pass, audit:tokens clean
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-10
 date: 2025-03-22T20:56:46Z
 ---
