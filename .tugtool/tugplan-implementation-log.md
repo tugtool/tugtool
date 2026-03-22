@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-22T00:17:26Z
+---
+
+## step-4: Replaced CompactHuePicker instances with TugHueStrip + TugToneStrip + TugIntensityStrip for surfaces, TugHueStrip + TugIntensityStrip for text, shared tone/intensity strips for roles. Added useState hooks for all new fields. Updated recipe construction, loadPreset, handleRecipeImported, and tests.
+
+**Files changed:**
+- .tugtool/tugplan-fully-specified-theme-colors.md
+
+---
+
+---
 step: step-3
 date: 2025-03-21T23:57:34Z
 ---

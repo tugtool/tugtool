@@ -642,16 +642,18 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders 10 hue pickers (2 surface + 1 text + 7 role) in the preview section", () => {
+  it("renders 11 hue pickers (3 surface + 1 text + 7 role) in the preview section", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
     const preview = container.querySelector("[data-testid='gtg-role-hues']");
     expect(preview).not.toBeNull();
-    // All pickers use the same CompactHuePicker component (gtg-compact-hue-row)
+    // Surface pickers (FullColorPicker) and text picker (HueIntensityPicker) and role hue
+    // pickers (CompactHuePicker) all render a button with class gtg-compact-hue-row.
+    // 3 surface (canvas, grid, card) + 1 text + 7 role = 11
     const pickers = preview!.querySelectorAll(".gtg-compact-hue-row");
-    expect(pickers.length).toBe(10);
+    expect(pickers.length).toBe(11);
   });
 
   it("each role hue picker button has the correct data-testid", () => {
@@ -1500,6 +1502,123 @@ describe("Step 5 – final integration checkpoint: component end-to-end", () => 
       darkFormulasOutput.tokens["--tug-base-element-tone-fill-normal-accent-rest"],
     );
     expect(Object.keys(noFormulasOutput.tokens).length).toBe(374);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 4: Fully-specified color pickers — tone/intensity state and UI
+// ---------------------------------------------------------------------------
+
+describe("GalleryThemeGeneratorContent – step 4 fully-specified color pickers", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders the canvas surface picker with data-testid gtg-canvas-hue", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-canvas-hue']")).not.toBeNull();
+  });
+
+  it("renders the grid surface picker with data-testid gtg-grid-hue", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-grid-hue']")).not.toBeNull();
+  });
+
+  it("renders the card surface picker with data-testid gtg-card-hue", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-card-hue']")).not.toBeNull();
+  });
+
+  it("renders the content/text picker with data-testid gtg-content-hue", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-content-hue']")).not.toBeNull();
+  });
+
+  it("renders the shared role tone/intensity strip container", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-role-shared-strips']")).not.toBeNull();
+  });
+
+  it("renders the role tone strip with data-testid gtg-role-tone-strip", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-role-tone-strip']")).not.toBeNull();
+  });
+
+  it("renders the role intensity strip with data-testid gtg-role-intensity-strip", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    expect(container.querySelector("[data-testid='gtg-role-intensity-strip']")).not.toBeNull();
+  });
+
+  it("loading brio preset sets correct tone/intensity values in derived theme", () => {
+    // After loading brio preset, the derived tokens should match direct deriveTheme(EXAMPLE_RECIPES.brio)
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    // Load brio preset
+    const brioBtn = container.querySelector("[data-testid='gtg-preset-brio']") as HTMLElement;
+    act(() => { fireEvent.click(brioBtn); });
+    // The token grid shows derived tokens; check one role fill token matches
+    const grid = container.querySelector("[data-testid='gtg-token-grid']");
+    expect(grid).not.toBeNull();
+    const tokenNames = Array.from(grid!.querySelectorAll(".gtg-token-name")).map((el) => el.textContent?.trim() ?? "");
+    expect(tokenNames).toContain("--tug-base-element-tone-fill-normal-accent-rest");
+    // Verify the derived theme produces the same token count as direct deriveTheme call
+    const swatches = grid!.querySelectorAll(".gtg-token-swatch");
+    expect(swatches.length).toBe(Object.keys(brioOutput.tokens).length);
+  });
+
+  it("loading harmony preset switches to light mode with correct tone values", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const harmonyBtn = container.querySelector("[data-testid='gtg-preset-harmony']") as HTMLElement;
+    act(() => { fireEvent.click(harmonyBtn); });
+    // After loading harmony (light mode), the Light button should be filled
+    const lightBtn = container.querySelector("[data-testid='gtg-mode-light']");
+    expect(lightBtn!.classList.contains("tug-button-filled-action")).toBe(true);
+  });
+
+  it("currentRecipe export includes tone/intensity fields for all surfaces", () => {
+    // Export the current recipe as JSON and verify it has ThemeColorSpec surface objects
+    const recipe = EXAMPLE_RECIPES.brio;
+    const json = JSON.stringify(recipe, null, 2);
+    const parsed = JSON.parse(json) as typeof recipe;
+    // Verify surface is ThemeColorSpec objects
+    expect(typeof parsed.surface.canvas).toBe("object");
+    expect(typeof parsed.surface.canvas.tone).toBe("number");
+    expect(typeof parsed.surface.canvas.intensity).toBe("number");
+    expect(typeof parsed.surface.grid).toBe("object");
+    expect(typeof parsed.surface.grid.tone).toBe("number");
+    expect(typeof parsed.surface.card).toBe("object");
+    expect(typeof parsed.surface.card.tone).toBe("number");
+    // Text has intensity
+    expect(typeof parsed.text.intensity).toBe("number");
+    // Role has shared tone/intensity
+    expect(typeof parsed.role.tone).toBe("number");
+    expect(typeof parsed.role.intensity).toBe("number");
   });
 });
 

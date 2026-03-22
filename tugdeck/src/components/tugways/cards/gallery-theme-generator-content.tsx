@@ -53,6 +53,7 @@ import {
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { TugButton } from "@/components/tugways/tug-button";
 import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
+import { TugToneStrip, TugIntensityStrip } from "@/components/tugways/tug-color-strip";
 import type { TugButtonEmphasis, TugButtonRole } from "@/components/tugways/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import type { TugBadgeEmphasis, TugBadgeRole } from "@/components/tugways/tug-badge";
@@ -199,6 +200,208 @@ function CompactHuePicker({
             selectedHue={selectedHue}
             onSelectHue={handleSelect}
           />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FullColorPicker — compact row that opens a popover with hue + tone + intensity strips
+// ---------------------------------------------------------------------------
+
+/**
+ * FullColorPicker — a compact row showing label, color chip, and hue name.
+ * Clicking opens a Radix Popover with TugHueStrip, TugToneStrip, and TugIntensityStrip.
+ *
+ * Used for surface picks (canvas, grid, card) where all three values are designer-controlled.
+ */
+function FullColorPicker({
+  label,
+  selectedHue,
+  tone,
+  intensity,
+  onSelectHue,
+  onChangeTone,
+  onChangeIntensity,
+  testId,
+  actualColor,
+}: {
+  label: string;
+  selectedHue: string;
+  tone: number;
+  intensity: number;
+  onSelectHue: (hue: string) => void;
+  onChangeTone: (tone: number) => void;
+  onChangeIntensity: (intensity: number) => void;
+  testId: string;
+  actualColor?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
+
+  const handleSelectHue = useCallback(
+    (hue: string) => {
+      onSelectHue(hue);
+    },
+    [onSelectHue],
+  );
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          className="gtg-compact-hue-row"
+          data-testid={testId}
+          aria-label={`${label}: ${selectedHue}, tone ${tone}, intensity ${intensity}. Click to change.`}
+          type="button"
+        >
+          <span className="gtg-compact-hue-label">{label}</span>
+          <span
+            className="gtg-compact-hue-chip"
+            style={{ backgroundColor: swatchColor }}
+            aria-hidden="true"
+          />
+          <span className="gtg-compact-hue-name">{selectedHue}</span>
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          className="gtg-full-color-popover"
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          collisionPadding={8}
+        >
+          <div className="gtg-full-color-popover-inner">
+            <div className="gtg-full-color-strip-row">
+              <span className="gtg-full-color-strip-label">Hue</span>
+              <div className="gtg-full-color-strip-track">
+                <TugHueStrip
+                  selectedHue={selectedHue}
+                  onSelectHue={handleSelectHue}
+                />
+              </div>
+            </div>
+            <div className="gtg-full-color-strip-row">
+              <span className="gtg-full-color-strip-label">Tone</span>
+              <div className="gtg-full-color-strip-track">
+                <TugToneStrip
+                  hue={selectedHue}
+                  intensity={intensity}
+                  value={tone}
+                  onChange={onChangeTone}
+                  data-testid={`${testId}-tone`}
+                />
+              </div>
+            </div>
+            <div className="gtg-full-color-strip-row">
+              <span className="gtg-full-color-strip-label">Intensity</span>
+              <div className="gtg-full-color-strip-track">
+                <TugIntensityStrip
+                  hue={selectedHue}
+                  tone={tone}
+                  value={intensity}
+                  onChange={onChangeIntensity}
+                  data-testid={`${testId}-intensity`}
+                />
+              </div>
+            </div>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// HueIntensityPicker — compact row that opens a popover with hue + intensity strips
+// ---------------------------------------------------------------------------
+
+/**
+ * HueIntensityPicker — compact row for text picks (hue + intensity, no tone strip).
+ * Clicking opens a Radix Popover with TugHueStrip and TugIntensityStrip.
+ *
+ * Text tone is derived via contrastSearch — never designer-specified.
+ */
+function HueIntensityPicker({
+  label,
+  selectedHue,
+  intensity,
+  onSelectHue,
+  onChangeIntensity,
+  testId,
+  actualColor,
+}: {
+  label: string;
+  selectedHue: string;
+  intensity: number;
+  onSelectHue: (hue: string) => void;
+  onChangeIntensity: (intensity: number) => void;
+  testId: string;
+  actualColor?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
+  // Use a representative mid-tone for the intensity strip gradient in text picker
+  const REPRESENTATIVE_TONE = 50;
+
+  const handleSelectHue = useCallback(
+    (hue: string) => {
+      onSelectHue(hue);
+    },
+    [onSelectHue],
+  );
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          className="gtg-compact-hue-row"
+          data-testid={testId}
+          aria-label={`${label}: ${selectedHue}, intensity ${intensity}. Click to change.`}
+          type="button"
+        >
+          <span className="gtg-compact-hue-label">{label}</span>
+          <span
+            className="gtg-compact-hue-chip"
+            style={{ backgroundColor: swatchColor }}
+            aria-hidden="true"
+          />
+          <span className="gtg-compact-hue-name">{selectedHue}</span>
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          className="gtg-full-color-popover"
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          collisionPadding={8}
+        >
+          <div className="gtg-full-color-popover-inner">
+            <div className="gtg-full-color-strip-row">
+              <span className="gtg-full-color-strip-label">Hue</span>
+              <div className="gtg-full-color-strip-track">
+                <TugHueStrip
+                  selectedHue={selectedHue}
+                  onSelectHue={handleSelectHue}
+                />
+              </div>
+            </div>
+            <div className="gtg-full-color-strip-row">
+              <span className="gtg-full-color-strip-label">Intensity</span>
+              <div className="gtg-full-color-strip-track">
+                <TugIntensityStrip
+                  hue={selectedHue}
+                  tone={REPRESENTATIVE_TONE}
+                  value={intensity}
+                  onChange={onChangeIntensity}
+                  data-testid={`${testId}-intensity`}
+                />
+              </div>
+            </div>
+          </div>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -1245,25 +1448,56 @@ const SELECTION_ROLES: TugCheckboxRole[] = [
 ];
 
 /**
- * ThemePreviewCard — annotated preview with surface/element/role color chips
- * overlaid on the elements they control.
+ * ThemePreviewCard — annotated preview with surface/text/role color pickers.
+ *
+ * Surface picks (canvas, grid, card) use FullColorPicker (hue + tone + intensity).
+ * Text pick uses HueIntensityPicker (hue + intensity; tone is derived).
+ * Role section has shared TugToneStrip + TugIntensityStrip plus 7 CompactHuePicker rows.
+ *
  * Uses real tugcard/tug-tab CSS classes. [D08, D09]
  */
 function ThemePreviewCard({
   resolvedColor,
   surface,
-  element,
+  text,
   roles,
-  moodSliders,
+  roleTone,
+  roleIntensity,
+  onRoleToneChange,
+  onRoleIntensityChange,
   liveTokenStyle,
 }: {
   resolvedColor: (key: string) => string;
-  surface: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
-  element: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
+  surface: Array<{
+    key: string;
+    label: string;
+    hue: string;
+    tone: number;
+    intensity: number;
+    setHue: (h: string) => void;
+    setTone: (t: number) => void;
+    setIntensity: (i: number) => void;
+    testId: string;
+  }>;
+  text: {
+    key: string;
+    label: string;
+    hue: string;
+    intensity: number;
+    setHue: (h: string) => void;
+    setIntensity: (i: number) => void;
+    testId: string;
+  };
   roles: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
-  moodSliders: React.ReactNode;
+  roleTone: number;
+  roleIntensity: number;
+  onRoleToneChange: (t: number) => void;
+  onRoleIntensityChange: (i: number) => void;
   liveTokenStyle: React.CSSProperties;
 }) {
+  // Representative role hue for the shared tone/intensity strips (use accent hue)
+  const roleRepresentativeHue = roles[0]?.hue ?? "blue";
+
   return (
     <div className="gtg-annotated-preview" data-testid="gtg-theme-preview">
 
@@ -1332,29 +1566,71 @@ function ThemePreviewCard({
         </div>
       </div>
 
-      {/* ---- Right: surface / element / role columns, mood sliders below ---- */}
+      {/* ---- Right: surface / text / role columns ---- */}
       <div className="gtg-right-panel">
         <div className="gtg-hue-sidebars">
           <div className="gtg-hue-sidebar">
             <div className="gtg-hue-column-title">Surface</div>
-            {surface.map(({ key, label, hue, set, testId }) => (
-              <CompactHuePicker key={testId} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
+            {surface.map(({ key, label, hue, tone, intensity, setHue, setTone, setIntensity, testId }) => (
+              <FullColorPicker
+                key={testId}
+                label={label}
+                selectedHue={hue}
+                tone={tone}
+                intensity={intensity}
+                onSelectHue={setHue}
+                onChangeTone={setTone}
+                onChangeIntensity={setIntensity}
+                testId={testId}
+                actualColor={resolvedColor(key)}
+              />
             ))}
           </div>
           <div className="gtg-hue-sidebar">
-            <div className="gtg-hue-column-title">Element</div>
-            {element.map(({ key, label, hue, set, testId }) => (
-              <CompactHuePicker key={testId} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
-            ))}
+            <div className="gtg-hue-column-title">Text</div>
+            <HueIntensityPicker
+              label={text.label}
+              selectedHue={text.hue}
+              intensity={text.intensity}
+              onSelectHue={text.setHue}
+              onChangeIntensity={text.setIntensity}
+              testId={text.testId}
+              actualColor={resolvedColor(text.key)}
+            />
           </div>
-          <div className="gtg-hue-sidebar">
+          <div className="gtg-hue-sidebar gtg-hue-sidebar--roles">
             <div className="gtg-hue-column-title">Roles</div>
+            <div className="gtg-role-shared-strips" data-testid="gtg-role-shared-strips">
+              <div className="gtg-full-color-strip-row">
+                <span className="gtg-full-color-strip-label">Tone</span>
+                <div className="gtg-full-color-strip-track">
+                  <TugToneStrip
+                    hue={roleRepresentativeHue}
+                    intensity={roleIntensity}
+                    value={roleTone}
+                    onChange={onRoleToneChange}
+                    data-testid="gtg-role-tone-strip"
+                  />
+                </div>
+              </div>
+              <div className="gtg-full-color-strip-row">
+                <span className="gtg-full-color-strip-label">Intensity</span>
+                <div className="gtg-full-color-strip-track">
+                  <TugIntensityStrip
+                    hue={roleRepresentativeHue}
+                    tone={roleTone}
+                    value={roleIntensity}
+                    onChange={onRoleIntensityChange}
+                    data-testid="gtg-role-intensity-strip"
+                  />
+                </div>
+              </div>
+            </div>
             {roles.map(({ key, label, hue, set, testId }) => (
               <CompactHuePicker key={key} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
             ))}
           </div>
         </div>
-        {moodSliders}
       </div>
     </div>
   );
@@ -1488,8 +1764,20 @@ export function GalleryThemeGeneratorContent() {
   // Surface hue state
   const [cardHue, setCardHue] = useState<string>(DEFAULT_RECIPE.surface.card.hue);
   const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.surface.canvas.hue);
+  // Surface tone and intensity state
+  const [canvasTone, setCanvasTone] = useState<number>(DEFAULT_RECIPE.surface.canvas.tone);
+  const [canvasIntensity, setCanvasIntensity] = useState<number>(DEFAULT_RECIPE.surface.canvas.intensity);
+  const [gridHue, setGridHue] = useState<string>(DEFAULT_RECIPE.surface.grid.hue);
+  const [gridTone, setGridTone] = useState<number>(DEFAULT_RECIPE.surface.grid.tone);
+  const [gridIntensity, setGridIntensity] = useState<number>(DEFAULT_RECIPE.surface.grid.intensity);
+  const [cardTone, setCardTone] = useState<number>(DEFAULT_RECIPE.surface.card.tone);
+  const [cardIntensity, setCardIntensity] = useState<number>(DEFAULT_RECIPE.surface.card.intensity);
   // Text hue state (replaces element.content)
   const [contentHue, setContentHue] = useState<string>(DEFAULT_RECIPE.text.hue);
+  const [textIntensity, setTextIntensity] = useState<number>(DEFAULT_RECIPE.text.intensity);
+  // Role shared tone and intensity
+  const [roleTone, setRoleTone] = useState<number>(DEFAULT_RECIPE.role.tone);
+  const [roleIntensity, setRoleIntensity] = useState<number>(DEFAULT_RECIPE.role.intensity);
 
   // Formula state — null means use deriveTheme() defaults; non-null
   // means the user has explicitly provided formulas (escape hatch path per [D06]).
@@ -1616,8 +1904,18 @@ export function GalleryThemeGeneratorContent() {
       n: string,
       m: "dark" | "light",
       card: string,
+      cTone: number,
+      cIntensity: number,
       canvas: string,
+      cvTone: number,
+      cvIntensity: number,
+      gHue: string,
+      gTone: number,
+      gIntensity: number,
       content: string,
+      tIntensity: number,
+      rTone: number,
+      rIntensity: number,
       accent: string,
       active: string,
       agent: string,
@@ -1626,28 +1924,17 @@ export function GalleryThemeGeneratorContent() {
       caution: string,
       danger: string,
     ) => {
-      // Use mode-dependent defaults for tone/intensity (Step 4 will add per-field state)
-      const isDark = m === "dark";
-      const canvasTone = isDark ? 5 : 95;
-      const canvasIntensity = isDark ? 5 : 6;
-      const gridTone = isDark ? 12 : 88;
-      const gridIntensity = isDark ? 4 : 5;
-      const cardTone = isDark ? 16 : 85;
-      const cardIntensity = isDark ? 12 : 35;
-      const textIntensity = isDark ? 3 : 4;
-      const roleTone = isDark ? 50 : 55;
-      const roleIntensity = isDark ? 50 : 60;
       const recipe: ThemeRecipe = {
         name: n,
         description: `Generated theme (${m} mode, card: ${card}, content: ${content})`,
         recipe: m,
         surface: {
-          canvas: { hue: canvas, tone: canvasTone, intensity: canvasIntensity },
-          grid: { hue: canvas, tone: gridTone, intensity: gridIntensity },
-          card: { hue: card, tone: cardTone, intensity: cardIntensity },
+          canvas: { hue: canvas, tone: cvTone, intensity: cvIntensity },
+          grid: { hue: gHue, tone: gTone, intensity: gIntensity },
+          card: { hue: card, tone: cTone, intensity: cIntensity },
         },
-        text: { hue: content, intensity: textIntensity },
-        role: { tone: roleTone, intensity: roleIntensity, accent, action: active, agent, data, success, caution, danger },
+        text: { hue: content, intensity: tIntensity },
+        role: { tone: rTone, intensity: rIntensity, accent, action: active, agent, data, success, caution, danger },
         ...(formulasRef.current !== null ? { formulas: formulasRef.current } : {}),
       };
       setThemeOutput(deriveTheme(recipe));
@@ -1656,13 +1943,30 @@ export function GalleryThemeGeneratorContent() {
   );
 
   /**
-   * Re-derive theme when mode or hue changes (no debounce needed — these are
-   * discrete picks, not continuous drags).
+   * Re-derive theme when any recipe field changes.
+   * Hue changes are discrete picks; tone/intensity changes arrive on every drag
+   * frame and derive immediately (no debounce — deriveTheme is synchronous and fast).
    */
   useEffect(() => {
-    runDerive(recipeName, mode, cardHue, canvasHue, contentHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
+    runDerive(
+      recipeName, mode,
+      cardHue, cardTone, cardIntensity,
+      canvasHue, canvasTone, canvasIntensity,
+      gridHue, gridTone, gridIntensity,
+      contentHue, textIntensity,
+      roleTone, roleIntensity,
+      accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, cardHue, canvasHue, contentHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas]);
+  }, [
+    mode, cardHue, cardTone, cardIntensity,
+    canvasHue, canvasTone, canvasIntensity,
+    gridHue, gridTone, gridIntensity,
+    contentHue, textIntensity,
+    roleTone, roleIntensity,
+    accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
+    formulas,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Preset load helpers
@@ -1674,8 +1978,18 @@ export function GalleryThemeGeneratorContent() {
       setRecipeName(r.name);
       setMode(r.recipe);
       setCardHue(r.surface.card.hue);
+      setCardTone(r.surface.card.tone);
+      setCardIntensity(r.surface.card.intensity);
       setCanvasHue(r.surface.canvas.hue);
+      setCanvasTone(r.surface.canvas.tone);
+      setCanvasIntensity(r.surface.canvas.intensity);
+      setGridHue(r.surface.grid.hue);
+      setGridTone(r.surface.grid.tone);
+      setGridIntensity(r.surface.grid.intensity);
       setContentHue(r.text.hue);
+      setTextIntensity(r.text.intensity);
+      setRoleTone(r.role.tone);
+      setRoleIntensity(r.role.intensity);
       setAccentHue(r.role.accent);
       setActiveHue(r.role.action);
       setAgentHue(r.role.agent);
@@ -1707,32 +2021,29 @@ export function GalleryThemeGeneratorContent() {
    * When formulas state is non-null, the recipe uses the escape-hatch formulas. [D06]
    */
   const currentRecipe = useMemo<ThemeRecipe>(
-    () => {
-      const isDark = mode === "dark";
-      const canvasTone = isDark ? 5 : 95;
-      const canvasIntensity = isDark ? 5 : 6;
-      const gridTone = isDark ? 12 : 88;
-      const gridIntensity = isDark ? 4 : 5;
-      const cardTone = isDark ? 16 : 85;
-      const cardIntensity = isDark ? 12 : 35;
-      const textIntensity = isDark ? 3 : 4;
-      const roleTone = isDark ? 50 : 55;
-      const roleIntensity = isDark ? 50 : 60;
-      return {
-        name: recipeName,
-        description: `Generated theme (${mode} mode, card: ${cardHue}, content: ${contentHue})`,
-        recipe: mode,
-        surface: {
-          canvas: { hue: canvasHue, tone: canvasTone, intensity: canvasIntensity },
-          grid: { hue: canvasHue, tone: gridTone, intensity: gridIntensity },
-          card: { hue: cardHue, tone: cardTone, intensity: cardIntensity },
-        },
-        text: { hue: contentHue, intensity: textIntensity },
-        role: { tone: roleTone, intensity: roleIntensity, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-        ...(formulas !== null ? { formulas } : {}),
-      };
-    },
-    [recipeName, mode, cardHue, canvasHue, contentHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue, formulas],
+    () => ({
+      name: recipeName,
+      description: `Generated theme (${mode} mode, card: ${cardHue}, content: ${contentHue})`,
+      recipe: mode,
+      surface: {
+        canvas: { hue: canvasHue, tone: canvasTone, intensity: canvasIntensity },
+        grid: { hue: gridHue, tone: gridTone, intensity: gridIntensity },
+        card: { hue: cardHue, tone: cardTone, intensity: cardIntensity },
+      },
+      text: { hue: contentHue, intensity: textIntensity },
+      role: { tone: roleTone, intensity: roleIntensity, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
+      ...(formulas !== null ? { formulas } : {}),
+    }),
+    [
+      recipeName, mode,
+      cardHue, cardTone, cardIntensity,
+      canvasHue, canvasTone, canvasIntensity,
+      gridHue, gridTone, gridIntensity,
+      contentHue, textIntensity,
+      roleTone, roleIntensity,
+      accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
+      formulas,
+    ],
   );
 
   /**
@@ -1749,8 +2060,18 @@ export function GalleryThemeGeneratorContent() {
       setRecipeName(r.name);
       setMode(r.recipe);
       setCardHue(r.surface.card.hue);
+      setCardTone(r.surface.card.tone);
+      setCardIntensity(r.surface.card.intensity);
       setCanvasHue(r.surface.canvas.hue);
+      setCanvasTone(r.surface.canvas.tone);
+      setCanvasIntensity(r.surface.canvas.intensity);
+      setGridHue(r.surface.grid.hue);
+      setGridTone(r.surface.grid.tone);
+      setGridIntensity(r.surface.grid.intensity);
       setContentHue(r.text.hue);
+      setTextIntensity(r.text.intensity);
+      setRoleTone(r.role.tone);
+      setRoleIntensity(r.role.intensity);
       setAccentHue(r.role.accent);
       setActiveHue(r.role.action);
       setAgentHue(r.role.agent);
@@ -1853,13 +2174,19 @@ export function GalleryThemeGeneratorContent() {
             onClick={() => {
               setMode("dark");
               setFormulasAndRef(null);
+              // Reset tone/intensity to dark-mode defaults from brio
+              setCanvasTone(5); setCanvasIntensity(5);
+              setGridTone(12); setGridIntensity(4);
+              setCardTone(16); setCardIntensity(12);
+              setTextIntensity(3);
+              setRoleTone(50); setRoleIntensity(50);
               const recipe: ThemeRecipe = {
                 name: recipeName,
                 description: `Generated theme (dark mode)`,
                 recipe: "dark",
                 surface: {
                   canvas: { hue: canvasHue, tone: 5, intensity: 5 },
-                  grid: { hue: canvasHue, tone: 12, intensity: 4 },
+                  grid: { hue: gridHue, tone: 12, intensity: 4 },
                   card: { hue: cardHue, tone: 16, intensity: 12 },
                 },
                 text: { hue: contentHue, intensity: 3 },
@@ -1878,13 +2205,19 @@ export function GalleryThemeGeneratorContent() {
             onClick={() => {
               setMode("light");
               setFormulasAndRef(null);
+              // Reset tone/intensity to light-mode defaults from harmony
+              setCanvasTone(95); setCanvasIntensity(6);
+              setGridTone(88); setGridIntensity(5);
+              setCardTone(85); setCardIntensity(35);
+              setTextIntensity(4);
+              setRoleTone(55); setRoleIntensity(60);
               const recipe: ThemeRecipe = {
                 name: recipeName,
                 description: `Generated theme (light mode)`,
                 recipe: "light",
                 surface: {
                   canvas: { hue: canvasHue, tone: 95, intensity: 6 },
-                  grid: { hue: canvasHue, tone: 88, intensity: 5 },
+                  grid: { hue: gridHue, tone: 88, intensity: 5 },
                   card: { hue: cardHue, tone: 85, intensity: 35 },
                 },
                 text: { hue: contentHue, intensity: 4 },
@@ -1907,12 +2240,19 @@ export function GalleryThemeGeneratorContent() {
             resolvedColor={resolvedColor}
             liveTokenStyle={liveTokenStyle}
             surface={[
-              { key: "card", label: "Card", hue: cardHue, set: setCardHue, testId: "gtg-card-hue" },
-              { key: "canvas", label: "Canvas", hue: canvasHue, set: setCanvasHue, testId: "gtg-canvas-hue" },
+              { key: "canvas", label: "Canvas", hue: canvasHue, tone: canvasTone, intensity: canvasIntensity, setHue: setCanvasHue, setTone: setCanvasTone, setIntensity: setCanvasIntensity, testId: "gtg-canvas-hue" },
+              { key: "grid", label: "Grid", hue: gridHue, tone: gridTone, intensity: gridIntensity, setHue: setGridHue, setTone: setGridTone, setIntensity: setGridIntensity, testId: "gtg-grid-hue" },
+              { key: "card", label: "Card", hue: cardHue, tone: cardTone, intensity: cardIntensity, setHue: setCardHue, setTone: setCardTone, setIntensity: setCardIntensity, testId: "gtg-card-hue" },
             ]}
-            element={[
-              { key: "content", label: "Content", hue: contentHue, set: setContentHue, testId: "gtg-content-hue" },
-            ]}
+            text={{
+              key: "content",
+              label: "Content",
+              hue: contentHue,
+              intensity: textIntensity,
+              setHue: setContentHue,
+              setIntensity: setTextIntensity,
+              testId: "gtg-content-hue",
+            }}
             roles={[
               { key: "accent", label: "Accent", hue: accentHue, set: setAccentHue, testId: "gtg-role-hue-accent" },
               { key: "action", label: "Action", hue: activeHue, set: setActiveHue, testId: "gtg-role-hue-action" },
@@ -1922,7 +2262,10 @@ export function GalleryThemeGeneratorContent() {
               { key: "caution", label: "Caution", hue: cautionHue, set: setCautionHue, testId: "gtg-role-hue-caution" },
               { key: "danger", label: "Danger", hue: dangerHue, set: setDangerHue, testId: "gtg-role-hue-danger" },
             ]}
-            moodSliders={null}
+            roleTone={roleTone}
+            roleIntensity={roleIntensity}
+            onRoleToneChange={setRoleTone}
+            onRoleIntensityChange={setRoleIntensity}
           />
         </div>
 
