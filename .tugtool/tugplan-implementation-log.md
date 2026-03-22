@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-22T20:16:20Z
+---
+
+## step-7: Rewrote theme middleware with handleThemesList, handleThemesLoadJson, handleThemesLoadCss, handleThemesSave supporting shipped + authored directories; added theme-middleware tests
+
+**Files changed:**
+- .tugtool/tugplan-theme-recipe-authoring.md
+
+---
+
+---
 step: step-6
 date: 2025-03-22T20:04:44Z
 ---

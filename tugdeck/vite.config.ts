@@ -3,6 +3,7 @@ import type { Plugin as VitePlugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import { execSync } from "child_process";
 // postcss-tug-color expands --tug-color(color, i: intensity, t: tone) to oklch() at build time.
 import postcssTugColor from "./postcss-tug-color";
@@ -79,67 +80,325 @@ function controlTokenHotReload(): VitePlugin {
 }
 
 // ---------------------------------------------------------------------------
-// Theme save/load middleware — handles /__themes/save and /__themes/list
+// Theme save/load middleware — handles /__themes/* endpoints
 // Handler functions are exported for unit testing with mocked fs.
+//
+// Two-directory storage model:
+//   Shipped themes: tugdeck/themes/       (read-only via middleware)
+//   Authored themes: ~/.tugtool/themes/   (read/write)
 // ---------------------------------------------------------------------------
 
-const THEMES_DIR = path.resolve(__dirname, "styles/themes");
+/** Absolute path to the shipped theme JSON files. */
+export const SHIPPED_THEMES_DIR = path.resolve(__dirname, "themes");
 
-export interface ThemeSaveBody {
+/** Absolute path to the shipped pre-generated theme CSS overrides. */
+const SHIPPED_THEMES_CSS_DIR = path.resolve(__dirname, "styles/themes");
+
+/** Absolute path to the user-authored theme directory. */
+export const USER_THEMES_DIR = path.join(os.homedir(), ".tugtool", "themes");
+
+export interface ThemeListEntry {
   name: string;
-  css: string;
   recipe: string;
+  source: "shipped" | "authored";
 }
 
-/**
- * Handle POST /__themes/save.
- * Writes <name>.css and <name>-recipe.json to styles/themes/.
- * Returns { ok: true } on success, { error: string } with status 400 on failure.
- */
-export function handleThemesSave(
-  body: ThemeSaveBody,
-  fsImpl: { writeFileSync: (p: string, data: string, enc: "utf-8") => void },
-  themesDir: string,
+/** Full ThemeRecipe JSON body sent to POST /__themes/save (minus formulas). */
+export interface ThemeSaveBody {
+  name: string;
+  recipe: string;
+  surface: {
+    canvas: { hue: string; tone: number; intensity: number };
+    grid?: { hue: string; tone: number; intensity: number };
+    frame?: { hue: string; tone: number; intensity: number };
+    card?: { hue: string; tone: number; intensity: number };
+  };
+  text: { hue: string; intensity: number };
+  display?: { hue: string; intensity: number };
+  role: {
+    tone: number;
+    intensity: number;
+    accent: string;
+    action: string;
+    agent: string;
+    data: string;
+    success: string;
+    caution: string;
+    danger: string;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem abstraction for testability
+// ---------------------------------------------------------------------------
+
+export interface FsReadImpl {
+  readdirSync: (p: string) => string[];
+  readFileSync: (p: string, enc: "utf-8") => string;
+  existsSync: (p: string) => boolean;
+}
+
+export interface FsWriteImpl extends FsReadImpl {
+  writeFileSync: (p: string, data: string, enc: "utf-8") => void;
+  mkdirSync: (p: string, opts: { recursive: boolean }) => void;
+}
+
+// ---------------------------------------------------------------------------
+// handleThemesList — GET /__themes/list
+//
+// Returns all themes from both shipped and user directories, sorted:
+//   1. brio first
+//   2. other shipped themes (alphabetical)
+//   3. authored themes (alphabetical)
+// ---------------------------------------------------------------------------
+
+export function handleThemesList(
+  fsImpl: FsReadImpl,
+  shippedDir: string,
+  userDir: string,
 ): { status: number; body: string } {
-  const { name, css, recipe } = body;
+  const entries: ThemeListEntry[] = [];
+
+  // Read shipped themes
+  let shippedFiles: string[] = [];
+  try {
+    shippedFiles = fsImpl.readdirSync(shippedDir).filter((f) => f.endsWith(".json"));
+  } catch {
+    shippedFiles = [];
+  }
+  for (const file of shippedFiles) {
+    const name = file.slice(0, -5); // strip .json
+    try {
+      const raw = fsImpl.readFileSync(path.join(shippedDir, file), "utf-8");
+      const parsed = JSON.parse(raw) as { recipe?: string };
+      entries.push({ name, recipe: parsed.recipe ?? "dark", source: "shipped" });
+    } catch {
+      // Skip malformed files
+    }
+  }
+
+  // Read authored themes (user dir may not exist yet)
+  let authoredFiles: string[] = [];
+  try {
+    authoredFiles = fsImpl.readdirSync(userDir).filter((f) => f.endsWith(".json"));
+  } catch {
+    authoredFiles = [];
+  }
+  for (const file of authoredFiles) {
+    const name = file.slice(0, -5);
+    try {
+      const raw = fsImpl.readFileSync(path.join(userDir, file), "utf-8");
+      const parsed = JSON.parse(raw) as { recipe?: string };
+      entries.push({ name, recipe: parsed.recipe ?? "dark", source: "authored" });
+    } catch {
+      // Skip malformed files
+    }
+  }
+
+  // Sort: brio first, then shipped alphabetical, then authored alphabetical
+  entries.sort((a, b) => {
+    if (a.name === "brio") return -1;
+    if (b.name === "brio") return 1;
+    if (a.source !== b.source) {
+      return a.source === "shipped" ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  return { status: 200, body: JSON.stringify({ themes: entries }) };
+}
+
+// ---------------------------------------------------------------------------
+// handleThemesLoadJson — GET /__themes/<name>.json
+//
+// Checks authored dir first, then shipped dir. Returns 404 if neither exists.
+// ---------------------------------------------------------------------------
+
+export function handleThemesLoadJson(
+  name: string,
+  fsImpl: FsReadImpl,
+  shippedDir: string,
+  userDir: string,
+): { status: number; body: string; contentType: string } {
+  const authoredPath = path.join(userDir, `${name}.json`);
+  const shippedPath = path.join(shippedDir, `${name}.json`);
+
+  for (const filePath of [authoredPath, shippedPath]) {
+    if (fsImpl.existsSync(filePath)) {
+      try {
+        const content = fsImpl.readFileSync(filePath, "utf-8");
+        return { status: 200, body: content, contentType: "application/json" };
+      } catch {
+        // Try next
+      }
+    }
+  }
+
+  return { status: 404, body: JSON.stringify({ error: `Theme '${name}' not found` }), contentType: "application/json" };
+}
+
+// ---------------------------------------------------------------------------
+// handleThemesLoadCss — GET /__themes/<name>.css
+//
+// - brio: always 404 (brio's CSS lives in tug-base-generated.css, not an override)
+// - shipped (non-brio): serve pre-generated file from styles/themes/<name>.css
+// - authored: serve from ~/.tugtool/themes/<name>.css; generate on-the-fly if missing
+//   but JSON exists (fallback path; primary write path is POST /__themes/save)
+// - Returns 404 if neither JSON nor CSS exists for the requested name.
+// ---------------------------------------------------------------------------
+
+export function handleThemesLoadCss(
+  name: string,
+  fsImpl: FsWriteImpl,
+  shippedDir: string,
+  shippedCssDir: string,
+  userDir: string,
+  generateCss: (jsonPath: string) => string,
+): { status: number; body: string; contentType: string } {
+  // brio always 404 — callers use the base stylesheet
+  if (name === "brio") {
+    return { status: 404, body: JSON.stringify({ error: "brio uses the base stylesheet, not an override" }), contentType: "application/json" };
+  }
+
+  // Check if it's a shipped theme (non-brio)
+  const shippedJsonPath = path.join(shippedDir, `${name}.json`);
+  if (fsImpl.existsSync(shippedJsonPath)) {
+    const shippedCssPath = path.join(shippedCssDir, `${name}.css`);
+    if (fsImpl.existsSync(shippedCssPath)) {
+      try {
+        const content = fsImpl.readFileSync(shippedCssPath, "utf-8");
+        return { status: 200, body: content, contentType: "text/css" };
+      } catch {
+        return { status: 500, body: JSON.stringify({ error: "failed to read shipped CSS" }), contentType: "application/json" };
+      }
+    }
+    return { status: 404, body: JSON.stringify({ error: `Shipped CSS for '${name}' not found` }), contentType: "application/json" };
+  }
+
+  // Check authored theme
+  const authoredJsonPath = path.join(userDir, `${name}.json`);
+  if (fsImpl.existsSync(authoredJsonPath)) {
+    const authoredCssPath = path.join(userDir, `${name}.css`);
+    // Serve existing CSS if present
+    if (fsImpl.existsSync(authoredCssPath)) {
+      try {
+        const content = fsImpl.readFileSync(authoredCssPath, "utf-8");
+        return { status: 200, body: content, contentType: "text/css" };
+      } catch {
+        return { status: 500, body: JSON.stringify({ error: "failed to read authored CSS" }), contentType: "application/json" };
+      }
+    }
+    // On-the-fly generation fallback: JSON exists but CSS not yet written
+    try {
+      const css = generateCss(authoredJsonPath);
+      fsImpl.writeFileSync(authoredCssPath, css, "utf-8");
+      return { status: 200, body: css, contentType: "text/css" };
+    } catch (err) {
+      return { status: 500, body: JSON.stringify({ error: `CSS generation failed: ${String(err)}` }), contentType: "application/json" };
+    }
+  }
+
+  return { status: 404, body: JSON.stringify({ error: `Theme '${name}' not found` }), contentType: "application/json" };
+}
+
+// ---------------------------------------------------------------------------
+// handleThemesSave — POST /__themes/save
+//
+// Accepts full theme JSON, rejects names that collide with shipped themes,
+// auto-creates ~/.tugtool/themes/ if missing, writes <name>.json and
+// generates + writes <name>.css via generateThemeCSS().
+// ---------------------------------------------------------------------------
+
+export function handleThemesSave(
+  body: unknown,
+  fsImpl: FsWriteImpl,
+  shippedDir: string,
+  userDir: string,
+  generateCss: (recipe: ThemeSaveBody) => string,
+): { status: number; body: string } {
+  if (!body || typeof body !== "object") {
+    return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
+  }
+  const b = body as Record<string, unknown>;
+  const name = b.name;
   if (!name || typeof name !== "string" || name.trim() === "") {
     return { status: 400, body: JSON.stringify({ error: "name is required" }) };
   }
   const safeName = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+
+  // Reject names that collide with shipped themes
+  const shippedJsonPath = path.join(shippedDir, `${safeName}.json`);
+  if (fsImpl.existsSync(shippedJsonPath)) {
+    return { status: 400, body: JSON.stringify({ error: `'${safeName}' is a shipped theme and cannot be overwritten` }) };
+  }
+
+  // Auto-create user themes directory
   try {
-    fsImpl.writeFileSync(path.join(themesDir, `${safeName}.css`), css, "utf-8");
-    fsImpl.writeFileSync(path.join(themesDir, `${safeName}-recipe.json`), recipe, "utf-8");
-    return { status: 200, body: JSON.stringify({ ok: true, name: safeName }) };
+    fsImpl.mkdirSync(userDir, { recursive: true });
   } catch (err) {
-    return { status: 500, body: JSON.stringify({ error: String(err) }) };
+    return { status: 500, body: JSON.stringify({ error: `Failed to create themes directory: ${String(err)}` }) };
   }
-}
 
-/**
- * Handle GET /__themes/list.
- * Reads styles/themes/ and returns theme names derived from .css files.
- */
-export function handleThemesList(
-  fsImpl: { readdirSync: (p: string) => string[] },
-  themesDir: string,
-): { status: number; body: string } {
+  // Validate minimum required fields
+  const recipe = b as ThemeSaveBody;
+  if (!recipe.recipe || typeof recipe.recipe !== "string") {
+    return { status: 400, body: JSON.stringify({ error: "recipe field is required" }) };
+  }
+
+  // Write JSON
   try {
-    const files = fsImpl.readdirSync(themesDir);
-    const names = files
-      .filter((f) => f.endsWith(".css"))
-      .map((f) => f.slice(0, -4));
-    return { status: 200, body: JSON.stringify({ themes: names }) };
-  } catch {
-    return { status: 200, body: JSON.stringify({ themes: [] }) };
+    const jsonPath = path.join(userDir, `${safeName}.json`);
+    const normalizedRecipe: ThemeSaveBody = { ...recipe, name: safeName };
+    fsImpl.writeFileSync(jsonPath, JSON.stringify(normalizedRecipe, null, 2), "utf-8");
+  } catch (err) {
+    return { status: 500, body: JSON.stringify({ error: `Failed to write theme JSON: ${String(err)}` }) };
   }
+
+  // Generate and write CSS
+  try {
+    const css = generateCss({ ...recipe, name: safeName } as ThemeSaveBody);
+    const cssPath = path.join(userDir, `${safeName}.css`);
+    fsImpl.writeFileSync(cssPath, css, "utf-8");
+  } catch (err) {
+    return { status: 500, body: JSON.stringify({ error: `Failed to generate CSS: ${String(err)}` }) };
+  }
+
+  return { status: 200, body: JSON.stringify({ ok: true, name: safeName }) };
+}
+
+// ---------------------------------------------------------------------------
+// Runtime CSS generator (wraps the shared theme-css-generator module)
+// Lazy-loaded to avoid circular dependency at module parse time.
+// ---------------------------------------------------------------------------
+
+function makeRuntimeCssGenerator(): (recipe: ThemeSaveBody) => string {
+  return (recipe: ThemeSaveBody): string => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: ThemeSaveBody) => string };
+    return generateThemeCSS(recipe);
+  };
+}
+
+function makeRuntimeCssGeneratorFromPath(): (jsonPath: string) => string {
+  return (jsonPath: string): string => {
+    const raw = fs.readFileSync(jsonPath, "utf-8");
+    const recipe = JSON.parse(raw) as ThemeSaveBody;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: ThemeSaveBody) => string };
+    return generateThemeCSS(recipe);
+  };
 }
 
 /**
- * Vite plugin: theme save/load API endpoints for the dev server.
- * POST /__themes/save — save a generated theme to disk
- * GET  /__themes/list  — list available saved themes
+ * Vite plugin: theme storage API endpoints for the dev server.
+ * GET  /__themes/list         — list available themes (shipped + authored)
+ * GET  /__themes/<name>.json  — load theme JSON (authored first, then shipped)
+ * GET  /__themes/<name>.css   — load theme CSS override
+ * POST /__themes/save         — save a new authored theme to disk
  */
 function themeSaveLoadPlugin(): VitePlugin {
+  const generateCssFromRecipe = makeRuntimeCssGenerator();
+  const generateCssFromPath = makeRuntimeCssGeneratorFromPath();
   return {
     name: "theme-save-load",
     configureServer(server) {
@@ -147,30 +406,53 @@ function themeSaveLoadPlugin(): VitePlugin {
         "/__themes",
         (req: import("http").IncomingMessage, res: import("http").ServerResponse, next: () => void) => {
           const url = req.url ?? "/";
+
+          if (req.method === "GET" && url === "/list") {
+            const result = handleThemesList(fs as unknown as FsReadImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
+            res.writeHead(result.status, { "Content-Type": "application/json" });
+            res.end(result.body);
+            return;
+          }
+
+          if (req.method === "GET" && url.endsWith(".json")) {
+            const name = url.replace(/^\//, "").slice(0, -5);
+            if (name && !name.includes("/")) {
+              const result = handleThemesLoadJson(name, fs as unknown as FsReadImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
+              res.writeHead(result.status, { "Content-Type": result.contentType });
+              res.end(result.body);
+              return;
+            }
+          }
+
+          if (req.method === "GET" && url.endsWith(".css")) {
+            const name = url.replace(/^\//, "").slice(0, -4);
+            if (name && !name.includes("/")) {
+              const result = handleThemesLoadCss(name, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, SHIPPED_THEMES_CSS_DIR, USER_THEMES_DIR, generateCssFromPath);
+              res.writeHead(result.status, { "Content-Type": result.contentType });
+              res.end(result.body);
+              return;
+            }
+          }
+
           if (req.method === "POST" && url === "/save") {
             let raw = "";
             req.on("data", (chunk: Buffer) => { raw += chunk.toString(); });
             req.on("end", () => {
-              let body: ThemeSaveBody;
+              let body: unknown;
               try {
-                body = JSON.parse(raw) as ThemeSaveBody;
+                body = JSON.parse(raw);
               } catch {
                 res.writeHead(400, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              const result = handleThemesSave(body, fs, THEMES_DIR);
+              const result = handleThemesSave(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, generateCssFromRecipe);
               res.writeHead(result.status, { "Content-Type": "application/json" });
               res.end(result.body);
             });
             return;
           }
-          if (req.method === "GET" && url === "/list") {
-            const result = handleThemesList(fs, THEMES_DIR);
-            res.writeHead(result.status, { "Content-Type": "application/json" });
-            res.end(result.body);
-            return;
-          }
+
           next();
         },
       );
