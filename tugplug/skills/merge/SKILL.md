@@ -231,6 +231,18 @@ Where `<plan_basename>` is just the filename (e.g., `tugplan-token-rename-35a.md
 If there are no changes to commit (e.g., plan was already archived), skip the
 commit silently.
 
+#### Step 6d: Garbage-collect stale state entries
+
+After archiving, the old plan path no longer exists on disk. Run state gc to
+remove its entries from state.db:
+
+```bash
+tugcode state gc
+```
+
+This is safe and idempotent. It also cleans up any other orphaned plan entries
+that may have accumulated. If it fails, report the error but do not halt.
+
 ---
 
 ### 7. Report Results
