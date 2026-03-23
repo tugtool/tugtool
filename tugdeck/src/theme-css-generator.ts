@@ -10,7 +10,7 @@
  * This is a pure utility with no React dependency.
  */
 
-import { deriveTheme, type ThemeRecipe } from "./components/tugways/theme-engine";
+import { deriveTheme, type ThemeSpec } from "./components/tugways/theme-engine";
 
 // ---------------------------------------------------------------------------
 // Token grouping — ordered by prefix per seven-slot convention
@@ -275,15 +275,15 @@ function buildTokenCssLines(tokens: Record<string, string>): string[] {
 // ---------------------------------------------------------------------------
 // generateThemeCSS — public API
 //
-// Takes a parsed ThemeRecipe, runs deriveTheme() + token generation + CSS
+// Takes a parsed ThemeSpec, runs deriveTheme() + token generation + CSS
 // formatting, and returns a complete CSS string with body {} wrapping.
 //
 // Both brio and override themes use the same body {} wrapping to maintain
 // identical CSS output and preserve cascade specificity.
 // ---------------------------------------------------------------------------
 
-export function generateThemeCSS(recipe: ThemeRecipe): string {
-  const output = deriveTheme(recipe);
+export function generateThemeCSS(spec: ThemeSpec): string {
+  const output = deriveTheme(spec);
   const tokens = output.tokens;
 
   const lines: string[] = [];

@@ -17,16 +17,16 @@ import {
   deriveTheme,
   enforceContrastFloor,
   primaryColorName,
-  type ThemeRecipe,
+  type ThemeSpec,
   type ResolvedColor,
   type DerivationFormulas,
 } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 import harmonyJson from "../../themes/harmony.json";
 
-const brio = brioJson as ThemeRecipe;
-const harmony = harmonyJson as ThemeRecipe;
-const SHIPPED_RECIPES: Record<string, ThemeRecipe> = { brio, harmony };
+const brio = brioJson as ThemeSpec;
+const harmony = harmonyJson as ThemeSpec;
+const SHIPPED_RECIPES: Record<string, ThemeSpec> = { brio, harmony };
 
 import {
   validateThemeContrast,
@@ -141,8 +141,8 @@ describe("derivation-engine", () => {
   });
 
   it("T2.6: non-override chromatic tokens resolve to valid sRGB colors", () => {
-    for (const [recipeName, recipe] of Object.entries(SHIPPED_RECIPES)) {
-      const output = deriveTheme(recipe);
+    for (const [recipeName, spec] of Object.entries(SHIPPED_RECIPES)) {
+      const output = deriveTheme(spec);
       const malformed: string[] = [];
       for (const [token, color] of Object.entries(output.resolved)) {
         if (
@@ -187,10 +187,10 @@ describe("derivation-engine", () => {
     expect(output.cvdWarnings).toEqual([]);
   });
 
-  it("ThemeOutput.name and recipe match the recipe", () => {
+  it("ThemeOutput.name and mode match the spec", () => {
     const brioOutput = deriveTheme(brio);
     expect(brioOutput.name).toBe("brio");
-    expect(brioOutput.recipe).toBe("dark");
+    expect(brioOutput.mode).toBe("dark");
   });
 
   it("step-3: deriveTheme() output includes formulas field of type DerivationFormulas", () => {
@@ -231,9 +231,9 @@ describe("derivation-engine", () => {
 // ---------------------------------------------------------------------------
 
 describe("recipe contrast validation", () => {
-  for (const [name, recipe] of Object.entries(SHIPPED_RECIPES)) {
+  for (const [name, spec] of Object.entries(SHIPPED_RECIPES)) {
     it(`${name}: fg-default passes content threshold on canonical surfaces`, () => {
-      const output = deriveTheme(recipe);
+      const output = deriveTheme(spec);
       const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
       // Core readability: fg-default must pass content on primary surfaces
@@ -249,7 +249,7 @@ describe("recipe contrast validation", () => {
     });
 
     it(`${name}: 0 non-decorative content failures (engine floors by construction)`, () => {
-      const output = deriveTheme(recipe);
+      const output = deriveTheme(spec);
       const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
       // Only check non-decorative roles — decorative is intentionally low contrast

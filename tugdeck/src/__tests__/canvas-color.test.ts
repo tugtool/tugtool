@@ -1,5 +1,5 @@
 /**
- * canvas-color.ts tests — runtime canvas color derivation from ThemeRecipe.
+ * canvas-color.ts tests — runtime canvas color derivation from ThemeSpec.
  *
  * Verifies that:
  * - canvasColorHex() with derived params matches the former CANVAS_COLORS lookup
@@ -15,13 +15,13 @@ import "./setup-rtl";
 import { describe, it, expect } from "bun:test";
 
 import { canvasColorHex } from "@/canvas-color";
-import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeSpec } from "@/components/tugways/theme-engine";
 
 import brioJson from "../../themes/brio.json";
 import harmonyJson from "../../themes/harmony.json";
 
-const brio = brioJson as ThemeRecipe;
-const harmony = harmonyJson as ThemeRecipe;
+const brio = brioJson as ThemeSpec;
+const harmony = harmonyJson as ThemeSpec;
 
 // ---------------------------------------------------------------------------
 // Helper: compute expected hex via the same algorithm as the former CANVAS_COLORS
@@ -81,10 +81,10 @@ describe("canvasColorHex", () => {
 
   it("TC3: arbitrary authored theme produces a valid hex from deriveTheme() canvas params", () => {
     // An authored theme with custom surface canvas params.
-    const authoredRecipe: ThemeRecipe = {
+    const authoredRecipe: ThemeSpec = {
       name: "custom-test",
       description: "Test authored theme for canvas color derivation",
-      recipe: "dark",
+      mode: "dark",
       surface: {
         canvas: { hue: "teal", tone: 8, intensity: 4 },
         grid:   { hue: "teal", tone: 14, intensity: 3 },

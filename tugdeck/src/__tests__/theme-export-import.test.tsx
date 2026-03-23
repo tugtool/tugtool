@@ -2,11 +2,11 @@
  * theme-export-import tests — new save model (Step 12).
  *
  * Tests cover:
- * - T9.3: Exported recipe JSON round-trips: export → import → re-export produces identical JSON
+ * - T9.3: Exported spec JSON round-trips: export → import → re-export produces identical JSON
  * - T9.4: Invalid JSON import shows error, does not crash (validateRecipeJson)
- * - T9.4: Migration: old-format recipe → new format
+ * - T9.4: Migration: old-format spec → new format
  * - TugThemeProvider context interface tests ({ theme, setTheme }, localStorage, dynamic themes)
- * - New save model: POST /__themes/save with name + recipe fields only (D07)
+ * - New save model: POST /__themes/save with name + spec fields only (D07)
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -20,10 +20,10 @@ import {
   GalleryThemeGeneratorContent,
   validateRecipeJson,
 } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeSpec } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 
-const brio = brioJson as ThemeRecipe;
+const brio = brioJson as ThemeSpec;
 import { _resetForTest } from "@/card-registry";
 import {
   TugThemeProvider,
@@ -32,38 +32,38 @@ import {
 } from "@/contexts/theme-provider";
 
 // ---------------------------------------------------------------------------
-// T9.3: Exported recipe JSON round-trips
+// T9.3: Exported spec JSON round-trips
 // ---------------------------------------------------------------------------
 
-describe("theme-import – T9.3: recipe JSON round-trips", () => {
+describe("theme-import – T9.3: spec JSON round-trips", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("JSON.stringify(recipe) -> JSON.parse -> JSON.stringify produces identical JSON", () => {
-    const recipe = brio;
-    const json1 = JSON.stringify(recipe, null, 2);
-    const parsed = JSON.parse(json1) as typeof recipe;
+  it("JSON.stringify(spec) -> JSON.parse -> JSON.stringify produces identical JSON", () => {
+    const spec = brio;
+    const json1 = JSON.stringify(spec, null, 2);
+    const parsed = JSON.parse(json1) as typeof spec;
     const json2 = JSON.stringify(parsed, null, 2);
     expect(json1).toBe(json2);
   });
 
-  it("import brio recipe: re-exported JSON matches original", () => {
-    const recipe = brio;
-    const exported = JSON.stringify(recipe, null, 2);
+  it("import brio spec: re-exported JSON matches original", () => {
+    const spec = brio;
+    const exported = JSON.stringify(spec, null, 2);
     const reimported = JSON.parse(exported);
     const reexported = JSON.stringify(reimported, null, 2);
     expect(exported).toBe(reexported);
   });
 
-  it("validateRecipeJson accepts a valid brio recipe", () => {
+  it("validateRecipeJson accepts a valid brio spec", () => {
     expect(validateRecipeJson(brio)).toBeNull();
   });
 
-  it("re-deriving brio recipe after round-trip produces same token count", () => {
-    const recipe = brio;
-    const json = JSON.stringify(recipe, null, 2);
+  it("re-deriving brio spec after round-trip produces same token count", () => {
+    const spec = brio;
+    const json = JSON.stringify(spec, null, 2);
     const roundTripped = JSON.parse(json);
-    const output1 = deriveTheme(recipe);
+    const output1 = deriveTheme(spec);
     const output2 = deriveTheme(roundTripped);
     expect(Object.keys(output1.tokens).length).toBe(Object.keys(output2.tokens).length);
   });
@@ -93,48 +93,48 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson({})).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for wrong recipe ('sepia')", () => {
-    const bad = { name: "X", recipe: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+  it("validateRecipeJson returns error for wrong spec ('sepia')", () => {
+    const bad = { name: "X", mode: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing name", () => {
-    const bad = { recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing surface group", () => {
-    const bad = { name: "X", recipe: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", mode: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson migrates old-format recipe without element group", () => {
-    const recipe: Record<string, unknown> = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    expect(validateRecipeJson(recipe)).toBeNull();
-    expect(typeof (recipe["surface"] as Record<string, unknown>)["canvas"]).toBe("object");
+  it("validateRecipeJson migrates old-format spec without element group", () => {
+    const spec: Record<string, unknown> = { name: "X", mode: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    expect(validateRecipeJson(spec)).toBeNull();
+    expect(typeof (spec["surface"] as Record<string, unknown>)["canvas"]).toBe("object");
   });
 
   it("validateRecipeJson ignores legacy surfaceContrast field", () => {
-    const legacy = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, surfaceContrast: "high" };
+    const legacy = { name: "X", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, surfaceContrast: "high" };
     expect(validateRecipeJson(legacy)).toBeNull();
   });
 
   it("validateRecipeJson ignores legacy roleIntensity field", () => {
-    const legacy = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, roleIntensity: "vivid" };
+    const legacy = { name: "X", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, roleIntensity: "vivid" };
     expect(validateRecipeJson(legacy)).toBeNull();
   });
 
   it("validateRecipeJson accepts both 'dark' and 'light' modes", () => {
-    const dark = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    const light = { name: "X", recipe: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const dark = { name: "X", mode: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const light = { name: "X", mode: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(dark)).toBeNull();
     expect(validateRecipeJson(light)).toBeNull();
   });
 
-  it("validateRecipeJson migrates old-format recipe with controls object into new surface/role structure", () => {
+  it("validateRecipeJson migrates old-format spec with controls object into new surface/role structure", () => {
     const legacy: Record<string, unknown> = {
       name: "ControlsMigrationTheme",
-      recipe: "dark",
+      mode: "dark",
       surface: { canvas: "teal", card: "teal" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "teal", border: "teal", decorative: "gray" },
       role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
@@ -178,12 +178,12 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 });
 
 // ---------------------------------------------------------------------------
-// New save model: POST /__themes/save with name + recipe (D07)
+// New save model: POST /__themes/save with name + spec (D07)
 // ---------------------------------------------------------------------------
 
 describe("theme-save – new save model (POST /__themes/save)", () => {
-  it("POST /__themes/save receives full ThemeRecipe directly (recipe is a mode string, surface is an object)", async () => {
-    const recipe = brio;
+  it("POST /__themes/save receives full ThemeSpec directly (spec is a mode string, surface is an object)", async () => {
+    const spec = brio;
 
     const capturedBody: Record<string, unknown>[] = [];
     const originalFetch = globalThis.fetch;
@@ -200,16 +200,16 @@ describe("theme-save – new save model (POST /__themes/save)", () => {
       const res = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(recipe),
+        body: JSON.stringify(spec),
       });
       expect(res.ok).toBe(true);
       expect(capturedBody.length).toBe(1);
       const body = capturedBody[0];
       // name is a string
       expect(typeof body["name"]).toBe("string");
-      // recipe is a short mode string, not a JSON blob
-      expect(typeof body["recipe"]).toBe("string");
-      expect((body["recipe"] as string).startsWith("{")).toBe(false);
+      // mode is a short mode string, not a JSON blob
+      expect(typeof body["mode"]).toBe("string");
+      expect((body["mode"] as string).startsWith("{")).toBe(false);
       // surface is an object (not a string)
       expect(body["surface"] !== null && typeof body["surface"] === "object").toBe(true);
     } finally {
@@ -438,13 +438,13 @@ describe("TugThemeProvider – simplified context (T6)", () => {
     }
   });
 
-  it("loadSavedThemes filters built-in theme names from new { name, recipe, source } format", async () => {
+  it("loadSavedThemes filters built-in theme names from new { name, spec, source } format", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
       new Response(JSON.stringify({ themes: [
-        { name: "brio", recipe: "dark", source: "shipped" },
-        { name: "harmony", recipe: "light", source: "shipped" },
-        { name: "my-theme", recipe: "dark", source: "authored" },
+        { name: "brio", mode: "dark", source: "shipped" },
+        { name: "harmony", mode: "light", source: "shipped" },
+        { name: "my-theme", mode: "dark", source: "authored" },
       ] }), { status: 200 });
     try {
       const themes = await loadSavedThemes();
@@ -459,7 +459,7 @@ describe("TugThemeProvider – simplified context (T6)", () => {
   it("loadSavedThemes: legacy string[] format is not included (no source info to filter)", async () => {
     // Legacy string[] responses lack source information so loadSavedThemes
     // cannot distinguish authored from shipped themes and returns nothing.
-    // Servers should use the new { name, recipe, source } format.
+    // Servers should use the new { name, spec, source } format.
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
       new Response(JSON.stringify({ themes: ["brio", "harmony", "my-theme"] }), { status: 200 });

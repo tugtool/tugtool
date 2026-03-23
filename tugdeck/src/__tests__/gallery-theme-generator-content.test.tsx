@@ -29,12 +29,12 @@ import {
 } from "@/components/tugways/cards/gallery-card";
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
-import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeSpec } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 import harmonyJson from "../../themes/harmony.json";
 
-const brio = brioJson as ThemeRecipe;
-const harmony = harmonyJson as ThemeRecipe;
+const brio = brioJson as ThemeSpec;
+const harmony = harmonyJson as ThemeSpec;
 import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
 import { TugThemeProvider } from "@/contexts/theme-provider";
@@ -65,17 +65,17 @@ function simulateInput(el: HTMLElement, value: string): void {
 // ---------------------------------------------------------------------------
 
 function mockFetch(options: {
-  themes?: Array<{ name: string; recipe: string; source: string }>;
-  themeJson?: Record<string, ThemeRecipe>;
+  themes?: Array<{ name: string; mode: string; source: string }>;
+  themeJson?: Record<string, ThemeSpec>;
   saveOk?: boolean;
 } = {}): () => void {
   const themes = options.themes ?? [
-    { name: "brio", recipe: "dark", source: "shipped" },
-    { name: "harmony", recipe: "light", source: "shipped" },
+    { name: "brio", mode: "dark", source: "shipped" },
+    { name: "harmony", mode: "light", source: "shipped" },
   ];
-  const themeJson: Record<string, ThemeRecipe> = {
-    brio: brioJson as ThemeRecipe,
-    harmony: harmonyJson as ThemeRecipe,
+  const themeJson: Record<string, ThemeSpec> = {
+    brio: brioJson as ThemeSpec,
+    harmony: harmonyJson as ThemeSpec,
     ...(options.themeJson ?? {}),
   };
   const saveOk = options.saveOk ?? true;
@@ -349,8 +349,8 @@ describe("GalleryThemeGeneratorContent – New flow", () => {
   it("shows name error when submitted name already exists", async () => {
     const restoreFetch = mockFetch({
       themes: [
-        { name: "brio", recipe: "dark", source: "shipped" },
-        { name: "my-theme", recipe: "dark", source: "authored" },
+        { name: "brio", mode: "dark", source: "shipped" },
+        { name: "my-theme", mode: "dark", source: "authored" },
       ],
     });
     let container!: HTMLElement;
@@ -517,11 +517,11 @@ describe("GalleryThemeGeneratorContent – Open flow", () => {
   });
 
   it("opening an authored theme enters Editing state (no read-only badge)", async () => {
-    const authoredTheme: ThemeRecipe = { ...brio, name: "my-authored" };
+    const authoredTheme: ThemeSpec = { ...brio, name: "my-authored" };
     const restoreFetch = mockFetch({
       themes: [
-        { name: "brio", recipe: "dark", source: "shipped" },
-        { name: "my-authored", recipe: "dark", source: "authored" },
+        { name: "brio", mode: "dark", source: "shipped" },
+        { name: "my-authored", mode: "dark", source: "authored" },
       ],
       themeJson: { "my-authored": authoredTheme },
     });
@@ -637,7 +637,7 @@ describe("GalleryThemeGeneratorContent – auto-save (Editing state)", () => {
       const url = String(input);
       if (url === "/__themes/list") {
         return new Response(JSON.stringify({ themes: [
-          { name: "brio", recipe: "dark", source: "shipped" },
+          { name: "brio", mode: "dark", source: "shipped" },
         ] }), { status: 200 });
       }
       if (url === "/__themes/save") {
@@ -690,7 +690,7 @@ describe("GalleryThemeGeneratorContent – auto-save (Editing state)", () => {
 const CHM_NOVEL_RECIPE = {
   name: "CHM Mood",
   description: "CHM acceptance test recipe — industrial warmth with amber atmosphere.",
-  recipe: "dark" as const,
+  mode: "dark" as const,
   surface: {
     canvas: { hue: "amber", tone: 5, intensity: 5 },
     grid: { hue: "amber", tone: 12, intensity: 4 },
@@ -801,7 +801,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
     const greenRedRecipe = {
       name: "GreenRed",
       description: "CVD test recipe with explicit green/red pairing.",
-      recipe: "dark" as const,
+      mode: "dark" as const,
       surface: {
         canvas: { hue: "slate", tone: 5, intensity: 5 },
         grid: { hue: "slate", tone: 12, intensity: 4 },
@@ -857,13 +857,13 @@ describe("GalleryThemeGeneratorContent – role hue selectors", () => {
 
   it("changing a role hue updates the derived theme output", () => {
     const withRed = deriveTheme({
-      name: "test", description: "Test recipe with red destructive hue.", recipe: "dark",
+      name: "test", description: "Test recipe with red destructive hue.", mode: "dark",
       surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, frame: { hue: "violet", tone: 16, intensity: 12 }, card: { hue: "violet", tone: 8, intensity: 5 } },
       text: { hue: "cobalt", intensity: 3 },
       role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
     });
     const withPink = deriveTheme({
-      name: "test", description: "Test recipe with pink destructive hue.", recipe: "dark",
+      name: "test", description: "Test recipe with pink destructive hue.", mode: "dark",
       surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, frame: { hue: "violet", tone: 16, intensity: 12 }, card: { hue: "violet", tone: 8, intensity: 5 } },
       text: { hue: "cobalt", intensity: 3 },
       role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
@@ -874,11 +874,11 @@ describe("GalleryThemeGeneratorContent – role hue selectors", () => {
   });
 
   it("in Editing state, clicking a compact role row opens the popover with a TugHueStrip", async () => {
-    const authoredTheme: ThemeRecipe = { ...brio, name: "my-edited" };
+    const authoredTheme: ThemeSpec = { ...brio, name: "my-edited" };
     const restoreFetch = mockFetch({
       themes: [
-        { name: "brio", recipe: "dark", source: "shipped" },
-        { name: "my-edited", recipe: "dark", source: "authored" },
+        { name: "brio", mode: "dark", source: "shipped" },
+        { name: "my-edited", mode: "dark", source: "authored" },
       ],
       themeJson: { "my-edited": authoredTheme },
     });

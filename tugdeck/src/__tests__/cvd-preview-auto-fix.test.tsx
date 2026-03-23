@@ -16,10 +16,10 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { GalleryThemeGeneratorContent } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeSpec } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 
-const brio = brioJson as ThemeRecipe;
+const brio = brioJson as ThemeSpec;
 import { _resetForTest } from "@/card-registry";
 
 // ---------------------------------------------------------------------------

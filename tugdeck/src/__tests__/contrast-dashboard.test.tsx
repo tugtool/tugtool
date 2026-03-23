@@ -17,10 +17,10 @@ import { render, act, cleanup } from "@testing-library/react";
 import { GalleryThemeGeneratorContent } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
 import { validateThemeContrast } from "@/components/tugways/theme-accessibility";
-import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeSpec } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 
-const brio = brioJson as ThemeRecipe;
+const brio = brioJson as ThemeSpec;
 import { _resetForTest } from "@/card-registry";
 
 // ---------------------------------------------------------------------------

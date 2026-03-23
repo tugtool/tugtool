@@ -1,6 +1,6 @@
 {
   "name": "brio",
-  "recipe": "dark",
+  "mode": "dark",
   "surface": {
     "canvas": { "hue": "indigo-violet", "tone": 5, "intensity": 5 },
     "grid":   { "hue": "indigo-violet", "tone": 12, "intensity": 4 },

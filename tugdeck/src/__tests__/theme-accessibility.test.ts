@@ -26,12 +26,12 @@ import {
 } from "@/components/tugways/theme-accessibility";
 import {
   deriveTheme,
-  type ThemeRecipe,
+  type ThemeSpec,
   type ResolvedColor,
 } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 
-const brio = brioJson as ThemeRecipe;
+const brio = brioJson as ThemeSpec;
 import { oklchToHex } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------

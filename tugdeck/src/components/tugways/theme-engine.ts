@@ -1,7 +1,7 @@
 /**
  * Theme Engine
  *
- * Derives complete 373-token `--tug-*` themes from a compact `ThemeRecipe`.
+ * Derives complete 373-token `--tug-*` themes from a compact `ThemeSpec`.
  * Each call to `deriveTheme()` returns:
  *   - `tokens`: all 373 token values as `--tug-color()` strings (for CSS export)
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
@@ -26,7 +26,7 @@
  *
  * [D01] Export format — tokens map matches tug-base.css override structure
  * [D02] Emphasis x role token naming: --tug-control-{emphasis}-{role}-{property}-{state}
- * [D04] ThemeRecipe interface from proposal
+ * [D04] ThemeSpec interface from proposal
  * [D06] HueSlot resolution — Layer 1 of the pipeline
  * [D07] white/highlight/highlightVerbose/shadow sentinels
  * [D08] Scope: --tug-* tokens only
@@ -276,9 +276,9 @@ export interface ThemeColorSpec {
  * Role group: shared tone + intensity + 7 vivid role hues.
  * Optional overrides: display and border hue overrides (default to text.hue / canvas.hue).
  */
-export interface ThemeRecipe {
+export interface ThemeSpec {
   name: string;
-  recipe: "dark" | "light";
+  mode: "dark" | "light";
 
   surface: {
     /** App background: hue + tone + intensity. */
@@ -388,7 +388,7 @@ export interface ContrastDiagnostic {
  */
 export interface ThemeOutput {
   name: string;
-  recipe: "dark" | "light";
+  mode: "dark" | "light";
   tokens: Record<string, string>;
   resolved: Record<string, ResolvedColor>;
   contrastResults: ContrastResult[];
@@ -469,7 +469,7 @@ export interface ResolvedHueSlots {
  * a recipe IS its formulas; dark and light are different recipes, not
  * parameterizations of one recipe. [D01]
  *
- * Produced by darkRecipe() or lightRecipe() from a ThemeRecipe and passed
+ * Produced by darkRecipe() or lightRecipe() from a ThemeSpec and passed
  * to resolveHueSlots() and evaluateRules(). [D02]
  *
  * Fields are grouped by the 23 semantic decision groups (see module JSDoc
@@ -1162,15 +1162,15 @@ export function contrastSearch(
  * rather than contrastSearch: the design calls for near-white text on dark
  * backgrounds, well above the minimum contrast-passing tone.
  */
-export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
-  const canvasTone = recipe.surface.canvas.tone;
-  const canvasIntensity = recipe.surface.canvas.intensity;
-  const frameTone = recipe.surface.frame.tone;
-  const frameIntensity = recipe.surface.frame.intensity;
-  const cardBodyTone = recipe.surface.card.tone;
-  const cardBodyIntensity = recipe.surface.card.intensity;
-  const roleTone = recipe.role.tone;
-  const roleIntensity = recipe.role.intensity;
+export function darkRecipe(spec: ThemeSpec): DerivationFormulas {
+  const canvasTone = spec.surface.canvas.tone;
+  const canvasIntensity = spec.surface.canvas.intensity;
+  const frameTone = spec.surface.frame.tone;
+  const frameIntensity = spec.surface.frame.intensity;
+  const cardBodyTone = spec.surface.card.tone;
+  const cardBodyIntensity = spec.surface.card.intensity;
+  const roleTone = spec.role.tone;
+  const roleIntensity = spec.role.intensity;
 
   // Design intent: near-white text on dark background (canvas+89 → ~94).
   // Using an offset rather than contrastSearch so the result is near-white,
@@ -1217,9 +1217,9 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     placeholderTextTone: primaryTextTone - 64,
 
     // ===== Text Coloring =====
-    contentTextIntensity: recipe.text.intensity,
-    subtleTextIntensity: recipe.text.intensity + 4,
-    mutedTextIntensity: recipe.text.intensity + 2,
+    contentTextIntensity: spec.text.intensity,
+    subtleTextIntensity: spec.text.intensity + 4,
+    mutedTextIntensity: spec.text.intensity + 2,
     atmosphereBorderIntensity: 6,
     inverseTextIntensity: 3,
     onCautionTextIntensity: 4,
@@ -1254,9 +1254,9 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     overlayHighlightAlpha: 6,
 
     // ===== Filled Control Prominence =====
-    filledSurfaceRestTone: recipe.role.tone,
-    filledSurfaceHoverTone: Math.max(0, Math.min(100, recipe.role.tone + 5)),
-    filledSurfaceActiveTone: Math.max(0, Math.min(100, recipe.role.tone + 10)),
+    filledSurfaceRestTone: spec.role.tone,
+    filledSurfaceHoverTone: Math.max(0, Math.min(100, spec.role.tone + 5)),
+    filledSurfaceActiveTone: Math.max(0, Math.min(100, spec.role.tone + 10)),
 
     // ===== Outlined Control Style =====
     outlinedTextRestTone: 100,
@@ -1460,15 +1460,15 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
  * contentTextTone uses canvas-87 (a design intent offset → ~8) rather than
  * contrastSearch: the design calls for near-black text on light backgrounds.
  */
-export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
-  const canvasTone = recipe.surface.canvas.tone;
-  const canvasIntensity = recipe.surface.canvas.intensity;
-  const frameTone = recipe.surface.frame.tone;
-  const frameIntensity = recipe.surface.frame.intensity;
-  const cardBodyTone = recipe.surface.card.tone;
-  const cardBodyIntensity = recipe.surface.card.intensity;
-  const roleTone = recipe.role.tone;
-  const roleIntensity = recipe.role.intensity;
+export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
+  const canvasTone = spec.surface.canvas.tone;
+  const canvasIntensity = spec.surface.canvas.intensity;
+  const frameTone = spec.surface.frame.tone;
+  const frameIntensity = spec.surface.frame.intensity;
+  const cardBodyTone = spec.surface.card.tone;
+  const cardBodyIntensity = spec.surface.card.intensity;
+  const roleTone = spec.role.tone;
+  const roleIntensity = spec.role.intensity;
 
   // Design intent: near-black text on light background (canvas-87 → ~8).
   const primaryTextTone = canvasTone - 87;
@@ -1513,9 +1513,9 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     placeholderTextTone: primaryTextTone + 52,
 
     // ===== Text Coloring =====
-    contentTextIntensity: recipe.text.intensity,
-    subtleTextIntensity: recipe.text.intensity + 4,
-    mutedTextIntensity: recipe.text.intensity + 2,
+    contentTextIntensity: spec.text.intensity,
+    subtleTextIntensity: spec.text.intensity + 4,
+    mutedTextIntensity: spec.text.intensity + 2,
     atmosphereBorderIntensity: 7,
     inverseTextIntensity: 3,
     onCautionTextIntensity: 5,
@@ -1552,9 +1552,9 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
 
     // ===== Filled Control Prominence =====
     // Light mode darkens on hover/active (negative offsets)
-    filledSurfaceRestTone: recipe.role.tone,
-    filledSurfaceHoverTone: Math.max(0, Math.min(100, recipe.role.tone - 5)),
-    filledSurfaceActiveTone: Math.max(0, Math.min(100, recipe.role.tone - 10)),
+    filledSurfaceRestTone: spec.role.tone,
+    filledSurfaceHoverTone: Math.max(0, Math.min(100, spec.role.tone - 5)),
+    filledSurfaceActiveTone: Math.max(0, Math.min(100, spec.role.tone - 10)),
 
     // ===== Outlined Control Style =====
     outlinedTextRestTone: primaryTextTone,
@@ -1756,7 +1756,7 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
  * Built-in recipe registry. Maps recipe name to its recipe function.
  * Used by deriveTheme() to produce DerivationFormulas.
  */
-export const RECIPE_REGISTRY: Record<string, { fn: (recipe: ThemeRecipe) => DerivationFormulas }> = {
+export const RECIPE_REGISTRY: Record<string, { fn: (spec: ThemeSpec) => DerivationFormulas }> = {
   dark: { fn: darkRecipe },
   light: { fn: lightRecipe },
 };
@@ -1916,8 +1916,8 @@ export function themeColorSpecToOklch(spec: ThemeColorSpec): string {
  * @param formulas - Formula constants produced by a recipe function; defaults to darkRecipe(recipe). Callers (e.g., deriveTheme) always pass this explicitly.
  */
 export function resolveHueSlots(
-  recipe: ThemeRecipe,
-  formulas: DerivationFormulas = darkRecipe(recipe),
+  spec: ThemeSpec,
+  formulas: DerivationFormulas = darkRecipe(spec),
 ): ResolvedHueSlots {
   /** Build a ResolvedHueSlot from a hue name. Hue angle used verbatim. */
   function resolveSlot(hueName: string): ResolvedHueSlot {
@@ -1939,16 +1939,16 @@ export function resolveHueSlots(
   // -------------------------------------------------------------------------
   // Recipe hues — derived from new ThemeColorSpec structure
   // -------------------------------------------------------------------------
-  const frameHue = recipe.surface.frame.hue; // frame / atmosphere hue
-  const textHue = recipe.text.hue;
-  const canvasHue = recipe.surface.canvas.hue;
+  const frameHue = spec.surface.frame.hue; // frame / atmosphere hue
+  const textHue = spec.text.hue;
+  const canvasHue = spec.surface.canvas.hue;
   // card body surface hue
-  const cardBodyHue = recipe.surface.card.hue;
+  const cardBodyHue = spec.surface.card.hue;
   // borderTint: optional override, defaults to canvas hue
-  const borderTintHue = recipe.border?.hue ?? recipe.surface.canvas.hue;
-  // action/link hue is derived from role.action directly (not a separate recipe field)
-  const actionHue = recipe.role.action;
-  const accentHue = recipe.role.accent;
+  const borderTintHue = spec.border?.hue ?? spec.surface.canvas.hue;
+  // action/link hue is derived from role.action directly (not a separate spec field)
+  const actionHue = spec.role.action;
+  const accentHue = spec.role.accent;
 
   const text = resolveSlot(textHue);
   const canvas = resolveSlot(canvasHue);
@@ -1960,16 +1960,16 @@ export function resolveHueSlots(
 
   // Element hues — derived from new structure (element group removed)
   const control = resolveSlot(textHue);
-  const display = resolveSlot(recipe.display?.hue ?? textHue);
-  const informational = resolveSlot(recipe.surface.canvas.hue);
+  const display = resolveSlot(spec.display?.hue ?? textHue);
+  const informational = resolveSlot(spec.surface.canvas.hue);
   const decorative = resolveSlot("gray");
 
   // Semantic hues — vivid role hues
-  const destructive = resolveSlot(recipe.role.danger);
-  const success = resolveSlot(recipe.role.success);
-  const caution = resolveSlot(recipe.role.caution);
-  const agent = resolveSlot(recipe.role.agent);
-  const data = resolveSlot(recipe.role.data);
+  const destructive = resolveSlot(spec.role.danger);
+  const success = resolveSlot(spec.role.success);
+  const caution = resolveSlot(spec.role.caution);
+  const agent = resolveSlot(spec.role.agent);
+  const data = resolveSlot(spec.role.data);
 
   // -------------------------------------------------------------------------
   // Per-tier derived hues
@@ -2849,7 +2849,7 @@ function resolvedEntryAlpha(
 // ---------------------------------------------------------------------------
 
 /**
- * Derive a complete `--tug-*` theme from a `ThemeRecipe`.
+ * Derive a complete `--tug-*` theme from a `ThemeSpec`.
  *
  * Returns `ThemeOutput` with:
  *   - `tokens`: every `--tug-*` token as a `--tug-color()` string or
@@ -2864,18 +2864,18 @@ function resolvedEntryAlpha(
  *   Layer 2 — evaluateRules():   RULES table      -> tokens + resolved maps
  *             Pre-computed tone values are read from DerivationFormulas directly. [D04]
  */
-export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
+export function deriveTheme(spec: ThemeSpec): ThemeOutput {
   // -------------------------------------------------------------------------
   // 1. Resolve formula constants [D01] [D06]
-  // Dispatch to the registered recipe function via RECIPE_REGISTRY.
+  // Dispatch to the registered spec function via RECIPE_REGISTRY.
   // -------------------------------------------------------------------------
-  const registryEntry = RECIPE_REGISTRY[recipe.recipe];
-  const formulas: DerivationFormulas = registryEntry ? registryEntry.fn(recipe) : darkRecipe(recipe);
+  const registryEntry = RECIPE_REGISTRY[spec.mode];
+  const formulas: DerivationFormulas = registryEntry ? registryEntry.fn(spec) : darkRecipe(spec);
 
   // -------------------------------------------------------------------------
   // 2. Layer 1 — resolve all hue slots (Spec S02)
   // -------------------------------------------------------------------------
-  const resolvedSlots = resolveHueSlots(recipe, formulas);
+  const resolvedSlots = resolveHueSlots(spec, formulas);
   const tokens: Record<string, string> = {};
   const resolved: Record<string, ResolvedColor> = {};
 
@@ -2920,8 +2920,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // Return ThemeOutput
   // =========================================================================
   return {
-    name: recipe.name,
-    recipe: recipe.recipe,
+    name: spec.name,
+    mode: spec.mode,
     tokens,
     resolved,
     contrastResults: [],
@@ -2974,17 +2974,17 @@ function simpleHashForEngine(str: string): string {
  */
 export function generateResolvedCssExport(
   output: ThemeOutput,
-  recipe: ThemeRecipe,
+  spec: ThemeSpec,
 ): string {
-  const recipeJson = JSON.stringify(recipe);
-  const hash = simpleHashForEngine(recipeJson);
+  const specJson = JSON.stringify(spec);
+  const hash = simpleHashForEngine(specJson);
   const dateStr = new Date().toISOString().slice(0, 10);
 
   const header = [
     "/**",
-    ` * @theme-name ${recipe.name}`,
+    ` * @theme-name ${spec.name}`,
     ` * @generated ${dateStr}`,
-    ` * @recipe-hash ${hash}`,
+    ` * @spec-hash ${hash}`,
     " *",
     " * Generated by Theme Generator. Contains --tug-* overrides as resolved oklch() values.",
     " * Spacing, radius, typography, stroke, icon-size are theme-invariant and not overridden.",

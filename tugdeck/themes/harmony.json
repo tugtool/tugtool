@@ -1,6 +1,6 @@
 {
   "name": "harmony",
-  "recipe": "light",
+  "mode": "light",
   "surface": {
     "canvas": { "hue": "indigo-violet", "tone": 95, "intensity": 6 },
     "grid":   { "hue": "indigo-violet", "tone": 88, "intensity": 5 },

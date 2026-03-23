@@ -26,7 +26,7 @@ import React, {
 import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
 import { canvasColorHex, type CanvasColorParams } from "../canvas-color";
-import { deriveTheme, type ThemeRecipe } from "../components/tugways/theme-engine";
+import { deriveTheme, type ThemeSpec } from "../components/tugways/theme-engine";
 import { THEME_CANVAS_PARAMS } from "../generated/theme-canvas-params";
 import { BASE_THEME_NAME } from "../theme-constants";
 
@@ -88,7 +88,7 @@ export function sendCanvasColor(params: CanvasColorParams): void {
 }
 
 /**
- * Derive canvas color params from a ThemeRecipe.
+ * Derive canvas color params from a ThemeSpec.
  *
  * Runs deriveTheme() and extracts:
  *   - hue:       recipe.surface.canvas.hue (the surfaceCanvasHueSlot is always "canvas")
@@ -97,10 +97,10 @@ export function sendCanvasColor(params: CanvasColorParams): void {
  *
  * [D08] Canvas color derived from theme JSON at runtime, Spec S04.
  */
-export function deriveCanvasParams(recipe: ThemeRecipe): CanvasColorParams {
-  const themeOutput = deriveTheme(recipe);
+export function deriveCanvasParams(spec: ThemeSpec): CanvasColorParams {
+  const themeOutput = deriveTheme(spec);
   return {
-    hue: recipe.surface.canvas.hue,
+    hue: spec.surface.canvas.hue,
     tone: themeOutput.formulas.surfaceCanvasTone,
     intensity: themeOutput.formulas.surfaceCanvasIntensity,
   };
@@ -154,7 +154,7 @@ export function activateProductionTheme(themeName: string): void {
  * Filters out shipped themes (source: "shipped") so they do not appear as
  * user-saved themes in the Theme Generator dropdown.
  *
- * Parses the middleware response format: { themes: [{ name, recipe, source }] }
+ * Parses the middleware response format: { themes: [{ name, mode, source }] }
  * [D07][D08]
  */
 export async function loadSavedThemes(): Promise<string[]> {
@@ -169,7 +169,7 @@ export async function loadSavedThemes(): Promise<string[]> {
         // Legacy format: string[] — cannot determine source, skip (shipped themes only in legacy)
         // Nothing to push; legacy string entries are all shipped themes.
       } else if (entry !== null && typeof entry === "object") {
-        // New format: { name, recipe, source }
+        // New format: { name, mode, source }
         const e = entry as Record<string, unknown>;
         const name = e.name;
         const source = e.source;

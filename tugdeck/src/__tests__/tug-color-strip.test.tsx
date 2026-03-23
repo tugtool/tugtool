@@ -23,10 +23,10 @@ import {
   buildIntensityGradient,
   valueFromPointerX,
 } from "@/components/tugways/tug-color-strip";
-import { themeColorSpecToOklch, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import { themeColorSpecToOklch, type ThemeSpec } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 
-const brio = brioJson as ThemeRecipe;
+const brio = brioJson as ThemeSpec;
 
 // ---------------------------------------------------------------------------
 // buildToneGradient / buildIntensityGradient — format tests only

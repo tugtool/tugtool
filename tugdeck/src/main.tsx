@@ -12,7 +12,7 @@ import {
   deriveCanvasParams,
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
-import { BASE_THEME_RECIPE } from "./generated/base-theme-recipe";
+import { BASE_THEME_SPEC } from "./generated/base-theme";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
@@ -55,27 +55,27 @@ if (!container) {
 
   const initialTheme = (theme as string) ?? BASE_THEME_NAME;
 
-  // Fetch the active theme's JSON recipe for canvas color derivation.
-  // For the base theme, use the statically generated recipe. For other themes,
+  // Fetch the active theme's JSON spec for canvas color derivation.
+  // For the base theme, use the statically generated spec. For other themes,
   // fetch from the middleware. [D08] Canvas color derived from theme JSON at runtime.
-  let cachedActiveRecipe: typeof BASE_THEME_RECIPE | null = null;
+  let cachedActiveSpec: typeof BASE_THEME_SPEC | null = null;
   if (initialTheme !== BASE_THEME_NAME) {
     const jsonResult = await fetch(`/__themes/${encodeURIComponent(initialTheme)}.json`)
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null);
     if (jsonResult !== null) {
-      cachedActiveRecipe = jsonResult as typeof BASE_THEME_RECIPE;
+      cachedActiveSpec = jsonResult as typeof BASE_THEME_SPEC;
     }
   }
 
-  // Derive canvas color params from the active theme recipe. For the base theme,
-  // use the generated BASE_THEME_RECIPE. For other themes, use the fetched recipe.
+  // Derive canvas color params from the active theme spec. For the base theme,
+  // use the generated BASE_THEME_SPEC. For other themes, use the fetched spec.
   // Run deriveTheme() to get the DERIVED surfaceCanvasIntensity value.
   // [D08] Canvas color derived from theme JSON at runtime, Spec S04.
-  const activeRecipe = initialTheme === BASE_THEME_NAME
-    ? BASE_THEME_RECIPE
-    : (cachedActiveRecipe ?? BASE_THEME_RECIPE);
-  const canvasParams = deriveCanvasParams(activeRecipe);
+  const activeSpec = initialTheme === BASE_THEME_NAME
+    ? BASE_THEME_SPEC
+    : (cachedActiveSpec ?? BASE_THEME_SPEC);
+  const canvasParams = deriveCanvasParams(activeSpec);
 
   // Register canvas params for TugThemeProvider's on-mount effect.
   registerInitialCanvasParams(canvasParams);

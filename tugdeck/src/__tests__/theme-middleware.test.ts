@@ -53,7 +53,7 @@ const SURFACE_CARD = { hue: "indigo-violet", tone: 15, intensity: 3 };
 function makeBrioJson(): string {
   return JSON.stringify({
     name: "brio",
-    recipe: "dark",
+    mode: "dark",
     surface: {
       canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
       grid: SURFACE_GRID,
@@ -68,7 +68,7 @@ function makeBrioJson(): string {
 function makeHarmonyJson(): string {
   return JSON.stringify({
     name: "harmony",
-    recipe: "light",
+    mode: "light",
     surface: {
       canvas: { hue: "indigo-violet", tone: 95, intensity: 6 },
       grid: { hue: "indigo-violet", tone: 92, intensity: 4 },
@@ -83,7 +83,7 @@ function makeHarmonyJson(): string {
 function makeAuthoredJson(name: string): string {
   return JSON.stringify({
     name,
-    recipe: "dark",
+    mode: "dark",
     surface: {
       canvas: { hue: "orange", tone: 10, intensity: 3 },
       grid: { hue: "orange", tone: 13, intensity: 3 },
@@ -98,7 +98,7 @@ function makeAuthoredJson(name: string): string {
 function makeMinimalSaveBody(name: string): ThemeSaveBody {
   return {
     name,
-    recipe: "dark",
+    mode: "dark",
     surface: {
       canvas: { hue: "orange", tone: 10, intensity: 3 },
       grid: { hue: "orange", tone: 13, intensity: 3 },
@@ -139,7 +139,7 @@ describe("handleThemesList", () => {
 
     const result = handleThemesList(mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(200);
-    const body = JSON.parse(result.body) as { themes: Array<{ name: string; recipe: string; source: string }> };
+    const body = JSON.parse(result.body) as { themes: Array<{ name: string; mode: string; source: string }> };
     const themes = body.themes;
 
     // brio and harmony are shipped
@@ -149,15 +149,15 @@ describe("handleThemesList", () => {
 
     expect(brio).toBeDefined();
     expect(brio?.source).toBe("shipped");
-    expect(brio?.recipe).toBe("dark");
+    expect(brio?.mode).toBe("dark");
 
     expect(harmony).toBeDefined();
     expect(harmony?.source).toBe("shipped");
-    expect(harmony?.recipe).toBe("light");
+    expect(harmony?.mode).toBe("light");
 
     expect(myTheme).toBeDefined();
     expect(myTheme?.source).toBe("authored");
-    expect(myTheme?.recipe).toBe("dark");
+    expect(myTheme?.mode).toBe("dark");
   });
 
   it("reads display name from JSON name field for authored themes", () => {
@@ -561,7 +561,7 @@ describe("handleThemesSave", () => {
     expect(result.status).toBe(400);
   });
 
-  it("returns 400 when recipe is a JSON blob (old broken format)", () => {
+  it("returns 400 when mode is a JSON blob (old broken format)", () => {
     const mockFs: FsWriteImpl = {
       readdirSync: () => [],
       readFileSync: (_p: string) => "",
@@ -570,7 +570,7 @@ describe("handleThemesSave", () => {
       mkdirSync: () => {},
     };
     const fullRecipe = makeMinimalSaveBody("My Theme");
-    const brokenBody = { ...fullRecipe, recipe: JSON.stringify(fullRecipe) };
+    const brokenBody = { ...fullRecipe, mode: JSON.stringify(fullRecipe) };
     const result = handleThemesSave(brokenBody, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
     const parsed = JSON.parse(result.body) as { error: string };

@@ -102,13 +102,13 @@ function themeOverridePlugin(): VitePlugin {
 
       try {
         const raw = fs.readFileSync(jsonPath, "utf-8");
-        let parsed = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeRecipe & { recipe: unknown };
+        let parsed = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeSpec & { mode: unknown };
 
-        // Legacy migration guard: detect old format where recipe is a stringified JSON blob.
-        if (typeof parsed.recipe === "string" && (parsed.recipe as string).startsWith("{")) {
-          let unwrapped: import("./src/components/tugways/theme-engine").ThemeRecipe;
+        // Legacy migration guard: detect old format where mode is a stringified JSON blob.
+        if (typeof parsed.mode === "string" && (parsed.mode as string).startsWith("{")) {
+          let unwrapped: import("./src/components/tugways/theme-engine").ThemeSpec;
           try {
-            unwrapped = JSON.parse(parsed.recipe as string) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+            unwrapped = JSON.parse(parsed.mode as string) as import("./src/components/tugways/theme-engine").ThemeSpec;
           } catch {
             throw new Error(`Theme '${activeTheme}' has corrupt recipe data`);
           }
@@ -121,10 +121,10 @@ function themeOverridePlugin(): VitePlugin {
           parsed = unwrapped as typeof parsed;
         }
 
-        const recipe = parsed as import("./src/components/tugways/theme-engine").ThemeRecipe;
+        const spec = parsed as import("./src/components/tugways/theme-engine").ThemeSpec;
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: typeof recipe) => string };
-        const css = generateThemeCSS(recipe);
+        const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: typeof spec) => string };
+        const css = generateThemeCSS(spec);
         fs.writeFileSync(THEME_OVERRIDE_CSS, css, "utf-8");
       } catch (err) {
         console.error(`[themeOverridePlugin] failed to generate CSS for theme "${activeTheme}":`, err);
@@ -231,14 +231,14 @@ export const USER_THEMES_DIR = path.join(os.homedir(), ".tugtool", "themes");
 
 export interface ThemeListEntry {
   name: string;
-  recipe: string;
+  mode: string;
   source: "shipped" | "authored";
 }
 
-/** Full ThemeRecipe JSON body sent to POST /__themes/save (minus formulas). */
+/** Full ThemeSpec JSON body sent to POST /__themes/save (minus formulas). */
 export interface ThemeSaveBody {
   name: string;
-  recipe: string; // "dark", "light", or future modes — NOT a JSON blob
+  mode: string; // "dark", "light", or future modes — NOT a JSON blob
   surface: {
     canvas: { hue: string; tone: number; intensity: number };
     grid: { hue: string; tone: number; intensity: number };
@@ -336,8 +336,8 @@ export function handleThemesList(
     const name = file.slice(0, -5); // strip .json
     try {
       const raw = fsImpl.readFileSync(path.join(shippedDir, file), "utf-8");
-      const parsed = JSON.parse(raw) as { recipe?: string };
-      entries.push({ name, recipe: parsed.recipe ?? "dark", source: "shipped" });
+      const parsed = JSON.parse(raw) as { mode?: string };
+      entries.push({ name, mode: parsed.mode ?? "dark", source: "shipped" });
     } catch {
       // Skip malformed files
     }
@@ -353,10 +353,10 @@ export function handleThemesList(
   for (const file of authoredFiles) {
     try {
       const raw = fsImpl.readFileSync(path.join(userDir, file), "utf-8");
-      const parsed = JSON.parse(raw) as { name?: string; recipe?: string };
+      const parsed = JSON.parse(raw) as { name?: string; mode?: string };
       // Use the JSON `name` field as the display name (hash-named files store the original display name)
       const displayName = parsed.name ?? file.slice(0, -5);
-      entries.push({ name: displayName, recipe: parsed.recipe ?? "dark", source: "authored" });
+      entries.push({ name: displayName, mode: parsed.mode ?? "dark", source: "authored" });
     } catch {
       // Skip malformed files
     }
@@ -457,14 +457,14 @@ export function handleThemesSave(
   }
 
   // Validate minimum required fields
-  const recipe = b as ThemeSaveBody;
-  if (!recipe.recipe || typeof recipe.recipe !== "string") {
-    return { status: 400, body: JSON.stringify({ error: "recipe field is required" }), themeName: null };
+  const spec = b as ThemeSaveBody;
+  if (!spec.mode || typeof spec.mode !== "string") {
+    return { status: 400, body: JSON.stringify({ error: "mode field is required" }), themeName: null };
   }
-  if (recipe.recipe.startsWith("{")) {
-    return { status: 400, body: JSON.stringify({ error: "recipe must be a mode string (e.g. 'dark'), not a JSON object" }), themeName: null };
+  if (spec.mode.startsWith("{")) {
+    return { status: 400, body: JSON.stringify({ error: "mode must be a mode string (e.g. 'dark'), not a JSON object" }), themeName: null };
   }
-  if (!recipe.surface || typeof recipe.surface !== "object") {
+  if (!spec.surface || typeof spec.surface !== "object") {
     return { status: 400, body: JSON.stringify({ error: "surface field is required" }), themeName: null };
   }
 
@@ -483,8 +483,8 @@ export function handleThemesSave(
   const hash = createHash("sha256").update(displayName).digest("hex").slice(0, 8);
   try {
     const jsonPath = path.join(userDir, `${hash}.json`);
-    const normalizedRecipe: ThemeSaveBody = { ...recipe, name: displayName };
-    fsImpl.writeFileSync(jsonPath, JSON.stringify(normalizedRecipe, null, 2), "utf-8");
+    const normalizedSpec: ThemeSaveBody = { ...spec, name: displayName };
+    fsImpl.writeFileSync(jsonPath, JSON.stringify(normalizedSpec, null, 2), "utf-8");
   } catch (err) {
     return { status: 500, body: JSON.stringify({ error: `Failed to write theme JSON: ${String(err)}` }), themeName: null };
   }
@@ -544,14 +544,14 @@ export function activateThemeOverride(
 
     // Base theme canvas params: derived from the base theme's JSON recipe.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeRecipe) => import("./src/components/tugways/theme-engine").ThemeOutput };
+    const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => import("./src/components/tugways/theme-engine").ThemeOutput };
     const baseRaw = fsImpl.readFileSync(path.join(shippedDir, `${BASE_THEME_NAME}.json`), "utf-8");
-    const baseRecipe = JSON.parse(baseRaw) as import("./src/components/tugways/theme-engine").ThemeRecipe;
-    const baseOutput = deriveTheme(baseRecipe);
+    const baseSpec = JSON.parse(baseRaw) as import("./src/components/tugways/theme-engine").ThemeSpec;
+    const baseOutput = deriveTheme(baseSpec);
     return {
       theme: BASE_THEME_NAME,
       canvasParams: {
-        hue: baseRecipe.surface.canvas.hue,
+        hue: baseSpec.surface.canvas.hue,
         tone: baseOutput.formulas.surfaceCanvasTone,
         intensity: baseOutput.formulas.surfaceCanvasIntensity,
       },
@@ -572,17 +572,17 @@ export function activateThemeOverride(
   }
 
   const raw = fsImpl.readFileSync(jsonPath, "utf-8");
-  let parsed = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeRecipe & { recipe: unknown };
+  let parsed = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeSpec & { mode: unknown };
 
-  // Legacy migration guard: detect old format where recipe is a stringified JSON blob.
-  // Old clients sent { name, recipe: JSON.stringify(fullRecipe) } to the save endpoint,
-  // resulting in files where recipe is a JSON string starting with "{" instead of a mode string.
-  if (typeof parsed.recipe === "string" && (parsed.recipe as string).startsWith("{")) {
-    let unwrapped: import("./src/components/tugways/theme-engine").ThemeRecipe;
+  // Legacy migration guard: detect old format where mode is a stringified JSON blob.
+  // Old clients sent { name, mode: JSON.stringify(fullSpec) } to the save endpoint,
+  // resulting in files where mode is a JSON string starting with "{" instead of a mode string.
+  if (typeof parsed.mode === "string" && (parsed.mode as string).startsWith("{")) {
+    let unwrapped: import("./src/components/tugways/theme-engine").ThemeSpec;
     try {
-      unwrapped = JSON.parse(parsed.recipe as string) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+      unwrapped = JSON.parse(parsed.mode as string) as import("./src/components/tugways/theme-engine").ThemeSpec;
     } catch {
-      throw new Error(`Theme '${themeName}' has corrupt recipe data`);
+      throw new Error(`Theme '${themeName}' has corrupt mode data`);
     }
     // Rewrite file in canonical format (best-effort).
     try {
@@ -593,22 +593,22 @@ export function activateThemeOverride(
     parsed = unwrapped as typeof parsed;
   }
 
-  const recipe = parsed as import("./src/components/tugways/theme-engine").ThemeRecipe;
+  const spec = parsed as import("./src/components/tugways/theme-engine").ThemeSpec;
 
   // Lazy-require to avoid circular dependency at module parse time.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: import("./src/components/tugways/theme-engine").ThemeRecipe) => string };
+  const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => string };
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeRecipe) => import("./src/components/tugways/theme-engine").ThemeOutput };
+  const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => import("./src/components/tugways/theme-engine").ThemeOutput };
 
-  const css = generateThemeCSS(recipe);
+  const css = generateThemeCSS(spec);
   fsImpl.writeFileSync(overrideCssPath, css, "utf-8");
 
-  const themeOutput = deriveTheme(recipe);
+  const themeOutput = deriveTheme(spec);
   return {
     theme: themeName,
     canvasParams: {
-      hue: recipe.surface.canvas.hue,
+      hue: spec.surface.canvas.hue,
       tone: themeOutput.formulas.surfaceCanvasTone,
       intensity: themeOutput.formulas.surfaceCanvasIntensity,
     },

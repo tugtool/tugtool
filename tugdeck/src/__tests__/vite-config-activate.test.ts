@@ -27,12 +27,12 @@ import {
 } from "../../vite.config";
 
 // ---------------------------------------------------------------------------
-// Minimal valid ThemeRecipe used for legacy migration tests
+// Minimal valid ThemeSpec used for legacy migration tests
 // ---------------------------------------------------------------------------
 
 const MINIMAL_RECIPE = {
   name: "my-cool-theme",
-  recipe: "dark",
+  mode: "dark",
   surface: {
     canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
     grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
@@ -121,7 +121,7 @@ function makeMockFs(): MockFs {
 // Mock factory for user-authored legacy files
 //
 // Extends makeMockFs to serve a synthetic user-authored theme file from
-// an in-memory map. The mock supports both legacy-format files (recipe is
+// an in-memory map. The mock supports both legacy-format files (mode is
 // a stringified blob) and canonical-format files.
 // ---------------------------------------------------------------------------
 
@@ -243,13 +243,13 @@ describe("activateThemeOverride", () => {
 });
 
 describe("activateThemeOverride — legacy migration", () => {
-  it("TC-LM1: legacy file with stringified recipe is migrated and activates correctly", () => {
-    // Build a legacy-format file: the old client wrote { name, recipe: JSON.stringify(fullRecipe) }.
-    // The inner recipe blob is the full ThemeRecipe fields minus name (the old client used safeName).
+  it("TC-LM1: legacy file with stringified mode is migrated and activates correctly", () => {
+    // Build a legacy-format file: the old client wrote { name, mode: JSON.stringify(fullRecipe) }.
+    // The inner mode blob is the full ThemeSpec fields minus name (the old client used safeName).
     const innerRecipe = { ...MINIMAL_RECIPE };
     const legacyFile = JSON.stringify({
       name: "my-cool-theme",
-      recipe: JSON.stringify(innerRecipe),
+      mode: JSON.stringify(innerRecipe),
       // Old format had no surface/text/role at top level — they were inside the stringified blob.
     });
 
@@ -279,7 +279,7 @@ describe("activateThemeOverride — legacy migration", () => {
     const innerRecipe = { ...MINIMAL_RECIPE };
     const legacyFile = JSON.stringify({
       name: "my-cool-theme",
-      recipe: JSON.stringify(innerRecipe),
+      mode: JSON.stringify(innerRecipe),
     });
 
     const userFilePath = path.join(USER_THEMES_DIR, "abcd1234.json");
@@ -297,11 +297,11 @@ describe("activateThemeOverride — legacy migration", () => {
     const rewrittenContent = mockFsLegacy.written.get(userFilePath);
     expect(rewrittenContent).toBeDefined();
 
-    // The rewritten content must be valid JSON with recipe as a mode string (not a blob).
-    const rewritten = JSON.parse(rewrittenContent!) as { recipe: string; surface?: object };
-    expect(typeof rewritten.recipe).toBe("string");
-    expect(rewritten.recipe).not.toContain("{");
-    expect(rewritten.recipe).toBe("dark");
+    // The rewritten content must be valid JSON with mode as a mode string (not a blob).
+    const rewritten = JSON.parse(rewrittenContent!) as { mode: string; surface?: object };
+    expect(typeof rewritten.mode).toBe("string");
+    expect(rewritten.mode).not.toContain("{");
+    expect(rewritten.mode).toBe("dark");
 
     // surface must be a top-level object in the rewritten file.
     expect(typeof rewritten.surface).toBe("object");
@@ -311,7 +311,7 @@ describe("activateThemeOverride — legacy migration", () => {
   it("TC-LM3: corrupt legacy file throws clear error message", () => {
     const corruptFile = JSON.stringify({
       name: "broken-theme",
-      recipe: '{"this is not valid json because it is truncated...',
+      mode: '{"this is not valid json because it is truncated...',
     });
 
     const mockFsCorrupt = makeMockFsWithUserFile("deadbeef.json", corruptFile);
@@ -324,7 +324,7 @@ describe("activateThemeOverride — legacy migration", () => {
         USER_THEMES_DIR,
         OVERRIDE_CSS_PATH,
       );
-    }).toThrow("corrupt recipe data");
+    }).toThrow("corrupt mode data");
   });
 });
 
@@ -480,12 +480,12 @@ describe("round-trip: save then activate", () => {
     };
   }
 
-  it("RT1: save a valid ThemeRecipe then activate it — succeeds with correct canvasParams", () => {
+  it("RT1: save a valid ThemeSpec then activate it — succeeds with correct canvasParams", () => {
     const roundTripFs = makeRoundTripFs();
 
     const saveBody: ThemeSaveBody = {
       name: "My Round-Trip Theme",
-      recipe: "dark",
+      mode: "dark",
       surface: {
         canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
         grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
@@ -532,12 +532,12 @@ describe("round-trip: save then activate", () => {
     expect(overrideContents).toContain("--tug-");
   });
 
-  it("RT2: saved JSON has recipe as a short mode string (not a JSON blob)", () => {
+  it("RT2: saved JSON has mode as a short mode string (not a JSON blob)", () => {
     const roundTripFs = makeRoundTripFs();
 
     const saveBody: ThemeSaveBody = {
       name: "Format Check Theme",
-      recipe: "dark",
+      mode: "dark",
       surface: {
         canvas: { hue: "orange", tone: 10, intensity: 3 },
         grid: { hue: "orange", tone: 13, intensity: 3 },
@@ -571,12 +571,12 @@ describe("round-trip: save then activate", () => {
     }
     expect(savedJson).toBeDefined();
 
-    const parsed = JSON.parse(savedJson!) as { recipe: string; surface: { canvas: { hue: string; tone: number; intensity: number } } };
+    const parsed = JSON.parse(savedJson!) as { mode: string; surface: { canvas: { hue: string; tone: number; intensity: number } } };
 
-    // recipe must be a short mode string, NOT a JSON blob
-    expect(typeof parsed.recipe).toBe("string");
-    expect(parsed.recipe).not.toContain("{");
-    expect(parsed.recipe).toBe("dark");
+    // mode must be a short mode string, NOT a JSON blob
+    expect(typeof parsed.mode).toBe("string");
+    expect(parsed.mode).not.toContain("{");
+    expect(parsed.mode).toBe("dark");
 
     // surface.canvas must have the expected fields
     expect(typeof parsed.surface).toBe("object");
