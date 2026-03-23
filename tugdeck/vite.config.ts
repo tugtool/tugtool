@@ -445,6 +445,177 @@ export function handleThemesSave(
 }
 
 // ---------------------------------------------------------------------------
+// activateThemeOverride — shared logic for startup plugin and activate endpoint
+//
+// Finds the theme JSON, derives CSS via generateThemeCSS(), writes the override
+// file (empty for Brio), writes .tugtool/active-theme, and returns
+// { theme, canvasParams }. Both the startup plugin and the POST /activate
+// handler call this function; tests can inject a mock fsImpl.
+//
+// The lazy require() pattern is used to avoid circular dependencies at module
+// parse time. This matches the existing pattern in the startup plugin and
+// makeRuntimeCssGenerator below.
+// ---------------------------------------------------------------------------
+
+/** Canvas color params returned alongside the theme name by activateThemeOverride. */
+export interface ActivateCanvasParams {
+  hue: string;
+  tone: number;
+  intensity: number;
+}
+
+/** Return value of activateThemeOverride on success. */
+export interface ActivateResult {
+  theme: string;
+  canvasParams: ActivateCanvasParams;
+}
+
+/**
+ * Activate a theme by rewriting the override CSS file and persisting the
+ * active-theme name. Returns { theme, canvasParams } on success.
+ *
+ * - For Brio: writes EMPTY_OVERRIDE to overrideCssPath.
+ * - For non-Brio: derives CSS from the theme JSON and writes it to overrideCssPath.
+ * - Always writes themeName to activeThemePath.
+ * - Throws if the theme JSON cannot be found or CSS generation fails.
+ *
+ * Both generateThemeCSS and deriveTheme are lazy-required to avoid circular
+ * dependency at module parse time.
+ */
+export function activateThemeOverride(
+  themeName: string,
+  fsImpl: FsWriteImpl,
+  shippedDir: string,
+  userDir: string,
+  overrideCssPath: string,
+  activeThemePath: string,
+): ActivateResult {
+  if (themeName === "brio") {
+    fsImpl.writeFileSync(overrideCssPath, EMPTY_OVERRIDE, "utf-8");
+    fsImpl.writeFileSync(activeThemePath, "brio", "utf-8");
+
+    // Brio canvas params: derived from brio.json recipe.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeRecipe) => import("./src/components/tugways/theme-engine").ThemeOutput };
+    const brioRaw = fsImpl.readFileSync(path.join(shippedDir, "brio.json"), "utf-8");
+    const brioRecipe = JSON.parse(brioRaw) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+    const brioOutput = deriveTheme(brioRecipe);
+    return {
+      theme: "brio",
+      canvasParams: {
+        hue: brioRecipe.surface.canvas.hue,
+        tone: brioOutput.formulas.surfaceCanvasTone,
+        intensity: brioOutput.formulas.surfaceCanvasIntensity,
+      },
+    };
+  }
+
+  // Locate theme JSON: shipped dir first, then user dir.
+  const shippedJsonPath = path.join(shippedDir, `${themeName}.json`);
+  const userJsonPath = path.join(userDir, `${themeName}.json`);
+  let jsonPath: string | null = null;
+  if (fsImpl.existsSync(shippedJsonPath)) {
+    jsonPath = shippedJsonPath;
+  } else if (fsImpl.existsSync(userJsonPath)) {
+    jsonPath = userJsonPath;
+  }
+
+  if (!jsonPath) {
+    throw new Error(`Theme '${themeName}' not found`);
+  }
+
+  const raw = fsImpl.readFileSync(jsonPath, "utf-8");
+  const recipe = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+
+  // Lazy-require to avoid circular dependency at module parse time.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: import("./src/components/tugways/theme-engine").ThemeRecipe) => string };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeRecipe) => import("./src/components/tugways/theme-engine").ThemeOutput };
+
+  const css = generateThemeCSS(recipe);
+  fsImpl.writeFileSync(overrideCssPath, css, "utf-8");
+  fsImpl.writeFileSync(activeThemePath, themeName, "utf-8");
+
+  const themeOutput = deriveTheme(recipe);
+  return {
+    theme: themeName,
+    canvasParams: {
+      hue: recipe.surface.canvas.hue,
+      tone: themeOutput.formulas.surfaceCanvasTone,
+      intensity: themeOutput.formulas.surfaceCanvasIntensity,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// writeMutex — Promise chain that serializes all override file writes.
+//
+// Pattern: pending = pending.catch(() => {}).then(fn)
+// The .catch(() => {}) swallows any previous rejection so fn always executes
+// exactly once, regardless of whether the previous write succeeded or failed.
+// The alternative .then(fn).catch(fn) would double-execute fn on rejection.
+// ---------------------------------------------------------------------------
+
+let pending: Promise<void> = Promise.resolve();
+
+function withMutex(fn: () => Promise<void>): Promise<void> {
+  pending = pending.catch(() => {}).then(fn);
+  return pending;
+}
+
+// ---------------------------------------------------------------------------
+// handleThemesActivate — POST /__themes/activate
+//
+// Parses the request body, validates the theme field, calls
+// activateThemeOverride inside the write mutex, and returns the response.
+// Exported for unit testing with mocked fs.
+//
+// Parameters:
+//   body           — parsed JSON request body (unknown)
+//   fsImpl         — fs implementation (real or mock)
+//   shippedDir     — absolute path to shipped theme JSON files
+//   userDir        — absolute path to user-authored theme directory
+//   overrideCssPath — absolute path to tug-theme-override.css
+//   activeThemePath — absolute path to .tugtool/active-theme
+// ---------------------------------------------------------------------------
+
+export async function handleThemesActivate(
+  body: unknown,
+  fsImpl: FsWriteImpl,
+  shippedDir: string,
+  userDir: string,
+  overrideCssPath: string,
+  activeThemePath: string,
+): Promise<{ status: number; body: string }> {
+  if (!body || typeof body !== "object") {
+    return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
+  }
+  const b = body as Record<string, unknown>;
+  const themeName = b.theme;
+  if (!themeName || typeof themeName !== "string" || themeName.trim() === "") {
+    return { status: 400, body: JSON.stringify({ error: "theme field is required" }) };
+  }
+  const name = themeName.trim();
+
+  return new Promise<{ status: number; body: string }>((resolve) => {
+    withMutex(async () => {
+      try {
+        const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath, activeThemePath);
+        resolve({ status: 200, body: JSON.stringify(result) });
+      } catch (err) {
+        const msg = String(err instanceof Error ? err.message : err);
+        if (msg.includes("not found")) {
+          resolve({ status: 404, body: JSON.stringify({ error: msg }) });
+        } else {
+          resolve({ status: 500, body: JSON.stringify({ error: msg }) });
+        }
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Runtime CSS generator (wraps the shared theme-css-generator module)
 // Lazy-loaded to avoid circular dependency at module parse time.
 // ---------------------------------------------------------------------------
@@ -527,6 +698,29 @@ function themeSaveLoadPlugin(): VitePlugin {
               const result = handleThemesSave(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, generateCssFromRecipe);
               res.writeHead(result.status, { "Content-Type": "application/json" });
               res.end(result.body);
+            });
+            return;
+          }
+
+          if (req.method === "POST" && url === "/activate") {
+            let raw = "";
+            req.on("data", (chunk: Buffer) => { raw += chunk.toString(); });
+            req.on("end", () => {
+              let body: unknown;
+              try {
+                body = JSON.parse(raw);
+              } catch {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "invalid JSON body" }));
+                return;
+              }
+              handleThemesActivate(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS, ACTIVE_THEME_FILE).then((result) => {
+                res.writeHead(result.status, { "Content-Type": "application/json" });
+                res.end(result.body);
+              }).catch((err) => {
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: String(err) }));
+              });
             });
             return;
           }

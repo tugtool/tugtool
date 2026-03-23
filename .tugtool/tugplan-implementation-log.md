@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-23T14:17:58Z
+---
+
+## step-3: Added activateThemeOverride, handleThemesActivate, writeMutex, and POST /activate route in themeSaveLoadPlugin. 8 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-2
 date: 2025-03-23T14:04:02Z
 ---
