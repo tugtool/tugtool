@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-23T23:08:55Z
+---
+
+## step-1: Created formula-reverse-map.ts with ReverseMap types and buildReverseMap function using Proxy interception. Added 13 unit/integration tests, all passing.
+
+**Files changed:**
+- .tugtool/tugplan-formula-editor.md
+
+---
+
+---
 step: step-7
 date: 2025-03-23T18:41:19Z
 ---
