@@ -62,9 +62,8 @@ const SHIPPED_THEMES_DIR = path.join(TUGDECK_ROOT, "themes");
 // User dir doesn't exist in tests — mock fs returns empty for it.
 const USER_THEMES_DIR = path.join(TUGDECK_ROOT, "test-user-themes-does-not-exist");
 
-// Synthetic paths used to capture writes — never written to real disk.
+// Synthetic path used to capture writes — never written to real disk.
 const OVERRIDE_CSS_PATH = "/mock/tug-theme-override.css";
-const ACTIVE_THEME_PATH = "/mock/.tugtool/active-theme";
 
 // ---------------------------------------------------------------------------
 // Mock FsWriteImpl factory
@@ -184,7 +183,6 @@ describe("activateThemeOverride", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     expect(result.theme).toBe("brio");
@@ -196,9 +194,6 @@ describe("activateThemeOverride", () => {
     expect(overrideContents).not.toContain("--tug-");
     // Typical empty override is a comment.
     expect(overrideContents).toContain("/*");
-
-    // active-theme file must be written.
-    expect(mockFs.written.get(ACTIVE_THEME_PATH)).toBe("brio");
 
     // canvasParams must be a valid structure.
     expect(typeof result.canvasParams.hue).toBe("string");
@@ -214,7 +209,6 @@ describe("activateThemeOverride", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     expect(result.theme).toBe("harmony");
@@ -224,9 +218,6 @@ describe("activateThemeOverride", () => {
     expect(overrideContents).toBeDefined();
     expect(overrideContents).toContain("--tug-");
     expect(overrideContents).toContain("body {");
-
-    // active-theme file must be written.
-    expect(mockFs.written.get(ACTIVE_THEME_PATH)).toBe("harmony");
 
     // canvasParams must be a valid structure for a light theme.
     expect(result.canvasParams.hue).toBe("indigo-violet");
@@ -243,7 +234,6 @@ describe("activateThemeOverride", () => {
         SHIPPED_THEMES_DIR,
         USER_THEMES_DIR,
         OVERRIDE_CSS_PATH,
-        ACTIVE_THEME_PATH,
       );
     }).toThrow("not found");
 
@@ -271,7 +261,6 @@ describe("activateThemeOverride — legacy migration", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     // Activation must succeed and return correct canvasParams.
@@ -302,7 +291,6 @@ describe("activateThemeOverride — legacy migration", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     // The user file must have been rewritten.
@@ -335,7 +323,6 @@ describe("activateThemeOverride — legacy migration", () => {
         SHIPPED_THEMES_DIR,
         USER_THEMES_DIR,
         OVERRIDE_CSS_PATH,
-        ACTIVE_THEME_PATH,
       );
     }).toThrow("corrupt recipe data");
   });
@@ -355,7 +342,6 @@ describe("handleThemesActivate", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     expect(response.status).toBe(200);
@@ -379,7 +365,6 @@ describe("handleThemesActivate", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     expect(response.status).toBe(200);
@@ -402,7 +387,6 @@ describe("handleThemesActivate", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     expect(response.status).toBe(404);
@@ -420,7 +404,6 @@ describe("handleThemesActivate", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     expect(response.status).toBe(400);
@@ -435,7 +418,6 @@ describe("handleThemesActivate", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     expect(response.status).toBe(400);
@@ -536,7 +518,6 @@ describe("round-trip: save then activate", () => {
       SHIPPED_THEMES_DIR,
       USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
-      ACTIVE_THEME_PATH,
     );
 
     // Activation must succeed with correct return values
@@ -549,9 +530,6 @@ describe("round-trip: save then activate", () => {
     const overrideContents = roundTripFs.written.get(OVERRIDE_CSS_PATH);
     expect(overrideContents).toBeDefined();
     expect(overrideContents).toContain("--tug-");
-
-    // active-theme file must record the display name
-    expect(roundTripFs.written.get(ACTIVE_THEME_PATH)).toBe("My Round-Trip Theme");
   });
 
   it("RT2: saved JSON has recipe as a short mode string (not a JSON blob)", () => {

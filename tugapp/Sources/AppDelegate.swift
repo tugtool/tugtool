@@ -558,13 +558,8 @@ extension AppDelegate: NSMenuDelegate {
         guard menu === themeMenu else { return }
         menu.removeAllItems()
 
-        // Read active theme from disk so the checkmark is always fresh
-        let activeThemeDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".tugtool")
-        let activeThemeFile = activeThemeDir.appendingPathComponent("active-theme")
-        if let raw = try? String(contentsOf: activeThemeFile, encoding: .utf8) {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { activeThemeName = trimmed }
-        }
+        // Active theme name comes from bridgeThemeListUpdated (set via the bridge callback).
+        // No file read needed — tugbank is the source of truth for the active theme.
 
         // Shipped themes from bridge cache — sort Brio first, then alphabetical
         let sortedShipped = cachedShippedThemes.sorted { a, b in

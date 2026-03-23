@@ -40,13 +40,6 @@ function paletteHotReload(): VitePlugin {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Active-theme file location (written by activate endpoint, read by plugin)
-// ---------------------------------------------------------------------------
-
-/** Absolute path to the active-theme persistence file. */
-const ACTIVE_THEME_FILE = path.resolve(__dirname, "..", ".tugtool", "active-theme");
-
 /** Absolute path to the override CSS file in the Vite module graph. */
 const THEME_OVERRIDE_CSS = path.resolve(__dirname, "styles/tug-theme-override.css");
 
@@ -58,11 +51,11 @@ const EMPTY_OVERRIDE = "/* empty - brio default */\n";
  * startup, before Vite processes any CSS.
  *
  * - In build mode: always writes an empty override (Brio default).
- * - If `.tugtool/active-theme` is missing or set to `brio`: empty override.
- * - If `.tugtool/active-theme` names a non-Brio theme: derives CSS from the
- *   theme JSON and writes it to the override file so PostCSS can expand it.
+ * - Reads the active theme name from tugbank via `tugbank read dev.tugtool.app theme`.
+ * - If the theme is missing or set to `brio`: empty override.
  * - If the named theme JSON cannot be found: logs a warning and falls back to
  *   Brio (empty override).
+ * - Falls back to Brio if tugbank is unavailable (e.g. not yet installed).
  */
 function themeOverridePlugin(): VitePlugin {
   return {
@@ -74,12 +67,14 @@ function themeOverridePlugin(): VitePlugin {
         return;
       }
 
-      // Read active theme name.
+      // Read active theme name from tugbank. Falls back to "brio" on any failure
+      // (tugbank not installed, key not set, tugcast not running, etc.).
       let activeTheme = "brio";
       try {
-        activeTheme = fs.readFileSync(ACTIVE_THEME_FILE, "utf-8").trim();
+        const raw = execSync("tugbank read dev.tugtool.app theme", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+        if (raw) activeTheme = raw;
       } catch {
-        // File missing → default to brio.
+        // tugbank unavailable or key not set → default to brio.
       }
 
       if (!activeTheme || activeTheme === "brio") {
@@ -163,11 +158,13 @@ function controlTokenHotReload(): VitePlugin {
   }
 
   function reactivateActiveTheme() {
+    // Read active theme from tugbank. Falls back to "brio" on any failure.
     let activeTheme = "brio";
     try {
-      activeTheme = fs.readFileSync(ACTIVE_THEME_FILE, "utf-8").trim();
+      const raw = execSync("tugbank read dev.tugtool.app theme", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+      if (raw) activeTheme = raw;
     } catch {
-      // File missing → default to brio.
+      // tugbank unavailable or key not set → default to brio.
     }
 
     if (!activeTheme || activeTheme === "brio") {
@@ -184,7 +181,6 @@ function controlTokenHotReload(): VitePlugin {
           SHIPPED_THEMES_DIR,
           USER_THEMES_DIR,
           THEME_OVERRIDE_CSS,
-          ACTIVE_THEME_FILE,
         );
       } catch (err) {
         console.error(`[control-token-hot-reload] failed to re-derive override for theme "${activeTheme}":`, err);
@@ -498,7 +494,7 @@ export function handleThemesSave(
 // activateThemeOverride — shared logic for startup plugin and activate endpoint
 //
 // Finds the theme JSON, derives CSS via generateThemeCSS(), writes the override
-// file (empty for Brio), writes .tugtool/active-theme, and returns
+// file (empty for Brio), and returns
 // { theme, canvasParams }. Both the startup plugin and the POST /activate
 // handler call this function; tests can inject a mock fsImpl.
 //
@@ -520,13 +516,15 @@ export interface ActivateResult {
 }
 
 /**
- * Activate a theme by rewriting the override CSS file and persisting the
- * active-theme name. Returns { theme, canvasParams } on success.
+ * Activate a theme by rewriting the override CSS file.
+ * Returns { theme, canvasParams } on success.
  *
  * - For Brio: writes EMPTY_OVERRIDE to overrideCssPath.
  * - For non-Brio: derives CSS from the theme JSON and writes it to overrideCssPath.
- * - Always writes themeName to activeThemePath.
  * - Throws if the theme JSON cannot be found or CSS generation fails.
+ *
+ * The active theme name is persisted to tugbank by the client-side settings-api.ts
+ * (putTheme), not by this function. This function only manages the CSS override file.
  *
  * Both generateThemeCSS and deriveTheme are lazy-required to avoid circular
  * dependency at module parse time.
@@ -537,11 +535,9 @@ export function activateThemeOverride(
   shippedDir: string,
   userDir: string,
   overrideCssPath: string,
-  activeThemePath: string,
 ): ActivateResult {
   if (themeName === "brio") {
     fsImpl.writeFileSync(overrideCssPath, EMPTY_OVERRIDE, "utf-8");
-    fsImpl.writeFileSync(activeThemePath, "brio", "utf-8");
 
     // Brio canvas params: derived from brio.json recipe.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -604,7 +600,6 @@ export function activateThemeOverride(
 
   const css = generateThemeCSS(recipe);
   fsImpl.writeFileSync(overrideCssPath, css, "utf-8");
-  fsImpl.writeFileSync(activeThemePath, themeName, "utf-8");
 
   const themeOutput = deriveTheme(recipe);
   return {
@@ -646,7 +641,6 @@ function withMutex(fn: () => Promise<void>): Promise<void> {
 //   shippedDir     — absolute path to shipped theme JSON files
 //   userDir        — absolute path to user-authored theme directory
 //   overrideCssPath — absolute path to tug-theme-override.css
-//   activeThemePath — absolute path to .tugtool/active-theme
 // ---------------------------------------------------------------------------
 
 export async function handleThemesActivate(
@@ -655,7 +649,6 @@ export async function handleThemesActivate(
   shippedDir: string,
   userDir: string,
   overrideCssPath: string,
-  activeThemePath: string,
 ): Promise<{ status: number; body: string }> {
   if (!body || typeof body !== "object") {
     return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
@@ -670,7 +663,7 @@ export async function handleThemesActivate(
   return new Promise<{ status: number; body: string }>((resolve) => {
     withMutex(async () => {
       try {
-        const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath, activeThemePath);
+        const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath);
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -739,7 +732,7 @@ function themeSaveLoadPlugin(): VitePlugin {
               // file write is serialized with any concurrent activate requests.
               withMutex(async () => {
                 try {
-                  const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS, ACTIVE_THEME_FILE);
+                  const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS);
                   const responseBody = JSON.stringify({ ok: true, name: saveResult.themeName, canvasParams: activateResult.canvasParams });
                   res.writeHead(200, { "Content-Type": "application/json" });
                   res.end(responseBody);
@@ -767,7 +760,7 @@ function themeSaveLoadPlugin(): VitePlugin {
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              handleThemesActivate(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS, ACTIVE_THEME_FILE).then((result) => {
+              handleThemesActivate(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS).then((result) => {
                 res.writeHead(result.status, { "Content-Type": "application/json" });
                 res.end(result.body);
               }).catch((err) => {
