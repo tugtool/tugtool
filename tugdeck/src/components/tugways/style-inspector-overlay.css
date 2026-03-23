@@ -108,6 +108,22 @@
   font-weight: 600;
 }
 
+.tug-inspector-panel__close-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  color: oklch(0.55 0.02 240);
+  margin-left: 6px;
+}
+
+.tug-inspector-panel__close-btn:hover {
+  color: oklch(0.85 0.02 240);
+}
+
 /* ---------------------------------------------------------------------------
    Panel body
    --------------------------------------------------------------------------- */
@@ -281,6 +297,51 @@
 .tug-inspector-readout__val {
   color: oklch(0.72 0.18 200);
   font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Formula provenance section (Step 3)
+   --------------------------------------------------------------------------- */
+
+/**
+ * @tug-pairings
+ * Formula section color additions (hardcoded oklch, not tracked by contrast engine):
+ * | Element (hardcoded)          | Surface (hardcoded)          | Role         | Context                                  |
+ * |------------------------------|------------------------------|--------------|------------------------------------------|
+ * | oklch(0.72 0.18 270)         | oklch(0.14 0.01 240)         | content      | Formula field name (purple-ish tone)     |
+ * | oklch(0.75 0.15 140)         | oklch(0.14 0.01 240)         | content      | Formula field value (green tone)         |
+ * | oklch(0.50 0.02 240)         | oklch(0.14 0.01 240)         | informational | Formula property label                  |
+ * | oklch(0.48 0.10 55)          | oklch(0.14 0.01 240)         | informational | "applies on release" indicator           |
+ */
+
+.tug-inspector-formula__field {
+  color: oklch(0.72 0.18 270);
+  flex-shrink: 0;
+}
+
+.tug-inspector-formula__eq {
+  color: oklch(0.45 0.02 240);
+  flex-shrink: 0;
+}
+
+.tug-inspector-formula__value {
+  color: oklch(0.75 0.15 140);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.tug-inspector-formula__prop {
+  color: oklch(0.50 0.02 240);
+  font-size: 10px;
+  font-style: italic;
+  flex-shrink: 0;
+}
+
+.tug-inspector-formula__release-label {
+  color: oklch(0.48 0.10 55);
+  font-size: 10px;
+  font-style: italic;
+  flex-shrink: 0;
 }
 
 /* ---------------------------------------------------------------------------

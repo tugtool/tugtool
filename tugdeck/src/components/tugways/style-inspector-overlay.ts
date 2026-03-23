@@ -28,6 +28,8 @@
 import "./style-inspector-overlay.css";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "./scale-timing";
 import { oklchToTugColor } from "./palette-engine";
+import { buildReverseMap, type ReverseMap } from "./formula-reverse-map";
+import { RULES } from "./theme-rules";
 
 // ---------------------------------------------------------------------------
 // PALETTE_VAR_REGEX -- matches only known hue palette variables
@@ -81,6 +83,36 @@ export interface TugColorProvenance {
   canonicalL: string;
   peakC: string;
   hueAngle: string;
+}
+
+/**
+ * Formula data fetched from GET /__themes/formulas.
+ * Used by the formula provenance section in the inspector panel.
+ *
+ * Step 3 — formula provenance display [D04]
+ */
+export interface FormulasData {
+  /** Current formula field values keyed by field name. */
+  formulas: Record<string, number | string | boolean>;
+  /** Theme mode: "dark" | "light" */
+  mode: string;
+  /** Theme name */
+  themeName: string;
+}
+
+/**
+ * A formula row entry for display in the panel.
+ * Each entry represents one formula field that affects the terminal token.
+ */
+export interface FormulaRow {
+  /** Formula field name, e.g. "surfaceAppTone" */
+  field: string;
+  /** Current value of the field */
+  value: number | string | boolean;
+  /** Which property this field controls */
+  property: "intensity" | "tone" | "alpha" | "hueSlot";
+  /** Whether this field is a StructuralRule field (no drag preview) */
+  isStructural: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +216,111 @@ const BASE_TOKEN_FALLBACKS: Record<string, string[]> = {
 };
 
 // ---------------------------------------------------------------------------
+// Formula section DOM builder — exported for unit testing
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch current formula values from the dev server's formulas cache endpoint.
+ * Returns null if the server returns a non-200 or the fetch fails.
+ *
+ * Step 3 — formula provenance display [D04]
+ */
+async function fetchFormulasData(): Promise<FormulasData | null> {
+  try {
+    const response = await fetch("/__themes/formulas");
+    if (!response.ok) return null;
+    return (await response.json()) as FormulasData;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Format a formula field value for display.
+ * Numbers are rounded to 3 significant figures; strings and booleans are shown as-is.
+ */
+function formatFieldValue(value: number | string | boolean): string {
+  if (typeof value === "number") {
+    return value.toPrecision(3).replace(/\.?0+$/, "");
+  }
+  return String(value);
+}
+
+/**
+ * Build the "Formula Provenance" section DOM element for the inspector panel.
+ *
+ * Shows the formula fields that contribute to the terminal token's color/value.
+ * For constant tokens (no formula fields), shows a "(constant)" indicator.
+ * For StructuralRule fields, appends "(applies on release)" label.
+ *
+ * Exported for unit testing.
+ *
+ * Step 3 — formula provenance display [D04]
+ *
+ * @param rows - FormulaRow array derived from tokenToFields + formulas data
+ * @param isConstant - True when the token has no formula fields (white/invariant rules)
+ */
+export function createFormulaSection(
+  rows: FormulaRow[],
+  isConstant: boolean,
+): HTMLElement {
+  const section = document.createElement("div");
+  section.className = "tug-inspector-section";
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "tug-inspector-section__title";
+  titleEl.textContent = "Formula";
+  section.appendChild(titleEl);
+
+  if (isConstant || rows.length === 0) {
+    const row = document.createElement("div");
+    row.className = "tug-inspector-row";
+    const val = document.createElement("span");
+    val.className = "tug-inspector-row__value tug-inspector-row__value--dim";
+    val.textContent = "(constant)";
+    row.appendChild(val);
+    section.appendChild(row);
+    return section;
+  }
+
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = "tug-inspector-row";
+
+    const fieldEl = document.createElement("span");
+    fieldEl.className = "tug-inspector-formula__field";
+    fieldEl.textContent = r.field;
+    row.appendChild(fieldEl);
+
+    const eqEl = document.createElement("span");
+    eqEl.className = "tug-inspector-formula__eq";
+    eqEl.textContent = "=";
+    row.appendChild(eqEl);
+
+    const valEl = document.createElement("span");
+    valEl.className = "tug-inspector-formula__value";
+    valEl.textContent = formatFieldValue(r.value);
+    row.appendChild(valEl);
+
+    const propEl = document.createElement("span");
+    propEl.className = "tug-inspector-formula__prop";
+    propEl.textContent = r.property;
+    row.appendChild(propEl);
+
+    if (r.isStructural) {
+      const relEl = document.createElement("span");
+      relEl.className = "tug-inspector-formula__release-label";
+      relEl.textContent = "(applies on release)";
+      row.appendChild(relEl);
+    }
+
+    section.appendChild(row);
+  }
+
+  return section;
+}
+
+// ---------------------------------------------------------------------------
 // StyleInspectorOverlay class
 // ---------------------------------------------------------------------------
 
@@ -211,6 +348,19 @@ export class StyleInspectorOverlay {
 
   /** Cleanup function returned from init(). */
   private cleanupFn: (() => void) | null = null;
+
+  /**
+   * Reverse map cached for the session. Built once on first activation.
+   * Step 3 — formula provenance [D01]
+   */
+  private reverseMap: ReverseMap | null = null;
+
+  /**
+   * Latest formula data fetched from /__themes/formulas.
+   * Refreshed on each inspectElement call.
+   * Step 3 — formula provenance [D04]
+   */
+  private formulasData: FormulasData | null = null;
 
   // ----- DOM Elements -----
 
@@ -299,11 +449,26 @@ export class StyleInspectorOverlay {
 
   /**
    * Show the overlay and begin tracking.
+   * Lazily builds the reverse map on first activation (cached for the session).
+   * Step 3 — formula provenance [D01]
    */
   activate(): void {
     this.active = true;
     this.highlightEl.style.display = "";
     this.panelEl.style.display = "";
+
+    // Build reverse map once per session
+    if (!this.reverseMap) {
+      this.reverseMap = buildReverseMap(RULES);
+    }
+
+    // Fetch fresh formula data on activation so the first inspected element
+    // can show formula provenance immediately.  [D06] step-3 task.
+    fetchFormulasData().then((data) => {
+      this.formulasData = data;
+    }).catch(() => {
+      // Fetch failed — formula section will be omitted until a successful fetch
+    });
   }
 
   /**
@@ -378,25 +543,32 @@ export class StyleInspectorOverlay {
   }
 
   /**
-   * Handle click: toggle pin state.
-   * When pinned, click unpins. When active (unpinned), click pins.
+   * Handle click: pin on first click while active (unpinned).
+   * When already pinned, clicking a different element re-inspects that element.
+   * Escape and the close button are the only ways to dismiss.
    *
-   * [D05] Pin/unpin interaction model
+   * [D06] Pin behavior change — click re-inspects, Escape/close dismisses
+   * Step 3 — formula provenance display
    */
   onClick(event: MouseEvent): void {
     if (!this.active) return;
 
-    // Don't pin if clicking within the inspector panel itself
+    // Don't act if clicking within the inspector panel itself
     if (this.panelEl.contains(event.target as Node)) return;
 
-    this.pinned = !this.pinned;
-
-    if (this.pinned) {
+    if (!this.pinned) {
+      // First click: pin the overlay
+      this.pinned = true;
       this.highlightEl.classList.add("tug-inspector-highlight--pinned");
       this.renderPinBadge(true);
+      this.renderHintText();
     } else {
-      this.highlightEl.classList.remove("tug-inspector-highlight--pinned");
-      this.renderPinBadge(false);
+      // Already pinned: re-inspect the clicked element
+      const el = document.elementFromPoint(event.clientX, event.clientY);
+      if (el && el !== this.highlightEl && el !== this.panelEl && !this.panelEl.contains(el)) {
+        this.currentTarget = el;
+        this.inspectElement(el as HTMLElement, event.clientX, event.clientY);
+      }
     }
   }
 
@@ -406,6 +578,11 @@ export class StyleInspectorOverlay {
    * Inspect an element: position the highlight overlay, read its token chains,
    * and populate the panel with all inspector data.
    *
+   * Fetches formula data asynchronously and updates the panel once received.
+   * The panel is rendered immediately with available data, then updated with
+   * formula provenance once the fetch resolves.
+   *
+   * Step 3 — formula provenance display [D04]
    * Spec S01, S03 (#s03-inspected-properties)
    */
   inspectElement(el: HTMLElement, cursorX: number, cursorY: number): void {
@@ -430,9 +607,12 @@ export class StyleInspectorOverlay {
     const timing = getTugTiming();
     const motionOn = isTugMotionEnabled();
 
-    // Render the panel
+    // Capture the formula target element to avoid closure stale-reference issues
+    const targetEl = el;
+
+    // Render the panel immediately with existing formulas data (may be null on first load)
     this.renderPanel({
-      el,
+      el: targetEl,
       domPath,
       bgColor,
       fgColor,
@@ -443,6 +623,31 @@ export class StyleInspectorOverlay {
       zoom,
       timing,
       motionOn,
+      formulasData: this.formulasData,
+    });
+
+    // Fetch fresh formulas data and update the panel
+    fetchFormulasData().then((data) => {
+      this.formulasData = data;
+      // Only re-render if the element is still the current target
+      if (this.currentTarget === targetEl) {
+        this.renderPanel({
+          el: targetEl,
+          domPath,
+          bgColor,
+          fgColor,
+          borderColor,
+          bgChain,
+          fgChain,
+          borderChain,
+          zoom,
+          timing,
+          motionOn,
+          formulasData: this.formulasData,
+        });
+      }
+    }).catch(() => {
+      // Fetch failed — panel already shown without formula section
     });
   }
 
@@ -943,6 +1148,21 @@ export class StyleInspectorOverlay {
   }
 
   /**
+   * Update the hint text at the bottom of the panel.
+   * When pinned: "Escape to close"
+   * When unpinned: "Click to pin • Escape to close"
+   * Step 3 — pin behavior change [D06]
+   */
+  private renderHintText(): void {
+    const hint = this.panelEl.querySelector(".tug-inspector-hint");
+    if (hint) {
+      hint.textContent = this.pinned
+        ? "Escape to close"
+        : "Click to pin \u2022 Escape to close";
+    }
+  }
+
+  /**
    * Render a color swatch element for a given color value.
    */
   private makeSwatchEl(color: string): HTMLSpanElement {
@@ -1144,6 +1364,8 @@ export class StyleInspectorOverlay {
 
   /**
    * Full panel render: clears and repopulates the panel element.
+   * Includes formula provenance section when formulasData is available.
+   * Step 3 — formula provenance display [D04]
    */
   private renderPanel(data: {
     el: HTMLElement;
@@ -1157,6 +1379,7 @@ export class StyleInspectorOverlay {
     zoom: number;
     timing: number;
     motionOn: boolean;
+    formulasData?: FormulasData | null;
   }): void {
     this.panelEl.innerHTML = "";
 
@@ -1173,6 +1396,20 @@ export class StyleInspectorOverlay {
     pinBadge.className = "tug-inspector-panel__pin-badge";
     pinBadge.textContent = this.pinned ? "PINNED" : "";
     header.appendChild(pinBadge);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "tug-inspector-panel__close-btn";
+    closeBtn.textContent = "\u00d7";
+    closeBtn.title = "Close inspector";
+    closeBtn.addEventListener("click", () => {
+      this.pinned = false;
+      this.active = false;
+      this.highlightEl.style.display = "none";
+      this.panelEl.style.display = "none";
+      this.currentTarget = null;
+      this.highlightEl.classList.remove("tug-inspector-highlight--pinned");
+    });
+    header.appendChild(closeBtn);
 
     this.panelEl.appendChild(header);
 
@@ -1289,15 +1526,95 @@ export class StyleInspectorOverlay {
       )
     );
 
+    // Formula provenance section (Step 3)
+    if (data.formulasData) {
+      const formulaSection = this.buildFormulaSectionForInspection(
+        data.bgChain,
+        data.fgChain,
+        data.borderChain,
+        data.formulasData,
+      );
+      if (formulaSection) {
+        body.appendChild(formulaSection);
+      }
+    }
+
     // Hint
     const hint = document.createElement("div");
     hint.className = "tug-inspector-hint";
     hint.textContent = this.pinned
-      ? "Click or Escape to unpin"
+      ? "Escape to close"
       : "Click to pin \u2022 Escape to close";
     body.appendChild(hint);
 
     this.panelEl.appendChild(body);
+  }
+
+  /**
+   * Build the formula provenance section for the currently inspected element.
+   *
+   * Finds the terminal token from the first chain that ends at a token (bgChain,
+   * fgChain, or borderChain), looks up formula fields via tokenToFields, and
+   * creates the formula section DOM node.
+   *
+   * Returns null if the reverse map is not available or no formula fields found.
+   *
+   * Step 3 — formula provenance display [D04]
+   */
+  private buildFormulaSectionForInspection(
+    bgChain: TokenChainResult,
+    fgChain: TokenChainResult,
+    borderChain: TokenChainResult,
+    formulasData: FormulasData,
+  ): HTMLElement | null {
+    if (!this.reverseMap) return null;
+
+    // Collect formula rows for all chains that have a terminal token
+    const allRows: FormulaRow[] = [];
+    const seenFields = new Set<string>();
+
+    for (const chain of [bgChain, fgChain, borderChain]) {
+      if (!chain.originToken) continue;
+
+      // Use terminal token (last in chain) for formula lookup
+      const terminalToken = chain.chain.length > 0
+        ? chain.chain[chain.chain.length - 1].property
+        : chain.originToken;
+
+      const mappings = this.reverseMap.tokenToFields.get(terminalToken);
+      if (!mappings) continue;
+
+      for (const mapping of mappings) {
+        if (seenFields.has(mapping.field)) continue;
+        seenFields.add(mapping.field);
+
+        const rawValue = formulasData.formulas[mapping.field];
+        if (rawValue === undefined) continue;
+
+        // Determine if this is a structural field (cannot do drag preview)
+        // Structural fields have property "tone" from the reverse map
+        // but they are non-color tokens — we identify them by checking
+        // whether the terminal token starts with known structural token patterns
+        // (opacity, radius, spacing, gap, etc.). A simpler heuristic: if
+        // the terminal value from the chain is not an oklch() value and not
+        // a palette variable, it's likely structural.
+        const terminalValue = chain.terminalValue ?? "";
+        const isStructural =
+          !terminalValue.startsWith("oklch(") &&
+          !PALETTE_VAR_REGEX.test(terminalToken) &&
+          !chain.endsAtPalette;
+
+        allRows.push({
+          field: mapping.field,
+          value: rawValue,
+          property: mapping.property,
+          isStructural,
+        });
+      }
+    }
+
+    const isConstant = allRows.length === 0;
+    return createFormulaSection(allRows, isConstant);
   }
 }
 

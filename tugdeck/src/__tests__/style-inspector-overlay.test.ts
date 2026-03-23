@@ -247,16 +247,19 @@ describe("StyleInspectorOverlay -- pin/unpin state machine", () => {
     expect(overlay.isPinned).toBe(true);
   });
 
-  it("unpins on second click while pinned", () => {
-    const clickEvent1 = new MouseEvent("click", { bubbles: true });
+  it("stays pinned on second click while pinned (re-inspect behavior, [D06])", () => {
+    // [D06] click re-inspects new element, does NOT unpin.
+    // Escape or close button are the only ways to dismiss.
+    const clickEvent1 = new MouseEvent("click", { bubbles: true, clientX: 10, clientY: 10 });
     Object.defineProperty(clickEvent1, "target", { value: document.body });
     overlay.onClick(clickEvent1);
     expect(overlay.isPinned).toBe(true);
 
-    const clickEvent2 = new MouseEvent("click", { bubbles: true });
+    const clickEvent2 = new MouseEvent("click", { bubbles: true, clientX: 10, clientY: 10 });
     Object.defineProperty(clickEvent2, "target", { value: document.body });
     overlay.onClick(clickEvent2);
-    expect(overlay.isPinned).toBe(false);
+    // Still pinned — click while pinned does re-inspect, not unpin
+    expect(overlay.isPinned).toBe(true);
   });
 
   it("does not pin when clicking inside the panel", () => {

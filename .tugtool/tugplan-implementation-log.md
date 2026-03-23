@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-23T23:39:31Z
+---
+
+## step-3: Added formula section to inspector panel showing formula fields affecting tokens with current values and property labels. Changed pin behavior per D06: click re-inspects, Escape/close button dismisses. Added close button to panel header. 58 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-formula-editor.md
+
+---
+
+---
 step: step-2
 date: 2025-03-23T23:19:19Z
 ---
