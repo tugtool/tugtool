@@ -25,8 +25,9 @@
  * | --tug-element-control-text-filled-danger-active (element-control-text-filled-danger-active) | --tug-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | control      | .tug-button-filled-danger[data-state="open"] (color) |
  * | --tug-element-control-border-filled-danger-active (element-control-border-filled-danger-active) | --tug-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | control      | .tug-button-filled-danger[data-state="open"] (border-color) |
  * | --tug-element-control-icon-filled-danger-active (element-control-icon-filled-danger-active) | --tug-surface-control-primary-filled-danger-active (surface-control-primary-filled-danger-active) | control      | .tug-button-filled-danger[data-state="open"] svg (color) |
- * | --tug-dropdown-border (element-global-border-normal-default-rest) | --tug-dropdown-bg (surface-global-primary-normal-overlay-rest) | informational | .tug-dropdown-content (border)       |
- * | --tug-dropdown-fg (element-global-text-normal-default-rest) | --tug-dropdown-bg (surface-global-primary-normal-overlay-rest) | content      | .tug-dropdown-content (color)        |
+ * | --tug-dropdown-border (dropdown-border)          | --tug-dropdown-bg (dropdown-bg)                  | informational | .tug-dropdown-content (border)       |
+ * | --tug-dropdown-fg (dropdown-fg)                  | --tug-dropdown-bg (dropdown-bg)                  | content      | .tug-dropdown-content (color)        |
+ * | --tug-dropdown-fg (dropdown-fg)                  | --tug-surface-global-primary-normal-overlay-rest (surface-global-primary-normal-overlay-rest) | content      | .tug-dropdown-item (color)           |
  * | --tug-element-control-text-filled-action-hover (element-control-text-filled-action-hover) | --tug-surface-control-primary-filled-action-hover (surface-control-primary-filled-action-hover) | control      | .tug-dropdown-item:hover:not([data-disabled]), .tug-dropdown-item[data-highlighted]:not([data-disabled]) (color) |
  */
 

@@ -1221,6 +1221,98 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // =========================================================================
+  // Badge Outlined / Ghost icon tokens (badge-token-split)
+  // Icon tokens render identically to the corresponding text tokens but are
+  // named with "icon" for CSS currentColor inheritance on SVG elements.
+  // Both outlined and ghost badges have transparent surfaces; contrast is
+  // measured against surface-default via parentSurface compositing. [D04]
+  // =========================================================================
+  {
+    element: "--tug-element-badge-icon-outlined-accent-rest",
+    surface: "--tug-surface-badge-primary-outlined-accent-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-outlined-action-rest",
+    surface: "--tug-surface-badge-primary-outlined-action-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-outlined-danger-rest",
+    surface: "--tug-surface-badge-primary-outlined-danger-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-outlined-agent-rest",
+    surface: "--tug-surface-badge-primary-outlined-agent-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-outlined-data-rest",
+    surface: "--tug-surface-badge-primary-outlined-data-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-outlined-success-rest",
+    surface: "--tug-surface-badge-primary-outlined-success-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-outlined-caution-rest",
+    surface: "--tug-surface-badge-primary-outlined-caution-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-ghost-accent-rest",
+    surface: "--tug-surface-badge-primary-ghost-accent-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-ghost-action-rest",
+    surface: "--tug-surface-badge-primary-ghost-action-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-ghost-danger-rest",
+    surface: "--tug-surface-badge-primary-ghost-danger-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-ghost-agent-rest",
+    surface: "--tug-surface-badge-primary-ghost-agent-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-ghost-data-rest",
+    surface: "--tug-surface-badge-primary-ghost-data-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-ghost-success-rest",
+    surface: "--tug-surface-badge-primary-ghost-success-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug-element-badge-icon-ghost-caution-rest",
+    surface: "--tug-surface-badge-primary-ghost-caution-rest",
+    role: "informational",
+    parentSurface: "--tug-surface-global-primary-normal-default-rest",
+  },
+
+  // =========================================================================
   // Toggle track visibility — track against parent surface (Step 3)
   // Checks whether the toggle track itself is visible against the surface it
   // sits on. "on" and hover states are the primary actionable signals;

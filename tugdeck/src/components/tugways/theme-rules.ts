@@ -14,6 +14,8 @@
  *   E. Control Surfaces: filled, outlined, ghost, disabled, field, toggle,
  *      checkmark, separator (~207 tokens)
  *   F. Badge Tinted (~21 tokens)
+ *   F2. Badge Outlined: 7 roles × 4 properties = 28 tokens
+ *   F3. Badge Ghost: 7 roles × 4 properties = 28 tokens
  *
  * hueSlot names follow dual-path resolution [D09]:
  *   - Direct ResolvedHueSlots keys (e.g., "text", "action", "accent") ->
@@ -1375,6 +1377,76 @@ const BADGE_TINTED_RULES: Record<string, DerivationRule> = {
 };
 
 // ---------------------------------------------------------------------------
+// F2. Badge Outlined — factory helper
+// 7 roles × 4 properties (surface, text, border, icon) = 28 tokens
+// Badges are non-interactive: rest state only (no hover/active).
+// Text/icon: role-colored via roleIntensity + semanticRoleTone (semanticTone builder).
+// Border: role-colored via borderRest (roleIntensity+5, borderRoleTone).
+// Surface: transparent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build 4 badge-outlined tokens for a role (rest only).
+ * Surface: transparent
+ * Text: role hue at roleIntensity, semanticRoleTone
+ * Border: role hue at roleIntensity+5, borderRoleTone
+ * Icon: role hue at roleIntensity, semanticRoleTone (same as text)
+ */
+function outlinedBadgeRules(role: string, hueSlot: string): Record<string, DerivationRule> {
+  return {
+    [`--tug-surface-badge-primary-outlined-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
+    [`--tug-element-badge-text-outlined-${role}-rest`]: semanticTone()(hueSlot),
+    [`--tug-element-badge-border-outlined-${role}-rest`]: borderRest(hueSlot),
+    [`--tug-element-badge-icon-outlined-${role}-rest`]: semanticTone()(hueSlot),
+  };
+}
+
+const BADGE_OUTLINED_RULES: Record<string, DerivationRule> = {
+  ...outlinedBadgeRules("accent", "accent"),
+  ...outlinedBadgeRules("action", "action"),
+  ...outlinedBadgeRules("danger", "destructive"),
+  ...outlinedBadgeRules("agent", "agent"),
+  ...outlinedBadgeRules("data", "data"),
+  ...outlinedBadgeRules("success", "success"),
+  ...outlinedBadgeRules("caution", "caution"),
+};
+
+// ---------------------------------------------------------------------------
+// F3. Badge Ghost — factory helper
+// 7 roles × 4 properties (surface, text, border, icon) = 28 tokens
+// Badges are non-interactive: rest state only (no hover/active).
+// Text/icon: role-colored via roleIntensity + semanticRoleTone (semanticTone builder).
+// Border: transparent at rest.
+// Surface: transparent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build 4 badge-ghost tokens for a role (rest only).
+ * Surface: transparent
+ * Text: role hue at roleIntensity, semanticRoleTone
+ * Border: transparent
+ * Icon: role hue at roleIntensity, semanticRoleTone (same as text)
+ */
+function ghostBadgeRules(role: string, hueSlot: string): Record<string, DerivationRule> {
+  return {
+    [`--tug-surface-badge-primary-ghost-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
+    [`--tug-element-badge-text-ghost-${role}-rest`]: semanticTone()(hueSlot),
+    [`--tug-element-badge-border-ghost-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
+    [`--tug-element-badge-icon-ghost-${role}-rest`]: semanticTone()(hueSlot),
+  };
+}
+
+const BADGE_GHOST_RULES: Record<string, DerivationRule> = {
+  ...ghostBadgeRules("accent", "accent"),
+  ...ghostBadgeRules("action", "action"),
+  ...ghostBadgeRules("danger", "destructive"),
+  ...ghostBadgeRules("agent", "agent"),
+  ...ghostBadgeRules("data", "data"),
+  ...ghostBadgeRules("success", "success"),
+  ...ghostBadgeRules("caution", "caution"),
+};
+
+// ---------------------------------------------------------------------------
 // RULES — complete merged rule table for all 373 tokens
 // ---------------------------------------------------------------------------
 
@@ -1404,4 +1476,6 @@ export const RULES: Record<string, DerivationRule> = {
   ...FIELD_RULES,
   ...TOGGLE_RULES,
   ...BADGE_TINTED_RULES,
+  ...BADGE_OUTLINED_RULES,
+  ...BADGE_GHOST_RULES,
 };

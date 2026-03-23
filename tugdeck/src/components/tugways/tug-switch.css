@@ -7,6 +7,14 @@
   --tug-element-field-text-normal-label-rest       |  --tug-surface-global-primary-normal-default-rest | content
 } */
 
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-switch-label (color)            |
+ */
+
+
 /* ============================================================================
    Switch Root (.tug-switch)
    ========================================================================= */

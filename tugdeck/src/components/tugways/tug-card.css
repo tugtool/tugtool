@@ -7,11 +7,11 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-card-border (element-global-border-normal-default-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
- * | --tug-card-title-fg (element-cardTitle-text-normal-plain-rest) | --tug-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | display      | .tugcard-title (color)               |
- * | --tug-card-title-fg (element-cardTitle-text-normal-plain-rest) | --tug-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | display      | .tugcard-title (color)               |
- * | --tug-card-title-bar-icon-active (element-global-icon-normal-active-rest) | --tug-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
- * | --tug-card-title-bar-icon-inactive (element-global-text-normal-subtle-rest) | --tug-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | informational | .card-frame[data-focused="false"] .tugcard-icon (color) |
+ * | --tug-card-border (card-border)                  | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
+ * | --tug-card-title-fg (card-title-fg)              | --tug-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | content      | .tugcard-title (color)               |
+ * | --tug-card-title-fg (card-title-fg)              | --tug-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | content      | .tugcard-title (color)               |
+ * | --tug-card-title-bar-icon-active (card-title-bar-icon-active) | --tug-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
+ * | --tug-card-title-bar-icon-inactive (card-title-bar-icon-inactive) | --tug-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
  * | --tug-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
  * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
  */

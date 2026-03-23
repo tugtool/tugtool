@@ -15,31 +15,40 @@
  * | --tug-element-control-border-filled-danger-rest (element-control-border-filled-danger-rest) | --tug-surface-control-primary-filled-danger-rest (surface-control-primary-filled-danger-rest) | control      | .tug-badge-filled-danger (border-color) |
  * | --tug-element-control-text-filled-agent-rest (element-control-text-filled-agent-rest) | --tug-surface-control-primary-filled-agent-rest (surface-control-primary-filled-agent-rest) | control      | .tug-badge-filled-agent (color)      |
  * | --tug-element-control-border-filled-agent-rest (element-control-border-filled-agent-rest) | --tug-surface-control-primary-filled-agent-rest (surface-control-primary-filled-agent-rest) | control      | .tug-badge-filled-agent (border-color) |
- * | --tug-element-control-text-outlined-action-rest (element-control-text-outlined-action-rest) | --tug-surface-control-primary-outlined-action-rest (surface-control-primary-outlined-action-rest) | control      | .tug-badge-outlined-action (color)   |
- * | --tug-element-control-border-outlined-action-rest (element-control-border-outlined-action-rest) | --tug-surface-control-primary-outlined-action-rest (surface-control-primary-outlined-action-rest) | control      | .tug-badge-outlined-action (border-color) |
- * | --tug-element-control-text-outlined-agent-rest (element-control-text-outlined-agent-rest) | --tug-surface-control-primary-outlined-agent-rest (surface-control-primary-outlined-agent-rest) | control      | .tug-badge-outlined-agent (color)    |
- * | --tug-element-control-border-outlined-agent-rest (element-control-border-outlined-agent-rest) | --tug-surface-control-primary-outlined-agent-rest (surface-control-primary-outlined-agent-rest) | control      | .tug-badge-outlined-agent (border-color) |
- * | --tug-element-control-text-ghost-action-rest (element-control-text-ghost-action-rest) | --tug-surface-control-primary-ghost-action-rest (surface-control-primary-ghost-action-rest) | control      | .tug-badge-ghost-action (color)      |
- * | --tug-element-control-border-ghost-action-rest (element-control-border-ghost-action-rest) | --tug-surface-control-primary-ghost-action-rest (surface-control-primary-ghost-action-rest) | control      | .tug-badge-ghost-action (border-color) |
- * | --tug-element-control-text-ghost-danger-rest (element-control-text-ghost-danger-rest) | --tug-surface-control-primary-ghost-danger-rest (surface-control-primary-ghost-danger-rest) | control      | .tug-badge-ghost-danger (color)      |
- * | --tug-element-control-border-ghost-danger-rest (element-control-border-ghost-danger-rest) | --tug-surface-control-primary-ghost-danger-rest (surface-control-primary-ghost-danger-rest) | control      | .tug-badge-ghost-danger (border-color) |
- * | --tug-element-tone-text-normal-accent-rest (element-tone-text-normal-accent-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-accent (color)   |
- * | --tug-element-tone-fill-normal-accent-rest (element-tone-fill-normal-accent-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-accent (border-color) |
- * | --tug-element-tone-fill-normal-danger-rest (element-tone-fill-normal-danger-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-danger (border-color) |
- * | --tug-element-tone-fill-normal-data-rest (element-tone-fill-normal-data-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-data (border-color) |
- * | --tug-element-tone-text-normal-accent-rest (element-tone-text-normal-accent-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-ghost-accent (color)      |
- * | --tug-element-tone-text-normal-agent-rest (element-tone-text-normal-agent-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-ghost-agent (color)       |
- * | --tug-element-tone-text-normal-data-rest (element-tone-text-normal-data-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-ghost-data (color)        |
+ * | --tug-element-badge-text-outlined-action-rest (element-badge-text-outlined-action-rest) | --tug-surface-badge-primary-outlined-action-rest (surface-badge-primary-outlined-action-rest) | informational | .tug-badge-outlined-action (color)   |
+ * | --tug-element-badge-border-outlined-action-rest (element-badge-border-outlined-action-rest) | --tug-surface-badge-primary-outlined-action-rest (surface-badge-primary-outlined-action-rest) | informational | .tug-badge-outlined-action (border-color) |
+ * | --tug-element-badge-text-outlined-agent-rest (element-badge-text-outlined-agent-rest) | --tug-surface-badge-primary-outlined-agent-rest (surface-badge-primary-outlined-agent-rest) | informational | .tug-badge-outlined-agent (color)    |
+ * | --tug-element-badge-border-outlined-agent-rest (element-badge-border-outlined-agent-rest) | --tug-surface-badge-primary-outlined-agent-rest (surface-badge-primary-outlined-agent-rest) | informational | .tug-badge-outlined-agent (border-color) |
+ * | --tug-element-badge-text-ghost-action-rest (element-badge-text-ghost-action-rest) | --tug-surface-badge-primary-ghost-action-rest (surface-badge-primary-ghost-action-rest) | informational | .tug-badge-ghost-action (color)      |
+ * | --tug-element-badge-border-ghost-action-rest (element-badge-border-ghost-action-rest) | --tug-surface-badge-primary-ghost-action-rest (surface-badge-primary-ghost-action-rest) | informational | .tug-badge-ghost-action (border-color) |
+ * | --tug-element-badge-text-ghost-danger-rest (element-badge-text-ghost-danger-rest) | --tug-surface-badge-primary-ghost-danger-rest (surface-badge-primary-ghost-danger-rest) | informational | .tug-badge-ghost-danger (color)      |
+ * | --tug-element-badge-border-ghost-danger-rest (element-badge-border-ghost-danger-rest) | --tug-surface-badge-primary-ghost-danger-rest (surface-badge-primary-ghost-danger-rest) | informational | .tug-badge-ghost-danger (border-color) |
+ * | --tug-element-badge-text-outlined-accent-rest (element-badge-text-outlined-accent-rest) | --tug-surface-badge-primary-outlined-accent-rest (surface-badge-primary-outlined-accent-rest) | informational | .tug-badge-outlined-accent (color)   |
+ * | --tug-element-badge-border-outlined-accent-rest (element-badge-border-outlined-accent-rest) | --tug-surface-badge-primary-outlined-accent-rest (surface-badge-primary-outlined-accent-rest) | informational | .tug-badge-outlined-accent (border-color) |
+ * | --tug-element-badge-text-outlined-danger-rest (element-badge-text-outlined-danger-rest) | --tug-surface-badge-primary-outlined-danger-rest (surface-badge-primary-outlined-danger-rest) | informational | .tug-badge-outlined-danger (color)   |
+ * | --tug-element-badge-border-outlined-danger-rest (element-badge-border-outlined-danger-rest) | --tug-surface-badge-primary-outlined-danger-rest (surface-badge-primary-outlined-danger-rest) | informational | .tug-badge-outlined-danger (border-color) |
+ * | --tug-element-badge-text-outlined-data-rest (element-badge-text-outlined-data-rest) | --tug-surface-badge-primary-outlined-data-rest (surface-badge-primary-outlined-data-rest) | informational | .tug-badge-outlined-data (color)     |
+ * | --tug-element-badge-border-outlined-data-rest (element-badge-border-outlined-data-rest) | --tug-surface-badge-primary-outlined-data-rest (surface-badge-primary-outlined-data-rest) | informational | .tug-badge-outlined-data (border-color) |
+ * | --tug-element-badge-text-ghost-accent-rest (element-badge-text-ghost-accent-rest) | --tug-surface-badge-primary-ghost-accent-rest (surface-badge-primary-ghost-accent-rest) | informational | .tug-badge-ghost-accent (color)      |
+ * | --tug-element-badge-border-ghost-accent-rest (element-badge-border-ghost-accent-rest) | --tug-surface-badge-primary-ghost-accent-rest (surface-badge-primary-ghost-accent-rest) | informational | .tug-badge-ghost-accent (border-color) |
+ * | --tug-element-badge-text-ghost-agent-rest (element-badge-text-ghost-agent-rest) | --tug-surface-badge-primary-ghost-agent-rest (surface-badge-primary-ghost-agent-rest) | informational | .tug-badge-ghost-agent (color)       |
+ * | --tug-element-badge-border-ghost-agent-rest (element-badge-border-ghost-agent-rest) | --tug-surface-badge-primary-ghost-agent-rest (surface-badge-primary-ghost-agent-rest) | informational | .tug-badge-ghost-agent (border-color) |
+ * | --tug-element-badge-text-ghost-data-rest (element-badge-text-ghost-data-rest) | --tug-surface-badge-primary-ghost-data-rest (surface-badge-primary-ghost-data-rest) | informational | .tug-badge-ghost-data (color)        |
+ * | --tug-element-badge-border-ghost-data-rest (element-badge-border-ghost-data-rest) | --tug-surface-badge-primary-ghost-data-rest (surface-badge-primary-ghost-data-rest) | informational | .tug-badge-ghost-data (border-color) |
  * | --tug-element-control-text-filled-data-rest (element-control-text-filled-data-rest) | --tug-surface-control-primary-filled-data-rest (surface-control-primary-filled-data-rest) | control      | .tug-badge-filled-data (color)       |
  * | --tug-element-control-border-filled-data-rest (element-control-border-filled-data-rest) | --tug-surface-control-primary-filled-data-rest (surface-control-primary-filled-data-rest) | control      | .tug-badge-filled-data (border-color) |
  * | --tug-element-control-text-filled-success-rest (element-control-text-filled-success-rest) | --tug-surface-control-primary-filled-success-rest (surface-control-primary-filled-success-rest) | control      | .tug-badge-filled-success (color)    |
  * | --tug-element-control-border-filled-success-rest (element-control-border-filled-success-rest) | --tug-surface-control-primary-filled-success-rest (surface-control-primary-filled-success-rest) | control      | .tug-badge-filled-success (border-color) |
- * | --tug-element-tone-fill-normal-success-rest (element-tone-fill-normal-success-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-success (border-color) |
- * | --tug-element-tone-text-normal-success-rest (element-tone-text-normal-success-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-ghost-success (color)     |
+ * | --tug-element-badge-text-outlined-success-rest (element-badge-text-outlined-success-rest) | --tug-surface-badge-primary-outlined-success-rest (surface-badge-primary-outlined-success-rest) | informational | .tug-badge-outlined-success (color)  |
+ * | --tug-element-badge-border-outlined-success-rest (element-badge-border-outlined-success-rest) | --tug-surface-badge-primary-outlined-success-rest (surface-badge-primary-outlined-success-rest) | informational | .tug-badge-outlined-success (border-color) |
+ * | --tug-element-badge-text-ghost-success-rest (element-badge-text-ghost-success-rest) | --tug-surface-badge-primary-ghost-success-rest (surface-badge-primary-ghost-success-rest) | informational | .tug-badge-ghost-success (color)     |
+ * | --tug-element-badge-border-ghost-success-rest (element-badge-border-ghost-success-rest) | --tug-surface-badge-primary-ghost-success-rest (surface-badge-primary-ghost-success-rest) | informational | .tug-badge-ghost-success (border-color) |
  * | --tug-element-control-text-filled-caution-rest (element-control-text-filled-caution-rest) | --tug-surface-control-primary-filled-caution-rest (surface-control-primary-filled-caution-rest) | control      | .tug-badge-filled-caution (color)    |
  * | --tug-element-control-border-filled-caution-rest (element-control-border-filled-caution-rest) | --tug-surface-control-primary-filled-caution-rest (surface-control-primary-filled-caution-rest) | control      | .tug-badge-filled-caution (border-color) |
- * | --tug-element-tone-fill-normal-caution-rest (element-tone-fill-normal-caution-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-outlined-caution (border-color) |
- * | --tug-element-tone-text-normal-caution-rest (element-tone-text-normal-caution-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-badge-ghost-caution (color)     |
+ * | --tug-element-badge-text-outlined-caution-rest (element-badge-text-outlined-caution-rest) | --tug-surface-badge-primary-outlined-caution-rest (surface-badge-primary-outlined-caution-rest) | informational | .tug-badge-outlined-caution (color)  |
+ * | --tug-element-badge-border-outlined-caution-rest (element-badge-border-outlined-caution-rest) | --tug-surface-badge-primary-outlined-caution-rest (surface-badge-primary-outlined-caution-rest) | informational | .tug-badge-outlined-caution (border-color) |
+ * | --tug-element-badge-text-ghost-caution-rest (element-badge-text-ghost-caution-rest) | --tug-surface-badge-primary-ghost-caution-rest (surface-badge-primary-ghost-caution-rest) | informational | .tug-badge-ghost-caution (color)     |
+ * | --tug-element-badge-border-ghost-caution-rest (element-badge-border-ghost-caution-rest) | --tug-surface-badge-primary-ghost-caution-rest (surface-badge-primary-ghost-caution-rest) | informational | .tug-badge-ghost-caution (border-color) |
  * | --tug-element-badge-text-tinted-accent-rest (element-badge-text-tinted-accent-rest) | --tug-surface-badge-primary-tinted-accent-rest (surface-badge-primary-tinted-accent-rest) | informational | .tug-badge-tinted-accent (color)     |
  * | --tug-element-badge-border-tinted-accent-rest (element-badge-border-tinted-accent-rest) | --tug-surface-badge-primary-tinted-accent-rest (surface-badge-primary-tinted-accent-rest) | informational | .tug-badge-tinted-accent (border-color) |
  * | --tug-element-badge-text-tinted-action-rest (element-badge-text-tinted-action-rest) | --tug-surface-badge-primary-tinted-action-rest (surface-badge-primary-tinted-action-rest) | informational | .tug-badge-tinted-action (color)     |
@@ -164,113 +173,86 @@
 /* --- outlined-action --- */
 
 .tug-badge-outlined-action {
-  background-color: var(--tug-surface-control-primary-outlined-action-rest);
-  color: var(--tug-element-control-text-outlined-action-rest);
-  border-color: var(--tug-element-control-border-outlined-action-rest);
+  background-color: var(--tug-surface-badge-primary-outlined-action-rest);
+  color: var(--tug-element-badge-text-outlined-action-rest);
+  border-color: var(--tug-element-badge-border-outlined-action-rest);
 }
 
 /* --- outlined-agent --- */
 
 .tug-badge-outlined-agent {
-  background-color: var(--tug-surface-control-primary-outlined-agent-rest);
-  color: var(--tug-element-control-text-outlined-agent-rest);
-  border-color: var(--tug-element-control-border-outlined-agent-rest);
+  background-color: var(--tug-surface-badge-primary-outlined-agent-rest);
+  color: var(--tug-element-badge-text-outlined-agent-rest);
+  border-color: var(--tug-element-badge-border-outlined-agent-rest);
 }
 
 /* --- ghost-action --- */
 
 .tug-badge-ghost-action {
-  background-color: var(--tug-surface-control-primary-ghost-action-rest);
-  color: var(--tug-element-control-text-ghost-action-rest);
-  border-color: var(--tug-element-control-border-ghost-action-rest);
-}
-
-/* --- outlined-accent --- */
-
-.tug-badge-outlined-accent {
-  background-color: var(--tug-surface-control-primary-outlined-accent-rest);
-  color: var(--tug-element-control-text-outlined-accent-rest);
-  border-color: var(--tug-element-control-border-outlined-accent-rest);
-}
-
-/* --- outlined-danger --- */
-
-.tug-badge-outlined-danger {
-  background-color: var(--tug-surface-control-primary-outlined-danger-rest);
-  color: var(--tug-element-control-text-outlined-danger-rest);
-  border-color: var(--tug-element-control-border-outlined-danger-rest);
-}
-
-/* --- outlined-data --- */
-
-.tug-badge-outlined-data {
-  background-color: var(--tug-surface-control-primary-outlined-data-rest);
-  color: var(--tug-element-control-text-outlined-data-rest);
-  border-color: var(--tug-element-control-border-outlined-data-rest);
-}
-
-/* --- outlined-success --- */
-
-.tug-badge-outlined-success {
-  background-color: var(--tug-surface-control-primary-outlined-success-rest);
-  color: var(--tug-element-control-text-outlined-success-rest);
-  border-color: var(--tug-element-control-border-outlined-success-rest);
-}
-
-/* --- outlined-caution --- */
-
-.tug-badge-outlined-caution {
-  background-color: var(--tug-surface-control-primary-outlined-caution-rest);
-  color: var(--tug-element-control-text-outlined-caution-rest);
-  border-color: var(--tug-element-control-border-outlined-caution-rest);
-}
-
-/* --- ghost-accent --- */
-
-.tug-badge-ghost-accent {
-  background-color: var(--tug-surface-control-primary-ghost-accent-rest);
-  color: var(--tug-element-control-text-ghost-accent-rest);
-  border-color: var(--tug-element-control-border-ghost-accent-rest);
-}
-
-/* --- ghost-agent --- */
-
-.tug-badge-ghost-agent {
-  background-color: var(--tug-surface-control-primary-ghost-agent-rest);
-  color: var(--tug-element-control-text-ghost-agent-rest);
-  border-color: var(--tug-element-control-border-ghost-agent-rest);
-}
-
-/* --- ghost-data --- */
-
-.tug-badge-ghost-data {
-  background-color: var(--tug-surface-control-primary-ghost-data-rest);
-  color: var(--tug-element-control-text-ghost-data-rest);
-  border-color: var(--tug-element-control-border-ghost-data-rest);
+  background-color: var(--tug-surface-badge-primary-ghost-action-rest);
+  color: var(--tug-element-badge-text-ghost-action-rest);
+  border-color: var(--tug-element-badge-border-ghost-action-rest);
 }
 
 /* --- ghost-danger --- */
 
 .tug-badge-ghost-danger {
-  background-color: var(--tug-surface-control-primary-ghost-danger-rest);
-  color: var(--tug-element-control-text-ghost-danger-rest);
-  border-color: var(--tug-element-control-border-ghost-danger-rest);
+  background-color: var(--tug-surface-badge-primary-ghost-danger-rest);
+  color: var(--tug-element-badge-text-ghost-danger-rest);
+  border-color: var(--tug-element-badge-border-ghost-danger-rest);
 }
 
-/* --- ghost-success --- */
+/* ============================================================================
+   Non-Table-T01 combinations (Spec S09)
+   Uses badge-specific outlined/ghost tokens (component=badge).
+   ========================================================================= */
 
-.tug-badge-ghost-success {
-  background-color: var(--tug-surface-control-primary-ghost-success-rest);
-  color: var(--tug-element-control-text-ghost-success-rest);
-  border-color: var(--tug-element-control-border-ghost-success-rest);
+/* --- outlined-accent --- */
+
+.tug-badge-outlined-accent {
+  background-color: var(--tug-surface-badge-primary-outlined-accent-rest);
+  color: var(--tug-element-badge-text-outlined-accent-rest);
+  border-color: var(--tug-element-badge-border-outlined-accent-rest);
 }
 
-/* --- ghost-caution --- */
+/* --- outlined-danger --- */
 
-.tug-badge-ghost-caution {
-  background-color: var(--tug-surface-control-primary-ghost-caution-rest);
-  color: var(--tug-element-control-text-ghost-caution-rest);
-  border-color: var(--tug-element-control-border-ghost-caution-rest);
+.tug-badge-outlined-danger {
+  background-color: var(--tug-surface-badge-primary-outlined-danger-rest);
+  color: var(--tug-element-badge-text-outlined-danger-rest);
+  border-color: var(--tug-element-badge-border-outlined-danger-rest);
+}
+
+/* --- outlined-data --- */
+
+.tug-badge-outlined-data {
+  background-color: var(--tug-surface-badge-primary-outlined-data-rest);
+  color: var(--tug-element-badge-text-outlined-data-rest);
+  border-color: var(--tug-element-badge-border-outlined-data-rest);
+}
+
+/* --- ghost-accent --- */
+
+.tug-badge-ghost-accent {
+  background-color: var(--tug-surface-badge-primary-ghost-accent-rest);
+  color: var(--tug-element-badge-text-ghost-accent-rest);
+  border-color: var(--tug-element-badge-border-ghost-accent-rest);
+}
+
+/* --- ghost-agent --- */
+
+.tug-badge-ghost-agent {
+  background-color: var(--tug-surface-badge-primary-ghost-agent-rest);
+  color: var(--tug-element-badge-text-ghost-agent-rest);
+  border-color: var(--tug-element-badge-border-ghost-agent-rest);
+}
+
+/* --- ghost-data --- */
+
+.tug-badge-ghost-data {
+  background-color: var(--tug-surface-badge-primary-ghost-data-rest);
+  color: var(--tug-element-badge-text-ghost-data-rest);
+  border-color: var(--tug-element-badge-border-ghost-data-rest);
 }
 
 /* --- filled-data --- */
@@ -281,6 +263,11 @@
   border-color: var(--tug-element-control-border-filled-data-rest);
 }
 
+/* ============================================================================
+   Tier 2: Signal-only roles (success, caution) (Spec S08)
+   Derived from tone families and fg-on{Role} tokens — no control tokens exist
+   ========================================================================= */
+
 /* --- filled-success --- */
 
 .tug-badge-filled-success {
@@ -289,12 +276,44 @@
   border-color: var(--tug-element-control-border-filled-success-rest);
 }
 
+/* --- outlined-success --- */
+
+.tug-badge-outlined-success {
+  background-color: var(--tug-surface-badge-primary-outlined-success-rest);
+  color: var(--tug-element-badge-text-outlined-success-rest);
+  border-color: var(--tug-element-badge-border-outlined-success-rest);
+}
+
+/* --- ghost-success --- */
+
+.tug-badge-ghost-success {
+  background-color: var(--tug-surface-badge-primary-ghost-success-rest);
+  color: var(--tug-element-badge-text-ghost-success-rest);
+  border-color: var(--tug-element-badge-border-ghost-success-rest);
+}
+
 /* --- filled-caution --- */
 
 .tug-badge-filled-caution {
   background-color: var(--tug-surface-control-primary-filled-caution-rest);
   color: var(--tug-element-control-text-filled-caution-rest);
   border-color: var(--tug-element-control-border-filled-caution-rest);
+}
+
+/* --- outlined-caution --- */
+
+.tug-badge-outlined-caution {
+  background-color: var(--tug-surface-badge-primary-outlined-caution-rest);
+  color: var(--tug-element-badge-text-outlined-caution-rest);
+  border-color: var(--tug-element-badge-border-outlined-caution-rest);
+}
+
+/* --- ghost-caution --- */
+
+.tug-badge-ghost-caution {
+  background-color: var(--tug-surface-badge-primary-ghost-caution-rest);
+  color: var(--tug-element-badge-text-ghost-caution-rest);
+  border-color: var(--tug-element-badge-border-ghost-caution-rest);
 }
 
 /* ============================================================================
