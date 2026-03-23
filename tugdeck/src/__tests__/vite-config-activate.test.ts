@@ -20,8 +20,10 @@ import fs from "fs";
 import {
   handleThemesActivate,
   activateThemeOverride,
+  handleThemesSave,
   type FsWriteImpl,
   type ActivateResult,
+  type ThemeSaveBody,
 } from "../../vite.config";
 
 // ---------------------------------------------------------------------------
@@ -439,5 +441,170 @@ describe("handleThemesActivate", () => {
     expect(response.status).toBe(400);
     const parsed = JSON.parse(response.body) as { error: string };
     expect(parsed.error).toContain("invalid request body");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round-trip integration test: save then activate
+//
+// Uses a combined mock fs that:
+//   - Stores all writes in an in-memory map (written)
+//   - Reads back written files for subsequent reads
+//   - Falls through to real disk only for shipped theme JSON
+// ---------------------------------------------------------------------------
+
+describe("round-trip: save then activate", () => {
+  function makeRoundTripFs(): FsWriteImpl & { written: Map<string, string> } {
+    const written = new Map<string, string>();
+
+    return {
+      written,
+
+      existsSync(p: string): boolean {
+        if (written.has(p)) return true;
+        if (p.startsWith(SHIPPED_THEMES_DIR) && p.endsWith(".json")) {
+          return fs.existsSync(p);
+        }
+        return false;
+      },
+
+      readFileSync(p: string, _enc: "utf-8"): string {
+        const inMemory = written.get(p);
+        if (inMemory !== undefined) return inMemory;
+        if (p.startsWith(SHIPPED_THEMES_DIR) && p.endsWith(".json")) {
+          return fs.readFileSync(p, "utf-8");
+        }
+        throw new Error(`readFileSync: unexpected path in round-trip mock: ${p}`);
+      },
+
+      writeFileSync(p: string, data: string, _enc: "utf-8"): void {
+        written.set(p, data);
+      },
+
+      readdirSync(p: string): string[] {
+        // Return basenames of all in-memory user-dir files
+        const results: string[] = [];
+        for (const key of written.keys()) {
+          if (key.startsWith(p + "/") && key.endsWith(".json")) {
+            results.push(path.basename(key));
+          }
+        }
+        return results;
+      },
+
+      mkdirSync(_p: string, _opts?: { recursive: boolean }): void {
+        // no-op
+      },
+    };
+  }
+
+  it("RT1: save a valid ThemeRecipe then activate it — succeeds with correct canvasParams", () => {
+    const roundTripFs = makeRoundTripFs();
+
+    const saveBody: ThemeSaveBody = {
+      name: "My Round-Trip Theme",
+      recipe: "dark",
+      surface: {
+        canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
+        grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
+        frame: { hue: "indigo-violet", tone: 16, intensity: 12 },
+        card: { hue: "indigo-violet", tone: 12, intensity: 5 },
+      },
+      text: { hue: "cobalt", intensity: 3 },
+      role: {
+        tone: 50,
+        intensity: 50,
+        accent: "orange",
+        action: "blue",
+        agent: "violet",
+        data: "teal",
+        success: "green",
+        caution: "yellow",
+        danger: "red",
+      },
+    };
+
+    // Step 1: save the theme
+    const saveResult = handleThemesSave(saveBody, roundTripFs, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
+    expect(saveResult.status).toBe(200);
+    expect(saveResult.themeName).toBe("My Round-Trip Theme");
+
+    // Step 2: activate the saved theme
+    const activateResult: ActivateResult = activateThemeOverride(
+      "My Round-Trip Theme",
+      roundTripFs,
+      SHIPPED_THEMES_DIR,
+      USER_THEMES_DIR,
+      OVERRIDE_CSS_PATH,
+      ACTIVE_THEME_PATH,
+    );
+
+    // Activation must succeed with correct return values
+    expect(activateResult.theme).toBe("My Round-Trip Theme");
+    expect(activateResult.canvasParams.hue).toBe("indigo-violet");
+    expect(typeof activateResult.canvasParams.tone).toBe("number");
+    expect(typeof activateResult.canvasParams.intensity).toBe("number");
+
+    // Override CSS must contain token declarations (non-Brio theme)
+    const overrideContents = roundTripFs.written.get(OVERRIDE_CSS_PATH);
+    expect(overrideContents).toBeDefined();
+    expect(overrideContents).toContain("--tug-");
+
+    // active-theme file must record the display name
+    expect(roundTripFs.written.get(ACTIVE_THEME_PATH)).toBe("My Round-Trip Theme");
+  });
+
+  it("RT2: saved JSON has recipe as a short mode string (not a JSON blob)", () => {
+    const roundTripFs = makeRoundTripFs();
+
+    const saveBody: ThemeSaveBody = {
+      name: "Format Check Theme",
+      recipe: "dark",
+      surface: {
+        canvas: { hue: "orange", tone: 10, intensity: 3 },
+        grid: { hue: "orange", tone: 13, intensity: 3 },
+        frame: { hue: "orange", tone: 17, intensity: 3 },
+        card: { hue: "orange", tone: 20, intensity: 2 },
+      },
+      text: { hue: "orange", intensity: 2 },
+      role: {
+        tone: 50,
+        intensity: 50,
+        accent: "orange",
+        action: "blue",
+        agent: "violet",
+        data: "teal",
+        success: "green",
+        caution: "yellow",
+        danger: "red",
+      },
+    };
+
+    const saveResult = handleThemesSave(saveBody, roundTripFs, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
+    expect(saveResult.status).toBe(200);
+
+    // Find the saved JSON file (only one JSON under USER_THEMES_DIR)
+    let savedJson: string | undefined;
+    for (const [key, value] of roundTripFs.written.entries()) {
+      if (key.startsWith(USER_THEMES_DIR) && key.endsWith(".json")) {
+        savedJson = value;
+        break;
+      }
+    }
+    expect(savedJson).toBeDefined();
+
+    const parsed = JSON.parse(savedJson!) as { recipe: string; surface: { canvas: { hue: string; tone: number; intensity: number } } };
+
+    // recipe must be a short mode string, NOT a JSON blob
+    expect(typeof parsed.recipe).toBe("string");
+    expect(parsed.recipe).not.toContain("{");
+    expect(parsed.recipe).toBe("dark");
+
+    // surface.canvas must have the expected fields
+    expect(typeof parsed.surface).toBe("object");
+    expect(parsed.surface).not.toBeNull();
+    expect(parsed.surface.canvas.hue).toBe("orange");
+    expect(typeof parsed.surface.canvas.tone).toBe("number");
+    expect(typeof parsed.surface.canvas.intensity).toBe("number");
   });
 });

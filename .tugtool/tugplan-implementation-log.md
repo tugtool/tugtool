@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-23T18:34:09Z
+---
+
+## step-6: Added RT1 and RT2 round-trip integration tests proving handleThemesSave -> activateThemeOverride works end-to-end with correct canvasParams and canonical JSON format.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
 step: step-5
 date: 2025-03-23T18:28:10Z
 ---
