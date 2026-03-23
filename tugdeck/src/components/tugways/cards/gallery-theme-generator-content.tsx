@@ -83,6 +83,8 @@ import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import { TugInput } from "@/components/tugways/tug-input";
+import { TugLabel } from "@/components/tugways/tug-label";
+import { Info, Ellipsis, ChevronDown, X, LayoutDashboard, MessageSquare } from "lucide-react";
 import { loadSavedThemes, useOptionalThemeContext, injectThemeCSS } from "@/contexts/theme-provider";
 import "./gallery-theme-generator-content.css";
 
@@ -1228,10 +1230,17 @@ function ThemePreviewCard({
       {/* ---- Center: preview card on canvas (only this gets live tokens) ---- */}
       <div className="gtg-preview-main">
         <div className="gtg-preview-canvas" style={liveTokenStyle}>
-          <div className="card-frame" data-focused="true" style={{ width: "66.7%" }}>
+          {/* ---- Active sample card ---- */}
+          <div className="card-frame" data-focused="true">
           <div className="tugcard" style={{ height: "auto" }}>
             <div className="tugcard-title-bar" style={{ cursor: "default" }}>
+              <span className="tugcard-icon"><LayoutDashboard /></span>
               <span className="tugcard-title">Sample Card</span>
+              <div className="card-title-bar-controls">
+                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Card menu"><Ellipsis /></button>
+                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Collapse card"><ChevronDown /></button>
+                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Close card"><X /></button>
+              </div>
             </div>
             <div className="tugcard-body">
               <div className="tugcard-accessory">
@@ -1269,10 +1278,54 @@ function ThemePreviewCard({
                     </div>
                   </div>
                   <div className="gtg-preview-divider" />
+                  <div className="gtg-preview-inline-row">
+                    <TugSwitch label="Auto-deploy" defaultChecked />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <TugLabel htmlFor="gtg-preview-env" icon={<Info />}>Environment</TugLabel>
+                    <TugInput id="gtg-preview-env" size="sm" placeholder="production" />
+                  </div>
+                  <div className="gtg-preview-divider" />
                   <div className="gtg-preview-action-row">
-                    <TugButton emphasis="filled" role="accent" size="sm">Deploy</TugButton>
-                    <TugButton emphasis="outlined" role="action" size="sm">View Logs</TugButton>
-                    <TugButton emphasis="ghost" role="danger" size="sm">Cancel</TugButton>
+                    <TugButton emphasis="outlined" role="action" size="sm">Cancel</TugButton>
+                    <TugButton emphasis="filled" role="action" size="sm">Deploy</TugButton>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          {/* ---- Inactive chat card ---- */}
+          <div className="card-frame" data-focused="false">
+          <div className="tugcard" style={{ height: "auto" }}>
+            <div className="tugcard-title-bar" style={{ cursor: "default" }}>
+              <span className="tugcard-icon"><MessageSquare /></span>
+              <span className="tugcard-title">Chat</span>
+              <div className="card-title-bar-controls">
+                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Card menu"><Ellipsis /></button>
+                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Collapse card"><ChevronDown /></button>
+                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Close card"><X /></button>
+              </div>
+            </div>
+            <div className="tugcard-body">
+              <div className="tugcard-content" style={{ overflow: "visible" }}>
+                <div className="gtg-chat-content">
+                  <div className="gtg-chat-messages">
+                    <div className="gtg-chat-bubble gtg-chat-bubble--received">
+                      How is the migration going?
+                    </div>
+                    <div className="gtg-chat-bubble gtg-chat-bubble--sent">
+                      All tests pass. Ready to deploy.
+                    </div>
+                    <div className="gtg-chat-bubble gtg-chat-bubble--received">
+                      Great, go ahead and push to staging first.
+                    </div>
+                  </div>
+                  <div className="gtg-preview-divider" />
+                  <div className="gtg-chat-input-row">
+                    <TugInput size="sm" placeholder="Type a message..." />
+                    <TugButton emphasis="filled" role="accent" size="sm">Submit</TugButton>
                   </div>
                 </div>
               </div>
@@ -1282,73 +1335,75 @@ function ThemePreviewCard({
         </div>
       </div>
 
-      {/* ---- Right column: color pickers ---- */}
-      <div className="gtg-hue-column">
+      {/* ---- Color pickers: two columns below preview ---- */}
+      <div className="gtg-picker-columns">
+        {/* Left column: Surface + Text */}
+        <div className="gtg-hue-column">
+          <div className="gtg-hue-column-title">Surface</div>
+          {surface.map((s) => (
+            <FullColorPicker
+              key={s.key}
+              label={s.label}
+              selectedHue={s.hue}
+              tone={s.tone}
+              intensity={s.intensity}
+              onSelectHue={s.setHue}
+              onChangeTone={s.setTone}
+              onChangeIntensity={s.setIntensity}
+              testId={s.testId}
+              actualColor={resolvedColor(s.key)}
+              disabled={disabled}
+            />
+          ))}
 
-        {/* Surface pickers */}
-        <div className="gtg-hue-column-title">Surface</div>
-        {surface.map((s) => (
-          <FullColorPicker
-            key={s.key}
-            label={s.label}
-            selectedHue={s.hue}
-            tone={s.tone}
-            intensity={s.intensity}
-            onSelectHue={s.setHue}
-            onChangeTone={s.setTone}
-            onChangeIntensity={s.setIntensity}
-            testId={s.testId}
-            actualColor={resolvedColor(s.key)}
+          <div className="gtg-hue-column-title">Text</div>
+          <HueIntensityPicker
+            label={text.label}
+            selectedHue={text.hue}
+            intensity={text.intensity}
+            onSelectHue={text.setHue}
+            onChangeIntensity={text.setIntensity}
+            testId={text.testId}
+            actualColor={resolvedColor(text.key)}
             disabled={disabled}
           />
-        ))}
-
-        {/* Text picker */}
-        <div className="gtg-hue-column-title">Text</div>
-        <HueIntensityPicker
-          label={text.label}
-          selectedHue={text.hue}
-          intensity={text.intensity}
-          onSelectHue={text.setHue}
-          onChangeIntensity={text.setIntensity}
-          testId={text.testId}
-          actualColor={resolvedColor(text.key)}
-          disabled={disabled}
-        />
-
-        {/* Role pickers */}
-        <div className="gtg-hue-column-title">Roles</div>
-        <div className="gtg-role-tone-row">
-          <span className="gtg-full-color-strip-label">Tone</span>
-          <TugToneStrip
-            hue={roleRepresentativeHue}
-            intensity={roleIntensity}
-            value={roleTone}
-            onChange={disabled ? () => {} : onRoleToneChange}
-            data-testid="gtg-role-tone-strip"
-          />
         </div>
-        <div className="gtg-role-tone-row">
-          <span className="gtg-full-color-strip-label">Intensity</span>
-          <TugIntensityStrip
-            hue={roleRepresentativeHue}
-            tone={roleTone}
-            value={roleIntensity}
-            onChange={disabled ? () => {} : onRoleIntensityChange}
-            data-testid="gtg-role-intensity-strip"
-          />
+
+        {/* Right column: Roles */}
+        <div className="gtg-hue-column">
+          <div className="gtg-hue-column-title">Roles</div>
+          <div className="gtg-role-tone-row">
+            <span className="gtg-full-color-strip-label">Tone</span>
+            <TugToneStrip
+              hue={roleRepresentativeHue}
+              intensity={roleIntensity}
+              value={roleTone}
+              onChange={disabled ? () => {} : onRoleToneChange}
+              data-testid="gtg-role-tone-strip"
+            />
+          </div>
+          <div className="gtg-role-tone-row">
+            <span className="gtg-full-color-strip-label">Intensity</span>
+            <TugIntensityStrip
+              hue={roleRepresentativeHue}
+              tone={roleTone}
+              value={roleIntensity}
+              onChange={disabled ? () => {} : onRoleIntensityChange}
+              data-testid="gtg-role-intensity-strip"
+            />
+          </div>
+          {roles.map((r) => (
+            <CompactHuePicker
+              key={r.key}
+              label={r.label}
+              selectedHue={r.hue}
+              onSelect={r.set}
+              testId={r.testId}
+              actualColor={resolvedColor(r.key)}
+              disabled={disabled}
+            />
+          ))}
         </div>
-        {roles.map((r) => (
-          <CompactHuePicker
-            key={r.key}
-            label={r.label}
-            selectedHue={r.hue}
-            onSelect={r.set}
-            testId={r.testId}
-            actualColor={resolvedColor(r.key)}
-            disabled={disabled}
-          />
-        ))}
       </div>
     </div>
   );

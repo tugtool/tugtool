@@ -153,12 +153,26 @@
 
 .gtg-annotated-preview {
   display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: flex-start;
 }
 
-/* Center: preview card */
+/* Preview area: full width */
 .gtg-preview-main {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Color picker columns below preview */
+.gtg-picker-columns {
+  display: flex;
+  gap: 32px;
+  justify-content: center;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.gtg-picker-columns > .gtg-hue-column {
   flex: 1;
   min-width: 0;
 }
@@ -195,12 +209,35 @@
   background-color: var(--tug-surface-global-primary-normal-canvas-rest);
   border: 1px solid var(--tug-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
-  padding: 16px;
+  padding: 24px;
   background-image:
     linear-gradient(var(--tug-surface-global-primary-normal-grid-rest) 1px, transparent 1px),
     linear-gradient(90deg, var(--tug-surface-global-primary-normal-grid-rest) 1px, transparent 1px);
   background-size: 24px 24px;
-  margin-bottom: 24px;
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.gtg-preview-canvas > .card-frame {
+  position: relative;
+  width: 40%;
+  flex: 0 0 40%;
+}
+
+/* Active card: stronger shadow, sits in front */
+.gtg-preview-canvas > .card-frame[data-focused="true"] .tugcard {
+  box-shadow: var(--tug-card-shadow-active);
+}
+
+/* Inactive card: lighter shadow, dimmed content, no interaction */
+.gtg-preview-canvas > .card-frame[data-focused="false"] .tugcard {
+  box-shadow: var(--tug-card-shadow-inactive);
+}
+
+.gtg-preview-canvas > .card-frame[data-focused="false"] .tugcard-body {
+  pointer-events: none;
 }
 
 /* (structural chip and role sidebar styles removed — both use CompactHuePicker) */
@@ -296,6 +333,62 @@
   font-size: 11px;
   font-family: var(--tug-font-family-sans);
   color: var(--tug-element-global-text-normal-default-rest);
+}
+
+.gtg-preview-action-row {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* ---- Chat card content ---- */
+
+.gtg-chat-content {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 8px;
+  min-height: 200px;
+}
+
+.gtg-chat-messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-family: var(--tug-font-family-sans);
+  line-height: 1.5;
+}
+
+/* @tug-renders-on: --tug-surface-global-primary-normal-canvas-rest */
+.gtg-chat-bubble {
+  padding: 6px 10px;
+  border-radius: var(--tug-radius-xs);
+  max-width: 85%;
+}
+
+.gtg-chat-bubble--received {
+  background-color: var(--tug-surface-global-primary-normal-raised-rest);
+  color: var(--tug-element-global-text-normal-default-rest);
+  align-self: flex-start;
+}
+
+.gtg-chat-bubble--sent {
+  background-color: var(--tug-element-global-fill-normal-accent-rest);
+  color: var(--tug-element-global-text-normal-inverse-rest);
+  align-self: flex-end;
+}
+
+.gtg-chat-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.gtg-chat-input-row .tug-input {
+  flex: 1;
 }
 
 /* Hue swatch strip is now provided by the shared TugHueStrip component. */
