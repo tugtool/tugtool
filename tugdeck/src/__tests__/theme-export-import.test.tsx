@@ -456,15 +456,17 @@ describe("TugThemeProvider – simplified context (T6)", () => {
     }
   });
 
-  it("loadSavedThemes also accepts legacy string[] format", async () => {
+  it("loadSavedThemes: legacy string[] format is not included (no source info to filter)", async () => {
+    // Legacy string[] responses lack source information so loadSavedThemes
+    // cannot distinguish authored from shipped themes and returns nothing.
+    // Servers should use the new { name, recipe, source } format.
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
       new Response(JSON.stringify({ themes: ["brio", "harmony", "my-theme"] }), { status: 200 });
     try {
       const themes = await loadSavedThemes();
-      expect(themes).not.toContain("brio");
-      expect(themes).not.toContain("harmony");
-      expect(themes).toContain("my-theme");
+      // Legacy entries are skipped because source cannot be determined.
+      expect(themes).toHaveLength(0);
     } finally {
       globalThis.fetch = originalFetch;
     }

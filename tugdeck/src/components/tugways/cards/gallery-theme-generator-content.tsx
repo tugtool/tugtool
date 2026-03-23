@@ -8,7 +8,7 @@
  *               after last change. Apply injects CSS app-wide after each save. [L06]
  *
  * On open, loads the currently active app theme via GET /__themes/<name>.json.
- * Shipped themes (brio, harmony) open read-only (Viewing state).
+ * Shipped themes open read-only (Viewing state).
  * Authored themes open for editing (Editing state).
  *
  * New flow: prompt for name (unique check via GET /__themes/list), select prototype,
@@ -51,14 +51,8 @@ import {
   type ContrastDiagnostic,
   type CVDWarning,
 } from "@/components/tugways/theme-engine";
-import brioJson from "../../../../themes/brio.json";
-import harmonyJson from "../../../../themes/harmony.json";
-
-const SHIPPED_BRIO = brioJson as ThemeRecipe;
-const SHIPPED_HARMONY = harmonyJson as ThemeRecipe;
-
-/** Names of shipped (read-only) themes. */
-const SHIPPED_NAMES: ReadonlySet<string> = new Set(["brio", "harmony"]);
+import { BASE_THEME_NAME } from "@/theme-constants";
+import { BASE_THEME_RECIPE } from "@/generated/base-theme-recipe";
 
 import {
   validateThemeContrast,
@@ -1313,7 +1307,7 @@ function NewThemeDialog({
   const [nameError, setNameError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [availableThemes, setAvailableThemes] = useState<ThemeListEntry[]>([]);
-  const [selectedPrototype, setSelectedPrototype] = useState<string>("brio");
+  const [selectedPrototype, setSelectedPrototype] = useState<string>(BASE_THEME_NAME);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -1366,31 +1360,26 @@ function NewThemeDialog({
             }
           }
         }
-        // Ensure brio and harmony are always available as prototypes
-        if (!entries.some((e) => e.name === "brio")) {
-          entries.unshift({ name: "brio", recipe: "dark", source: "shipped" });
-        }
-        if (!entries.some((e) => e.name === "harmony")) {
-          entries.splice(1, 0, { name: "harmony", recipe: "light", source: "shipped" });
+        // Ensure the base theme is always first in the prototype list
+        if (!entries.some((e) => e.name === BASE_THEME_NAME)) {
+          entries.unshift({ name: BASE_THEME_NAME, recipe: "dark", source: "shipped" });
         }
         setAvailableThemes(entries);
-        setSelectedPrototype("brio");
+        setSelectedPrototype(entries[0]?.name ?? BASE_THEME_NAME);
         setStep("prototype");
       } else {
-        // Middleware unavailable — use built-ins only
+        // Middleware unavailable — use base theme as the only fallback prototype
         setAvailableThemes([
-          { name: "brio", recipe: "dark", source: "shipped" },
-          { name: "harmony", recipe: "light", source: "shipped" },
+          { name: BASE_THEME_NAME, recipe: "dark", source: "shipped" },
         ]);
-        setSelectedPrototype("brio");
+        setSelectedPrototype(BASE_THEME_NAME);
         setStep("prototype");
       }
     } catch {
       setAvailableThemes([
-        { name: "brio", recipe: "dark", source: "shipped" },
-        { name: "harmony", recipe: "light", source: "shipped" },
+        { name: BASE_THEME_NAME, recipe: "dark", source: "shipped" },
       ]);
-      setSelectedPrototype("brio");
+      setSelectedPrototype(BASE_THEME_NAME);
       setStep("prototype");
     }
     setIsValidating(false);
@@ -1413,8 +1402,8 @@ function NewThemeDialog({
         }
         protoRecipe = raw as ThemeRecipe;
       } else {
-        // Fall back to in-memory shipped recipe
-        protoRecipe = selectedPrototype === "harmony" ? SHIPPED_HARMONY : SHIPPED_BRIO;
+        // Middleware unavailable — fall back to base theme recipe
+        protoRecipe = BASE_THEME_RECIPE;
       }
 
       // Copy with new name
@@ -1584,18 +1573,17 @@ function OpenThemeDialog({
             }
           }
         }
-        // Ensure brio is always first
-        if (!entries.some((e) => e.name === "brio")) {
-          entries.unshift({ name: "brio", recipe: "dark", source: "shipped" });
+        // Ensure the base theme is always first
+        if (!entries.some((e) => e.name === BASE_THEME_NAME)) {
+          entries.unshift({ name: BASE_THEME_NAME, recipe: "dark", source: "shipped" });
         }
         setThemes(entries);
-        setSelected(entries[0]?.name ?? "brio");
+        setSelected(entries[0]?.name ?? BASE_THEME_NAME);
       } catch {
         setThemes([
-          { name: "brio", recipe: "dark", source: "shipped" },
-          { name: "harmony", recipe: "light", source: "shipped" },
+          { name: BASE_THEME_NAME, recipe: "dark", source: "shipped" },
         ]);
-        setSelected("brio");
+        setSelected(BASE_THEME_NAME);
       }
       setIsLoading(false);
     };
@@ -1619,17 +1607,17 @@ function OpenThemeDialog({
         }
         recipe = raw as ThemeRecipe;
       } else {
-        // Fall back to in-memory for shipped themes
-        if (selected === "harmony") recipe = SHIPPED_HARMONY;
-        else recipe = SHIPPED_BRIO;
+        // Middleware unavailable — fall back to base theme recipe
+        recipe = BASE_THEME_RECIPE;
       }
-      const shipped = SHIPPED_NAMES.has(selected);
+      const selectedEntry = themes.find((t) => t.name === selected);
+      const shipped = selectedEntry?.source === "shipped";
       onSelected(selected, recipe, shipped);
     } catch (err) {
       setError(String(err));
       setIsOpening(false);
     }
-  }, [selected, onSelected]);
+  }, [selected, themes, onSelected]);
 
   return (
     <div className="gtg-dialog-overlay" data-testid="gtg-open-dialog">
@@ -1771,43 +1759,65 @@ export function GalleryThemeGeneratorContent() {
   // Recipe field state
   // ---------------------------------------------------------------------------
 
-  const [recipeName, setRecipeName] = useState<string>("brio");
+  const [recipeName, setRecipeName] = useState<string>(BASE_THEME_NAME);
   const [recipeMode, setRecipeMode] = useState<"dark" | "light">("dark");
-  const [frameHue, setFrameHue] = useState<string>(SHIPPED_BRIO.surface.frame.hue);
-  const [canvasHue, setCanvasHue] = useState<string>(SHIPPED_BRIO.surface.canvas.hue);
-  const [canvasTone, setCanvasTone] = useState<number>(SHIPPED_BRIO.surface.canvas.tone);
-  const [canvasIntensity, setCanvasIntensity] = useState<number>(SHIPPED_BRIO.surface.canvas.intensity);
-  const [gridHue, setGridHue] = useState<string>(SHIPPED_BRIO.surface.grid.hue);
-  const [gridTone, setGridTone] = useState<number>(SHIPPED_BRIO.surface.grid.tone);
-  const [gridIntensity, setGridIntensity] = useState<number>(SHIPPED_BRIO.surface.grid.intensity);
-  const [frameTone, setFrameTone] = useState<number>(SHIPPED_BRIO.surface.frame.tone);
-  const [frameIntensity, setFrameIntensity] = useState<number>(SHIPPED_BRIO.surface.frame.intensity);
-  const [cardHue, setCardHue] = useState<string>(SHIPPED_BRIO.surface.card.hue);
-  const [cardTone, setCardTone] = useState<number>(SHIPPED_BRIO.surface.card.tone);
-  const [cardIntensity, setCardIntensity] = useState<number>(SHIPPED_BRIO.surface.card.intensity);
-  const [contentHue, setContentHue] = useState<string>(SHIPPED_BRIO.text.hue);
-  const [textIntensity, setTextIntensity] = useState<number>(SHIPPED_BRIO.text.intensity);
-  const [roleTone, setRoleTone] = useState<number>(SHIPPED_BRIO.role.tone);
-  const [roleIntensity, setRoleIntensity] = useState<number>(SHIPPED_BRIO.role.intensity);
-  const [accentHue, setAccentHue] = useState<string>(SHIPPED_BRIO.role.accent);
-  const [activeHue, setActiveHue] = useState<string>(SHIPPED_BRIO.role.action);
-  const [agentHue, setAgentHue] = useState<string>(SHIPPED_BRIO.role.agent);
-  const [dataHue, setDataHue] = useState<string>(SHIPPED_BRIO.role.data);
-  const [successHue, setSuccessHue] = useState<string>(SHIPPED_BRIO.role.success);
-  const [cautionHue, setCautionHue] = useState<string>(SHIPPED_BRIO.role.caution);
-  const [dangerHue, setDangerHue] = useState<string>(SHIPPED_BRIO.role.danger);
+  const [frameHue, setFrameHue] = useState<string>(BASE_THEME_RECIPE.surface.frame.hue);
+  const [canvasHue, setCanvasHue] = useState<string>(BASE_THEME_RECIPE.surface.canvas.hue);
+  const [canvasTone, setCanvasTone] = useState<number>(BASE_THEME_RECIPE.surface.canvas.tone);
+  const [canvasIntensity, setCanvasIntensity] = useState<number>(BASE_THEME_RECIPE.surface.canvas.intensity);
+  const [gridHue, setGridHue] = useState<string>(BASE_THEME_RECIPE.surface.grid.hue);
+  const [gridTone, setGridTone] = useState<number>(BASE_THEME_RECIPE.surface.grid.tone);
+  const [gridIntensity, setGridIntensity] = useState<number>(BASE_THEME_RECIPE.surface.grid.intensity);
+  const [frameTone, setFrameTone] = useState<number>(BASE_THEME_RECIPE.surface.frame.tone);
+  const [frameIntensity, setFrameIntensity] = useState<number>(BASE_THEME_RECIPE.surface.frame.intensity);
+  const [cardHue, setCardHue] = useState<string>(BASE_THEME_RECIPE.surface.card.hue);
+  const [cardTone, setCardTone] = useState<number>(BASE_THEME_RECIPE.surface.card.tone);
+  const [cardIntensity, setCardIntensity] = useState<number>(BASE_THEME_RECIPE.surface.card.intensity);
+  const [contentHue, setContentHue] = useState<string>(BASE_THEME_RECIPE.text.hue);
+  const [textIntensity, setTextIntensity] = useState<number>(BASE_THEME_RECIPE.text.intensity);
+  const [roleTone, setRoleTone] = useState<number>(BASE_THEME_RECIPE.role.tone);
+  const [roleIntensity, setRoleIntensity] = useState<number>(BASE_THEME_RECIPE.role.intensity);
+  const [accentHue, setAccentHue] = useState<string>(BASE_THEME_RECIPE.role.accent);
+  const [activeHue, setActiveHue] = useState<string>(BASE_THEME_RECIPE.role.action);
+  const [agentHue, setAgentHue] = useState<string>(BASE_THEME_RECIPE.role.agent);
+  const [dataHue, setDataHue] = useState<string>(BASE_THEME_RECIPE.role.data);
+  const [successHue, setSuccessHue] = useState<string>(BASE_THEME_RECIPE.role.success);
+  const [cautionHue, setCautionHue] = useState<string>(BASE_THEME_RECIPE.role.caution);
+  const [dangerHue, setDangerHue] = useState<string>(BASE_THEME_RECIPE.role.danger);
 
   // Derived theme output — updated whenever recipe fields change
-  const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(SHIPPED_BRIO));
+  const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(BASE_THEME_RECIPE));
 
   // ---------------------------------------------------------------------------
   // Load active theme on mount
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    const themeName = themeCtx?.theme ?? "brio";
+    const themeName = themeCtx?.theme ?? BASE_THEME_NAME;
     const doLoad = async () => {
       try {
+        // Fetch theme list to determine source (shipped vs authored)
+        let shipped = false;
+        try {
+          const listRes = await fetch("/__themes/list");
+          if (listRes.ok) {
+            const listData = (await listRes.json()) as { themes?: unknown[] };
+            if (Array.isArray(listData.themes)) {
+              for (const entry of listData.themes) {
+                if (entry !== null && typeof entry === "object") {
+                  const e = entry as Record<string, unknown>;
+                  if (e.name === themeName) {
+                    shipped = e.source === "shipped";
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        } catch {
+          // List fetch failed — default to not shipped (editable)
+        }
+
         const res = await fetch(`/__themes/${encodeURIComponent(themeName)}.json`);
         let recipe: ThemeRecipe;
         if (res.ok) {
@@ -1819,11 +1829,9 @@ export function GalleryThemeGeneratorContent() {
           }
           recipe = raw as ThemeRecipe;
         } else {
-          // Fall back to shipped recipes
-          if (themeName === "harmony") recipe = SHIPPED_HARMONY;
-          else recipe = SHIPPED_BRIO;
+          // Middleware unavailable — fall back to base theme recipe
+          recipe = BASE_THEME_RECIPE;
         }
-        const shipped = SHIPPED_NAMES.has(themeName);
         loadRecipeIntoState(recipe);
         setCurrentThemeName(themeName);
         setIsShipped(shipped);

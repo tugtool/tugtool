@@ -19,6 +19,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedShippedThemes: [ThemeEntry] = []
     private var activeThemeName: String?
 
+    /// The name of the base theme — must match BASE_THEME_NAME in tugdeck/src/theme-constants.ts.
+    private let baseThemeName = "brio"
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check tmux availability
         if !ProcessManager.checkTmux() {
@@ -561,10 +564,10 @@ extension AppDelegate: NSMenuDelegate {
         // Active theme name comes from bridgeThemeListUpdated (set via the bridge callback).
         // No file read needed — tugbank is the source of truth for the active theme.
 
-        // Shipped themes from bridge cache — sort Brio first, then alphabetical
+        // Shipped themes from bridge cache — sort base theme first, then alphabetical
         let sortedShipped = cachedShippedThemes.sorted { a, b in
-            if a.name.lowercased() == "brio" { return true }
-            if b.name.lowercased() == "brio" { return false }
+            if a.name.lowercased() == baseThemeName { return true }
+            if b.name.lowercased() == baseThemeName { return false }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
 

@@ -28,9 +28,9 @@ const SAMPLE_ITEMS: TugPopupMenuItem[] = [
 ];
 
 const THEME_ITEMS: TugPopupMenuItem[] = [
-  { id: "brio", label: "Brio", icon: <Palette size={12} /> },
-  { id: "stark", label: "Stark", icon: <Palette size={12} /> },
-  { id: "warm", label: "Warm", icon: <Palette size={12} /> },
+  { id: "theme-alpha", label: "Alpha", icon: <Palette size={12} /> },
+  { id: "theme-beta", label: "Beta", icon: <Palette size={12} /> },
+  { id: "theme-gamma", label: "Gamma", icon: <Palette size={12} /> },
 ];
 
 const SIZE_ITEMS: TugPopupMenuItem[] = [

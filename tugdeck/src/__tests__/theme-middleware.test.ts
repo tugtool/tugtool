@@ -11,7 +11,7 @@
  *
  * Tests cover:
  * - handleThemesList returns entries from both dirs with correct source fields
- * - handleThemesList sorts: brio first, other shipped, then authored
+ * - handleThemesList sorts: base theme first, other shipped, then authored
  * - handleThemesList reads display name from JSON `name` field for authored themes
  * - handleThemesLoadJson checks shipped dir by direct filename; user dir by name-scan
  * - handleThemesLoadJson decodes URL-encoded theme names
@@ -37,6 +37,7 @@ import {
   type FsReadImpl,
   type FsWriteImpl,
 } from "../../vite.config";
+import { BASE_THEME_NAME } from "../theme-constants";
 
 const FAKE_SHIPPED_DIR = "/fake/tugdeck/themes";
 const FAKE_USER_DIR = "/fake/home/.tugtool/themes";
@@ -182,7 +183,7 @@ describe("handleThemesList", () => {
     expect(entry?.name).toBe("My Cool Theme");
   });
 
-  it("sorts brio first, then other shipped, then authored", () => {
+  it("sorts base theme first, then other shipped, then authored", () => {
     const zebraHash = themeHash("zebra");
     const files: Record<string, string[]> = {
       [FAKE_SHIPPED_DIR]: ["harmony.json", "brio.json"],
@@ -202,7 +203,7 @@ describe("handleThemesList", () => {
     const result = handleThemesList(mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     const body = JSON.parse(result.body) as { themes: Array<{ name: string }> };
     const names = body.themes.map((t) => t.name);
-    expect(names[0]).toBe("brio");
+    expect(names[0]).toBe(BASE_THEME_NAME);
     expect(names[1]).toBe("harmony");
     expect(names[2]).toBe("zebra");
   });

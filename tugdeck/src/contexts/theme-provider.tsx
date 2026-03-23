@@ -28,6 +28,7 @@ import { registerThemeSetter } from "../action-dispatch";
 import { canvasColorHex, type CanvasColorParams } from "../canvas-color";
 import { deriveTheme, type ThemeRecipe } from "../components/tugways/theme-engine";
 import { THEME_CANVAS_PARAMS } from "../generated/theme-canvas-params";
+import { BASE_THEME_NAME } from "../theme-constants";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -113,8 +114,8 @@ export function deriveCanvasParams(recipe: ThemeRecipe): CanvasColorParams {
  * Swap a `<link id="tug-theme-override">` element to activate a theme in
  * production mode (no Vite dev server, no POST /__themes/activate).
  *
- * - For Brio: removes the link element if present (Brio is the base CSS).
- * - For non-Brio: sets href to `/assets/themes/<name>.css`, creating the
+ * - For the base theme: removes the link element if present (base theme tokens are the CSS foundation).
+ * - For non-base themes: sets href to `/assets/themes/<name>.css`, creating the
  *   element if it does not already exist.
  *
  * [D08] Production link swap, Spec S03 (#s03-production-link).
@@ -123,8 +124,8 @@ export function activateProductionTheme(themeName: string): void {
   const LINK_ID = "tug-theme-override";
   const existing = document.getElementById(LINK_ID) as HTMLLinkElement | null;
 
-  if (themeName === "brio") {
-    // Brio base tokens take over — remove the override link if present.
+  if (themeName === BASE_THEME_NAME) {
+    // Base theme tokens take over — remove the override link if present.
     if (existing) {
       existing.remove();
     }
@@ -148,21 +149,12 @@ export function activateProductionTheme(themeName: string): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Built-in theme names to exclude from the saved-themes list. [D08]
- * generate-tug-tokens.ts writes harmony.css to styles/themes/, the same
- * directory that handleThemesList reads for user-saved themes. Filtering
- * these names prevents harmony from appearing as both a built-in preset
- * and a user-saved theme in the Theme Generator dropdown.
- */
-const BUILT_IN_THEME_NAMES: ReadonlySet<string> = new Set<string>(["brio", "harmony"]);
-
-/**
  * Fetch the list of saved dynamic themes from the Vite dev middleware.
  * Returns an empty array if the endpoint is unavailable (e.g. in production).
- * Filters out built-in theme names so harmony.css does not appear as both
- * a built-in preset and a user-saved theme.
+ * Filters out shipped themes (source: "shipped") so they do not appear as
+ * user-saved themes in the Theme Generator dropdown.
  *
- * Parses the new middleware response format: { themes: [{ name, recipe, source }] }
+ * Parses the middleware response format: { themes: [{ name, recipe, source }] }
  * [D07][D08]
  */
 export async function loadSavedThemes(): Promise<string[]> {
@@ -174,12 +166,14 @@ export async function loadSavedThemes(): Promise<string[]> {
     const names: string[] = [];
     for (const entry of data.themes) {
       if (typeof entry === "string") {
-        // Legacy format: string[] — still accept for backward compat
-        if (!BUILT_IN_THEME_NAMES.has(entry)) names.push(entry);
+        // Legacy format: string[] — cannot determine source, skip (shipped themes only in legacy)
+        // Nothing to push; legacy string entries are all shipped themes.
       } else if (entry !== null && typeof entry === "object") {
         // New format: { name, recipe, source }
-        const name = (entry as Record<string, unknown>).name;
-        if (typeof name === "string" && !BUILT_IN_THEME_NAMES.has(name)) {
+        const e = entry as Record<string, unknown>;
+        const name = e.name;
+        const source = e.source;
+        if (typeof name === "string" && source === "authored") {
           names.push(name);
         }
       }
@@ -214,7 +208,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
  */
 export function TugThemeProvider({
   children,
-  initialTheme = "brio",
+  initialTheme = BASE_THEME_NAME,
 }: {
   children?: React.ReactNode;
   initialTheme?: string;

@@ -49,6 +49,7 @@ import { putLayout, putTabState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
 import { DeckManagerContext } from "./deck-manager-context";
+import { BASE_THEME_NAME } from "./theme-constants";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -220,7 +221,7 @@ export class DeckManager implements IDeckManagerStore {
     this.container = container;
     this.connection = connection;
     this.initialLayout = initialLayout ?? null;
-    this.initialTheme = initialTheme ?? "brio";
+    this.initialTheme = initialTheme ?? BASE_THEME_NAME;
 
     // Phase 5f: populate tab state cache from pre-fetched tugbank data.
     if (initialTabStates) {

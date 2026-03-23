@@ -43,41 +43,44 @@ function paletteHotReload(): VitePlugin {
 /** Absolute path to the override CSS file in the Vite module graph. */
 const THEME_OVERRIDE_CSS = path.resolve(__dirname, "styles/tug-theme-override.css");
 
-/** Empty override — Brio default. */
-const EMPTY_OVERRIDE = "/* empty - brio default */\n";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { BASE_THEME_NAME } = require("./src/theme-constants") as { BASE_THEME_NAME: string };
+
+/** Empty override — base theme default. */
+const EMPTY_OVERRIDE = `/* empty - ${BASE_THEME_NAME} default */\n`;
 
 /**
  * Vite plugin: ensure `tug-theme-override.css` reflects the active theme at
  * startup, before Vite processes any CSS.
  *
- * - In build mode: always writes an empty override (Brio default).
+ * - In build mode: always writes an empty override (base theme default).
  * - Reads the active theme name from tugbank via `tugbank read dev.tugtool.app theme`.
- * - If the theme is missing or set to `brio`: empty override.
+ * - If the theme is missing or set to the base theme: empty override.
  * - If the named theme JSON cannot be found: logs a warning and falls back to
- *   Brio (empty override).
- * - Falls back to Brio if tugbank is unavailable (e.g. not yet installed).
+ *   the base theme (empty override).
+ * - Falls back to the base theme if tugbank is unavailable (e.g. not yet installed).
  */
 function themeOverridePlugin(): VitePlugin {
   return {
     name: "theme-override",
     async configResolved(config) {
-      // In build mode always use Brio (empty override).
+      // In build mode always use the base theme (empty override).
       if (config.command === "build") {
         fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
         return;
       }
 
-      // Read active theme name from tugbank. Falls back to "brio" on any failure
+      // Read active theme name from tugbank. Falls back to the base theme on any failure
       // (tugbank not installed, key not set, tugcast not running, etc.).
-      let activeTheme = "brio";
+      let activeTheme = BASE_THEME_NAME;
       try {
         const raw = execSync("tugbank read dev.tugtool.app theme", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
         if (raw) activeTheme = raw;
       } catch {
-        // tugbank unavailable or key not set → default to brio.
+        // tugbank unavailable or key not set → default to base theme.
       }
 
-      if (!activeTheme || activeTheme === "brio") {
+      if (!activeTheme || activeTheme === BASE_THEME_NAME) {
         fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
         return;
       }
@@ -92,7 +95,7 @@ function themeOverridePlugin(): VitePlugin {
       }
 
       if (!jsonPath) {
-        console.warn(`[themeOverridePlugin] theme "${activeTheme}" not found, falling back to Brio`);
+        console.warn(`[themeOverridePlugin] theme "${activeTheme}" not found, falling back to base theme`);
         fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
         return;
       }
@@ -138,7 +141,7 @@ function themeOverridePlugin(): VitePlugin {
  * When it changes, we re-run generate-tug-tokens.ts to update the
  * generated section of tug-base.css, then CSS HMR picks up the change.
  *
- * After regeneration, if a non-Brio theme is active, the override CSS is
+ * After regeneration, if a non-base theme is active, the override CSS is
  * re-derived using activateThemeOverride so that the active theme reflects
  * the updated engine output. The write is serialized through writeMutex to
  * avoid racing with concurrent POST /__themes/activate requests.
@@ -158,21 +161,21 @@ function controlTokenHotReload(): VitePlugin {
   }
 
   function reactivateActiveTheme() {
-    // Read active theme from tugbank. Falls back to "brio" on any failure.
-    let activeTheme = "brio";
+    // Read active theme from tugbank. Falls back to the base theme on any failure.
+    let activeTheme = BASE_THEME_NAME;
     try {
       const raw = execSync("tugbank read dev.tugtool.app theme", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
       if (raw) activeTheme = raw;
     } catch {
-      // tugbank unavailable or key not set → default to brio.
+      // tugbank unavailable or key not set → default to base theme.
     }
 
-    if (!activeTheme || activeTheme === "brio") {
-      // Brio: override file stays empty; no action needed.
+    if (!activeTheme || activeTheme === BASE_THEME_NAME) {
+      // Base theme: override file stays empty; no action needed.
       return;
     }
 
-    // Non-Brio: re-derive override CSS through the write mutex to avoid races.
+    // Non-base theme: re-derive override CSS through the write mutex to avoid races.
     withMutex(async () => {
       try {
         activateThemeOverride(
@@ -310,7 +313,7 @@ export function findUserThemeByName(name: string, fsImpl: FsReadImpl, userDir: s
 // handleThemesList — GET /__themes/list
 //
 // Returns all themes from both shipped and user directories, sorted:
-//   1. brio first
+//   1. base theme first
 //   2. other shipped themes (alphabetical)
 //   3. authored themes (alphabetical)
 // ---------------------------------------------------------------------------
@@ -359,10 +362,10 @@ export function handleThemesList(
     }
   }
 
-  // Sort: brio first, then shipped alphabetical, then authored alphabetical
+  // Sort: base theme first, then shipped alphabetical, then authored alphabetical
   entries.sort((a, b) => {
-    if (a.name === "brio") return -1;
-    if (b.name === "brio") return 1;
+    if (a.name === BASE_THEME_NAME) return -1;
+    if (b.name === BASE_THEME_NAME) return 1;
     if (a.source !== b.source) {
       return a.source === "shipped" ? -1 : 1;
     }
@@ -494,7 +497,7 @@ export function handleThemesSave(
 // activateThemeOverride — shared logic for startup plugin and activate endpoint
 //
 // Finds the theme JSON, derives CSS via generateThemeCSS(), writes the override
-// file (empty for Brio), and returns
+// file (empty for the base theme), and returns
 // { theme, canvasParams }. Both the startup plugin and the POST /activate
 // handler call this function; tests can inject a mock fsImpl.
 //
@@ -519,8 +522,8 @@ export interface ActivateResult {
  * Activate a theme by rewriting the override CSS file.
  * Returns { theme, canvasParams } on success.
  *
- * - For Brio: writes EMPTY_OVERRIDE to overrideCssPath.
- * - For non-Brio: derives CSS from the theme JSON and writes it to overrideCssPath.
+ * - For the base theme: writes EMPTY_OVERRIDE to overrideCssPath.
+ * - For non-base themes: derives CSS from the theme JSON and writes it to overrideCssPath.
  * - Throws if the theme JSON cannot be found or CSS generation fails.
  *
  * The active theme name is persisted to tugbank by the client-side settings-api.ts
@@ -536,21 +539,21 @@ export function activateThemeOverride(
   userDir: string,
   overrideCssPath: string,
 ): ActivateResult {
-  if (themeName === "brio") {
+  if (themeName === BASE_THEME_NAME) {
     fsImpl.writeFileSync(overrideCssPath, EMPTY_OVERRIDE, "utf-8");
 
-    // Brio canvas params: derived from brio.json recipe.
+    // Base theme canvas params: derived from the base theme's JSON recipe.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeRecipe) => import("./src/components/tugways/theme-engine").ThemeOutput };
-    const brioRaw = fsImpl.readFileSync(path.join(shippedDir, "brio.json"), "utf-8");
-    const brioRecipe = JSON.parse(brioRaw) as import("./src/components/tugways/theme-engine").ThemeRecipe;
-    const brioOutput = deriveTheme(brioRecipe);
+    const baseRaw = fsImpl.readFileSync(path.join(shippedDir, `${BASE_THEME_NAME}.json`), "utf-8");
+    const baseRecipe = JSON.parse(baseRaw) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+    const baseOutput = deriveTheme(baseRecipe);
     return {
-      theme: "brio",
+      theme: BASE_THEME_NAME,
       canvasParams: {
-        hue: brioRecipe.surface.canvas.hue,
-        tone: brioOutput.formulas.surfaceCanvasTone,
-        intensity: brioOutput.formulas.surfaceCanvasIntensity,
+        hue: baseRecipe.surface.canvas.hue,
+        tone: baseOutput.formulas.surfaceCanvasTone,
+        intensity: baseOutput.formulas.surfaceCanvasIntensity,
       },
     };
   }

@@ -11,9 +11,8 @@ import {
   registerInitialCanvasParams,
   deriveCanvasParams,
 } from "./contexts/theme-provider";
-import type { ThemeRecipe } from "./components/tugways/theme-engine";
-import brioJsonRaw from "../themes/brio.json";
-const BRIO_RECIPE = brioJsonRaw as ThemeRecipe;
+import { BASE_THEME_NAME } from "./theme-constants";
+import { BASE_THEME_RECIPE } from "./generated/base-theme-recipe";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
@@ -54,28 +53,28 @@ if (!container) {
     fetch("/__themes/list").then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
 
-  const initialTheme = (theme as string) ?? "brio";
+  const initialTheme = (theme as string) ?? BASE_THEME_NAME;
 
   // Fetch the active theme's JSON recipe for canvas color derivation.
-  // For non-brio themes, fetch from the middleware. Brio uses the statically
-  // imported recipe. [D08] Canvas color derived from theme JSON at runtime.
-  let cachedActiveRecipe: ThemeRecipe | null = null;
-  if (initialTheme !== "brio") {
+  // For the base theme, use the statically generated recipe. For other themes,
+  // fetch from the middleware. [D08] Canvas color derived from theme JSON at runtime.
+  let cachedActiveRecipe: typeof BASE_THEME_RECIPE | null = null;
+  if (initialTheme !== BASE_THEME_NAME) {
     const jsonResult = await fetch(`/__themes/${encodeURIComponent(initialTheme)}.json`)
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null);
     if (jsonResult !== null) {
-      cachedActiveRecipe = jsonResult as ThemeRecipe;
+      cachedActiveRecipe = jsonResult as typeof BASE_THEME_RECIPE;
     }
   }
 
-  // Derive canvas color params from the active theme recipe. For brio (the default),
-  // use the statically imported recipe. For non-brio themes, use the cached recipe
-  // fetched above. Run deriveTheme() to get the DERIVED surfaceCanvasIntensity value.
+  // Derive canvas color params from the active theme recipe. For the base theme,
+  // use the generated BASE_THEME_RECIPE. For other themes, use the fetched recipe.
+  // Run deriveTheme() to get the DERIVED surfaceCanvasIntensity value.
   // [D08] Canvas color derived from theme JSON at runtime, Spec S04.
-  const activeRecipe: ThemeRecipe = initialTheme === "brio"
-    ? BRIO_RECIPE
-    : (cachedActiveRecipe ?? BRIO_RECIPE);
+  const activeRecipe = initialTheme === BASE_THEME_NAME
+    ? BASE_THEME_RECIPE
+    : (cachedActiveRecipe ?? BASE_THEME_RECIPE);
   const canvasParams = deriveCanvasParams(activeRecipe);
 
   // Register canvas params for TugThemeProvider's on-mount effect.
