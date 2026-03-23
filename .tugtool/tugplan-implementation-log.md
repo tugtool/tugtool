@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-23T15:24:17Z
+---
+
+## step-9: Removed generateResolvedCssExport import and all call sites from gallery-theme-generator-content.tsx. Save bodies now send only { name, recipe } per D07.
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-8
 date: 2025-03-23T15:16:12Z
 ---

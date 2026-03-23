@@ -45,7 +45,6 @@ import * as Popover from "@radix-ui/react-popover";
 import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
-  generateResolvedCssExport,
   type ThemeRecipe,
   type ThemeOutput,
   type ContrastResult,
@@ -1539,13 +1538,11 @@ function NewThemeDialog({
       // Copy with new name
       const newRecipe: ThemeRecipe = { ...protoRecipe, name: newName.trim() };
 
-      // Save via POST /__themes/save
-      const output = deriveTheme(newRecipe);
-      const css = generateResolvedCssExport(output, newRecipe);
+      // Save via POST /__themes/save — server derives CSS from recipe [D07]
       const saveRes = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRecipe.name, css, recipe: JSON.stringify(newRecipe) }),
+        body: JSON.stringify({ name: newRecipe.name, recipe: JSON.stringify(newRecipe) }),
       });
       if (!saveRes.ok) {
         const body = (await saveRes.json().catch(() => ({ error: "Save failed" }))) as { error?: string };
@@ -2046,14 +2043,14 @@ export function GalleryThemeGeneratorContent() {
   // Auto-save — debounced 500ms after last change, Editing state only
   // ---------------------------------------------------------------------------
 
-  const performSave = useCallback(async (recipe: ThemeRecipe, output: ThemeOutput) => {
+  const performSave = useCallback(async (recipe: ThemeRecipe) => {
     setSaveStatus("saving");
     try {
-      const css = generateResolvedCssExport(output, recipe);
+      // Server derives CSS from recipe — no client-side CSS generation needed [D07]
       const res = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
+        body: JSON.stringify({ name: recipe.name, recipe: JSON.stringify(recipe) }),
       });
       if (res.ok) {
         setSaveStatus("saved");
@@ -2076,9 +2073,8 @@ export function GalleryThemeGeneratorContent() {
     if (autoSaveTimerRef.current !== null) {
       clearTimeout(autoSaveTimerRef.current);
     }
-    const output = deriveTheme(currentRecipe);
     autoSaveTimerRef.current = setTimeout(() => {
-      void performSave(currentRecipe, output);
+      void performSave(currentRecipe);
     }, 500);
 
     return () => {
