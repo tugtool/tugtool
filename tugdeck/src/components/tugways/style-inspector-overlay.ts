@@ -84,6 +84,18 @@ export interface TugColorProvenance {
 }
 
 // ---------------------------------------------------------------------------
+// Display formatting
+// ---------------------------------------------------------------------------
+
+/** Round floating-point numbers in a CSS value string to 3 significant digits. */
+function shortenNumbers(s: string): string {
+  return s.replace(/\d+\.\d+/g, (m) => {
+    const n = parseFloat(m);
+    return n.toPrecision(3).replace(/\.?0+$/, "");
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Component token families (Spec S03)
 // ---------------------------------------------------------------------------
 
@@ -1017,7 +1029,7 @@ export class StyleInspectorOverlay {
 
     const computedVal = document.createElement("span");
     computedVal.className = "tug-inspector-row__value";
-    computedVal.textContent = computedValue;
+    computedVal.textContent = shortenNumbers(computedValue);
     computedRow.appendChild(computedVal);
 
     if (isColorProp) {
@@ -1032,61 +1044,44 @@ export class StyleInspectorOverlay {
       const chainEl = document.createElement("div");
       chainEl.className = "tug-inspector-chain";
 
-      // Show origin layer indicator for no-comp-token case
-      if (result.originLayer === "base") {
-        const indicator = document.createElement("div");
-        indicator.className = "tug-inspector-chain__indicator";
-        indicator.textContent = "(no comp token -- base token layer)";
-        chainEl.appendChild(indicator);
-      } else if (result.originLayer === "none") {
-        const indicator = document.createElement("div");
-        indicator.className = "tug-inspector-chain__indicator";
-        indicator.textContent = "(no token -- inspector could not determine originating design token)";
-        chainEl.appendChild(indicator);
-      }
-
       for (let i = 0; i < result.chain.length; i++) {
         const hop = result.chain[i];
         const hopEl = document.createElement("div");
         hopEl.className = "tug-inspector-chain__hop";
 
+        // Token name on its own line
         const propEl = document.createElement("span");
         propEl.className = "tug-inspector-chain__prop";
         propEl.textContent = hop.property;
         hopEl.appendChild(propEl);
 
-        if (i < result.chain.length - 1) {
-          const arrowEl = document.createElement("span");
-          arrowEl.className = "tug-inspector-chain__arrow";
-          arrowEl.textContent = "\u2192";
-          hopEl.appendChild(arrowEl);
+        // Resolved value indented below
+        const resolvedEl = document.createElement("div");
+        resolvedEl.className = "tug-inspector-chain__resolved";
 
+        if (i < result.chain.length - 1) {
           const valEl = document.createElement("span");
           valEl.className = "tug-inspector-chain__value";
-          valEl.textContent = hop.value;
-          hopEl.appendChild(valEl);
+          valEl.textContent = shortenNumbers(hop.value);
+          resolvedEl.appendChild(valEl);
         } else {
           // Terminal hop
-          const arrowEl = document.createElement("span");
-          arrowEl.className = "tug-inspector-chain__arrow";
-          arrowEl.textContent = "\u2192";
-          hopEl.appendChild(arrowEl);
-
           if (isColorProp && hop.value && hop.value !== "none") {
-            hopEl.appendChild(this.makeSwatchEl(hop.value));
+            resolvedEl.appendChild(this.makeSwatchEl(hop.value));
           }
 
           const valEl = document.createElement("span");
           valEl.className = "tug-inspector-chain__terminal";
-          valEl.textContent = hop.value;
-          hopEl.appendChild(valEl);
+          valEl.textContent = shortenNumbers(hop.value);
+          resolvedEl.appendChild(valEl);
 
           if (isColorProp) {
             const tugColorEl = this.makeTugColorEl(hop.value);
-            if (tugColorEl)hopEl.appendChild(tugColorEl);
+            if (tugColorEl) resolvedEl.appendChild(tugColorEl);
           }
         }
 
+        hopEl.appendChild(resolvedEl);
         chainEl.appendChild(hopEl);
       }
 
@@ -1100,18 +1095,6 @@ export class StyleInspectorOverlay {
           section.appendChild(tugColorSection);
         }
       }
-    } else if (result.originLayer === "none") {
-      const indicator = document.createElement("div");
-      indicator.className = "tug-inspector-chain__indicator";
-      indicator.textContent = "(no token -- inspector could not determine originating design token)";
-      section.appendChild(indicator);
-    }
-
-    if (result.usedHeuristic) {
-      const hint = document.createElement("div");
-      hint.className = "tug-inspector-chain__indicator";
-      hint.textContent = "(heuristic)";
-      section.appendChild(hint);
     }
 
     return section;
