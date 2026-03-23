@@ -39,6 +39,84 @@ function paletteHotReload(): VitePlugin {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Active-theme file location (written by activate endpoint, read by plugin)
+// ---------------------------------------------------------------------------
+
+/** Absolute path to the active-theme persistence file. */
+const ACTIVE_THEME_FILE = path.resolve(__dirname, "..", ".tugtool", "active-theme");
+
+/** Absolute path to the override CSS file in the Vite module graph. */
+const THEME_OVERRIDE_CSS = path.resolve(__dirname, "styles/tug-theme-override.css");
+
+/** Empty override — Brio default. */
+const EMPTY_OVERRIDE = "/* empty - brio default */\n";
+
+/**
+ * Vite plugin: ensure `tug-theme-override.css` reflects the active theme at
+ * startup, before Vite processes any CSS.
+ *
+ * - In build mode: always writes an empty override (Brio default).
+ * - If `.tugtool/active-theme` is missing or set to `brio`: empty override.
+ * - If `.tugtool/active-theme` names a non-Brio theme: derives CSS from the
+ *   theme JSON and writes it to the override file so PostCSS can expand it.
+ * - If the named theme JSON cannot be found: logs a warning and falls back to
+ *   Brio (empty override).
+ */
+function themeOverridePlugin(): VitePlugin {
+  return {
+    name: "theme-override",
+    async configResolved(config) {
+      // In build mode always use Brio (empty override).
+      if (config.command === "build") {
+        fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
+        return;
+      }
+
+      // Read active theme name.
+      let activeTheme = "brio";
+      try {
+        activeTheme = fs.readFileSync(ACTIVE_THEME_FILE, "utf-8").trim();
+      } catch {
+        // File missing → default to brio.
+      }
+
+      if (!activeTheme || activeTheme === "brio") {
+        fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
+        return;
+      }
+
+      // Locate theme JSON: shipped dir first, then user dir.
+      const shippedJsonPath = path.join(SHIPPED_THEMES_DIR, `${activeTheme}.json`);
+      const userJsonPath = path.join(USER_THEMES_DIR, `${activeTheme}.json`);
+      let jsonPath: string | null = null;
+      if (fs.existsSync(shippedJsonPath)) {
+        jsonPath = shippedJsonPath;
+      } else if (fs.existsSync(userJsonPath)) {
+        jsonPath = userJsonPath;
+      }
+
+      if (!jsonPath) {
+        console.warn(`[themeOverridePlugin] theme "${activeTheme}" not found, falling back to Brio`);
+        fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
+        return;
+      }
+
+      try {
+        const raw = fs.readFileSync(jsonPath, "utf-8");
+        const recipe = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: typeof recipe) => string };
+        const css = generateThemeCSS(recipe);
+        fs.writeFileSync(THEME_OVERRIDE_CSS, css, "utf-8");
+      } catch (err) {
+        console.error(`[themeOverridePlugin] failed to generate CSS for theme "${activeTheme}":`, err);
+        fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
+      }
+    },
+  };
+}
+
 /**
  * Vite plugin: regenerate tokens when theme-engine.ts changes.
  *
@@ -468,7 +546,7 @@ export default defineConfig(() => {
     "/api": { target: `http://localhost:${tugcastPort}` },
   };
   return {
-    plugins: [react(), paletteHotReload(), controlTokenHotReload(), themeSaveLoadPlugin()],
+    plugins: [react(), themeOverridePlugin(), paletteHotReload(), controlTokenHotReload(), themeSaveLoadPlugin()],
     css: {
       postcss: {
         plugins: [postcssTugColor()],

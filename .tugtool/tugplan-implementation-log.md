@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-23T14:04:02Z
+---
+
+## step-2: Added themeOverridePlugin with configResolved hook that reads .tugtool/active-theme and writes tug-theme-override.css at startup
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-1
 date: 2025-03-23T13:55:52Z
 ---
