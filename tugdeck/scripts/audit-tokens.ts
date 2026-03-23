@@ -92,7 +92,7 @@ function classifyToken(shortName: string): TokenClass {
     if (shortName.includes(pattern)) return "non-color";
   }
 
-  // Phase 2: classify color tokens by six-slot naming convention prefix.
+  // Phase 2: classify color tokens by seven-slot naming convention prefix.
   // All color tokens now follow <plane>-<component>-<constituent>-<emphasis>-<role>-<state>
   // where plane is always "element" or "surface".
 

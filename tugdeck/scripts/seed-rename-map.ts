@@ -3,13 +3,13 @@
  *
  * This file contains SEED_RENAME_MAP, a Record<string, string> mapping every
  * --tug-{name} short name to itself. After the Phase 3.5A rename was applied
- * (Step 7), all tokens are now at their final six-slot names. All entries are
+ * (Step 7), all tokens are now at their final seven-slot names. All entries are
  * identity mappings (name === name) confirming rename completion.
  *
  * Imported by audit-tokens.ts for the rename-map subcommand.
  *
- * Naming convention — all structured tokens use the six-slot format:
- *   <plane>-<component>-<constituent>-<emphasis>-<role>-<state>
+ * Naming convention — all structured tokens use the seven-slot format:
+ *   <namespace>-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
  *       plane:       element | surface
  *       component:   global | control | tab | tabClose | tone | field | badge | selection | checkmark | toggle | radio | overlay | highlight
  *       constituent: (element) text | icon | border | shadow | divider | fill | thumb | dot
@@ -436,8 +436,8 @@ export const SEED_RENAME_MAP: Record<string, string> = {
   "element-toggle-icon-normal-plain-mixed": "element-toggle-icon-normal-plain-mixed",
 
   // ---------------------------------------------------------------------------
-  // FORMERLY CHROMATIC — 32 tokens (now six-slot convention, identity mappings)
-  // All tokens from Table T01 in the plan are now at their final six-slot names.
+  // FORMERLY CHROMATIC — 32 tokens (now seven-slot convention, identity mappings)
+  // All tokens from Table T01 in the plan are now at their final seven-slot names.
   // ---------------------------------------------------------------------------
   "element-global-fill-normal-accent-rest": "element-global-fill-normal-accent-rest",
   "element-global-fill-normal-accentCool-rest": "element-global-fill-normal-accentCool-rest",

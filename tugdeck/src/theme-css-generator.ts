@@ -13,8 +13,8 @@
 import { deriveTheme, type ThemeRecipe } from "./components/tugways/theme-engine";
 
 // ---------------------------------------------------------------------------
-// Token grouping — ordered by prefix per six-slot convention
-// <plane>-<component>-<constituent>-<emphasis>-<role>-<state>
+// Token grouping — ordered by prefix per seven-slot convention
+// <namespace>-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
 // ---------------------------------------------------------------------------
 
 const EMPHASIS_ORDER = ["filled", "outlined", "ghost"];
@@ -24,7 +24,7 @@ const STATE_ORDER = ["rest", "hover", "active"];
 // Plane order: surface bg tokens before element fg/border/icon tokens
 const PLANE_ORDER = ["surface", "element"];
 
-// Matches control tokens with emphasis (filled|outlined|ghost) in the new six-slot format:
+// Matches control tokens with emphasis (filled|outlined|ghost) in the seven-slot format:
 // --tug-(element|surface)-control-<constituent>-(filled|outlined|ghost)-<role>-<state>
 const EMPHASIS_ROLE_PATTERN =
   /^--tug-(element|surface)-control-\w+-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-/;

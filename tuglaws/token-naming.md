@@ -1,21 +1,22 @@
 # Token Naming
 
-*Every `--tug-*` token follows a six-slot naming convention that makes classification, parsing, and contrast pairing mechanical.*
+*Every `--tug-*` token follows a seven-slot naming convention that makes classification, parsing, and contrast pairing mechanical.*
 
 *Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [laws-of-tug.md](laws-of-tug.md).*
 
 ---
 
-## The Six Slots
+## The Seven Slots
 
 ```
---tug-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
+--<namespace>-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
 ```
 
-All six slots are always present. No shortcuts, no omissions.
+All seven slots are always present. No shortcuts, no omissions.
 
 | Slot | Position | Purpose |
 |------|----------|---------|
+| **namespace** | 0 | Identifies the design system. Always `tug`. |
 | **plane** | 1 | Is it a visible mark or the field behind it? |
 | **component** | 2 | What UI component does it belong to? |
 | **constituent** | 3 | What structural part of that component? |
@@ -26,6 +27,10 @@ All six slots are always present. No shortcuts, no omissions.
 ---
 
 ## Slot Values
+
+### Namespace
+
+One value. Slot 0 is always `tug`, identifying the token as part of the tug design system.
 
 ### Plane
 
@@ -90,56 +95,56 @@ The interaction condition. Every token has a state — non-interactive tokens us
 
 ## Classification Rules
 
-These rules make six-slot parsing deterministic:
+These rules make seven-slot parsing deterministic:
 
-**`disabled` is always a state, never a role.** Disabled tokens use `role=plain` with `state=disabled`. Example: `element-global-text-normal-plain-disabled`.
+**`disabled` is always a state, never a role.** Disabled tokens use `role=plain` with `state=disabled`. Example: `tug-element-global-text-normal-plain-disabled`.
 
-**`on`, `off`, `mixed`, `selected`, `highlighted` are roles, not states.** They describe persistent visual treatments that combine with interaction states. Example: `surface-toggle-track-normal-on-hover` (role=`on`, state=`hover`).
+**`on`, `off`, `mixed`, `selected`, `highlighted` are roles, not states.** They describe persistent visual treatments that combine with interaction states. Example: `tug-surface-toggle-track-normal-on-hover` (role=`on`, state=`hover`).
 
-**Shadow sizes are roles.** The constituent is `shadow`; the size (`xs`, `md`, `lg`, `xl`, `overlay`) occupies the role slot. Example: `element-global-shadow-normal-xs-rest`.
+**Shadow sizes are roles.** The constituent is `shadow`; the size (`xs`, `md`, `lg`, `xl`, `overlay`) occupies the role slot. Example: `tug-element-global-shadow-normal-xs-rest`.
 
-**`link` is a role; interaction is a state.** Link text decomposes as `role=link` + `state=hover`. Example: `element-global-text-normal-link-hover`.
+**`link` is a role; interaction is a state.** Link text decomposes as `role=link` + `state=hover`. Example: `tug-element-global-text-normal-link-hover`.
 
-**Field text types are roles.** `label`, `placeholder`, and `required` are roles (persistent characteristics). `disabled` and `readOnly` are states. Example: `element-field-text-normal-label-rest`.
+**Field text types are roles.** `label`, `placeholder`, and `required` are roles (persistent characteristics). `disabled` and `readOnly` are states. Example: `tug-element-field-text-normal-label-rest`.
 
-**Dual-slot values.** Some values appear in both role and state slots. `hover` is a role when it names a highlight surface's purpose (`surface-highlight-primary-normal-hover-rest`) and a state when it names an interaction condition (`element-global-text-normal-link-hover`). `mixed` is a role for toggle tracks (`surface-toggle-track-normal-mixed-rest`) and a state for checkmarks (`element-checkmark-icon-normal-plain-mixed`). The slot determines the meaning.
+**Dual-slot values.** Some values appear in both role and state slots. `hover` is a role when it names a highlight surface's purpose (`tug-surface-highlight-primary-normal-hover-rest`) and a state when it names an interaction condition (`tug-element-global-text-normal-link-hover`). `mixed` is a role for toggle tracks (`tug-surface-toggle-track-normal-mixed-rest`) and a state for checkmarks (`tug-element-checkmark-icon-normal-plain-mixed`). The slot determines the meaning.
 
 ---
 
 ## Examples
 
 ```
-element-global-text-normal-plain-rest         ← default body text
-element-global-text-normal-subtle-rest        ← muted/secondary text
-element-global-text-normal-link-hover         ← link text on hover
-element-global-icon-normal-plain-rest         ← default icon color
-element-global-border-normal-default-rest     ← standard border
-element-global-shadow-normal-md-rest          ← medium shadow
-element-global-fill-normal-accent-rest        ← accent fill color
-element-control-text-filled-accent-rest       ← filled accent button text
-element-control-text-filled-accent-hover      ← filled accent button text on hover
-element-control-icon-outlined-action-rest     ← outlined action button icon
-element-field-text-normal-label-rest          ← field label text
-element-field-text-normal-plain-disabled      ← disabled field text
-element-toggle-thumb-normal-plain-rest        ← toggle thumb
-element-radio-dot-normal-plain-rest           ← radio dot
-element-tone-fill-normal-success-rest         ← success tone fill
-element-checkmark-icon-normal-plain-mixed     ← mixed-state checkmark
+tug-element-global-text-normal-plain-rest         ← default body text
+tug-element-global-text-normal-subtle-rest        ← muted/secondary text
+tug-element-global-text-normal-link-hover         ← link text on hover
+tug-element-global-icon-normal-plain-rest         ← default icon color
+tug-element-global-border-normal-default-rest     ← standard border
+tug-element-global-shadow-normal-md-rest          ← medium shadow
+tug-element-global-fill-normal-accent-rest        ← accent fill color
+tug-element-control-text-filled-accent-rest       ← filled accent button text
+tug-element-control-text-filled-accent-hover      ← filled accent button text on hover
+tug-element-control-icon-outlined-action-rest     ← outlined action button icon
+tug-element-field-text-normal-label-rest          ← field label text
+tug-element-field-text-normal-plain-disabled      ← disabled field text
+tug-element-toggle-thumb-normal-plain-rest        ← toggle thumb
+tug-element-radio-dot-normal-plain-rest           ← radio dot
+tug-element-tone-fill-normal-success-rest         ← success tone fill
+tug-element-checkmark-icon-normal-plain-mixed     ← mixed-state checkmark
 
-surface-global-primary-normal-app-rest        ← app background
-surface-global-primary-normal-canvas-rest     ← canvas background
-surface-global-primary-normal-raised-rest     ← elevated surface
-surface-control-primary-filled-accent-rest    ← filled accent button bg
-surface-control-primary-filled-accent-hover   ← filled accent button bg on hover
-surface-toggle-track-normal-on-rest           ← toggle track (on)
-surface-toggle-track-normal-off-hover         ← toggle track (off, hovered)
-surface-overlay-primary-normal-dim-rest       ← overlay dim
-surface-highlight-primary-normal-hover-rest   ← hover highlight
-surface-highlight-primary-normal-flash-rest   ← flash highlight
+tug-surface-global-primary-normal-app-rest        ← app background
+tug-surface-global-primary-normal-canvas-rest     ← canvas background
+tug-surface-global-primary-normal-raised-rest     ← elevated surface
+tug-surface-control-primary-filled-accent-rest    ← filled accent button bg
+tug-surface-control-primary-filled-accent-hover   ← filled accent button bg on hover
+tug-surface-toggle-track-normal-on-rest           ← toggle track (on)
+tug-surface-toggle-track-normal-off-hover         ← toggle track (off, hovered)
+tug-surface-overlay-primary-normal-dim-rest       ← overlay dim
+tug-surface-highlight-primary-normal-hover-rest   ← hover highlight
+tug-surface-highlight-primary-normal-flash-rest   ← flash highlight
 ```
 
 ---
 
 ## Contrast Pairing
 
-A contrast pairing is an element token rendered on a surface token. The six-slot convention makes pairing extraction mechanical — split on `-`, read slot 1, and classify as element or surface. Every `--tug-*` element token has a corresponding surface token it renders on. `audit-tokens pairings` validates all pairings against contrast thresholds. [L16, L18, D81, D83]
+A contrast pairing is an element token rendered on a surface token. The seven-slot convention makes pairing extraction mechanical — split on `-`, read slot 0 for the namespace, slot 1 for the plane, and classify as element or surface. Every `--tug-*` element token has a corresponding surface token it renders on. `audit-tokens pairings` validates all pairings against contrast thresholds. [L16, L18, D81, D83]

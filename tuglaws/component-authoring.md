@@ -332,14 +332,15 @@ Before a component is done:
 
 ## Reference: Token Naming
 
-Tokens follow the six-slot convention from [token-naming.md](token-naming.md):
+Tokens follow the seven-slot convention from [token-naming.md](token-naming.md):
 
 ```
---tug-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
+--<namespace>-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
 ```
 
 | Slot | Purpose |
 |------|---------|
+| namespace | Always `tug`. Identifies the design system. |
 | plane | `element` (visible marks) or `surface` (backgrounds) |
 | component | `global`, `control`, `field`, `toggle`, `badge`, etc. |
 | constituent | `text`, `icon`, `border`, `shadow`, `primary`, `track`, etc. |
