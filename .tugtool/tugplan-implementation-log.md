@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-23T13:55:52Z
+---
+
+## step-1: Added tug-theme-override.css to tugdeck/.gitignore and created the empty override CSS file on disk
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-16
 date: 2025-03-22T22:42:23Z
 ---
