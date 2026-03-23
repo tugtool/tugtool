@@ -37,7 +37,7 @@ const brio = brioJson as ThemeRecipe;
 const harmony = harmonyJson as ThemeRecipe;
 import { validateThemeContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, CONTRAST_THRESHOLDS, CONTRAST_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
-import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
+import { TugThemeProvider } from "@/contexts/theme-provider";
 
 // ---------------------------------------------------------------------------
 // simulateInput — trigger React's onChange by accessing React internal props.
@@ -137,7 +137,7 @@ describe("registerGalleryCards – gallery-theme-generator (T6.2)", () => {
 
 describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("renders without throwing", async () => {
     const restoreFetch = mockFetch();
@@ -226,7 +226,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
 
 describe("GalleryThemeGeneratorContent – initial state loads active theme", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("loads brio on mount when TugThemeProvider has default theme", async () => {
     const restoreFetch = mockFetch();
@@ -289,7 +289,7 @@ describe("GalleryThemeGeneratorContent – initial state loads active theme", ()
 
 describe("GalleryThemeGeneratorContent – New flow", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("clicking New opens the new-theme dialog", () => {
     const restoreFetch = mockFetch();
@@ -451,7 +451,7 @@ describe("GalleryThemeGeneratorContent – New flow", () => {
 
 describe("GalleryThemeGeneratorContent – Open flow", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("clicking Open opens the open-theme dialog", async () => {
     const restoreFetch = mockFetch();
@@ -553,7 +553,7 @@ describe("GalleryThemeGeneratorContent – Open flow", () => {
 
 describe("GalleryThemeGeneratorContent – Viewing state (shipped theme, read-only)", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("in Viewing state, hue pickers are disabled", async () => {
     const restoreFetch = mockFetch();
@@ -585,7 +585,7 @@ describe("GalleryThemeGeneratorContent – Viewing state (shipped theme, read-on
 
 describe("GalleryThemeGeneratorContent – recipe label (D09)", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("after loading a theme, shows recipe (dark/light) as a read-only label", async () => {
     const restoreFetch = mockFetch();
@@ -628,7 +628,7 @@ describe("GalleryThemeGeneratorContent – recipe label (D09)", () => {
 
 describe("GalleryThemeGeneratorContent – auto-save (Editing state)", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("after creating a theme, auto-save fires within ~600ms and shows saved status", async () => {
     const saveCalls: string[] = [];
@@ -823,7 +823,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
 
 describe("GalleryThemeGeneratorContent – role hue selectors", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("renders 12 hue pickers (4 surface + 1 text + 7 role) in the preview section", () => {
     const restoreFetch = mockFetch();
@@ -913,7 +913,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors", () => {
 
 describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
   beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
 
   it("renders the emphasis x role preview section", () => {
     const restoreFetch = mockFetch();

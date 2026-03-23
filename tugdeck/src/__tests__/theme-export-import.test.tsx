@@ -6,7 +6,7 @@
  * - T9.4: Invalid JSON import shows error, does not crash (validateRecipeJson)
  * - T9.4: Migration: old-format recipe → new format
  * - TugThemeProvider context interface tests ({ theme, setTheme }, localStorage, dynamic themes)
- * - New save model: POST /__themes/save with name + css + recipe fields
+ * - New save model: POST /__themes/save with name + recipe fields only (D07)
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -20,15 +20,13 @@ import {
   GalleryThemeGeneratorContent,
   validateRecipeJson,
 } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { deriveTheme, generateResolvedCssExport, type ThemeRecipe } from "@/components/tugways/theme-engine";
+import { deriveTheme, type ThemeRecipe } from "@/components/tugways/theme-engine";
 import brioJson from "../../themes/brio.json";
 
 const brio = brioJson as ThemeRecipe;
 import { _resetForTest } from "@/card-registry";
 import {
   TugThemeProvider,
-  injectThemeCSS,
-  removeThemeCSS,
   loadSavedThemes,
   useThemeContext,
 } from "@/contexts/theme-provider";
@@ -181,14 +179,12 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 });
 
 // ---------------------------------------------------------------------------
-// New save model: POST /__themes/save with name + css + recipe
+// New save model: POST /__themes/save with name + recipe (D07)
 // ---------------------------------------------------------------------------
 
 describe("theme-save – new save model (POST /__themes/save)", () => {
-  it("POST /__themes/save receives name, css (resolved oklch), and recipe (JSON string)", async () => {
+  it("POST /__themes/save receives name and recipe (JSON string) only", async () => {
     const recipe = brio;
-    const output = deriveTheme(recipe);
-    const css = generateResolvedCssExport(output, recipe);
 
     const capturedBody: Record<string, unknown>[] = [];
     const originalFetch = globalThis.fetch;
@@ -205,38 +201,19 @@ describe("theme-save – new save model (POST /__themes/save)", () => {
       const res = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
+        body: JSON.stringify({ name: recipe.name, recipe: JSON.stringify(recipe) }),
       });
       expect(res.ok).toBe(true);
       expect(capturedBody.length).toBe(1);
       const body = capturedBody[0];
       expect(typeof body["name"]).toBe("string");
-      expect(typeof body["css"]).toBe("string");
       expect(typeof body["recipe"]).toBe("string");
-      // CSS should contain resolved oklch() values, not --tug-color() build-time values
-      expect(body["css"] as string).not.toContain("--tug-color(");
       // recipe JSON should parse back to a valid ThemeRecipe
       const parsedRecipe = JSON.parse(body["recipe"] as string) as unknown;
       expect(validateRecipeJson(parsedRecipe)).toBeNull();
     } finally {
       globalThis.fetch = originalFetch;
     }
-  });
-
-  it("generateResolvedCssExport produces CSS with oklch() values for saved themes", () => {
-    const recipe = brio;
-    const output = deriveTheme(recipe);
-    const css = generateResolvedCssExport(output, recipe);
-    expect(css).toContain("oklch(");
-    expect(css).not.toContain("--tug-color(");
-  });
-
-  it("saved CSS contains body {} block", () => {
-    const recipe = brio;
-    const output = deriveTheme(recipe);
-    const css = generateResolvedCssExport(output, recipe);
-    expect(css).toContain("body {");
-    expect(css).toContain("}");
   });
 });
 
@@ -288,7 +265,6 @@ function ContextCapture({
 describe("TugThemeProvider – simplified context (T6)", () => {
   afterEach(() => {
     cleanup();
-    removeThemeCSS();
   });
 
   it("context exposes { theme, setTheme } interface", () => {
@@ -314,19 +290,23 @@ describe("TugThemeProvider – simplified context (T6)", () => {
     }
   });
 
-  it("setTheme('brio') removes the override stylesheet", async () => {
-    injectThemeCSS("harmony", "body { --tug-surface-global-primary-normal-app-rest: oklch(0.9 0 0); }");
-    expect(document.getElementById("tug-theme-override")).not.toBeNull();
+  it("setTheme posts to /__themes/activate and updates state on success", async () => {
+    const activateCalls: string[] = [];
 
     const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
     const themeRef: { current: string | null } = { current: null };
     const { restore } = installMockLocalStorage();
 
-    // Mock fetch for brio.json
     const origFetch = globalThis.fetch;
-    globalThis.fetch = async (input: RequestInfo | URL) => {
-      if (String(input).includes("brio.json")) {
-        return new Response(JSON.stringify(brioJson), { status: 200 });
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/__themes/activate") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        activateCalls.push(String(body.theme));
+        return new Response(
+          JSON.stringify({ theme: "harmony", canvasParams: { hue: "cobalt", tone: 85, intensity: 60 } }),
+          { status: 200 },
+        );
       }
       return new Response("", { status: 404 });
     };
@@ -336,31 +316,39 @@ describe("TugThemeProvider – simplified context (T6)", () => {
         render(
           React.createElement(
             TugThemeProvider,
-            { initialTheme: "harmony" },
+            { initialTheme: "brio" },
             React.createElement(ContextCapture, { setThemeRef, themeRef }),
           ),
         );
       });
 
-      act(() => {
-        setThemeRef.current!("brio");
+      await act(async () => {
+        setThemeRef.current!("harmony");
+        await new Promise((r) => setTimeout(r, 0));
       });
 
-      expect(document.getElementById("tug-theme-override")).toBeNull();
-      expect(themeRef.current).toBe("brio");
+      expect(activateCalls).toContain("harmony");
+      expect(themeRef.current).toBe("harmony");
     } finally {
       restore();
       globalThis.fetch = origFetch;
     }
   });
 
-  it("setTheme with a dynamic name fetches CSS and injects it", async () => {
-    const fakeCss = "body { --tug-surface-global-primary-normal-app-rest: oklch(0.2 0 0); }";
+  it("setTheme with a dynamic name posts to activate endpoint", async () => {
     const fetchCalls: string[] = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (input: RequestInfo | URL) => {
-      fetchCalls.push(String(input));
-      return new Response(fakeCss, { status: 200 });
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      if (url === "/__themes/activate") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({ theme: String(body.theme), canvasParams: { hue: "teal", tone: 20, intensity: 50 } }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
     };
 
     const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
@@ -383,11 +371,10 @@ describe("TugThemeProvider – simplified context (T6)", () => {
         await new Promise((r) => setTimeout(r, 0));
       });
 
-      expect(fetchCalls.some((u) => u.includes("my-theme"))).toBe(true);
-      const el = document.getElementById("tug-theme-override");
-      expect(el).not.toBeNull();
-      expect(el!.textContent).toBe(fakeCss);
-      expect(el!.getAttribute("data-theme")).toBe("my-theme");
+      expect(fetchCalls.some((u) => u === "/__themes/activate")).toBe(true);
+      expect(themeRef.current).toBe("my-theme");
+      // No <style> element should be injected
+      expect(document.getElementById("tug-theme-override")).toBeNull();
     } finally {
       globalThis.fetch = originalFetch;
       restore();
@@ -396,6 +383,18 @@ describe("TugThemeProvider – simplified context (T6)", () => {
 
   it("setTheme persists theme name to localStorage under td-theme", async () => {
     const { store, restore } = installMockLocalStorage();
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/__themes/activate") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({ theme: String(body.theme), canvasParams: { hue: "cobalt", tone: 5, intensity: 5 } }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    };
 
     try {
       act(() => {
@@ -415,13 +414,15 @@ describe("TugThemeProvider – simplified context (T6)", () => {
         );
       });
 
-      act(() => {
+      await act(async () => {
         setThemeRef.current!("brio");
+        await new Promise((r) => setTimeout(r, 0));
       });
 
       expect(store["td-theme"]).toBe("brio");
     } finally {
       restore();
+      globalThis.fetch = origFetch;
     }
   });
 
@@ -468,16 +469,44 @@ describe("TugThemeProvider – simplified context (T6)", () => {
     }
   });
 
-  it("injectThemeCSS + removeThemeCSS DOM contract: injected CSS is accessible and removal is clean", () => {
-    const fakeCss = "body { --tug-surface-global-primary-normal-app-rest: oklch(0.15 0 0); }";
-    injectThemeCSS("saved-theme", fakeCss);
+  it("no <style id='tug-theme-override'> element in DOM after setTheme", async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/__themes/activate") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({ theme: String(body.theme), canvasParams: { hue: "cobalt", tone: 85, intensity: 60 } }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    };
 
-    const el = document.getElementById("tug-theme-override");
-    expect(el).not.toBeNull();
-    expect(el!.getAttribute("data-theme")).toBe("saved-theme");
-    expect(el!.textContent).toBe(fakeCss);
+    const setThemeRef: { current: ((name: string) => void) | null } = { current: null };
+    const themeRef: { current: string | null } = { current: null };
+    const { restore } = installMockLocalStorage();
 
-    removeThemeCSS();
-    expect(document.getElementById("tug-theme-override")).toBeNull();
+    try {
+      act(() => {
+        render(
+          React.createElement(
+            TugThemeProvider,
+            {},
+            React.createElement(ContextCapture, { setThemeRef, themeRef }),
+          ),
+        );
+      });
+
+      await act(async () => {
+        setThemeRef.current!("harmony");
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+      // The new architecture never injects a <style> element
+      expect(document.getElementById("tug-theme-override")).toBeNull();
+    } finally {
+      restore();
+      globalThis.fetch = origFetch;
+    }
   });
 });

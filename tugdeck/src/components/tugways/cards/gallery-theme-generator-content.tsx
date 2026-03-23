@@ -45,7 +45,6 @@ import * as Popover from "@radix-ui/react-popover";
 import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
-  generateResolvedCssExport,
   type ThemeRecipe,
   type ThemeOutput,
   type ContrastResult,
@@ -85,7 +84,7 @@ import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { Info, Ellipsis, ChevronDown, X, LayoutDashboard, MessageSquare } from "lucide-react";
-import { loadSavedThemes, useOptionalThemeContext, injectThemeCSS } from "@/contexts/theme-provider";
+import { loadSavedThemes, useOptionalThemeContext } from "@/contexts/theme-provider";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
@@ -1539,13 +1538,11 @@ function NewThemeDialog({
       // Copy with new name
       const newRecipe: ThemeRecipe = { ...protoRecipe, name: newName.trim() };
 
-      // Save via POST /__themes/save
-      const output = deriveTheme(newRecipe);
-      const css = generateResolvedCssExport(output, newRecipe);
+      // Save via POST /__themes/save — server derives CSS from recipe [D07]
       const saveRes = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRecipe.name, css, recipe: JSON.stringify(newRecipe) }),
+        body: JSON.stringify({ name: newRecipe.name, recipe: JSON.stringify(newRecipe) }),
       });
       if (!saveRes.ok) {
         const body = (await saveRes.json().catch(() => ({ error: "Save failed" }))) as { error?: string };
@@ -2029,11 +2026,7 @@ export function GalleryThemeGeneratorContent() {
     const output = deriveTheme(currentRecipe);
     setThemeOutput(output);
 
-    // Apply: inject regenerated CSS app-wide immediately for preview. [L06]
-    if (generatorState === "editing" && currentThemeName !== null) {
-      const css = generateResolvedCssExport(output, currentRecipe);
-      injectThemeCSS(currentRecipe.name, css);
-    }
+    // Live preview via activate endpoint will be wired in step 9.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     recipeMode,
@@ -2050,14 +2043,14 @@ export function GalleryThemeGeneratorContent() {
   // Auto-save — debounced 500ms after last change, Editing state only
   // ---------------------------------------------------------------------------
 
-  const performSave = useCallback(async (recipe: ThemeRecipe, output: ThemeOutput) => {
+  const performSave = useCallback(async (recipe: ThemeRecipe) => {
     setSaveStatus("saving");
     try {
-      const css = generateResolvedCssExport(output, recipe);
+      // Server derives CSS from recipe — no client-side CSS generation needed [D07]
       const res = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
+        body: JSON.stringify({ name: recipe.name, recipe: JSON.stringify(recipe) }),
       });
       if (res.ok) {
         setSaveStatus("saved");
@@ -2080,9 +2073,8 @@ export function GalleryThemeGeneratorContent() {
     if (autoSaveTimerRef.current !== null) {
       clearTimeout(autoSaveTimerRef.current);
     }
-    const output = deriveTheme(currentRecipe);
     autoSaveTimerRef.current = setTimeout(() => {
-      void performSave(currentRecipe, output);
+      void performSave(currentRecipe);
     }, 500);
 
     return () => {
@@ -2114,10 +2106,7 @@ export function GalleryThemeGeneratorContent() {
     setIsShipped(false);
     setGeneratorState("editing");
     setSaveStatus("idle");
-    // Apply CSS immediately
-    const output = deriveTheme(recipe);
-    const css = generateResolvedCssExport(output, recipe);
-    injectThemeCSS(name, css);
+    // Apply theme via context (activate endpoint wired in step 9).
     if (themeCtx) themeCtx.setTheme(name);
     void pushThemeListToSwift(name);
   }, [loadRecipeIntoState, themeCtx]);

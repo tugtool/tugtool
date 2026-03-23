@@ -7,9 +7,7 @@ import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { fetchLayoutWithRetry, fetchThemeWithRetry, fetchTabStatesWithRetry, fetchDeckStateWithRetry } from "./settings-api";
 import {
-  applyInitialTheme,
   sendCanvasColor,
-  registerThemeCSS,
   registerInitialCanvasParams,
   deriveCanvasParams,
 } from "./contexts/theme-provider";
@@ -35,14 +33,6 @@ if (!container) {
   throw new Error("deck-container element not found");
 }
 
-/**
- * Cached ThemeRecipe for the active theme at startup.
- * Populated by the async IIFE when the theme is non-brio and its JSON can be
- * fetched from GET /__themes/<name>.json. Used by sendCanvasColor() in Step 10
- * to derive canvas params synchronously at startup. [D07]
- */
-export let cachedActiveRecipe: ThemeRecipe | null = null;
-
 // Async IIFE: fetch settings before constructing DeckManager so the pre-fetched
 // layout and theme are applied before React renders.
 //
@@ -55,8 +45,8 @@ export let cachedActiveRecipe: ThemeRecipe | null = null;
 //            so it cannot be parallelized with the layout fetch itself.
 (async () => {
   // Phase 1: parallel fetch of layout, theme, focused card ID, and theme list.
-  // The theme list is fetched here so we can pre-fetch CSS for the active theme
-  // and populate themeCSSMap before applyInitialTheme(). [D07]
+  // The theme list is fetched here so we can push it to the Swift bridge via
+  // themeListUpdated on first open. [D10]
   const [layout, theme, focusedCardId, themeListRes] = await Promise.all([
     fetchLayoutWithRetry(),
     fetchThemeWithRetry(),
@@ -66,49 +56,18 @@ export let cachedActiveRecipe: ThemeRecipe | null = null;
 
   const initialTheme = (theme as string) ?? "brio";
 
-  // Parse theme list and pre-fetch CSS for the active theme (if non-brio).
-  // Also register harmony CSS if it is available via the middleware. [D07]
-  if (themeListRes !== null) {
-    const entries = (themeListRes as { themes?: unknown[] }).themes ?? [];
-    // Build a set of all known theme names from the list
-    const knownNames = new Set<string>(
-      entries
-        .map((e) => (typeof e === "string" ? e : typeof e === "object" && e !== null ? (e as Record<string, unknown>).name : null))
-        .filter((n): n is string => typeof n === "string")
-    );
-
-    // Pre-fetch CSS for the active theme if it is non-brio and in the list
-    if (initialTheme !== "brio" && knownNames.has(initialTheme)) {
-      const cssResult = await fetch(`/__themes/${encodeURIComponent(initialTheme)}.css`)
-        .then((r) => (r.ok ? r.text() : null))
-        .catch(() => null);
-      if (cssResult) {
-        registerThemeCSS(initialTheme, cssResult);
-      }
-
-      // Fetch the active theme's JSON recipe and cache it for Step 10 canvas color derivation
-      const jsonResult = await fetch(`/__themes/${encodeURIComponent(initialTheme)}.json`)
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null);
-      if (jsonResult !== null) {
-        cachedActiveRecipe = jsonResult as ThemeRecipe;
-      }
-    }
-
-    // Pre-fetch harmony CSS if not already the active theme
-    if (initialTheme !== "harmony" && knownNames.has("harmony")) {
-      const harmonyCSSResult = await fetch("/__themes/harmony.css")
-        .then((r) => (r.ok ? r.text() : null))
-        .catch(() => null);
-      if (harmonyCSSResult) {
-        registerThemeCSS("harmony", harmonyCSSResult);
-      }
+  // Fetch the active theme's JSON recipe for canvas color derivation.
+  // For non-brio themes, fetch from the middleware. Brio uses the statically
+  // imported recipe. [D08] Canvas color derived from theme JSON at runtime.
+  let cachedActiveRecipe: ThemeRecipe | null = null;
+  if (initialTheme !== "brio") {
+    const jsonResult = await fetch(`/__themes/${encodeURIComponent(initialTheme)}.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (jsonResult !== null) {
+      cachedActiveRecipe = jsonResult as ThemeRecipe;
     }
   }
-
-  // Apply the initial theme via stylesheet injection before DeckManager construction
-  // so the correct colors are visible before React renders.
-  applyInitialTheme(initialTheme);
 
   // Derive canvas color params from the active theme recipe. For brio (the default),
   // use the statically imported recipe. For non-brio themes, use the cached recipe

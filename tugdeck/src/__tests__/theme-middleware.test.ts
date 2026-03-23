@@ -13,12 +13,10 @@
  * - handleThemesList returns entries from both dirs with correct source fields
  * - handleThemesList sorts: brio first, other shipped, then authored
  * - handleThemesLoadJson checks authored dir first, then shipped; returns 404 if neither
- * - handleThemesLoadCss returns 404 for brio (uses base stylesheet)
- * - handleThemesLoadCss returns pre-generated CSS for shipped non-brio themes
- * - handleThemesLoadCss generates CSS on-the-fly for authored themes without CSS
  * - handleThemesSave rejects names that collide with shipped themes (400)
  * - handleThemesSave auto-creates the user themes directory
- * - handleThemesSave writes JSON and CSS for valid authored themes
+ * - handleThemesSave writes JSON only (no CSS file — activate handles override)
+ * - handleThemesSave returns safeName on success
  * - handleThemesSave returns 400 when name is empty
  */
 import { describe, it, expect } from "bun:test";
@@ -28,14 +26,12 @@ import {
   handleThemesSave,
   handleThemesList,
   handleThemesLoadJson,
-  handleThemesLoadCss,
   type ThemeSaveBody,
   type FsReadImpl,
   type FsWriteImpl,
 } from "../../vite.config";
 
 const FAKE_SHIPPED_DIR = "/fake/tugdeck/themes";
-const FAKE_SHIPPED_CSS_DIR = "/fake/tugdeck/styles/themes";
 const FAKE_USER_DIR = "/fake/home/.tugtool/themes";
 
 // ---------------------------------------------------------------------------
@@ -223,98 +219,11 @@ describe("handleThemesLoadJson", () => {
 });
 
 // ---------------------------------------------------------------------------
-// handleThemesLoadCss
-// ---------------------------------------------------------------------------
-
-describe("handleThemesLoadCss", () => {
-  it("returns 404 for brio (uses base stylesheet, not override)", () => {
-    const mockFs: FsWriteImpl = {
-      readdirSync: () => [],
-      readFileSync: (_p: string) => "",
-      existsSync: (_p: string) => true,
-      writeFileSync: () => {},
-      mkdirSync: () => {},
-    };
-    const result = handleThemesLoadCss("brio", mockFs, FAKE_SHIPPED_DIR, FAKE_SHIPPED_CSS_DIR, FAKE_USER_DIR, () => "");
-    expect(result.status).toBe(404);
-  });
-
-  it("returns pre-generated CSS for non-brio shipped theme", () => {
-    const harmonyCss = "body { --tug-base: oklch(0.5 0 0); }";
-    const mockFs: FsWriteImpl = {
-      readdirSync: () => [],
-      readFileSync: (_p: string) => harmonyCss,
-      existsSync: (p: string) => p === path.join(FAKE_SHIPPED_DIR, "harmony.json") || p === path.join(FAKE_SHIPPED_CSS_DIR, "harmony.css"),
-      writeFileSync: () => {},
-      mkdirSync: () => {},
-    };
-    const result = handleThemesLoadCss("harmony", mockFs, FAKE_SHIPPED_DIR, FAKE_SHIPPED_CSS_DIR, FAKE_USER_DIR, () => "");
-    expect(result.status).toBe(200);
-    expect(result.contentType).toBe("text/css");
-    expect(result.body).toBe(harmonyCss);
-  });
-
-  it("returns authored theme CSS when CSS file exists", () => {
-    const authoredCss = "body { --tug-custom: oklch(0.3 0.1 30); }";
-    const mockFs: FsWriteImpl = {
-      readdirSync: () => [],
-      readFileSync: (_p: string) => authoredCss,
-      existsSync: (p: string) => {
-        // Not a shipped theme
-        if (p === path.join(FAKE_SHIPPED_DIR, "my-theme.json")) return false;
-        // Has authored JSON and CSS
-        return p === path.join(FAKE_USER_DIR, "my-theme.json") || p === path.join(FAKE_USER_DIR, "my-theme.css");
-      },
-      writeFileSync: () => {},
-      mkdirSync: () => {},
-    };
-    const result = handleThemesLoadCss("my-theme", mockFs, FAKE_SHIPPED_DIR, FAKE_SHIPPED_CSS_DIR, FAKE_USER_DIR, () => "");
-    expect(result.status).toBe(200);
-    expect(result.contentType).toBe("text/css");
-    expect(result.body).toBe(authoredCss);
-  });
-
-  it("generates CSS on-the-fly when authored JSON exists but CSS does not", () => {
-    const generatedCss = "body { --tug-generated: oklch(0.4 0.05 200); }";
-    const written: Record<string, string> = {};
-    const mockFs: FsWriteImpl = {
-      readdirSync: () => [],
-      readFileSync: (_p: string) => makeAuthoredJson("my-theme"),
-      existsSync: (p: string) => {
-        if (p === path.join(FAKE_SHIPPED_DIR, "my-theme.json")) return false;
-        if (p === path.join(FAKE_USER_DIR, "my-theme.css")) return false;
-        return p === path.join(FAKE_USER_DIR, "my-theme.json");
-      },
-      writeFileSync: (p: string, data: string) => { written[p] = data; },
-      mkdirSync: () => {},
-    };
-    const result = handleThemesLoadCss("my-theme", mockFs, FAKE_SHIPPED_DIR, FAKE_SHIPPED_CSS_DIR, FAKE_USER_DIR, () => generatedCss);
-    expect(result.status).toBe(200);
-    expect(result.contentType).toBe("text/css");
-    expect(result.body).toBe(generatedCss);
-    // CSS was written to disk
-    expect(written[path.join(FAKE_USER_DIR, "my-theme.css")]).toBe(generatedCss);
-  });
-
-  it("returns 404 when neither JSON nor CSS exists for the name", () => {
-    const mockFs: FsWriteImpl = {
-      readdirSync: () => [],
-      readFileSync: (_p: string) => "",
-      existsSync: (_p: string) => false,
-      writeFileSync: () => {},
-      mkdirSync: () => {},
-    };
-    const result = handleThemesLoadCss("nonexistent", mockFs, FAKE_SHIPPED_DIR, FAKE_SHIPPED_CSS_DIR, FAKE_USER_DIR, () => "");
-    expect(result.status).toBe(404);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // handleThemesSave
 // ---------------------------------------------------------------------------
 
 describe("handleThemesSave", () => {
-  it("writes JSON and CSS for a valid authored theme", () => {
+  it("writes JSON only (no CSS) for a valid authored theme", () => {
     const written: Record<string, string> = {};
     const created: string[] = [];
     const mockFs: FsWriteImpl = {
@@ -325,19 +234,46 @@ describe("handleThemesSave", () => {
       mkdirSync: (p: string) => { created.push(p); },
     };
     const body = makeMinimalSaveBody("My Theme");
-    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, (_r) => "body {}");
+    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
 
     expect(result.status).toBe(200);
     const parsed = JSON.parse(result.body) as { ok: boolean; name: string };
     expect(parsed.ok).toBe(true);
     expect(parsed.name).toBe("my-theme");
 
-    // Both files were written
+    // JSON was written
     const jsonPath = path.join(FAKE_USER_DIR, "my-theme.json");
-    const cssPath = path.join(FAKE_USER_DIR, "my-theme.css");
     expect(jsonPath in written).toBe(true);
-    expect(cssPath in written).toBe(true);
-    expect(written[cssPath]).toBe("body {}");
+
+    // CSS file was NOT written — activate handles the override
+    const cssPath = path.join(FAKE_USER_DIR, "my-theme.css");
+    expect(cssPath in written).toBe(false);
+  });
+
+  it("returns safeName on success", () => {
+    const mockFs: FsWriteImpl = {
+      readdirSync: () => [],
+      readFileSync: (_p: string) => "",
+      existsSync: (_p: string) => false,
+      writeFileSync: () => {},
+      mkdirSync: () => {},
+    };
+    const result = handleThemesSave(makeMinimalSaveBody("My Theme"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
+    expect(result.status).toBe(200);
+    expect(result.safeName).toBe("my-theme");
+  });
+
+  it("returns safeName null on validation failure", () => {
+    const mockFs: FsWriteImpl = {
+      readdirSync: () => [],
+      readFileSync: (_p: string) => "",
+      existsSync: (_p: string) => false,
+      writeFileSync: () => {},
+      mkdirSync: () => {},
+    };
+    const result = handleThemesSave(makeMinimalSaveBody(""), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
+    expect(result.status).toBe(400);
+    expect(result.safeName).toBeNull();
   });
 
   it("rejects names that collide with shipped themes (400)", () => {
@@ -349,7 +285,7 @@ describe("handleThemesSave", () => {
       mkdirSync: () => {},
     };
     const body = makeMinimalSaveBody("brio");
-    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
     const parsed = JSON.parse(result.body) as { error: string };
     expect(parsed.error).toContain("shipped");
@@ -364,7 +300,7 @@ describe("handleThemesSave", () => {
       writeFileSync: () => {},
       mkdirSync: (p: string) => { created.push(p); },
     };
-    handleThemesSave(makeMinimalSaveBody("new-theme"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    handleThemesSave(makeMinimalSaveBody("new-theme"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(created).toContain(FAKE_USER_DIR);
   });
 
@@ -377,7 +313,7 @@ describe("handleThemesSave", () => {
       mkdirSync: () => {},
     };
     const body = makeMinimalSaveBody("");
-    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
     const parsed = JSON.parse(result.body) as { error: string };
     expect(typeof parsed.error).toBe("string");
@@ -392,7 +328,7 @@ describe("handleThemesSave", () => {
       mkdirSync: () => {},
     };
     const body = makeMinimalSaveBody("   ");
-    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
   });
 
@@ -405,9 +341,11 @@ describe("handleThemesSave", () => {
       writeFileSync: (p: string, data: string) => { written[path.basename(p)] = data; },
       mkdirSync: () => {},
     };
-    handleThemesSave(makeMinimalSaveBody("My Cool Theme!"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    handleThemesSave(makeMinimalSaveBody("My Cool Theme!"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     const keys = Object.keys(written);
     expect(keys.some((k) => k.startsWith("my-cool-theme"))).toBe(true);
+    // Only JSON file written, no CSS
+    expect(keys.every((k) => k.endsWith(".json"))).toBe(true);
   });
 
   it("returns 500 when fs.writeFileSync throws", () => {
@@ -418,7 +356,7 @@ describe("handleThemesSave", () => {
       writeFileSync: () => { throw new Error("disk full"); },
       mkdirSync: () => {},
     };
-    const result = handleThemesSave(makeMinimalSaveBody("test"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(makeMinimalSaveBody("test"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(500);
   });
 
@@ -430,7 +368,7 @@ describe("handleThemesSave", () => {
       writeFileSync: () => {},
       mkdirSync: () => {},
     };
-    const result = handleThemesSave(null, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(null, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
   });
 });

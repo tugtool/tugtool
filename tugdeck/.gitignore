@@ -4,3 +4,6 @@
 
 # Golden snapshots for token output identity checks
 styles/*.golden
+
+# Runtime theme override file (written by Vite plugin and activate endpoint)
+styles/tug-theme-override.css
