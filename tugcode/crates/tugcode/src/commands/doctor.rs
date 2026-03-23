@@ -169,7 +169,7 @@ fn check_initialized() -> HealthCheck {
     }
 
     // Check for required files
-    let required_files = ["tugplan-skeleton.md", "config.toml"];
+    let required_files = ["config.toml"];
     let missing: Vec<_> = required_files
         .iter()
         .filter(|f| !tug_dir.join(f).exists())
@@ -596,10 +596,9 @@ fn check_broken_refs() -> HealthCheck {
         let path = entry.path();
         if path.is_file() {
             let filename = path.file_name().unwrap().to_string_lossy();
-            // Skip skeleton, config, and log files
+            // Skip config and log files
             if filename.starts_with("tugplan-")
                 && filename.ends_with(".md")
-                && filename != "tugplan-skeleton.md"
                 && filename != "tugplan-implementation-log.md"
             {
                 // Read and parse the plan

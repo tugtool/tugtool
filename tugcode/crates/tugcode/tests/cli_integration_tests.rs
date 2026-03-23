@@ -129,10 +129,6 @@ fn test_init_creates_expected_files() {
     // Check files were created
     let tug_dir = temp.path().join(".tugtool");
     assert!(tug_dir.is_dir(), ".tugtool directory should exist");
-    assert!(
-        tug_dir.join("tugplan-skeleton.md").is_file(),
-        "skeleton should exist"
-    );
     assert!(tug_dir.join("config.toml").is_file(), "config should exist");
     assert!(
         tug_dir.join("tugplan-implementation-log.md").is_file(),
@@ -158,7 +154,6 @@ fn test_init_idempotent_on_existing_project() {
 
     // All files should still exist
     let tug_dir = temp.path().join(".tugtool");
-    assert!(tug_dir.join("tugplan-skeleton.md").is_file());
     assert!(tug_dir.join("config.toml").is_file());
     assert!(tug_dir.join("tugplan-implementation-log.md").is_file());
 }
@@ -185,7 +180,6 @@ fn test_init_creates_missing_files() {
     );
 
     // Infrastructure files should now exist
-    assert!(tug_dir.join("tugplan-skeleton.md").is_file());
     assert!(tug_dir.join("config.toml").is_file());
     assert!(tug_dir.join("tugplan-implementation-log.md").is_file());
 

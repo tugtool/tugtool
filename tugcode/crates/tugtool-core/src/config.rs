@@ -94,7 +94,7 @@ impl Config {
 }
 
 /// Reserved file names that are not treated as plan files
-pub const RESERVED_FILES: &[&str] = &["tugplan-skeleton.md", "tugplan-implementation-log.md"];
+pub const RESERVED_FILES: &[&str] = &["tugplan-implementation-log.md"];
 
 /// Check if a filename is reserved (not a plan file)
 pub fn is_reserved_file(filename: &str) -> bool {
@@ -181,7 +181,6 @@ mod tests {
 
     #[test]
     fn test_is_reserved_file() {
-        assert!(is_reserved_file("tugplan-skeleton.md"));
         assert!(is_reserved_file("tugplan-implementation-log.md"));
         assert!(!is_reserved_file("tugplan-1.md"));
         assert!(!is_reserved_file("tugplan-feature.md"));

@@ -6,9 +6,6 @@ use std::path::Path;
 
 use crate::output::{InitCheckData, InitData, JsonResponse};
 
-/// Embedded skeleton content
-const SKELETON_CONTENT: &str = include_str!("../../../../../tuglaws/tugplan-skeleton.md");
-
 /// Default config.toml content
 const DEFAULT_CONFIG: &str = r#"[tugtool]
 # Validation strictness: "lenient", "normal", "strict"
@@ -45,8 +42,8 @@ Entries are sorted newest-first.
 /// * `json_output` - Output in JSON format
 pub fn run_init_check(root: Option<&Path>, json_output: bool) -> Result<i32, String> {
     let base = root.unwrap_or_else(|| Path::new("."));
-    let skeleton_path = base.join(".tugtool/tugplan-skeleton.md");
-    let initialized = skeleton_path.exists();
+    let config_path = base.join(".tugtool/config.toml");
+    let initialized = config_path.exists();
 
     if json_output {
         let response = JsonResponse::ok(
@@ -76,13 +73,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     if tug_dir.exists() && !force {
         // Idempotent mode: create only missing files
         let mut files_created = vec![];
-
-        let skeleton_path = tug_dir.join("tugplan-skeleton.md");
-        if !skeleton_path.exists() {
-            fs::write(&skeleton_path, SKELETON_CONTENT)
-                .map_err(|e| format!("failed to write tugplan-skeleton.md: {}", e))?;
-            files_created.push("tugplan-skeleton.md".to_string());
-        }
 
         let config_path = tug_dir.join("config.toml");
         if !config_path.exists() {
@@ -137,11 +127,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     fs::create_dir_all(tug_dir)
         .map_err(|e| format!("failed to create .tugtool directory: {}", e))?;
 
-    // Create skeleton
-    let skeleton_path = tug_dir.join("tugplan-skeleton.md");
-    fs::write(&skeleton_path, SKELETON_CONTENT)
-        .map_err(|e| format!("failed to write tugplan-skeleton.md: {}", e))?;
-
     // Create config.toml
     let config_path = tug_dir.join("config.toml");
     fs::write(&config_path, DEFAULT_CONFIG)
@@ -155,7 +140,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     ensure_gitignore(quiet)?;
 
     let files_created = vec![
-        "tugplan-skeleton.md".to_string(),
         "config.toml".to_string(),
         "tugplan-implementation-log.md".to_string(),
     ];
@@ -171,7 +155,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     } else if !quiet {
         println!("Initialized tug project in .tugtool/");
-        println!("  Created: tugplan-skeleton.md");
         println!("  Created: config.toml");
         println!("  Created: tugplan-implementation-log.md");
     }
@@ -240,11 +223,10 @@ mod tests {
         let temp = TempDir::new().expect("failed to create temp dir");
         let temp_path = temp.path();
 
-        // Create .tugtool directory with skeleton
+        // Create .tugtool directory with config
         let tug_dir = temp_path.join(".tugtool");
         fs::create_dir_all(&tug_dir).expect("failed to create .tugtool");
-        fs::write(tug_dir.join("tugplan-skeleton.md"), "test content")
-            .expect("failed to write skeleton");
+        fs::write(tug_dir.join("config.toml"), "test content").expect("failed to write config");
 
         let result = run_init_check(Some(temp_path), false).expect("init check should not error");
         assert_eq!(result, 0, "should return exit code 0 for initialized");
