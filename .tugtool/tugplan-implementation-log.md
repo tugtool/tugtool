@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-23T15:40:29Z
+---
+
+## step-10: Added THEME_CANVAS_PARAMS generation to generate-tug-tokens.ts, production link swap to theme-provider.tsx, and Rollup config for theme CSS assets
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-9
 date: 2025-03-23T15:24:17Z
 ---

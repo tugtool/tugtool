@@ -3,13 +3,17 @@
  *
  * Architecture: file-based override (not DOM injection).
  *
- * Theme switching posts to POST /__themes/activate, which rewrites
+ * Dev mode: Theme switching posts to POST /__themes/activate, which rewrites
  * tug-theme-override.css through Vite's CSS pipeline so PostCSS expands all
  * --tug-color() tokens correctly. Brio uses an empty override file; all other
  * themes write their full CSS into the override file.
  *
+ * Production mode: Theme switching swaps a <link id="tug-theme-override">
+ * element pointing to the pre-built per-theme CSS asset. Canvas params come
+ * from the static THEME_CANVAS_PARAMS map generated at build time. [D08]
+ *
  * Spec S01 (#settheme-flow), [D01] Single override file, [D03] Activate endpoint,
- * [D04] Dual persistence, Spec S03 (#s03-theme-provider)
+ * [D04] Dual persistence, Spec S03 (#s03-theme-provider), [D08] Production link swap
  */
 
 import React, {
@@ -23,6 +27,7 @@ import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
 import { canvasColorHex, type CanvasColorParams } from "../canvas-color";
 import { deriveTheme, type ThemeRecipe } from "../components/tugways/theme-engine";
+import { THEME_CANVAS_PARAMS } from "../generated/theme-canvas-params";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,6 +103,44 @@ export function deriveCanvasParams(recipe: ThemeRecipe): CanvasColorParams {
     tone: themeOutput.formulas.surfaceCanvasTone,
     intensity: themeOutput.formulas.surfaceCanvasIntensity,
   };
+}
+
+// ---------------------------------------------------------------------------
+// activateProductionTheme — production <link> swap [D08]
+// ---------------------------------------------------------------------------
+
+/**
+ * Swap a `<link id="tug-theme-override">` element to activate a theme in
+ * production mode (no Vite dev server, no POST /__themes/activate).
+ *
+ * - For Brio: removes the link element if present (Brio is the base CSS).
+ * - For non-Brio: sets href to `/assets/themes/<name>.css`, creating the
+ *   element if it does not already exist.
+ *
+ * [D08] Production link swap, Spec S03 (#s03-production-link).
+ */
+export function activateProductionTheme(themeName: string): void {
+  const LINK_ID = "tug-theme-override";
+  const existing = document.getElementById(LINK_ID) as HTMLLinkElement | null;
+
+  if (themeName === "brio") {
+    // Brio base tokens take over — remove the override link if present.
+    if (existing) {
+      existing.remove();
+    }
+    return;
+  }
+
+  const href = `/assets/themes/${themeName}.css`;
+  if (existing) {
+    existing.href = href;
+  } else {
+    const link = document.createElement("link");
+    link.id = LINK_ID;
+    link.rel = "stylesheet";
+    link.href = href;
+    document.head.appendChild(link);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +227,20 @@ export function TugThemeProvider({
   const setThemeRef = useRef<(t: string) => void>(() => {});
 
   const setTheme = (newTheme: string): void => {
+    if (import.meta.env.PROD) {
+      // Production: swap <link> element and use static canvas params map. [D08]
+      activateProductionTheme(newTheme);
+      const canvasParams = THEME_CANVAS_PARAMS[newTheme];
+      if (canvasParams) {
+        sendCanvasColor(canvasParams);
+      }
+      setThemeState(newTheme);
+      try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
+      putTheme(newTheme);
+      return;
+    }
+
+    // Dev: POST to activate endpoint — rewrites tug-theme-override.css via HMR. [D03]
     void fetch("/__themes/activate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

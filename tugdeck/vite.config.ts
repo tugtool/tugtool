@@ -684,6 +684,31 @@ function themeSaveLoadPlugin(): VitePlugin {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Discover shipped theme CSS files for production build inputs.
+//
+// Each styles/themes/<name>.css file is added as a separate Rollup entry
+// so Vite processes it through PostCSS (expanding --tug-color() tokens)
+// and emits it to dist/assets/themes/<name>.css. The production link swap
+// in theme-provider.tsx targets these paths. [D08]
+// ---------------------------------------------------------------------------
+
+function discoverThemeCssInputs(): Record<string, string> {
+  const themesDir = path.resolve(__dirname, "styles", "themes");
+  const inputs: Record<string, string> = {};
+  let files: string[] = [];
+  try {
+    files = fs.readdirSync(themesDir).filter((f) => f.endsWith(".css"));
+  } catch {
+    // themes dir may not exist yet during first run
+  }
+  for (const file of files) {
+    const name = file.slice(0, -4); // strip .css
+    inputs[`themes/${name}`] = path.join(themesDir, file);
+  }
+  return inputs;
+}
+
 export default defineConfig(() => {
   const tugcastPort = process.env.TUGCAST_PORT || "55255";
   const proxyConfig = {
@@ -691,6 +716,9 @@ export default defineConfig(() => {
     "/ws": { target: `ws://localhost:${tugcastPort}`, ws: true },
     "/api": { target: `http://localhost:${tugcastPort}` },
   };
+
+  const themeInputs = discoverThemeCssInputs();
+
   return {
     plugins: [react(), themeOverridePlugin(), paletteHotReload(), controlTokenHotReload(), themeSaveLoadPlugin()],
     css: {
@@ -735,7 +763,28 @@ export default defineConfig(() => {
       // restructuring the syntax-highlighting feature.
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
+        input: {
+          index: path.resolve(__dirname, "index.html"),
+          ...themeInputs,
+        },
         output: {
+          // Emit per-theme CSS to assets/themes/<name>.css (no hash) so
+          // the production link swap can target a stable path. [D08]
+          assetFileNames: (assetInfo) => {
+            const name = assetInfo.name ?? "";
+            if (name.endsWith(".css")) {
+              // Theme entry CSS files are named "themes/<themeName>" by discoverThemeCssInputs.
+              // Rollup preserves the entry key as the asset name for extracted CSS.
+              const names = assetInfo.names ?? [name];
+              for (const n of names) {
+                if (n.startsWith("themes/") || n.includes("/styles/themes/")) {
+                  const themeName = path.basename(n, ".css");
+                  return `assets/themes/${themeName}.css`;
+                }
+              }
+            }
+            return "assets/[name]-[hash][extname]";
+          },
           manualChunks: (id: string) => {
             if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
               return "vendor";
