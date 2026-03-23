@@ -82,12 +82,12 @@ function filledFg(): ChromaticRule {
 
 /**
  * outlinedFg — outlined/ghost control fg or icon rule.
- * Always: control hue, intensity from iField, tone from toneField.
+ * Role hue at emphasis-level intensity and tone.
  */
-function outlinedFg(iField: keyof F, toneField: keyof F): ChromaticRule {
+function outlinedFg(iField: keyof F, toneField: keyof F, hueSlot: string = "control"): ChromaticRule {
   return {
     type: "chromatic",
-    hueSlot: "control",
+    hueSlot,
     intensityExpr: (formulas) => formulas[iField] as number,
     toneExpr: (formulas) => formulas[toneField] as number,
   };
@@ -910,46 +910,37 @@ const FILLED_RULES: Record<string, DerivationRule> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Build outlined-{role} rules (action, agent, option).
+ * Build outlined-{role} rules for any role.
  *
  * bg-rest: transparent
- * bg-hover/active: hueSlot "outlinedSurfaceHover"/"outlinedSurfaceActive" (sentinel "highlight" dark,
- *   chromatic "frame" light with outlinedBgHover/Active tones)
- *
- * fg/icon: emphasis-level fields shared across all roles (Table T01 D02):
- *   outlinedFg{Rest,Hover,Active}Tone, outlinedTextIntensity (fg)
- *   outlinedIcon{Rest,Hover,Active}Tone, outlinedIconIntensity (icon)
- *
- * border: roleHueSlot at Math.min(90, roleIntensity+{5,15,25}), t:50
+ * bg-hover/active: sentinel hue slot with formula-driven intensity/alpha
+ * fg/icon: role hue at emphasis-level tone/intensity
+ * border: role hue at roleIntensity ramp
  */
-function outlinedFgRules(role: string, hueSlot: string): Record<string, DerivationRule> {
+function outlinedRoleRules(role: string, hueSlot: string): Record<string, DerivationRule> {
   return {
     // bg (surface)
     [`--tug-surface-control-primary-outlined-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    // bg-hover: unified intensity/alpha from formulas (dark: 0/outlinedSurfaceHoverAlpha; light: chromatic 4/100)
     [`--tug-surface-control-primary-outlined-${role}-hover`]: outlinedBg("outlinedSurfaceHoverIntensity", "outlinedSurfaceHoverTone", "outlinedSurfaceHoverAlpha")("outlinedSurfaceHover"),
-    // bg-active: unified intensity/alpha from formulas (dark: 0/outlinedSurfaceActiveAlpha; light: chromatic 6/100)
     [`--tug-surface-control-primary-outlined-${role}-active`]: outlinedBg("outlinedSurfaceActiveIntensity", "outlinedSurfaceActiveTone", "outlinedSurfaceActiveAlpha")("outlinedSurfaceActive"),
-    // fg — emphasis-level fields (Table T01 D02), same across all outlined roles
-    [`--tug-element-control-text-outlined-${role}-rest`]: outlinedFg("outlinedTextIntensity", "outlinedTextRestTone"),
-    [`--tug-element-control-text-outlined-${role}-hover`]: outlinedFg("outlinedTextIntensity", "outlinedTextHoverTone"),
-    [`--tug-element-control-text-outlined-${role}-active`]: outlinedFg("outlinedTextIntensity", "outlinedTextActiveTone"),
-    // border
+    // fg — role hue, emphasis-level tone/intensity
+    [`--tug-element-control-text-outlined-${role}-rest`]: outlinedFg("outlinedTextIntensity", "outlinedTextRestTone", hueSlot),
+    [`--tug-element-control-text-outlined-${role}-hover`]: outlinedFg("outlinedTextIntensity", "outlinedTextHoverTone", hueSlot),
+    [`--tug-element-control-text-outlined-${role}-active`]: outlinedFg("outlinedTextIntensity", "outlinedTextActiveTone", hueSlot),
+    // border — role hue at roleIntensity ramp
     [`--tug-element-control-border-outlined-${role}-rest`]: borderRest(hueSlot),
     [`--tug-element-control-border-outlined-${role}-hover`]: borderHover(hueSlot),
     [`--tug-element-control-border-outlined-${role}-active`]: borderActive(hueSlot),
-    // icon — emphasis-level fields (Table T01 D02), same across all outlined roles
-    [`--tug-element-control-icon-outlined-${role}-rest`]: outlinedFg("outlinedIconIntensity", "outlinedIconRestTone"),
-    [`--tug-element-control-icon-outlined-${role}-hover`]: outlinedFg("outlinedIconIntensity", "outlinedIconHoverTone"),
-    [`--tug-element-control-icon-outlined-${role}-active`]: outlinedFg("outlinedIconIntensity", "outlinedIconActiveTone"),
+    // icon — role hue, emphasis-level tone/intensity
+    [`--tug-element-control-icon-outlined-${role}-rest`]: outlinedFg("outlinedIconIntensity", "outlinedIconRestTone", hueSlot),
+    [`--tug-element-control-icon-outlined-${role}-hover`]: outlinedFg("outlinedIconIntensity", "outlinedIconHoverTone", hueSlot),
+    [`--tug-element-control-icon-outlined-${role}-active`]: outlinedFg("outlinedIconIntensity", "outlinedIconActiveTone", hueSlot),
   };
 }
 
-// Outlined-option has neutral text-hue borders (not role-colored) — separate factory.
-// Distinct pattern: subtleTextIntensity-based intensity ramp with formula tone fields.
+// Outlined-option overrides: neutral control-hue borders instead of role-colored.
 function outlinedOptionBorderRules(): Record<string, DerivationRule> {
   return {
-    // Override the borders from outlinedFgRules with neutral control-hue borders
     "--tug-element-control-border-outlined-option-rest": {
       type: "chromatic",
       hueSlot: "control",
@@ -972,100 +963,60 @@ function outlinedOptionBorderRules(): Record<string, DerivationRule> {
 }
 
 const OUTLINED_RULES: Record<string, DerivationRule> = {
-  ...outlinedFgRules("action", "action"),
-  ...outlinedFgRules("agent", "agent"),
-  ...outlinedFgRules("option", "action"), // option uses action slot for border initially; overridden below
+  ...outlinedRoleRules("accent", "accent"),
+  ...outlinedRoleRules("action", "action"),
+  ...outlinedRoleRules("danger", "destructive"),
+  ...outlinedRoleRules("agent", "agent"),
+  ...outlinedRoleRules("data", "data"),
+  ...outlinedRoleRules("success", "success"),
+  ...outlinedRoleRules("caution", "caution"),
+  ...outlinedRoleRules("option", "action"),
   // Override outlined-option borders with neutral formulas
   ...outlinedOptionBorderRules(),
 };
 
 // ---------------------------------------------------------------------------
-// E. Control Surfaces — Ghost roles (action, danger, option)
+// E. Control Surfaces — Ghost roles (all 7 + option)
 // ---------------------------------------------------------------------------
 
 /**
- * Build ghost-{role} rules (action, option).
- * Unified factory — both roles share emphasis-level fg/icon/border fields (Table T02 D02).
- * Per-role exceptions: bgHoverHueSlot, bgActiveHueSlot, and the alpha formula fields
- * remain per-role because the bg sentinel hue slot may differ between roles in light mode.
+ * Build ghost-{role} rules for any role.
  *
- * bg-rest/border-rest: transparent (structural)
- * bg-hover/active: per-role sentinel hue slot (e.g. "ghostActionSurfaceHover" / "ghostOptionSurfaceHover")
- * fg/icon: emphasis-level fields ghostFg{Rest,Hover,Active}Tone/I, ghostIcon{Rest,Hover,Active}Tone/I
- * border-hover/active: txt hue at ghostBorderIntensity, ghostBorderTone (shared)
+ * bg-rest/border-rest: transparent
+ * bg-hover/active: sentinel hue slot with formula-driven alpha
+ * fg/icon: role hue at emphasis-level tone/intensity
+ * border-hover/active: role hue at ghostBorderIntensity, ghostBorderTone
  */
-function ghostFgRules(
-  role: "action" | "option",
-  bgHoverHueSlot: string,
-  bgActiveHueSlot: string,
-  bgHoverAlphaExpr: (formulas: DerivationFormulas) => number,
-  bgActiveAlphaExpr: (formulas: DerivationFormulas) => number,
-): Record<string, DerivationRule> {
+function ghostRoleRules(role: string, hueSlot: string): Record<string, DerivationRule> {
   return {
     // bg (surface)
     [`--tug-surface-control-primary-ghost-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`--tug-surface-control-primary-ghost-${role}-hover`]: ghostBg(bgHoverAlphaExpr)(bgHoverHueSlot),
-    [`--tug-surface-control-primary-ghost-${role}-active`]: ghostBg(bgActiveAlphaExpr)(bgActiveHueSlot),
-    // fg — emphasis-level fields (Table T02 D02), shared across ghost action and option
-    [`--tug-element-control-text-ghost-${role}-rest`]: outlinedFg("ghostTextRestIntensity", "ghostTextRestTone"),
-    [`--tug-element-control-text-ghost-${role}-hover`]: outlinedFg("ghostTextHoverIntensity", "ghostTextHoverTone"),
-    [`--tug-element-control-text-ghost-${role}-active`]: outlinedFg("ghostTextActiveIntensity", "ghostTextActiveTone"),
+    [`--tug-surface-control-primary-ghost-${role}-hover`]: ghostBg((f) => f.ghostSurfaceHoverAlpha)("ghostSurfaceHover"),
+    [`--tug-surface-control-primary-ghost-${role}-active`]: ghostBg((f) => f.ghostSurfaceActiveAlpha)("ghostSurfaceActive"),
+    // fg — role hue, emphasis-level tone/intensity
+    [`--tug-element-control-text-ghost-${role}-rest`]: outlinedFg("ghostTextRestIntensity", "ghostTextRestTone", hueSlot),
+    [`--tug-element-control-text-ghost-${role}-hover`]: outlinedFg("ghostTextHoverIntensity", "ghostTextHoverTone", hueSlot),
+    [`--tug-element-control-text-ghost-${role}-active`]: outlinedFg("ghostTextActiveIntensity", "ghostTextActiveTone", hueSlot),
     // border
     [`--tug-element-control-border-ghost-${role}-rest`]: { type: "structural", valueExpr: () => "transparent" },
-    [`--tug-element-control-border-ghost-${role}-hover`]: outlinedFg("ghostBorderIntensity", "ghostBorderTone"),
-    [`--tug-element-control-border-ghost-${role}-active`]: outlinedFg("ghostBorderIntensity", "ghostBorderTone"),
-    // icon — emphasis-level fields (Table T02 D02), shared across ghost action and option
-    [`--tug-element-control-icon-ghost-${role}-rest`]: outlinedFg("ghostIconRestIntensity", "ghostIconRestTone"),
-    [`--tug-element-control-icon-ghost-${role}-hover`]: outlinedFg("ghostIconHoverIntensity", "ghostIconHoverTone"),
-    [`--tug-element-control-icon-ghost-${role}-active`]: outlinedFg("ghostIconActiveIntensity", "ghostIconActiveTone"),
-  };
-}
-
-/**
- * Build ghost-danger rules.
- * bg-rest/border-rest: transparent
- * bg-hover/active: destructive hue at roleIntensity+5, t:50, a: ghostDangerSurfaceHoverAlpha/ActiveAlpha
- * fg/icon: destructive hue at roleIntensity+5/+15/+25, t:50
- * border-hover/active: destructive hue at roleIntensity+5, t:50, a:40/60
- */
-function ghostDangerRules(): Record<string, DerivationRule> {
-  return {
-    // bg (surface)
-    "--tug-surface-control-primary-ghost-danger-rest": { type: "structural", valueExpr: () => "transparent" },
-    // bg-hover/active: roleIntensity+5 at destructive hue, t:50, formula-driven alpha
-    "--tug-surface-control-primary-ghost-danger-hover": { ...roleRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerSurfaceHoverAlpha },
-    "--tug-surface-control-primary-ghost-danger-active": { ...roleRamp(5)("destructive"), alphaExpr: (formulas) => formulas.ghostDangerSurfaceActiveAlpha },
-    // fg (element text)
-    "--tug-element-control-text-ghost-danger-rest": roleRamp(5)("destructive"),
-    "--tug-element-control-text-ghost-danger-hover": roleRamp(15)("destructive"),
-    "--tug-element-control-text-ghost-danger-active": roleRamp(25)("destructive"),
-    // border (element border)
-    "--tug-element-control-border-ghost-danger-rest": { type: "structural", valueExpr: () => "transparent" },
-    "--tug-element-control-border-ghost-danger-hover": roleRampAlpha(5, 40)("destructive"),
-    "--tug-element-control-border-ghost-danger-active": roleRampAlpha(5, 60)("destructive"),
-    // icon (element icon)
-    "--tug-element-control-icon-ghost-danger-rest": roleRamp(5)("destructive"),
-    "--tug-element-control-icon-ghost-danger-hover": roleRamp(15)("destructive"),
-    "--tug-element-control-icon-ghost-danger-active": roleRamp(25)("destructive"),
+    [`--tug-element-control-border-ghost-${role}-hover`]: outlinedFg("ghostBorderIntensity", "ghostBorderTone", hueSlot),
+    [`--tug-element-control-border-ghost-${role}-active`]: outlinedFg("ghostBorderIntensity", "ghostBorderTone", hueSlot),
+    // icon — role hue, emphasis-level tone/intensity
+    [`--tug-element-control-icon-ghost-${role}-rest`]: outlinedFg("ghostIconRestIntensity", "ghostIconRestTone", hueSlot),
+    [`--tug-element-control-icon-ghost-${role}-hover`]: outlinedFg("ghostIconHoverIntensity", "ghostIconHoverTone", hueSlot),
+    [`--tug-element-control-icon-ghost-${role}-active`]: outlinedFg("ghostIconActiveIntensity", "ghostIconActiveTone", hueSlot),
   };
 }
 
 const GHOST_RULES: Record<string, DerivationRule> = {
-  ...ghostFgRules(
-    "action",
-    "ghostActionSurfaceHover",
-    "ghostActionSurfaceActive",
-    (formulas) => formulas.ghostActionSurfaceHoverAlpha,
-    (formulas) => formulas.ghostActionSurfaceActiveAlpha,
-  ),
-  ...ghostDangerRules(),
-  ...ghostFgRules(
-    "option",
-    "ghostOptionSurfaceHover",
-    "ghostOptionSurfaceActive",
-    (formulas) => formulas.ghostOptionSurfaceHoverAlpha,
-    (formulas) => formulas.ghostOptionSurfaceActiveAlpha,
-  ),
+  ...ghostRoleRules("accent", "accent"),
+  ...ghostRoleRules("action", "action"),
+  ...ghostRoleRules("danger", "destructive"),
+  ...ghostRoleRules("agent", "agent"),
+  ...ghostRoleRules("data", "data"),
+  ...ghostRoleRules("success", "success"),
+  ...ghostRoleRules("caution", "caution"),
+  ...ghostRoleRules("option", "action"),
 };
 
 // ---------------------------------------------------------------------------

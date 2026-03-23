@@ -886,14 +886,10 @@ export interface DerivationFormulas {
   outlinedSurfaceHoverHueSlot: string;
   /** @semantic sentinel-hue-dispatch — hue slot for outlined control active background */
   outlinedSurfaceActiveHueSlot: string;
-  /** @semantic sentinel-hue-dispatch — hue slot for ghost action button hover background */
-  ghostActionSurfaceHoverHueSlot: string;
-  /** @semantic sentinel-hue-dispatch — hue slot for ghost action button active background */
-  ghostActionSurfaceActiveHueSlot: string;
-  /** @semantic sentinel-hue-dispatch — hue slot for ghost option button hover background */
-  ghostOptionSurfaceHoverHueSlot: string;
-  /** @semantic sentinel-hue-dispatch — hue slot for ghost option button active background */
-  ghostOptionSurfaceActiveHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for ghost control hover background */
+  ghostSurfaceHoverHueSlot: string;
+  /** @semantic sentinel-hue-dispatch — hue slot for ghost control active background */
+  ghostSurfaceActiveHueSlot: string;
   /** @semantic sentinel-hue-dispatch — hue slot for tab hover background */
   tabSurfaceHoverHueSlot: string;
   /** @semantic sentinel-hue-dispatch — hue slot for tab close button hover background */
@@ -909,20 +905,12 @@ export interface DerivationFormulas {
   tabCloseSurfaceHoverAlpha: number;
   /** @semantic sentinel-alpha — alpha for outlined control hover background */
   /** @semantic sentinel-alpha — alpha for outlined control active background */
-  /** @semantic sentinel-alpha — alpha for ghost action button hover background */
-  ghostActionSurfaceHoverAlpha: number;
-  /** @semantic sentinel-alpha — alpha for ghost action button active background */
-  ghostActionSurfaceActiveAlpha: number;
-  /** @semantic sentinel-alpha — alpha for ghost option button hover background */
-  ghostOptionSurfaceHoverAlpha: number;
-  /** @semantic sentinel-alpha — alpha for ghost option button active background */
-  ghostOptionSurfaceActiveAlpha: number;
+  /** @semantic sentinel-alpha — alpha for ghost control hover background */
+  ghostSurfaceHoverAlpha: number;
+  /** @semantic sentinel-alpha — alpha for ghost control active background */
+  ghostSurfaceActiveAlpha: number;
   /** @semantic sentinel-alpha — alpha for inline highlight hover tint */
   highlightHoverAlpha: number;
-  /** @semantic sentinel-alpha — alpha for ghost danger button hover background */
-  ghostDangerSurfaceHoverAlpha: number;
-  /** @semantic sentinel-alpha — alpha for ghost danger button active background */
-  ghostDangerSurfaceActiveAlpha: number;
 
   // ===== Computed Tone Override =====
   // Flat-value overrides for computed tones and formula parameters. number or null.
@@ -1397,10 +1385,8 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Sentinel Hue Dispatch =====
     outlinedSurfaceHoverHueSlot: "highlight",
     outlinedSurfaceActiveHueSlot: "highlight",
-    ghostActionSurfaceHoverHueSlot: "highlight",
-    ghostActionSurfaceActiveHueSlot: "highlight",
-    ghostOptionSurfaceHoverHueSlot: "highlight",
-    ghostOptionSurfaceActiveHueSlot: "highlight",
+    ghostSurfaceHoverHueSlot: "highlight",
+    ghostSurfaceActiveHueSlot: "highlight",
     tabSurfaceHoverHueSlot: "highlight",
     tabCloseSurfaceHoverHueSlot: "highlight",
     highlightHoverHueSlot: "highlightVerbose",
@@ -1408,13 +1394,9 @@ export function darkRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Sentinel Alpha =====
     tabSurfaceHoverAlpha: 8,
     tabCloseSurfaceHoverAlpha: 12,
-    ghostActionSurfaceHoverAlpha: 10,
-    ghostActionSurfaceActiveAlpha: 20,
-    ghostOptionSurfaceHoverAlpha: 10,
-    ghostOptionSurfaceActiveAlpha: 20,
+    ghostSurfaceHoverAlpha: 10,
+    ghostSurfaceActiveAlpha: 20,
     highlightHoverAlpha: 5,
-    ghostDangerSurfaceHoverAlpha: 10,
-    ghostDangerSurfaceActiveAlpha: 20,
 
     // ===== Computed Tone Override =====
     disabledTextToneComputed: primaryTextTone - 56,
@@ -1702,10 +1684,8 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Sentinel Hue Dispatch =====
     outlinedSurfaceHoverHueSlot: "highlight",
     outlinedSurfaceActiveHueSlot: "highlight",
-    ghostActionSurfaceHoverHueSlot: "highlight",
-    ghostActionSurfaceActiveHueSlot: "highlight",
-    ghostOptionSurfaceHoverHueSlot: "highlight",
-    ghostOptionSurfaceActiveHueSlot: "highlight",
+    ghostSurfaceHoverHueSlot: "highlight",
+    ghostSurfaceActiveHueSlot: "highlight",
     tabSurfaceHoverHueSlot: "highlight",
     tabCloseSurfaceHoverHueSlot: "highlight",
     highlightHoverHueSlot: "highlightVerbose",
@@ -1713,13 +1693,9 @@ export function lightRecipe(recipe: ThemeRecipe): DerivationFormulas {
     // ===== Sentinel Alpha =====
     tabSurfaceHoverAlpha: 8,
     tabCloseSurfaceHoverAlpha: 12,
-    ghostActionSurfaceHoverAlpha: 10,
-    ghostActionSurfaceActiveAlpha: 20,
-    ghostOptionSurfaceHoverAlpha: 10,
-    ghostOptionSurfaceActiveAlpha: 20,
+    ghostSurfaceHoverAlpha: 10,
+    ghostSurfaceActiveAlpha: 20,
     highlightHoverAlpha: 5,
-    ghostDangerSurfaceHoverAlpha: 10,
-    ghostDangerSurfaceActiveAlpha: 20,
 
     // ===== Computed Tone Override =====
     disabledTextToneComputed: primaryTextTone + 54,

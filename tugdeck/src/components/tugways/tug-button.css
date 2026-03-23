@@ -272,6 +272,76 @@
   color: var(--tug-element-control-icon-filled-danger-active);
 }
 
+/* --- filled-data: Data/informational (teal) --- */
+
+.tug-button-filled-data {
+  background-color: var(--tug-surface-control-primary-filled-data-rest);
+  color: var(--tug-element-control-text-filled-data-rest);
+  border-color: var(--tug-element-control-border-filled-data-rest);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-filled-data-rest */
+.tug-button-filled-data svg {
+  color: var(--tug-element-control-icon-filled-data-rest);
+}
+
+.tug-button-filled-data:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-filled-data-hover);
+  color: var(--tug-element-control-text-filled-data-hover);
+  border-color: var(--tug-element-control-border-filled-data-hover);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-filled-data-hover */
+.tug-button-filled-data:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-filled-data-hover);
+}
+
+.tug-button-filled-data:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-filled-data-active);
+  color: var(--tug-element-control-text-filled-data-active);
+  border-color: var(--tug-element-control-border-filled-data-active);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-filled-data-active */
+.tug-button-filled-data:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-filled-data-active);
+}
+
+/* --- outlined-accent: Secondary brand (orange outline) --- */
+
+.tug-button-outlined-accent {
+  background-color: var(--tug-surface-control-primary-outlined-accent-rest);
+  color: var(--tug-element-control-text-outlined-accent-rest);
+  border-color: var(--tug-element-control-border-outlined-accent-rest);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-accent-rest */
+.tug-button-outlined-accent svg {
+  color: var(--tug-element-control-icon-outlined-accent-rest);
+}
+
+.tug-button-outlined-accent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-outlined-accent-hover);
+  color: var(--tug-element-control-text-outlined-accent-hover);
+  border-color: var(--tug-element-control-border-outlined-accent-hover);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-accent-hover */
+.tug-button-outlined-accent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-outlined-accent-hover);
+}
+
+.tug-button-outlined-accent:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-outlined-accent-active);
+  color: var(--tug-element-control-text-outlined-accent-active);
+  border-color: var(--tug-element-control-border-outlined-accent-active);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-accent-active */
+.tug-button-outlined-accent:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-outlined-accent-active);
+}
+
 /* --- outlined-action: Secondary action (default style) [D04] --- */
 
 .tug-button-outlined-action {
@@ -284,6 +354,111 @@
 /* @tug-renders-on: --tug-surface-control-primary-outlined-action-rest */
 .tug-button-outlined-action svg {
   color: var(--tug-element-control-icon-outlined-action-rest);
+}
+
+/* --- outlined-data: Secondary data/informational (teal outline) --- */
+
+.tug-button-outlined-data {
+  background-color: var(--tug-surface-control-primary-outlined-data-rest);
+  color: var(--tug-element-control-text-outlined-data-rest);
+  border-color: var(--tug-element-control-border-outlined-data-rest);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-data-rest */
+.tug-button-outlined-data svg {
+  color: var(--tug-element-control-icon-outlined-data-rest);
+}
+
+.tug-button-outlined-data:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-outlined-data-hover);
+  color: var(--tug-element-control-text-outlined-data-hover);
+  border-color: var(--tug-element-control-border-outlined-data-hover);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-data-hover */
+.tug-button-outlined-data:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-outlined-data-hover);
+}
+
+.tug-button-outlined-data:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-outlined-data-active);
+  color: var(--tug-element-control-text-outlined-data-active);
+  border-color: var(--tug-element-control-border-outlined-data-active);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-data-active */
+.tug-button-outlined-data:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-outlined-data-active);
+}
+
+/* --- outlined-danger: Secondary destructive (red outline) --- */
+
+.tug-button-outlined-danger {
+  background-color: var(--tug-surface-control-primary-outlined-danger-rest);
+  color: var(--tug-element-control-text-outlined-danger-rest);
+  border-color: var(--tug-element-control-border-outlined-danger-rest);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-danger-rest */
+.tug-button-outlined-danger svg {
+  color: var(--tug-element-control-icon-outlined-danger-rest);
+}
+
+.tug-button-outlined-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-outlined-danger-hover);
+  color: var(--tug-element-control-text-outlined-danger-hover);
+  border-color: var(--tug-element-control-border-outlined-danger-hover);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-danger-hover */
+.tug-button-outlined-danger:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-outlined-danger-hover);
+}
+
+.tug-button-outlined-danger:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-outlined-danger-active);
+  color: var(--tug-element-control-text-outlined-danger-active);
+  border-color: var(--tug-element-control-border-outlined-danger-active);
+}
+
+/* @tug-renders-on: --tug-surface-control-primary-outlined-danger-active */
+.tug-button-outlined-danger:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-outlined-danger-active);
+}
+
+/* --- ghost-accent: Subtle brand (orange text, transparent bg) --- */
+
+.tug-button-ghost-accent {
+  background-color: var(--tug-surface-control-primary-ghost-accent-rest);
+  color: var(--tug-element-control-text-ghost-accent-rest);
+  border-color: var(--tug-element-control-border-ghost-accent-rest);
+}
+
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+.tug-button-ghost-accent svg {
+  color: var(--tug-element-control-icon-ghost-accent-rest);
+}
+
+.tug-button-ghost-accent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-ghost-accent-hover);
+  color: var(--tug-element-control-text-ghost-accent-hover);
+  border-color: var(--tug-element-control-border-ghost-accent-hover);
+}
+
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+.tug-button-ghost-accent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-ghost-accent-hover);
+}
+
+.tug-button-ghost-accent:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-ghost-accent-active);
+  color: var(--tug-element-control-text-ghost-accent-active);
+  border-color: var(--tug-element-control-border-ghost-accent-active);
+}
+
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+.tug-button-ghost-accent:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-ghost-accent-active);
 }
 
 /* --- ghost-action: Link-like action (neutral) --- */
@@ -354,6 +529,41 @@
 /* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
 .tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) svg {
   color: var(--tug-element-control-icon-ghost-danger-active);
+}
+
+/* --- ghost-data: Subtle data/informational (teal text, transparent bg) --- */
+
+.tug-button-ghost-data {
+  background-color: var(--tug-surface-control-primary-ghost-data-rest);
+  color: var(--tug-element-control-text-ghost-data-rest);
+  border-color: var(--tug-element-control-border-ghost-data-rest);
+}
+
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+.tug-button-ghost-data svg {
+  color: var(--tug-element-control-icon-ghost-data-rest);
+}
+
+.tug-button-ghost-data:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-ghost-data-hover);
+  color: var(--tug-element-control-text-ghost-data-hover);
+  border-color: var(--tug-element-control-border-ghost-data-hover);
+}
+
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+.tug-button-ghost-data:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-ghost-data-hover);
+}
+
+.tug-button-ghost-data:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-surface-control-primary-ghost-data-active);
+  color: var(--tug-element-control-text-ghost-data-active);
+  border-color: var(--tug-element-control-border-ghost-data-active);
+}
+
+/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+.tug-button-ghost-data:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-element-control-icon-ghost-data-active);
 }
 
 /* --- outlined-option: Calm configuration control (neutral muted border) --- */

@@ -197,14 +197,14 @@ Examples: `filledSurfaceHoverTone`, `outlinedTextRestIntensity`, `ghostIconActiv
 | Group | Controls | Key Fields |
 |-------|----------|------------|
 | **hue-slot-dispatch** | Maps surface/element groups to hue slots | `surfaceAppHueSlot`, `surfaceCanvasHueSlot`, `mutedTextHueSlot`, `subtleTextHueSlot`, `fieldSurfaceHoverHueSlot`, `disabledSurfaceHueSlot`, and others |
-| **sentinel-hue-dispatch** | Hue slots for hover/active highlight surfaces | `outlinedSurfaceHoverHueSlot`, `ghostActionSurfaceHoverHueSlot`, `highlightHoverHueSlot`, `tabSurfaceHoverHueSlot`, and others |
+| **sentinel-hue-dispatch** | Hue slots for hover/active highlight surfaces | `outlinedSurfaceHoverHueSlot`, `ghostSurfaceHoverHueSlot`, `highlightHoverHueSlot`, `tabSurfaceHoverHueSlot`, and others |
 | **hue-name-dispatch** | Direct hue name expressions (bypass slot resolution) | `surfaceScreenHueExpression`, `mutedTextHueExpression`, `subtleTextHueExpression`, `selectionInactiveHueExpression` |
 
 **System-level:**
 
 | Group | Controls | Key Fields |
 |-------|----------|------------|
-| **sentinel-alpha** | Alpha values for translucent highlights | `tabSurfaceHoverAlpha`, `ghostActionSurfaceHoverAlpha`, `highlightHoverAlpha` |
+| **sentinel-alpha** | Alpha values for translucent highlights | `tabSurfaceHoverAlpha`, `ghostSurfaceHoverAlpha`, `highlightHoverAlpha` |
 | **computed-tone-override** | Override values for `computeTones()` derived tones | `dividerDefaultToneOverride`, `outlinedSurfaceRestToneOverride`, `disabledTextToneComputed`, `borderStrongToneComputed` |
 | **selection-mode** | Inactive selection appearance | `selectionInactiveSemanticMode`, `selectionSurfaceInactiveTone`, `selectionSurfaceInactiveAlpha` |
 | **role-intensity** | Role color saturation scaling | `roleIntensityValue` |
