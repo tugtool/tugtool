@@ -208,9 +208,6 @@ function controlTokenHotReload(): VitePlugin {
 /** Absolute path to the shipped theme JSON files. */
 export const SHIPPED_THEMES_DIR = path.resolve(__dirname, "themes");
 
-/** Absolute path to the shipped pre-generated theme CSS overrides. */
-const SHIPPED_THEMES_CSS_DIR = path.resolve(__dirname, "styles/themes");
-
 /** Absolute path to the user-authored theme directory. */
 export const USER_THEMES_DIR = path.join(os.homedir(), ".tugtool", "themes");
 
@@ -355,70 +352,6 @@ export function handleThemesLoadJson(
 }
 
 // ---------------------------------------------------------------------------
-// handleThemesLoadCss — GET /__themes/<name>.css
-//
-// - brio: always 404 (brio's CSS lives in tug-base-generated.css, not an override)
-// - shipped (non-brio): serve pre-generated file from styles/themes/<name>.css
-// - authored: serve from ~/.tugtool/themes/<name>.css; generate on-the-fly if missing
-//   but JSON exists (fallback path; primary write path is POST /__themes/save)
-// - Returns 404 if neither JSON nor CSS exists for the requested name.
-// ---------------------------------------------------------------------------
-
-export function handleThemesLoadCss(
-  name: string,
-  fsImpl: FsWriteImpl,
-  shippedDir: string,
-  shippedCssDir: string,
-  userDir: string,
-  generateCss: (jsonPath: string) => string,
-): { status: number; body: string; contentType: string } {
-  // brio always 404 — callers use the base stylesheet
-  if (name === "brio") {
-    return { status: 404, body: JSON.stringify({ error: "brio uses the base stylesheet, not an override" }), contentType: "application/json" };
-  }
-
-  // Check if it's a shipped theme (non-brio)
-  const shippedJsonPath = path.join(shippedDir, `${name}.json`);
-  if (fsImpl.existsSync(shippedJsonPath)) {
-    const shippedCssPath = path.join(shippedCssDir, `${name}.css`);
-    if (fsImpl.existsSync(shippedCssPath)) {
-      try {
-        const content = fsImpl.readFileSync(shippedCssPath, "utf-8");
-        return { status: 200, body: content, contentType: "text/css" };
-      } catch {
-        return { status: 500, body: JSON.stringify({ error: "failed to read shipped CSS" }), contentType: "application/json" };
-      }
-    }
-    return { status: 404, body: JSON.stringify({ error: `Shipped CSS for '${name}' not found` }), contentType: "application/json" };
-  }
-
-  // Check authored theme
-  const authoredJsonPath = path.join(userDir, `${name}.json`);
-  if (fsImpl.existsSync(authoredJsonPath)) {
-    const authoredCssPath = path.join(userDir, `${name}.css`);
-    // Serve existing CSS if present
-    if (fsImpl.existsSync(authoredCssPath)) {
-      try {
-        const content = fsImpl.readFileSync(authoredCssPath, "utf-8");
-        return { status: 200, body: content, contentType: "text/css" };
-      } catch {
-        return { status: 500, body: JSON.stringify({ error: "failed to read authored CSS" }), contentType: "application/json" };
-      }
-    }
-    // On-the-fly generation fallback: JSON exists but CSS not yet written
-    try {
-      const css = generateCss(authoredJsonPath);
-      fsImpl.writeFileSync(authoredCssPath, css, "utf-8");
-      return { status: 200, body: css, contentType: "text/css" };
-    } catch (err) {
-      return { status: 500, body: JSON.stringify({ error: `CSS generation failed: ${String(err)}` }), contentType: "application/json" };
-    }
-  }
-
-  return { status: 404, body: JSON.stringify({ error: `Theme '${name}' not found` }), contentType: "application/json" };
-}
-
-// ---------------------------------------------------------------------------
 // handleThemesSave — POST /__themes/save
 //
 // Accepts full theme JSON, rejects names that collide with shipped themes,
@@ -489,8 +422,7 @@ export function handleThemesSave(
 // handler call this function; tests can inject a mock fsImpl.
 //
 // The lazy require() pattern is used to avoid circular dependencies at module
-// parse time. This matches the existing pattern in the startup plugin and
-// makeRuntimeCssGeneratorFromPath below.
+// parse time. This matches the existing pattern in the startup plugin.
 // ---------------------------------------------------------------------------
 
 /** Canvas color params returned alongside the theme name by activateThemeOverride. */
@@ -651,31 +583,14 @@ export async function handleThemesActivate(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Runtime CSS generator (wraps the shared theme-css-generator module)
-// Used by handleThemesLoadCss for the on-the-fly authored CSS fallback path.
-// Lazy-loaded to avoid circular dependency at module parse time.
-// ---------------------------------------------------------------------------
-
-function makeRuntimeCssGeneratorFromPath(): (jsonPath: string) => string {
-  return (jsonPath: string): string => {
-    const raw = fs.readFileSync(jsonPath, "utf-8");
-    const recipe = JSON.parse(raw) as ThemeSaveBody;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: ThemeSaveBody) => string };
-    return generateThemeCSS(recipe);
-  };
-}
-
 /**
  * Vite plugin: theme storage API endpoints for the dev server.
  * GET  /__themes/list         — list available themes (shipped + authored)
  * GET  /__themes/<name>.json  — load theme JSON (authored first, then shipped)
- * GET  /__themes/<name>.css   — load theme CSS override
  * POST /__themes/save         — save a new authored theme to disk
+ * POST /__themes/activate     — activate a theme by rewriting the override file
  */
 function themeSaveLoadPlugin(): VitePlugin {
-  const generateCssFromPath = makeRuntimeCssGeneratorFromPath();
   return {
     name: "theme-save-load",
     configureServer(server) {
@@ -695,16 +610,6 @@ function themeSaveLoadPlugin(): VitePlugin {
             const name = url.replace(/^\//, "").slice(0, -5);
             if (name && !name.includes("/")) {
               const result = handleThemesLoadJson(name, fs as unknown as FsReadImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
-              res.writeHead(result.status, { "Content-Type": result.contentType });
-              res.end(result.body);
-              return;
-            }
-          }
-
-          if (req.method === "GET" && url.endsWith(".css")) {
-            const name = url.replace(/^\//, "").slice(0, -4);
-            if (name && !name.includes("/")) {
-              const result = handleThemesLoadCss(name, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, SHIPPED_THEMES_CSS_DIR, USER_THEMES_DIR, generateCssFromPath);
               res.writeHead(result.status, { "Content-Type": result.contentType });
               res.end(result.body);
               return;

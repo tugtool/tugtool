@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-23T14:45:37Z
+---
+
+## step-6: Removed handleThemesLoadCss, makeRuntimeCssGeneratorFromPath, SHIPPED_THEMES_CSS_DIR, CSS route handler, and related tests
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-5
 date: 2025-03-23T14:37:21Z
 ---
