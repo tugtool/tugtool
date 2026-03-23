@@ -4,13 +4,13 @@
   "surface": {
     "canvas": { "hue": "indigo-violet", "tone": 5, "intensity": 5 },
     "grid":   { "hue": "indigo-violet", "tone": 12, "intensity": 4 },
-    "frame":  { "hue": "indigo-violet", "tone": 16, "intensity": 12 },
+    "frame":  { "hue": "indigo-violet", "tone": 15, "intensity": 15 },
     "card":   { "hue": "indigo-violet", "tone": 12, "intensity": 5 }
   },
-  "text": { "hue": "cobalt", "intensity": 3 },
+  "text": { "hue": "indigo", "intensity": 3 },
   "display": { "hue": "indigo", "intensity": 3 },
   "role": {
-    "tone": 50, "intensity": 50,
+    "tone": 47, "intensity": 50,
     "accent": "orange",
     "action": "blue",
     "agent": "violet",

@@ -26,8 +26,8 @@ export const BASE_THEME_RECIPE: ThemeRecipe = {
     },
     "frame": {
       "hue": "indigo-violet",
-      "tone": 16,
-      "intensity": 12
+      "tone": 15,
+      "intensity": 15
     },
     "card": {
       "hue": "indigo-violet",
@@ -36,7 +36,7 @@ export const BASE_THEME_RECIPE: ThemeRecipe = {
     }
   },
   "text": {
-    "hue": "cobalt",
+    "hue": "indigo",
     "intensity": 3
   },
   "display": {
@@ -44,7 +44,7 @@ export const BASE_THEME_RECIPE: ThemeRecipe = {
     "intensity": 3
   },
   "role": {
-    "tone": 50,
+    "tone": 47,
     "intensity": 50,
     "accent": "orange",
     "action": "blue",
