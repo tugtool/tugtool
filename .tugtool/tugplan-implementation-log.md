@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-23T18:19:51Z
+---
+
+## step-4: Added findUserThemeByName helper, hash-based filenames in handleThemesSave, name-scan lookup in activateThemeOverride/handleThemesLoadJson/themeOverridePlugin, renamed safeName to themeName, added decodeURIComponent for URL names, dedup on re-save. Comprehensive test updates.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
 step: step-3
 date: 2025-03-23T18:06:58Z
 ---

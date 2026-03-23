@@ -5,6 +5,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { execSync } from "child_process";
+import { createHash } from "node:crypto";
 // postcss-tug-color expands --tug-color(color, i: intensity, t: tone) to oklch() at build time.
 import postcssTugColor from "./postcss-tug-color";
 
@@ -86,14 +87,13 @@ function themeOverridePlugin(): VitePlugin {
         return;
       }
 
-      // Locate theme JSON: shipped dir first, then user dir.
+      // Locate theme JSON: shipped dir first (by direct filename), then user dir (by name-scan).
       const shippedJsonPath = path.join(SHIPPED_THEMES_DIR, `${activeTheme}.json`);
-      const userJsonPath = path.join(USER_THEMES_DIR, `${activeTheme}.json`);
       let jsonPath: string | null = null;
       if (fs.existsSync(shippedJsonPath)) {
         jsonPath = shippedJsonPath;
-      } else if (fs.existsSync(userJsonPath)) {
-        jsonPath = userJsonPath;
+      } else {
+        jsonPath = findUserThemeByName(activeTheme, fs as unknown as FsReadImpl, USER_THEMES_DIR);
       }
 
       if (!jsonPath) {
@@ -256,6 +256,39 @@ export interface FsReadImpl {
 export interface FsWriteImpl extends FsReadImpl {
   writeFileSync: (p: string, data: string, enc: "utf-8") => void;
   mkdirSync: (p: string, opts: { recursive: boolean }) => void;
+  unlinkSync?: (p: string) => void;
+}
+
+// ---------------------------------------------------------------------------
+// findUserThemeByName — scan user theme directory for a theme by display name
+//
+// User themes are stored with hash-based filenames. To find a theme by display
+// name, scan all JSON files in userDir and return the path of the first file
+// whose JSON `name` field matches the given name (case-sensitive).
+//
+// Returns null if no matching file is found or if userDir cannot be read.
+// ---------------------------------------------------------------------------
+
+export function findUserThemeByName(name: string, fsImpl: FsReadImpl, userDir: string): string | null {
+  let files: string[];
+  try {
+    files = fsImpl.readdirSync(userDir).filter((f) => f.endsWith(".json"));
+  } catch {
+    return null;
+  }
+  for (const file of files) {
+    const filePath = path.join(userDir, file);
+    try {
+      const raw = fsImpl.readFileSync(filePath, "utf-8");
+      const parsed = JSON.parse(raw) as { name?: string };
+      if (parsed.name === name) {
+        return filePath;
+      }
+    } catch {
+      // Skip unreadable/malformed files
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -300,11 +333,12 @@ export function handleThemesList(
     authoredFiles = [];
   }
   for (const file of authoredFiles) {
-    const name = file.slice(0, -5);
     try {
       const raw = fsImpl.readFileSync(path.join(userDir, file), "utf-8");
-      const parsed = JSON.parse(raw) as { recipe?: string };
-      entries.push({ name, recipe: parsed.recipe ?? "dark", source: "authored" });
+      const parsed = JSON.parse(raw) as { name?: string; recipe?: string };
+      // Use the JSON `name` field as the display name (hash-named files store the original display name)
+      const displayName = parsed.name ?? file.slice(0, -5);
+      entries.push({ name: displayName, recipe: parsed.recipe ?? "dark", source: "authored" });
     } catch {
       // Skip malformed files
     }
@@ -335,17 +369,25 @@ export function handleThemesLoadJson(
   shippedDir: string,
   userDir: string,
 ): { status: number; body: string; contentType: string } {
-  const authoredPath = path.join(userDir, `${name}.json`);
+  // Shipped themes use direct filename lookup
   const shippedPath = path.join(shippedDir, `${name}.json`);
+  if (fsImpl.existsSync(shippedPath)) {
+    try {
+      const content = fsImpl.readFileSync(shippedPath, "utf-8");
+      return { status: 200, body: content, contentType: "application/json" };
+    } catch {
+      // Fall through to user dir
+    }
+  }
 
-  for (const filePath of [authoredPath, shippedPath]) {
-    if (fsImpl.existsSync(filePath)) {
-      try {
-        const content = fsImpl.readFileSync(filePath, "utf-8");
-        return { status: 200, body: content, contentType: "application/json" };
-      } catch {
-        // Try next
-      }
+  // User themes use name-scan lookup (hash-based filenames)
+  const userPath = findUserThemeByName(name, fsImpl, userDir);
+  if (userPath !== null) {
+    try {
+      const content = fsImpl.readFileSync(userPath, "utf-8");
+      return { status: 200, body: content, contentType: "application/json" };
+    } catch {
+      // Fall through to 404
     }
   }
 
@@ -356,14 +398,15 @@ export function handleThemesLoadJson(
 // handleThemesSave — POST /__themes/save
 //
 // Accepts full theme JSON, rejects names that collide with shipped themes,
-// auto-creates ~/.tugtool/themes/ if missing, writes <name>.json only.
+// auto-creates ~/.tugtool/themes/ if missing, writes <hash>.json only.
 //
 // CSS generation has been removed: the middleware calls activateThemeOverride
 // after a successful save so the override file is written through writeMutex
 // (serialized with any concurrent activate requests).
 //
-// Returns { status, body, safeName } — safeName is exposed so the middleware
-// can pass it directly to activateThemeOverride without re-parsing the body.
+// Returns { status, body, themeName } — themeName is the user's display name,
+// exposed so the middleware can pass it directly to activateThemeOverride
+// without re-parsing the body.
 // ---------------------------------------------------------------------------
 
 export function handleThemesSave(
@@ -371,53 +414,65 @@ export function handleThemesSave(
   fsImpl: FsWriteImpl,
   shippedDir: string,
   userDir: string,
-): { status: number; body: string; safeName: string | null } {
+): { status: number; body: string; themeName: string | null } {
   if (!body || typeof body !== "object") {
-    return { status: 400, body: JSON.stringify({ error: "invalid request body" }), safeName: null };
+    return { status: 400, body: JSON.stringify({ error: "invalid request body" }), themeName: null };
   }
   const b = body as Record<string, unknown>;
   const name = b.name;
   if (!name || typeof name !== "string" || name.trim() === "") {
-    return { status: 400, body: JSON.stringify({ error: "name is required" }), safeName: null };
+    return { status: 400, body: JSON.stringify({ error: "name is required" }), themeName: null };
   }
-  const safeName = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+  const displayName = name.trim();
 
-  // Reject names that collide with shipped themes
-  const shippedJsonPath = path.join(shippedDir, `${safeName}.json`);
+  // Reject names that collide with shipped themes (compare lowercased display name against shipped filenames)
+  const shippedJsonPath = path.join(shippedDir, `${displayName.toLowerCase()}.json`);
   if (fsImpl.existsSync(shippedJsonPath)) {
-    return { status: 400, body: JSON.stringify({ error: `'${safeName}' is a shipped theme and cannot be overwritten` }), safeName: null };
+    return { status: 400, body: JSON.stringify({ error: `'${displayName}' is a shipped theme and cannot be overwritten` }), themeName: null };
   }
 
   // Auto-create user themes directory
   try {
     fsImpl.mkdirSync(userDir, { recursive: true });
   } catch (err) {
-    return { status: 500, body: JSON.stringify({ error: `Failed to create themes directory: ${String(err)}` }), safeName: null };
+    return { status: 500, body: JSON.stringify({ error: `Failed to create themes directory: ${String(err)}` }), themeName: null };
   }
 
   // Validate minimum required fields
   const recipe = b as ThemeSaveBody;
   if (!recipe.recipe || typeof recipe.recipe !== "string") {
-    return { status: 400, body: JSON.stringify({ error: "recipe field is required" }), safeName: null };
+    return { status: 400, body: JSON.stringify({ error: "recipe field is required" }), themeName: null };
   }
   if (recipe.recipe.startsWith("{")) {
-    return { status: 400, body: JSON.stringify({ error: "recipe must be a mode string (e.g. 'dark'), not a JSON object" }), safeName: null };
+    return { status: 400, body: JSON.stringify({ error: "recipe must be a mode string (e.g. 'dark'), not a JSON object" }), themeName: null };
   }
   if (!recipe.surface || typeof recipe.surface !== "object") {
-    return { status: 400, body: JSON.stringify({ error: "surface field is required" }), safeName: null };
+    return { status: 400, body: JSON.stringify({ error: "surface field is required" }), themeName: null };
   }
 
-  // Write JSON
+  // Delete any existing file for this display name (including legacy slug-named files)
+  // to prevent duplicate theme entries after re-save.
+  const existingPath = findUserThemeByName(displayName, fsImpl, userDir);
+  if (existingPath !== null) {
+    try {
+      fsImpl.unlinkSync?.(existingPath);
+    } catch {
+      // Best-effort delete; if it fails the new file will still be written
+    }
+  }
+
+  // Write JSON with hash-based filename; store the user's display name in the JSON
+  const hash = createHash("sha256").update(displayName).digest("hex").slice(0, 8);
   try {
-    const jsonPath = path.join(userDir, `${safeName}.json`);
-    const normalizedRecipe: ThemeSaveBody = { ...recipe, name: safeName };
+    const jsonPath = path.join(userDir, `${hash}.json`);
+    const normalizedRecipe: ThemeSaveBody = { ...recipe, name: displayName };
     fsImpl.writeFileSync(jsonPath, JSON.stringify(normalizedRecipe, null, 2), "utf-8");
   } catch (err) {
-    return { status: 500, body: JSON.stringify({ error: `Failed to write theme JSON: ${String(err)}` }), safeName: null };
+    return { status: 500, body: JSON.stringify({ error: `Failed to write theme JSON: ${String(err)}` }), themeName: null };
   }
 
-  // No CSS write here — the middleware calls activateThemeOverride(safeName) after this returns.
-  return { status: 200, body: JSON.stringify({ ok: true, name: safeName }), safeName };
+  // No CSS write here — the middleware calls activateThemeOverride(displayName) after this returns.
+  return { status: 200, body: JSON.stringify({ ok: true, name: displayName }), themeName: displayName };
 }
 
 // ---------------------------------------------------------------------------
@@ -485,14 +540,13 @@ export function activateThemeOverride(
     };
   }
 
-  // Locate theme JSON: shipped dir first, then user dir.
+  // Locate theme JSON: shipped dir first (by direct filename), then user dir (by name-scan).
   const shippedJsonPath = path.join(shippedDir, `${themeName}.json`);
-  const userJsonPath = path.join(userDir, `${themeName}.json`);
   let jsonPath: string | null = null;
   if (fsImpl.existsSync(shippedJsonPath)) {
     jsonPath = shippedJsonPath;
-  } else if (fsImpl.existsSync(userJsonPath)) {
-    jsonPath = userJsonPath;
+  } else {
+    jsonPath = findUserThemeByName(themeName, fsImpl, userDir);
   }
 
   if (!jsonPath) {
@@ -614,7 +668,7 @@ function themeSaveLoadPlugin(): VitePlugin {
           }
 
           if (req.method === "GET" && url.endsWith(".json")) {
-            const name = url.replace(/^\//, "").slice(0, -5);
+            const name = decodeURIComponent(url.replace(/^\//, "").slice(0, -5));
             if (name && !name.includes("/")) {
               const result = handleThemesLoadJson(name, fs as unknown as FsReadImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
               res.writeHead(result.status, { "Content-Type": result.contentType });
@@ -636,7 +690,7 @@ function themeSaveLoadPlugin(): VitePlugin {
                 return;
               }
               const saveResult = handleThemesSave(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
-              if (saveResult.status !== 200 || saveResult.safeName === null) {
+              if (saveResult.status !== 200 || saveResult.themeName === null) {
                 res.writeHead(saveResult.status, { "Content-Type": "application/json" });
                 res.end(saveResult.body);
                 return;
@@ -645,8 +699,8 @@ function themeSaveLoadPlugin(): VitePlugin {
               // file write is serialized with any concurrent activate requests.
               withMutex(async () => {
                 try {
-                  const activateResult = activateThemeOverride(saveResult.safeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS, ACTIVE_THEME_FILE);
-                  const responseBody = JSON.stringify({ ok: true, name: saveResult.safeName, canvasParams: activateResult.canvasParams });
+                  const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS, ACTIVE_THEME_FILE);
+                  const responseBody = JSON.stringify({ ok: true, name: saveResult.themeName, canvasParams: activateResult.canvasParams });
                   res.writeHead(200, { "Content-Type": "application/json" });
                   res.end(responseBody);
                 } catch (err) {
