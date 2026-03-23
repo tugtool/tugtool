@@ -1257,6 +1257,17 @@ function ThemePreviewCard({
         {/* Right column: Roles */}
         <div className="gtg-hue-column">
           <div className="gtg-hue-column-title">Roles</div>
+          {roles.map((r) => (
+            <CompactHuePicker
+              key={r.key}
+              label={r.label}
+              selectedHue={r.hue}
+              onSelect={r.set}
+              testId={r.testId}
+              actualColor={resolvedColor(r.key)}
+              disabled={disabled}
+            />
+          ))}
           <div className="gtg-role-tone-row">
             <span className="gtg-full-color-strip-label">Tone</span>
             <TugToneStrip
@@ -1277,17 +1288,6 @@ function ThemePreviewCard({
               data-testid="gtg-role-intensity-strip"
             />
           </div>
-          {roles.map((r) => (
-            <CompactHuePicker
-              key={r.key}
-              label={r.label}
-              selectedHue={r.hue}
-              onSelect={r.set}
-              testId={r.testId}
-              actualColor={resolvedColor(r.key)}
-              disabled={disabled}
-            />
-          ))}
         </div>
       </div>
     </div>

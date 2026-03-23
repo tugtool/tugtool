@@ -155,14 +155,10 @@
 .gtg-picker-columns {
   display: flex;
   gap: 32px;
-  justify-content: center;
-  max-width: 720px;
-  margin: 0 auto;
 }
 
 .gtg-picker-columns > .gtg-hue-column {
-  flex: 1;
-  min-width: 0;
+  min-width: 200px;
 }
 
 
@@ -324,8 +320,6 @@
   color: var(--tug-element-global-text-normal-muted-rest);
   user-select: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Popover content containing TugHueStrip — constrained width so 48 swatches
