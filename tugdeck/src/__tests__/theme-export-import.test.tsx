@@ -94,7 +94,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   });
 
   it("validateRecipeJson returns error for wrong recipe ('sepia')", () => {
-    const bad = { name: "X", description: "Test.", recipe: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", recipe: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
@@ -104,29 +104,29 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   });
 
   it("validateRecipeJson returns error for missing surface group", () => {
-    const bad = { name: "X", description: "Test.", recipe: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", recipe: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson migrates old-format recipe without element group", () => {
-    const recipe: Record<string, unknown> = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const recipe: Record<string, unknown> = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(recipe)).toBeNull();
     expect(typeof (recipe["surface"] as Record<string, unknown>)["canvas"]).toBe("object");
   });
 
   it("validateRecipeJson ignores legacy surfaceContrast field", () => {
-    const legacy = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, surfaceContrast: "high" };
+    const legacy = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, surfaceContrast: "high" };
     expect(validateRecipeJson(legacy)).toBeNull();
   });
 
   it("validateRecipeJson ignores legacy roleIntensity field", () => {
-    const legacy = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, roleIntensity: "vivid" };
+    const legacy = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, roleIntensity: "vivid" };
     expect(validateRecipeJson(legacy)).toBeNull();
   });
 
   it("validateRecipeJson accepts both 'dark' and 'light' modes", () => {
-    const dark = { name: "X", description: "Dark test theme.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    const light = { name: "X", description: "Light test theme.", recipe: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const dark = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const light = { name: "X", recipe: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(dark)).toBeNull();
     expect(validateRecipeJson(light)).toBeNull();
   });
@@ -134,7 +134,6 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   it("validateRecipeJson migrates old-format recipe with controls object into new surface/role structure", () => {
     const legacy: Record<string, unknown> = {
       name: "ControlsMigrationTheme",
-      description: "Old-format theme with controls object for migration testing.",
       recipe: "dark",
       surface: { canvas: "teal", card: "teal" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "teal", border: "teal", decorative: "gray" },
@@ -183,7 +182,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 // ---------------------------------------------------------------------------
 
 describe("theme-save – new save model (POST /__themes/save)", () => {
-  it("POST /__themes/save receives name and recipe (JSON string) only", async () => {
+  it("POST /__themes/save receives full ThemeRecipe directly (recipe is a mode string, surface is an object)", async () => {
     const recipe = brio;
 
     const capturedBody: Record<string, unknown>[] = [];
@@ -201,16 +200,18 @@ describe("theme-save – new save model (POST /__themes/save)", () => {
       const res = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipe.name, recipe: JSON.stringify(recipe) }),
+        body: JSON.stringify(recipe),
       });
       expect(res.ok).toBe(true);
       expect(capturedBody.length).toBe(1);
       const body = capturedBody[0];
+      // name is a string
       expect(typeof body["name"]).toBe("string");
+      // recipe is a short mode string, not a JSON blob
       expect(typeof body["recipe"]).toBe("string");
-      // recipe JSON should parse back to a valid ThemeRecipe
-      const parsedRecipe = JSON.parse(body["recipe"] as string) as unknown;
-      expect(validateRecipeJson(parsedRecipe)).toBeNull();
+      expect((body["recipe"] as string).startsWith("{")).toBe(false);
+      // surface is an object (not a string)
+      expect(body["surface"] !== null && typeof body["surface"] === "object").toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }

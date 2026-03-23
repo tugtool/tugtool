@@ -1,6 +1,5 @@
 {
   "name": "brio",
-  "description": "Deep, immersive dark theme with industrial warmth.",
   "recipe": "dark",
   "surface": {
     "canvas": { "hue": "indigo-violet", "tone": 5, "intensity": 5 },

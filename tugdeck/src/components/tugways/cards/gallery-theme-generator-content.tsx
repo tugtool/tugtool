@@ -897,7 +897,6 @@ export function generateCssExport(
   const header = [
     "/**",
     ` * @theme-name ${recipe.name}`,
-    ` * @theme-description ${recipe.description}`,
     ` * @generated ${dateStr}`,
     ` * @recipe-hash ${hash}`,
     " *",
@@ -937,9 +936,6 @@ export function validateRecipeJson(value: unknown): string | null {
   const obj = value as Record<string, unknown>;
   if (typeof obj["name"] !== "string" || obj["name"].trim() === "") {
     return "Missing or invalid 'name' field (string required)";
-  }
-  if (typeof obj["description"] !== "string" || obj["description"].trim() === "") {
-    return "Missing or invalid 'description' field (non-empty string required)";
   }
   if (obj["recipe"] !== "dark" && obj["recipe"] !== "light") {
     return "Invalid 'recipe' field (must be 'dark' or 'light')";
@@ -1428,7 +1424,7 @@ function NewThemeDialog({
       const saveRes = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRecipe.name, recipe: JSON.stringify(newRecipe) }),
+        body: JSON.stringify(newRecipe),
       });
       if (!saveRes.ok) {
         const body = (await saveRes.json().catch(() => ({ error: "Save failed" }))) as { error?: string };
@@ -1883,7 +1879,6 @@ export function GalleryThemeGeneratorContent() {
   const currentRecipe = useMemo<ThemeRecipe>(
     () => ({
       name: recipeName,
-      description: `Generated theme (${recipeMode} mode, frame: ${frameHue}, content: ${contentHue})`,
       recipe: recipeMode,
       surface: {
         canvas: { hue: canvasHue, tone: canvasTone, intensity: canvasIntensity },
@@ -1936,7 +1931,7 @@ export function GalleryThemeGeneratorContent() {
       const res = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipe.name, recipe: JSON.stringify(recipe) }),
+        body: JSON.stringify(recipe),
       });
       if (res.ok) {
         setSaveStatus("saved");

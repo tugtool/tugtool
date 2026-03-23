@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-23T18:41:19Z
+---
+
+## step-7: Final verification: tsc --noEmit clean, 64 theme tests pass, generate:tokens clean, audit:tokens zero violations, bun run build exits 0.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
+step: step-6
+date: 2025-03-23T18:34:09Z
+---
+
+## step-6: Added RT1 and RT2 round-trip integration tests proving handleThemesSave -> activateThemeOverride works end-to-end with correct canvasParams and canonical JSON format.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
+step: step-5
+date: 2025-03-23T18:28:10Z
+---
+
+## step-5: Added legacy format detection and migration in activateThemeOverride and themeOverridePlugin. Detects stringified recipe blob, unwraps inner JSON, rewrites file in canonical format. Three new migration tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
+step: step-4
+date: 2025-03-23T18:19:51Z
+---
+
+## step-4: Added findUserThemeByName helper, hash-based filenames in handleThemesSave, name-scan lookup in activateThemeOverride/handleThemesLoadJson/themeOverridePlugin, renamed safeName to themeName, added decodeURIComponent for URL names, dedup on re-save. Comprehensive test updates.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
+step: step-3
+date: 2025-03-23T18:06:58Z
+---
+
+## step-3: Replaced ThemeSaveBody interface with required grid/frame/card fields. Added server validation rejecting JSON blobs in recipe field and missing surface. Updated test helpers and added negative tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
+step: step-2
+date: 2025-03-23T17:59:37Z
+---
+
+## step-2: Changed both save call sites (NewThemeDialog.handleCreate and performSave) to send ThemeRecipe directly as JSON body instead of wrapping with JSON.stringify(recipe). Updated theme-export-import test assertions.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
+step: step-1
+date: 2025-03-23T17:52:21Z
+---
+
+## step-1: Removed description field from ThemeRecipe interface, shipped theme JSON files, CSS header generation, brio.css comment, validateRecipeJson, and all test fixtures.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
 step: step-11
 date: 2025-03-23T15:50:34Z
 ---

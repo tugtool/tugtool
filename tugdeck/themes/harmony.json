@@ -1,6 +1,5 @@
 {
   "name": "harmony",
-  "description": "Bright, open light theme with the same palette as Brio seen in daylight.",
   "recipe": "light",
   "surface": {
     "canvas": { "hue": "indigo-violet", "tone": 95, "intensity": 6 },
