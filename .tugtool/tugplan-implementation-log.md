@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-23T18:06:58Z
+---
+
+## step-3: Replaced ThemeSaveBody interface with required grid/frame/card fields. Added server validation rejecting JSON blobs in recipe field and missing surface. Updated test helpers and added negative tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
 step: step-2
 date: 2025-03-23T17:59:37Z
 ---

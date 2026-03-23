@@ -38,11 +38,20 @@ const FAKE_USER_DIR = "/fake/home/.tugtool/themes";
 // Helpers
 // ---------------------------------------------------------------------------
 
+const SURFACE_GRID = { hue: "indigo-violet", tone: 8, intensity: 4 };
+const SURFACE_FRAME = { hue: "indigo-violet", tone: 12, intensity: 4 };
+const SURFACE_CARD = { hue: "indigo-violet", tone: 15, intensity: 3 };
+
 function makeBrioJson(): string {
   return JSON.stringify({
     name: "brio",
     recipe: "dark",
-    surface: { canvas: { hue: "indigo-violet", tone: 5, intensity: 5 } },
+    surface: {
+      canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
+      grid: SURFACE_GRID,
+      frame: SURFACE_FRAME,
+      card: SURFACE_CARD,
+    },
     text: { hue: "cobalt", intensity: 3 },
     role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
   });
@@ -52,7 +61,12 @@ function makeHarmonyJson(): string {
   return JSON.stringify({
     name: "harmony",
     recipe: "light",
-    surface: { canvas: { hue: "indigo-violet", tone: 95, intensity: 6 } },
+    surface: {
+      canvas: { hue: "indigo-violet", tone: 95, intensity: 6 },
+      grid: { hue: "indigo-violet", tone: 92, intensity: 4 },
+      frame: { hue: "indigo-violet", tone: 88, intensity: 4 },
+      card: { hue: "indigo-violet", tone: 85, intensity: 3 },
+    },
     text: { hue: "cobalt", intensity: 4 },
     role: { tone: 55, intensity: 60, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
   });
@@ -62,7 +76,12 @@ function makeAuthoredJson(name: string): string {
   return JSON.stringify({
     name,
     recipe: "dark",
-    surface: { canvas: { hue: "orange", tone: 10, intensity: 3 } },
+    surface: {
+      canvas: { hue: "orange", tone: 10, intensity: 3 },
+      grid: { hue: "orange", tone: 13, intensity: 3 },
+      frame: { hue: "orange", tone: 17, intensity: 3 },
+      card: { hue: "orange", tone: 20, intensity: 2 },
+    },
     text: { hue: "orange", intensity: 2 },
     role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
   });
@@ -72,7 +91,12 @@ function makeMinimalSaveBody(name: string): ThemeSaveBody {
   return {
     name,
     recipe: "dark",
-    surface: { canvas: { hue: "orange", tone: 10, intensity: 3 } },
+    surface: {
+      canvas: { hue: "orange", tone: 10, intensity: 3 },
+      grid: { hue: "orange", tone: 13, intensity: 3 },
+      frame: { hue: "orange", tone: 17, intensity: 3 },
+      card: { hue: "orange", tone: 20, intensity: 2 },
+    },
     text: { hue: "orange", intensity: 2 },
     role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
   };
@@ -367,5 +391,37 @@ describe("handleThemesSave", () => {
     };
     const result = handleThemesSave(null, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
+  });
+
+  it("returns 400 when recipe is a JSON blob (old broken format)", () => {
+    const mockFs: FsWriteImpl = {
+      readdirSync: () => [],
+      readFileSync: (_p: string) => "",
+      existsSync: (_p: string) => false,
+      writeFileSync: () => {},
+      mkdirSync: () => {},
+    };
+    const fullRecipe = makeMinimalSaveBody("My Theme");
+    const brokenBody = { ...fullRecipe, recipe: JSON.stringify(fullRecipe) };
+    const result = handleThemesSave(brokenBody, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
+    expect(result.status).toBe(400);
+    const parsed = JSON.parse(result.body) as { error: string };
+    expect(parsed.error).toContain("mode string");
+  });
+
+  it("returns 400 when surface field is missing", () => {
+    const mockFs: FsWriteImpl = {
+      readdirSync: () => [],
+      readFileSync: (_p: string) => "",
+      existsSync: (_p: string) => false,
+      writeFileSync: () => {},
+      mkdirSync: () => {},
+    };
+    const body = makeMinimalSaveBody("My Theme");
+    const { surface: _surface, ...bodyWithoutSurface } = body;
+    const result = handleThemesSave(bodyWithoutSurface, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
+    expect(result.status).toBe(400);
+    const parsed = JSON.parse(result.body) as { error: string };
+    expect(parsed.error).toContain("surface");
   });
 });

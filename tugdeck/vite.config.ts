@@ -220,15 +220,16 @@ export interface ThemeListEntry {
 /** Full ThemeRecipe JSON body sent to POST /__themes/save (minus formulas). */
 export interface ThemeSaveBody {
   name: string;
-  recipe: string;
+  recipe: string; // "dark", "light", or future modes — NOT a JSON blob
   surface: {
     canvas: { hue: string; tone: number; intensity: number };
-    grid?: { hue: string; tone: number; intensity: number };
-    frame?: { hue: string; tone: number; intensity: number };
-    card?: { hue: string; tone: number; intensity: number };
+    grid: { hue: string; tone: number; intensity: number };
+    frame: { hue: string; tone: number; intensity: number };
+    card: { hue: string; tone: number; intensity: number };
   };
   text: { hue: string; intensity: number };
   display?: { hue: string; intensity: number };
+  border?: { hue: string; intensity: number };
   role: {
     tone: number;
     intensity: number;
@@ -398,6 +399,12 @@ export function handleThemesSave(
   const recipe = b as ThemeSaveBody;
   if (!recipe.recipe || typeof recipe.recipe !== "string") {
     return { status: 400, body: JSON.stringify({ error: "recipe field is required" }), safeName: null };
+  }
+  if (recipe.recipe.startsWith("{")) {
+    return { status: 400, body: JSON.stringify({ error: "recipe must be a mode string (e.g. 'dark'), not a JSON object" }), safeName: null };
+  }
+  if (!recipe.surface || typeof recipe.surface !== "object") {
+    return { status: 400, body: JSON.stringify({ error: "surface field is required" }), safeName: null };
   }
 
   // Write JSON
