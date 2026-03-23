@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-03-23T15:50:34Z
+---
+
+## step-11: Final integration checkpoint: build passes, dead code removed, audit:tokens passes, all automated checks green
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-10
 date: 2025-03-23T15:40:29Z
 ---
