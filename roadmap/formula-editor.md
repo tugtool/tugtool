@@ -135,13 +135,14 @@ values from the active recipe.
 5. Render as additional rows in the existing panel DOM structure.
 
 **Where the active recipe comes from:** The dev server already knows the active
-theme (from tugbank). It runs `deriveTheme()` to generate override CSS. Cache
-the `DerivationFormulas` object and the active `ThemeSpec` from the most recent
-derivation and expose them via a dev endpoint (e.g., `GET /__themes/formulas`).
-The response includes:
+theme (from tugbank). It runs `deriveTheme()` via `activateThemeOverride` to
+generate override CSS. Extend `ActivateResult` to include the
+`DerivationFormulas` object and the active mode. Expose this data via a dev
+endpoint (`GET /__themes/formulas`). The response includes:
 - The `DerivationFormulas` field values
 - The active theme's `mode` field (`"dark"` or `"light"`) — this determines
-  which recipe file to edit (`recipes/dark.ts` or `recipes/light.ts`)
+  which recipe file to edit (`src/components/tugways/recipes/dark.ts` or
+  `src/components/tugways/recipes/light.ts`)
 - The active theme name
 
 The inspector fetches this once on activation and refreshes after each edit.
@@ -186,6 +187,15 @@ This two-phase approach (instant preview during drag, file write on release)
 avoids the 300-500ms pipeline latency during continuous slider movement. The
 temporary CSS override is discarded once HMR delivers the real update.
 
+**Preview during drag uses `document.body.style.setProperty()`.** All `--tug-*`
+tokens are declared on `body {}` selectors in the generated stylesheets. Inline
+styles on `document.documentElement` would be overridden by the `body {}` rule
+and have no visible effect. During drag, call
+`document.body.style.setProperty(tokenName, newValue)` for each affected token.
+On drag-end, call `document.body.style.removeProperty(tokenName)` to clear the
+inline overrides — the HMR-delivered stylesheet update will supply the correct
+values.
+
 **Preview during drag uses delta approximation.** The browser does not re-run
 `deriveTheme()` during drag — that would require shipping the full derivation
 engine to the client. Instead, it adjusts affected CSS custom property values
@@ -195,20 +205,34 @@ the computed oklch lightness of all affected tokens. This is an approximation
 enough for visual feedback during drag. The file write on release produces the
 exact correct values via the full pipeline.
 
+**StructuralRule tokens skip drag preview.** Some tokens are governed by
+`StructuralRule` entries in the rules table — these produce non-color CSS values
+(e.g., border-radius, spacing) that cannot be approximated by delta adjustment
+to oklch components. For formula fields that only affect StructuralRule tokens,
+the slider control should display a "(applies on release)" indicator so the user
+knows the visual update will come from the file pipeline, not from an instant
+preview. The control still works — it just has ~300ms latency instead of being
+frame-instant.
+
 **High-fan-out fields** like `roleIntensity` affect 150+ tokens. The preview
 must update all of them per frame during drag. This is feasible (setting CSS
-custom properties is fast) but should be tested early with a high-fan-out
-field to confirm performance.
+custom properties on `document.body.style` is fast) but should be tested early
+with a high-fan-out field to confirm performance.
 
 **Implementation:**
 
 - Controls are pure DOM (no React) — consistent with the existing inspector
   approach (Law L01).
-- Each control stores: recipe file path, formula field name, current value.
+- Each control stores: formula field name, current value.
 - onChange sends a POST to the Vite middleware (Part 4).
-- Incoming HMR updates refresh the formulas cache, which updates all visible
-  controls to their new values (handles cascading changes where one formula
-  field affects others through the recipe logic).
+- The `GET /__themes/formulas` endpoint returns formulas and mode in the
+  `ActivateResult` — callers read from the return value rather than relying
+  on module-level cache side effects. This keeps `activateThemeOverride`
+  testable with mock fs. The endpoint handler calls `activateThemeOverride`,
+  reads formulas and mode from the returned `ActivateResult`, and serves them.
+- Incoming HMR updates refresh the formulas by re-fetching the endpoint,
+  which updates all visible controls to their new values (handles cascading
+  changes where one formula field affects others through the recipe logic).
 
 **Pinned mode is the primary editing mode.** The tuning workflow is:
 
@@ -243,34 +267,55 @@ them to the recipe source files on disk.
 
 The recipe file is not specified in the request — the server determines it
 automatically from the active theme's `mode` field. If the active theme has
-`mode: "dark"`, the server edits `recipes/dark.ts`. This means the inspector
+`mode: "dark"`, the server edits `src/components/tugways/recipes/dark.ts`. This means the inspector
 never needs to know the file path — it just sends field + value.
 
 **What it does:**
 
 1. Read the active theme's mode from the cached ThemeSpec (same cache as
    `GET /__themes/formulas`). Map mode to recipe file:
-   `"dark"` → `recipes/dark.ts`, `"light"` → `recipes/light.ts`.
+   `"dark"` → `src/components/tugways/recipes/dark.ts`,
+   `"light"` → `src/components/tugways/recipes/light.ts`.
 2. Read the file.
-3. Find the line that assigns the formula field. The pattern in recipe files
-   is consistent:
+3. Find the line that assigns the formula field. Recipe files use object
+   literal return syntax — the return statement is a single object literal
+   with one property per line. There are two patterns:
 
+   **Expression properties** — field name, colon, value expression, comma:
    ```typescript
-   formulas.surfaceCanvasTone = spec.surface.canvas.tone;
-   formulas.surfaceCanvasTone = 5;
-   formulas.surfaceCanvasTone = Math.max(0, Math.min(100, spec.role.tone + 5));
+   surfaceCanvasTone: canvasTone,
+   surfaceCanvasTone: canvasTone + 6,
+   filledSurfaceHoverTone: Math.max(0, Math.min(100, spec.role.tone + 5)),
    ```
+   Regex: `/^(\s*){fieldName}\s*:\s*(.+),\s*$/m`
 
-   Regex: `/formulas\.{fieldName}\s*=\s*.+;/`
+   **Shorthand properties** — field name alone (value comes from a same-name
+   local variable, e.g., `cardBodyTone,`):
+   ```typescript
+   cardBodyTone,
+   cardBodyIntensity,
+   ```
+   Regex: `/^(\s*){fieldName}\s*,\s*$/m`
 
-4. Replace the right-hand side with the new value:
-   `formulas.surfaceCanvasTone = 8;`
+   The write-back must handle both patterns. For an expression property,
+   replace the value between the colon and comma. For a shorthand property,
+   expand it to the full `fieldName: newValue,` form.
+
+4. Replace the value with the raw literal:
+   `surfaceCanvasTone: 8,`
 
    This intentionally replaces computed expressions with literal values.
    When you're tuning by hand, you want direct control. If the formula was
-   `spec.surface.canvas.tone + 3` and you set it to 8, the formula becomes
-   `8`. You can always restore the expression later by editing the source
-   directly.
+   `canvasTone + 6` and you set it to 8, the line becomes
+   `surfaceCanvasTone: 8,`. You can always restore the expression later by
+   editing the source directly.
+
+   **Raw literal only — no clamping.** The write-back writes the exact
+   numeric value from the slider. It does not attempt to wrap the value in
+   `Math.max`/`Math.min` or replicate any clamping logic from the original
+   expression. The slider range itself constrains valid values (0-100 for
+   tone/intensity, 0-1 for alpha). If the original expression had clamping,
+   that clamping is lost — the user can restore it manually if needed.
 
 5. Write the file back to disk.
 6. The file watcher picks up the change → `generate:tokens` runs → HMR
@@ -280,9 +325,9 @@ never needs to know the file path — it just sends field + value.
 ```json
 {
   "ok": true,
-  "file": "recipes/dark.ts",
+  "file": "src/components/tugways/recipes/dark.ts",
   "field": "surfaceCanvasTone",
-  "oldValue": "spec.surface.canvas.tone",
+  "oldValue": "canvasTone",
   "newValue": "8"
 }
 ```
@@ -338,8 +383,10 @@ catches computed expressions that static analysis would miss.
 **Literal replacement, not expression editing.** When the user drags a slider,
 the formula becomes a literal number. This is intentional — live tuning is
 about finding the right value, not writing the right expression. The user can
-restore expressions later in source. This keeps the write-back logic trivial
-(regex replace) instead of requiring AST manipulation.
+restore expressions later in source. Two regex patterns handle the recipe file
+format: expression properties (`fieldName: expr,`) and shorthand properties
+(`fieldName,`). Both are replaced with `fieldName: literal,`. No AST
+manipulation needed.
 
 **Two-phase slider feedback.** During drag, the browser applies a temporary
 CSS override for instant visual feedback — no file round-trip. On drag-end,
@@ -351,10 +398,14 @@ but too slow for continuous drag. The temporary override bridges the gap.
 ship in production builds. It uses direct DOM manipulation consistent with the
 existing style inspector (Law L01, Law L06). No React state, no components.
 
-**Formulas endpoint caches derivation output.** The dev server already runs
-`deriveTheme()` for the active theme. Cache the `DerivationFormulas` object
-and serve it via `GET /__themes/formulas`. The inspector fetches it once on
-activation and refreshes after each edit.
+**Formulas come from ActivateResult, not module-level cache.**
+`activateThemeOverride` already runs `deriveTheme()` for the active theme.
+Extend `ActivateResult` to include the `DerivationFormulas` object and the
+active `mode` string. The `GET /__themes/formulas` endpoint handler calls
+`activateThemeOverride` and reads formulas/mode from the return value — no
+hidden module-level cache write. This keeps `activateThemeOverride` testable
+with mock fs (the existing test pattern). The inspector fetches the endpoint
+once on activation and refreshes after each edit.
 
 ## What This Does NOT Cover
 
