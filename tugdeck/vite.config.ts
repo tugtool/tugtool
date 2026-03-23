@@ -49,6 +49,23 @@ const { BASE_THEME_NAME } = require("./src/theme-constants") as { BASE_THEME_NAM
 /** Empty override — base theme default. */
 const EMPTY_OVERRIDE = `/* empty - ${BASE_THEME_NAME} default */\n`;
 
+// ---------------------------------------------------------------------------
+// formulasCache — in-memory cache of latest DerivationFormulas + ThemeSpec
+//
+// Populated by all activateThemeOverride call sites from the returned
+// ActivateResult. The GET /__themes/formulas endpoint reads from this cache.
+// ---------------------------------------------------------------------------
+
+/** Cached derivation state served by GET /__themes/formulas. */
+export interface FormulasCache {
+  formulas: Record<string, number | string | boolean>;
+  mode: "dark" | "light";
+  themeName: string;
+}
+
+/** In-memory cache. Null until a theme has been activated. */
+let formulasCache: FormulasCache | null = null;
+
 /**
  * Vite plugin: ensure `tug-theme-override.css` reflects the active theme at
  * startup, before Vite processes any CSS.
@@ -178,13 +195,14 @@ function controlTokenHotReload(): VitePlugin {
     // Non-base theme: re-derive override CSS through the write mutex to avoid races.
     withMutex(async () => {
       try {
-        activateThemeOverride(
+        const result = activateThemeOverride(
           activeTheme,
           fs as unknown as FsWriteImpl,
           SHIPPED_THEMES_DIR,
           USER_THEMES_DIR,
           THEME_OVERRIDE_CSS,
         );
+        formulasCache = { formulas: result.formulas, mode: result.mode, themeName: result.theme };
       } catch (err) {
         console.error(`[control-token-hot-reload] failed to re-derive override for theme "${activeTheme}":`, err);
       }
@@ -207,6 +225,13 @@ function controlTokenHotReload(): VitePlugin {
       // Regenerate when any shipped theme JSON changes
       const themesJsonDir = path.resolve(__dirname, "themes");
       if (file.startsWith(themesJsonDir) && file.endsWith(".json")) {
+        regenerate();
+        reactivateActiveTheme();
+        return;
+      }
+      // Regenerate when any recipe file changes (supports formula write-back hot-reload, [D07])
+      const recipesDir = path.resolve(__dirname, "src/components/tugways/recipes");
+      if (file.startsWith(recipesDir) && file.endsWith(".ts")) {
         regenerate();
         reactivateActiveTheme();
       }
@@ -516,6 +541,10 @@ export interface ActivateCanvasParams {
 export interface ActivateResult {
   theme: string;
   canvasParams: ActivateCanvasParams;
+  /** DerivationFormulas produced by the active theme recipe. */
+  formulas: Record<string, number | string | boolean>;
+  /** Mode of the active theme ("dark" | "light"). */
+  mode: "dark" | "light";
 }
 
 /**
@@ -555,6 +584,8 @@ export function activateThemeOverride(
         tone: baseOutput.formulas.surfaceCanvasTone,
         intensity: baseOutput.formulas.surfaceCanvasIntensity,
       },
+      formulas: baseOutput.formulas as unknown as Record<string, number | string | boolean>,
+      mode: baseSpec.mode,
     };
   }
 
@@ -612,6 +643,8 @@ export function activateThemeOverride(
       tone: themeOutput.formulas.surfaceCanvasTone,
       intensity: themeOutput.formulas.surfaceCanvasIntensity,
     },
+    formulas: themeOutput.formulas as unknown as Record<string, number | string | boolean>,
+    mode: spec.mode,
   };
 }
 
@@ -629,6 +662,33 @@ let pending: Promise<void> = Promise.resolve();
 function withMutex(fn: () => Promise<void>): Promise<void> {
   pending = pending.catch(() => {}).then(fn);
   return pending;
+}
+
+// ---------------------------------------------------------------------------
+// handleFormulasGet — GET /__themes/formulas
+//
+// Returns the cached DerivationFormulas and ThemeSpec mode as JSON per Spec S03.
+// Returns 404 if no theme has been activated yet.
+//
+// Exported for unit testing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle GET /__themes/formulas.
+ *
+ * @param cache - Current formulas cache (null if no theme activated yet).
+ * @returns HTTP response with status and body.
+ */
+export function handleFormulasGet(cache: FormulasCache | null): { status: number; body: string } {
+  if (cache === null) {
+    return { status: 404, body: JSON.stringify({ error: "no active theme" }) };
+  }
+  const response = {
+    formulas: cache.formulas,
+    mode: cache.mode,
+    themeName: cache.themeName,
+  };
+  return { status: 200, body: JSON.stringify(response) };
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +727,7 @@ export async function handleThemesActivate(
     withMutex(async () => {
       try {
         const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath);
+        formulasCache = { formulas: result.formulas, mode: result.mode, themeName: result.theme };
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -684,6 +745,7 @@ export async function handleThemesActivate(
  * Vite plugin: theme storage API endpoints for the dev server.
  * GET  /__themes/list         — list available themes (shipped + authored)
  * GET  /__themes/<name>.json  — load theme JSON (authored first, then shipped)
+ * GET  /__themes/formulas     — current DerivationFormulas cache (Spec S03)
  * POST /__themes/save         — save a new authored theme to disk
  * POST /__themes/activate     — activate a theme by rewriting the override file
  */
@@ -695,6 +757,13 @@ function themeSaveLoadPlugin(): VitePlugin {
         "/__themes",
         (req: import("http").IncomingMessage, res: import("http").ServerResponse, next: () => void) => {
           const url = req.url ?? "/";
+
+          if (req.method === "GET" && url === "/formulas") {
+            const result = handleFormulasGet(formulasCache);
+            res.writeHead(result.status, { "Content-Type": "application/json" });
+            res.end(result.body);
+            return;
+          }
 
           if (req.method === "GET" && url === "/list") {
             const result = handleThemesList(fs as unknown as FsReadImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
@@ -736,6 +805,7 @@ function themeSaveLoadPlugin(): VitePlugin {
               withMutex(async () => {
                 try {
                   const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS);
+                  formulasCache = { formulas: activateResult.formulas, mode: activateResult.mode, themeName: activateResult.theme };
                   const responseBody = JSON.stringify({ ok: true, name: saveResult.themeName, canvasParams: activateResult.canvasParams });
                   res.writeHead(200, { "Content-Type": "application/json" });
                   res.end(responseBody);

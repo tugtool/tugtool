@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-23T23:19:19Z
+---
+
+## step-2: Extended ActivateResult with formulas/mode fields, added formulasCache module variable, implemented handleFormulasGet endpoint at /__themes/formulas, added recipe file hot-reload to controlTokenHotReload. 3 unit tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-formula-editor.md
+
+---
+
+---
 step: step-1
 date: 2025-03-23T23:08:55Z
 ---
