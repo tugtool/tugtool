@@ -7,7 +7,6 @@ import type { ThemeSpec, DerivationFormulas } from "../theme-engine";
 /**
  * Produces DerivationFormulas for a light theme recipe.
  *
- * Independent from darkRecipe — not derived by inverting parameters.
  * Surfaces descend from near-white (~95); text ascends from near-black (~8).
  * contentTextTone uses canvas-87 (a design intent offset → ~8) rather than
  * contrastSearch: the design calls for near-black text on light backgrounds.
