@@ -104,7 +104,26 @@ function themeOverridePlugin(): VitePlugin {
 
       try {
         const raw = fs.readFileSync(jsonPath, "utf-8");
-        const recipe = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+        let parsed = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeRecipe & { recipe: unknown };
+
+        // Legacy migration guard: detect old format where recipe is a stringified JSON blob.
+        if (typeof parsed.recipe === "string" && (parsed.recipe as string).startsWith("{")) {
+          let unwrapped: import("./src/components/tugways/theme-engine").ThemeRecipe;
+          try {
+            unwrapped = JSON.parse(parsed.recipe as string) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+          } catch {
+            throw new Error(`Theme '${activeTheme}' has corrupt recipe data`);
+          }
+          // Rewrite file in canonical format (best-effort, uses real fs).
+          try {
+            fs.writeFileSync(jsonPath, JSON.stringify(unwrapped, null, 2), "utf-8");
+          } catch {
+            // Rewrite failed — theme still works for this session.
+          }
+          parsed = unwrapped as typeof parsed;
+        }
+
+        const recipe = parsed as import("./src/components/tugways/theme-engine").ThemeRecipe;
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: typeof recipe) => string };
         const css = generateThemeCSS(recipe);
@@ -554,7 +573,28 @@ export function activateThemeOverride(
   }
 
   const raw = fsImpl.readFileSync(jsonPath, "utf-8");
-  const recipe = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+  let parsed = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeRecipe & { recipe: unknown };
+
+  // Legacy migration guard: detect old format where recipe is a stringified JSON blob.
+  // Old clients sent { name, recipe: JSON.stringify(fullRecipe) } to the save endpoint,
+  // resulting in files where recipe is a JSON string starting with "{" instead of a mode string.
+  if (typeof parsed.recipe === "string" && (parsed.recipe as string).startsWith("{")) {
+    let unwrapped: import("./src/components/tugways/theme-engine").ThemeRecipe;
+    try {
+      unwrapped = JSON.parse(parsed.recipe as string) as import("./src/components/tugways/theme-engine").ThemeRecipe;
+    } catch {
+      throw new Error(`Theme '${themeName}' has corrupt recipe data`);
+    }
+    // Rewrite file in canonical format (best-effort).
+    try {
+      fsImpl.writeFileSync(jsonPath, JSON.stringify(unwrapped, null, 2), "utf-8");
+    } catch {
+      // Rewrite failed — theme still works for this session.
+    }
+    parsed = unwrapped as typeof parsed;
+  }
+
+  const recipe = parsed as import("./src/components/tugways/theme-engine").ThemeRecipe;
 
   // Lazy-require to avoid circular dependency at module parse time.
   // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-23T18:28:10Z
+---
+
+## step-5: Added legacy format detection and migration in activateThemeOverride and themeOverridePlugin. Detects stringified recipe blob, unwraps inner JSON, rewrites file in canonical format. Three new migration tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
 step: step-4
 date: 2025-03-23T18:19:51Z
 ---

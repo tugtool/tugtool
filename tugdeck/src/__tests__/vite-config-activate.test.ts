@@ -25,6 +25,33 @@ import {
 } from "../../vite.config";
 
 // ---------------------------------------------------------------------------
+// Minimal valid ThemeRecipe used for legacy migration tests
+// ---------------------------------------------------------------------------
+
+const MINIMAL_RECIPE = {
+  name: "my-cool-theme",
+  recipe: "dark",
+  surface: {
+    canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
+    grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
+    frame: { hue: "indigo-violet", tone: 16, intensity: 12 },
+    card: { hue: "indigo-violet", tone: 12, intensity: 5 },
+  },
+  text: { hue: "cobalt", intensity: 3 },
+  role: {
+    tone: 50,
+    intensity: 50,
+    accent: "orange",
+    action: "blue",
+    agent: "violet",
+    data: "teal",
+    success: "green",
+    caution: "yellow",
+    danger: "red",
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
 // Paths (same constants as vite.config.ts)
 // ---------------------------------------------------------------------------
 
@@ -85,6 +112,54 @@ function makeMockFs(): MockFs {
 
     mkdirSync(_p: string, _opts: { recursive: boolean }): void {
       // no-op
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Mock factory for user-authored legacy files
+//
+// Extends makeMockFs to serve a synthetic user-authored theme file from
+// an in-memory map. The mock supports both legacy-format files (recipe is
+// a stringified blob) and canonical-format files.
+// ---------------------------------------------------------------------------
+
+interface MockFsWithUserFiles extends MockFs {
+  userFiles: Map<string, string>;
+}
+
+function makeMockFsWithUserFile(fileName: string, content: string): MockFsWithUserFiles {
+  const base = makeMockFs();
+  const userFiles = new Map<string, string>([[path.join(USER_THEMES_DIR, fileName), content]]);
+
+  return {
+    ...base,
+    userFiles,
+
+    existsSync(p: string): boolean {
+      if (userFiles.has(p)) return true;
+      return base.existsSync(p);
+    },
+
+    readFileSync(p: string, enc: "utf-8"): string {
+      const userContent = userFiles.get(p);
+      if (userContent !== undefined) return userContent;
+      return base.readFileSync(p, enc);
+    },
+
+    readdirSync(p: string): string[] {
+      if (p === USER_THEMES_DIR) {
+        return Array.from(userFiles.keys()).map((fp) => path.basename(fp));
+      }
+      return base.readdirSync(p);
+    },
+
+    writeFileSync(p: string, data: string, enc: "utf-8"): void {
+      // Capture rewrites of user files in the userFiles map too.
+      if (userFiles.has(p)) {
+        userFiles.set(p, data);
+      }
+      base.writeFileSync(p, data, enc);
     },
   };
 }
@@ -172,6 +247,95 @@ describe("activateThemeOverride", () => {
 
     // No files should have been written.
     expect(mockFs.written.size).toBe(0);
+  });
+});
+
+describe("activateThemeOverride — legacy migration", () => {
+  it("TC-LM1: legacy file with stringified recipe is migrated and activates correctly", () => {
+    // Build a legacy-format file: the old client wrote { name, recipe: JSON.stringify(fullRecipe) }.
+    // The inner recipe blob is the full ThemeRecipe fields minus name (the old client used safeName).
+    const innerRecipe = { ...MINIMAL_RECIPE };
+    const legacyFile = JSON.stringify({
+      name: "my-cool-theme",
+      recipe: JSON.stringify(innerRecipe),
+      // Old format had no surface/text/role at top level — they were inside the stringified blob.
+    });
+
+    const mockFsLegacy = makeMockFsWithUserFile("abcd1234.json", legacyFile);
+
+    const result: ActivateResult = activateThemeOverride(
+      "my-cool-theme",
+      mockFsLegacy,
+      SHIPPED_THEMES_DIR,
+      USER_THEMES_DIR,
+      OVERRIDE_CSS_PATH,
+      ACTIVE_THEME_PATH,
+    );
+
+    // Activation must succeed and return correct canvasParams.
+    expect(result.theme).toBe("my-cool-theme");
+    expect(result.canvasParams.hue).toBe("indigo-violet");
+    expect(typeof result.canvasParams.tone).toBe("number");
+    expect(typeof result.canvasParams.intensity).toBe("number");
+
+    // Override CSS must contain token declarations (non-Brio theme).
+    const overrideContents = mockFsLegacy.written.get(OVERRIDE_CSS_PATH);
+    expect(overrideContents).toBeDefined();
+    expect(overrideContents).toContain("--tug-");
+  });
+
+  it("TC-LM2: legacy file is rewritten in canonical format after migration", () => {
+    const innerRecipe = { ...MINIMAL_RECIPE };
+    const legacyFile = JSON.stringify({
+      name: "my-cool-theme",
+      recipe: JSON.stringify(innerRecipe),
+    });
+
+    const userFilePath = path.join(USER_THEMES_DIR, "abcd1234.json");
+    const mockFsLegacy = makeMockFsWithUserFile("abcd1234.json", legacyFile);
+
+    activateThemeOverride(
+      "my-cool-theme",
+      mockFsLegacy,
+      SHIPPED_THEMES_DIR,
+      USER_THEMES_DIR,
+      OVERRIDE_CSS_PATH,
+      ACTIVE_THEME_PATH,
+    );
+
+    // The user file must have been rewritten.
+    const rewrittenContent = mockFsLegacy.written.get(userFilePath);
+    expect(rewrittenContent).toBeDefined();
+
+    // The rewritten content must be valid JSON with recipe as a mode string (not a blob).
+    const rewritten = JSON.parse(rewrittenContent!) as { recipe: string; surface?: object };
+    expect(typeof rewritten.recipe).toBe("string");
+    expect(rewritten.recipe).not.toContain("{");
+    expect(rewritten.recipe).toBe("dark");
+
+    // surface must be a top-level object in the rewritten file.
+    expect(typeof rewritten.surface).toBe("object");
+    expect(rewritten.surface).not.toBeNull();
+  });
+
+  it("TC-LM3: corrupt legacy file throws clear error message", () => {
+    const corruptFile = JSON.stringify({
+      name: "broken-theme",
+      recipe: '{"this is not valid json because it is truncated...',
+    });
+
+    const mockFsCorrupt = makeMockFsWithUserFile("deadbeef.json", corruptFile);
+
+    expect(() => {
+      activateThemeOverride(
+        "broken-theme",
+        mockFsCorrupt,
+        SHIPPED_THEMES_DIR,
+        USER_THEMES_DIR,
+        OVERRIDE_CSS_PATH,
+        ACTIVE_THEME_PATH,
+      );
+    }).toThrow("corrupt recipe data");
   });
 });
 
