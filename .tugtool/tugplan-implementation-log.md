@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-23T14:52:46Z
+---
+
+## step-7: Server-side integration checkpoint: all unit tests pass, build clean, server-side theme pipeline verified
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-6
 date: 2025-03-23T14:45:37Z
 ---
