@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-23T14:25:49Z
+---
+
+## step-4: Added reactivateActiveTheme helper in controlTokenHotReload to re-derive tug-theme-override.css after regenerate runs
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-3
 date: 2025-03-23T14:17:58Z
 ---

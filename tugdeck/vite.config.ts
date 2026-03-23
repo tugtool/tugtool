@@ -124,6 +124,11 @@ function themeOverridePlugin(): VitePlugin {
  * When it changes, we re-run generate-tug-tokens.ts to update the
  * generated section of tug-base.css, then CSS HMR picks up the change.
  *
+ * After regeneration, if a non-Brio theme is active, the override CSS is
+ * re-derived using activateThemeOverride so that the active theme reflects
+ * the updated engine output. The write is serialized through writeMutex to
+ * avoid racing with concurrent POST /__themes/activate requests.
+ *
  * Uses Vite's built-in watcher via handleHotUpdate (no separate fs.watchFile).
  * Also runs once at buildStart to ensure tug-base.css is in sync.
  */
@@ -138,6 +143,38 @@ function controlTokenHotReload(): VitePlugin {
     }
   }
 
+  function reactivateActiveTheme() {
+    let activeTheme = "brio";
+    try {
+      activeTheme = fs.readFileSync(ACTIVE_THEME_FILE, "utf-8").trim();
+    } catch {
+      // File missing → default to brio.
+    }
+
+    if (!activeTheme || activeTheme === "brio") {
+      // Brio: override file stays empty; no action needed.
+      return;
+    }
+
+    // Non-Brio: re-derive override CSS through the write mutex to avoid races.
+    withMutex(async () => {
+      try {
+        activateThemeOverride(
+          activeTheme,
+          fs as unknown as FsWriteImpl,
+          SHIPPED_THEMES_DIR,
+          USER_THEMES_DIR,
+          THEME_OVERRIDE_CSS,
+          ACTIVE_THEME_FILE,
+        );
+      } catch (err) {
+        console.error(`[control-token-hot-reload] failed to re-derive override for theme "${activeTheme}":`, err);
+      }
+    }).catch((err) => {
+      console.error("[control-token-hot-reload] mutex error:", err);
+    });
+  }
+
   return {
     name: "control-token-hot-reload",
     buildStart() {
@@ -146,12 +183,14 @@ function controlTokenHotReload(): VitePlugin {
     handleHotUpdate({ file }) {
       if (file.endsWith("theme-engine.ts")) {
         regenerate();
+        reactivateActiveTheme();
         return;
       }
       // Regenerate when any shipped theme JSON changes
       const themesJsonDir = path.resolve(__dirname, "themes");
       if (file.startsWith(themesJsonDir) && file.endsWith(".json")) {
         regenerate();
+        reactivateActiveTheme();
       }
     },
   };
