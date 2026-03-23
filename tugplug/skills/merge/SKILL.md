@@ -121,17 +121,17 @@ If the command fails, report the error and suggest recovery.
 
 ### 4. Post-Merge Health Check
 
-Run health checks:
+Run health checks **sequentially**, tolerating non-zero exit codes:
 
 ```bash
-tugcode doctor
+tugcode doctor 2>&1 || true
 ```
 
 ```bash
-tugcode worktree list
+tugcode worktree list 2>&1 || true
 ```
 
-If doctor reports issues, present them as warnings (the merge itself succeeded).
+**Important:** `tugcode doctor` exits non-zero when it finds issues, but those are informational warnings — the merge itself already succeeded. Never run these two commands in parallel; if doctor fails and kills the worktree list call, useful diagnostic output is lost. Run them sequentially, always appending `|| true` so neither blocks the flow.
 
 ### 5. Post-Merge Dependency Installation
 
@@ -152,7 +152,7 @@ Match each changed file path against the following lookup table. The directory t
 | File Pattern | Command |
 |--------------|---------|
 | `Cargo.toml`, `Cargo.lock` | `cargo build` |
-| `package.json`, `package-lock.json` | `npm install` |
+| `package.json`, `bun.lock`, `bun.lockb` | `bun install` |
 | `Gemfile`, `Gemfile.lock` | `bundle install` |
 | `requirements.txt` | `pip install -r requirements.txt` |
 | `pyproject.toml` | `pip install -e .` |
@@ -205,9 +205,19 @@ up step files so they don't confuse future agent runs.
 
 #### Step 6a: Move the plan file to the archive directory
 
+First, verify the plan file still exists at `<plan_path>`. If it does not (already archived or moved during merge), skip to step 6d.
+
 ```bash
 mkdir -p .tugtool/archive
 git mv <plan_path> .tugtool/archive/
+```
+
+If `git mv` fails (file already tracked elsewhere, path mismatch), fall back to a manual move:
+
+```bash
+mv <plan_path> .tugtool/archive/ 2>/dev/null || true
+git add .tugtool/archive/<plan_basename> 2>/dev/null || true
+git rm --cached <plan_path> 2>/dev/null || true
 ```
 
 #### Step 6b: Remove step files
@@ -222,14 +232,19 @@ This is a no-op if the directory is empty or doesn't exist.
 
 #### Step 6c: Commit the archival
 
+Check whether there are any staged changes before committing:
+
+```bash
+git diff --cached --quiet 2>/dev/null
+```
+
+If there are staged changes (exit code 1), commit them:
+
 ```bash
 git commit -m "chore: archive completed plan <plan_basename>"
 ```
 
-Where `<plan_basename>` is just the filename (e.g., `tugplan-token-rename-35a.md`).
-
-If there are no changes to commit (e.g., plan was already archived), skip the
-commit silently.
+If there are no staged changes (exit code 0), the plan was already archived — skip the commit silently.
 
 #### Step 6d: Garbage-collect stale state entries
 
@@ -267,7 +282,9 @@ that may have accumulated. If it fails, report the error but do not halt.
 
 ## Error Handling
 
-If any step fails, report clearly and suggest recovery. Do not retry automatically.
+**The merge itself (step 3) is the only hard failure.** Once the merge succeeds, all subsequent steps (health check, dependency install, archive, state gc) are best-effort cleanup. If any cleanup step fails, report the error as a warning and continue to the next step. Never let a cleanup failure prevent the merge from being reported as successful.
+
+If step 3 fails, report clearly and suggest recovery. Do not retry automatically.
 
 **Common errors:**
 - **No worktree found**: Implementation hasn't run or worktree was already cleaned up
