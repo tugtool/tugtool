@@ -18,7 +18,8 @@
  * - handleThemesLoadCss generates CSS on-the-fly for authored themes without CSS
  * - handleThemesSave rejects names that collide with shipped themes (400)
  * - handleThemesSave auto-creates the user themes directory
- * - handleThemesSave writes JSON and CSS for valid authored themes
+ * - handleThemesSave writes JSON only (no CSS file — activate handles override)
+ * - handleThemesSave returns safeName on success
  * - handleThemesSave returns 400 when name is empty
  */
 import { describe, it, expect } from "bun:test";
@@ -314,7 +315,7 @@ describe("handleThemesLoadCss", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleThemesSave", () => {
-  it("writes JSON and CSS for a valid authored theme", () => {
+  it("writes JSON only (no CSS) for a valid authored theme", () => {
     const written: Record<string, string> = {};
     const created: string[] = [];
     const mockFs: FsWriteImpl = {
@@ -325,19 +326,46 @@ describe("handleThemesSave", () => {
       mkdirSync: (p: string) => { created.push(p); },
     };
     const body = makeMinimalSaveBody("My Theme");
-    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, (_r) => "body {}");
+    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
 
     expect(result.status).toBe(200);
     const parsed = JSON.parse(result.body) as { ok: boolean; name: string };
     expect(parsed.ok).toBe(true);
     expect(parsed.name).toBe("my-theme");
 
-    // Both files were written
+    // JSON was written
     const jsonPath = path.join(FAKE_USER_DIR, "my-theme.json");
-    const cssPath = path.join(FAKE_USER_DIR, "my-theme.css");
     expect(jsonPath in written).toBe(true);
-    expect(cssPath in written).toBe(true);
-    expect(written[cssPath]).toBe("body {}");
+
+    // CSS file was NOT written — activate handles the override
+    const cssPath = path.join(FAKE_USER_DIR, "my-theme.css");
+    expect(cssPath in written).toBe(false);
+  });
+
+  it("returns safeName on success", () => {
+    const mockFs: FsWriteImpl = {
+      readdirSync: () => [],
+      readFileSync: (_p: string) => "",
+      existsSync: (_p: string) => false,
+      writeFileSync: () => {},
+      mkdirSync: () => {},
+    };
+    const result = handleThemesSave(makeMinimalSaveBody("My Theme"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
+    expect(result.status).toBe(200);
+    expect(result.safeName).toBe("my-theme");
+  });
+
+  it("returns safeName null on validation failure", () => {
+    const mockFs: FsWriteImpl = {
+      readdirSync: () => [],
+      readFileSync: (_p: string) => "",
+      existsSync: (_p: string) => false,
+      writeFileSync: () => {},
+      mkdirSync: () => {},
+    };
+    const result = handleThemesSave(makeMinimalSaveBody(""), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
+    expect(result.status).toBe(400);
+    expect(result.safeName).toBeNull();
   });
 
   it("rejects names that collide with shipped themes (400)", () => {
@@ -349,7 +377,7 @@ describe("handleThemesSave", () => {
       mkdirSync: () => {},
     };
     const body = makeMinimalSaveBody("brio");
-    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
     const parsed = JSON.parse(result.body) as { error: string };
     expect(parsed.error).toContain("shipped");
@@ -364,7 +392,7 @@ describe("handleThemesSave", () => {
       writeFileSync: () => {},
       mkdirSync: (p: string) => { created.push(p); },
     };
-    handleThemesSave(makeMinimalSaveBody("new-theme"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    handleThemesSave(makeMinimalSaveBody("new-theme"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(created).toContain(FAKE_USER_DIR);
   });
 
@@ -377,7 +405,7 @@ describe("handleThemesSave", () => {
       mkdirSync: () => {},
     };
     const body = makeMinimalSaveBody("");
-    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
     const parsed = JSON.parse(result.body) as { error: string };
     expect(typeof parsed.error).toBe("string");
@@ -392,7 +420,7 @@ describe("handleThemesSave", () => {
       mkdirSync: () => {},
     };
     const body = makeMinimalSaveBody("   ");
-    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(body, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
   });
 
@@ -405,9 +433,11 @@ describe("handleThemesSave", () => {
       writeFileSync: (p: string, data: string) => { written[path.basename(p)] = data; },
       mkdirSync: () => {},
     };
-    handleThemesSave(makeMinimalSaveBody("My Cool Theme!"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    handleThemesSave(makeMinimalSaveBody("My Cool Theme!"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     const keys = Object.keys(written);
     expect(keys.some((k) => k.startsWith("my-cool-theme"))).toBe(true);
+    // Only JSON file written, no CSS
+    expect(keys.every((k) => k.endsWith(".json"))).toBe(true);
   });
 
   it("returns 500 when fs.writeFileSync throws", () => {
@@ -418,7 +448,7 @@ describe("handleThemesSave", () => {
       writeFileSync: () => { throw new Error("disk full"); },
       mkdirSync: () => {},
     };
-    const result = handleThemesSave(makeMinimalSaveBody("test"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(makeMinimalSaveBody("test"), mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(500);
   });
 
@@ -430,7 +460,7 @@ describe("handleThemesSave", () => {
       writeFileSync: () => {},
       mkdirSync: () => {},
     };
-    const result = handleThemesSave(null, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR, () => "");
+    const result = handleThemesSave(null, mockFs, FAKE_SHIPPED_DIR, FAKE_USER_DIR);
     expect(result.status).toBe(400);
   });
 });

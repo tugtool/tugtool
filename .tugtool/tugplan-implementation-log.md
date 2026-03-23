@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-23T14:37:21Z
+---
+
+## step-5: Removed CSS file write from handleThemesSave, added safeName return, middleware calls activateThemeOverride via withMutex after save
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-4
 date: 2025-03-23T14:25:49Z
 ---

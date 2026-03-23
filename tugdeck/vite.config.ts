@@ -422,8 +422,14 @@ export function handleThemesLoadCss(
 // handleThemesSave — POST /__themes/save
 //
 // Accepts full theme JSON, rejects names that collide with shipped themes,
-// auto-creates ~/.tugtool/themes/ if missing, writes <name>.json and
-// generates + writes <name>.css via generateThemeCSS().
+// auto-creates ~/.tugtool/themes/ if missing, writes <name>.json only.
+//
+// CSS generation has been removed: the middleware calls activateThemeOverride
+// after a successful save so the override file is written through writeMutex
+// (serialized with any concurrent activate requests).
+//
+// Returns { status, body, safeName } — safeName is exposed so the middleware
+// can pass it directly to activateThemeOverride without re-parsing the body.
 // ---------------------------------------------------------------------------
 
 export function handleThemesSave(
@@ -431,35 +437,34 @@ export function handleThemesSave(
   fsImpl: FsWriteImpl,
   shippedDir: string,
   userDir: string,
-  generateCss: (recipe: ThemeSaveBody) => string,
-): { status: number; body: string } {
+): { status: number; body: string; safeName: string | null } {
   if (!body || typeof body !== "object") {
-    return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
+    return { status: 400, body: JSON.stringify({ error: "invalid request body" }), safeName: null };
   }
   const b = body as Record<string, unknown>;
   const name = b.name;
   if (!name || typeof name !== "string" || name.trim() === "") {
-    return { status: 400, body: JSON.stringify({ error: "name is required" }) };
+    return { status: 400, body: JSON.stringify({ error: "name is required" }), safeName: null };
   }
   const safeName = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
 
   // Reject names that collide with shipped themes
   const shippedJsonPath = path.join(shippedDir, `${safeName}.json`);
   if (fsImpl.existsSync(shippedJsonPath)) {
-    return { status: 400, body: JSON.stringify({ error: `'${safeName}' is a shipped theme and cannot be overwritten` }) };
+    return { status: 400, body: JSON.stringify({ error: `'${safeName}' is a shipped theme and cannot be overwritten` }), safeName: null };
   }
 
   // Auto-create user themes directory
   try {
     fsImpl.mkdirSync(userDir, { recursive: true });
   } catch (err) {
-    return { status: 500, body: JSON.stringify({ error: `Failed to create themes directory: ${String(err)}` }) };
+    return { status: 500, body: JSON.stringify({ error: `Failed to create themes directory: ${String(err)}` }), safeName: null };
   }
 
   // Validate minimum required fields
   const recipe = b as ThemeSaveBody;
   if (!recipe.recipe || typeof recipe.recipe !== "string") {
-    return { status: 400, body: JSON.stringify({ error: "recipe field is required" }) };
+    return { status: 400, body: JSON.stringify({ error: "recipe field is required" }), safeName: null };
   }
 
   // Write JSON
@@ -468,19 +473,11 @@ export function handleThemesSave(
     const normalizedRecipe: ThemeSaveBody = { ...recipe, name: safeName };
     fsImpl.writeFileSync(jsonPath, JSON.stringify(normalizedRecipe, null, 2), "utf-8");
   } catch (err) {
-    return { status: 500, body: JSON.stringify({ error: `Failed to write theme JSON: ${String(err)}` }) };
+    return { status: 500, body: JSON.stringify({ error: `Failed to write theme JSON: ${String(err)}` }), safeName: null };
   }
 
-  // Generate and write CSS
-  try {
-    const css = generateCss({ ...recipe, name: safeName } as ThemeSaveBody);
-    const cssPath = path.join(userDir, `${safeName}.css`);
-    fsImpl.writeFileSync(cssPath, css, "utf-8");
-  } catch (err) {
-    return { status: 500, body: JSON.stringify({ error: `Failed to generate CSS: ${String(err)}` }) };
-  }
-
-  return { status: 200, body: JSON.stringify({ ok: true, name: safeName }) };
+  // No CSS write here — the middleware calls activateThemeOverride(safeName) after this returns.
+  return { status: 200, body: JSON.stringify({ ok: true, name: safeName }), safeName };
 }
 
 // ---------------------------------------------------------------------------
@@ -493,7 +490,7 @@ export function handleThemesSave(
 //
 // The lazy require() pattern is used to avoid circular dependencies at module
 // parse time. This matches the existing pattern in the startup plugin and
-// makeRuntimeCssGenerator below.
+// makeRuntimeCssGeneratorFromPath below.
 // ---------------------------------------------------------------------------
 
 /** Canvas color params returned alongside the theme name by activateThemeOverride. */
@@ -656,16 +653,9 @@ export async function handleThemesActivate(
 
 // ---------------------------------------------------------------------------
 // Runtime CSS generator (wraps the shared theme-css-generator module)
+// Used by handleThemesLoadCss for the on-the-fly authored CSS fallback path.
 // Lazy-loaded to avoid circular dependency at module parse time.
 // ---------------------------------------------------------------------------
-
-function makeRuntimeCssGenerator(): (recipe: ThemeSaveBody) => string {
-  return (recipe: ThemeSaveBody): string => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: ThemeSaveBody) => string };
-    return generateThemeCSS(recipe);
-  };
-}
 
 function makeRuntimeCssGeneratorFromPath(): (jsonPath: string) => string {
   return (jsonPath: string): string => {
@@ -685,7 +675,6 @@ function makeRuntimeCssGeneratorFromPath(): (jsonPath: string) => string {
  * POST /__themes/save         — save a new authored theme to disk
  */
 function themeSaveLoadPlugin(): VitePlugin {
-  const generateCssFromRecipe = makeRuntimeCssGenerator();
   const generateCssFromPath = makeRuntimeCssGeneratorFromPath();
   return {
     name: "theme-save-load",
@@ -734,9 +723,28 @@ function themeSaveLoadPlugin(): VitePlugin {
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              const result = handleThemesSave(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, generateCssFromRecipe);
-              res.writeHead(result.status, { "Content-Type": "application/json" });
-              res.end(result.body);
+              const saveResult = handleThemesSave(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
+              if (saveResult.status !== 200 || saveResult.safeName === null) {
+                res.writeHead(saveResult.status, { "Content-Type": "application/json" });
+                res.end(saveResult.body);
+                return;
+              }
+              // Activate the saved theme through the write mutex so the override
+              // file write is serialized with any concurrent activate requests.
+              withMutex(async () => {
+                try {
+                  const activateResult = activateThemeOverride(saveResult.safeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS, ACTIVE_THEME_FILE);
+                  const responseBody = JSON.stringify({ ok: true, name: saveResult.safeName, canvasParams: activateResult.canvasParams });
+                  res.writeHead(200, { "Content-Type": "application/json" });
+                  res.end(responseBody);
+                } catch (err) {
+                  res.writeHead(500, { "Content-Type": "application/json" });
+                  res.end(JSON.stringify({ error: `Failed to activate saved theme: ${String(err)}` }));
+                }
+              }).catch((err) => {
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: `Mutex error: ${String(err)}` }));
+              });
             });
             return;
           }
