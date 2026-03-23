@@ -1,22 +1,15 @@
 /**
  * TugThemeProvider — React context provider for the Tugways theme system.
  *
- * Architecture: stylesheet injection (not body classes).
+ * Architecture: file-based override (not DOM injection).
  *
- * Built-in themes:
- *   - brio    (default dark)  — palette defined as body {} defaults in tug-base.css.
- *                               No override stylesheet needed.
- *   - harmony (built-in light) — full 373-token override file at /styles/themes/harmony.css.
- *                               Pre-fetched in main.tsx before React mounts via
- *                               registerThemeCSS(). [D07]
+ * Theme switching posts to POST /__themes/activate, which rewrites
+ * tug-theme-override.css through Vite's CSS pipeline so PostCSS expands all
+ * --tug-color() tokens correctly. Brio uses an empty override file; all other
+ * themes write their full CSS into the override file.
  *
- * With ThemeName widened to `string`, dynamically-loaded themes are handled identically
- * to built-in non-brio themes: their CSS is fetched via GET /__themes/<name>.css and
- * injected via injectThemeCSS(). The built-in vs. dynamic distinction is removed. [D07][D11]
- *
- * Spec S02 (#s02-injection-contract), Spec S03 (#s03-theme-provider),
- * [D03] Brio is the base theme, [D07] Dynamic theme loading through middleware,
- * [D11] Remove Bluenote
+ * Spec S01 (#settheme-flow), [D01] Single override file, [D03] Activate endpoint,
+ * [D04] Dual persistence, Spec S03 (#s03-theme-provider)
  */
 
 import React, {
@@ -35,36 +28,12 @@ import { deriveTheme, type ThemeRecipe } from "../components/tugways/theme-engin
 // Types
 // ---------------------------------------------------------------------------
 
-/** Theme name — widened to string to support dynamically-loaded themes. [D07] */
+/** Theme name — widened to string to support dynamically-loaded themes. */
 export type ThemeName = string;
 
 interface ThemeContextValue {
   theme: string;
   setTheme: (theme: string) => void;
-}
-
-// ---------------------------------------------------------------------------
-// Theme CSS map
-// ---------------------------------------------------------------------------
-
-/**
- * Cache of pre-fetched or previously-fetched CSS strings keyed by theme name.
- * - brio:    null — uses tug-base.css body {} defaults; no override needed.
- * - harmony: null until populated by registerThemeCSS() in main.tsx before mount. [D07]
- * - dynamic: null until fetched on first setTheme() call for that name.
- */
-const themeCSSMap = new Map<string, string | null>();
-themeCSSMap.set("brio", null);
-
-/**
- * Populate a theme's CSS before applyInitialTheme() is called.
- *
- * Called from main.tsx's async IIFE after a theme CSS fetch resolves.
- * Must be called before applyInitialTheme() and before React mounts so that
- * the initial theme injection is synchronous. [D07]
- */
-export function registerThemeCSS(name: string, css: string): void {
-  themeCSSMap.set(name, css);
 }
 
 // ---------------------------------------------------------------------------
@@ -88,43 +57,6 @@ let initialCanvasParams: CanvasColorParams | null = null;
  */
 export function registerInitialCanvasParams(params: CanvasColorParams): void {
   initialCanvasParams = params;
-}
-
-// ---------------------------------------------------------------------------
-// Stylesheet injection helpers
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_ELEMENT_ID = "tug-theme-override";
-
-/**
- * Inject or replace the theme override stylesheet.
- *
- * Creates (or reuses) a <style id="tug-theme-override" data-theme="...">
- * element appended as the last child of <head>. This position guarantees
- * the injected styles win in CSS cascade order over tug-base.css.
- */
-export function injectThemeCSS(themeName: string, cssText: string): void {
-  let el = document.getElementById(OVERRIDE_ELEMENT_ID) as HTMLStyleElement | null;
-  if (!el) {
-    el = document.createElement("style");
-    el.id = OVERRIDE_ELEMENT_ID;
-    document.head.appendChild(el);
-  }
-  el.setAttribute("data-theme", themeName);
-  el.textContent = cssText;
-}
-
-/**
- * Remove the theme override stylesheet.
- *
- * After removal, tug-base.css body {} defaults (Brio) take over automatically
- * via CSS cascade — no additional style recalculation is needed.
- */
-export function removeThemeCSS(): void {
-  const el = document.getElementById(OVERRIDE_ELEMENT_ID);
-  if (el) {
-    el.remove();
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -166,23 +98,6 @@ export function deriveCanvasParams(recipe: ThemeRecipe): CanvasColorParams {
     tone: themeOutput.formulas.surfaceCanvasTone,
     intensity: themeOutput.formulas.surfaceCanvasIntensity,
   };
-}
-
-// ---------------------------------------------------------------------------
-// applyInitialTheme — called by main.tsx before React mounts
-// ---------------------------------------------------------------------------
-
-/**
- * Apply the initial theme via stylesheet injection before React mounts.
- *
- * For brio (the default), this is a no-op — tug-base.css defaults are already active.
- * For harmony and other pre-fetched themes, injects the CSS from themeCSSMap when non-null. [D07]
- */
-export function applyInitialTheme(themeName: string): void {
-  const cssText = themeCSSMap.get(themeName);
-  if (cssText) {
-    injectThemeCSS(themeName, cssText);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -243,17 +158,16 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 // ---------------------------------------------------------------------------
 
 /**
- * React context provider for theme state and stylesheet injection.
+ * React context provider for theme state.
  *
- * On mount, applies `initialTheme` if it is non-Brio. Exposes `theme` and
- * `setTheme` via React context. Registers a stable setter wrapper with
- * the action-dispatch system so the set-theme control frame can update the
- * theme from the Mac menu.
+ * Exposes `theme` and `setTheme` via React context. Registers a stable setter
+ * wrapper with the action-dispatch system so the set-theme control frame can
+ * update the theme from the Mac menu.
  *
- * The `setTheme` implementation:
- *   - brio: removes the override stylesheet so tug-base.css defaults take over.
- *   - all others: fetches CSS via GET /__themes/<name>.css and injects it.
- *     On 404, logs a warning and does not change the active theme. [D07]
+ * The `setTheme` implementation posts to POST /__themes/activate with the new
+ * theme name. The server rewrites tug-theme-override.css and returns
+ * { theme, canvasParams }. On success: calls sendCanvasColor(canvasParams),
+ * updates React state, persists to localStorage, and calls putTheme(). [D03]
  */
 export function TugThemeProvider({
   children,
@@ -270,76 +184,29 @@ export function TugThemeProvider({
   const setThemeRef = useRef<(t: string) => void>(() => {});
 
   const setTheme = (newTheme: string): void => {
-    if (newTheme === "brio") {
-      // brio: remove override so tug-base.css defaults take over
-      removeThemeCSS();
-      setThemeState(newTheme);
-      try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
-      putTheme(newTheme);
-      // Fetch brio.json and derive canvas params at runtime. [D08]
-      void fetch("/__themes/brio.json")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((json: unknown) => {
-          if (json !== null) {
-            sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
-          }
-        })
-        .catch((err: unknown) => {
-          console.warn("setTheme: failed to fetch brio.json for canvas color", err);
-        });
-    } else {
-      const cached = themeCSSMap.get(newTheme);
-      if (cached !== undefined) {
-        // CSS already fetched (or null sentinel for brio — handled above)
-        if (cached !== null) {
-          injectThemeCSS(newTheme, cached);
+    void fetch("/__themes/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: newTheme }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`setTheme: activate failed for "${newTheme}" (${res.status})`);
+          return;
         }
-        setThemeState(newTheme);
-        try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
-        putTheme(newTheme);
-        // Fetch JSON and derive canvas params at runtime. [D08]
-        void fetch(`/__themes/${encodeURIComponent(newTheme)}.json`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((json: unknown) => {
-            if (json !== null) {
-              sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
-            }
-          })
-          .catch((err: unknown) => {
-            console.warn(`setTheme: failed to fetch ${newTheme}.json for canvas color`, err);
-          });
-      } else {
-        // Fetch CSS from middleware, then inject
-        void fetch(`/__themes/${encodeURIComponent(newTheme)}.css`)
-          .then((res) => {
-            if (!res.ok) {
-              console.warn(`setTheme: theme "${newTheme}" not found (${res.status}), not changing theme`);
-              return;
-            }
-            return res.text().then((css) => {
-              themeCSSMap.set(newTheme, css);
-              injectThemeCSS(newTheme, css);
-              setThemeState(newTheme);
-              try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
-              putTheme(newTheme);
-              // Fetch JSON and derive canvas params at runtime. [D08]
-              void fetch(`/__themes/${encodeURIComponent(newTheme)}.json`)
-                .then((r) => (r.ok ? r.json() : null))
-                .then((json: unknown) => {
-                  if (json !== null) {
-                    sendCanvasColor(deriveCanvasParams(json as ThemeRecipe));
-                  }
-                })
-                .catch((err: unknown) => {
-                  console.warn(`setTheme: failed to fetch ${newTheme}.json for canvas color`, err);
-                });
-            });
-          })
-          .catch((err: unknown) => {
-            console.warn(`setTheme: failed to fetch CSS for theme "${newTheme}"`, err);
-          });
-      }
-    }
+        return res.json().then((data: unknown) => {
+          const result = data as { theme?: string; canvasParams?: CanvasColorParams };
+          if (result.canvasParams) {
+            sendCanvasColor(result.canvasParams);
+          }
+          setThemeState(newTheme);
+          try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
+          putTheme(newTheme);
+        });
+      })
+      .catch((err: unknown) => {
+        console.warn(`setTheme: activate request failed for "${newTheme}"`, err);
+      });
   };
 
   // Keep ref current on every render so the stable wrapper always calls the latest setter.

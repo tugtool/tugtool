@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-23T15:16:12Z
+---
+
+## step-8: Rewrote setTheme to POST /__themes/activate. Removed themeCSSMap, registerThemeCSS, applyInitialTheme, style injection. Simplified main.tsx startup. Updated test files for D07.
+
+**Files changed:**
+- .tugtool/tugplan-theme-switching-pipeline.md
+
+---
+
+---
 step: step-7
 date: 2025-03-23T14:52:46Z
 ---

@@ -85,7 +85,7 @@ import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { Info, Ellipsis, ChevronDown, X, LayoutDashboard, MessageSquare } from "lucide-react";
-import { loadSavedThemes, useOptionalThemeContext, injectThemeCSS } from "@/contexts/theme-provider";
+import { loadSavedThemes, useOptionalThemeContext } from "@/contexts/theme-provider";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
@@ -2029,11 +2029,7 @@ export function GalleryThemeGeneratorContent() {
     const output = deriveTheme(currentRecipe);
     setThemeOutput(output);
 
-    // Apply: inject regenerated CSS app-wide immediately for preview. [L06]
-    if (generatorState === "editing" && currentThemeName !== null) {
-      const css = generateResolvedCssExport(output, currentRecipe);
-      injectThemeCSS(currentRecipe.name, css);
-    }
+    // Live preview via activate endpoint will be wired in step 9.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     recipeMode,
@@ -2114,10 +2110,7 @@ export function GalleryThemeGeneratorContent() {
     setIsShipped(false);
     setGeneratorState("editing");
     setSaveStatus("idle");
-    // Apply CSS immediately
-    const output = deriveTheme(recipe);
-    const css = generateResolvedCssExport(output, recipe);
-    injectThemeCSS(name, css);
+    // Apply theme via context (activate endpoint wired in step 9).
     if (themeCtx) themeCtx.setTheme(name);
     void pushThemeListToSwift(name);
   }, [loadRecipeIntoState, themeCtx]);
