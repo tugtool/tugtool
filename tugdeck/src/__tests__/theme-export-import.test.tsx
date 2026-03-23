@@ -182,7 +182,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
 // ---------------------------------------------------------------------------
 
 describe("theme-save – new save model (POST /__themes/save)", () => {
-  it("POST /__themes/save receives name and recipe (JSON string) only", async () => {
+  it("POST /__themes/save receives full ThemeRecipe directly (recipe is a mode string, surface is an object)", async () => {
     const recipe = brio;
 
     const capturedBody: Record<string, unknown>[] = [];
@@ -200,16 +200,18 @@ describe("theme-save – new save model (POST /__themes/save)", () => {
       const res = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipe.name, recipe: JSON.stringify(recipe) }),
+        body: JSON.stringify(recipe),
       });
       expect(res.ok).toBe(true);
       expect(capturedBody.length).toBe(1);
       const body = capturedBody[0];
+      // name is a string
       expect(typeof body["name"]).toBe("string");
+      // recipe is a short mode string, not a JSON blob
       expect(typeof body["recipe"]).toBe("string");
-      // recipe JSON should parse back to a valid ThemeRecipe
-      const parsedRecipe = JSON.parse(body["recipe"] as string) as unknown;
-      expect(validateRecipeJson(parsedRecipe)).toBeNull();
+      expect((body["recipe"] as string).startsWith("{")).toBe(false);
+      // surface is an object (not a string)
+      expect(body["surface"] !== null && typeof body["surface"] === "object").toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }

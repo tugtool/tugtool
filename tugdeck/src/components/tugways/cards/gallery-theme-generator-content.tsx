@@ -1424,7 +1424,7 @@ function NewThemeDialog({
       const saveRes = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRecipe.name, recipe: JSON.stringify(newRecipe) }),
+        body: JSON.stringify(newRecipe),
       });
       if (!saveRes.ok) {
         const body = (await saveRes.json().catch(() => ({ error: "Save failed" }))) as { error?: string };
@@ -1931,7 +1931,7 @@ export function GalleryThemeGeneratorContent() {
       const res = await fetch("/__themes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipe.name, recipe: JSON.stringify(recipe) }),
+        body: JSON.stringify(recipe),
       });
       if (res.ok) {
         setSaveStatus("saved");

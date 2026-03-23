@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-23T17:59:37Z
+---
+
+## step-2: Changed both save call sites (NewThemeDialog.handleCreate and performSave) to send ThemeRecipe directly as JSON body instead of wrapping with JSON.stringify(recipe). Updated theme-export-import test assertions.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
 step: step-1
 date: 2025-03-23T17:52:21Z
 ---
