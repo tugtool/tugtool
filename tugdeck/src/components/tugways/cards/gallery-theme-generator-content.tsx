@@ -82,8 +82,6 @@ import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import { TugInput } from "@/components/tugways/tug-input";
-import { TugLabel } from "@/components/tugways/tug-label";
-import { Info, Ellipsis, ChevronDown, X, LayoutDashboard, MessageSquare } from "lucide-react";
 import { loadSavedThemes, useOptionalThemeContext } from "@/contexts/theme-provider";
 import "./gallery-theme-generator-content.css";
 
@@ -1177,7 +1175,7 @@ function EmphasisRolePreview() {
 }
 
 // ---------------------------------------------------------------------------
-// ThemePreviewCard — annotated preview with surface/text/role color pickers
+// ThemePreviewCard — color pickers for surface/text/role hues
 // ---------------------------------------------------------------------------
 
 function ThemePreviewCard({
@@ -1189,7 +1187,6 @@ function ThemePreviewCard({
   roleIntensity,
   onRoleToneChange,
   onRoleIntensityChange,
-  liveTokenStyle,
   disabled,
 }: {
   resolvedColor: (key: string) => string;
@@ -1218,123 +1215,12 @@ function ThemePreviewCard({
   roleIntensity: number;
   onRoleToneChange: (t: number) => void;
   onRoleIntensityChange: (i: number) => void;
-  liveTokenStyle: React.CSSProperties;
   disabled?: boolean;
 }) {
   const roleRepresentativeHue = roles[0]?.hue ?? "blue";
 
   return (
     <div className="gtg-annotated-preview" data-testid="gtg-theme-preview">
-
-      {/* ---- Center: preview card on canvas (only this gets live tokens) ---- */}
-      <div className="gtg-preview-main">
-        <div className="gtg-preview-canvas" style={liveTokenStyle}>
-          {/* ---- Active sample card ---- */}
-          <div className="card-frame" data-focused="true">
-          <div className="tugcard" style={{ height: "auto" }}>
-            <div className="tugcard-title-bar" style={{ cursor: "default" }}>
-              <span className="tugcard-icon"><LayoutDashboard /></span>
-              <span className="tugcard-title">Sample Card</span>
-              <div className="card-title-bar-controls">
-                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Card menu"><Ellipsis /></button>
-                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Collapse card"><ChevronDown /></button>
-                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Close card"><X /></button>
-              </div>
-            </div>
-            <div className="tugcard-body">
-              <div className="tugcard-accessory">
-                <div className="tug-tab-bar" style={{ position: "static" }}>
-                  <button className="tug-tab" data-active="true" type="button"><span className="tug-tab-title">Overview</span></button>
-                  <button className="tug-tab" type="button"><span className="tug-tab-title">Details</span></button>
-                  <button className="tug-tab" type="button"><span className="tug-tab-title">Settings</span></button>
-                </div>
-              </div>
-              <div className="tugcard-content" style={{ overflow: "visible" }}>
-                <div className="gtg-preview-content">
-                  <div className="gtg-preview-header">
-                    <span className="gtg-preview-title">Project Dashboard</span>
-                    <div className="gtg-preview-header-actions">
-                      <TugBadge emphasis="filled" role="success">active</TugBadge>
-                      <TugBadge emphasis="outlined" role="data">3 items</TugBadge>
-                    </div>
-                  </div>
-                  <div className="gtg-preview-body">
-                    <span>Default text on the primary surface. </span>
-                    <span className="gtg-preview-muted">Muted text for secondary. </span>
-                    <span className="gtg-preview-subtle">Subtle for tertiary.</span>
-                  </div>
-                  <div className="gtg-preview-divider" />
-                  <div className="gtg-preview-inset">
-                    <div className="gtg-preview-inline-row">
-                      <TugCheckbox role="success" checked aria-label="complete" />
-                      <span>Build passed</span>
-                      <TugBadge emphasis="filled" role="success">pass</TugBadge>
-                    </div>
-                    <div className="gtg-preview-inline-row">
-                      <TugCheckbox role="danger" aria-label="failing" />
-                      <span>Tests failing</span>
-                      <TugBadge emphasis="filled" role="danger">fail</TugBadge>
-                    </div>
-                  </div>
-                  <div className="gtg-preview-divider" />
-                  <div className="gtg-preview-inline-row">
-                    <TugSwitch label="Auto-deploy" defaultChecked />
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                    <TugLabel htmlFor="gtg-preview-env" icon={<Info />}>Environment</TugLabel>
-                    <TugInput id="gtg-preview-env" size="sm" placeholder="production" />
-                  </div>
-                  <div className="gtg-preview-divider" />
-                  <div className="gtg-preview-action-row">
-                    <TugButton emphasis="outlined" role="action" size="sm">Cancel</TugButton>
-                    <TugButton emphasis="filled" role="action" size="sm">Deploy</TugButton>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          </div>
-
-          {/* ---- Inactive chat card ---- */}
-          <div className="card-frame" data-focused="false">
-          <div className="tugcard" style={{ height: "auto" }}>
-            <div className="tugcard-title-bar" style={{ cursor: "default" }}>
-              <span className="tugcard-icon"><MessageSquare /></span>
-              <span className="tugcard-title">Chat</span>
-              <div className="card-title-bar-controls">
-                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Card menu"><Ellipsis /></button>
-                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Collapse card"><ChevronDown /></button>
-                <button type="button" className="tug-button tug-button-ghost-action tug-button-icon-sm" aria-label="Close card"><X /></button>
-              </div>
-            </div>
-            <div className="tugcard-body">
-              <div className="tugcard-content" style={{ overflow: "visible" }}>
-                <div className="gtg-chat-content">
-                  <div className="gtg-chat-messages">
-                    <div className="gtg-chat-bubble gtg-chat-bubble--received">
-                      How is the migration going?
-                    </div>
-                    <div className="gtg-chat-bubble gtg-chat-bubble--sent">
-                      All tests pass. Ready to deploy.
-                    </div>
-                    <div className="gtg-chat-bubble gtg-chat-bubble--received">
-                      Great, go ahead and push to staging first.
-                    </div>
-                  </div>
-                  <div className="gtg-preview-divider" />
-                  <div className="gtg-chat-input-row">
-                    <TugInput size="sm" placeholder="Type a message..." />
-                    <TugButton emphasis="filled" role="accent" size="sm">Submit</TugButton>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ---- Color pickers: two columns below preview ---- */}
       <div className="gtg-picker-columns">
         {/* Left column: Surface + Text */}
         <div className="gtg-hue-column">
@@ -2269,13 +2155,12 @@ export function GalleryThemeGeneratorContent() {
         )}
       </div>
 
-      {/* ---- Preview + hue pickers ---- */}
+      {/* ---- Color pickers ---- */}
       <div data-testid="gtg-role-hues">
         <div className="cg-section">
-          <div className="cg-section-title">Preview</div>
+          <div className="cg-section-title">Colors</div>
           <ThemePreviewCard
             resolvedColor={resolvedColor}
-            liveTokenStyle={liveTokenStyle}
             disabled={isReadOnly}
             surface={[
               { key: "canvas", label: "Canvas", hue: canvasHue, tone: canvasTone, intensity: canvasIntensity, setHue: setCanvasHue, setTone: setCanvasTone, setIntensity: setCanvasIntensity, testId: "gtg-canvas-hue" },
