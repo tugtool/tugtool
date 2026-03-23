@@ -7,7 +7,6 @@ import type { ThemeSpec, DerivationFormulas } from "../theme-engine";
 /**
  * Produces DerivationFormulas for a dark theme recipe.
  *
- * All fields are computed from recipe inputs via tone offsets and constants.
  * contentTextTone uses canvas+89 (a design intent offset → ~94, near-white)
  * rather than contrastSearch: the design calls for near-white text on dark
  * backgrounds, well above the minimum contrast-passing tone.
