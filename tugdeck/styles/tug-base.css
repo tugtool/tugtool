@@ -22,6 +22,7 @@
  */
 
 @import './tug-base-generated.css';
+@import './tug-theme-override.css';
 
 /* ============================================================================
    Font Declarations
