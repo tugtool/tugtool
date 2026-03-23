@@ -68,14 +68,14 @@ You receive a JSON payload matching Spec S01:
 ```json
 {
   "plan_path": ".tugtool/tugplan-<slug>.md",
-  "skeleton_path": ".tugtool/tugplan-skeleton.md"
+  "skeleton_path": "tuglaws/tugplan-skeleton.md"
 }
 ```
 
 | Field | Description |
 |-------|-------------|
 | `plan_path` | Path to the plan to check |
-| `skeleton_path` | Path to skeleton (always `.tugtool/tugplan-skeleton.md`) |
+| `skeleton_path` | Path to skeleton (always `tuglaws/tugplan-skeleton.md`) |
 
 ### Resume
 

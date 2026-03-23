@@ -329,7 +329,7 @@ Dispatch both agents in a single message with two Task calls.
 ```
 Task(
   subagent_type: "tugplug:conformance-agent",
-  prompt: '{"plan_path": "<path from author>", "skeleton_path": ".tugtool/tugplan-skeleton.md"}',
+  prompt: '{"plan_path": "<path from author>", "skeleton_path": "tuglaws/tugplan-skeleton.md"}',
   description: "Check plan conformance"
 )
 Task(

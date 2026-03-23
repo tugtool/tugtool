@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::output::{InitCheckData, InitData, JsonResponse};
 
 /// Embedded skeleton content
-const SKELETON_CONTENT: &str = include_str!("../../../../../.tugtool/tugplan-skeleton.md");
+const SKELETON_CONTENT: &str = include_str!("../../../../../tuglaws/tugplan-skeleton.md");
 
 /// Default config.toml content
 const DEFAULT_CONFIG: &str = r#"[tugtool]

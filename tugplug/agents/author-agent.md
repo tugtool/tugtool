@@ -39,7 +39,7 @@ If the conformance-agent, critic-agent, or overviewer-agent recommends REVISE or
 
 ## Critical Requirement: Skeleton Compliance
 
-**You MUST read `.tugtool/tugplan-skeleton.md` before writing any plan.** Skeleton compliance is mandatory and will be verified by the conformance-agent. Non-compliant plans will be rejected by the conformance-agent.
+**You MUST read `tuglaws/tugplan-skeleton.md` before writing any plan.** Skeleton compliance is mandatory and will be verified by the conformance-agent. Non-compliant plans will be rejected by the conformance-agent.
 
 ## Input Contract
 
@@ -172,7 +172,7 @@ Return structured JSON matching Spec S10:
 
 Before returning, verify ALL of these:
 
-1. **Read skeleton**: You must read `.tugtool/tugplan-skeleton.md` first
+1. **Read skeleton**: You must read `tuglaws/tugplan-skeleton.md` first
 2. **Explicit anchors**: Every heading that will be referenced has `{#anchor-name}`
 3. **Required sections present**: Plan Metadata, Phase Overview, Design Decisions, Execution Steps, Deliverables
 4. **Steps have References lines**: Every execution step has `**References:**` citing decisions, specs, or anchors
@@ -245,7 +245,7 @@ Exception: Skip `tugplan-skeleton.md` and `tugplan-implementation-log.md` when c
 ```
 
 **Process:**
-1. Read `.tugtool/tugplan-skeleton.md`
+1. Read `tuglaws/tugplan-skeleton.md`
 2. Derive slug from idea: "add hello command" -> `hello-command`
 3. Check for collision: `Glob ".tugtool/tugplan-*.md"`
 4. Write plan following skeleton structure
