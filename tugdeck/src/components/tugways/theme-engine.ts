@@ -278,8 +278,6 @@ export interface ThemeColorSpec {
  */
 export interface ThemeRecipe {
   name: string;
-  /** Human-readable description of the design intent for this theme. */
-  description: string;
   recipe: "dark" | "light";
 
   surface: {
@@ -2969,7 +2967,7 @@ function simpleHashForEngine(str: string): string {
  * --tug-color() notation, suitable for saving themes to disk and loading
  * them at runtime without the PostCSS plugin. [D03] Resolved oklch() CSS.
  *
- * - Header comment with @theme-name, @theme-description, date, recipe hash
+ * - Header comment with @theme-name, date, recipe hash
  * - `body { }` block with all resolved --tug-* tokens as oklch() values
  *
  * Exported for unit testing.
@@ -2985,7 +2983,6 @@ export function generateResolvedCssExport(
   const header = [
     "/**",
     ` * @theme-name ${recipe.name}`,
-    ` * @theme-description ${recipe.description}`,
     ` * @generated ${dateStr}`,
     ` * @recipe-hash ${hash}`,
     " *",

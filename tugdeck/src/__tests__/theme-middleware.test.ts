@@ -41,7 +41,6 @@ const FAKE_USER_DIR = "/fake/home/.tugtool/themes";
 function makeBrioJson(): string {
   return JSON.stringify({
     name: "brio",
-    description: "Deep, immersive dark theme.",
     recipe: "dark",
     surface: { canvas: { hue: "indigo-violet", tone: 5, intensity: 5 } },
     text: { hue: "cobalt", intensity: 3 },
@@ -52,7 +51,6 @@ function makeBrioJson(): string {
 function makeHarmonyJson(): string {
   return JSON.stringify({
     name: "harmony",
-    description: "Bright, open light theme.",
     recipe: "light",
     surface: { canvas: { hue: "indigo-violet", tone: 95, intensity: 6 } },
     text: { hue: "cobalt", intensity: 4 },
@@ -63,7 +61,6 @@ function makeHarmonyJson(): string {
 function makeAuthoredJson(name: string): string {
   return JSON.stringify({
     name,
-    description: "An authored theme.",
     recipe: "dark",
     surface: { canvas: { hue: "orange", tone: 10, intensity: 3 } },
     text: { hue: "orange", intensity: 2 },

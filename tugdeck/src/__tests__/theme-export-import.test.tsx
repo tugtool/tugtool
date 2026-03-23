@@ -94,7 +94,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   });
 
   it("validateRecipeJson returns error for wrong recipe ('sepia')", () => {
-    const bad = { name: "X", description: "Test.", recipe: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", recipe: "sepia", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
@@ -104,29 +104,29 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   });
 
   it("validateRecipeJson returns error for missing surface group", () => {
-    const bad = { name: "X", description: "Test.", recipe: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const bad = { name: "X", recipe: "dark", element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson migrates old-format recipe without element group", () => {
-    const recipe: Record<string, unknown> = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const recipe: Record<string, unknown> = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(recipe)).toBeNull();
     expect(typeof (recipe["surface"] as Record<string, unknown>)["canvas"]).toBe("object");
   });
 
   it("validateRecipeJson ignores legacy surfaceContrast field", () => {
-    const legacy = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, surfaceContrast: "high" };
+    const legacy = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, surfaceContrast: "high" };
     expect(validateRecipeJson(legacy)).toBeNull();
   });
 
   it("validateRecipeJson ignores legacy roleIntensity field", () => {
-    const legacy = { name: "X", description: "Test.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, roleIntensity: "vivid" };
+    const legacy = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" }, roleIntensity: "vivid" };
     expect(validateRecipeJson(legacy)).toBeNull();
   });
 
   it("validateRecipeJson accepts both 'dark' and 'light' modes", () => {
-    const dark = { name: "X", description: "Dark test theme.", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
-    const light = { name: "X", description: "Light test theme.", recipe: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const dark = { name: "X", recipe: "dark", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
+    const light = { name: "X", recipe: "light", surface: { canvas: "red", card: "red" }, element: { content: "blue", control: "blue", display: "indigo", informational: "red", border: "red", decorative: "gray" }, role: { accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" } };
     expect(validateRecipeJson(dark)).toBeNull();
     expect(validateRecipeJson(light)).toBeNull();
   });
@@ -134,7 +134,6 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   it("validateRecipeJson migrates old-format recipe with controls object into new surface/role structure", () => {
     const legacy: Record<string, unknown> = {
       name: "ControlsMigrationTheme",
-      description: "Old-format theme with controls object for migration testing.",
       recipe: "dark",
       surface: { canvas: "teal", card: "teal" },
       element: { content: "cobalt", control: "cobalt", display: "indigo", informational: "teal", border: "teal", decorative: "gray" },

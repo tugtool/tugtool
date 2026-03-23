@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-23T17:52:21Z
+---
+
+## step-1: Removed description field from ThemeRecipe interface, shipped theme JSON files, CSS header generation, brio.css comment, validateRecipeJson, and all test fixtures.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
 step: step-11
 date: 2025-03-23T15:50:34Z
 ---
