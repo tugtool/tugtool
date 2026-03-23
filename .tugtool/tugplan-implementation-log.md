@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-23T18:41:19Z
+---
+
+## step-7: Final verification: tsc --noEmit clean, 64 theme tests pass, generate:tokens clean, audit:tokens zero violations, bun run build exits 0.
+
+**Files changed:**
+- .tugtool/tugplan-theme-save-format-fix.md
+
+---
+
+---
 step: step-6
 date: 2025-03-23T18:34:09Z
 ---
