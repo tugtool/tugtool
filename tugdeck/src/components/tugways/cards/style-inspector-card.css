@@ -17,8 +17,7 @@
  * | --tug-element-global-text-normal-muted-rest            | --tug-surface-global-primary-normal-content-rest        | informational | Row labels and dim text                |
  * | --tug-element-tone-text-normal-success-rest            | --tug-surface-global-primary-normal-content-rest        | content      | Chain resolved value text (green)       |
  * | --tug-element-tone-text-normal-accent-rest             | --tug-surface-global-primary-normal-content-rest        | content      | Terminal value display (orange)         |
- * | --tug-element-control-text-outlined-action-rest        | --tug-surface-control-primary-outlined-action-rest      | control      | Inspect button text (rest)              |
- * | --tug-element-control-text-outlined-action-rest        | --tug-surface-global-primary-normal-raised-rest         | control      | Inspect button text (active state)      |
+ * | --tug-element-global-text-normal-subtle-rest           | --tug-surface-global-primary-normal-raised-rest         | informational | Hint text in toolbar (scanning state)   |
  */
 
 /* ---------------------------------------------------------------------------
@@ -53,40 +52,18 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Inspect button (renamed from reticle-button)
+   Hint text -- shown in toolbar during scanning state
    --------------------------------------------------------------------------- */
 
-.si-card-inspect-button {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  background: var(--tug-surface-control-primary-outlined-action-rest);
-  border: 1px solid var(--tug-element-control-border-outlined-action-rest);
-  border-radius: 4px;
-  color: var(--tug-element-control-text-outlined-action-rest);
+.si-card-hint {
   font-family: var(--tug-font-family-mono);
-  font-size: 10px;
-  cursor: pointer;
-  transition: background var(--tug-motion-duration-fast) ease,
-    border-color var(--tug-motion-duration-fast) ease,
-    color var(--tug-motion-duration-fast) ease;
-  user-select: none;
-}
-
-.si-card-inspect-button:hover {
-  background: var(--tug-surface-control-primary-outlined-action-hover);
-  border-color: var(--tug-element-control-border-outlined-action-hover);
-}
-
-.si-card-inspect-button--active {
-  background: var(--tug-surface-global-primary-normal-raised-rest);
-  border-color: var(--tug-element-control-border-outlined-action-active);
-  color: var(--tug-element-control-text-outlined-action-active);
-}
-
-.si-card-inspect-button--active:hover {
-  background: var(--tug-surface-control-primary-outlined-action-hover);
+  font-size: 9px;
+  color: var(--tug-element-global-text-normal-subtle-rest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---------------------------------------------------------------------------

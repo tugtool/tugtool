@@ -254,6 +254,64 @@ describe("ScanModeController -- suppression graceful without deck-container", ()
 });
 
 // ---------------------------------------------------------------------------
+// ScanModeController -- Cmd+Click passthrough
+// ---------------------------------------------------------------------------
+
+describe("ScanModeController -- Cmd+Click passthrough", () => {
+  let ctrl: ScanModeController;
+
+  beforeEach(() => {
+    ctrl = new ScanModeController();
+  });
+
+  afterEach(() => {
+    if (ctrl.isActive) {
+      ctrl.deactivate();
+    }
+    if (ctrl.overlayEl.parentNode) {
+      ctrl.overlayEl.parentNode.removeChild(ctrl.overlayEl);
+    }
+    if (ctrl.highlightEl.parentNode) {
+      ctrl.highlightEl.parentNode.removeChild(ctrl.highlightEl);
+    }
+  });
+
+  it("Cmd+Click (metaKey) sets overlay pointer-events to none and does not deactivate", () => {
+    const onSelect = (_el: HTMLElement) => {};
+    ctrl.activate(onSelect);
+
+    // Verify overlay is active with pointer-events: auto initially
+    expect(ctrl.isActive).toBe(true);
+
+    // Dispatch a click with metaKey = true on the overlay
+    const clickEvent = new MouseEvent("click", { bubbles: true, metaKey: true, clientX: 100, clientY: 100 });
+    ctrl.overlayEl.dispatchEvent(clickEvent);
+
+    // Cmd+Click should NOT deactivate scan mode
+    expect(ctrl.isActive).toBe(true);
+
+    // Overlay pointer-events should be none immediately after the metaKey click
+    expect(ctrl.overlayEl.style.pointerEvents).toBe("none");
+  });
+
+  it("normal click (no metaKey) on overlay does not prevent deactivation path", () => {
+    // This tests that the normal click path still runs (though elementFromPoint
+    // returns null in happy-dom, so the callback won't be invoked). The important
+    // thing is the metaKey guard doesn't interfere.
+    let selected = false;
+    ctrl.activate((_el: HTMLElement) => { selected = true; });
+
+    const clickEvent = new MouseEvent("click", { bubbles: true, metaKey: false, clientX: 50, clientY: 50 });
+    ctrl.overlayEl.dispatchEvent(clickEvent);
+
+    // In happy-dom, elementFromPoint returns null, so deactivate is NOT called
+    // and the callback is NOT invoked. The scan remains active.
+    // This verifies the normal path is reachable without errors.
+    expect(selected).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // ScanModeController -- keepHighlight option
 // ---------------------------------------------------------------------------
 

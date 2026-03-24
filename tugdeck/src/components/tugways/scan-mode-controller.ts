@@ -231,11 +231,27 @@ export class ScanModeController {
   /**
    * Handle click on the overlay.
    *
-   * Identifies the real element under cursor using the same pointer-events
-   * suppression technique, calls the onSelect callback, and deactivates
-   * while keeping the highlight rect in the DOM for the caller to pin.
+   * If metaKey (Cmd) is held, the click passes through to the underlying element
+   * as a normal click instead of triggering element selection. This lets users
+   * Cmd+Click on card title bars or other UI chrome during scan mode without
+   * accidentally selecting them for inspection.
+   *
+   * Otherwise, identifies the real element under cursor using the same
+   * pointer-events suppression technique, calls the onSelect callback, and
+   * deactivates while keeping the highlight rect in the DOM for the caller to pin.
    */
   private _handleClick(e: MouseEvent): void {
+    // Cmd+Click passthrough: let the click reach the real target normally.
+    if (e.metaKey) {
+      this.overlayEl.style.pointerEvents = "none";
+      requestAnimationFrame(() => {
+        if (this.active) {
+          this.overlayEl.style.pointerEvents = "auto";
+        }
+      });
+      return;
+    }
+
     // Find the real target (same technique as pointermove)
     this.overlayEl.style.pointerEvents = "none";
     const el = document.elementFromPoint(e.clientX, e.clientY);

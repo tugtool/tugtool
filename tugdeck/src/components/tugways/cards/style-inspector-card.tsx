@@ -42,6 +42,8 @@
  */
 
 import React, { useRef, useState, useCallback, useEffect } from "react";
+import { Crosshair } from "lucide-react";
+import { TugButton } from "@/components/tugways/tug-button";
 import { ScanModeController } from "@/components/tugways/scan-mode-controller";
 import {
   resolveTokenChainForProperty,
@@ -510,11 +512,15 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     mode === "inspecting" ? "Done Inspecting" :
     "Inspect Element";
 
-  // Button CSS class -- active style for both scanning and inspecting
-  const buttonClass =
-    mode === "rest"
-      ? "si-card-inspect-button"
-      : "si-card-inspect-button si-card-inspect-button--active";
+  // Button emphasis/role by mode -- scanning gets a visually distinct style
+  const buttonEmphasis = mode === "scanning" ? "filled" : "outlined";
+  const buttonRole = mode === "scanning" ? "danger" : "action";
+
+  // Hint text shown only during scanning state
+  const hintText =
+    mode === "scanning"
+      ? "Click to inspect \u00B7 \u2318-click for normal click \u00B7 \u2325 suppresses hover"
+      : "";
 
   // aria-pressed reflects active scanning/inspecting state
   const ariaPressed = mode !== "rest";
@@ -528,10 +534,14 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
       className="si-card-content"
       data-testid="style-inspector-content"
     >
-      {/* Toolbar with inspect button */}
+      {/* Toolbar with inspect button and hint text */}
       <div className="si-card-toolbar">
-        <button
-          className={buttonClass}
+        <TugButton
+          subtype="icon-text"
+          emphasis={buttonEmphasis}
+          role={buttonRole}
+          size="sm"
+          icon={<Crosshair size={13} aria-hidden="true" />}
           onClick={handleInspectButtonClick}
           title={
             mode === "scanning" ? "Cancel element inspection" :
@@ -546,23 +556,13 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
             "Inspect an element"
           }
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.2" />
-            <circle cx="7" cy="7" r="2" fill="currentColor" />
-            <line x1="7" y1="0" x2="7" y2="3" stroke="currentColor" strokeWidth="1.2" />
-            <line x1="7" y1="11" x2="7" y2="14" stroke="currentColor" strokeWidth="1.2" />
-            <line x1="0" y1="7" x2="3" y2="7" stroke="currentColor" strokeWidth="1.2" />
-            <line x1="11" y1="7" x2="14" y2="7" stroke="currentColor" strokeWidth="1.2" />
-          </svg>
-          <span>{buttonLabel}</span>
-        </button>
+          {buttonLabel}
+        </TugButton>
+        {hintText && (
+          <span className="si-card-hint" data-testid="style-inspector-hint">
+            {hintText}
+          </span>
+        )}
       </div>
 
       {/* Content area */}

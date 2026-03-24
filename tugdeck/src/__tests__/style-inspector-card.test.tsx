@@ -136,7 +136,7 @@ describe("StyleInspectorContent -- T-SI-03: inspect button is present", () => {
     expect(inspectBtn).not.toBeNull();
   });
 
-  it("inspect button is initially not in active state", () => {
+  it("inspect button is a TugButton (has tug-button class)", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-5" />));
@@ -144,8 +144,8 @@ describe("StyleInspectorContent -- T-SI-03: inspect button is present", () => {
 
     const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
     expect(inspectBtn).not.toBeNull();
-    // Rest state: no --active modifier
-    expect(inspectBtn!.classList.contains("si-card-inspect-button--active")).toBe(false);
+    // TugButton renders with the tug-button base class
+    expect(inspectBtn!.classList.contains("tug-button")).toBe(true);
   });
 
   it("inspect button has aria-label attribute", () => {
@@ -171,7 +171,7 @@ describe("StyleInspectorContent -- T-SI-03: inspect button is present", () => {
     expect(wrapper).not.toBeNull();
   });
 
-  it("inspect button has si-card-inspect-button class (not reticle-button)", () => {
+  it("inspect button uses outlined-action emphasis in rest state", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-8" />));
@@ -179,8 +179,8 @@ describe("StyleInspectorContent -- T-SI-03: inspect button is present", () => {
 
     const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
     expect(inspectBtn).not.toBeNull();
-    expect(inspectBtn!.classList.contains("si-card-inspect-button")).toBe(true);
-    expect(inspectBtn!.classList.contains("si-card-reticle-button")).toBe(false);
+    // Rest state: outlined-action TugButton variant
+    expect(inspectBtn!.classList.contains("tug-button-outlined-action")).toBe(true);
   });
 });
 
@@ -213,9 +213,9 @@ describe("StyleInspectorContent -- T-SI-04: button labels by state", () => {
       fireEvent.click(inspectBtn!);
     });
 
-    // Should now show "Cancel Inspection"
+    // Should now show "Cancel Inspection" with filled-danger TugButton variant
     expect(inspectBtn!.textContent).toContain("Cancel Inspection");
-    expect(inspectBtn!.classList.contains("si-card-inspect-button--active")).toBe(true);
+    expect(inspectBtn!.classList.contains("tug-button-filled-danger")).toBe(true);
   });
 
   it("button shows aria-pressed=true in scanning state", () => {
@@ -258,6 +258,61 @@ describe("StyleInspectorContent -- T-SI-04: button labels by state", () => {
       fireEvent.click(inspectBtn!);
     });
     expect(inspectBtn!.textContent).toContain("Inspect Element");
-    expect(inspectBtn!.classList.contains("si-card-inspect-button--active")).toBe(false);
+    // Back to outlined-action in rest state
+    expect(inspectBtn!.classList.contains("tug-button-outlined-action")).toBe(true);
+  });
+});
+
+// ============================================================================
+// T-SI-05: Hint text presence by state
+// ============================================================================
+
+describe("StyleInspectorContent -- T-SI-05: hint text by state", () => {
+  it("no hint text in rest state", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-13" />));
+    });
+
+    const hint = container.querySelector("[data-testid='style-inspector-hint']");
+    expect(hint).toBeNull();
+  });
+
+  it("hint text appears in scanning state", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-14" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+
+    const hint = container.querySelector("[data-testid='style-inspector-hint']");
+    expect(hint).not.toBeNull();
+    expect(hint!.textContent).toContain("\u2318-click");
+    expect(hint!.textContent).toContain("\u2325");
+  });
+
+  it("hint text disappears after cancelling scan", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-15" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+
+    // Enter scanning
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+    expect(container.querySelector("[data-testid='style-inspector-hint']")).not.toBeNull();
+
+    // Cancel scanning
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+    expect(container.querySelector("[data-testid='style-inspector-hint']")).toBeNull();
   });
 });
