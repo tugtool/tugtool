@@ -5,7 +5,7 @@
  * - activate() appends overlay and highlight to body; deactivate() removes them
  * - isActive reflects current state
  * - calling deactivate() when not active is a no-op
- * - Alt keydown toggles tug-scan-hover-suppressed class on #deck-container
+ * - Escape key deactivates scan mode and invokes onCancel callback
  * - deactivate({ keepHighlight: true }) leaves highlightEl in DOM
  *
  * Note: Tests use happy-dom (preloaded via bunfig.toml). DOM globals are
@@ -13,34 +13,14 @@
  *
  * happy-dom does not implement elementFromPoint (returns null). Tests that
  * exercise pointermove/click event paths are constrained to verifying
- * DOM-visible side effects (overlay presence, suppression class) and skip
- * assertions that depend on elementFromPoint returning a non-null element.
+ * DOM-visible side effects (overlay presence) and skip assertions that depend
+ * on elementFromPoint returning a non-null element.
  */
 
 import "./setup-rtl";
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { ScanModeController } from "@/components/tugways/scan-mode-controller";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Create a #deck-container div and append it to document.body for tests. */
-function createDeckContainer(): HTMLDivElement {
-  const el = document.createElement("div");
-  el.id = "deck-container";
-  document.body.appendChild(el);
-  return el;
-}
-
-/** Remove a #deck-container previously created by createDeckContainer(). */
-function removeDeckContainer(): void {
-  const el = document.getElementById("deck-container");
-  if (el && el.parentNode) {
-    el.parentNode.removeChild(el);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // ScanModeController -- activate / deactivate lifecycle
@@ -168,88 +148,6 @@ describe("ScanModeController -- deactivate when not active", () => {
     ctrl.deactivate();
     // Body should not have gained any elements
     expect(document.body.childElementCount).toBe(bodyChildrenBefore);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// ScanModeController -- Alt key toggles suppression class
-// ---------------------------------------------------------------------------
-
-describe("ScanModeController -- Alt key toggles hover suppression", () => {
-  let ctrl: ScanModeController;
-  let deckContainer: HTMLDivElement;
-
-  beforeEach(() => {
-    ctrl = new ScanModeController();
-    deckContainer = createDeckContainer();
-    ctrl.activate(() => {});
-  });
-
-  afterEach(() => {
-    if (ctrl.isActive) {
-      ctrl.deactivate();
-    }
-    removeDeckContainer();
-  });
-
-  it("Alt keydown adds tug-scan-hover-suppressed to #deck-container", () => {
-    expect(deckContainer.classList.contains("tug-scan-hover-suppressed")).toBe(false);
-
-    const altDown = new KeyboardEvent("keydown", { key: "Alt", bubbles: true });
-    document.dispatchEvent(altDown);
-
-    expect(deckContainer.classList.contains("tug-scan-hover-suppressed")).toBe(true);
-  });
-
-  it("Alt keyup removes tug-scan-hover-suppressed from #deck-container", () => {
-    // Add the class first via keydown
-    const altDown = new KeyboardEvent("keydown", { key: "Alt", bubbles: true });
-    document.dispatchEvent(altDown);
-    expect(deckContainer.classList.contains("tug-scan-hover-suppressed")).toBe(true);
-
-    // Now keyup should remove it
-    const altUp = new KeyboardEvent("keyup", { key: "Alt", bubbles: true });
-    document.dispatchEvent(altUp);
-    expect(deckContainer.classList.contains("tug-scan-hover-suppressed")).toBe(false);
-  });
-
-  it("deactivate() removes tug-scan-hover-suppressed if it was active", () => {
-    const altDown = new KeyboardEvent("keydown", { key: "Alt", bubbles: true });
-    document.dispatchEvent(altDown);
-    expect(deckContainer.classList.contains("tug-scan-hover-suppressed")).toBe(true);
-
-    ctrl.deactivate();
-    expect(deckContainer.classList.contains("tug-scan-hover-suppressed")).toBe(false);
-  });
-
-  it("non-Alt keydown does not toggle suppression class", () => {
-    const otherKey = new KeyboardEvent("keydown", { key: "Shift", bubbles: true });
-    document.dispatchEvent(otherKey);
-    expect(deckContainer.classList.contains("tug-scan-hover-suppressed")).toBe(false);
-  });
-
-  it("Escape keydown deactivates scan mode", () => {
-    expect(ctrl.isActive).toBe(true);
-    const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true });
-    document.dispatchEvent(escKey);
-    expect(ctrl.isActive).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// ScanModeController -- suppression class absent when #deck-container missing
-// ---------------------------------------------------------------------------
-
-describe("ScanModeController -- suppression graceful without deck-container", () => {
-  it("Alt keydown does not throw when #deck-container is not in the DOM", () => {
-    const ctrl = new ScanModeController();
-    ctrl.activate(() => {});
-
-    // No #deck-container in the DOM -- should not throw
-    const altDown = new KeyboardEvent("keydown", { key: "Alt", bubbles: true });
-    expect(() => document.dispatchEvent(altDown)).not.toThrow();
-
-    ctrl.deactivate();
   });
 });
 

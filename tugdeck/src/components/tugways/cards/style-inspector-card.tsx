@@ -392,7 +392,6 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     }
     ctrl.highlightEl.style.display = "none";
     ctrl.highlightEl.classList.remove("tug-inspector-highlight--pinned");
-    ctrl.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
   }, []);
 
   /**
@@ -407,7 +406,6 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     pinnedElementRef.current = el;
 
     // Switch to pinned visual style
-    ctrl.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
     ctrl.highlightEl.classList.add("tug-inspector-highlight--pinned");
 
     // Update position immediately
@@ -624,11 +622,11 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
   const buttonEmphasis = mode === "scanning" ? "outlined" : "ghost";
   const buttonRole = "action";
 
-  // Hint text shown only during scanning state
+  // Hint text shown contextually by state
   const hintText =
-    mode === "scanning"
-      ? "Esc to cancel \u00B7 Opt no hover"
-      : "";
+    mode === "rest" ? "\u2325\u2318E to scan" :
+    mode === "scanning" ? "Esc to cancel" :
+    "";
 
   // aria-pressed reflects active scanning/inspecting state
   const ariaPressed = mode !== "rest";

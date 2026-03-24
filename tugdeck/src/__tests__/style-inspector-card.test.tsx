@@ -268,17 +268,18 @@ describe("StyleInspectorContent -- T-SI-04: button labels by state", () => {
 // ============================================================================
 
 describe("StyleInspectorContent -- T-SI-05: hint text by state", () => {
-  it("no hint text in rest state", () => {
+  it("hint text shows in rest state with keyboard shortcut", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-13" />));
     });
 
     const hint = container.querySelector("[data-testid='style-inspector-hint']");
-    expect(hint).toBeNull();
+    expect(hint).not.toBeNull();
+    expect(hint!.textContent).toContain("to scan");
   });
 
-  it("hint text appears in scanning state", () => {
+  it("hint text shows 'Esc to cancel' in scanning state", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-14" />));
@@ -292,10 +293,9 @@ describe("StyleInspectorContent -- T-SI-05: hint text by state", () => {
     const hint = container.querySelector("[data-testid='style-inspector-hint']");
     expect(hint).not.toBeNull();
     expect(hint!.textContent).toContain("Esc to cancel");
-    expect(hint!.textContent).toContain("Opt no hover");
   });
 
-  it("hint text disappears after cancelling scan", () => {
+  it("hint text returns to rest hint after cancelling scan", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-15" />));
@@ -307,13 +307,17 @@ describe("StyleInspectorContent -- T-SI-05: hint text by state", () => {
     act(() => {
       fireEvent.click(inspectBtn!);
     });
-    expect(container.querySelector("[data-testid='style-inspector-hint']")).not.toBeNull();
+    const scanHint = container.querySelector("[data-testid='style-inspector-hint']");
+    expect(scanHint).not.toBeNull();
+    expect(scanHint!.textContent).toContain("Esc to cancel");
 
-    // Cancel scanning
+    // Cancel scanning — back to rest hint
     act(() => {
       fireEvent.click(inspectBtn!);
     });
-    expect(container.querySelector("[data-testid='style-inspector-hint']")).toBeNull();
+    const restHint = container.querySelector("[data-testid='style-inspector-hint']");
+    expect(restHint).not.toBeNull();
+    expect(restHint!.textContent).toContain("to scan");
   });
 });
 
@@ -348,7 +352,7 @@ describe("StyleInspectorContent -- T-SI-06: Escape key cancels scanning", () => 
     expect(inspectBtn!.classList.contains("tug-button-ghost-action")).toBe(true);
   });
 
-  it("Escape key during scanning removes the hint text", () => {
+  it("Escape key during scanning reverts hint text to rest hint", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-17" />));
@@ -360,7 +364,9 @@ describe("StyleInspectorContent -- T-SI-06: Escape key cancels scanning", () => 
     act(() => {
       fireEvent.click(inspectBtn!);
     });
-    expect(container.querySelector("[data-testid='style-inspector-hint']")).not.toBeNull();
+    const scanHint = container.querySelector("[data-testid='style-inspector-hint']");
+    expect(scanHint).not.toBeNull();
+    expect(scanHint!.textContent).toContain("Esc to cancel");
 
     // Press Escape to cancel
     act(() => {
@@ -368,8 +374,10 @@ describe("StyleInspectorContent -- T-SI-06: Escape key cancels scanning", () => 
       document.dispatchEvent(escKey);
     });
 
-    // Hint should be gone
-    expect(container.querySelector("[data-testid='style-inspector-hint']")).toBeNull();
+    // Hint reverts to rest hint (not gone — rest state shows shortcut hint)
+    const restHint = container.querySelector("[data-testid='style-inspector-hint']");
+    expect(restHint).not.toBeNull();
+    expect(restHint!.textContent).toContain("to scan");
   });
 
   it("Escape key in rest state (not scanning) does not throw", () => {

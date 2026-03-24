@@ -9,8 +9,6 @@
  * Design decisions:
  *   [D02] Scan overlay DOM -- the overlay and highlight rect are direct DOM elements
  *         on `document.body`, not React-managed (L06).
- *   [D05] Option-key hover suppression -- pointer-events toggling + elementFromPoint,
- *         no React state involvement (L06).
  *
  * **Authoritative references:**
  *   Spec S03 (#scan-mode-controller)
@@ -27,9 +25,6 @@ import "./style-inspector-overlay.css";
 
 /** z-index for the scan overlay (sits below the highlight rect at 999998). */
 const OVERLAY_Z_INDEX = "999997";
-
-/** CSS class added to #deck-container when Alt/Option is held during scan. */
-const SUPPRESSION_CLASS = "tug-scan-hover-suppressed";
 
 // ---------------------------------------------------------------------------
 // DeactivateOptions
@@ -99,7 +94,6 @@ export class ScanModeController {
   private readonly _onPointerMove: (e: PointerEvent) => void;
   private readonly _onClick: (e: MouseEvent) => void;
   private readonly _onKeyDown: (e: KeyboardEvent) => void;
-  private readonly _onKeyUp: (e: KeyboardEvent) => void;
 
   // ---------------------------------------------------------------------------
   // Constructor
@@ -125,7 +119,6 @@ export class ScanModeController {
     this._onPointerMove = this._handlePointerMove.bind(this);
     this._onClick = this._handleClick.bind(this);
     this._onKeyDown = this._handleKeyDown.bind(this);
-    this._onKeyUp = this._handleKeyUp.bind(this);
   }
 
   // ---------------------------------------------------------------------------
@@ -159,7 +152,6 @@ export class ScanModeController {
     this.overlayEl.addEventListener("pointermove", this._onPointerMove);
     this.overlayEl.addEventListener("click", this._onClick);
     document.addEventListener("keydown", this._onKeyDown, true);
-    document.addEventListener("keyup", this._onKeyUp, true);
   }
 
   /**
@@ -192,17 +184,12 @@ export class ScanModeController {
         this.highlightEl.parentNode.removeChild(this.highlightEl);
       }
       this.highlightEl.style.display = "none";
-      this.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
     }
 
     // Remove all event listeners
     this.overlayEl.removeEventListener("pointermove", this._onPointerMove);
     this.overlayEl.removeEventListener("click", this._onClick);
     document.removeEventListener("keydown", this._onKeyDown, true);
-    document.removeEventListener("keyup", this._onKeyUp, true);
-
-    // Remove hover suppression class if still present
-    this._setSuppression(false);
   }
 
   // ---------------------------------------------------------------------------
@@ -280,15 +267,10 @@ export class ScanModeController {
   /**
    * Handle keydown during scan mode.
    *
-   * Alt (Option) key: add `tug-scan-hover-suppressed` to `#deck-container`
-   * and switch highlight to dashed border style.
-   *
    * Escape: cancel scan mode without selection.
    */
   private _handleKeyDown(e: KeyboardEvent): void {
-    if (e.key === "Alt") {
-      this._setSuppression(true);
-    } else if (e.key === "Escape") {
+    if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       // Capture the cancel callback before deactivate() clears it
@@ -297,40 +279,6 @@ export class ScanModeController {
       if (cancelCb) {
         cancelCb();
       }
-    }
-  }
-
-  /**
-   * Handle keyup during scan mode.
-   *
-   * Alt (Option) key released: remove `tug-scan-hover-suppressed` and restore
-   * solid highlight border.
-   */
-  private _handleKeyUp(e: KeyboardEvent): void {
-    if (e.key === "Alt") {
-      this._setSuppression(false);
-    }
-  }
-
-  /**
-   * Toggle the hover-suppression class on `#deck-container` and update the
-   * highlight border style to indicate suppression state.
-   */
-  private _setSuppression(active: boolean): void {
-    const container = document.getElementById("deck-container");
-    if (container) {
-      if (active) {
-        container.classList.add(SUPPRESSION_CLASS);
-      } else {
-        container.classList.remove(SUPPRESSION_CLASS);
-      }
-    }
-
-    // Toggle dashed highlight border when suppressed
-    if (active) {
-      this.highlightEl.classList.add("tug-inspector-highlight--scan-suppressed");
-    } else {
-      this.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
     }
   }
 

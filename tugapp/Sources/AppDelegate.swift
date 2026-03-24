@@ -261,7 +261,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Show Test Card", action: #selector(showTestCard(_:)), keyEquivalent: "t", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Show Style Inspector", action: #selector(showStyleInspector(_:)), keyEquivalent: "i", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Inspect Element", action: #selector(inspectElement(_:)), keyEquivalent: "e", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Add Tab", action: #selector(addTab(_:)), keyEquivalent: ""))
 
         // Source tree display item
@@ -357,10 +356,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showStyleInspector(_ sender: Any?) {
         sendControl("show-style-inspector")
-    }
-
-    @objc private func inspectElement(_ sender: Any?) {
-        sendControl("toggle-style-inspector-scan")
     }
 
     @objc private func addTab(_ sender: Any) {

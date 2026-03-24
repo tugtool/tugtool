@@ -29,7 +29,6 @@
  * | Element (hardcoded)          | Surface (hardcoded)          | Role         | Context                        |
  * |------------------------------|------------------------------|--------------|--------------------------------|
  * | oklch(0.72 0.18 200)         | (transparent overlay)        | accent       | Highlight ring in scan mode    |
- * | oklch(0.72 0.18 55)          | (transparent overlay)        | accent       | Highlight ring (option-key)    |
  * | oklch(0.78 0.16 200)         | (transparent overlay)        | accent       | Highlight ring (pinned state)  |
  */
 
@@ -46,13 +45,6 @@
   border-radius: 3px;
   z-index: 999998;
   transition: top 50ms ease-out, left 50ms ease-out, width 50ms ease-out, height 50ms ease-out;
-}
-
-/* Dashed border style applied during Option-key hover suppression in scan mode */
-.tug-inspector-highlight.tug-inspector-highlight--option {
-  border-style: dashed;
-  border-color: oklch(0.72 0.18 55);
-  background: oklch(0.72 0.18 55 / 0.08);
 }
 
 /* Pinned state: solid thicker border with slightly more visible background tint.
