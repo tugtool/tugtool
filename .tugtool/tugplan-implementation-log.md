@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-24T20:29:36Z
+---
+
+## step-4: Added inline numeric input and hue slot select editing via imperative DOM (L06), extended StyleInspectorBusEvent with formulas-updated, added HMR listeners for tug:formulas-updated and vite:afterUpdate, useLayoutEffect bus subscription for re-fetch, server.hot.send in controlTokenHotReload, CSS for editable values, 21 new unit tests
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
 step: step-3
 date: 2025-03-24T20:10:35Z
 ---

@@ -393,3 +393,47 @@
   color: var(--tug-element-global-text-normal-default-rest);
   font-size: 10px;
 }
+
+/*
+ * @tug-pairings (addendum)
+ * | Element token                                          | Surface token                                           | Role         | Context                                 |
+ * |--------------------------------------------------------|---------------------------------------------------------|--------------|-----------------------------------------|
+ * | --tug-element-tone-text-normal-active-rest             | --tug-surface-control-primary-filled-accent-rest        | interactive  | Editable formula value hover/focus      |
+ */
+
+/* Editable formula value -- hover state shows pointer cursor and subtle highlight */
+.si-all-props-formula-chip__value--editable {
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0 1px;
+  transition: background-color 0.1s ease;
+}
+
+.si-all-props-formula-chip__value--editable:hover {
+  background: color-mix(in oklch, var(--tug-element-tone-text-normal-active-rest) 15%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   Inline edit input -- overlays the value span
+   --------------------------------------------------------------------------- */
+
+.si-formula-edit-input {
+  font-family: var(--tug-font-family-mono);
+  font-size: 10px;
+  color: var(--tug-element-global-text-normal-default-rest);
+  background: var(--tug-surface-control-primary-filled-accent-rest);
+  border-radius: 2px;
+  caret-color: var(--tug-element-global-text-normal-default-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Inline edit select -- overlays the value span for hue slot fields
+   --------------------------------------------------------------------------- */
+
+.si-formula-edit-select {
+  font-family: var(--tug-font-family-mono);
+  font-size: 10px;
+  color: var(--tug-element-global-text-normal-default-rest);
+  background: var(--tug-surface-control-primary-filled-accent-rest);
+  border-radius: 2px;
+}

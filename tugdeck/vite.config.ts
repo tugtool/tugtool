@@ -225,7 +225,7 @@ function controlTokenHotReload(): VitePlugin {
     buildStart() {
       regenerate();
     },
-    handleHotUpdate({ file }) {
+    handleHotUpdate({ file, server }) {
       // Generated .ts files written by regenerate() — suppress module-graph HMR.
       // Their effects are delivered via CSS HMR from the .css files in the same pass.
       const generatedDir = path.resolve(__dirname, "src/generated");
@@ -235,6 +235,7 @@ function controlTokenHotReload(): VitePlugin {
       if (file.endsWith("theme-engine.ts")) {
         regenerate();
         reactivateActiveTheme();
+        server.hot.send({ type: "custom", event: "tug:formulas-updated" });
         return [];
       }
       // Regenerate when any shipped theme JSON changes
@@ -242,14 +243,17 @@ function controlTokenHotReload(): VitePlugin {
       if (file.startsWith(themesJsonDir) && file.endsWith(".json")) {
         regenerate();
         reactivateActiveTheme();
+        server.hot.send({ type: "custom", event: "tug:formulas-updated" });
         return [];
       }
       // Regenerate when recipe files change. Both regenerate() and
       // reactivateActiveTheme() use subprocesses so they get fresh module state.
+      // After reactivation, notify the client that formulas have been updated. [D04]
       const recipesDir = path.resolve(__dirname, "src/components/tugways/recipes");
       if (file.startsWith(recipesDir) && file.endsWith(".ts")) {
         regenerate();
         reactivateActiveTheme();
+        server.hot.send({ type: "custom", event: "tug:formulas-updated" });
         return [];
       }
     },
