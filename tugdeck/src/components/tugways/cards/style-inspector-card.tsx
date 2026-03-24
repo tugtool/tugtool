@@ -624,7 +624,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
 
   // Hint text shown contextually by state
   const hintText =
-    mode === "rest" ? "\u2325\u2318E to scan" :
+    mode === "rest" ? "Option-Command-E to scan" :
     mode === "scanning" ? "Esc to cancel" :
     "";
 
@@ -677,7 +677,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
           /* Empty state */
           <div className="si-card-empty-state" data-testid="style-inspector-empty-state">
             <p className="si-card-empty-state__message">
-              Click &quot;Inspect Element&quot; to inspect a UI element.
+              Click &quot;Inspect Element&quot; or type Option-Command-E to inspect a UI element.
             </p>
           </div>
         ) : (
