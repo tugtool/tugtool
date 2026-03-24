@@ -368,21 +368,22 @@ export function extractLastNumericLiteral(sourceExpr: string): string | null {
  *
  * Returns: 'numeric', 'hue', or 'readonly'
  * Exported for unit testing. [D06] Imperative editing, Spec S05 (#s05-editable-field-types)
+ *
+ * Rules (in priority order):
+ *   - hueSlot property → 'hue'
+ *   - boolean value → 'readonly'
+ *   - number value → 'numeric'
+ *   - string value → 'readonly'
+ * Sources are NOT used to gatekeep editability — only for pre-filling the edit input.
  */
 export function getEditableType(
   row: FormulaRow,
-  sources: Record<string, string>
+  _sources: Record<string, string>
 ): "numeric" | "hue" | "readonly" {
   if (row.property === "hueSlot") return "hue";
-  // Boolean fields are always read-only
   if (typeof row.value === "boolean") return "readonly";
-  // Check sources: if undefined (shorthand), read-only
-  const src = sources[row.field];
-  if (src === undefined) return "readonly";
-  // Check if there is a numeric literal to edit
-  const literal = extractLastNumericLiteral(src);
-  if (literal === null) return "readonly";
-  return "numeric";
+  if (typeof row.value === "number") return "numeric";
+  return "readonly";
 }
 
 /**

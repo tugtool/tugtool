@@ -113,30 +113,38 @@ describe("findAndEditNumericLiteral", () => {
 
   // -------------------------------------------------------------------------
   // Math.round of bare variable: roleIntensity: Math.round(roleIntensity),
-  // No numeric literal inside — returns null.
+  // No numeric literal inside — falls back to whole-RHS replacement.
   // -------------------------------------------------------------------------
-  it("Math.round of bare variable: returns null (no numeric literal)", () => {
+  it("Math.round of bare variable: falls back to whole-RHS replacement", () => {
     const content = makeRecipe("roleIntensity: Math.round(roleIntensity),");
-    const result = findAndEditNumericLiteral(content, "roleIntensity", 42);
-    expect(result).toBeNull();
+    const result = findAndEditNumericLiteral(content, "roleIntensity", 60);
+    expect(result).not.toBeNull();
+    expect(result).toContain("roleIntensity: 60,");
+    expect(result).not.toContain("Math.round(roleIntensity)");
   });
 
   // -------------------------------------------------------------------------
   // Bare variable reference: contentTextTone: primaryTextTone,
+  // Falls back to whole-RHS replacement.
   // -------------------------------------------------------------------------
-  it("bare variable reference: returns null (no numeric literal)", () => {
+  it("bare variable reference: falls back to whole-RHS replacement", () => {
     const content = makeRecipe("contentTextTone: primaryTextTone,");
-    const result = findAndEditNumericLiteral(content, "contentTextTone", 50);
-    expect(result).toBeNull();
+    const result = findAndEditNumericLiteral(content, "contentTextTone", 72);
+    expect(result).not.toBeNull();
+    expect(result).toContain("contentTextTone: 72,");
+    expect(result).not.toContain("primaryTextTone");
   });
 
   // -------------------------------------------------------------------------
   // Spec path reference: filledSurfaceRestTone: spec.role.tone,
+  // Falls back to whole-RHS replacement.
   // -------------------------------------------------------------------------
-  it("spec path reference: returns null (no numeric literal)", () => {
+  it("spec path reference: falls back to whole-RHS replacement", () => {
     const content = makeRecipe("filledSurfaceRestTone: spec.role.tone,");
-    const result = findAndEditNumericLiteral(content, "filledSurfaceRestTone", 50);
-    expect(result).toBeNull();
+    const result = findAndEditNumericLiteral(content, "filledSurfaceRestTone", 45);
+    expect(result).not.toBeNull();
+    expect(result).toContain("filledSurfaceRestTone: 45,");
+    expect(result).not.toContain("spec.role.tone");
   });
 
   // -------------------------------------------------------------------------
@@ -270,7 +278,7 @@ describe("handleFormulaEdit", () => {
     expect(body.error).toContain("nonExistentField");
   });
 
-  it("non-editable field (bare variable ref) returns 404", () => {
+  it("bare variable ref field: whole-RHS fallback returns 200 with updated content", () => {
     const darkPath = path.join(FAKE_RECIPES_DIR, "dark.ts");
     const originalContent = makeRecipe("contentTextTone: primaryTextTone,");
     const mockFs = makeMockFs(new Map([[darkPath, originalContent]]));
@@ -283,7 +291,11 @@ describe("handleFormulaEdit", () => {
       FAKE_RECIPES_DIR,
     );
 
-    expect(result.status).toBe(404);
+    expect(result.status).toBe(200);
+    const updatedContent = mockFs.written.get(darkPath);
+    expect(updatedContent).toBeDefined();
+    expect(updatedContent).toContain("contentTextTone: 50,");
+    expect(updatedContent).not.toContain("primaryTextTone");
   });
 
   it("invalid body (non-object) returns 400", () => {

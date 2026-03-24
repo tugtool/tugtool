@@ -457,34 +457,44 @@ describe("getEditableType -- T-SI-08: determine editability of a formula row", (
     property: "tone" | "intensity" | "alpha" | "hueSlot"
   ): FormulaRow => ({ field, value, property, isStructural: false });
 
-  it("hueSlot property returns 'hue' regardless of sources", () => {
+  it("hueSlot property returns 'hue' regardless of value or sources", () => {
     const row = makeRow("primaryHue", "action", "hueSlot");
-    expect(getEditableType(row, { primaryHue: "action" })).toBe("hue");
+    expect(getEditableType(row, {})).toBe("hue");
   });
 
   it("boolean value returns 'readonly'", () => {
     const row = makeRow("isDark", true, "tone");
-    expect(getEditableType(row, { isDark: "true" })).toBe("readonly");
-  });
-
-  it("undefined sources[field] returns 'readonly'", () => {
-    const row = makeRow("cardBodyTone", 50, "tone");
     expect(getEditableType(row, {})).toBe("readonly");
   });
 
-  it("source with numeric literal returns 'numeric'", () => {
+  it("number value returns 'numeric' regardless of sources", () => {
+    const row = makeRow("cardBodyTone", 50, "tone");
+    expect(getEditableType(row, {})).toBe("numeric");
+  });
+
+  it("number value returns 'numeric' even when source is a bare variable ref", () => {
+    const row = makeRow("contentTextTone", 72, "tone");
+    expect(getEditableType(row, { contentTextTone: "primaryTextTone" })).toBe("numeric");
+  });
+
+  it("number value returns 'numeric' even when source is a spec path", () => {
+    const row = makeRow("filledSurfaceRestTone", 45, "tone");
+    expect(getEditableType(row, { filledSurfaceRestTone: "spec.role.tone" })).toBe("numeric");
+  });
+
+  it("number value returns 'numeric' even when source is Math.round of bare variable", () => {
+    const row = makeRow("roleIntensity", 50, "intensity");
+    expect(getEditableType(row, { roleIntensity: "Math.round(roleIntensity)" })).toBe("numeric");
+  });
+
+  it("number value returns 'numeric' with numeric literal in source", () => {
     const row = makeRow("mutedTextTone", 66, "tone");
     expect(getEditableType(row, { mutedTextTone: "primaryTextTone - 28" })).toBe("numeric");
   });
 
-  it("source with no numeric literal (bare variable) returns 'readonly'", () => {
-    const row = makeRow("contentTextTone", 72, "tone");
-    expect(getEditableType(row, { contentTextTone: "primaryTextTone" })).toBe("readonly");
-  });
-
-  it("bare literal source returns 'numeric'", () => {
-    const row = makeRow("surfaceAppIntensity", 2, "intensity");
-    expect(getEditableType(row, { surfaceAppIntensity: "2" })).toBe("numeric");
+  it("string value returns 'readonly' (non-hueSlot)", () => {
+    const row = makeRow("someStringField", "active", "tone");
+    expect(getEditableType(row, {})).toBe("readonly");
   });
 });
 

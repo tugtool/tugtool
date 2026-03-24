@@ -839,9 +839,14 @@ export function findAndEditNumericLiteral(
     }
 
     // Non-clamped: replace the LAST numeric literal on the line.
+    // If no literal exists, fall back to replacing the entire RHS with newValue.
     const replaced = replaceLast(rhs, newValue);
-    if (replaced === null) return null;
-    lines[i] = prefix + replaced + suffix;
+    if (replaced === null) {
+      // Fallback: whole-RHS replacement (e.g., spec.role.tone → 45, Math.round(x) → 60)
+      lines[i] = prefix + String(newValue) + suffix;
+    } else {
+      lines[i] = prefix + replaced + suffix;
+    }
     return lines.join("\n");
   }
 
