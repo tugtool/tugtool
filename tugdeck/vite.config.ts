@@ -56,6 +56,8 @@ const EMPTY_OVERRIDE = `/* empty - ${BASE_THEME_NAME} default */\n`;
  */
 export interface FormulasCache {
   formulas: Record<string, number | string | boolean>;
+  /** Maps each formula field name to its source expression text from the recipe file. [D07] */
+  sources: Record<string, string>;
   mode: "dark" | "light";
   themeName: string;
 }
@@ -71,7 +73,7 @@ export function handleFormulasGet(cache: FormulasCache | null): { status: number
   }
   return {
     status: 200,
-    body: JSON.stringify({ formulas: cache.formulas, mode: cache.mode, themeName: cache.themeName }),
+    body: JSON.stringify({ formulas: cache.formulas, sources: cache.sources, mode: cache.mode, themeName: cache.themeName }),
   };
 }
 
@@ -223,7 +225,7 @@ function controlTokenHotReload(): VitePlugin {
     buildStart() {
       regenerate();
     },
-    handleHotUpdate({ file }) {
+    handleHotUpdate({ file, server }) {
       // Generated .ts files written by regenerate() — suppress module-graph HMR.
       // Their effects are delivered via CSS HMR from the .css files in the same pass.
       const generatedDir = path.resolve(__dirname, "src/generated");
@@ -233,6 +235,7 @@ function controlTokenHotReload(): VitePlugin {
       if (file.endsWith("theme-engine.ts")) {
         regenerate();
         reactivateActiveTheme();
+        server.hot.send({ type: "custom", event: "tug:formulas-updated" });
         return [];
       }
       // Regenerate when any shipped theme JSON changes
@@ -240,14 +243,17 @@ function controlTokenHotReload(): VitePlugin {
       if (file.startsWith(themesJsonDir) && file.endsWith(".json")) {
         regenerate();
         reactivateActiveTheme();
+        server.hot.send({ type: "custom", event: "tug:formulas-updated" });
         return [];
       }
       // Regenerate when recipe files change. Both regenerate() and
       // reactivateActiveTheme() use subprocesses so they get fresh module state.
+      // After reactivation, notify the client that formulas have been updated. [D04]
       const recipesDir = path.resolve(__dirname, "src/components/tugways/recipes");
       if (file.startsWith(recipesDir) && file.endsWith(".ts")) {
         regenerate();
         reactivateActiveTheme();
+        server.hot.send({ type: "custom", event: "tug:formulas-updated" });
         return [];
       }
     },
@@ -716,7 +722,7 @@ export async function handleThemesActivate(
     withMutex(async () => {
       try {
         const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath);
-        formulasCache = { formulas: result.formulas, mode: result.mode, themeName: name };
+        formulasCache = { formulas: result.formulas, sources: {}, mode: result.mode, themeName: name };
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -730,12 +736,197 @@ export async function handleThemesActivate(
   });
 }
 
+// ---------------------------------------------------------------------------
+// findAndEditNumericLiteral — targeted numeric literal replacement in recipe files
+//
+// Finds the line containing `field:` and replaces the appropriate numeric
+// literal with `newValue`. The replacement strategy depends on expression form:
+//
+//   Clamp wrapper:  Math.max(N, Math.min(N, innerExpr))
+//     → if innerExpr contains an arithmetic operator (+/-) followed by a numeric
+//       literal, replace that literal.
+//     → if innerExpr is a bare variable (no arithmetic literal), return null —
+//       the 0 and 100 are clamp bounds, not user-authored offsets.
+//
+//   Non-clamped line:
+//     → replace the LAST numeric literal on the line (covers bare literals,
+//       variable ± offset, Math.round(expr ± N), etc.)
+//     → if the line has NO numeric literal to replace (bare variable ref,
+//       shorthand property reference, spec path reference), return null.
+//
+// The replace-last-literal strategy is intentional: for `primaryTextTone - 28`
+// the last literal is 28 (the editable offset), not any implicit ones.
+// For `Math.round(primaryTextTone - 57)` the last literal inside the round is 57.
+//
+// Returns the modified file content, or null if the field is not found or is
+// non-editable (no numeric literal to target). [D02, R03]
+// ---------------------------------------------------------------------------
+
+export function findAndEditNumericLiteral(
+  fileContent: string,
+  field: string,
+  newValue: number | string,
+): string | null {
+  const lines = fileContent.split("\n");
+  const fieldPattern = new RegExp(`^(\\s*${field}:\\s*)(.+?)([,;]?\\s*)$`);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const match = fieldPattern.exec(line);
+    if (!match) continue;
+
+    const prefix = match[1]; // "  fieldName: "
+    const rhs = match[2];    // expression value
+    const suffix = match[3]; // trailing comma/semicolon
+
+    // Detect Math.max(N, Math.min(N, innerExpr)) clamp wrapper.
+    // The pattern matches the full clamped expression with any whitespace.
+    const clampMatch = /^Math\.max\(\s*[\d.]+\s*,\s*Math\.min\(\s*[\d.]+\s*,\s*(.+?)\s*\)\s*\)$/.exec(rhs.trim());
+
+    if (clampMatch) {
+      const innerExpr = clampMatch[1].trim();
+      // Check if innerExpr has an arithmetic operator followed by a numeric literal.
+      // Pattern: <variable> [+|-] <numericLiteral>
+      const innerArithMatch = /^(.+?)\s*([+\-])\s*([\d.]+)\s*$/.exec(innerExpr);
+      if (innerArithMatch) {
+        // Replace the numeric literal after the operator.
+        const varPart = innerArithMatch[1];
+        const op = innerArithMatch[2];
+        const newRhs = rhs.replace(
+          new RegExp(`(Math\\.max\\(\\s*[\\d.]+\\s*,\\s*Math\\.min\\(\\s*[\\d.]+\\s*,\\s*${escapeRegex(varPart)}\\s*[${escapeRegex(op)}]\\s*)[\\d.]+`),
+          `$1${newValue}`,
+        );
+        if (newRhs === rhs) {
+          // Fallback: replace last numeric literal in the full line
+          const replaced = replaceLast(rhs, newValue);
+          if (replaced === null) return null;
+          lines[i] = prefix + replaced + suffix;
+        } else {
+          lines[i] = prefix + newRhs + suffix;
+        }
+        return lines.join("\n");
+      }
+      // innerExpr has no arithmetic literal (bare variable inside clamp) — non-editable.
+      return null;
+    }
+
+    // Non-clamped: replace the LAST numeric literal on the line.
+    const replaced = replaceLast(rhs, newValue);
+    if (replaced === null) return null;
+    lines[i] = prefix + replaced + suffix;
+    return lines.join("\n");
+  }
+
+  // Field not found.
+  return null;
+}
+
+/** Escape a string for use inside a RegExp character class or pattern. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Replace the LAST numeric literal (integer or decimal) in `expr` with
+ * `newValue`. Returns null if no numeric literal exists in the expression.
+ */
+function replaceLast(expr: string, newValue: number | string): string | null {
+  // Find all numeric literals in the expression.
+  // We use a global regex and track the last match.
+  const numericPattern = /\d+(?:\.\d+)?/g;
+  let lastMatch: RegExpExecArray | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = numericPattern.exec(expr)) !== null) {
+    lastMatch = m;
+  }
+  if (lastMatch === null) return null;
+
+  const before = expr.slice(0, lastMatch.index);
+  const after = expr.slice(lastMatch.index + lastMatch[0].length);
+  return before + String(newValue) + after;
+}
+
+// ---------------------------------------------------------------------------
+// handleFormulaEdit — POST /__themes/formula
+//
+// Validates the request body (field: string, value: number | string),
+// resolves the recipe file path from formulasCache.mode, reads the file,
+// calls findAndEditNumericLiteral, and writes the modified content back.
+//
+// Returns:
+//   200 { ok: true }            on success
+//   400 { error: ... }          for invalid body
+//   404 { error: ... }          if field not found or not editable
+//   500 { error: ... }          on I/O failure
+//
+// Parameters:
+//   body             — parsed JSON request body (unknown)
+//   fsImpl           — fs implementation (real or mock)
+//   formulasCacheRef — current FormulasCache (may be null)
+//   recipesDir       — absolute path to the recipes directory (injected for testability)
+// ---------------------------------------------------------------------------
+
+/** Request body shape for POST /__themes/formula */
+export interface FormulaEditBody {
+  field: string;
+  value: number | string;
+}
+
+export function handleFormulaEdit(
+  body: unknown,
+  fsImpl: FsWriteImpl,
+  formulasCacheRef: FormulasCache | null,
+  recipesDir: string,
+): { status: number; body: string } {
+  if (!body || typeof body !== "object") {
+    return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
+  }
+  const b = body as Record<string, unknown>;
+  if (typeof b.field !== "string" || b.field.trim() === "") {
+    return { status: 400, body: JSON.stringify({ error: "field is required" }) };
+  }
+  if (b.value === undefined || b.value === null || (typeof b.value !== "number" && typeof b.value !== "string")) {
+    return { status: 400, body: JSON.stringify({ error: "value must be a number or string" }) };
+  }
+
+  const field = b.field.trim();
+  const value = b.value as number | string;
+
+  if (!formulasCacheRef) {
+    return { status: 404, body: JSON.stringify({ error: "no active theme" }) };
+  }
+
+  const mode = formulasCacheRef.mode;
+  const recipeFilePath = path.resolve(recipesDir, `${mode}.ts`);
+
+  let fileContent: string;
+  try {
+    fileContent = fsImpl.readFileSync(recipeFilePath, "utf-8");
+  } catch (err) {
+    return { status: 500, body: JSON.stringify({ error: `Failed to read recipe file: ${String(err)}` }) };
+  }
+
+  const modified = findAndEditNumericLiteral(fileContent, field, value);
+  if (modified === null) {
+    return { status: 404, body: JSON.stringify({ error: `Field '${field}' not found or not editable` }) };
+  }
+
+  try {
+    fsImpl.writeFileSync(recipeFilePath, modified, "utf-8");
+  } catch (err) {
+    return { status: 500, body: JSON.stringify({ error: `Failed to write recipe file: ${String(err)}` }) };
+  }
+
+  return { status: 200, body: JSON.stringify({ ok: true }) };
+}
+
 /**
  * Vite plugin: theme storage API endpoints for the dev server.
  * GET  /__themes/list         — list available themes (shipped + authored)
  * GET  /__themes/<name>.json  — load theme JSON (authored first, then shipped)
  * POST /__themes/save         — save a new authored theme to disk
  * POST /__themes/activate     — activate a theme by rewriting the override file
+ * POST /__themes/formula      — edit a numeric literal in the active recipe file
  */
 function themeSaveLoadPlugin(): VitePlugin {
   return {
@@ -793,7 +984,7 @@ function themeSaveLoadPlugin(): VitePlugin {
               withMutex(async () => {
                 try {
                   const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS);
-                  formulasCache = { formulas: activateResult.formulas, mode: activateResult.mode, themeName: saveResult.themeName! };
+                  formulasCache = { formulas: activateResult.formulas, sources: {}, mode: activateResult.mode, themeName: saveResult.themeName! };
                   const responseBody = JSON.stringify({ ok: true, name: saveResult.themeName, canvasParams: activateResult.canvasParams });
                   res.writeHead(200, { "Content-Type": "application/json" });
                   res.end(responseBody);
@@ -828,6 +1019,26 @@ function themeSaveLoadPlugin(): VitePlugin {
                 res.writeHead(500, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ error: String(err) }));
               });
+            });
+            return;
+          }
+
+          if (req.method === "POST" && url === "/formula") {
+            let raw = "";
+            req.on("data", (chunk: Buffer) => { raw += chunk.toString(); });
+            req.on("end", () => {
+              let body: unknown;
+              try {
+                body = JSON.parse(raw);
+              } catch {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "invalid JSON body" }));
+                return;
+              }
+              const recipesDir = path.resolve(__dirname, "src/components/tugways/recipes");
+              const result = handleFormulaEdit(body, fs as unknown as FsWriteImpl, formulasCache, recipesDir);
+              res.writeHead(result.status, { "Content-Type": "application/json" });
+              res.end(result.body);
             });
             return;
           }

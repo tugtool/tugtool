@@ -31,6 +31,11 @@ import {
   buildDomPath,
   buildFormulaRows,
   createFormulaSection,
+  categorizeProperty,
+  scanAllTugProperties,
+  invalidateTugPropertiesCache,
+  groupProperties,
+  getReverseMap,
 } from "@/components/tugways/style-inspector-overlay";
 import type { TokenChainResult, FormulasData } from "@/components/tugways/style-inspector-overlay";
 import type { ReverseMap } from "@/components/tugways/formula-reverse-map";
@@ -444,7 +449,7 @@ describe("buildFormulaRows", () => {
   });
 
   it("returns empty array when all chains have no origin token", () => {
-    const formulasData: FormulasData = { formulas: {}, mode: "dark", themeName: "test" };
+    const formulasData: FormulasData = { formulas: {}, sources: {}, mode: "dark", themeName: "test" };
     const reverseMap: ReverseMap = { tokenToFields: new Map() };
 
     const result = buildFormulaRows(
@@ -460,6 +465,7 @@ describe("buildFormulaRows", () => {
   it("returns rows when token maps to formula fields", () => {
     const formulasData: FormulasData = {
       formulas: { intensity: 0.7, tone: 0.5 },
+      sources: {},
       mode: "dark",
       themeName: "test",
     };
@@ -491,6 +497,7 @@ describe("buildFormulaRows", () => {
   it("deduplicates formula rows by field name across chains", () => {
     const formulasData: FormulasData = {
       formulas: { intensity: 0.7 },
+      sources: {},
       mode: "dark",
       themeName: "test",
     };
@@ -549,5 +556,219 @@ describe("createFormulaSection", () => {
     const titleEl = el.querySelector(".tug-inspector-section__title");
     expect(titleEl).not.toBeNull();
     expect(titleEl!.textContent).toBe("Formula");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// categorizeProperty
+// ---------------------------------------------------------------------------
+
+describe("categorizeProperty", () => {
+  it("classifies --tug-tab-bg-rest as BACKGROUND/rest", () => {
+    const { category, state } = categorizeProperty("--tug-tab-bg-rest");
+    expect(category).toBe("BACKGROUND");
+    expect(state).toBe("rest");
+  });
+
+  it("classifies --tug-tab-fg-hover as TEXT/hover", () => {
+    const { category, state } = categorizeProperty("--tug-tab-fg-hover");
+    expect(category).toBe("TEXT");
+    expect(state).toBe("hover");
+  });
+
+  it("classifies --tug-card-border as BORDER/rest (no state suffix)", () => {
+    const { category, state } = categorizeProperty("--tug-card-border");
+    expect(category).toBe("BORDER");
+    expect(state).toBe("rest");
+  });
+
+  it("classifies --tug-dropdown-shadow as OTHER/rest", () => {
+    const { category, state } = categorizeProperty("--tug-dropdown-shadow");
+    expect(category).toBe("OTHER");
+    expect(state).toBe("rest");
+  });
+
+  it("classifies -surface- tokens as BACKGROUND", () => {
+    const { category } = categorizeProperty("--tug-surface-global-primary-normal-default-rest");
+    expect(category).toBe("BACKGROUND");
+  });
+
+  it("classifies -text- tokens as TEXT", () => {
+    const { category } = categorizeProperty("--tug-element-global-text-normal-default-rest");
+    expect(category).toBe("TEXT");
+  });
+
+  it("classifies -divider- tokens as BORDER", () => {
+    const { category } = categorizeProperty("--tug-card-title-bar-divider");
+    expect(category).toBe("BORDER");
+  });
+
+  it("classifies -active state suffix correctly", () => {
+    const { state } = categorizeProperty("--tug-tab-bg-active");
+    expect(state).toBe("active");
+  });
+
+  it("classifies -disabled state suffix correctly", () => {
+    const { state } = categorizeProperty("--tug-tab-bg-disabled");
+    expect(state).toBe("disabled");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scanAllTugProperties
+// ---------------------------------------------------------------------------
+
+describe("scanAllTugProperties", () => {
+  beforeEach(() => {
+    // Ensure cache is cleared before each test
+    invalidateTugPropertiesCache();
+  });
+
+  afterEach(() => {
+    invalidateTugPropertiesCache();
+  });
+
+  it("returns a Set (even if empty in jsdom environment)", () => {
+    const result = scanAllTugProperties();
+    expect(result).toBeInstanceOf(Set);
+  });
+
+  it("caches results across multiple calls", () => {
+    const first = scanAllTugProperties();
+    const second = scanAllTugProperties();
+    // Should return same Set instance (cached)
+    expect(first).toBe(second);
+  });
+
+  it("returns fresh result after cache invalidation", () => {
+    const first = scanAllTugProperties();
+    invalidateTugPropertiesCache();
+    const second = scanAllTugProperties();
+    // Should be a new Set instance
+    expect(first).not.toBe(second);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// groupProperties
+// ---------------------------------------------------------------------------
+
+describe("groupProperties", () => {
+  it("returns a GroupedProperties map with all four categories", () => {
+    const tugProps = new Set<string>();
+    const reverseMap: ReverseMap = { fieldToTokens: new Map(), tokenToFields: new Map() };
+    const grouped = groupProperties(tugProps, null, reverseMap);
+
+    expect(grouped.has("BACKGROUND")).toBe(true);
+    expect(grouped.has("TEXT")).toBe(true);
+    expect(grouped.has("BORDER")).toBe(true);
+    expect(grouped.has("OTHER")).toBe(true);
+  });
+
+  it("places --tug-tab-bg-rest in BACKGROUND/rest", () => {
+    const tugProps = new Set(["--tug-tab-bg-rest"]);
+    const reverseMap: ReverseMap = { fieldToTokens: new Map(), tokenToFields: new Map() };
+    const grouped = groupProperties(tugProps, null, reverseMap);
+
+    const bgMap = grouped.get("BACKGROUND")!;
+    const restEntries = bgMap.get("rest")!;
+    expect(restEntries.some((e) => e.property === "--tug-tab-bg-rest")).toBe(true);
+  });
+
+  it("places --tug-tab-fg-hover in TEXT/hover", () => {
+    const tugProps = new Set(["--tug-tab-fg-hover"]);
+    const reverseMap: ReverseMap = { fieldToTokens: new Map(), tokenToFields: new Map() };
+    const grouped = groupProperties(tugProps, null, reverseMap);
+
+    const textMap = grouped.get("TEXT")!;
+    const hoverEntries = textMap.get("hover")!;
+    expect(hoverEntries.some((e) => e.property === "--tug-tab-fg-hover")).toBe(true);
+  });
+
+  it("places --tug-card-border in BORDER/rest (no state suffix)", () => {
+    const tugProps = new Set(["--tug-card-border"]);
+    const reverseMap: ReverseMap = { fieldToTokens: new Map(), tokenToFields: new Map() };
+    const grouped = groupProperties(tugProps, null, reverseMap);
+
+    const borderMap = grouped.get("BORDER")!;
+    const restEntries = borderMap.get("rest")!;
+    expect(restEntries.some((e) => e.property === "--tug-card-border")).toBe(true);
+  });
+
+  it("places --tug-dropdown-shadow in OTHER/rest", () => {
+    const tugProps = new Set(["--tug-dropdown-shadow"]);
+    const reverseMap: ReverseMap = { fieldToTokens: new Map(), tokenToFields: new Map() };
+    const grouped = groupProperties(tugProps, null, reverseMap);
+
+    const otherMap = grouped.get("OTHER")!;
+    const restEntries = otherMap.get("rest")!;
+    expect(restEntries.some((e) => e.property === "--tug-dropdown-shadow")).toBe(true);
+  });
+
+  it("attaches formula rows when formulasData and reverseMap match", () => {
+    // Set up document.body property so resolveTokenChain can find the chain
+    document.body.style.setProperty("--tug-test-bg-rest", " oklch(0.5 0.2 240)");
+
+    const tugProps = new Set(["--tug-test-bg-rest"]);
+    const formulasData: FormulasData = {
+      formulas: { intensity: 0.7, tone: 50 },
+      sources: {},
+      mode: "dark",
+      themeName: "test",
+    };
+    const reverseMap: ReverseMap = {
+      fieldToTokens: new Map(),
+      tokenToFields: new Map([
+        ["--tug-test-bg-rest", [
+          { field: "intensity", property: "intensity" },
+          { field: "tone", property: "tone" },
+        ]],
+      ]),
+    };
+
+    const grouped = groupProperties(tugProps, formulasData, reverseMap);
+    const bgMap = grouped.get("BACKGROUND")!;
+    const restEntries = bgMap.get("rest")!;
+
+    const entry = restEntries.find((e) => e.property === "--tug-test-bg-rest");
+    expect(entry).not.toBeUndefined();
+    expect(entry!.formulaRows).toHaveLength(2);
+    expect(entry!.formulaRows[0].field).toBe("intensity");
+    expect(entry!.formulaRows[1].field).toBe("tone");
+
+    document.body.style.removeProperty("--tug-test-bg-rest");
+  });
+
+  it("returns empty formula rows when formulasData is null", () => {
+    const tugProps = new Set(["--tug-tab-bg-rest"]);
+    const reverseMap: ReverseMap = { fieldToTokens: new Map(), tokenToFields: new Map() };
+    const grouped = groupProperties(tugProps, null, reverseMap);
+
+    const bgMap = grouped.get("BACKGROUND")!;
+    const restEntries = bgMap.get("rest")!;
+    const entry = restEntries.find((e) => e.property === "--tug-tab-bg-rest");
+    // entry exists but has no formula rows since formulasData is null
+    expect(entry).not.toBeUndefined();
+    expect(entry!.formulaRows).toHaveLength(0);
+  });
+
+  it("all four states are present in every category map", () => {
+    const tugProps = new Set<string>();
+    const reverseMap: ReverseMap = { fieldToTokens: new Map(), tokenToFields: new Map() };
+    const grouped = groupProperties(tugProps, null, reverseMap);
+
+    for (const cat of ["BACKGROUND", "TEXT", "BORDER", "OTHER"] as const) {
+      const stateMap = grouped.get(cat)!;
+      expect(stateMap.has("rest")).toBe(true);
+      expect(stateMap.has("hover")).toBe(true);
+      expect(stateMap.has("active")).toBe(true);
+      expect(stateMap.has("disabled")).toBe(true);
+    }
+  });
+
+  it("getReverseMap() returns a ReverseMap with tokenToFields", () => {
+    const reverseMap = getReverseMap();
+    expect(reverseMap).not.toBeNull();
+    expect(reverseMap.tokenToFields).toBeInstanceOf(Map);
   });
 });

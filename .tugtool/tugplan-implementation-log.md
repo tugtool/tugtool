@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-24T20:37:49Z
+---
+
+## step-5: Integration checkpoint: all automated checks pass (TypeScript check, 1948 tests, audit:tokens). Manual browser verification tasks deferred.
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
+step: step-4
+date: 2025-03-24T20:29:36Z
+---
+
+## step-4: Added inline numeric input and hue slot select editing via imperative DOM (L06), extended StyleInspectorBusEvent with formulas-updated, added HMR listeners for tug:formulas-updated and vite:afterUpdate, useLayoutEffect bus subscription for re-fetch, server.hot.send in controlTokenHotReload, CSS for editable values, 21 new unit tests
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
+step: step-3
+date: 2025-03-24T20:10:35Z
+---
+
+## step-3: Implemented findAndEditNumericLiteral with clamp-aware replace-last-literal strategy, handleFormulaEdit with body validation and mock-friendly fs injection, registered POST /__themes/formula route, added comprehensive unit tests covering all 11 expression forms
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
+step: step-2
+date: 2025-03-24T20:00:20Z
+---
+
+## step-2: Implemented groupProperties() function, AllPropertiesSection React component, CSS styles with pairings, extended handleElementSelected to call scan+group pipeline, added unit tests for groupProperties
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
+step: step-1
+date: 2025-03-24T19:45:33Z
+---
+
+## step-1: Added SemanticCategory/InteractionState/PropertyEntry types, scanAllTugProperties with cache, categorizeProperty heuristics, exported RESOLVED_HUE_SLOT_KEYS, extended FormulasCache/FormulasData with sources field, updated generate-theme-override to extract source expressions, updated all tests
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
 step: step-7
 date: 2025-03-24T16:00:57Z
 ---

@@ -54,8 +54,9 @@ export interface ReverseMap {
 /**
  * All direct keys of the ResolvedHueSlots interface.
  * These are resolved without going through formulas-mediation.
+ * Exported so the style inspector client can populate hue slot dropdown options. [D08]
  */
-const RESOLVED_HUE_SLOT_KEYS = new Set([
+export const RESOLVED_HUE_SLOT_KEYS = new Set([
   "text",
   "canvas",
   "frame",

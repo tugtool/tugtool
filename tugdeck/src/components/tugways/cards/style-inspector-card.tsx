@@ -54,10 +54,14 @@ import {
   shortenNumbers,
   tryFormatTugColor,
   getReverseMap,
+  scanAllTugProperties,
+  groupProperties,
+  invalidateTugPropertiesCache,
 } from "@/components/tugways/style-inspector-overlay";
+import { RESOLVED_HUE_SLOT_KEYS } from "@/components/tugways/formula-reverse-map";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 import { registerCard } from "@/card-registry";
-import type { TokenChainResult, FormulaRow, FormulasData } from "@/components/tugways/style-inspector-overlay";
+import type { TokenChainResult, FormulaRow, FormulasData, GroupedProperties } from "@/components/tugways/style-inspector-overlay";
 import "./style-inspector-card.css";
 
 // ---------------------------------------------------------------------------
@@ -72,10 +76,14 @@ import "./style-inspector-card.css";
  * StyleInspectorContent component registers a listener via useLayoutEffect
  * (L03: use useLayoutEffect for registrations that events depend on).
  *
+ * 'formulas-updated' is dispatched by HMR listeners (module level) after a
+ * recipe or theme-engine file changes and the server sends 'tug:formulas-updated'.
+ * [D04] HMR listener for re-fetch.
+ *
  * Uses a plain callback registry rather than EventTarget to avoid
  * browser-vs-happy-dom EventTarget/Event compatibility issues in tests.
  */
-type StyleInspectorBusEvent = "toggle-scan";
+type StyleInspectorBusEvent = "toggle-scan" | "formulas-updated";
 
 interface StyleInspectorBus {
   on(event: StyleInspectorBusEvent, listener: () => void): void;
@@ -104,6 +112,37 @@ function createStyleInspectorBus(): StyleInspectorBus {
 export const styleInspectorBus: StyleInspectorBus = createStyleInspectorBus();
 
 // ---------------------------------------------------------------------------
+// HMR listeners — module level (dev only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-level HMR listeners for formula re-fetch.
+ *
+ * Both listeners dispatch 'formulas-updated' on styleInspectorBus.
+ * The React component subscribes via useLayoutEffect (L03) and re-fetches.
+ *
+ * 'tug:formulas-updated' is the authoritative signal sent by controlTokenHotReload
+ * after reactivateActiveTheme() completes. [D04]
+ *
+ * 'vite:afterUpdate' is a fallback for non-recipe CSS changes where
+ * tug:formulas-updated may not fire.
+ *
+ * No cleanup needed — module-level listeners persist for the module lifetime
+ * (dev-only code, never runs in production builds).
+ */
+if (import.meta.hot) {
+  import.meta.hot.on("tug:formulas-updated", () => {
+    invalidateTugPropertiesCache();
+    styleInspectorBus.emit("formulas-updated");
+  });
+
+  import.meta.hot.on("vite:afterUpdate", () => {
+    invalidateTugPropertiesCache();
+    styleInspectorBus.emit("formulas-updated");
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Internal types
 // ---------------------------------------------------------------------------
 
@@ -120,6 +159,8 @@ interface InspectionData {
   timing: number;
   motionOn: boolean;
   formulasData: FormulasData | null;
+  /** All --tug-* properties grouped by category and state. [D01] */
+  groupedProperties: GroupedProperties | null;
 }
 
 /** Button mode enum for the three-state inspect button. */
@@ -309,6 +350,378 @@ function FormulaSection({ rows }: { rows: FormulaRow[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// AllPropertiesSection -- grouped all-properties display
+// ---------------------------------------------------------------------------
+
+/** Category display labels for the section headings. */
+const CATEGORY_LABELS: Record<string, string> = {
+  BACKGROUND: "Background",
+  TEXT: "Text",
+  BORDER: "Border",
+  OTHER: "Other",
+};
+
+/** State display labels for sub-row labels. */
+const STATE_LABELS: Record<string, string> = {
+  rest: "rest",
+  hover: "hover",
+  active: "active",
+  disabled: "disabled",
+};
+
+// ---------------------------------------------------------------------------
+// Inline editing helpers (L06: imperative DOM)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the last numeric literal from a source expression string.
+ * Used to pre-fill the edit input with the current source literal (not computed value).
+ *
+ * Returns the literal as a string (e.g., "28" from "primaryTextTone - 28"),
+ * or null if no numeric literal exists.
+ *
+ * Exported for unit testing. [D07] Source expressions, Spec S05 (#s05-editable-field-types)
+ */
+export function extractLastNumericLiteral(sourceExpr: string): string | null {
+  // Match all numeric literals (integers and decimals, not preceded by a letter/underscore
+  // to avoid matching part of identifiers like 'tone1').
+  const matches = sourceExpr.match(/(?<![a-zA-Z_\d])(\d+(?:\.\d+)?)/g);
+  if (!matches || matches.length === 0) return null;
+  return matches[matches.length - 1];
+}
+
+/**
+ * Determine if a FormulaRow is editable via text input, a hue slot select, or read-only.
+ *
+ * Returns: 'numeric', 'hue', or 'readonly'
+ * Exported for unit testing. [D06] Imperative editing, Spec S05 (#s05-editable-field-types)
+ */
+export function getEditableType(
+  row: FormulaRow,
+  sources: Record<string, string>
+): "numeric" | "hue" | "readonly" {
+  if (row.property === "hueSlot") return "hue";
+  // Boolean fields are always read-only
+  if (typeof row.value === "boolean") return "readonly";
+  // Check sources: if undefined (shorthand), read-only
+  const src = sources[row.field];
+  if (src === undefined) return "readonly";
+  // Check if there is a numeric literal to edit
+  const literal = extractLastNumericLiteral(src);
+  if (literal === null) return "readonly";
+  return "numeric";
+}
+
+/**
+ * POST a formula field edit to the dev server.
+ *
+ * [D05] Testable handler pattern, Spec S03 (#s03-post-endpoint)
+ */
+async function postFormulaEdit(field: string, value: number | string): Promise<void> {
+  await fetch("/__themes/formula", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ field, value }),
+  });
+}
+
+/**
+ * Activate an inline numeric input over a value span.
+ *
+ * Creates an <input type="text"> imperatively (L06), positions it over the span,
+ * pre-fills with the source literal, and handles Enter/Escape/blur.
+ *
+ * Exported for unit testing. [D06] Imperative editing, Spec S04 (#s04-hmr-refetch)
+ */
+export function activateNumericInput(
+  valueSpan: HTMLElement,
+  sourceLiteral: string,
+  field: string
+): void {
+  // Prevent duplicate inputs
+  if (valueSpan.querySelector(".si-formula-edit-input")) return;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = sourceLiteral;
+  input.className = "si-formula-edit-input";
+  input.setAttribute("data-testid", `formula-edit-input-${field}`);
+  input.setAttribute("aria-label", `Edit ${field}`);
+  input.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "width:100%",
+    "height:100%",
+    "box-sizing:border-box",
+    "padding:0 2px",
+    "margin:0",
+    "border:none",
+    "outline:none",
+  ].join(";");
+
+  // Make the span a positioned container
+  valueSpan.style.position = "relative";
+
+  let committed = false;
+
+  function commit() {
+    if (committed) return;
+    committed = true;
+    const raw = input.value.trim();
+    const num = parseFloat(raw);
+    if (!isNaN(num)) {
+      postFormulaEdit(field, num).catch(() => {});
+    }
+    cleanup();
+  }
+
+  function cancel() {
+    if (committed) return;
+    committed = true;
+    cleanup();
+  }
+
+  function cleanup() {
+    if (input.parentNode) {
+      input.parentNode.removeChild(input);
+    }
+    valueSpan.style.position = "";
+  }
+
+  input.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      commit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      cancel();
+    }
+  });
+
+  input.addEventListener("blur", () => {
+    // Commit on blur (same as Enter per spec)
+    commit();
+  });
+
+  valueSpan.appendChild(input);
+  input.focus();
+  input.select();
+}
+
+/**
+ * Activate an inline hue slot <select> dropdown over a value span.
+ *
+ * Creates a <select> element imperatively (L06), populates from RESOLVED_HUE_SLOT_KEYS,
+ * and POSTs on change.
+ *
+ * [D06] Imperative editing, [D08] RESOLVED_HUE_SLOT_KEYS, Spec S05 (#s05-editable-field-types)
+ */
+function activateHueSlotSelect(
+  valueSpan: HTMLElement,
+  currentValue: string,
+  field: string
+): void {
+  // Prevent duplicate selects
+  if (valueSpan.querySelector(".si-formula-edit-select")) return;
+
+  const select = document.createElement("select");
+  select.className = "si-formula-edit-select";
+  select.setAttribute("data-testid", `formula-edit-select-${field}`);
+  select.setAttribute("aria-label", `Select hue for ${field}`);
+  select.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "width:100%",
+    "height:100%",
+    "box-sizing:border-box",
+    "padding:0 2px",
+    "margin:0",
+    "border:none",
+    "outline:none",
+  ].join(";");
+
+  for (const key of RESOLVED_HUE_SLOT_KEYS) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = key;
+    if (key === currentValue) opt.selected = true;
+    select.appendChild(opt);
+  }
+
+  valueSpan.style.position = "relative";
+
+  function cleanup() {
+    if (select.parentNode) {
+      select.parentNode.removeChild(select);
+    }
+    valueSpan.style.position = "";
+  }
+
+  select.addEventListener("change", () => {
+    const newValue = select.value;
+    postFormulaEdit(field, newValue).catch(() => {});
+    cleanup();
+  });
+
+  select.addEventListener("blur", () => {
+    cleanup();
+  });
+
+  select.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      cleanup();
+    }
+  });
+
+  valueSpan.appendChild(select);
+  select.focus();
+}
+
+/**
+ * FormulaChipValue renders the value portion of a formula chip.
+ * For numeric and hue slot fields, clicking activates an inline editor (L06).
+ * For read-only fields, just renders text.
+ *
+ * [D06] Imperative editing, Spec S05 (#s05-editable-field-types)
+ */
+function FormulaChipValue({
+  row,
+  sources,
+}: {
+  row: FormulaRow;
+  sources: Record<string, string>;
+}) {
+  const editableType = getEditableType(row, sources);
+  const displayValue = String(row.value);
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent<HTMLSpanElement>) => {
+      const span = e.currentTarget as HTMLElement;
+      if (editableType === "numeric") {
+        const src = sources[row.field] ?? "";
+        const literal = extractLastNumericLiteral(src) ?? displayValue;
+        activateNumericInput(span, literal, row.field);
+      } else if (editableType === "hue") {
+        activateHueSlotSelect(span, displayValue, row.field);
+      }
+    },
+    [editableType, row.field, sources, displayValue]
+  );
+
+  if (editableType === "readonly") {
+    return (
+      <span
+        className="si-all-props-formula-chip__value"
+        data-testid={`formula-value-${row.field}`}
+      >
+        {displayValue}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="si-all-props-formula-chip__value si-all-props-formula-chip__value--editable"
+      data-testid={`formula-value-${row.field}`}
+      data-editable-type={editableType}
+      onClick={handleClick}
+      title={`Click to edit ${row.field}`}
+    >
+      {displayValue}
+    </span>
+  );
+}
+
+/**
+ * AllPropertiesSection renders all discovered --tug-* properties grouped by
+ * semantic category (BACKGROUND, TEXT, BORDER, OTHER) and interaction state
+ * (rest, hover, active, disabled).
+ *
+ * Accepts `sources` from FormulasData to support inline editing. [D07]
+ *
+ * [D01] All-properties scan, [D03] Group by name heuristic.
+ * Spec S02 (#s02-property-grouping)
+ */
+function AllPropertiesSection({
+  grouped,
+  sources,
+}: {
+  grouped: GroupedProperties;
+  sources: Record<string, string>;
+}) {
+  const categories = ["BACKGROUND", "TEXT", "BORDER", "OTHER"] as const;
+  const states = ["rest", "hover", "active", "disabled"] as const;
+
+  // Determine if there are any entries at all
+  let hasAnyEntry = false;
+  for (const cat of categories) {
+    const stateMap = grouped.get(cat);
+    if (!stateMap) continue;
+    for (const state of states) {
+      const entries = stateMap.get(state);
+      if (entries && entries.length > 0) {
+        hasAnyEntry = true;
+        break;
+      }
+    }
+    if (hasAnyEntry) break;
+  }
+
+  if (!hasAnyEntry) return null;
+
+  return (
+    <div className="si-all-props-root" data-testid="all-properties-section">
+      {categories.map((cat) => {
+        const stateMap = grouped.get(cat);
+        if (!stateMap) return null;
+
+        // Check if any state has entries for this category
+        const hasCatEntries = states.some((st) => (stateMap.get(st)?.length ?? 0) > 0);
+        if (!hasCatEntries) return null;
+
+        return (
+          <div key={cat} className="si-all-props-category">
+            <div className="si-all-props-category__header">{CATEGORY_LABELS[cat]}</div>
+            {states.map((state) => {
+              const entries = stateMap.get(state);
+              if (!entries || entries.length === 0) return null;
+
+              return (
+                <div key={state} className="si-all-props-state-group">
+                  <span className="si-all-props-state__label">{STATE_LABELS[state]}</span>
+                  <div className="si-all-props-entries">
+                    {entries.map((entry) => (
+                      <div key={entry.property} className="si-all-props-entry">
+                        <span className="si-all-props-entry__prop">{entry.property}</span>
+                        {entry.formulaRows.length > 0 && (
+                          <div className="si-all-props-entry__formulas">
+                            {entry.formulaRows.map((row) => (
+                              <span key={row.field} className="si-all-props-formula-chip">
+                                <span className="si-all-props-formula-chip__field">{row.field}</span>
+                                <span className="si-all-props-formula-chip__sep"> = </span>
+                                <FormulaChipValue row={row} sources={sources} />
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // StyleInspectorContent
 // ---------------------------------------------------------------------------
 
@@ -471,6 +884,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
       timing,
       motionOn,
       formulasData: null,
+      groupedProperties: null,
     };
     setRenderKey((k) => k + 1);
 
@@ -478,9 +892,14 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     const targetEl = el;
     fetchFormulasData().then((data) => {
       if (inspectionDataRef.current && inspectionDataRef.current.el === targetEl) {
+        // Build grouped properties once formulas data is available
+        const tugProps = scanAllTugProperties();
+        const reverseMap = getReverseMap();
+        const grouped = groupProperties(tugProps, data, reverseMap);
         inspectionDataRef.current = {
           ...inspectionDataRef.current,
           formulasData: data,
+          groupedProperties: grouped,
         };
         setRenderKey((k) => k + 1);
       }
@@ -595,6 +1014,45 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
       styleInspectorBus.off("toggle-scan", handleToggleScan);
     };
   }, [handleElementSelected, removePinnedHighlight]);
+
+  // Listen for 'formulas-updated' events on the styleInspectorBus.
+  //
+  // Dispatched by module-level HMR listeners (tug:formulas-updated and vite:afterUpdate)
+  // after a recipe or theme file changes. Re-fetches formulas and re-groups properties.
+  //
+  // L03: useLayoutEffect for registrations that events depend on.
+  // [D04] HMR listener for re-fetch, Spec S04 (#s04-hmr-refetch)
+  useLayoutEffect(() => {
+    const handleFormulasUpdated = () => {
+      const currentData = inspectionDataRef.current;
+      if (!currentData) return;
+      const targetEl = currentData.el;
+
+      fetchFormulasData().then((data) => {
+        if (
+          !data ||
+          !inspectionDataRef.current ||
+          inspectionDataRef.current.el !== targetEl
+        ) {
+          return;
+        }
+        const tugProps = scanAllTugProperties();
+        const reverseMap = getReverseMap();
+        const grouped = groupProperties(tugProps, data, reverseMap);
+        inspectionDataRef.current = {
+          ...inspectionDataRef.current,
+          formulasData: data,
+          groupedProperties: grouped,
+        };
+        setRenderKey((k) => k + 1);
+      }).catch(() => {});
+    };
+
+    styleInspectorBus.on("formulas-updated", handleFormulasUpdated);
+    return () => {
+      styleInspectorBus.off("formulas-updated", handleFormulasUpdated);
+    };
+  }, []);
 
   const data = inspectionDataRef.current;
   const mode = modeRef.current;
@@ -741,6 +1199,17 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
             {/* Formula provenance section */}
             {formulaRows !== null && (
               <FormulaSection rows={formulaRows} />
+            )}
+
+            {/* All-properties grouped section (Step 2 + Step 4: inline editing) */}
+            {data.groupedProperties !== null && (
+              <div className="tug-inspector-section">
+                <div className="tug-inspector-section__title">All Tug Properties</div>
+                <AllPropertiesSection
+                  grouped={data.groupedProperties}
+                  sources={data.formulasData?.sources ?? {}}
+                />
+              </div>
             )}
           </>
         )}
