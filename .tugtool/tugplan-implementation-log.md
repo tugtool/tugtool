@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-24T15:11:18Z
+---
+
+## step-2: Created ScanModeController class with imperative DOM overlay, pointer-events toggle hit detection, single-shot click selection, Alt key hover suppression. 18 new tests pass (1848 total).
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
 step: step-1
 date: 2025-03-24T15:00:49Z
 ---
