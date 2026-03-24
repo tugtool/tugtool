@@ -85,47 +85,24 @@ function themeOverridePlugin(): VitePlugin {
         return;
       }
 
-      // Locate theme JSON: shipped dir first (by direct filename), then user dir (by name-scan).
-      const shippedJsonPath = path.join(SHIPPED_THEMES_DIR, `${activeTheme}.json`);
-      let jsonPath: string | null = null;
-      if (fs.existsSync(shippedJsonPath)) {
-        jsonPath = shippedJsonPath;
-      } else {
-        jsonPath = findUserThemeByName(activeTheme, fs as unknown as FsReadImpl, USER_THEMES_DIR);
-      }
-
+      const jsonPath = findThemeJsonPath(activeTheme);
       if (!jsonPath) {
         console.warn(`[themeOverridePlugin] theme "${activeTheme}" not found, falling back to base theme`);
         fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
         return;
       }
 
+      // Generate the override CSS via a subprocess to avoid require()'ing
+      // theme-engine (and its transitive recipe imports) during config loading.
+      // If theme-engine is require()'d here, Vite treats the entire dependency
+      // chain (including recipes/dark.ts, recipes/light.ts) as config deps and
+      // auto-restarts the server whenever any of them change.
       try {
-        const raw = fs.readFileSync(jsonPath, "utf-8");
-        let parsed = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeSpec & { mode: unknown };
-
-        // Legacy migration guard: detect old format where mode is a stringified JSON blob.
-        if (typeof parsed.mode === "string" && (parsed.mode as string).startsWith("{")) {
-          let unwrapped: import("./src/components/tugways/theme-engine").ThemeSpec;
-          try {
-            unwrapped = JSON.parse(parsed.mode as string) as import("./src/components/tugways/theme-engine").ThemeSpec;
-          } catch {
-            throw new Error(`Theme '${activeTheme}' has corrupt recipe data`);
-          }
-          // Rewrite file in canonical format (best-effort, uses real fs).
-          try {
-            fs.writeFileSync(jsonPath, JSON.stringify(unwrapped, null, 2), "utf-8");
-          } catch {
-            // Rewrite failed — theme still works for this session.
-          }
-          parsed = unwrapped as typeof parsed;
-        }
-
-        const spec = parsed as import("./src/components/tugways/theme-engine").ThemeSpec;
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: typeof spec) => string };
-        const css = generateThemeCSS(spec);
-        fs.writeFileSync(THEME_OVERRIDE_CSS, css, "utf-8");
+        const script = path.resolve(__dirname, "scripts/generate-theme-override.ts");
+        execSync(`bun run ${script} ${JSON.stringify(jsonPath)} ${JSON.stringify(THEME_OVERRIDE_CSS)}`, {
+          cwd: __dirname,
+          stdio: "pipe",
+        });
       } catch (err) {
         console.error(`[themeOverridePlugin] failed to generate CSS for theme "${activeTheme}":`, err);
         fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
@@ -149,6 +126,13 @@ function themeOverridePlugin(): VitePlugin {
  * Uses Vite's built-in watcher via handleHotUpdate (no separate fs.watchFile).
  * Also runs once at buildStart to ensure tug-base.css is in sync.
  */
+/** Locate theme JSON path by name: shipped dir first, then user dir. */
+function findThemeJsonPath(themeName: string): string | null {
+  const shippedJsonPath = path.join(SHIPPED_THEMES_DIR, `${themeName}.json`);
+  if (fs.existsSync(shippedJsonPath)) return shippedJsonPath;
+  return findUserThemeByName(themeName, fs as unknown as FsReadImpl, USER_THEMES_DIR);
+}
+
 function controlTokenHotReload(): VitePlugin {
   const scriptPath = path.resolve(__dirname, "scripts/generate-tug-tokens.ts");
 
@@ -171,26 +155,27 @@ function controlTokenHotReload(): VitePlugin {
     }
 
     if (!activeTheme || activeTheme === BASE_THEME_NAME) {
-      // Base theme: override file stays empty; no action needed.
+      fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
       return;
     }
 
-    // Non-base theme: re-derive override CSS through the write mutex to avoid races.
-    withMutex(async () => {
-      try {
-        activateThemeOverride(
-          activeTheme,
-          fs as unknown as FsWriteImpl,
-          SHIPPED_THEMES_DIR,
-          USER_THEMES_DIR,
-          THEME_OVERRIDE_CSS,
-        );
-      } catch (err) {
-        console.error(`[control-token-hot-reload] failed to re-derive override for theme "${activeTheme}":`, err);
-      }
-    }).catch((err) => {
-      console.error("[control-token-hot-reload] mutex error:", err);
-    });
+    // Re-derive override CSS via subprocess to avoid require()'ing theme-engine
+    // in the Vite process. If theme-engine is loaded here, its transitive recipe
+    // imports become config deps and Vite auto-restarts on recipe file edits.
+    const jsonPath = findThemeJsonPath(activeTheme);
+    if (!jsonPath) {
+      console.error(`[control-token-hot-reload] theme "${activeTheme}" not found`);
+      return;
+    }
+    try {
+      const script = path.resolve(__dirname, "scripts/generate-theme-override.ts");
+      execSync(`bun run ${script} ${JSON.stringify(jsonPath)} ${JSON.stringify(THEME_OVERRIDE_CSS)}`, {
+        cwd: __dirname,
+        stdio: "pipe",
+      });
+    } catch (err) {
+      console.error(`[control-token-hot-reload] failed to re-derive override for theme "${activeTheme}":`, err);
+    }
   }
 
   return {
@@ -199,16 +184,31 @@ function controlTokenHotReload(): VitePlugin {
       regenerate();
     },
     handleHotUpdate({ file }) {
+      // Generated .ts files written by regenerate() — suppress module-graph HMR.
+      // Their effects are delivered via CSS HMR from the .css files in the same pass.
+      const generatedDir = path.resolve(__dirname, "src/generated");
+      if (file.startsWith(generatedDir) && file.endsWith(".ts")) {
+        return [];
+      }
       if (file.endsWith("theme-engine.ts")) {
         regenerate();
         reactivateActiveTheme();
-        return;
+        return [];
       }
       // Regenerate when any shipped theme JSON changes
       const themesJsonDir = path.resolve(__dirname, "themes");
       if (file.startsWith(themesJsonDir) && file.endsWith(".json")) {
         regenerate();
         reactivateActiveTheme();
+        return [];
+      }
+      // Regenerate when recipe files change. Both regenerate() and
+      // reactivateActiveTheme() use subprocesses so they get fresh module state.
+      const recipesDir = path.resolve(__dirname, "src/components/tugways/recipes");
+      if (file.startsWith(recipesDir) && file.endsWith(".ts")) {
+        regenerate();
+        reactivateActiveTheme();
+        return [];
       }
     },
   };
@@ -543,8 +543,10 @@ export function activateThemeOverride(
     fsImpl.writeFileSync(overrideCssPath, EMPTY_OVERRIDE, "utf-8");
 
     // Base theme canvas params: derived from the base theme's JSON recipe.
+    // Dynamic path construction prevents Vite's static config-dep scanner from
+    // tracing through theme-engine → recipes/* and registering them as config deps.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => import("./src/components/tugways/theme-engine").ThemeOutput };
+    const { deriveTheme } = require([".", "src", "components", "tugways", "theme-engine"].join("/")) as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => import("./src/components/tugways/theme-engine").ThemeOutput };
     const baseRaw = fsImpl.readFileSync(path.join(shippedDir, `${BASE_THEME_NAME}.json`), "utf-8");
     const baseSpec = JSON.parse(baseRaw) as import("./src/components/tugways/theme-engine").ThemeSpec;
     const baseOutput = deriveTheme(baseSpec);
@@ -595,11 +597,12 @@ export function activateThemeOverride(
 
   const spec = parsed as import("./src/components/tugways/theme-engine").ThemeSpec;
 
-  // Lazy-require to avoid circular dependency at module parse time.
+  // Dynamic path construction prevents Vite's static config-dep scanner from
+  // tracing through theme-engine → recipes/* and registering them as config deps.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { generateThemeCSS } = require("./src/theme-css-generator") as { generateThemeCSS: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => string };
+  const { generateThemeCSS } = require([".", "src", "theme-css-generator"].join("/")) as { generateThemeCSS: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => string };
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { deriveTheme } = require("./src/components/tugways/theme-engine") as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => import("./src/components/tugways/theme-engine").ThemeOutput };
+  const { deriveTheme } = require([".", "src", "components", "tugways", "theme-engine"].join("/")) as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => import("./src/components/tugways/theme-engine").ThemeOutput };
 
   const css = generateThemeCSS(spec);
   fsImpl.writeFileSync(overrideCssPath, css, "utf-8");
