@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-24T15:00:49Z
+---
+
+## step-1: Extracted resolveTokenChainForProperty, resolveTokenChain, extractTugColorProvenance, buildDomPath, tryFormatTugColor, buildFormulaRows, getReverseMap, shortenNumbers, fetchFormulasData as standalone module-level exports. Class methods delegate to extracted functions. All 1830 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
 step: step-7
 date: 2025-03-23T18:41:19Z
 ---
