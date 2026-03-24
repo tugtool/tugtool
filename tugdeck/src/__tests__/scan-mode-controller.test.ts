@@ -276,22 +276,65 @@ describe("ScanModeController -- Cmd+Click passthrough", () => {
     }
   });
 
-  it("Cmd+Click (metaKey) sets overlay pointer-events to none and does not deactivate", () => {
+  it("Cmd+Click (metaKey) does not deactivate scan mode", () => {
     const onSelect = (_el: HTMLElement) => {};
     ctrl.activate(onSelect);
 
-    // Verify overlay is active with pointer-events: auto initially
     expect(ctrl.isActive).toBe(true);
 
-    // Dispatch a click with metaKey = true on the overlay
     const clickEvent = new MouseEvent("click", { bubbles: true, metaKey: true, clientX: 100, clientY: 100 });
     ctrl.overlayEl.dispatchEvent(clickEvent);
 
     // Cmd+Click should NOT deactivate scan mode
     expect(ctrl.isActive).toBe(true);
+  });
 
-    // Overlay pointer-events should be none immediately after the metaKey click
-    expect(ctrl.overlayEl.style.pointerEvents).toBe("none");
+  it("Cmd+Click dispatches a synthetic click on the real target element", () => {
+    ctrl.activate(() => {});
+
+    // Create a real target element and append it to body
+    const realTarget = document.createElement("div");
+    realTarget.id = "real-target";
+    document.body.appendChild(realTarget);
+
+    // Mock elementFromPoint to return our target
+    const originalEFP = document.elementFromPoint.bind(document);
+    document.elementFromPoint = (_x: number, _y: number) => realTarget;
+
+    let syntheticClickReceived = false;
+    realTarget.addEventListener("click", (e) => {
+      // The synthetic click should have metaKey set
+      if ((e as MouseEvent).metaKey) {
+        syntheticClickReceived = true;
+      }
+    });
+
+    const clickEvent = new MouseEvent("click", { bubbles: true, metaKey: true, clientX: 100, clientY: 100 });
+    ctrl.overlayEl.dispatchEvent(clickEvent);
+
+    expect(syntheticClickReceived).toBe(true);
+
+    // Cleanup
+    document.elementFromPoint = originalEFP;
+    realTarget.parentNode!.removeChild(realTarget);
+  });
+
+  it("Cmd+Click does not invoke onSelect callback", () => {
+    let selected = false;
+    ctrl.activate((_el: HTMLElement) => { selected = true; });
+
+    const realTarget = document.createElement("div");
+    document.body.appendChild(realTarget);
+    const originalEFP = document.elementFromPoint.bind(document);
+    document.elementFromPoint = (_x: number, _y: number) => realTarget;
+
+    const clickEvent = new MouseEvent("click", { bubbles: true, metaKey: true, clientX: 100, clientY: 100 });
+    ctrl.overlayEl.dispatchEvent(clickEvent);
+
+    expect(selected).toBe(false);
+
+    document.elementFromPoint = originalEFP;
+    realTarget.parentNode!.removeChild(realTarget);
   });
 
   it("normal click (no metaKey) on overlay does not prevent deactivation path", () => {
@@ -308,6 +351,93 @@ describe("ScanModeController -- Cmd+Click passthrough", () => {
     // and the callback is NOT invoked. The scan remains active.
     // This verifies the normal path is reachable without errors.
     expect(selected).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ScanModeController -- self-inspection blocking (inspector card)
+// ---------------------------------------------------------------------------
+
+describe("ScanModeController -- self-inspection blocking", () => {
+  let ctrl: ScanModeController;
+  let inspectorContent: HTMLDivElement;
+  let innerEl: HTMLSpanElement;
+  let originalEFP: typeof document.elementFromPoint;
+
+  beforeEach(() => {
+    ctrl = new ScanModeController();
+
+    // Build a minimal inspector card DOM structure
+    inspectorContent = document.createElement("div");
+    inspectorContent.setAttribute("data-testid", "style-inspector-content");
+    innerEl = document.createElement("span");
+    innerEl.textContent = "some inspector text";
+    inspectorContent.appendChild(innerEl);
+    document.body.appendChild(inspectorContent);
+
+    originalEFP = document.elementFromPoint.bind(document);
+    ctrl.activate(() => {});
+  });
+
+  afterEach(() => {
+    if (ctrl.isActive) {
+      ctrl.deactivate();
+    }
+    if (ctrl.overlayEl.parentNode) {
+      ctrl.overlayEl.parentNode.removeChild(ctrl.overlayEl);
+    }
+    if (ctrl.highlightEl.parentNode) {
+      ctrl.highlightEl.parentNode.removeChild(ctrl.highlightEl);
+    }
+    inspectorContent.parentNode!.removeChild(inspectorContent);
+    document.elementFromPoint = originalEFP;
+  });
+
+  it("clicking on an element inside the inspector card does NOT trigger selection", () => {
+    document.elementFromPoint = (_x: number, _y: number) => innerEl;
+
+    let selected = false;
+    // Re-activate with a fresh callback (ctrl is already active, need to test the path)
+    ctrl.deactivate();
+    ctrl.activate((_el: HTMLElement) => { selected = true; });
+
+    const clickEvent = new MouseEvent("click", { bubbles: true, metaKey: false, clientX: 50, clientY: 50 });
+    ctrl.overlayEl.dispatchEvent(clickEvent);
+
+    expect(selected).toBe(false);
+    // Scan mode should remain active (not deactivated on self-click)
+    expect(ctrl.isActive).toBe(true);
+  });
+
+  it("hovering over an element inside the inspector card hides the highlight", () => {
+    document.elementFromPoint = (_x: number, _y: number) => innerEl;
+
+    // First make highlight visible
+    ctrl.highlightEl.style.display = "";
+
+    // happy-dom does not support PointerEvent; use MouseEvent as a stand-in.
+    // The handler only reads clientX/clientY which MouseEvent provides.
+    const moveEvent = new MouseEvent("pointermove", { bubbles: true, clientX: 50, clientY: 50 });
+    ctrl.overlayEl.dispatchEvent(moveEvent);
+
+    expect(ctrl.highlightEl.style.display).toBe("none");
+  });
+
+  it("hovering over a non-inspector element positions the highlight normally", () => {
+    const outsideEl = document.createElement("div");
+    outsideEl.style.cssText = "position:fixed;top:10px;left:10px;width:50px;height:50px";
+    document.body.appendChild(outsideEl);
+
+    document.elementFromPoint = (_x: number, _y: number) => outsideEl;
+
+    // happy-dom does not support PointerEvent; use MouseEvent as a stand-in.
+    const moveEvent = new MouseEvent("pointermove", { bubbles: true, clientX: 35, clientY: 35 });
+    ctrl.overlayEl.dispatchEvent(moveEvent);
+
+    // Highlight should be visible (not display:none) for non-inspector elements
+    expect(ctrl.highlightEl.style.display).not.toBe("none");
+
+    outsideEl.parentNode!.removeChild(outsideEl);
   });
 });
 

@@ -512,9 +512,9 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     mode === "inspecting" ? "Done Inspecting" :
     "Inspect Element";
 
-  // Button emphasis/role by mode -- scanning gets a visually distinct style
-  const buttonEmphasis = mode === "scanning" ? "filled" : "outlined";
-  const buttonRole = mode === "scanning" ? "danger" : "action";
+  // Button emphasis/role by mode -- subtle in rest/inspecting, outlined in scanning
+  const buttonEmphasis = mode === "scanning" ? "outlined" : "ghost";
+  const buttonRole = "action";
 
   // Hint text shown only during scanning state
   const hintText =

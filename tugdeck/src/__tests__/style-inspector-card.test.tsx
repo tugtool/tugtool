@@ -171,7 +171,7 @@ describe("StyleInspectorContent -- T-SI-03: inspect button is present", () => {
     expect(wrapper).not.toBeNull();
   });
 
-  it("inspect button uses outlined-action emphasis in rest state", () => {
+  it("inspect button uses ghost-action emphasis in rest state", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-8" />));
@@ -179,8 +179,8 @@ describe("StyleInspectorContent -- T-SI-03: inspect button is present", () => {
 
     const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
     expect(inspectBtn).not.toBeNull();
-    // Rest state: outlined-action TugButton variant
-    expect(inspectBtn!.classList.contains("tug-button-outlined-action")).toBe(true);
+    // Rest state: ghost-action TugButton variant (subtle, not attention-grabbing)
+    expect(inspectBtn!.classList.contains("tug-button-ghost-action")).toBe(true);
   });
 });
 
@@ -213,9 +213,9 @@ describe("StyleInspectorContent -- T-SI-04: button labels by state", () => {
       fireEvent.click(inspectBtn!);
     });
 
-    // Should now show "Cancel Inspection" with filled-danger TugButton variant
+    // Should now show "Cancel Inspection" with outlined-action TugButton variant
     expect(inspectBtn!.textContent).toContain("Cancel Inspection");
-    expect(inspectBtn!.classList.contains("tug-button-filled-danger")).toBe(true);
+    expect(inspectBtn!.classList.contains("tug-button-outlined-action")).toBe(true);
   });
 
   it("button shows aria-pressed=true in scanning state", () => {
@@ -258,8 +258,8 @@ describe("StyleInspectorContent -- T-SI-04: button labels by state", () => {
       fireEvent.click(inspectBtn!);
     });
     expect(inspectBtn!.textContent).toContain("Inspect Element");
-    // Back to outlined-action in rest state
-    expect(inspectBtn!.classList.contains("tug-button-outlined-action")).toBe(true);
+    // Back to ghost-action in rest state
+    expect(inspectBtn!.classList.contains("tug-button-ghost-action")).toBe(true);
   });
 });
 

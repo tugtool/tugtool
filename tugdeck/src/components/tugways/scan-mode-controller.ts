@@ -212,7 +212,8 @@ export class ScanModeController {
    *   2. Call `document.elementFromPoint` to find the real element under cursor.
    *   3. Restore `pointer-events: auto` immediately.
    *   4. Skip the overlay itself or the highlight rect (identity check).
-   *   5. Position the highlight rect on the identified element.
+   *   5. If the target is inside the inspector card, hide the highlight and return.
+   *   6. Position the highlight rect on the identified element.
    */
   private _handlePointerMove(e: PointerEvent): void {
     // Temporarily suppress overlay to allow elementFromPoint to see through it
@@ -224,8 +225,16 @@ export class ScanModeController {
       return;
     }
 
-    this.hoveredEl = el as HTMLElement;
-    this._positionHighlight(el as HTMLElement);
+    const target = el as HTMLElement;
+
+    // Don't highlight elements inside the inspector card itself
+    if (this._isInsideInspectorCard(target)) {
+      this.highlightEl.style.display = "none";
+      return;
+    }
+
+    this.hoveredEl = target;
+    this._positionHighlight(target);
   }
 
   /**
@@ -234,34 +243,52 @@ export class ScanModeController {
    * If metaKey (Cmd) is held, the click passes through to the underlying element
    * as a normal click instead of triggering element selection. This lets users
    * Cmd+Click on card title bars or other UI chrome during scan mode without
-   * accidentally selecting them for inspection.
+   * accidentally selecting them for inspection. The synthetic click is dispatched
+   * regardless of whether the target is inside the inspector card (so card
+   * interactions like focusing/closing still work normally via Cmd+Click).
    *
    * Otherwise, identifies the real element under cursor using the same
    * pointer-events suppression technique, calls the onSelect callback, and
    * deactivates while keeping the highlight rect in the DOM for the caller to pin.
+   * Clicks on elements inside the inspector card itself are ignored (no selection).
    */
   private _handleClick(e: MouseEvent): void {
-    // Cmd+Click passthrough: let the click reach the real target normally.
-    if (e.metaKey) {
-      this.overlayEl.style.pointerEvents = "none";
-      requestAnimationFrame(() => {
-        if (this.active) {
-          this.overlayEl.style.pointerEvents = "auto";
-        }
-      });
-      return;
-    }
-
-    // Find the real target (same technique as pointermove)
+    // Find the real target via pointer-events suppression
     this.overlayEl.style.pointerEvents = "none";
     const el = document.elementFromPoint(e.clientX, e.clientY);
     this.overlayEl.style.pointerEvents = "auto";
+
+    // Cmd+Click passthrough: dispatch a synthetic click on the real target.
+    // Always forwarded (even if target is inside the inspector card), so that
+    // card interactions (close, focus) continue to work normally.
+    if (e.metaKey) {
+      if (el && el !== this.overlayEl && el !== this.highlightEl) {
+        const synthetic = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+        });
+        el.dispatchEvent(synthetic);
+      }
+      return;
+    }
 
     if (!el || el === this.overlayEl || el === this.highlightEl) {
       return;
     }
 
     const target = el as HTMLElement;
+
+    // Ignore clicks on elements inside the inspector card itself (no selection)
+    if (this._isInsideInspectorCard(target)) {
+      return;
+    }
+
     const cb = this.onSelectCallback;
     // Deactivate before calling callback, keeping highlight for caller to pin
     this.deactivate({ keepHighlight: true });
@@ -318,6 +345,17 @@ export class ScanModeController {
     } else {
       this.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
     }
+  }
+
+  /**
+   * Returns true if `el` is inside the style inspector card content.
+   *
+   * Uses `closest` to walk up the DOM tree looking for an ancestor with
+   * `data-testid="style-inspector-content"`. This prevents the scan overlay
+   * from highlighting or selecting elements within the inspector card itself.
+   */
+  private _isInsideInspectorCard(el: HTMLElement): boolean {
+    return el.closest('[data-testid="style-inspector-content"]') !== null;
   }
 
   /**
