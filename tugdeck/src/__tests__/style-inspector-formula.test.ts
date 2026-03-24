@@ -12,7 +12,7 @@ import { describe, it, expect } from "bun:test";
 import {
   createFormulaSection,
   type FormulaRow,
-} from "@/components/tugways/style-inspector-overlay";
+} from "@/components/tugways/style-inspector-core";
 
 // ---------------------------------------------------------------------------
 // createFormulaSection — with formula rows

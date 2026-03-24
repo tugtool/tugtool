@@ -54,14 +54,11 @@ import {
   shortenNumbers,
   tryFormatTugColor,
   getReverseMap,
-  scanAllTugProperties,
-  groupProperties,
-  invalidateTugPropertiesCache,
-} from "@/components/tugways/style-inspector-overlay";
+} from "@/components/tugways/style-inspector-core";
 import { RESOLVED_HUE_SLOT_KEYS } from "@/components/tugways/formula-reverse-map";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 import { registerCard } from "@/card-registry";
-import type { TokenChainResult, FormulaRow, FormulasData, GroupedProperties } from "@/components/tugways/style-inspector-overlay";
+import type { TokenChainResult, FormulaRow, FormulasData } from "@/components/tugways/style-inspector-core";
 import "./style-inspector-card.css";
 
 // ---------------------------------------------------------------------------
@@ -132,12 +129,10 @@ export const styleInspectorBus: StyleInspectorBus = createStyleInspectorBus();
  */
 if (import.meta.hot) {
   import.meta.hot.on("tug:formulas-updated", () => {
-    invalidateTugPropertiesCache();
     styleInspectorBus.emit("formulas-updated");
   });
 
   import.meta.hot.on("vite:afterUpdate", () => {
-    invalidateTugPropertiesCache();
     styleInspectorBus.emit("formulas-updated");
   });
 }
@@ -159,8 +154,6 @@ interface InspectionData {
   timing: number;
   motionOn: boolean;
   formulasData: FormulasData | null;
-  /** All --tug-* properties grouped by category and state. [D01] */
-  groupedProperties: GroupedProperties | null;
 }
 
 /** Button mode enum for the three-state inspect button. */
@@ -319,10 +312,10 @@ function ChainSection({
 // ---------------------------------------------------------------------------
 
 /**
- * FormulaSection renders formula rows.
- * Ports the DOM structure from `createFormulaSection`.
+ * FormulaSection renders formula rows with inline editing support.
+ * Uses FormulaChipValue for the value display (supports click-to-edit).
  */
-function FormulaSection({ rows }: { rows: FormulaRow[] }) {
+function FormulaSection({ rows, sources }: { rows: FormulaRow[]; sources: Record<string, string> }) {
   const isConstant = rows.length === 0;
 
   return (
@@ -337,7 +330,7 @@ function FormulaSection({ rows }: { rows: FormulaRow[] }) {
           <div className="tug-inspector-formula-field" key={row.field}>
             <span className="tug-inspector-formula-field__name">{row.field}</span>
             <span className="tug-inspector-row__value--dim"> = </span>
-            <span className="tug-inspector-formula-field__value">{String(row.value)}</span>
+            <FormulaChipValue row={row} sources={sources} />
             <span className="tug-inspector-formula-field__type">{row.property}</span>
             {row.isStructural && (
               <span className="tug-inspector-formula__release-label">(applies on release)</span>
@@ -348,26 +341,6 @@ function FormulaSection({ rows }: { rows: FormulaRow[] }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// AllPropertiesSection -- grouped all-properties display
-// ---------------------------------------------------------------------------
-
-/** Category display labels for the section headings. */
-const CATEGORY_LABELS: Record<string, string> = {
-  BACKGROUND: "Background",
-  TEXT: "Text",
-  BORDER: "Border",
-  OTHER: "Other",
-};
-
-/** State display labels for sub-row labels. */
-const STATE_LABELS: Record<string, string> = {
-  rest: "rest",
-  hover: "hover",
-  active: "active",
-  disabled: "disabled",
-};
 
 // ---------------------------------------------------------------------------
 // Inline editing helpers (L06: imperative DOM)
@@ -615,7 +588,7 @@ function FormulaChipValue({
   if (editableType === "readonly") {
     return (
       <span
-        className="si-all-props-formula-chip__value"
+        className="tug-inspector-formula-field__value"
         data-testid={`formula-value-${row.field}`}
       >
         {displayValue}
@@ -625,7 +598,7 @@ function FormulaChipValue({
 
   return (
     <span
-      className="si-all-props-formula-chip__value si-all-props-formula-chip__value--editable"
+      className="tug-inspector-formula-field__value tug-inspector-formula-field__value--editable"
       data-testid={`formula-value-${row.field}`}
       data-editable-type={editableType}
       onClick={handleClick}
@@ -633,91 +606,6 @@ function FormulaChipValue({
     >
       {displayValue}
     </span>
-  );
-}
-
-/**
- * AllPropertiesSection renders all discovered --tug-* properties grouped by
- * semantic category (BACKGROUND, TEXT, BORDER, OTHER) and interaction state
- * (rest, hover, active, disabled).
- *
- * Accepts `sources` from FormulasData to support inline editing. [D07]
- *
- * [D01] All-properties scan, [D03] Group by name heuristic.
- * Spec S02 (#s02-property-grouping)
- */
-function AllPropertiesSection({
-  grouped,
-  sources,
-}: {
-  grouped: GroupedProperties;
-  sources: Record<string, string>;
-}) {
-  const categories = ["BACKGROUND", "TEXT", "BORDER", "OTHER"] as const;
-  const states = ["rest", "hover", "active", "disabled"] as const;
-
-  // Determine if there are any entries at all
-  let hasAnyEntry = false;
-  for (const cat of categories) {
-    const stateMap = grouped.get(cat);
-    if (!stateMap) continue;
-    for (const state of states) {
-      const entries = stateMap.get(state);
-      if (entries && entries.length > 0) {
-        hasAnyEntry = true;
-        break;
-      }
-    }
-    if (hasAnyEntry) break;
-  }
-
-  if (!hasAnyEntry) return null;
-
-  return (
-    <div className="si-all-props-root" data-testid="all-properties-section">
-      {categories.map((cat) => {
-        const stateMap = grouped.get(cat);
-        if (!stateMap) return null;
-
-        // Check if any state has entries for this category
-        const hasCatEntries = states.some((st) => (stateMap.get(st)?.length ?? 0) > 0);
-        if (!hasCatEntries) return null;
-
-        return (
-          <div key={cat} className="si-all-props-category">
-            <div className="si-all-props-category__header">{CATEGORY_LABELS[cat]}</div>
-            {states.map((state) => {
-              const entries = stateMap.get(state);
-              if (!entries || entries.length === 0) return null;
-
-              return (
-                <div key={state} className="si-all-props-state-group">
-                  <span className="si-all-props-state__label">{STATE_LABELS[state]}</span>
-                  <div className="si-all-props-entries">
-                    {entries.map((entry) => (
-                      <div key={entry.property} className="si-all-props-entry">
-                        <span className="si-all-props-entry__prop">{entry.property}</span>
-                        {entry.formulaRows.length > 0 && (
-                          <div className="si-all-props-entry__formulas">
-                            {entry.formulaRows.map((row) => (
-                              <span key={row.field} className="si-all-props-formula-chip">
-                                <span className="si-all-props-formula-chip__field">{row.field}</span>
-                                <span className="si-all-props-formula-chip__sep"> = </span>
-                                <FormulaChipValue row={row} sources={sources} />
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -884,7 +772,6 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
       timing,
       motionOn,
       formulasData: null,
-      groupedProperties: null,
     };
     setRenderKey((k) => k + 1);
 
@@ -892,14 +779,9 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     const targetEl = el;
     fetchFormulasData().then((data) => {
       if (inspectionDataRef.current && inspectionDataRef.current.el === targetEl) {
-        // Build grouped properties once formulas data is available
-        const tugProps = scanAllTugProperties();
-        const reverseMap = getReverseMap();
-        const grouped = groupProperties(tugProps, data, reverseMap);
         inspectionDataRef.current = {
           ...inspectionDataRef.current,
           formulasData: data,
-          groupedProperties: grouped,
         };
         setRenderKey((k) => k + 1);
       }
@@ -1036,13 +918,9 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
         ) {
           return;
         }
-        const tugProps = scanAllTugProperties();
-        const reverseMap = getReverseMap();
-        const grouped = groupProperties(tugProps, data, reverseMap);
         inspectionDataRef.current = {
           ...inspectionDataRef.current,
           formulasData: data,
-          groupedProperties: grouped,
         };
         setRenderKey((k) => k + 1);
       }).catch(() => {});
@@ -1198,18 +1076,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
 
             {/* Formula provenance section */}
             {formulaRows !== null && (
-              <FormulaSection rows={formulaRows} />
-            )}
-
-            {/* All-properties grouped section (Step 2 + Step 4: inline editing) */}
-            {data.groupedProperties !== null && (
-              <div className="tug-inspector-section">
-                <div className="tug-inspector-section__title">All Tug Properties</div>
-                <AllPropertiesSection
-                  grouped={data.groupedProperties}
-                  sources={data.formulasData?.sources ?? {}}
-                />
-              </div>
+              <FormulaSection rows={formulaRows} sources={data.formulasData?.sources ?? {}} />
             )}
           </>
         )}

@@ -51,13 +51,13 @@ const EMPTY_OVERRIDE = `/* empty - ${BASE_THEME_NAME} default */\n`;
 
 /**
  * Cached formulas data from the most recently activated theme.
- * Populated by the subprocess sidecar file after each theme activation.
  * Served via GET /__themes/formulas for the style inspector.
+ *
+ * Note: sources are NOT cached here — they are read fresh from the recipe file
+ * on each GET request so they are always in sync with the current file on disk.
  */
 export interface FormulasCache {
   formulas: Record<string, number | string | boolean>;
-  /** Maps each formula field name to its source expression text from the recipe file. [D07] */
-  sources: Record<string, string>;
   mode: "dark" | "light";
   themeName: string;
 }
@@ -65,15 +65,45 @@ let formulasCache: FormulasCache | null = null;
 
 /**
  * Handle GET /__themes/formulas.
- * Returns the cached formulas data for the active theme, or 404 if none.
+ * Returns formulas data for the active theme, or 404 if none.
+ *
+ * Sources are read directly from the recipe file at request time so they are
+ * always fresh (no sidecar file, no caching of source expressions). [D07]
+ *
+ * @param cache - Current FormulasCache (may be null)
+ * @param recipesDir - Absolute path to the recipes directory
+ * @param fsImpl - fs implementation (real or mock)
  */
-export function handleFormulasGet(cache: FormulasCache | null): { status: number; body: string } {
+export function handleFormulasGet(
+  cache: FormulasCache | null,
+  recipesDir: string,
+  fsImpl: { readFileSync: (p: string, enc: "utf-8") => string }
+): { status: number; body: string } {
   if (cache === null) {
     return { status: 404, body: JSON.stringify({ error: "no active theme" }) };
   }
+
+  // Extract source expressions from the recipe file directly at request time.
+  const sources: Record<string, string> = {};
+  try {
+    const recipeFilePath = path.resolve(recipesDir, `${cache.mode}.ts`);
+    const recipeContent = fsImpl.readFileSync(recipeFilePath, "utf-8");
+    const assignmentRegex = /^\s*(\w+)\s*:\s*(.+?)[\s,]*$/gm;
+    let match: RegExpExecArray | null;
+    while ((match = assignmentRegex.exec(recipeContent)) !== null) {
+      const field = match[1];
+      const rhs = match[2].trim().replace(/,\s*$/, "");
+      if (field && rhs && Object.prototype.hasOwnProperty.call(cache.formulas, field)) {
+        sources[field] = rhs;
+      }
+    }
+  } catch {
+    // Recipe source extraction failed — sources will be empty, fields will be read-only.
+  }
+
   return {
     status: 200,
-    body: JSON.stringify({ formulas: cache.formulas, sources: cache.sources, mode: cache.mode, themeName: cache.themeName }),
+    body: JSON.stringify({ formulas: cache.formulas, sources, mode: cache.mode, themeName: cache.themeName }),
   };
 }
 
@@ -125,22 +155,21 @@ function themeOverridePlugin(): VitePlugin {
       // If theme-engine is require()'d here, Vite treats the entire dependency
       // chain (including recipes/dark.ts, recipes/light.ts) as config deps and
       // auto-restarts the server whenever any of them change.
+      // The subprocess outputs formulas JSON to stdout; capture it to populate formulasCache.
       try {
         const script = path.resolve(__dirname, "scripts/generate-theme-override.ts");
-        execSync(`bun run ${script} ${JSON.stringify(jsonPath)} ${JSON.stringify(THEME_OVERRIDE_CSS)}`, {
+        const output = execSync(`bun run ${script} ${JSON.stringify(jsonPath)} ${JSON.stringify(THEME_OVERRIDE_CSS)}`, {
           cwd: __dirname,
           stdio: "pipe",
         });
+        try {
+          formulasCache = JSON.parse(output.toString().trim()) as FormulasCache;
+        } catch {
+          // Formulas parse failed — inspector will show without formula section.
+        }
       } catch (err) {
         console.error(`[themeOverridePlugin] failed to generate CSS for theme "${activeTheme}":`, err);
         fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
-      }
-      // Populate formulasCache from the sidecar written by the subprocess.
-      try {
-        const formulasJson = fs.readFileSync(THEME_OVERRIDE_CSS + ".formulas.json", "utf-8");
-        formulasCache = JSON.parse(formulasJson) as FormulasCache;
-      } catch {
-        // Formulas cache population failed — inspector will show without formula section.
       }
     },
   };
@@ -202,21 +231,20 @@ function controlTokenHotReload(): VitePlugin {
       console.error(`[control-token-hot-reload] theme "${activeTheme}" not found`);
       return;
     }
+    // The subprocess outputs formulas JSON to stdout; capture it to populate formulasCache.
     try {
       const script = path.resolve(__dirname, "scripts/generate-theme-override.ts");
-      execSync(`bun run ${script} ${JSON.stringify(jsonPath)} ${JSON.stringify(THEME_OVERRIDE_CSS)}`, {
+      const output = execSync(`bun run ${script} ${JSON.stringify(jsonPath)} ${JSON.stringify(THEME_OVERRIDE_CSS)}`, {
         cwd: __dirname,
         stdio: "pipe",
       });
+      try {
+        formulasCache = JSON.parse(output.toString().trim()) as FormulasCache;
+      } catch {
+        // Formulas parse failed — inspector will show without formula section.
+      }
     } catch (err) {
       console.error(`[control-token-hot-reload] failed to re-derive override for theme "${activeTheme}":`, err);
-    }
-    // Populate formulasCache from the sidecar written by the subprocess.
-    try {
-      const formulasJson = fs.readFileSync(THEME_OVERRIDE_CSS + ".formulas.json", "utf-8");
-      formulasCache = JSON.parse(formulasJson) as FormulasCache;
-    } catch {
-      // Formulas cache population failed — inspector will show without formula section.
     }
   }
 
@@ -722,7 +750,7 @@ export async function handleThemesActivate(
     withMutex(async () => {
       try {
         const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath);
-        formulasCache = { formulas: result.formulas, sources: {}, mode: result.mode, themeName: name };
+        formulasCache = { formulas: result.formulas, mode: result.mode, themeName: name };
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -945,7 +973,8 @@ function themeSaveLoadPlugin(): VitePlugin {
           }
 
           if (req.method === "GET" && url === "/formulas") {
-            const result = handleFormulasGet(formulasCache);
+            const recipesDir = path.resolve(__dirname, "src/components/tugways/recipes");
+            const result = handleFormulasGet(formulasCache, recipesDir, fs as unknown as { readFileSync: (p: string, enc: "utf-8") => string });
             res.writeHead(result.status, { "Content-Type": "application/json" });
             res.end(result.body);
             return;
@@ -984,7 +1013,7 @@ function themeSaveLoadPlugin(): VitePlugin {
               withMutex(async () => {
                 try {
                   const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS);
-                  formulasCache = { formulas: activateResult.formulas, sources: {}, mode: activateResult.mode, themeName: saveResult.themeName! };
+                  formulasCache = { formulas: activateResult.formulas, mode: activateResult.mode, themeName: saveResult.themeName! };
                   const responseBody = JSON.stringify({ ok: true, name: saveResult.themeName, canvasParams: activateResult.canvasParams });
                   res.writeHead(200, { "Content-Type": "application/json" });
                   res.end(responseBody);

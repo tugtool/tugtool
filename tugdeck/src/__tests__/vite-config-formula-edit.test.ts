@@ -192,7 +192,6 @@ const FAKE_RECIPES_DIR = "/fake/tugdeck/src/components/tugways/recipes";
 function makeFakeCache(mode: "dark" | "light"): FormulasCache {
   return {
     formulas: { surfaceAppIntensity: 2 },
-    sources: { surfaceAppIntensity: "2" },
     mode,
     themeName: "brio",
   };

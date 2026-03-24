@@ -7,8 +7,9 @@
  * (which would make the entire recipe chain a config dependency, causing Vite to
  * auto-restart the server on recipe file edits).
  *
- * Also writes a JSON sidecar file at <output-css-path>.formulas.json containing
- * the DerivationFormulas, mode, and themeName for the GET /__themes/formulas endpoint.
+ * Outputs a JSON object to stdout with { formulas, mode, themeName } for the
+ * GET /__themes/formulas endpoint. The caller (vite.config.ts) captures this
+ * to populate formulasCache.
  */
 
 import { generateThemeCSS } from "../src/theme-css-generator";
@@ -48,44 +49,16 @@ if (typeof parsed.mode === "string" && (parsed.mode as string).startsWith("{")) 
 const css = generateThemeCSS(parsed as ThemeSpec);
 fs.writeFileSync(outputPath, css, "utf-8");
 
-// Write formulas sidecar for the GET /__themes/formulas endpoint.
+// Output formulas JSON to stdout for the caller (vite.config.ts) to populate formulasCache.
 try {
   const themeOutput = deriveTheme(parsed as ThemeSpec);
   const themeName = (parsed as ThemeSpec).name || path.basename(jsonPath, ".json");
-
-  // Extract source expressions from the recipe file.
-  // The recipe file path is determined from the mode in the theme spec.
-  const sources: Record<string, string> = {};
-  try {
-    const recipeMode = (parsed as ThemeSpec).mode;
-    const recipePath = path.resolve(path.dirname(outputPath), "..", "src", "components", "tugways", "recipes", `${recipeMode}.ts`);
-    const recipeContent = fs.readFileSync(recipePath, "utf-8");
-    // Extract all formula field assignments.
-    // Match lines like: `  fieldName: expression,` or `  fieldName: expression`
-    // Regex: capture field name and RHS expression text.
-    const assignmentRegex = /^\s*(\w+)\s*:\s*(.+?)[\s,]*$/gm;
-    let match: RegExpExecArray | null;
-    while ((match = assignmentRegex.exec(recipeContent)) !== null) {
-      const field = match[1];
-      const rhs = match[2].trim().replace(/,\s*$/, "");
-      if (field && rhs) {
-        // Only record if this field appears in the formulas output
-        if (Object.prototype.hasOwnProperty.call(themeOutput.formulas, field)) {
-          sources[field] = rhs;
-        }
-      }
-    }
-  } catch {
-    // Recipe source extraction failed — sources will be empty, fields will be read-only.
-  }
-
   const formulasJson = JSON.stringify({
     formulas: themeOutput.formulas,
-    sources,
     mode: (parsed as ThemeSpec).mode,
     themeName,
   });
-  fs.writeFileSync(outputPath + ".formulas.json", formulasJson, "utf-8");
+  process.stdout.write(formulasJson + "\n");
 } catch {
-  // Formulas sidecar write failed — inspector will show without formula section.
+  // Formulas output failed — caller will leave formulasCache null.
 }

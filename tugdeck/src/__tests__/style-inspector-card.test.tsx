@@ -27,7 +27,7 @@ import {
   activateNumericInput,
 } from "@/components/tugways/cards/style-inspector-card";
 import { getRegistration, _resetForTest } from "@/card-registry";
-import type { FormulaRow } from "@/components/tugways/style-inspector-overlay";
+import type { FormulaRow } from "@/components/tugways/style-inspector-core";
 
 // Clean up mounted React trees after each test.
 afterEach(() => {
