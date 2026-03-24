@@ -38,6 +38,7 @@ import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
 import { registerHelloCard } from "@/components/tugways/cards/hello-card";
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-card";
+import { registerStyleInspectorCard } from "@/components/tugways/cards/style-inspector-card";
 import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 
@@ -895,6 +896,127 @@ describe("DeckCanvas – onClose wired from store.handleCardClosed via Tugcard",
 
     expect(closedIds.length).toBe(1);
     expect(closedIds[0]).toBe("target-card");
+  });
+});
+
+// ============================================================================
+// Action handlers: showStyleInspector
+// ============================================================================
+
+describe("DeckCanvas – showStyleInspector action", () => {
+  beforeEach(() => { _resetForTest(); registerStyleInspectorCard(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("DeckCanvas canHandle('showStyleInspector') returns true", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const store = makeMockStore();
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    expect(manager!.canHandle("showStyleInspector")).toBe(true);
+  });
+
+  it("showStyleInspector calls store.addCard('style-inspector') when no inspector card exists", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const addCardCalls: string[] = [];
+    const INSPECTOR_CARD_ID = "inspector-card-uuid-1";
+    const store = makeMockStore();
+    store.addCard = (componentId: string) => {
+      addCardCalls.push(componentId);
+      return INSPECTOR_CARD_ID;
+    };
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    act(() => {
+      manager!.dispatch({ action: "showStyleInspector", phase: "discrete" });
+    });
+
+    expect(addCardCalls.length).toBe(1);
+    expect(addCardCalls[0]).toBe("style-inspector");
+  });
+
+  it("showStyleInspector a second time calls store.handleCardFocused (show-only semantics)", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const INSPECTOR_CARD_ID = "inspector-card-uuid-2";
+    const addCardCalls: string[] = [];
+    const focusedIds: string[] = [];
+
+    // ReactiveStore so cards array updates after addCard
+    const reactiveStore = new ReactiveStore({ cards: [] });
+    reactiveStore.addCard = (componentId: string) => {
+      addCardCalls.push(componentId);
+      // Simulate adding the card to store state
+      reactiveStore.setState({
+        cards: [makeCardState(INSPECTOR_CARD_ID, "style-inspector")],
+      });
+      return INSPECTOR_CARD_ID;
+    };
+    reactiveStore.handleCardFocused = (id: string) => {
+      focusedIds.push(id);
+    };
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={reactiveStore}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    // First dispatch: creates the inspector card
+    act(() => {
+      manager!.dispatch({ action: "showStyleInspector", phase: "discrete" });
+    });
+    expect(addCardCalls.length).toBe(1);
+
+    // Second dispatch: inspector card now exists -- should focus it, NOT create a new one
+    act(() => {
+      manager!.dispatch({ action: "showStyleInspector", phase: "discrete" });
+    });
+    expect(addCardCalls.length).toBe(1); // No second addCard call
+    expect(focusedIds).toContain(INSPECTOR_CARD_ID);
   });
 });
 

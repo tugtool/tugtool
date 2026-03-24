@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-24T15:35:49Z
+---
+
+## step-4: Added show-style-inspector action handler in action-dispatch.ts, showStyleInspector responder action with find-or-create-and-focus semantics in DeckCanvas, replaced initStyleInspector with registerStyleInspectorCard in main.tsx. 6 new tests pass (1868 total).
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
 step: step-3
 date: 2025-03-24T15:24:20Z
 ---

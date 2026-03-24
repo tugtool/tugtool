@@ -15,8 +15,8 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { BASE_THEME_SPEC } from "./generated/base-theme";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
+import { registerStyleInspectorCard } from "./components/tugways/cards/style-inspector-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
-import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
 import { selectionGuard } from "./components/tugways/selection-guard";
 import { deserialize } from "./serialization";
 
@@ -94,14 +94,10 @@ if (!container) {
   // registered in Phase 9.
   registerHelloCard();
   registerGalleryCards();
-
-  // Initialize the cascade inspector in dev mode only. The cleanup function is
-  // intentionally not called during normal app lifetime (same pattern as
-  // initMotionObserver) -- the inspector should live for the entire app session.
-  // [D02] Dev-only gating via NODE_ENV
-  if (process.env.NODE_ENV !== "production") {
-    initStyleInspector();
-  }
+  // Register the Style Inspector card unconditionally (same pattern as hello and gallery).
+  // The card code is inert until opened via the Developer menu; no global listeners are
+  // attached at registration time. [D02] Style inspector as card, not overlay.
+  registerStyleInspectorCard();
 
   // Phase 5f Phase 2: extract tab IDs from the loaded layout and fetch tab states.
   // This must run after the layout fetch (depends on tab IDs) but before
