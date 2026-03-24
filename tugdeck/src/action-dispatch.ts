@@ -208,6 +208,18 @@ export function initActionDispatch(
     }
   });
 
+  // toggle-style-inspector-scan: Toggle scan mode on the Style Inspector via DeckCanvas
+  // responder action. Dispatches "toggleStyleInspectorScan" through the ResponderChainManager,
+  // which routes it to DeckCanvas's registered toggleStyleInspectorScan handler. The handler
+  // fires the styleInspectorBus without opening or focusing the card.
+  registerAction("toggle-style-inspector-scan", () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.dispatch({ action: "toggleStyleInspectorScan", phase: "discrete" });
+    } else {
+      console.warn("toggle-style-inspector-scan: responder chain manager not registered yet");
+    }
+  });
+
   // choose-source-tree: Call WKScriptMessageHandler bridge if available
   registerAction("choose-source-tree", () => {
     console.info("choose-source-tree: triggering source tree picker");

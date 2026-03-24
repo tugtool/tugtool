@@ -321,13 +321,11 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
 
         if (existingCard) {
           // Inspector card already exists -- focus it ([D07] show-only, never close)
-          // and toggle scan mode so repeated Opt+Cmd+I presses cycle scan on/off.
           store.handleCardFocused(existingCard.id);
           setDeselected(false);
           manager.makeFirstResponder(existingCard.id);
-          styleInspectorBus.emit("toggle-scan");
         } else {
-          // No inspector card -- create one (no scan toggle on first open)
+          // No inspector card -- create one
           const newId = store.addCard("style-inspector");
           if (newId) {
             styleInspectorCardIdRef.current = newId;
@@ -335,6 +333,17 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
             manager.makeFirstResponder(newId);
           }
         }
+      },
+      /**
+       * toggleStyleInspectorScan -- fire the styleInspectorBus toggle-scan event.
+       *
+       * This action is separate from showStyleInspector so that scan mode can be
+       * toggled independently (e.g., via Opt+Cmd+E) without opening or focusing the
+       * inspector card. Just fires the bus -- no card creation, no card focusing.
+       */
+      toggleStyleInspectorScan: (_event: ActionEvent) => {
+        styleInspectorBus.emit("toggle-scan");
+        return true;
       },
       // addTab: Add a new "hello" tab to the topmost card (last in array).
       // Reads cardsRef so the closure never goes stale. If no cards exist,

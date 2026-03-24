@@ -1021,6 +1021,67 @@ describe("DeckCanvas – showStyleInspector action", () => {
 });
 
 // ============================================================================
+// Action handlers: toggleStyleInspectorScan
+// ============================================================================
+
+describe("DeckCanvas – toggleStyleInspectorScan action", () => {
+  beforeEach(() => { _resetForTest(); registerStyleInspectorCard(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("DeckCanvas canHandle('toggleStyleInspectorScan') returns true", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const store = makeMockStore();
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    expect(manager!.canHandle("toggleStyleInspectorScan")).toBe(true);
+  });
+
+  it("dispatching toggleStyleInspectorScan returns true (handled)", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const store = makeMockStore();
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    let handled = false;
+    act(() => {
+      handled = manager!.dispatch({ action: "toggleStyleInspectorScan", phase: "discrete" });
+    });
+    expect(handled).toBe(true);
+  });
+});
+
+// ============================================================================
 // Step 7: addTab responder action wired in DeckCanvas
 // ============================================================================
 
