@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-24T00:27:01Z
+---
+
+## step-6: Verification-only step: all tests pass (2 pre-existing failures unrelated), build succeeds, production bundle excludes formula editor symbols, audit:tokens passes, reverse map completeness verified.
+
+**Files changed:**
+- .tugtool/tugplan-formula-editor.md
+
+---
+
+---
 step: step-5
 date: 2025-03-24T00:16:35Z
 ---
