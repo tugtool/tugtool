@@ -165,6 +165,158 @@ Accessibility card continues to use them for its theme creation flow.
    whole-RHS-replacement fallback. Existing tests for the happy path
    (literal replacement) should not change.
 
+### Phase A2 — Show All States for the Inspected Element
+
+**Problem:** The FORMULA section only shows formula fields reachable
+from three computed CSS values (background-color, color, border-color).
+This misses most of the element's formula-driven styling. A tug-tab
+shows `(constant)` even though it has `--tug-tab-fg-rest`,
+`--tug-tab-fg-hover`, `--tug-tab-bg-rest`, etc. — all defined in its
+matched CSS rules. A TugButton shows rest-state formulas but nothing
+for hover, active, or disabled.
+
+**Root cause:** `buildFormulaRows` only examines the three token chains
+already traced. It never looks at the element's other `--tug-*` custom
+properties.
+
+**Solution:** Walk the inspected element's matched CSS rules, collect
+all `--tug-*` custom properties, resolve each through the existing
+`resolveTokenChain`, look up formula fields via the reverse map, and
+group by interaction state.
+
+This is NOT a global stylesheet scan. It's scoped to rules that match
+the specific element the user clicked. The existing `walkRulesForToken`
+already does element-scoped rule walking with `el.matches()` — the
+new function follows the same pattern.
+
+#### What to build
+
+**One new function in `style-inspector-core.ts`:**
+
+```
+collectElementTugProperties(el: HTMLElement): string[]
+```
+
+Walk `document.styleSheets`. For each `CSSStyleRule`, check
+`el.matches(rule.selectorText)`. If it matches, iterate
+`rule.style` and collect any property starting with `--tug-`.
+Recurse into grouping rules (`@media`, `@supports`, `@layer`)
+the same way `walkRulesForToken` does. Also check ancestor
+elements up the DOM (depth 3-5) since tug tokens are often
+defined on parent containers like `body` or wrapper divs.
+
+Return a deduplicated array of `--tug-*` property names.
+
+**One new function in `style-inspector-core.ts`:**
+
+```
+buildAllStateFormulaRows(
+  tugProperties: string[],
+  formulasData: FormulasData,
+  reverseMap: ReverseMap
+): Map<string, FormulaRow[]>
+```
+
+For each property name:
+1. Call `resolveTokenChain(property)` to walk the var() chain.
+2. Get the terminal token (last hop's property, or the property
+   itself if chain is empty).
+3. Look up `reverseMap.tokenToFields.get(terminalToken)`.
+4. If mappings found, build `FormulaRow` entries from
+   `formulasData.formulas`.
+5. Parse the interaction state from the property name suffix:
+   `-rest`, `-hover`, `-active`, `-disabled`. Default to `"rest"`
+   if no recognized suffix.
+6. Insert rows into the Map keyed by state.
+
+Deduplicate by field name within each state group (same field
+can appear via multiple properties).
+
+Return `Map<string, FormulaRow[]>` where keys are state names.
+
+**Changes to `style-inspector-card.tsx`:**
+
+1. Import `collectElementTugProperties` and
+   `buildAllStateFormulaRows`.
+
+2. In `handleElementSelected`, after the formulas fetch resolves,
+   call `collectElementTugProperties(el)` then
+   `buildAllStateFormulaRows(tugProps, data, reverseMap)`.
+   Store the result in `inspectionDataRef`.
+
+3. In the `formulas-updated` handler, recompute the same way.
+
+4. Replace the current `FormulaSection` render with a loop over
+   states. If only one state has rows (common case), render it
+   without a state header. If multiple states have rows, render
+   each with a header:
+
+   ```
+   FORMULA
+   rest
+     filledSurfaceRestTone = spec.role.tone  tone
+     roleIntensity = Math.round(roleIntensity)  intensity
+   hover
+     filledSurfaceHoverTone = Math.max(0, ...)  tone
+   active
+     filledSurfaceActiveTone = Math.max(0, ...)  tone
+   ```
+
+   Each row is editable via the existing `FormulaChipValue`.
+
+5. Add `InspectionData.allStateFormulas: Map<string, FormulaRow[]> | null`.
+
+**CSS additions:**
+
+Add a `.tug-inspector-formula-state__label` class for state
+sub-headers (rest, hover, active, disabled). Style like a subtle
+uppercase label — similar to how the existing section titles look
+but smaller and lighter.
+
+**What NOT to do:**
+
+- Do NOT scan all stylesheets globally. Only rules matching the
+  inspected element.
+- Do NOT add categorization heuristics (BACKGROUND, TEXT, BORDER).
+  Group by state only. The field names are self-documenting.
+- Do NOT cache the property scan. The element's matched rules
+  don't change between inspections of the same element, and
+  re-scanning is cheap. Caching adds complexity with no benefit.
+- Do NOT touch the existing three-chain display (BACKGROUND COLOR,
+  TEXT COLOR, BORDER COLOR sections). Those stay as-is — they show
+  the live resolution path. The expanded FORMULA section appears
+  below them.
+
+#### Testing
+
+- Unit test `collectElementTugProperties` with a mock element
+  that has matched rules containing `--tug-*` properties. Verify
+  it collects from matching rules and skips non-matching ones.
+- Unit test `buildAllStateFormulaRows` with mock properties and
+  reverse map. Verify state grouping (-rest, -hover, -active,
+  -disabled, default-to-rest).
+- Verify `(constant)` no longer appears for tug-tab when it has
+  `--tug-tab-*` properties in its matched rules.
+- Verify TugButton shows rest, hover, and active formula groups.
+
+#### Why this is different from the failed attempt
+
+The failed Phase 2 implementation built `scanAllTugProperties`
+which scanned every stylesheet globally for every `--tug-*`
+property, then categorized them by name heuristic into
+BACKGROUND/TEXT/BORDER/OTHER groups. That produced a wall of
+hundreds of properties with no connection to the element being
+inspected.
+
+This approach:
+- Scopes to the inspected element via `el.matches()`
+- Groups by interaction state (useful) not semantic category
+  (noise)
+- Uses existing infrastructure (`walkRulesForToken` pattern,
+  `resolveTokenChain`, reverse map)
+- Produces a focused list of exactly the formula fields that
+  control the element the user is looking at
+
 ### Phase B — Code Audit and Cleanup
 
 1. **Audit `style-inspector-core.ts`**: Remove any dead code left
