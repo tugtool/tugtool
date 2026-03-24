@@ -64,7 +64,7 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     placeholderTextTone: primaryTextTone + 52,
 
     // ===== Text Coloring =====
-    contentTextIntensity: spec.text.intensity,
+    contentTextIntensity: 4,
     subtleTextIntensity: spec.text.intensity + 4,
     mutedTextIntensity: spec.text.intensity + 2,
     atmosphereBorderIntensity: 7,
@@ -103,7 +103,7 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
 
     // ===== Filled Control Prominence =====
     // Light mode darkens on hover/active (negative offsets)
-    filledSurfaceRestTone: spec.role.tone,
+    filledSurfaceRestTone: 45,
     filledSurfaceHoverTone: Math.max(0, Math.min(100, spec.role.tone - 5)),
     filledSurfaceActiveTone: Math.max(0, Math.min(100, spec.role.tone - 10)),
 
@@ -280,7 +280,7 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     toggleDisabledTone: canvasTone - 15,
 
     // ===== Computed Signal Intensity =====
-    roleIntensity: Math.round(roleIntensity),
+    roleIntensity: 50,
 
     // ===== Hue Name Dispatch =====
     // Light mode uses cobalt screen bg and frame placeholder (dark mode uses indigo and textMuted)

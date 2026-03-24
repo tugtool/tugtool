@@ -315,7 +315,11 @@ function ChainSection({
  * FormulaSection renders formula rows with inline editing support.
  * Uses FormulaChipValue for the value display (supports click-to-edit).
  */
-function FormulaSection({ rows, sources }: { rows: FormulaRow[]; sources: Record<string, string> }) {
+function FormulaSection({ rows, sources, defaults }: {
+  rows: FormulaRow[];
+  sources: Record<string, string>;
+  defaults: Record<string, number | string | boolean>;
+}) {
   const isConstant = rows.length === 0;
 
   return (
@@ -335,6 +339,7 @@ function FormulaSection({ rows, sources }: { rows: FormulaRow[]; sources: Record
             {row.isStructural && (
               <span className="tug-inspector-formula__release-label">(applies on release)</span>
             )}
+            <FormulaDefault row={row} defaults={defaults} />
           </div>
         ))
       )}
@@ -410,10 +415,25 @@ async function postFormulaEdit(field: string, value: number | string): Promise<v
 export function activateNumericInput(
   valueSpan: HTMLElement,
   sourceLiteral: string,
+  sourceExpr: string | null,
   field: string
 ): void {
   // Prevent duplicate inputs
   if (valueSpan.querySelector(".si-formula-edit-input")) return;
+
+  // Save original content for restore on cancel
+  const originalContent = valueSpan.textContent ?? "";
+
+  // Split the source expression around the literal to get prefix/suffix
+  let prefix = "";
+  let suffix = "";
+  if (sourceExpr && sourceLiteral !== originalContent) {
+    const litIdx = sourceExpr.lastIndexOf(sourceLiteral);
+    if (litIdx >= 0) {
+      prefix = sourceExpr.slice(0, litIdx);
+      suffix = sourceExpr.slice(litIdx + sourceLiteral.length);
+    }
+  }
 
   const input = document.createElement("input");
   input.type = "text";
@@ -421,20 +441,20 @@ export function activateNumericInput(
   input.className = "si-formula-edit-input";
   input.setAttribute("data-testid", `formula-edit-input-${field}`);
   input.setAttribute("aria-label", `Edit ${field}`);
+  // Size the input to fit the literal content
   input.style.cssText = [
-    "position:absolute",
-    "inset:0",
-    "width:100%",
-    "height:100%",
-    "box-sizing:border-box",
-    "padding:0 2px",
-    "margin:0",
     "border:none",
     "outline:none",
+    "margin:0",
+    "padding:0 2px",
+    `width:${Math.max(sourceLiteral.length + 1, 3)}ch`,
   ].join(";");
 
-  // Make the span a positioned container
-  valueSpan.style.position = "relative";
+  // Replace span content with: prefix text + input + suffix text
+  valueSpan.textContent = "";
+  if (prefix) valueSpan.appendChild(document.createTextNode(prefix));
+  valueSpan.appendChild(input);
+  if (suffix) valueSpan.appendChild(document.createTextNode(suffix));
 
   let committed = false;
 
@@ -456,10 +476,7 @@ export function activateNumericInput(
   }
 
   function cleanup() {
-    if (input.parentNode) {
-      input.parentNode.removeChild(input);
-    }
-    valueSpan.style.position = "";
+    valueSpan.textContent = originalContent;
   }
 
   input.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -475,11 +492,9 @@ export function activateNumericInput(
   });
 
   input.addEventListener("blur", () => {
-    // Commit on blur (same as Enter per spec)
     commit();
   });
 
-  valueSpan.appendChild(input);
   input.focus();
   input.select();
 }
@@ -556,6 +571,47 @@ function activateHueSlotSelect(
 }
 
 /**
+ * FormulaDefault shows the default value and a restore link when the current
+ * value differs from the default. Clicking "restore" POSTs the default value.
+ */
+function FormulaDefault({
+  row,
+  defaults,
+}: {
+  row: FormulaRow;
+  defaults: Record<string, number | string | boolean>;
+}) {
+  const defaultValue = defaults[row.field];
+  if (defaultValue === undefined || defaultValue === row.value) return null;
+
+  const handleRestore = useCallback(() => {
+    if (typeof defaultValue === "number") {
+      postFormulaEdit(row.field, defaultValue).catch(() => {});
+    }
+  }, [row.field, defaultValue]);
+
+  return (
+    <span className="tug-inspector-formula-field__default">
+      (default: {String(defaultValue)}
+      {typeof defaultValue === "number" && (
+        <>
+          {" "}&bull;{" "}
+          <span
+            className="tug-inspector-formula-field__restore"
+            onClick={handleRestore}
+            role="button"
+            tabIndex={0}
+          >
+            restore
+          </span>
+        </>
+      )}
+      )
+    </span>
+  );
+}
+
+/**
  * FormulaChipValue renders the value portion of a formula chip.
  * For numeric and hue slot fields, clicking activates an inline editor (L06).
  * For read-only fields, just renders text.
@@ -570,20 +626,21 @@ function FormulaChipValue({
   sources: Record<string, string>;
 }) {
   const editableType = getEditableType(row, sources);
-  const displayValue = String(row.value);
+  const computedValue = String(row.value);
+  const sourceExpr = sources[row.field];
+  const displayValue = sourceExpr ?? computedValue;
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLSpanElement>) => {
       const span = e.currentTarget as HTMLElement;
       if (editableType === "numeric") {
-        const src = sources[row.field] ?? "";
-        const literal = extractLastNumericLiteral(src) ?? displayValue;
-        activateNumericInput(span, literal, row.field);
+        const literal = (sourceExpr ? extractLastNumericLiteral(sourceExpr) : null) ?? computedValue;
+        activateNumericInput(span, literal, sourceExpr ?? null, row.field);
       } else if (editableType === "hue") {
-        activateHueSlotSelect(span, displayValue, row.field);
+        activateHueSlotSelect(span, computedValue, row.field);
       }
     },
-    [editableType, row.field, sources, displayValue]
+    [editableType, row.field, sourceExpr, computedValue]
   );
 
   if (editableType === "readonly") {
@@ -1077,7 +1134,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
 
             {/* Formula provenance section */}
             {formulaRows !== null && (
-              <FormulaSection rows={formulaRows} sources={data.formulasData?.sources ?? {}} />
+              <FormulaSection rows={formulaRows} sources={data.formulasData?.sources ?? {}} defaults={data.formulasData?.defaults ?? {}} />
             )}
           </>
         )}

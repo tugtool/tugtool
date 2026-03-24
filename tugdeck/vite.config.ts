@@ -58,6 +58,8 @@ const EMPTY_OVERRIDE = `/* empty - ${BASE_THEME_NAME} default */\n`;
  */
 export interface FormulasCache {
   formulas: Record<string, number | string | boolean>;
+  /** Default formula values from initial theme activation, before any recipe edits. */
+  defaults: Record<string, number | string | boolean>;
   mode: "dark" | "light";
   themeName: string;
 }
@@ -103,7 +105,7 @@ export function handleFormulasGet(
 
   return {
     status: 200,
-    body: JSON.stringify({ formulas: cache.formulas, sources, mode: cache.mode, themeName: cache.themeName }),
+    body: JSON.stringify({ formulas: cache.formulas, defaults: cache.defaults, sources, mode: cache.mode, themeName: cache.themeName }),
   };
 }
 
@@ -163,7 +165,8 @@ function themeOverridePlugin(): VitePlugin {
           stdio: "pipe",
         });
         try {
-          formulasCache = JSON.parse(output.toString().trim()) as FormulasCache;
+          const parsed = JSON.parse(output.toString().trim());
+          formulasCache = { ...parsed, defaults: { ...parsed.formulas } };
         } catch {
           // Formulas parse failed — inspector will show without formula section.
         }
@@ -239,7 +242,9 @@ function controlTokenHotReload(): VitePlugin {
         stdio: "pipe",
       });
       try {
-        formulasCache = JSON.parse(output.toString().trim()) as FormulasCache;
+        const parsed = JSON.parse(output.toString().trim());
+        const prevDefaults = formulasCache?.defaults ?? parsed.formulas;
+        formulasCache = { ...parsed, defaults: { ...prevDefaults } };
       } catch {
         // Formulas parse failed — inspector will show without formula section.
       }
@@ -750,7 +755,7 @@ export async function handleThemesActivate(
     withMutex(async () => {
       try {
         const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath);
-        formulasCache = { formulas: result.formulas, mode: result.mode, themeName: name };
+        formulasCache = { formulas: result.formulas, defaults: { ...result.formulas }, mode: result.mode, themeName: name };
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -1018,7 +1023,7 @@ function themeSaveLoadPlugin(): VitePlugin {
               withMutex(async () => {
                 try {
                   const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS);
-                  formulasCache = { formulas: activateResult.formulas, mode: activateResult.mode, themeName: saveResult.themeName! };
+                  formulasCache = { formulas: activateResult.formulas, defaults: { ...activateResult.formulas }, mode: activateResult.mode, themeName: saveResult.themeName! };
                   const responseBody = JSON.stringify({ ok: true, name: saveResult.themeName, canvasParams: activateResult.canvasParams });
                   res.writeHead(200, { "Content-Type": "application/json" });
                   res.end(responseBody);

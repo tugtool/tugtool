@@ -94,6 +94,8 @@ export interface TugColorProvenance {
 /** Formulas data fetched from GET /__themes/formulas. */
 export interface FormulasData {
   formulas: Record<string, number | string | boolean>;
+  /** Default formula values from initial theme activation, before any recipe edits. */
+  defaults: Record<string, number | string | boolean>;
   /** Maps each formula field name to its source expression text from the recipe file. [D07] */
   sources: Record<string, string>;
   mode: string;

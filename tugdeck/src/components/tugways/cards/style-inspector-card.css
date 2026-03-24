@@ -279,6 +279,9 @@
 .tug-inspector-formula-field__value {
   color: var(--tug-element-global-text-normal-default-rest);
   flex-shrink: 0;
+  min-width: 3ch;
+  padding: 2px 4px;
+  border-radius: 2px;
 }
 
 .tug-inspector-formula-field__type {
@@ -292,6 +295,23 @@
   font-style: italic;
   font-size: 10px;
   flex-shrink: 0;
+}
+
+.tug-inspector-formula-field__default {
+  color: var(--tug-element-global-text-normal-subtle-rest);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.tug-inspector-formula-field__restore {
+  color: var(--tug-element-tone-text-normal-accent-rest);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tug-inspector-formula-field__restore:hover {
+  color: var(--tug-element-tone-text-normal-active-rest);
 }
 
 /* ---------------------------------------------------------------------------
@@ -323,10 +343,13 @@
 
 .si-formula-edit-input {
   font-family: var(--tug-font-family-mono);
-  font-size: 10px;
+  font-size: inherit;
+  line-height: inherit;
   color: var(--tug-element-global-text-normal-default-rest);
   background: var(--tug-surface-control-primary-filled-accent-rest);
+  border: none;
   border-radius: 2px;
+  padding: 0 2px;
   caret-color: var(--tug-element-global-text-normal-default-rest);
 }
 
