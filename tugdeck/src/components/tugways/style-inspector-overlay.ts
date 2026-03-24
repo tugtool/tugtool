@@ -30,6 +30,7 @@ import { getTugZoom, getTugTiming, isTugMotionEnabled } from "./scale-timing";
 import { oklchToTugColor } from "./palette-engine";
 import { buildReverseMap, type ReverseMap } from "./formula-reverse-map";
 import { RULES } from "./theme-rules";
+import { createFormulaControls, type FormulaControlsOptions } from "./formula-editor-controls";
 
 // ---------------------------------------------------------------------------
 // PALETTE_VAR_REGEX -- matches only known hue palette variables
@@ -1555,11 +1556,11 @@ export class StyleInspectorOverlay {
    *
    * Finds the terminal token from the first chain that ends at a token (bgChain,
    * fgChain, or borderChain), looks up formula fields via tokenToFields, and
-   * creates the formula section DOM node.
+   * creates the formula section DOM node with interactive controls.
    *
    * Returns null if the reverse map is not available or no formula fields found.
    *
-   * Step 3 — formula provenance display [D04]
+   * Step 5 — interactive formula controls [D02] [D04]
    */
   private buildFormulaSectionForInspection(
     bgChain: TokenChainResult,
@@ -1592,12 +1593,8 @@ export class StyleInspectorOverlay {
         if (rawValue === undefined) continue;
 
         // Determine if this is a structural field (cannot do drag preview)
-        // Structural fields have property "tone" from the reverse map
-        // but they are non-color tokens — we identify them by checking
-        // whether the terminal token starts with known structural token patterns
-        // (opacity, radius, spacing, gap, etc.). A simpler heuristic: if
-        // the terminal value from the chain is not an oklch() value and not
-        // a palette variable, it's likely structural.
+        // A simpler heuristic: if the terminal value from the chain is not an
+        // oklch() value and not a palette variable, it's likely structural.
         const terminalValue = chain.terminalValue ?? "";
         const isStructural =
           !terminalValue.startsWith("oklch(") &&
@@ -1613,8 +1610,46 @@ export class StyleInspectorOverlay {
       }
     }
 
-    const isConstant = allRows.length === 0;
-    return createFormulaSection(allRows, isConstant);
+    // Build the section container
+    const section = document.createElement("div");
+    section.className = "tug-inspector-section";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "tug-inspector-section__title";
+    titleEl.textContent = "Formula";
+    section.appendChild(titleEl);
+
+    if (allRows.length === 0) {
+      // Constant token — show static indicator (no controls)
+      return createFormulaSection(allRows, true);
+    }
+
+    // Interactive controls per Table T01
+    const reverseMap = this.reverseMap;
+
+    const controlsOptions: FormulaControlsOptions = {
+      reverseMap,
+      onRefresh: (updatedFormulas) => {
+        // Re-render the formula section with updated values
+        this.formulasData = updatedFormulas;
+        // Re-render the full panel with updated formula data if still showing same element
+        if (this.currentTarget && this.pinned) {
+          this.inspectElement(
+            this.currentTarget as HTMLElement,
+            // Use current panel position since we don't have cursor coords
+            parseInt(this.panelEl.style.left ?? "0", 10),
+            parseInt(this.panelEl.style.top ?? "0", 10),
+          );
+        }
+      },
+    };
+
+    for (const row of allRows) {
+      const controlEl = createFormulaControls(row, controlsOptions);
+      section.appendChild(controlEl);
+    }
+
+    return section;
   }
 }
 

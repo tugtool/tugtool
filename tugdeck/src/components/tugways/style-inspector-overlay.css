@@ -345,6 +345,137 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Formula editor interactive controls (Step 5)
+   --------------------------------------------------------------------------- */
+
+/**
+ * @tug-pairings
+ * Formula control additions (hardcoded oklch, not tracked by contrast engine):
+ * | Element (hardcoded)          | Surface (hardcoded)          | Role         | Context                                  |
+ * |------------------------------|------------------------------|--------------|------------------------------------------|
+ * | oklch(0.72 0.18 270)         | oklch(0.14 0.01 240)         | content      | Formula field name in control row        |
+ * | oklch(0.65 0.02 240)         | oklch(0.19 0.01 240)         | content      | Number input text on control background  |
+ * | oklch(0.88 0.01 240)         | oklch(0.19 0.01 240)         | content      | Select dropdown text on control bg       |
+ * | oklch(0.48 0.10 55)          | oklch(0.14 0.01 240)         | informational | Structural field "applies on release"   |
+ */
+
+.tug-formula-control {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 3px 0;
+}
+
+.tug-formula-control__field {
+  color: oklch(0.72 0.18 270);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tug-formula-control__slider-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tug-formula-control__slider {
+  flex: 1;
+  min-width: 80px;
+  height: 3px;
+  cursor: pointer;
+  accent-color: oklch(0.72 0.18 200);
+  background: oklch(0.28 0.01 240);
+  border-radius: 2px;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+
+.tug-formula-control__slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: oklch(0.72 0.18 200);
+  cursor: pointer;
+  border: none;
+}
+
+.tug-formula-control__slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: oklch(0.72 0.18 200);
+  cursor: pointer;
+  border: none;
+}
+
+.tug-formula-control__number {
+  width: 44px;
+  background: oklch(0.19 0.01 240);
+  border: 1px solid oklch(0.30 0.01 240);
+  border-radius: 3px;
+  color: oklch(0.65 0.02 240);
+  font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+  font-size: 11px;
+  padding: 1px 4px;
+  text-align: right;
+  outline: none;
+}
+
+.tug-formula-control__number:focus {
+  border-color: oklch(0.72 0.18 200);
+  color: oklch(0.88 0.01 240);
+}
+
+.tug-formula-control__select {
+  background: oklch(0.19 0.01 240);
+  border: 1px solid oklch(0.30 0.01 240);
+  border-radius: 3px;
+  color: oklch(0.88 0.01 240);
+  font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+  font-size: 11px;
+  padding: 2px 4px;
+  outline: none;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.tug-formula-control__select:focus {
+  border-color: oklch(0.72 0.18 200);
+}
+
+.tug-formula-control__text {
+  background: oklch(0.19 0.01 240);
+  border: 1px solid oklch(0.30 0.01 240);
+  border-radius: 3px;
+  color: oklch(0.88 0.01 240);
+  font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+  font-size: 11px;
+  padding: 2px 4px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tug-formula-control__text:focus {
+  border-color: oklch(0.72 0.18 200);
+}
+
+.tug-formula-control__readonly {
+  color: oklch(0.55 0.02 240);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.tug-formula-control__structural-note {
+  color: oklch(0.48 0.10 55);
+  font-size: 10px;
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------------
    Hint text at the bottom
    --------------------------------------------------------------------------- */
 

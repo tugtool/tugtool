@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-24T00:16:35Z
+---
+
+## step-5: Created formula-editor-controls.ts with interactive controls per Table T01 (sliders, dropdowns, text inputs, read-only spans). Implemented two-phase drag preview per Spec S05 with delta approximation during drag and POST on release. Integrated into style inspector overlay replacing static formula display. 49 formula-related tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-formula-editor.md
+
+---
+
+---
 step: step-4
 date: 2025-03-24T00:01:38Z
 ---
