@@ -31,6 +31,9 @@ import {
   buildDomPath,
   buildFormulaRows,
   createFormulaSection,
+  categorizeProperty,
+  scanAllTugProperties,
+  invalidateTugPropertiesCache,
 } from "@/components/tugways/style-inspector-overlay";
 import type { TokenChainResult, FormulasData } from "@/components/tugways/style-inspector-overlay";
 import type { ReverseMap } from "@/components/tugways/formula-reverse-map";
@@ -444,7 +447,7 @@ describe("buildFormulaRows", () => {
   });
 
   it("returns empty array when all chains have no origin token", () => {
-    const formulasData: FormulasData = { formulas: {}, mode: "dark", themeName: "test" };
+    const formulasData: FormulasData = { formulas: {}, sources: {}, mode: "dark", themeName: "test" };
     const reverseMap: ReverseMap = { tokenToFields: new Map() };
 
     const result = buildFormulaRows(
@@ -460,6 +463,7 @@ describe("buildFormulaRows", () => {
   it("returns rows when token maps to formula fields", () => {
     const formulasData: FormulasData = {
       formulas: { intensity: 0.7, tone: 0.5 },
+      sources: {},
       mode: "dark",
       themeName: "test",
     };
@@ -491,6 +495,7 @@ describe("buildFormulaRows", () => {
   it("deduplicates formula rows by field name across chains", () => {
     const formulasData: FormulasData = {
       formulas: { intensity: 0.7 },
+      sources: {},
       mode: "dark",
       themeName: "test",
     };
@@ -549,5 +554,95 @@ describe("createFormulaSection", () => {
     const titleEl = el.querySelector(".tug-inspector-section__title");
     expect(titleEl).not.toBeNull();
     expect(titleEl!.textContent).toBe("Formula");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// categorizeProperty
+// ---------------------------------------------------------------------------
+
+describe("categorizeProperty", () => {
+  it("classifies --tug-tab-bg-rest as BACKGROUND/rest", () => {
+    const { category, state } = categorizeProperty("--tug-tab-bg-rest");
+    expect(category).toBe("BACKGROUND");
+    expect(state).toBe("rest");
+  });
+
+  it("classifies --tug-tab-fg-hover as TEXT/hover", () => {
+    const { category, state } = categorizeProperty("--tug-tab-fg-hover");
+    expect(category).toBe("TEXT");
+    expect(state).toBe("hover");
+  });
+
+  it("classifies --tug-card-border as BORDER/rest (no state suffix)", () => {
+    const { category, state } = categorizeProperty("--tug-card-border");
+    expect(category).toBe("BORDER");
+    expect(state).toBe("rest");
+  });
+
+  it("classifies --tug-dropdown-shadow as OTHER/rest", () => {
+    const { category, state } = categorizeProperty("--tug-dropdown-shadow");
+    expect(category).toBe("OTHER");
+    expect(state).toBe("rest");
+  });
+
+  it("classifies -surface- tokens as BACKGROUND", () => {
+    const { category } = categorizeProperty("--tug-surface-global-primary-normal-default-rest");
+    expect(category).toBe("BACKGROUND");
+  });
+
+  it("classifies -text- tokens as TEXT", () => {
+    const { category } = categorizeProperty("--tug-element-global-text-normal-default-rest");
+    expect(category).toBe("TEXT");
+  });
+
+  it("classifies -divider- tokens as BORDER", () => {
+    const { category } = categorizeProperty("--tug-card-title-bar-divider");
+    expect(category).toBe("BORDER");
+  });
+
+  it("classifies -active state suffix correctly", () => {
+    const { state } = categorizeProperty("--tug-tab-bg-active");
+    expect(state).toBe("active");
+  });
+
+  it("classifies -disabled state suffix correctly", () => {
+    const { state } = categorizeProperty("--tug-tab-bg-disabled");
+    expect(state).toBe("disabled");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scanAllTugProperties
+// ---------------------------------------------------------------------------
+
+describe("scanAllTugProperties", () => {
+  beforeEach(() => {
+    // Ensure cache is cleared before each test
+    invalidateTugPropertiesCache();
+  });
+
+  afterEach(() => {
+    invalidateTugPropertiesCache();
+  });
+
+  it("returns a Set (even if empty in jsdom environment)", () => {
+    const result = scanAllTugProperties();
+    expect(result).toBeInstanceOf(Set);
+  });
+
+  it("caches results across multiple calls", () => {
+    const first = scanAllTugProperties();
+    const second = scanAllTugProperties();
+    // Should return same Set instance (cached)
+    expect(first).toBe(second);
+  });
+
+  it("returns fresh result after cache invalidation", () => {
+    const first = scanAllTugProperties();
+    invalidateTugPropertiesCache();
+    const second = scanAllTugProperties();
+    // Should be a new Set instance
+    expect(first).not.toBe(second);
   });
 });

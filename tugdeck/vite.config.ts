@@ -56,6 +56,8 @@ const EMPTY_OVERRIDE = `/* empty - ${BASE_THEME_NAME} default */\n`;
  */
 export interface FormulasCache {
   formulas: Record<string, number | string | boolean>;
+  /** Maps each formula field name to its source expression text from the recipe file. [D07] */
+  sources: Record<string, string>;
   mode: "dark" | "light";
   themeName: string;
 }
@@ -71,7 +73,7 @@ export function handleFormulasGet(cache: FormulasCache | null): { status: number
   }
   return {
     status: 200,
-    body: JSON.stringify({ formulas: cache.formulas, mode: cache.mode, themeName: cache.themeName }),
+    body: JSON.stringify({ formulas: cache.formulas, sources: cache.sources, mode: cache.mode, themeName: cache.themeName }),
   };
 }
 
@@ -716,7 +718,7 @@ export async function handleThemesActivate(
     withMutex(async () => {
       try {
         const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath);
-        formulasCache = { formulas: result.formulas, mode: result.mode, themeName: name };
+        formulasCache = { formulas: result.formulas, sources: {}, mode: result.mode, themeName: name };
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -793,7 +795,7 @@ function themeSaveLoadPlugin(): VitePlugin {
               withMutex(async () => {
                 try {
                   const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS);
-                  formulasCache = { formulas: activateResult.formulas, mode: activateResult.mode, themeName: saveResult.themeName! };
+                  formulasCache = { formulas: activateResult.formulas, sources: {}, mode: activateResult.mode, themeName: saveResult.themeName! };
                   const responseBody = JSON.stringify({ ok: true, name: saveResult.themeName, canvasParams: activateResult.canvasParams });
                   res.writeHead(200, { "Content-Type": "application/json" });
                   res.end(responseBody);

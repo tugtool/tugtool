@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-24T19:45:33Z
+---
+
+## step-1: Added SemanticCategory/InteractionState/PropertyEntry types, scanAllTugProperties with cache, categorizeProperty heuristics, exported RESOLVED_HUE_SLOT_KEYS, extended FormulasCache/FormulasData with sources field, updated generate-theme-override to extract source expressions, updated all tests
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
 step: step-7
 date: 2025-03-24T16:00:57Z
 ---

@@ -94,9 +94,34 @@ export interface TugColorProvenance {
 /** Formulas data fetched from GET /__themes/formulas. */
 export interface FormulasData {
   formulas: Record<string, number | string | boolean>;
+  /** Maps each formula field name to its source expression text from the recipe file. [D07] */
+  sources: Record<string, string>;
   mode: string;
   themeName: string;
 }
+
+// ---------------------------------------------------------------------------
+// All-properties scan types (Spec S01, S02, D01, D03)
+// ---------------------------------------------------------------------------
+
+/** Semantic category of a --tug-* property, derived from its name. [D03] */
+export type SemanticCategory = "BACKGROUND" | "TEXT" | "BORDER" | "OTHER";
+
+/** Interaction state of a --tug-* property, derived from its name suffix. [D03] */
+export type InteractionState = "rest" | "hover" | "active" | "disabled";
+
+/** One discovered tug property entry with its chain and formula rows. */
+export interface PropertyEntry {
+  /** Full CSS custom property name (e.g. "--tug-tab-bg-rest"). */
+  property: string;
+  /** Resolved token chain for this property. */
+  chain: TokenChainHop[];
+  /** Formula rows derived from the chain via the reverse map. */
+  formulaRows: FormulaRow[];
+}
+
+/** Properties grouped by semantic category and interaction state. */
+export type GroupedProperties = Map<SemanticCategory, Map<InteractionState, PropertyEntry[]>>;
 
 /** One formula row displayed in the inspector panel. */
 export interface FormulaRow {
@@ -836,4 +861,149 @@ export function buildFormulaRows(
   }
 
   return allRows;
+}
+
+// ---------------------------------------------------------------------------
+// scanAllTugProperties — discover all --tug-* properties on :root/body/html
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-level cache of discovered --tug-* property names.
+ * Populated on first scan; invalidated by setting to null.
+ * [D01] Cache per session since global tug properties don't change without HMR.
+ */
+let cachedTugProperties: Set<string> | null = null;
+
+/**
+ * Invalidate the stylesheet scan cache.
+ * Call after an HMR update to force a re-scan on next access.
+ */
+export function invalidateTugPropertiesCache(): void {
+  cachedTugProperties = null;
+}
+
+/**
+ * Walk a CSSRuleList and collect all --tug-* custom property names defined on
+ * :root, body, or html selectors. Recurses into grouping rules.
+ *
+ * [D01] Scan all stylesheets for global --tug-* definitions.
+ * Spec S01 (#s01-stylesheet-scan)
+ */
+function walkRulesForTugProperties(rules: CSSRuleList, result: Set<string>): void {
+  for (let i = 0; i < rules.length; i++) {
+    let rule: CSSRule;
+    try {
+      rule = rules[i];
+    } catch {
+      continue;
+    }
+
+    if (rule instanceof CSSStyleRule) {
+      // Check if this rule targets :root, body, or html (Spec S01 step 1)
+      const sel = rule.selectorText;
+      if (sel === ":root" || sel === "body" || sel === "html") {
+        // Collect all --tug-* properties (Spec S01 step 2-3)
+        const style = rule.style;
+        for (let j = 0; j < style.length; j++) {
+          const prop = style[j];
+          if (prop.startsWith("--tug-")) {
+            result.add(prop);
+          }
+        }
+      }
+    } else {
+      // Recurse into grouping rules (@media, @supports, @layer, etc.)
+      let nested: CSSRuleList | undefined;
+      try {
+        if ("cssRules" in rule) {
+          nested = (rule as CSSGroupingRule).cssRules;
+        }
+      } catch {
+        continue;
+      }
+      if (nested) {
+        walkRulesForTugProperties(nested, result);
+      }
+    }
+  }
+}
+
+/**
+ * Scan all stylesheets for --tug-* custom property definitions on :root/body/html.
+ * Results are cached in a module-level Set; call invalidateTugPropertiesCache() to reset.
+ *
+ * [D01] Scan all stylesheets for global --tug-* definitions.
+ * Spec S01 (#s01-stylesheet-scan)
+ *
+ * @returns Set of discovered --tug-* property names.
+ */
+export function scanAllTugProperties(): Set<string> {
+  if (cachedTugProperties !== null) {
+    return cachedTugProperties;
+  }
+
+  const result = new Set<string>();
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      walkRulesForTugProperties(sheet.cssRules, result);
+    } catch {
+      // Cross-origin or inaccessible stylesheet — skip.
+      continue;
+    }
+  }
+
+  cachedTugProperties = result;
+  return result;
+}
+
+/**
+ * Derive the semantic category and interaction state from a --tug-* property name.
+ *
+ * Category heuristic: Table T01 (#t01-category-heuristic)
+ *   -bg- or -surface-   -> BACKGROUND
+ *   -fg- or -text-      -> TEXT
+ *   -border- or -divider- -> BORDER
+ *   (else)              -> OTHER
+ *
+ * State heuristic: Table T02 (#t02-state-heuristic)
+ *   -rest suffix        -> rest
+ *   -hover suffix       -> hover
+ *   -active suffix      -> active
+ *   -disabled suffix    -> disabled
+ *   (else)              -> rest (default)
+ *
+ * [D03] Group by name heuristic.
+ * Spec S02 (#s02-property-grouping)
+ */
+export function categorizeProperty(name: string): { category: SemanticCategory; state: InteractionState } {
+  // Category heuristic (T01)
+  // Match substrings as word fragments (with leading/trailing dash) OR at end of string.
+  let category: SemanticCategory;
+  const hasBorder = name.includes("-border-") || name.endsWith("-border");
+  const hasDivider = name.includes("-divider-") || name.endsWith("-divider");
+  if (name.includes("-bg-") || name.includes("-surface-")) {
+    category = "BACKGROUND";
+  } else if (name.includes("-fg-") || name.includes("-text-")) {
+    category = "TEXT";
+  } else if (hasBorder || hasDivider) {
+    category = "BORDER";
+  } else {
+    category = "OTHER";
+  }
+
+  // State heuristic (T02)
+  let state: InteractionState;
+  if (name.endsWith("-rest")) {
+    state = "rest";
+  } else if (name.endsWith("-hover")) {
+    state = "hover";
+  } else if (name.endsWith("-active")) {
+    state = "active";
+  } else if (name.endsWith("-disabled")) {
+    state = "disabled";
+  } else {
+    state = "rest";
+  }
+
+  return { category, state };
 }

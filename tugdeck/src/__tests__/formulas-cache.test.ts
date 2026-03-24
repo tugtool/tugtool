@@ -24,6 +24,7 @@ describe("handleFormulasGet", () => {
         surfaceCanvasTone: 8,
         surfaceCanvasIntensity: 3,
       },
+      sources: {},
       mode: "dark",
       themeName: "brio",
     };
@@ -46,6 +47,7 @@ describe("handleFormulasGet", () => {
   it("returns 200 with light mode data", () => {
     const cache: FormulasCache = {
       formulas: { contentTextIntensity: 5, contentTextTone: 10 },
+      sources: {},
       mode: "light",
       themeName: "harmony",
     };
@@ -56,5 +58,46 @@ describe("handleFormulasGet", () => {
     const body = JSON.parse(result.body) as { mode: string; themeName: string };
     expect(body.mode).toBe("light");
     expect(body.themeName).toBe("harmony");
+  });
+
+  it("includes sources field in response when cache has sources", () => {
+    const cache: FormulasCache = {
+      formulas: { mutedTextTone: 66, surfaceAppIntensity: 2 },
+      sources: {
+        mutedTextTone: "primaryTextTone - 28",
+        surfaceAppIntensity: "2",
+      },
+      mode: "dark",
+      themeName: "brio",
+    };
+
+    const result = handleFormulasGet(cache);
+    expect(result.status).toBe(200);
+
+    const body = JSON.parse(result.body) as {
+      formulas: Record<string, number>;
+      sources: Record<string, string>;
+      mode: string;
+      themeName: string;
+    };
+    expect(body.sources).toBeDefined();
+    expect(body.sources.mutedTextTone).toBe("primaryTextTone - 28");
+    expect(body.sources.surfaceAppIntensity).toBe("2");
+  });
+
+  it("includes empty sources object when cache sources is empty", () => {
+    const cache: FormulasCache = {
+      formulas: { contentTextTone: 92 },
+      sources: {},
+      mode: "dark",
+      themeName: "brio",
+    };
+
+    const result = handleFormulasGet(cache);
+    expect(result.status).toBe(200);
+
+    const body = JSON.parse(result.body) as { sources: Record<string, string> };
+    expect(body.sources).toBeDefined();
+    expect(Object.keys(body.sources).length).toBe(0);
   });
 });
