@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-24T15:55:24Z
+---
+
+## step-6: Removed StyleInspectorOverlay class, initStyleInspector, singleton, overlay-specific CSS. Kept all exported types and standalone functions. Rewrote tests for standalone functions. Updated gallery doc for card workflow. 1861 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
 step: step-5
 date: 2025-03-24T15:39:53Z
 ---
