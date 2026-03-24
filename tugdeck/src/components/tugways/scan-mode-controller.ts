@@ -83,6 +83,9 @@ export class ScanModeController {
   /** Callback invoked when the user clicks to select an element. */
   private onSelectCallback: ((el: HTMLElement) => void) | null = null;
 
+  /** Callback invoked when scan mode is cancelled (e.g., Escape key). */
+  private onCancelCallback: (() => void) | null = null;
+
   // ----- DOM Elements -----
 
   /** Transparent full-viewport overlay that captures pointer events. */
@@ -141,12 +144,14 @@ export class ScanModeController {
    * pointer and keyboard listeners, and stores the `onSelect` callback.
    *
    * @param onSelect - Called with the selected element when the user clicks.
+   * @param options.onCancel - Called when scan mode is cancelled (e.g., Escape key).
    */
-  activate(onSelect: (el: HTMLElement) => void): void {
+  activate(onSelect: (el: HTMLElement) => void, options?: { onCancel?: () => void }): void {
     if (this.active) return;
 
     this.active = true;
     this.onSelectCallback = onSelect;
+    this.onCancelCallback = options?.onCancel ?? null;
 
     document.body.appendChild(this.overlayEl);
     document.body.appendChild(this.highlightEl);
@@ -173,6 +178,7 @@ export class ScanModeController {
 
     this.active = false;
     this.onSelectCallback = null;
+    this.onCancelCallback = null;
     this.hoveredEl = null;
 
     // Always remove the overlay
@@ -258,12 +264,29 @@ export class ScanModeController {
     const el = document.elementFromPoint(e.clientX, e.clientY);
     this.overlayEl.style.pointerEvents = "auto";
 
-    // Cmd+Click passthrough: dispatch a synthetic click on the real target.
-    // Always forwarded (even if target is inside the inspector card), so that
-    // card interactions (close, focus) continue to work normally.
+    // Cmd+Click passthrough: dispatch a synthetic pointerdown then click on the
+    // real target. Always forwarded (even if target is inside the inspector card),
+    // so that card interactions (close, focus) continue to work normally.
+    // The pointerdown fires first (matching natural browser event ordering) to
+    // trigger React's onPointerDown handlers for card focusing. The click handles
+    // any click-based interactions.
     if (e.metaKey) {
       if (el && el !== this.overlayEl && el !== this.highlightEl) {
-        const synthetic = new MouseEvent("click", {
+        const syntheticPointerDown = new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          pointerId: 1,
+          pointerType: "mouse",
+        });
+        el.dispatchEvent(syntheticPointerDown);
+
+        const syntheticClick = new MouseEvent("click", {
           bubbles: true,
           cancelable: true,
           clientX: e.clientX,
@@ -273,7 +296,7 @@ export class ScanModeController {
           shiftKey: e.shiftKey,
           altKey: e.altKey,
         });
-        el.dispatchEvent(synthetic);
+        el.dispatchEvent(syntheticClick);
       }
       return;
     }
@@ -309,7 +332,14 @@ export class ScanModeController {
     if (e.key === "Alt") {
       this._setSuppression(true);
     } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      // Capture the cancel callback before deactivate() clears it
+      const cancelCb = this.onCancelCallback;
       this.deactivate();
+      if (cancelCb) {
+        cancelCb();
+      }
     }
   }
 

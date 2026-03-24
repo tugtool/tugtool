@@ -458,7 +458,17 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
       if (containerRef.current) {
         containerRef.current.setAttribute("data-inspect-mode", "scanning");
       }
-      ctrl.activate(handleElementSelected);
+      ctrl.activate(handleElementSelected, {
+        onCancel: () => {
+          // Escape was pressed during scanning — return to rest state
+          // (same cleanup as clicking "Cancel Inspection")
+          modeRef.current = "rest";
+          if (containerRef.current) {
+            containerRef.current.removeAttribute("data-inspect-mode");
+          }
+          setRenderKey((k) => k + 1);
+        },
+      });
     } else if (currentMode === "scanning") {
       // Scanning → Rest (cancel)
       ctrl.deactivate(); // removes overlay AND highlight
@@ -519,7 +529,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
   // Hint text shown only during scanning state
   const hintText =
     mode === "scanning"
-      ? "Click to inspect \u00B7 \u2318-click for normal click \u00B7 \u2325 suppresses hover"
+      ? "click to inspect \u00B7 Cmd-click normal \u00B7 Opt no hover"
       : "";
 
   // aria-pressed reflects active scanning/inspecting state

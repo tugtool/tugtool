@@ -67,7 +67,7 @@
 
 .si-card-hint {
   font-family: var(--tug-font-family-mono);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--tug-element-global-text-normal-subtle-rest);
   white-space: nowrap;
   overflow: hidden;

@@ -47,6 +47,7 @@ if (!existingNav || typeof existingNav.userAgent !== "string") {
 (global as any).KeyboardEvent = happyWindow.KeyboardEvent;
 (global as any).FocusEvent = happyWindow.FocusEvent;
 (global as any).InputEvent = happyWindow.InputEvent;
+(global as any).PointerEvent = (happyWindow as any).PointerEvent ?? happyWindow.MouseEvent;
 (global as any).MutationObserver = happyWindow.MutationObserver;
 (global as any).DocumentFragment = happyWindow.DocumentFragment;
 (global as any).Range = happyWindow.Range;

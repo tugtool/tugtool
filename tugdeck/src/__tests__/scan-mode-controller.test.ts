@@ -289,7 +289,7 @@ describe("ScanModeController -- Cmd+Click passthrough", () => {
     expect(ctrl.isActive).toBe(true);
   });
 
-  it("Cmd+Click dispatches a synthetic click on the real target element", () => {
+  it("Cmd+Click dispatches a synthetic pointerdown then click on the real target element", () => {
     ctrl.activate(() => {});
 
     // Create a real target element and append it to body
@@ -301,18 +301,23 @@ describe("ScanModeController -- Cmd+Click passthrough", () => {
     const originalEFP = document.elementFromPoint.bind(document);
     document.elementFromPoint = (_x: number, _y: number) => realTarget;
 
-    let syntheticClickReceived = false;
+    const receivedEvents: string[] = [];
+    realTarget.addEventListener("pointerdown", (e) => {
+      if ((e as PointerEvent).metaKey) {
+        receivedEvents.push("pointerdown");
+      }
+    });
     realTarget.addEventListener("click", (e) => {
-      // The synthetic click should have metaKey set
       if ((e as MouseEvent).metaKey) {
-        syntheticClickReceived = true;
+        receivedEvents.push("click");
       }
     });
 
     const clickEvent = new MouseEvent("click", { bubbles: true, metaKey: true, clientX: 100, clientY: 100 });
     ctrl.overlayEl.dispatchEvent(clickEvent);
 
-    expect(syntheticClickReceived).toBe(true);
+    // Both events should be dispatched in order: pointerdown first, then click
+    expect(receivedEvents).toEqual(["pointerdown", "click"]);
 
     // Cleanup
     document.elementFromPoint = originalEFP;
@@ -337,20 +342,25 @@ describe("ScanModeController -- Cmd+Click passthrough", () => {
     realTarget.parentNode!.removeChild(realTarget);
   });
 
-  it("normal click (no metaKey) on overlay does not prevent deactivation path", () => {
-    // This tests that the normal click path still runs (though elementFromPoint
-    // returns null in happy-dom, so the callback won't be invoked). The important
-    // thing is the metaKey guard doesn't interfere.
+  it("normal click (no metaKey) on overlay does not invoke onSelect for overlay/highlight elements", () => {
+    // This tests that the normal click path is reachable without errors and that
+    // clicking overlay/highlight elements does not trigger selection.
+    // We mock elementFromPoint to return null (simulating no real target), which
+    // means the click is a no-op and onSelect is NOT called.
+    const originalEFP = document.elementFromPoint.bind(document);
+    document.elementFromPoint = (_x: number, _y: number) => null;
+
     let selected = false;
     ctrl.activate((_el: HTMLElement) => { selected = true; });
 
     const clickEvent = new MouseEvent("click", { bubbles: true, metaKey: false, clientX: 50, clientY: 50 });
     ctrl.overlayEl.dispatchEvent(clickEvent);
 
-    // In happy-dom, elementFromPoint returns null, so deactivate is NOT called
-    // and the callback is NOT invoked. The scan remains active.
-    // This verifies the normal path is reachable without errors.
+    // elementFromPoint returned null, so deactivate is NOT called and callback is NOT invoked.
     expect(selected).toBe(false);
+
+    // Cleanup
+    document.elementFromPoint = originalEFP;
   });
 });
 
@@ -493,5 +503,86 @@ describe("ScanModeController -- deactivate({ keepHighlight: true })", () => {
     ctrl.activate(() => {});
     ctrl.deactivate({ keepHighlight: false });
     expect(document.body.contains(ctrl.highlightEl)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ScanModeController -- Escape key triggers onCancel callback
+// ---------------------------------------------------------------------------
+
+describe("ScanModeController -- Escape key and onCancel callback", () => {
+  let ctrl: ScanModeController;
+
+  beforeEach(() => {
+    ctrl = new ScanModeController();
+  });
+
+  afterEach(() => {
+    if (ctrl.isActive) {
+      ctrl.deactivate();
+    }
+    if (ctrl.overlayEl.parentNode) {
+      ctrl.overlayEl.parentNode.removeChild(ctrl.overlayEl);
+    }
+    if (ctrl.highlightEl.parentNode) {
+      ctrl.highlightEl.parentNode.removeChild(ctrl.highlightEl);
+    }
+  });
+
+  it("Escape keydown calls deactivate (isActive becomes false)", () => {
+    ctrl.activate(() => {});
+    expect(ctrl.isActive).toBe(true);
+
+    const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    document.dispatchEvent(escKey);
+
+    expect(ctrl.isActive).toBe(false);
+  });
+
+  it("Escape keydown calls the onCancel callback if provided", () => {
+    let cancelCalled = false;
+    ctrl.activate(() => {}, { onCancel: () => { cancelCalled = true; } });
+
+    const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    document.dispatchEvent(escKey);
+
+    expect(cancelCalled).toBe(true);
+  });
+
+  it("Escape keydown does not call onCancel when no callback is provided", () => {
+    // Should not throw when no onCancel is given
+    ctrl.activate(() => {});
+
+    expect(() => {
+      const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      document.dispatchEvent(escKey);
+    }).not.toThrow();
+
+    expect(ctrl.isActive).toBe(false);
+  });
+
+  it("onCancel is called after deactivate (isActive is false inside callback)", () => {
+    let isActiveInCallback: boolean | undefined;
+    ctrl.activate(() => {}, {
+      onCancel: () => {
+        isActiveInCallback = ctrl.isActive;
+      },
+    });
+
+    const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    document.dispatchEvent(escKey);
+
+    // deactivate runs before onCancel callback
+    expect(isActiveInCallback).toBe(false);
+  });
+
+  it("activate() without onCancel option — Escape still deactivates cleanly", () => {
+    ctrl.activate(() => {});
+    expect(ctrl.isActive).toBe(true);
+
+    const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    document.dispatchEvent(escKey);
+
+    expect(ctrl.isActive).toBe(false);
   });
 });

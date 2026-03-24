@@ -291,8 +291,8 @@ describe("StyleInspectorContent -- T-SI-05: hint text by state", () => {
 
     const hint = container.querySelector("[data-testid='style-inspector-hint']");
     expect(hint).not.toBeNull();
-    expect(hint!.textContent).toContain("\u2318-click");
-    expect(hint!.textContent).toContain("\u2325");
+    expect(hint!.textContent).toContain("Cmd-click");
+    expect(hint!.textContent).toContain("Opt");
   });
 
   it("hint text disappears after cancelling scan", () => {
@@ -314,5 +314,75 @@ describe("StyleInspectorContent -- T-SI-05: hint text by state", () => {
       fireEvent.click(inspectBtn!);
     });
     expect(container.querySelector("[data-testid='style-inspector-hint']")).toBeNull();
+  });
+});
+
+// ============================================================================
+// T-SI-06: Escape key cancels scanning and returns to rest state
+// ============================================================================
+
+describe("StyleInspectorContent -- T-SI-06: Escape key cancels scanning", () => {
+  it("Escape key during scanning returns button to 'Inspect Element' rest state", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-16" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
+
+    // Enter scanning state
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+    expect(inspectBtn!.textContent).toContain("Cancel Inspection");
+
+    // Press Escape to cancel
+    act(() => {
+      const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      document.dispatchEvent(escKey);
+    });
+
+    // Button should return to rest state
+    expect(inspectBtn!.textContent).toContain("Inspect Element");
+    expect(inspectBtn!.classList.contains("tug-button-ghost-action")).toBe(true);
+  });
+
+  it("Escape key during scanning removes the hint text", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-17" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+
+    // Enter scanning state
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+    expect(container.querySelector("[data-testid='style-inspector-hint']")).not.toBeNull();
+
+    // Press Escape to cancel
+    act(() => {
+      const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      document.dispatchEvent(escKey);
+    });
+
+    // Hint should be gone
+    expect(container.querySelector("[data-testid='style-inspector-hint']")).toBeNull();
+  });
+
+  it("Escape key in rest state (not scanning) does not throw", () => {
+    act(() => {
+      render(<StyleInspectorContent cardId="test-card-18" />);
+    });
+
+    // Escape when not scanning should not throw
+    expect(() => {
+      act(() => {
+        const escKey = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+        document.dispatchEvent(escKey);
+      });
+    }).not.toThrow();
   });
 });
