@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-24T20:37:49Z
+---
+
+## step-5: Integration checkpoint: all automated checks pass (TypeScript check, 1948 tests, audit:tokens). Manual browser verification tasks deferred.
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
 step: step-4
 date: 2025-03-24T20:29:36Z
 ---
