@@ -10,6 +10,90 @@ Entries are sorted newest-first.
 
 ---
 step: step-7
+date: 2025-03-24T16:00:57Z
+---
+
+## step-7: Integration checkpoint: TypeScript check clean, 1861 tests pass, audit:tokens zero violations. All artifacts from steps 1-6 verified in place. Manual end-to-end tests deferred.
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
+step: step-6
+date: 2025-03-24T15:55:24Z
+---
+
+## step-6: Removed StyleInspectorOverlay class, initStyleInspector, singleton, overlay-specific CSS. Kept all exported types and standalone functions. Rewrote tests for standalone functions. Updated gallery doc for card workflow. 1861 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
+step: step-5
+date: 2025-03-24T15:39:53Z
+---
+
+## step-5: Added Show Style Inspector menu item to Developer menu in AppDelegate.swift with Opt+Cmd+I shortcut, calling sendControl(show-style-inspector). Swift build succeeded.
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
+step: step-4
+date: 2025-03-24T15:35:49Z
+---
+
+## step-4: Added show-style-inspector action handler in action-dispatch.ts, showStyleInspector responder action with find-or-create-and-focus semantics in DeckCanvas, replaced initStyleInspector with registerStyleInspectorCard in main.tsx. 6 new tests pass (1868 total).
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
+step: step-3
+date: 2025-03-24T15:24:20Z
+---
+
+## step-3: Created StyleInspectorContent React component with reticle-based element selection, token chain rendering, formula provenance, scale/timing readout. Registered as developer-family card. Ported styles to card CSS. 14 new tests pass (1862 total).
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
+step: step-2
+date: 2025-03-24T15:11:18Z
+---
+
+## step-2: Created ScanModeController class with imperative DOM overlay, pointer-events toggle hit detection, single-shot click selection, Alt key hover suppression. 18 new tests pass (1848 total).
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
+step: step-1
+date: 2025-03-24T15:00:49Z
+---
+
+## step-1: Extracted resolveTokenChainForProperty, resolveTokenChain, extractTugColorProvenance, buildDomPath, tryFormatTugColor, buildFormulaRows, getReverseMap, shortenNumbers, fetchFormulasData as standalone module-level exports. Class methods delegate to extracted functions. All 1830 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
+step: step-7
 date: 2025-03-23T18:41:19Z
 ---
 

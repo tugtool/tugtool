@@ -1,0 +1,306 @@
+/**
+ * style-inspector-card.css -- Style inspector card content styles.
+ *
+ * Styles for StyleInspectorContent rendered inside a Tugcard.
+ * Adapted from style-inspector-overlay.css for a card context:
+ *   - No fixed positioning (card chrome handles geometry)
+ *   - Scroll within card body
+ *   - Reticle toolbar at top
+ *
+ * Uses the same hardcoded oklch values as the overlay for visual consistency.
+ * All pairings are outside the token system and are NOT tracked in theme-pairings.ts.
+ *
+ * @tug-pairings
+ * Logical pairings (hardcoded oklch, not tracked by contrast engine):
+ * | Element (hardcoded)          | Surface (hardcoded)          | Role         | Context                                 |
+ * |------------------------------|------------------------------|--------------|-----------------------------------------|
+ * | oklch(0.88 0.01 240)         | oklch(0.14 0.01 240)         | content      | Panel text on dark card background      |
+ * | oklch(0.72 0.18 200)         | oklch(0.14 0.01 240)         | content      | Token name and accent labels            |
+ * | oklch(0.55 0.02 240)         | oklch(0.14 0.01 240)         | informational | Row labels and dim text                |
+ * | oklch(0.7 0.12 140)          | oklch(0.14 0.01 240)         | content      | Chain resolved value text               |
+ * | oklch(0.72 0.18 55)          | oklch(0.14 0.01 240)         | content      | Terminal value display (orange tone)    |
+ */
+
+/* ---------------------------------------------------------------------------
+   Card content root
+   --------------------------------------------------------------------------- */
+
+.si-card-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: oklch(0.14 0.01 240);
+  color: oklch(0.88 0.01 240);
+  font-family: ui-monospace, "SF Mono", "Menlo", "Cascadia Code", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  user-select: text;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   Toolbar
+   --------------------------------------------------------------------------- */
+
+.si-card-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid oklch(0.22 0.01 240);
+  background: oklch(0.18 0.01 240);
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Reticle button
+   --------------------------------------------------------------------------- */
+
+.si-card-reticle-button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: oklch(0.22 0.01 240);
+  border: 1px solid oklch(0.32 0.02 240);
+  border-radius: 4px;
+  color: oklch(0.72 0.18 200);
+  font-family: ui-monospace, "SF Mono", "Menlo", "Cascadia Code", monospace;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+  user-select: none;
+}
+
+.si-card-reticle-button:hover {
+  background: oklch(0.26 0.01 240);
+  border-color: oklch(0.40 0.04 200);
+}
+
+.si-card-reticle-button--active {
+  background: oklch(0.20 0.06 200);
+  border-color: oklch(0.48 0.14 200);
+  color: oklch(0.88 0.12 200);
+}
+
+.si-card-reticle-button--active:hover {
+  background: oklch(0.24 0.08 200);
+}
+
+/* ---------------------------------------------------------------------------
+   Card body -- scrollable content area
+   --------------------------------------------------------------------------- */
+
+.si-card-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   Empty state
+   --------------------------------------------------------------------------- */
+
+.si-card-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+}
+
+.si-card-empty-state__message {
+  color: oklch(0.45 0.02 240);
+  font-style: italic;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Inspector sections -- reused from overlay styles
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tug-inspector-section__title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: oklch(0.55 0.02 240);
+  font-weight: 600;
+  padding-bottom: 2px;
+  border-bottom: 1px solid oklch(0.22 0.01 240);
+  margin-bottom: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Rows within sections
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.tug-inspector-row__label {
+  color: oklch(0.55 0.02 240);
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.tug-inspector-row__value {
+  color: oklch(0.88 0.01 240);
+  overflow-wrap: break-word;
+  flex: 1;
+  min-width: 0;
+}
+
+.tug-inspector-row__value--dim {
+  color: oklch(0.45 0.02 240);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------------
+   Token chain display
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tug-inspector-chain__hop {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tug-inspector-chain__prop {
+  color: oklch(0.72 0.18 200);
+}
+
+.tug-inspector-chain__resolved {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 12px;
+}
+
+.tug-inspector-chain__value {
+  color: oklch(0.7 0.12 140);
+  overflow-wrap: break-word;
+}
+
+.tug-inspector-chain__terminal {
+  color: oklch(0.72 0.18 55);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Color swatch
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid oklch(0.4 0.01 240);
+  flex-shrink: 0;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   TugColor annotation
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-tug-color {
+  color: oklch(0.72 0.18 140);
+  margin-left: auto;
+  padding-left: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   DOM path display
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-path {
+  color: oklch(0.45 0.02 240);
+  overflow-wrap: break-word;
+  font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   Scale/timing readout section
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-readout {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tug-inspector-readout__item {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.tug-inspector-readout__key {
+  color: oklch(0.55 0.02 240);
+}
+
+.tug-inspector-readout__val {
+  color: oklch(0.72 0.18 200);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Formula provenance section
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-formula-field {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 0;
+  flex-wrap: wrap;
+}
+
+.tug-inspector-formula-field__name {
+  color: oklch(0.72 0.18 200);
+  flex-shrink: 0;
+}
+
+.tug-inspector-formula-field__value {
+  color: oklch(0.88 0.01 240);
+  flex-shrink: 0;
+}
+
+.tug-inspector-formula-field__type {
+  color: oklch(0.55 0.02 240);
+  font-style: italic;
+  flex-shrink: 0;
+}
+
+.tug-inspector-formula__release-label {
+  color: oklch(0.48 0.10 55);
+  font-style: italic;
+  font-size: 10px;
+  flex-shrink: 0;
+}

@@ -1,14 +1,17 @@
 /**
  * gallery-cascade-inspector-content.tsx -- Cascade Inspector gallery tab content.
  *
- * Interactive demo tab for the StyleInspectorOverlay cascade inspector.
- * Provides a set of sample elements that exercise all token chain depths:
+ * Interactive demo tab for the Style Inspector card. Provides a set of sample
+ * elements that exercise all token chain depths:
  *
  *   (a) TugPopupButton -- full three-layer chain: --tug-dropdown-* -> --tug-* -> palette
  *   (b) TugButton -- two-layer chain: --tug-* -> palette (no comp token)
  *   (c) Colored div using --tug-element-global-fill-normal-accent-rest -- base -> palette chain
  *   (d) Div using --tug-surface-global-primary-normal-raised-rest -- non-chromatic base token, terminal hex
  *   (e) Div with direct palette var -- var(--tug-orange-light), direct TugColor provenance
+ *
+ * Activation: Use Opt+Cmd+I to open the Style Inspector card, then click the
+ * reticle button to enter scan mode and hover over elements to inspect them.
  *
  * Rules of Tugways compliance:
  *   - Local useState for UI state only [D40]
@@ -48,10 +51,11 @@ const INSPECTOR_DEMO_ITEMS: TugPopupMenuItem[] = [
  * GalleryCascadeInspectorContent -- gallery tab content with inspectable demo elements.
  *
  * Renders a set of sample elements that exercise all token chain depths so that
- * the Shift+Option cascade inspector can be verified against real token resolution
- * paths in the running app.
+ * the Style Inspector card can be verified against real token resolution paths
+ * in the running app.
  *
- * Activation instructions are shown at the top of the tab.
+ * To inspect: Use Opt+Cmd+I to open the Style Inspector card, then click the
+ * reticle button to enter scan mode and hover over elements to inspect them.
  *
  * **Authoritative reference:** [D06] Gallery tab (#d06-gallery-tab)
  */
@@ -65,9 +69,9 @@ export function GalleryCascadeInspectorContent() {
       <div className="cg-section">
         <div className="cg-section-title">Cascade Inspector Demo</div>
         <p className="cg-description" data-testid="inspector-instructions">
-          Hold <kbd>Shift+Option</kbd> and hover the elements below to see the cascade
-          inspector in action. Each sample exercises a different token chain depth.
-          Click to pin the overlay; press <kbd>Escape</kbd> to close.
+          Use <kbd>Opt+Cmd+I</kbd> to open the Style Inspector card, then click the
+          reticle button to enter scan mode and hover over elements to inspect them.
+          Each sample exercises a different token chain depth.
         </p>
       </div>
 

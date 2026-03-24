@@ -178,6 +178,19 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   const galleryCardIdRef = useRef<string | null>(null);
 
   /**
+   * styleInspectorCardIdRef tracks the ID of the currently-open style inspector card.
+   *
+   * showStyleInspector reads this ref to determine whether to create a new
+   * inspector card or focus the existing one ([D07] show-only semantics).
+   * The onClose callback for inspector cards clears this ref so that the next
+   * showStyleInspector dispatch creates a fresh inspector card.
+   *
+   * [D04] Show action pattern
+   * [D07] Show-only semantics (never close via showStyleInspector)
+   */
+  const styleInspectorCardIdRef = useRef<string | null>(null);
+
+  /**
    * containerRef: ref to the positioning wrapper div that card frames, snap guides,
    * and SVG flash elements are rendered into. Passed to updateSetAppearance for
    * initial-load clip-path and data-in-set setup. [D03, Spec S04]
@@ -283,6 +296,38 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
           const newId = store.addCard("gallery-buttons");
           if (newId) {
             galleryCardIdRef.current = newId;
+            setDeselected(false);
+            manager.makeFirstResponder(newId);
+          }
+        }
+      },
+      /**
+       * showStyleInspector -- find or create the style inspector card ([D04], [D07]).
+       *
+       * Show-only semantics ([D07]): the inspector card is never closed by this
+       * action. If an inspector card is already present (tracked via styleInspectorCardIdRef),
+       * it is focused. If not, a new inspector card is created via
+       * store.addCard("style-inspector") and the returned ID is stored in
+       * styleInspectorCardIdRef. In both paths, makeFirstResponder is called so the
+       * inspector takes responder focus immediately.
+       */
+      showStyleInspector: (_event: ActionEvent) => {
+        const existingId = styleInspectorCardIdRef.current;
+        const c = cardsRef.current;
+
+        // Check whether the tracked inspector card still exists in the store
+        const existingCard = existingId ? c.find((card) => card.id === existingId) : null;
+
+        if (existingCard) {
+          // Inspector card already exists -- focus it ([D07] show-only, never close)
+          store.handleCardFocused(existingCard.id);
+          setDeselected(false);
+          manager.makeFirstResponder(existingCard.id);
+        } else {
+          // No inspector card -- create one
+          const newId = store.addCard("style-inspector");
+          if (newId) {
+            styleInspectorCardIdRef.current = newId;
             setDeselected(false);
             manager.makeFirstResponder(newId);
           }
@@ -457,14 +502,18 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
         }
 
         /**
-         * onClose wrapper: when the closed card matches galleryCardIdRef.current,
-         * clear the ref to null. This ensures that the next showComponentGallery
-         * dispatch creates a fresh gallery card rather than looking for a card
+         * onClose wrapper: when the closed card matches galleryCardIdRef.current
+         * or styleInspectorCardIdRef.current, clear the respective ref to null.
+         * This ensures that the next showComponentGallery or showStyleInspector
+         * dispatch creates a fresh card rather than looking for a card
          * that no longer exists (defense-in-depth, [D07]).
          */
         const handleClose = () => {
           if (galleryCardIdRef.current === cardState.id) {
             galleryCardIdRef.current = null;
+          }
+          if (styleInspectorCardIdRef.current === cardState.id) {
+            styleInspectorCardIdRef.current = null;
           }
           store.handleCardClosed(cardState.id);
         };

@@ -196,6 +196,18 @@ export function initActionDispatch(
     }
   });
 
+  // show-style-inspector: Show the Style Inspector card via DeckCanvas responder action.
+  // Dispatches "showStyleInspector" through the ResponderChainManager, which routes it
+  // to DeckCanvas's registered showStyleInspector handler. DeckCanvas finds or creates
+  // the inspector card and focuses it. ([D04] show action pattern)
+  registerAction("show-style-inspector", () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.dispatch({ action: "showStyleInspector", phase: "discrete" });
+    } else {
+      console.warn("show-style-inspector: responder chain manager not registered yet");
+    }
+  });
+
   // choose-source-tree: Call WKScriptMessageHandler bridge if available
   registerAction("choose-source-tree", () => {
     console.info("choose-source-tree: triggering source tree picker");
