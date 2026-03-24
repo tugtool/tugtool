@@ -1007,3 +1007,75 @@ export function categorizeProperty(name: string): { category: SemanticCategory; 
 
   return { category, state };
 }
+
+// ---------------------------------------------------------------------------
+// groupProperties — group resolved --tug-* properties by category and state
+// ---------------------------------------------------------------------------
+
+/**
+ * Group a set of discovered --tug-* properties by semantic category and interaction state.
+ *
+ * For each property name in `tugProperties`:
+ *   1. Resolve its token chain via `resolveTokenChain`.
+ *   2. Look up formula rows via the reverse map.
+ *   3. Categorize by name heuristic (T01, T02).
+ *   4. Insert into the nested Map<SemanticCategory, Map<InteractionState, PropertyEntry[]>>.
+ *
+ * [D01] Scan all stylesheets, [D03] Group by name heuristic.
+ * Spec S02 (#s02-property-grouping)
+ *
+ * @param tugProperties - Set of --tug-* property names discovered by scanAllTugProperties
+ * @param formulasData - Formulas data fetched from GET /__themes/formulas (may be null)
+ * @param reverseMap - The reverse map to look up token-to-field mappings
+ * @returns GroupedProperties map
+ */
+export function groupProperties(
+  tugProperties: Set<string>,
+  formulasData: FormulasData | null,
+  reverseMap: ReturnType<typeof getReverseMap>
+): GroupedProperties {
+  const grouped: GroupedProperties = new Map();
+
+  // Ensure all categories are present in canonical order
+  const categories: SemanticCategory[] = ["BACKGROUND", "TEXT", "BORDER", "OTHER"];
+  const states: InteractionState[] = ["rest", "hover", "active", "disabled"];
+  for (const cat of categories) {
+    const stateMap: Map<InteractionState, PropertyEntry[]> = new Map();
+    for (const st of states) {
+      stateMap.set(st, []);
+    }
+    grouped.set(cat, stateMap);
+  }
+
+  for (const property of tugProperties) {
+    const { category, state } = categorizeProperty(property);
+
+    // Resolve the token chain for this property
+    const chain = resolveTokenChain(property);
+
+    // Look up formula rows: find the terminal token in the reverse map
+    const formulaRows: FormulaRow[] = [];
+    if (formulasData && chain.length > 0) {
+      const terminalToken = chain[chain.length - 1].property;
+      const mappings = reverseMap.tokenToFields.get(terminalToken);
+      if (mappings) {
+        for (const mapping of mappings) {
+          const rawValue = formulasData.formulas[mapping.field];
+          if (rawValue !== undefined) {
+            formulaRows.push({
+              field: mapping.field,
+              value: rawValue,
+              property: mapping.property,
+              isStructural: false,
+            });
+          }
+        }
+      }
+    }
+
+    const entry: PropertyEntry = { property, chain, formulaRows };
+    grouped.get(category)!.get(state)!.push(entry);
+  }
+
+  return grouped;
+}

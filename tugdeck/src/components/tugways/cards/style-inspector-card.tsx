@@ -54,10 +54,12 @@ import {
   shortenNumbers,
   tryFormatTugColor,
   getReverseMap,
+  scanAllTugProperties,
+  groupProperties,
 } from "@/components/tugways/style-inspector-overlay";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 import { registerCard } from "@/card-registry";
-import type { TokenChainResult, FormulaRow, FormulasData } from "@/components/tugways/style-inspector-overlay";
+import type { TokenChainResult, FormulaRow, FormulasData, GroupedProperties } from "@/components/tugways/style-inspector-overlay";
 import "./style-inspector-card.css";
 
 // ---------------------------------------------------------------------------
@@ -120,6 +122,8 @@ interface InspectionData {
   timing: number;
   motionOn: boolean;
   formulasData: FormulasData | null;
+  /** All --tug-* properties grouped by category and state. [D01] */
+  groupedProperties: GroupedProperties | null;
 }
 
 /** Button mode enum for the three-state inspect button. */
@@ -309,6 +313,103 @@ function FormulaSection({ rows }: { rows: FormulaRow[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// AllPropertiesSection -- grouped all-properties display
+// ---------------------------------------------------------------------------
+
+/** Category display labels for the section headings. */
+const CATEGORY_LABELS: Record<string, string> = {
+  BACKGROUND: "Background",
+  TEXT: "Text",
+  BORDER: "Border",
+  OTHER: "Other",
+};
+
+/** State display labels for sub-row labels. */
+const STATE_LABELS: Record<string, string> = {
+  rest: "rest",
+  hover: "hover",
+  active: "active",
+  disabled: "disabled",
+};
+
+/**
+ * AllPropertiesSection renders all discovered --tug-* properties grouped by
+ * semantic category (BACKGROUND, TEXT, BORDER, OTHER) and interaction state
+ * (rest, hover, active, disabled).
+ *
+ * [D01] All-properties scan, [D03] Group by name heuristic.
+ * Spec S02 (#s02-property-grouping)
+ */
+function AllPropertiesSection({ grouped }: { grouped: GroupedProperties }) {
+  const categories = ["BACKGROUND", "TEXT", "BORDER", "OTHER"] as const;
+  const states = ["rest", "hover", "active", "disabled"] as const;
+
+  // Determine if there are any entries at all
+  let hasAnyEntry = false;
+  for (const cat of categories) {
+    const stateMap = grouped.get(cat);
+    if (!stateMap) continue;
+    for (const state of states) {
+      const entries = stateMap.get(state);
+      if (entries && entries.length > 0) {
+        hasAnyEntry = true;
+        break;
+      }
+    }
+    if (hasAnyEntry) break;
+  }
+
+  if (!hasAnyEntry) return null;
+
+  return (
+    <div className="si-all-props-root" data-testid="all-properties-section">
+      {categories.map((cat) => {
+        const stateMap = grouped.get(cat);
+        if (!stateMap) return null;
+
+        // Check if any state has entries for this category
+        const hasCatEntries = states.some((st) => (stateMap.get(st)?.length ?? 0) > 0);
+        if (!hasCatEntries) return null;
+
+        return (
+          <div key={cat} className="si-all-props-category">
+            <div className="si-all-props-category__header">{CATEGORY_LABELS[cat]}</div>
+            {states.map((state) => {
+              const entries = stateMap.get(state);
+              if (!entries || entries.length === 0) return null;
+
+              return (
+                <div key={state} className="si-all-props-state-group">
+                  <span className="si-all-props-state__label">{STATE_LABELS[state]}</span>
+                  <div className="si-all-props-entries">
+                    {entries.map((entry) => (
+                      <div key={entry.property} className="si-all-props-entry">
+                        <span className="si-all-props-entry__prop">{entry.property}</span>
+                        {entry.formulaRows.length > 0 && (
+                          <div className="si-all-props-entry__formulas">
+                            {entry.formulaRows.map((row) => (
+                              <span key={row.field} className="si-all-props-formula-chip">
+                                <span className="si-all-props-formula-chip__field">{row.field}</span>
+                                <span className="si-all-props-formula-chip__sep"> = </span>
+                                <span className="si-all-props-formula-chip__value">{String(row.value)}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // StyleInspectorContent
 // ---------------------------------------------------------------------------
 
@@ -471,6 +572,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
       timing,
       motionOn,
       formulasData: null,
+      groupedProperties: null,
     };
     setRenderKey((k) => k + 1);
 
@@ -478,9 +580,14 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     const targetEl = el;
     fetchFormulasData().then((data) => {
       if (inspectionDataRef.current && inspectionDataRef.current.el === targetEl) {
+        // Build grouped properties once formulas data is available
+        const tugProps = scanAllTugProperties();
+        const reverseMap = getReverseMap();
+        const grouped = groupProperties(tugProps, data, reverseMap);
         inspectionDataRef.current = {
           ...inspectionDataRef.current,
           formulasData: data,
+          groupedProperties: grouped,
         };
         setRenderKey((k) => k + 1);
       }
@@ -741,6 +848,14 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
             {/* Formula provenance section */}
             {formulaRows !== null && (
               <FormulaSection rows={formulaRows} />
+            )}
+
+            {/* All-properties grouped section (Step 2) */}
+            {data.groupedProperties !== null && (
+              <div className="tug-inspector-section">
+                <div className="tug-inspector-section__title">All Tug Properties</div>
+                <AllPropertiesSection grouped={data.groupedProperties} />
+              </div>
             )}
           </>
         )}

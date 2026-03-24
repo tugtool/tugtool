@@ -293,3 +293,103 @@
   font-size: 10px;
   flex-shrink: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   All-properties grouped section (Step 2)
+   --------------------------------------------------------------------------- */
+
+/*
+ * @tug-pairings (addendum)
+ * | Element token                                          | Surface token                                           | Role         | Context                                 |
+ * |--------------------------------------------------------|---------------------------------------------------------|--------------|-----------------------------------------|
+ * | --tug-element-global-text-normal-muted-rest            | --tug-surface-global-primary-normal-content-rest        | informational | All-props category header text          |
+ * | --tug-element-tone-text-normal-active-rest             | --tug-surface-global-primary-normal-content-rest        | content      | All-props property name                 |
+ * | --tug-element-global-text-normal-subtle-rest           | --tug-surface-global-primary-normal-content-rest        | informational | All-props state label                   |
+ * | --tug-element-global-text-normal-default-rest          | --tug-surface-global-primary-normal-content-rest        | content      | All-props formula chip value            |
+ */
+
+.si-all-props-root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.si-all-props-category {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.si-all-props-category__header {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tug-element-global-text-normal-muted-rest);
+  font-weight: 700;
+  padding: 1px 0;
+}
+
+.si-all-props-state-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+}
+
+.si-all-props-state__label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tug-element-global-text-normal-subtle-rest);
+  font-weight: 600;
+}
+
+.si-all-props-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+}
+
+.si-all-props-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 1px 0;
+}
+
+.si-all-props-entry__prop {
+  color: var(--tug-element-tone-text-normal-active-rest);
+  overflow-wrap: break-word;
+  word-break: break-all;
+  font-size: 10px;
+}
+
+.si-all-props-entry__formulas {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 8px;
+}
+
+.si-all-props-formula-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.si-all-props-formula-chip__field {
+  color: var(--tug-element-tone-text-normal-active-rest);
+  font-size: 10px;
+}
+
+.si-all-props-formula-chip__sep {
+  color: var(--tug-element-global-text-normal-subtle-rest);
+  font-size: 10px;
+}
+
+.si-all-props-formula-chip__value {
+  color: var(--tug-element-global-text-normal-default-rest);
+  font-size: 10px;
+}
