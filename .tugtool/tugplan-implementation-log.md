@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-24T00:01:38Z
+---
+
+## step-4: Implemented handleFormulaPost with regex-based recipe file editing, expression/shorthand form detection, coupling warning detection, and error handling. Registered POST /__themes/formula route. 12 unit tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-formula-editor.md
+
+---
+
+---
 step: step-3
 date: 2025-03-23T23:39:31Z
 ---

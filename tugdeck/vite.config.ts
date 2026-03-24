@@ -692,6 +692,208 @@ export function handleFormulasGet(cache: FormulasCache | null): { status: number
 }
 
 // ---------------------------------------------------------------------------
+// handleFormulaPost — POST /__themes/formula
+//
+// Writes a new literal value for a formula field to the active recipe file.
+//
+// Algorithm:
+//   1. Validate request body (field + value).
+//   2. Read mode from formulasCache to determine the recipe file path.
+//   3. Read the recipe file from disk.
+//   4. Find the property in the object literal using two regex patterns:
+//      - Expression form:  `fieldName: expr,`
+//      - Shorthand form:   `fieldName,`  (bare identifier)
+//   5. Replace the RHS with the new literal value.
+//   6. Write the file back to disk.
+//   7. Return success response per Spec S04.
+//
+// Returns 400 if: cache is null, field not found, field is boolean.
+//
+// Exported for unit testing with mocked fs.
+// ---------------------------------------------------------------------------
+
+/** Path mapping from mode string to recipe file (relative to tugdeck root). */
+const RECIPE_PATHS: Record<string, string> = {
+  dark: "src/components/tugways/recipes/dark.ts",
+  light: "src/components/tugways/recipes/light.ts",
+};
+
+/** Request body shape for POST /__themes/formula. */
+export interface FormulaWriteBody {
+  field: string;
+  value: number | string;
+}
+
+/** Success response shape for POST /__themes/formula. */
+export interface FormulaWriteResponse {
+  ok: true;
+  file: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  couplingWarning?: string[];
+}
+
+/**
+ * Handle POST /__themes/formula.
+ *
+ * @param body        - Parsed JSON request body (unknown).
+ * @param cache       - Current formulas cache (null if no theme activated yet).
+ * @param fsImpl      - Filesystem implementation (real or mock).
+ * @param recipeRoot  - Absolute path to the tugdeck root (for resolving recipe paths).
+ * @returns HTTP response with status and body.
+ */
+export function handleFormulaPost(
+  body: unknown,
+  cache: FormulasCache | null,
+  fsImpl: FsWriteImpl,
+  recipeRoot: string,
+): { status: number; body: string } {
+  // Validate request body
+  if (!body || typeof body !== "object") {
+    return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
+  }
+  const b = body as Record<string, unknown>;
+  const field = b.field;
+  const value = b.value;
+
+  if (!field || typeof field !== "string" || field.trim() === "") {
+    return { status: 400, body: JSON.stringify({ error: "field is required" }) };
+  }
+  if (value === undefined || value === null) {
+    return { status: 400, body: JSON.stringify({ error: "value is required" }) };
+  }
+  if (typeof value !== "number" && typeof value !== "string") {
+    return { status: 400, body: JSON.stringify({ error: "value must be a number or string" }) };
+  }
+
+  const fieldName = field.trim();
+
+  // Check for no active theme
+  if (cache === null) {
+    return { status: 400, body: JSON.stringify({ error: "no active theme — activate a theme first" }) };
+  }
+
+  // Reject boolean fields (OF1, OQ1)
+  if (typeof cache.formulas[fieldName] === "boolean") {
+    return { status: 400, body: JSON.stringify({ error: `field '${fieldName}' is a boolean field and cannot be edited via write-back` }) };
+  }
+
+  // Verify field exists in formulas cache (validates field name)
+  if (!(fieldName in cache.formulas)) {
+    return { status: 400, body: JSON.stringify({ error: `field '${fieldName}' is not a valid formula field` }) };
+  }
+
+  // Resolve recipe file path
+  const relPath = RECIPE_PATHS[cache.mode];
+  if (!relPath) {
+    return { status: 400, body: JSON.stringify({ error: `unknown mode '${cache.mode}'` }) };
+  }
+  const filePath = path.join(recipeRoot, relPath);
+
+  // Read recipe file
+  let source: string;
+  try {
+    source = fsImpl.readFileSync(filePath, "utf-8");
+  } catch (err) {
+    return { status: 400, body: JSON.stringify({ error: `failed to read recipe file: ${String(err)}` }) };
+  }
+
+  // Format the new value as a string to write
+  const newValueStr = typeof value === "string" ? `"${value}"` : String(value);
+
+  // Try expression form: `fieldName: expr,`
+  // Matches: `  fieldName: someExpr,` (with optional leading whitespace)
+  const exprRegex = new RegExp(`(^|\\n)([ \\t]*${escapeRegExp(fieldName)}\\s*:)\\s*(.+?)(,[ \\t]*(?:\\/\\/[^\\n]*)?)(?=\\n|$)`, "");
+
+  // Try shorthand form: `  fieldName,`
+  // Matches bare identifier on its own line: `  fieldName,`
+  const shorthandRegex = new RegExp(`(^|\\n)([ \\t]*)(${escapeRegExp(fieldName)})(,[ \\t]*(?:\\/\\/[^\\n]*)?)(?=\\n|$)`, "");
+
+  let oldValue: string;
+  let newSource: string;
+
+  // First try expression form
+  const exprMatch = exprRegex.exec(source);
+  if (exprMatch) {
+    oldValue = exprMatch[3].trim();
+    // Rebuild: keep leading newline + indent + "fieldName:" + space + newValue + trailing comma/comment
+    newSource = source.replace(exprRegex, `$1$2 ${newValueStr}$4`);
+  } else {
+    // Try shorthand form
+    const shorthandMatch = shorthandRegex.exec(source);
+    if (shorthandMatch) {
+      oldValue = shorthandMatch[3]; // bare field name (= fieldName)
+      // Rewrite shorthand as expression form: `  fieldName: newValue,`
+      // fieldName is a valid identifier (no regex special chars), so safe in replacement string.
+      newSource = source.replace(shorthandRegex, `$1$2${fieldName}: ${newValueStr}$4`);
+    } else {
+      return { status: 400, body: JSON.stringify({ error: `field '${fieldName}' not found in recipe file` }) };
+    }
+  }
+
+  // Write back to disk
+  try {
+    fsImpl.writeFileSync(filePath, newSource, "utf-8");
+  } catch (err) {
+    return { status: 400, body: JSON.stringify({ error: `failed to write recipe file: ${String(err)}` }) };
+  }
+
+  // Check for coupling warning: if old RHS is a bare identifier (not a number, string literal, or expression),
+  // find other fields in the same file that reference the same variable.
+  const couplingWarning = computeCouplingWarning(fieldName, oldValue, newSource);
+
+  const response: FormulaWriteResponse = {
+    ok: true,
+    file: relPath,
+    field: fieldName,
+    oldValue,
+    newValue: newValueStr,
+    ...(couplingWarning.length > 0 ? { couplingWarning } : {}),
+  };
+
+  return { status: 200, body: JSON.stringify(response) };
+}
+
+/**
+ * Escape special regex characters in a string for use in a RegExp constructor.
+ */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * If oldRhs looks like a bare identifier (no operators, no spaces, not a number,
+ * not a quoted string), find other fields in the recipe file that reference
+ * the same identifier. Returns the list of field names (Risk R03).
+ */
+function computeCouplingWarning(fieldName: string, oldRhs: string, source: string): string[] {
+  // A bare identifier: starts with a letter/underscore, contains only word chars, no spaces/operators
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(oldRhs)) {
+    return [];
+  }
+  const varName = oldRhs;
+  const coupled: string[] = [];
+
+  // Find lines that contain `otherFieldName: <something containing varName>`
+  // Pattern: `identifierName: ... varName ...`
+  const lineRe = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)[ \t]*:[ \t]*(.+?),[ \t]*(?:\/\/[^\n]*)?$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = lineRe.exec(source)) !== null) {
+    const otherField = m[1];
+    const rhs = m[2];
+    if (otherField === fieldName) continue;
+    // Check if the rhs references the varName as a whole word
+    const wordRe = new RegExp(`\\b${escapeRegExp(varName)}\\b`);
+    if (wordRe.test(rhs)) {
+      coupled.push(otherField);
+    }
+  }
+
+  return coupled;
+}
+
+// ---------------------------------------------------------------------------
 // handleThemesActivate — POST /__themes/activate
 //
 // Parses the request body, validates the theme field, calls
@@ -748,6 +950,7 @@ export async function handleThemesActivate(
  * GET  /__themes/formulas     — current DerivationFormulas cache (Spec S03)
  * POST /__themes/save         — save a new authored theme to disk
  * POST /__themes/activate     — activate a theme by rewriting the override file
+ * POST /__themes/formula      — write a formula field literal value to recipe file (Spec S04)
  */
 function themeSaveLoadPlugin(): VitePlugin {
   return {
@@ -840,6 +1043,25 @@ function themeSaveLoadPlugin(): VitePlugin {
                 res.writeHead(500, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ error: String(err) }));
               });
+            });
+            return;
+          }
+
+          if (req.method === "POST" && url === "/formula") {
+            let raw = "";
+            req.on("data", (chunk: Buffer) => { raw += chunk.toString(); });
+            req.on("end", () => {
+              let body: unknown;
+              try {
+                body = JSON.parse(raw);
+              } catch {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "invalid JSON body" }));
+                return;
+              }
+              const result = handleFormulaPost(body, formulasCache, fs as unknown as FsWriteImpl, __dirname);
+              res.writeHead(result.status, { "Content-Type": "application/json" });
+              res.end(result.body);
             });
             return;
           }
