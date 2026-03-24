@@ -291,8 +291,8 @@ describe("StyleInspectorContent -- T-SI-05: hint text by state", () => {
 
     const hint = container.querySelector("[data-testid='style-inspector-hint']");
     expect(hint).not.toBeNull();
-    expect(hint!.textContent).toContain("Cmd-click");
-    expect(hint!.textContent).toContain("Opt");
+    expect(hint!.textContent).toContain("Esc to cancel");
+    expect(hint!.textContent).toContain("Opt no hover");
   });
 
   it("hint text disappears after cancelling scan", () => {

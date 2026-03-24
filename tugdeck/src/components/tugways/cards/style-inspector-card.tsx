@@ -41,7 +41,7 @@
  * @module components/tugways/cards/style-inspector-card
  */
 
-import React, { useRef, useState, useCallback, useEffect } from "react";
+import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 import { Crosshair } from "lucide-react";
 import { TugButton } from "@/components/tugways/tug-button";
 import { ScanModeController } from "@/components/tugways/scan-mode-controller";
@@ -59,6 +59,49 @@ import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugwa
 import { registerCard } from "@/card-registry";
 import type { TokenChainResult, FormulaRow, FormulasData } from "@/components/tugways/style-inspector-overlay";
 import "./style-inspector-card.css";
+
+// ---------------------------------------------------------------------------
+// styleInspectorBus -- module-level pub/sub bus for external toggle-scan events
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-level pub/sub bus for the style inspector card.
+ *
+ * External callers (e.g., DeckCanvas) can call `styleInspectorBus.emit('toggle-scan')`
+ * to trigger a scan mode toggle from outside the component tree. The
+ * StyleInspectorContent component registers a listener via useLayoutEffect
+ * (L03: use useLayoutEffect for registrations that events depend on).
+ *
+ * Uses a plain callback registry rather than EventTarget to avoid
+ * browser-vs-happy-dom EventTarget/Event compatibility issues in tests.
+ */
+type StyleInspectorBusEvent = "toggle-scan";
+
+interface StyleInspectorBus {
+  on(event: StyleInspectorBusEvent, listener: () => void): void;
+  off(event: StyleInspectorBusEvent, listener: () => void): void;
+  emit(event: StyleInspectorBusEvent): void;
+}
+
+function createStyleInspectorBus(): StyleInspectorBus {
+  const listeners = new Map<StyleInspectorBusEvent, Set<() => void>>();
+  return {
+    on(event, listener) {
+      if (!listeners.has(event)) {
+        listeners.set(event, new Set());
+      }
+      listeners.get(event)!.add(listener);
+    },
+    off(event, listener) {
+      listeners.get(event)?.delete(listener);
+    },
+    emit(event) {
+      listeners.get(event)?.forEach((cb) => cb());
+    },
+  };
+}
+
+export const styleInspectorBus: StyleInspectorBus = createStyleInspectorBus();
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -500,6 +543,61 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     };
   }, [removePinnedHighlight]);
 
+  // Listen for 'toggle-scan' events on the styleInspectorBus (L03: useLayoutEffect
+  // for registrations that events depend on).
+  //
+  // Behavior by current mode:
+  //   rest      → start scanning (same as clicking Inspect Element)
+  //   scanning  → cancel scanning (same as clicking Cancel Inspection / Escape)
+  //   inspecting → go to rest first (clear inspection); user can press again to scan
+  useLayoutEffect(() => {
+    const handleToggleScan = () => {
+      const ctrl = scanCtrlRef.current;
+      if (!ctrl) return;
+
+      const currentMode = modeRef.current;
+
+      if (currentMode === "rest") {
+        // Rest → Scanning
+        modeRef.current = "scanning";
+        if (containerRef.current) {
+          containerRef.current.setAttribute("data-inspect-mode", "scanning");
+        }
+        ctrl.activate(handleElementSelected, {
+          onCancel: () => {
+            modeRef.current = "rest";
+            if (containerRef.current) {
+              containerRef.current.removeAttribute("data-inspect-mode");
+            }
+            setRenderKey((k) => k + 1);
+          },
+        });
+      } else if (currentMode === "scanning") {
+        // Scanning → Rest (cancel)
+        ctrl.deactivate();
+        modeRef.current = "rest";
+        if (containerRef.current) {
+          containerRef.current.removeAttribute("data-inspect-mode");
+        }
+      } else if (currentMode === "inspecting") {
+        // Inspecting → Rest (clear inspection; user must press again to scan)
+        removePinnedHighlight();
+        inspectionDataRef.current = null;
+        modeRef.current = "rest";
+        if (containerRef.current) {
+          containerRef.current.removeAttribute("data-inspect-mode");
+        }
+      }
+
+      setRenderKey((k) => k + 1);
+    };
+
+    styleInspectorBus.on("toggle-scan", handleToggleScan);
+    return () => {
+      styleInspectorBus.off("toggle-scan", handleToggleScan);
+    };
+  }, [handleElementSelected, removePinnedHighlight]);
+
   const data = inspectionDataRef.current;
   const mode = modeRef.current;
 
@@ -529,7 +627,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
   // Hint text shown only during scanning state
   const hintText =
     mode === "scanning"
-      ? "click to inspect \u00B7 Cmd-click normal \u00B7 Opt no hover"
+      ? "Esc to cancel \u00B7 Opt no hover"
       : "";
 
   // aria-pressed reflects active scanning/inspecting state

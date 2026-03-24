@@ -246,16 +246,10 @@ export class ScanModeController {
   /**
    * Handle click on the overlay.
    *
-   * If metaKey (Cmd) is held, the click passes through to the underlying element
-   * as a normal click instead of triggering element selection. This lets users
-   * Cmd+Click on card title bars or other UI chrome during scan mode without
-   * accidentally selecting them for inspection. The synthetic click is dispatched
-   * regardless of whether the target is inside the inspector card (so card
-   * interactions like focusing/closing still work normally via Cmd+Click).
+   * Identifies the real element under cursor using pointer-events suppression,
+   * calls the onSelect callback, and deactivates while keeping the highlight
+   * rect in the DOM for the caller to pin.
    *
-   * Otherwise, identifies the real element under cursor using the same
-   * pointer-events suppression technique, calls the onSelect callback, and
-   * deactivates while keeping the highlight rect in the DOM for the caller to pin.
    * Clicks on elements inside the inspector card itself are ignored (no selection).
    */
   private _handleClick(e: MouseEvent): void {
@@ -263,43 +257,6 @@ export class ScanModeController {
     this.overlayEl.style.pointerEvents = "none";
     const el = document.elementFromPoint(e.clientX, e.clientY);
     this.overlayEl.style.pointerEvents = "auto";
-
-    // Cmd+Click passthrough: dispatch a synthetic pointerdown then click on the
-    // real target. Always forwarded (even if target is inside the inspector card),
-    // so that card interactions (close, focus) continue to work normally.
-    // The pointerdown fires first (matching natural browser event ordering) to
-    // trigger React's onPointerDown handlers for card focusing. The click handles
-    // any click-based interactions.
-    if (e.metaKey) {
-      if (el && el !== this.overlayEl && el !== this.highlightEl) {
-        const syntheticPointerDown = new PointerEvent("pointerdown", {
-          bubbles: true,
-          cancelable: true,
-          clientX: e.clientX,
-          clientY: e.clientY,
-          metaKey: e.metaKey,
-          ctrlKey: e.ctrlKey,
-          shiftKey: e.shiftKey,
-          altKey: e.altKey,
-          pointerId: 1,
-          pointerType: "mouse",
-        });
-        el.dispatchEvent(syntheticPointerDown);
-
-        const syntheticClick = new MouseEvent("click", {
-          bubbles: true,
-          cancelable: true,
-          clientX: e.clientX,
-          clientY: e.clientY,
-          metaKey: e.metaKey,
-          ctrlKey: e.ctrlKey,
-          shiftKey: e.shiftKey,
-          altKey: e.altKey,
-        });
-        el.dispatchEvent(syntheticClick);
-      }
-      return;
-    }
 
     if (!el || el === this.overlayEl || el === this.highlightEl) {
       return;

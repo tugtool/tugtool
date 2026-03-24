@@ -78,6 +78,7 @@ import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { tabDragCoordinator } from "@/tab-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
+import { styleInspectorBus } from "@/components/tugways/cards/style-inspector-card";
 
 // ---- DeckCanvasProps (Spec S04) ----
 
@@ -320,11 +321,13 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
 
         if (existingCard) {
           // Inspector card already exists -- focus it ([D07] show-only, never close)
+          // and toggle scan mode so repeated Opt+Cmd+I presses cycle scan on/off.
           store.handleCardFocused(existingCard.id);
           setDeselected(false);
           manager.makeFirstResponder(existingCard.id);
+          styleInspectorBus.emit("toggle-scan");
         } else {
-          // No inspector card -- create one
+          // No inspector card -- create one (no scan toggle on first open)
           const newId = store.addCard("style-inspector");
           if (newId) {
             styleInspectorCardIdRef.current = newId;
