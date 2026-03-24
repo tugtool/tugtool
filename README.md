@@ -1,6 +1,6 @@
 # Tug
 
-AI-assisted software construction
+An IDE for AI coding
 
 How do we move beyond “vibe coding” with AI and bring more structure to developing complex software with coding assistants?
 
