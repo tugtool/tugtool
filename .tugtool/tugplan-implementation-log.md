@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-24T15:24:20Z
+---
+
+## step-3: Created StyleInspectorContent React component with reticle-based element selection, token chain rendering, formula provenance, scale/timing readout. Registered as developer-family card. Ported styles to card CSS. 14 new tests pass (1862 total).
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
 step: step-2
 date: 2025-03-24T15:11:18Z
 ---
