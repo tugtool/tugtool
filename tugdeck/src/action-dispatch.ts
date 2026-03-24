@@ -263,7 +263,7 @@ export function initActionDispatch(
   // This supplements the control-socket path (toggle-style-inspector-scan action above)
   // for contexts where there is no Mac menu item routing through the control socket.
   document.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.metaKey && e.altKey && e.key === "e") {
+    if (e.metaKey && e.altKey && e.code === "KeyE") {
       e.preventDefault();
       e.stopPropagation();
       if (responderChainManagerRef) {
