@@ -257,4 +257,18 @@ export function initActionDispatch(
       console.warn("add-tab: responder chain manager not registered yet");
     }
   });
+
+  // Opt+Cmd+E → toggle style inspector scan (web-side keybinding).
+  // Registered in capture phase so it fires before other handlers.
+  // This supplements the control-socket path (toggle-style-inspector-scan action above)
+  // for contexts where there is no Mac menu item routing through the control socket.
+  document.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.metaKey && e.altKey && e.key === "e") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (responderChainManagerRef) {
+        responderChainManagerRef.dispatch({ action: "toggleStyleInspectorScan", phase: "discrete" });
+      }
+    }
+  }, true); // capture phase
 }

@@ -17,7 +17,6 @@ protocol BridgeDelegate: AnyObject {
     func bridgeSetTheme(color: String)
     func bridgeDevBadge(backend: Bool, app: Bool)
     func bridgeThemeListUpdated(themes: [ThemeEntry], activeTheme: String?)
-    func bridgeStyleInspectorState(open: Bool)
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
@@ -42,7 +41,6 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "setTheme")
         contentController.add(self, name: "devBadge")
         contentController.add(self, name: "themeListUpdated")
-        contentController.add(self, name: "styleInspectorState")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -120,7 +118,6 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "setTheme")
         contentController.removeScriptMessageHandler(forName: "devBadge")
         contentController.removeScriptMessageHandler(forName: "themeListUpdated")
-        contentController.removeScriptMessageHandler(forName: "styleInspectorState")
         bridgeCleaned = true
     }
 
@@ -277,10 +274,6 @@ extension MainWindow: WKScriptMessageHandler {
             }
             let activeTheme = body["activeTheme"] as? String
             bridgeDelegate?.bridgeThemeListUpdated(themes: themes, activeTheme: activeTheme)
-        case "styleInspectorState":
-            guard let body = message.body as? [String: Any],
-                  let open = body["open"] as? Bool else { return }
-            bridgeDelegate?.bridgeStyleInspectorState(open: open)
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
         }

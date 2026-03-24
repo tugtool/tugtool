@@ -541,19 +541,6 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     };
   }, [removePinnedHighlight]);
 
-  // Notify the native app when the style inspector card opens and closes.
-  // On mount: posts { open: true } so the app enables the "Inspect Element" menu item.
-  // On unmount: posts { open: false } so the app disables it.
-  useEffect(() => {
-    const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
-    const handlers = webkit?.messageHandlers as Record<string, unknown> | undefined;
-    const handler = handlers?.styleInspectorState as { postMessage: (v: unknown) => void } | undefined;
-    handler?.postMessage({ open: true });
-    return () => {
-      handler?.postMessage({ open: false });
-    };
-  }, []);
-
   // Listen for 'toggle-scan' events on the styleInspectorBus (L03: useLayoutEffect
   // for registrations that events depend on).
   //
