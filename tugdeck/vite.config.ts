@@ -50,6 +50,32 @@ const { BASE_THEME_NAME } = require("./src/theme-constants") as { BASE_THEME_NAM
 const EMPTY_OVERRIDE = `/* empty - ${BASE_THEME_NAME} default */\n`;
 
 /**
+ * Cached formulas data from the most recently activated theme.
+ * Populated by the subprocess sidecar file after each theme activation.
+ * Served via GET /__themes/formulas for the style inspector.
+ */
+export interface FormulasCache {
+  formulas: Record<string, number | string | boolean>;
+  mode: "dark" | "light";
+  themeName: string;
+}
+let formulasCache: FormulasCache | null = null;
+
+/**
+ * Handle GET /__themes/formulas.
+ * Returns the cached formulas data for the active theme, or 404 if none.
+ */
+export function handleFormulasGet(cache: FormulasCache | null): { status: number; body: string } {
+  if (cache === null) {
+    return { status: 404, body: JSON.stringify({ error: "no active theme" }) };
+  }
+  return {
+    status: 200,
+    body: JSON.stringify({ formulas: cache.formulas, mode: cache.mode, themeName: cache.themeName }),
+  };
+}
+
+/**
  * Vite plugin: ensure `tug-theme-override.css` reflects the active theme at
  * startup, before Vite processes any CSS.
  *
@@ -106,6 +132,13 @@ function themeOverridePlugin(): VitePlugin {
       } catch (err) {
         console.error(`[themeOverridePlugin] failed to generate CSS for theme "${activeTheme}":`, err);
         fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
+      }
+      // Populate formulasCache from the sidecar written by the subprocess.
+      try {
+        const formulasJson = fs.readFileSync(THEME_OVERRIDE_CSS + ".formulas.json", "utf-8");
+        formulasCache = JSON.parse(formulasJson) as FormulasCache;
+      } catch {
+        // Formulas cache population failed — inspector will show without formula section.
       }
     },
   };
@@ -175,6 +208,13 @@ function controlTokenHotReload(): VitePlugin {
       });
     } catch (err) {
       console.error(`[control-token-hot-reload] failed to re-derive override for theme "${activeTheme}":`, err);
+    }
+    // Populate formulasCache from the sidecar written by the subprocess.
+    try {
+      const formulasJson = fs.readFileSync(THEME_OVERRIDE_CSS + ".formulas.json", "utf-8");
+      formulasCache = JSON.parse(formulasJson) as FormulasCache;
+    } catch {
+      // Formulas cache population failed — inspector will show without formula section.
     }
   }
 
@@ -516,6 +556,8 @@ export interface ActivateCanvasParams {
 export interface ActivateResult {
   theme: string;
   canvasParams: ActivateCanvasParams;
+  formulas: Record<string, number | string | boolean>;
+  mode: "dark" | "light";
 }
 
 /**
@@ -557,6 +599,8 @@ export function activateThemeOverride(
         tone: baseOutput.formulas.surfaceCanvasTone,
         intensity: baseOutput.formulas.surfaceCanvasIntensity,
       },
+      formulas: baseOutput.formulas as Record<string, number | string | boolean>,
+      mode: baseSpec.mode,
     };
   }
 
@@ -615,6 +659,8 @@ export function activateThemeOverride(
       tone: themeOutput.formulas.surfaceCanvasTone,
       intensity: themeOutput.formulas.surfaceCanvasIntensity,
     },
+    formulas: themeOutput.formulas as Record<string, number | string | boolean>,
+    mode: spec.mode,
   };
 }
 
@@ -670,6 +716,7 @@ export async function handleThemesActivate(
     withMutex(async () => {
       try {
         const result = activateThemeOverride(name, fsImpl, shippedDir, userDir, overrideCssPath);
+        formulasCache = { formulas: result.formulas, mode: result.mode, themeName: name };
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -701,6 +748,13 @@ function themeSaveLoadPlugin(): VitePlugin {
 
           if (req.method === "GET" && url === "/list") {
             const result = handleThemesList(fs as unknown as FsReadImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
+            res.writeHead(result.status, { "Content-Type": "application/json" });
+            res.end(result.body);
+            return;
+          }
+
+          if (req.method === "GET" && url === "/formulas") {
+            const result = handleFormulasGet(formulasCache);
             res.writeHead(result.status, { "Content-Type": "application/json" });
             res.end(result.body);
             return;
@@ -739,6 +793,7 @@ function themeSaveLoadPlugin(): VitePlugin {
               withMutex(async () => {
                 try {
                   const activateResult = activateThemeOverride(saveResult.themeName!, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, USER_THEMES_DIR, THEME_OVERRIDE_CSS);
+                  formulasCache = { formulas: activateResult.formulas, mode: activateResult.mode, themeName: saveResult.themeName! };
                   const responseBody = JSON.stringify({ ok: true, name: saveResult.themeName, canvasParams: activateResult.canvasParams });
                   res.writeHead(200, { "Content-Type": "application/json" });
                   res.end(responseBody);

@@ -28,6 +28,8 @@
 import "./style-inspector-overlay.css";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "./scale-timing";
 import { oklchToTugColor } from "./palette-engine";
+import { buildReverseMap, type ReverseMap } from "./formula-reverse-map";
+import { RULES } from "./theme-rules";
 
 // ---------------------------------------------------------------------------
 // PALETTE_VAR_REGEX -- matches only known hue palette variables
@@ -84,6 +86,25 @@ export interface TugColorProvenance {
 }
 
 // ---------------------------------------------------------------------------
+// Formula provenance types
+// ---------------------------------------------------------------------------
+
+/** Formulas data fetched from GET /__themes/formulas. */
+export interface FormulasData {
+  formulas: Record<string, number | string | boolean>;
+  mode: string;
+  themeName: string;
+}
+
+/** One formula row displayed in the inspector panel. */
+export interface FormulaRow {
+  field: string;
+  value: number | string | boolean;
+  property: "tone" | "intensity" | "alpha" | "hueSlot";
+  isStructural: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Display formatting
 // ---------------------------------------------------------------------------
 
@@ -93,6 +114,93 @@ function shortenNumbers(s: string): string {
     const n = parseFloat(m);
     return n.toPrecision(3).replace(/\.?0+$/, "");
   });
+}
+
+// ---------------------------------------------------------------------------
+// Formula provenance helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch formulas data from the dev server.
+ * Returns null on any failure (server not available, no active theme, etc.).
+ */
+async function fetchFormulasData(): Promise<FormulasData | null> {
+  try {
+    const response = await fetch("/__themes/formulas");
+    if (!response.ok) return null;
+    return (await response.json()) as FormulasData;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Render formula rows as a read-only display section.
+ * Returns an HTMLElement containing formula field display, or a "(constant)" indicator.
+ *
+ * @param rows - The formula rows to display
+ * @param isConstant - Whether the token has no formula-driven fields
+ */
+export function createFormulaSection(rows: FormulaRow[], isConstant: boolean): HTMLElement {
+  const section = document.createElement("div");
+  section.className = "tug-inspector-section";
+
+  const title = document.createElement("div");
+  title.className = "tug-inspector-section__title";
+  title.textContent = "Formula";
+  section.appendChild(title);
+
+  if (isConstant || rows.length === 0) {
+    const constantEl = document.createElement("div");
+    constantEl.className = "tug-inspector-row";
+    const constantVal = document.createElement("span");
+    constantVal.className = "tug-inspector-row__value tug-inspector-row__value--dim";
+    constantVal.textContent = "(constant)";
+    constantEl.appendChild(constantVal);
+    section.appendChild(constantEl);
+    return section;
+  }
+
+  for (const row of rows) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "tug-inspector-formula-field";
+
+    // Field name
+    const nameEl = document.createElement("span");
+    nameEl.className = "tug-inspector-formula-field__name";
+    nameEl.textContent = row.field;
+    rowEl.appendChild(nameEl);
+
+    // Separator
+    const sep = document.createElement("span");
+    sep.className = "tug-inspector-row__value--dim";
+    sep.textContent = " = ";
+    rowEl.appendChild(sep);
+
+    // Value
+    const valueEl = document.createElement("span");
+    valueEl.className = "tug-inspector-formula-field__value";
+    valueEl.textContent = String(row.value);
+    rowEl.appendChild(valueEl);
+
+    // Property type label
+    const typeEl = document.createElement("span");
+    typeEl.className = "tug-inspector-formula-field__type";
+    typeEl.textContent = row.property;
+    rowEl.appendChild(typeEl);
+
+    // Structural label
+    if (row.isStructural) {
+      const releaseLabel = document.createElement("span");
+      releaseLabel.className = "tug-inspector-formula__release-label";
+      releaseLabel.textContent = "(applies on release)";
+      rowEl.appendChild(releaseLabel);
+    }
+
+    section.appendChild(rowEl);
+  }
+
+  return section;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +320,12 @@ export class StyleInspectorOverlay {
   /** Cleanup function returned from init(). */
   private cleanupFn: (() => void) | null = null;
 
+  /** Cached reverse map (built once per session on first activation). */
+  private reverseMap: ReverseMap | null = null;
+
+  /** Most recently fetched formulas data from the dev server. */
+  private formulasData: FormulasData | null = null;
+
   // ----- DOM Elements -----
 
   /** Absolutely-positioned highlight ring around the inspected element. */
@@ -299,11 +413,21 @@ export class StyleInspectorOverlay {
 
   /**
    * Show the overlay and begin tracking.
+   * Builds the reverse map (cached for session) and fetches current formulas.
    */
   activate(): void {
     this.active = true;
     this.highlightEl.style.display = "";
     this.panelEl.style.display = "";
+
+    // Build reverse map once per session (cached in instance field).
+    if (!this.reverseMap) {
+      this.reverseMap = buildReverseMap(RULES);
+    }
+    // Fetch formulas data asynchronously; update instance field when done.
+    fetchFormulasData().then((data) => {
+      this.formulasData = data;
+    }).catch(() => {});
   }
 
   /**
@@ -430,7 +554,9 @@ export class StyleInspectorOverlay {
     const timing = getTugTiming();
     const motionOn = isTugMotionEnabled();
 
-    // Render the panel
+    const targetEl = el;
+
+    // Render the panel with current formulas data (may be null on first render).
     this.renderPanel({
       el,
       domPath,
@@ -443,7 +569,29 @@ export class StyleInspectorOverlay {
       zoom,
       timing,
       motionOn,
+      formulasData: this.formulasData,
     });
+
+    // Re-fetch formulas data and re-render if the target hasn't changed.
+    fetchFormulasData().then((data) => {
+      this.formulasData = data;
+      if (this.currentTarget === targetEl) {
+        this.renderPanel({
+          el: targetEl,
+          domPath,
+          bgColor,
+          fgColor,
+          borderColor,
+          bgChain,
+          fgChain,
+          borderChain,
+          zoom,
+          timing,
+          motionOn,
+          formulasData: this.formulasData,
+        });
+      }
+    }).catch(() => {});
   }
 
   // ----- Token Chain Resolution -----
@@ -1157,6 +1305,7 @@ export class StyleInspectorOverlay {
     zoom: number;
     timing: number;
     motionOn: boolean;
+    formulasData: FormulasData | null;
   }): void {
     this.panelEl.innerHTML = "";
 
@@ -1289,6 +1438,19 @@ export class StyleInspectorOverlay {
       )
     );
 
+    // Formula provenance section (dev-only, shown when formulasData is available)
+    if (data.formulasData) {
+      const formulaSection = this.buildFormulaSectionForInspection(
+        data.bgChain,
+        data.fgChain,
+        data.borderChain,
+        data.formulasData,
+      );
+      if (formulaSection) {
+        body.appendChild(formulaSection);
+      }
+    }
+
     // Hint
     const hint = document.createElement("div");
     hint.className = "tug-inspector-hint";
@@ -1298,6 +1460,68 @@ export class StyleInspectorOverlay {
     body.appendChild(hint);
 
     this.panelEl.appendChild(body);
+  }
+
+  /**
+   * Build a formula provenance section for the inspected element's token chains.
+   *
+   * Looks up the terminal token for each chain (bg, fg, border) in the reverse map,
+   * collects formula rows, deduplicates by field name, and returns a createFormulaSection element.
+   *
+   * Returns null if the reverse map is not built or all chains have no tokens.
+   */
+  private buildFormulaSectionForInspection(
+    bgChain: TokenChainResult,
+    fgChain: TokenChainResult,
+    borderChain: TokenChainResult,
+    formulasData: FormulasData,
+  ): HTMLElement | null {
+    if (!this.reverseMap) return null;
+
+    const allRows: FormulaRow[] = [];
+    const seenFields = new Set<string>();
+
+    const chains = [bgChain, fgChain, borderChain];
+    for (const chainResult of chains) {
+      if (!chainResult.originToken) continue;
+
+      // Get terminal token: last hop's property if chain is non-empty, otherwise originToken.
+      let terminalToken: string;
+      if (chainResult.chain.length > 0) {
+        terminalToken = chainResult.chain[chainResult.chain.length - 1].property;
+      } else {
+        terminalToken = chainResult.originToken;
+      }
+
+      const mappings = this.reverseMap.tokenToFields.get(terminalToken);
+      if (!mappings) continue;
+
+      // Determine if this is a structural token:
+      // structural = terminal value doesn't start with 'oklch(' AND token doesn't match palette
+      // AND chain doesn't end at palette.
+      const terminalValue = chainResult.terminalValue ?? "";
+      const isStructural =
+        !terminalValue.startsWith("oklch(") &&
+        !PALETTE_VAR_REGEX.test(terminalToken) &&
+        !chainResult.endsAtPalette;
+
+      for (const mapping of mappings) {
+        if (seenFields.has(mapping.field)) continue;
+        seenFields.add(mapping.field);
+
+        const rawValue = formulasData.formulas[mapping.field];
+        if (rawValue === undefined) continue;
+
+        allRows.push({
+          field: mapping.field,
+          value: rawValue,
+          property: mapping.property,
+          isStructural,
+        });
+      }
+    }
+
+    return createFormulaSection(allRows, allRows.length === 0);
   }
 }
 

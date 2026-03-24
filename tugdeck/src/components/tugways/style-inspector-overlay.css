@@ -294,3 +294,43 @@
   border-top: 1px solid oklch(0.22 0.01 240);
   margin-top: 2px;
 }
+
+/* ---------------------------------------------------------------------------
+   Formula provenance section
+   --------------------------------------------------------------------------- */
+
+/** Row container for a single formula field display. */
+.tug-inspector-formula-field {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 0;
+  flex-wrap: wrap;
+}
+
+/** Formula field name (accent color). */
+.tug-inspector-formula-field__name {
+  color: oklch(0.72 0.18 200);
+  flex-shrink: 0;
+}
+
+/** Formula field value display. */
+.tug-inspector-formula-field__value {
+  color: oklch(0.88 0.01 240);
+  flex-shrink: 0;
+}
+
+/** Property type label (dim, e.g. "intensity", "tone"). */
+.tug-inspector-formula-field__type {
+  color: oklch(0.55 0.02 240);
+  font-style: italic;
+  flex-shrink: 0;
+}
+
+/** Label shown on structural rows indicating the value applies on release. */
+.tug-inspector-formula__release-label {
+  color: oklch(0.48 0.10 55);
+  font-style: italic;
+  font-size: 10px;
+  flex-shrink: 0;
+}
