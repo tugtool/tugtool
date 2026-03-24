@@ -610,6 +610,101 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // =========================================================================
+  // Control — Outlined Accent
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-outlined-accent-rest",
+    surface: "--tug-surface-control-primary-outlined-accent-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-accent-hover",
+    surface: "--tug-surface-control-primary-outlined-accent-hover",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-accent-active",
+    surface: "--tug-surface-control-primary-outlined-accent-active",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Outlined Danger
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-outlined-danger-rest",
+    surface: "--tug-surface-control-primary-outlined-danger-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-danger-hover",
+    surface: "--tug-surface-control-primary-outlined-danger-hover",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-danger-active",
+    surface: "--tug-surface-control-primary-outlined-danger-active",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Outlined Data
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-outlined-data-rest",
+    surface: "--tug-surface-control-primary-outlined-data-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-data-hover",
+    surface: "--tug-surface-control-primary-outlined-data-hover",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-data-active",
+    surface: "--tug-surface-control-primary-outlined-data-active",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Outlined Success
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-outlined-success-rest",
+    surface: "--tug-surface-control-primary-outlined-success-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-success-hover",
+    surface: "--tug-surface-control-primary-outlined-success-hover",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-success-active",
+    surface: "--tug-surface-control-primary-outlined-success-active",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Outlined Caution
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-outlined-caution-rest",
+    surface: "--tug-surface-control-primary-outlined-caution-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-caution-hover",
+    surface: "--tug-surface-control-primary-outlined-caution-hover",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-outlined-caution-active",
+    surface: "--tug-surface-control-primary-outlined-caution-active",
+    role: "control",
+  },
+
+  // =========================================================================
   // Control — Ghost Active (fg/icon over surface-default)
   // Ghost bg-rest is transparent; effective background is the parent surface.
   // =========================================================================
@@ -674,6 +769,101 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
   {
     element: "--tug-element-control-icon-ghost-danger-active",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Ghost Accent (fg/icon over surface-default; bg-rest is transparent)
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-ghost-accent-rest",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-accent-hover",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-accent-active",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Ghost Agent (fg/icon over surface-default; bg-rest is transparent)
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-ghost-agent-rest",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-agent-hover",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-agent-active",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Ghost Data (fg/icon over surface-default; bg-rest is transparent)
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-ghost-data-rest",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-data-hover",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-data-active",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Ghost Success (fg/icon over surface-default; bg-rest is transparent)
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-ghost-success-rest",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-success-hover",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-success-active",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+
+  // =========================================================================
+  // Control — Ghost Caution (fg/icon over surface-default; bg-rest is transparent)
+  // =========================================================================
+  {
+    element: "--tug-element-control-icon-ghost-caution-rest",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-caution-hover",
+    surface: "--tug-surface-global-primary-normal-default-rest",
+    role: "control",
+  },
+  {
+    element: "--tug-element-control-icon-ghost-caution-active",
     surface: "--tug-surface-global-primary-normal-default-rest",
     role: "control",
   },
