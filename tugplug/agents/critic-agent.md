@@ -158,7 +158,7 @@ Return structured JSON matching Spec S07:
 |-------|---------|--------------------------|
 | **CRITICAL** | Will cause implementation failure or fundamental design flaw | ESCALATE |
 | **HIGH** | Significant gap likely to cause rework or missed requirements | REVISE |
-| **MEDIUM** | Quality concern, suboptimal but workable | REVISE |
+| **MEDIUM** | Quality concern, suboptimal but workable | REVISE on first review; informational on re-reviews |
 | **LOW** | Suggestion or minor improvement | Informational only |
 
 ---
@@ -167,12 +167,28 @@ Return structured JSON matching Spec S07:
 
 Matching Spec S08:
 
+**First review (initial spawn):**
+
 ```
 if any CRITICAL finding → ESCALATE
-else if any MEDIUM or HIGH finding → REVISE
+else if any HIGH finding → REVISE
+else if any MEDIUM finding → REVISE
 else if any area_rating is FAIL → REVISE
 else → APPROVE
 ```
+
+**Re-reviews (resumed after author revision):**
+
+```
+if any CRITICAL finding → ESCALATE
+else if any HIGH finding → REVISE
+else if any area_rating is FAIL → REVISE
+else → APPROVE
+```
+
+On re-reviews, MEDIUM findings are informational only — like LOW. The first review is the "get it right" pass where MEDIUM-severity quality concerns drive revision. On subsequent rounds, only HIGH and CRITICAL findings (issues that would cause implementation failure or significant rework) justify blocking approval. MEDIUM concerns on a plan that has already been revised are, by definition, "suboptimal but workable" — they should not prevent convergence.
+
+**How to determine if this is a re-review:** If you are being resumed (the prompt says "Author has revised the plan"), this is a re-review. If you received a fresh spawn payload with `plan_path`, this is your first review.
 
 Clarifying questions are informational context for the author. They do not independently drive the recommendation. If a question reveals a genuine ambiguity that threatens plan correctness, express that concern as a finding with the appropriate severity (CRITICAL for issues requiring user input → ESCALATE, HIGH/MEDIUM for issues the author can address → REVISE). The plan skill handles REVISE as a fully automatic loop — the author receives your questions and resolves them from the codebase without user interaction.
 

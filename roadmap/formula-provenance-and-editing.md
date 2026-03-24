@@ -56,6 +56,90 @@ FORMULA
   sidecar file, so the Vite process can populate `formulasCache` without
   requiring theme-engine in-process.
 
+## Phase 1.5 — Style Inspector as a Card
+
+**Goal:** Replace the floating overlay inspector with a proper card in the card
+system, and replace the awkward Opt+Shift hover / click-to-pin / Escape-to-dismiss
+interaction with a reticle-based scanning mode that plays nicely with the rest of
+the UI.
+
+### Why
+
+The current interaction model has problems:
+- Opt+Shift to activate is undiscoverable and conflicts with other shortcuts.
+- Click-to-pin, Escape-to-dismiss is a one-off interaction pattern unlike anything
+  else in the app.
+- The inspector isn't a card, so it can't be docked, resized, or managed like
+  other panels.
+- Hovering to inspect triggers the content's own hover states, making it impossible
+  to inspect rest-state styling.
+
+### Interaction model
+
+1. **Open:** Developer menu → "Show Style Inspector" (or keyboard shortcut). Opens
+   a regular card in the card system with the inspector content.
+
+2. **Scan mode:** The card has a reticle icon button (like Safari/Chrome's element
+   picker). Clicking it enters scan mode — the cursor changes and mousing over
+   elements highlights them with the existing overlay rect. Clicking an element
+   selects it: the card updates to show that element's token chains and formula
+   provenance, and scan mode turns off.
+
+3. **Option key suppresses hover:** While in scan mode, holding Option prevents
+   the content's CSS hover states from firing. This lets you inspect rest-state
+   styling without the element reacting to the pointer. Implementation: while
+   Option is held, set `pointer-events: none` on the content area (or use a
+   transparent overlay that intercepts events), and use `document.elementFromPoint`
+   to determine which element is under the cursor.
+
+4. **Close:** Close the card like any other card. No Escape key handling needed.
+
+5. **Re-scan:** Click the reticle button again to enter scan mode and pick a
+   different element. The card stays open between scans.
+
+### Swift app changes
+
+- Add "Show Style Inspector" menu item under the Developer menu, in the same
+  section as "Show JavaScript Console".
+- The menu item sends a message to the web content (via the existing bridge)
+  to open/focus the style inspector card.
+
+### Tugdeck changes
+
+- **New card component:** `StyleInspectorCard` — a regular card that renders the
+  inspector content. Replaces the floating overlay panel.
+- **Reticle button:** Icon button in the card's toolbar/footer. Toggles scan mode.
+- **Scan mode overlay:** Transparent full-viewport overlay that intercepts pointer
+  events during scanning. Uses `document.elementFromPoint` to identify targets.
+  Draws the highlight rect. Clicks through to select, then removes itself.
+- **Option-key hover suppression:** During scan mode, listen for `keydown`/`keyup`
+  for the Option key. When held, add a class that sets `pointer-events: none` on
+  the main content container, forcing all pointer events to the scan overlay.
+  `elementFromPoint` still works because it's a layout query, not an event.
+- **Migrate content:** Move the token chain rendering, formula provenance section,
+  and all associated CSS from `style-inspector-overlay.ts` into the new card.
+  The reverse map, formulas cache fetch, and chain resolution logic stay the same.
+- **Remove overlay:** Delete the floating panel code (`panelEl`, `overlayEl`,
+  `positionPanel`, pin/unpin logic, Opt+Shift activation, Escape handler).
+
+### What stays the same
+
+- Token chain resolution algorithm
+- Formula provenance display (from Phase 1)
+- The visual design (dark panel, oklch color scheme, section layout)
+- `buildReverseMap`, `fetchFormulasData`, `createFormulaSection`
+- All the reverse map and formulas cache infrastructure
+
+### Decisions
+
+- **Default size:** Match the current style inspector panel dimensions.
+- **Reticle button:** Footer row, with hint text (like the current panel's
+  "Escape to close" line).
+- **Highlight rect on Option hold:** Change style (e.g., dashed border or
+  different color) to indicate hover suppression is active.
+- **Open trigger:** Developer menu only + Opt+Cmd+I keyboard shortcut. No
+  auto-open.
+
 ## Phase 2 — Inline Editing
 
 **Goal:** Click a formula value in the inspector → type a new number → press

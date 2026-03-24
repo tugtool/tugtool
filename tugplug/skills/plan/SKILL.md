@@ -231,9 +231,9 @@ critic_question_answers = null
 overviewer_feedback = null
 overviewer_question_answers = null
 overviewer_round = 0
-max_overviewer_rounds = 3
+max_overviewer_rounds = 2
 revision_count = 0
-max_revision_count = 5
+max_revision_count = 3
 previous_high_findings = []     # IDs of HIGH+ findings from prior round (for stagnation detection)
 ```
 
@@ -488,8 +488,21 @@ if critic_feedback.recommendation == "ESCALATE":
 **REVISE (conformance or critic) — auto-revise, no user prompt:**
 
 ```
-if conformance_feedback.recommendation == "REVISE" or critic_feedback.recommendation == "REVISE":
-    # Auto-revise: no user prompt. Go directly to author.
+# Soft convergence: if conformance approves and the critic's only findings are
+# MEDIUM or LOW (no HIGH/CRITICAL), treat as APPROVE — MEDIUM is "suboptimal but
+# workable" and should not block a plan that has already been through revision.
+# This is the orchestrator-level backstop for the critic's round-aware severity
+# rules. It prevents infinite loops where the critic keeps generating new MEDIUM
+# findings on each revision pass.
+
+if conformance_feedback.recommendation == "APPROVE"
+   and critic_feedback.recommendation == "REVISE"
+   and all(f.severity in ("MEDIUM", "LOW") for f in critic_feedback.findings):
+    # Soft convergence: promote to APPROVE
+    # Fall through to the "Both APPROVE" block below (overviewer gate)
+
+else if conformance_feedback.recommendation == "REVISE" or critic_feedback.recommendation == "REVISE":
+    # Hard REVISE: HIGH/CRITICAL findings or conformance issues. Go directly to author.
     # Clarifying questions (if any) are passed to the author as context via critic_feedback.
     # The author resolves them from the codebase or makes reasonable choices.
     # critic_question_answers remains null (no user answers collected on REVISE).
@@ -499,17 +512,35 @@ if conformance_feedback.recommendation == "REVISE" or critic_feedback.recommenda
 
 User is NOT prompted when recommendation is REVISE. The revision loop runs fully autonomously. User interaction is only required for: ESCALATE recommendations, stagnation detection, and max revision rounds reached.
 
-**Both APPROVE — run overviewer gate:**
+**Both APPROVE (or soft convergence) — run overviewer gate:**
 
 ```
-if conformance_feedback.recommendation == "APPROVE" and critic_feedback.recommendation == "APPROVE":
+# This block runs when both agents explicitly APPROVE, or when soft convergence
+# promoted a MEDIUM-only critic REVISE to APPROVE (see above).
+if conformance_feedback.recommendation == "APPROVE"
+   and (critic_feedback.recommendation == "APPROVE"
+        or all(f.severity in ("MEDIUM", "LOW") for f in critic_feedback.findings)):
 
     # Fresh-spawn overviewer (never resumed — fresh eyes every time)
-    Task(
-      subagent_type: "tugplug:overviewer-agent",
-      prompt: '{"plan_path": "<plan_path>"}',
-      description: "Final quality review"
-    )
+    # On round 2+, include a brief summary of prior-round findings so the
+    # overviewer doesn't re-raise concerns that were already addressed.
+    if overviewer_round == 0:
+        Task(
+          subagent_type: "tugplug:overviewer-agent",
+          prompt: '{"plan_path": "<plan_path>"}',
+          description: "Final quality review"
+        )
+    else:
+        # Build a brief summary: finding IDs + one-line titles from prior overviewer rounds
+        prior_findings_summary = [
+            {"id": f.id, "title": f.title, "severity": f.severity}
+            for f in overviewer_feedback.findings
+        ]
+        Task(
+          subagent_type: "tugplug:overviewer-agent",
+          prompt: '{"plan_path": "<plan_path>", "prior_overviewer_findings": <prior_findings_summary JSON>}',
+          description: "Final quality review"
+        )
     increment overviewer_round
     store result as overviewer_feedback
 

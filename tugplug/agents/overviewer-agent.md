@@ -38,15 +38,21 @@ You receive a JSON payload:
 
 ```json
 {
-  "plan_path": ".tugtool/tugplan-<slug>.md"
+  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "prior_overviewer_findings": [
+    {"id": "OF1", "title": "Short title", "severity": "MEDIUM"}
+  ]
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `plan_path` | string | yes | Path to the plan to review |
+| `prior_overviewer_findings` | array | no | Brief summary of findings from the previous overviewer round (id, title, severity only). Present on round 2+ to prevent re-raising concerns that were already addressed and revised. |
 
-No skeleton path. No critic findings. No conformance results. No revision history. You start clean every time.
+No skeleton path. No critic findings. No conformance results. No full revision history. You start with fresh eyes every time.
+
+**If `prior_overviewer_findings` is present:** These findings were raised in a prior overviewer round, the author revised the plan to address them, and the plan passed conformance + critic review again. Do not re-raise these same concerns unless the author's revision was clearly inadequate. Focus your investigation on areas NOT covered by prior findings.
 
 ---
 
@@ -118,7 +124,7 @@ Return structured JSON:
 |-------|---------|--------------------------|
 | **CRITICAL** | Will cause implementation failure or fundamental design flaw | REVISE |
 | **HIGH** | Significant gap likely to cause rework or missed requirements | REVISE |
-| **MEDIUM** | Quality concern, suboptimal but workable | REVISE |
+| **MEDIUM** | Quality concern, suboptimal but workable | Informational only |
 | **LOW** | Suggestion or minor improvement | Informational only |
 
 ---
@@ -126,11 +132,11 @@ Return structured JSON:
 ## Recommendation Logic
 
 ```
-if any MEDIUM, HIGH or CRITICAL finding -> REVISE
+if any HIGH or CRITICAL finding -> REVISE
 else -> APPROVE
 ```
 
-LOW findings are informational only and do not block approval. The plan has already passed the critic's systematic review; the intent of the overviewer is to provide an additional and *skeptical* eye to the plan and its proposed changes.
+MEDIUM and LOW findings are informational only and do not block approval. The plan has already passed the critic's systematic review, including a first-pass where MEDIUM findings drove revision. By the time a plan reaches the overviewer, MEDIUM-severity concerns ("suboptimal but workable") should not trigger another full revision cycle. Reserve REVISE for issues that would cause implementation failure (CRITICAL) or significant rework (HIGH).
 
 Clarifying questions are informational context for the author. They do not independently drive the recommendation. If a question reveals a genuine ambiguity that threatens plan correctness, express that concern as a finding with the appropriate severity — this ensures the finding drives the recommendation. The plan skill handles REVISE as a fully automatic loop — the author receives your questions and resolves them from the codebase without user interaction.
 
