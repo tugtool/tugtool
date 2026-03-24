@@ -126,7 +126,8 @@ The current interaction model has problems:
 
 - Token chain resolution algorithm
 - Formula provenance display (from Phase 1)
-- The visual design (dark panel, oklch color scheme, section layout)
+- The section layout and information hierarchy (Phase 1.5B updates the
+  color scheme to use theme tokens instead of hardcoded oklch)
 - `buildReverseMap`, `fetchFormulasData`, `createFormulaSection`
 - All the reverse map and formulas cache infrastructure
 
@@ -139,6 +140,102 @@ The current interaction model has problems:
   different color) to indicate hover suppression is active.
 - **Open trigger:** Developer menu only + Opt+Cmd+I keyboard shortcut. No
   auto-open.
+
+## Phase 1.5B — Card Polish and Persistent Highlight
+
+**Goal:** Make the style inspector card theme-aware, rename the interaction
+verbs, and keep the highlight rect visible on the inspected element after
+selection — setting the stage for Phase 2 inline editing.
+
+### Theme-aware card styling
+
+The card currently uses hardcoded oklch values for all backgrounds, text,
+borders, and accents. Replace these with `--tug-*` tokens so the card
+adapts to the active theme. This means the inspector card looks correct in
+both light and dark themes and responds to live theme changes.
+
+- Audit `style-inspector-card.css` — replace every hardcoded oklch value
+  with the appropriate `--tug-*` token (surface, content-text, accent, etc.).
+- Update the `@tug-pairings` block to reflect token-based pairings instead
+  of hardcoded values.
+- Run `bun run audit:tokens` to verify all pairings pass.
+
+### Rename interaction verbs
+
+Replace "Scan" terminology with "Inspect" throughout:
+
+- Button label: "Inspect Element" (rest), "Cancel Inspection" (scanning),
+  "Done Inspecting" (element selected).
+- `aria-label`, `title`, CSS class names (`si-card-inspect-button` instead
+  of `si-card-reticle-button`), and test assertions.
+- The ScanModeController class name and file name stay as-is — the class
+  manages the scan overlay mechanics, and renaming it would churn every
+  import for no functional gain.
+
+### Three-state inspection button
+
+The button currently has two states (rest / scanning). Add a third
+"inspecting" state so the user always knows which element is selected.
+
+| State | Button Label | Highlight Rect | Scan Overlay |
+|-------|-------------|----------------|--------------|
+| **Rest** | "Inspect Element" | None | None |
+| **Scanning** | "Cancel Inspection" | Follows cursor | Active |
+| **Inspecting** | "Done Inspecting" | Pinned on selected element | Removed |
+
+State transitions:
+
+- **Rest → Scanning:** Click "Inspect Element". Overlay appears, highlight
+  follows pointer.
+- **Scanning → Inspecting:** Click an element. Overlay removed, highlight
+  stays pinned at the element's bounding rect, card populates with chain/
+  formula data.
+- **Scanning → Rest:** Click "Cancel Inspection". Overlay and highlight
+  removed, no data change.
+- **Inspecting → Rest:** Click "Done Inspecting". Highlight removed,
+  inspection data cleared, card returns to empty state.
+- **Inspecting → Scanning:** Click "Inspect Element" again (button cycles
+  back). Current highlight removed, overlay reappears for a new selection.
+  Actually — this transition should go Inspecting → Rest first (clear), then
+  the user clicks again to scan. Simpler and avoids stale data flash. Or:
+  go directly Inspecting → Scanning if we clear the data immediately. Either
+  works; decide during implementation.
+
+### Persistent highlight rect
+
+When transitioning from Scanning → Inspecting:
+
+- `ScanModeController.deactivate()` currently removes the highlight rect
+  from the DOM. Change this: on element selection, the controller hands
+  ownership of the highlight rect to the card (or leaves it in the DOM
+  with a "pinned" class). The rect stays positioned over the selected
+  element's bounding box.
+- The highlight rect in "inspecting" state should have a distinct visual
+  treatment — e.g., solid border with a subtle background tint — so it's
+  clearly pinned rather than hover-tracking.
+- Add a `--pinned` CSS modifier class (`.tug-inspector-highlight--pinned`)
+  for the inspecting state, distinct from the scanning hover style.
+- On window resize or scroll, update the pinned highlight position (the
+  element may have moved). A `ResizeObserver` or periodic
+  `getBoundingClientRect` check handles this.
+- On "Done Inspecting" (Inspecting → Rest), remove the highlight rect.
+
+### Why this matters for Phase 2
+
+Phase 2 adds inline formula editing. The user clicks a formula value in the
+inspector, types a new number, and the theme hot-reloads. During this edit
+cycle, the persistent highlight rect shows which element is being affected.
+Without it, the user loses visual context the moment they start editing.
+
+### Changes summary
+
+| File | Change |
+|------|--------|
+| `style-inspector-card.css` | Replace hardcoded oklch with `--tug-*` tokens |
+| `style-inspector-card.tsx` | Three-state button, rename labels, manage pinned highlight lifecycle |
+| `scan-mode-controller.ts` | Option to leave highlight in DOM on deactivate (hand off to caller) |
+| `style-inspector-overlay.css` | Add `.tug-inspector-highlight--pinned` style |
+| Tests | Update button text assertions, add three-state transition tests, pinned highlight tests |
 
 ## Phase 2 — Inline Editing
 
