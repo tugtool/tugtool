@@ -317,7 +317,21 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
         const c = cardsRef.current;
 
         // Check whether the tracked inspector card still exists in the store
-        const existingCard = existingId ? c.find((card) => card.id === existingId) : null;
+        let existingCard = existingId ? c.find((card) => card.id === existingId) : null;
+
+        if (existingId && !existingCard) {
+          console.warn('[showStyleInspector] ref has ID', existingId, 'but card not found in store. Cards:', c.map(cs => cs.id));
+        }
+
+        // Defense against double-dispatch: check if any style-inspector card already
+        // exists in the current cards array BEFORE calling addCard. This handles rapid
+        // back-to-back dispatches where cardsRef hasn't updated yet between calls.
+        if (!existingCard) {
+          existingCard = c.find((card) => card.tabs.some((t) => t.componentId === 'style-inspector')) ?? null;
+          if (existingCard) {
+            styleInspectorCardIdRef.current = existingCard.id;
+          }
+        }
 
         if (existingCard) {
           // Inspector card already exists -- focus it ([D07] show-only, never close)

@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsMenuItem: NSMenuItem?
     private var restartMenuItem: NSMenuItem?
     private var relaunchMenuItem: NSMenuItem?
+    private var inspectElementMenuItem: NSMenuItem?
 
     // Theme menu state
     private var themeMenu: NSMenu!
@@ -261,6 +262,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Show Test Card", action: #selector(showTestCard(_:)), keyEquivalent: "t", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Show Style Inspector", action: #selector(showStyleInspector(_:)), keyEquivalent: "i", modifierMask: [.command, .option]))
+        let inspectItem = NSMenuItem(title: "Inspect Element", action: #selector(inspectElement(_:)), keyEquivalent: "e", modifierMask: [.command, .option])
+        inspectItem.isEnabled = false
+        inspectElementMenuItem = inspectItem
+        devMenu.addItem(inspectItem)
         devMenu.addItem(NSMenuItem(title: "Add Tab", action: #selector(addTab(_:)), keyEquivalent: ""))
 
         // Source tree display item
@@ -356,6 +361,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showStyleInspector(_ sender: Any?) {
         sendControl("show-style-inspector")
+    }
+
+    @objc private func inspectElement(_ sender: Any?) {
+        sendControl("toggle-style-inspector-scan")
     }
 
     @objc private func addTab(_ sender: Any) {
@@ -529,6 +538,12 @@ extension AppDelegate: BridgeDelegate {
             if let name = activeTheme {
                 self.activeThemeName = name
             }
+        }
+    }
+
+    func bridgeStyleInspectorState(open: Bool) {
+        DispatchQueue.main.async {
+            self.inspectElementMenuItem?.isEnabled = open
         }
     }
 
