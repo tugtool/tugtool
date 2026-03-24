@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-24T20:10:35Z
+---
+
+## step-3: Implemented findAndEditNumericLiteral with clamp-aware replace-last-literal strategy, handleFormulaEdit with body validation and mock-friendly fs injection, registered POST /__themes/formula route, added comprehensive unit tests covering all 11 expression forms
+
+**Files changed:**
+- .tugtool/tugplan-formula-display-editing.md
+
+---
+
+---
 step: step-2
 date: 2025-03-24T20:00:20Z
 ---
