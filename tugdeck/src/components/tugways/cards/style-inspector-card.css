@@ -5,20 +5,20 @@
  * Adapted from style-inspector-overlay.css for a card context:
  *   - No fixed positioning (card chrome handles geometry)
  *   - Scroll within card body
- *   - Reticle toolbar at top
+ *   - Inspect toolbar at top
  *
- * Uses the same hardcoded oklch values as the overlay for visual consistency.
- * All pairings are outside the token system and are NOT tracked in theme-pairings.ts.
+ * Uses --tug-* tokens for all colors so the card adapts to the active theme.
  *
  * @tug-pairings
- * Logical pairings (hardcoded oklch, not tracked by contrast engine):
- * | Element (hardcoded)          | Surface (hardcoded)          | Role         | Context                                 |
- * |------------------------------|------------------------------|--------------|-----------------------------------------|
- * | oklch(0.88 0.01 240)         | oklch(0.14 0.01 240)         | content      | Panel text on dark card background      |
- * | oklch(0.72 0.18 200)         | oklch(0.14 0.01 240)         | content      | Token name and accent labels            |
- * | oklch(0.55 0.02 240)         | oklch(0.14 0.01 240)         | informational | Row labels and dim text                |
- * | oklch(0.7 0.12 140)          | oklch(0.14 0.01 240)         | content      | Chain resolved value text               |
- * | oklch(0.72 0.18 55)          | oklch(0.14 0.01 240)         | content      | Terminal value display (orange tone)    |
+ * | Element token                                          | Surface token                                           | Role         | Context                                 |
+ * |--------------------------------------------------------|---------------------------------------------------------|--------------|-----------------------------------------|
+ * | --tug-element-global-text-normal-default-rest          | --tug-surface-global-primary-normal-content-rest        | content      | Panel text on card background           |
+ * | --tug-element-tone-text-normal-active-rest             | --tug-surface-global-primary-normal-content-rest        | content      | Token name and accent labels (blue)     |
+ * | --tug-element-global-text-normal-muted-rest            | --tug-surface-global-primary-normal-content-rest        | informational | Row labels and dim text                |
+ * | --tug-element-tone-text-normal-success-rest            | --tug-surface-global-primary-normal-content-rest        | content      | Chain resolved value text (green)       |
+ * | --tug-element-tone-text-normal-accent-rest             | --tug-surface-global-primary-normal-content-rest        | content      | Terminal value display (orange)         |
+ * | --tug-element-control-text-outlined-action-rest        | --tug-surface-control-primary-outlined-action-rest      | control      | Inspect button text (rest)              |
+ * | --tug-element-control-text-outlined-action-rest        | --tug-surface-global-primary-normal-raised-rest         | control      | Inspect button text (active state)      |
  */
 
 /* ---------------------------------------------------------------------------
@@ -29,9 +29,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: oklch(0.14 0.01 240);
-  color: oklch(0.88 0.01 240);
-  font-family: ui-monospace, "SF Mono", "Menlo", "Cascadia Code", monospace;
+  background: var(--tug-surface-global-primary-normal-content-rest);
+  color: var(--tug-element-global-text-normal-default-rest);
+  font-family: var(--tug-font-family-mono);
   font-size: 11px;
   line-height: 1.5;
   user-select: text;
@@ -47,44 +47,46 @@
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border-bottom: 1px solid oklch(0.22 0.01 240);
-  background: oklch(0.18 0.01 240);
+  border-bottom: 1px solid var(--tug-element-global-divider-normal-separator-rest);
+  background: var(--tug-surface-global-primary-normal-raised-rest);
   flex-shrink: 0;
 }
 
 /* ---------------------------------------------------------------------------
-   Reticle button
+   Inspect button (renamed from reticle-button)
    --------------------------------------------------------------------------- */
 
-.si-card-reticle-button {
+.si-card-inspect-button {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 3px 8px;
-  background: oklch(0.22 0.01 240);
-  border: 1px solid oklch(0.32 0.02 240);
+  background: var(--tug-surface-control-primary-outlined-action-rest);
+  border: 1px solid var(--tug-element-control-border-outlined-action-rest);
   border-radius: 4px;
-  color: oklch(0.72 0.18 200);
-  font-family: ui-monospace, "SF Mono", "Menlo", "Cascadia Code", monospace;
+  color: var(--tug-element-control-text-outlined-action-rest);
+  font-family: var(--tug-font-family-mono);
   font-size: 10px;
   cursor: pointer;
-  transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+  transition: background var(--tug-motion-duration-fast) ease,
+    border-color var(--tug-motion-duration-fast) ease,
+    color var(--tug-motion-duration-fast) ease;
   user-select: none;
 }
 
-.si-card-reticle-button:hover {
-  background: oklch(0.26 0.01 240);
-  border-color: oklch(0.40 0.04 200);
+.si-card-inspect-button:hover {
+  background: var(--tug-surface-control-primary-outlined-action-hover);
+  border-color: var(--tug-element-control-border-outlined-action-hover);
 }
 
-.si-card-reticle-button--active {
-  background: oklch(0.20 0.06 200);
-  border-color: oklch(0.48 0.14 200);
-  color: oklch(0.88 0.12 200);
+.si-card-inspect-button--active {
+  background: var(--tug-surface-global-primary-normal-raised-rest);
+  border-color: var(--tug-element-control-border-outlined-action-active);
+  color: var(--tug-element-control-text-outlined-action-active);
 }
 
-.si-card-reticle-button--active:hover {
-  background: oklch(0.24 0.08 200);
+.si-card-inspect-button--active:hover {
+  background: var(--tug-surface-control-primary-outlined-action-hover);
 }
 
 /* ---------------------------------------------------------------------------
@@ -116,7 +118,7 @@
 }
 
 .si-card-empty-state__message {
-  color: oklch(0.45 0.02 240);
+  color: var(--tug-element-global-text-normal-muted-rest);
   font-style: italic;
   margin: 0;
 }
@@ -135,10 +137,10 @@
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: oklch(0.55 0.02 240);
+  color: var(--tug-element-global-text-normal-muted-rest);
   font-weight: 600;
   padding-bottom: 2px;
-  border-bottom: 1px solid oklch(0.22 0.01 240);
+  border-bottom: 1px solid var(--tug-element-global-divider-normal-separator-rest);
   margin-bottom: 2px;
 }
 
@@ -154,20 +156,20 @@
 }
 
 .tug-inspector-row__label {
-  color: oklch(0.55 0.02 240);
+  color: var(--tug-element-global-text-normal-muted-rest);
   flex-shrink: 0;
   min-width: 80px;
 }
 
 .tug-inspector-row__value {
-  color: oklch(0.88 0.01 240);
+  color: var(--tug-element-global-text-normal-default-rest);
   overflow-wrap: break-word;
   flex: 1;
   min-width: 0;
 }
 
 .tug-inspector-row__value--dim {
-  color: oklch(0.45 0.02 240);
+  color: var(--tug-element-global-text-normal-subtle-rest);
   font-style: italic;
 }
 
@@ -188,7 +190,7 @@
 }
 
 .tug-inspector-chain__prop {
-  color: oklch(0.72 0.18 200);
+  color: var(--tug-element-tone-text-normal-active-rest);
 }
 
 .tug-inspector-chain__resolved {
@@ -199,12 +201,12 @@
 }
 
 .tug-inspector-chain__value {
-  color: oklch(0.7 0.12 140);
+  color: var(--tug-element-tone-text-normal-success-rest);
   overflow-wrap: break-word;
 }
 
 .tug-inspector-chain__terminal {
-  color: oklch(0.72 0.18 55);
+  color: var(--tug-element-tone-text-normal-accent-rest);
   white-space: nowrap;
 }
 
@@ -217,7 +219,7 @@
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  border: 1px solid oklch(0.4 0.01 240);
+  border: 1px solid var(--tug-element-global-border-normal-muted-rest);
   flex-shrink: 0;
   vertical-align: middle;
   margin-right: 2px;
@@ -228,7 +230,7 @@
    --------------------------------------------------------------------------- */
 
 .tug-inspector-tug-color {
-  color: oklch(0.72 0.18 140);
+  color: var(--tug-element-tone-text-normal-success-rest);
   margin-left: auto;
   padding-left: 12px;
   white-space: nowrap;
@@ -240,7 +242,7 @@
    --------------------------------------------------------------------------- */
 
 .tug-inspector-path {
-  color: oklch(0.45 0.02 240);
+  color: var(--tug-element-global-text-normal-subtle-rest);
   overflow-wrap: break-word;
   font-size: 10px;
 }
@@ -262,11 +264,11 @@
 }
 
 .tug-inspector-readout__key {
-  color: oklch(0.55 0.02 240);
+  color: var(--tug-element-global-text-normal-muted-rest);
 }
 
 .tug-inspector-readout__val {
-  color: oklch(0.72 0.18 200);
+  color: var(--tug-element-tone-text-normal-active-rest);
   font-weight: 600;
 }
 
@@ -283,23 +285,23 @@
 }
 
 .tug-inspector-formula-field__name {
-  color: oklch(0.72 0.18 200);
+  color: var(--tug-element-tone-text-normal-active-rest);
   flex-shrink: 0;
 }
 
 .tug-inspector-formula-field__value {
-  color: oklch(0.88 0.01 240);
+  color: var(--tug-element-global-text-normal-default-rest);
   flex-shrink: 0;
 }
 
 .tug-inspector-formula-field__type {
-  color: oklch(0.55 0.02 240);
+  color: var(--tug-element-global-text-normal-muted-rest);
   font-style: italic;
   flex-shrink: 0;
 }
 
 .tug-inspector-formula__release-label {
-  color: oklch(0.48 0.10 55);
+  color: var(--tug-element-tone-text-normal-accent-rest);
   font-style: italic;
   font-size: 10px;
   flex-shrink: 0;

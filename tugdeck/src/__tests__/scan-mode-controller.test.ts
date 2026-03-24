@@ -6,6 +6,7 @@
  * - isActive reflects current state
  * - calling deactivate() when not active is a no-op
  * - Alt keydown toggles tug-scan-hover-suppressed class on #deck-container
+ * - deactivate({ keepHighlight: true }) leaves highlightEl in DOM
  *
  * Note: Tests use happy-dom (preloaded via bunfig.toml). DOM globals are
  * available at module scope via setup-rtl.ts.
@@ -249,5 +250,60 @@ describe("ScanModeController -- suppression graceful without deck-container", ()
     expect(() => document.dispatchEvent(altDown)).not.toThrow();
 
     ctrl.deactivate();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ScanModeController -- keepHighlight option
+// ---------------------------------------------------------------------------
+
+describe("ScanModeController -- deactivate({ keepHighlight: true })", () => {
+  let ctrl: ScanModeController;
+
+  beforeEach(() => {
+    ctrl = new ScanModeController();
+  });
+
+  afterEach(() => {
+    if (ctrl.isActive) {
+      ctrl.deactivate();
+    }
+    // Clean up highlight if it's still in the DOM (for keepHighlight tests)
+    if (ctrl.highlightEl.parentNode) {
+      ctrl.highlightEl.parentNode.removeChild(ctrl.highlightEl);
+    }
+  });
+
+  it("deactivate({ keepHighlight: true }) removes overlayEl from DOM", () => {
+    ctrl.activate(() => {});
+    expect(document.body.contains(ctrl.overlayEl)).toBe(true);
+    ctrl.deactivate({ keepHighlight: true });
+    expect(document.body.contains(ctrl.overlayEl)).toBe(false);
+  });
+
+  it("deactivate({ keepHighlight: true }) leaves highlightEl in DOM", () => {
+    ctrl.activate(() => {});
+    expect(document.body.contains(ctrl.highlightEl)).toBe(true);
+    ctrl.deactivate({ keepHighlight: true });
+    // highlightEl should remain in the DOM
+    expect(document.body.contains(ctrl.highlightEl)).toBe(true);
+  });
+
+  it("deactivate({ keepHighlight: true }) sets isActive to false", () => {
+    ctrl.activate(() => {});
+    ctrl.deactivate({ keepHighlight: true });
+    expect(ctrl.isActive).toBe(false);
+  });
+
+  it("default deactivate() removes highlightEl (no options = keepHighlight false)", () => {
+    ctrl.activate(() => {});
+    ctrl.deactivate();
+    expect(document.body.contains(ctrl.highlightEl)).toBe(false);
+  });
+
+  it("deactivate({ keepHighlight: false }) removes highlightEl", () => {
+    ctrl.activate(() => {});
+    ctrl.deactivate({ keepHighlight: false });
+    expect(document.body.contains(ctrl.highlightEl)).toBe(false);
   });
 });

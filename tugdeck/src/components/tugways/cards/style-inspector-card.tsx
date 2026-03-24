@@ -3,7 +3,7 @@
  *
  * Renders the style inspector as a proper card in the developer card family.
  * Content includes:
- *   - Reticle button to activate ScanModeController for element selection
+ *   - Inspect button to activate ScanModeController for element selection
  *   - DOM path display
  *   - Token chain sections (bg, fg, border)
  *   - Formula provenance section
@@ -15,6 +15,24 @@
  *   [D03] Reverse map built once as module singleton.
  *   [D06] Appearance changes through CSS/DOM, never React state (L06).
  *
+ * **Three-state button:**
+ *   - Rest: "Inspect Element" -- no highlight, no overlay
+ *   - Scanning: "Cancel Inspection" -- overlay active, highlight follows cursor
+ *   - Inspecting: "Done Inspecting" -- overlay gone, highlight pinned on element
+ *
+ * State transitions (L06 compliant -- DOM attributes drive appearance, not React state):
+ *   Rest → Scanning: click "Inspect Element"
+ *   Scanning → Inspecting: click an element (ScanModeController calls onSelect)
+ *   Scanning → Rest: click "Cancel Inspection"
+ *   Inspecting → Rest: click "Done Inspecting" (clears data, removes pinned highlight)
+ *   Inspecting → Scanning: NOT allowed; must go Inspecting → Rest first.
+ *
+ * **Persistent highlight (L06 compliant):**
+ *   On element selection, ScanModeController.deactivate({ keepHighlight: true })
+ *   leaves the highlightEl in the DOM. The card applies the --pinned CSS class and
+ *   manages its position imperatively via ResizeObserver + scroll listener.
+ *   On "Done Inspecting", the highlight is removed from the DOM and observers cleaned up.
+ *
  * **Authoritative references:**
  *   Spec S01 (#s01-card-registration)
  *   Spec S04 (#s04-data-flow)
@@ -23,7 +41,7 @@
  * @module components/tugways/cards/style-inspector-card
  */
 
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback, useEffect } from "react";
 import { ScanModeController } from "@/components/tugways/scan-mode-controller";
 import {
   resolveTokenChainForProperty,
@@ -58,6 +76,9 @@ interface InspectionData {
   motionOn: boolean;
   formulasData: FormulasData | null;
 }
+
+/** Button mode enum for the three-state inspect button. */
+type InspectMode = "rest" | "scanning" | "inspecting";
 
 // ---------------------------------------------------------------------------
 // SwatchChip -- small color swatch inline element
@@ -249,13 +270,15 @@ function FormulaSection({ rows }: { rows: FormulaRow[] }) {
 /**
  * StyleInspectorContent -- main card content component.
  *
- * Renders the reticle button, DOM path, token chain sections, formula
+ * Renders the inspect button, DOM path, token chain sections, formula
  * provenance, and scale/timing readout for the selected element.
  *
  * Spec S04 (#s04-data-flow):
  *   - `inspectionDataRef` holds the latest inspection results
  *   - `renderKey` is bumped to trigger re-render after async data arrives
  *   - Scan mode is managed imperatively via `ScanModeController` (L06)
+ *   - Button mode (rest/scanning/inspecting) drives label and CSS class via ref+renderKey
+ *   - Pinned highlight positioning is managed via ResizeObserver + scroll listener (L06)
  */
 export function StyleInspectorContent({ cardId }: { cardId: string }) {
   // Ref holding latest inspection data (avoid stale closures with async fetch).
@@ -270,15 +293,112 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     scanCtrlRef.current = new ScanModeController();
   }
 
-  // Whether scan mode is currently active (for button visual state, L06: CSS-only toggle via data attr).
-  const scanActiveRef = useRef(false);
+  // Three-state button mode (L06: drives label/class via ref + renderKey bump).
+  const modeRef = useRef<InspectMode>("rest");
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const handleElementSelected = useCallback((el: HTMLElement) => {
-    scanActiveRef.current = false;
-    if (containerRef.current) {
-      containerRef.current.removeAttribute("data-scan-active");
+  // Refs for cleanup of pinned highlight observers.
+  const pinnedResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const pinnedScrollHandlerRef = useRef<(() => void) | null>(null);
+  const pinnedElementRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * Update the position of the pinned highlight to match the element's bounding rect.
+   * Called by ResizeObserver and scroll listener while in "inspecting" state.
+   * L06: imperative DOM operation, no React state.
+   */
+  const updatePinnedHighlightPosition = useCallback(() => {
+    const ctrl = scanCtrlRef.current;
+    const el = pinnedElementRef.current;
+    if (!ctrl || !el) return;
+
+    const rect = el.getBoundingClientRect();
+    ctrl.highlightEl.style.top = `${rect.top}px`;
+    ctrl.highlightEl.style.left = `${rect.left}px`;
+    ctrl.highlightEl.style.width = `${rect.width}px`;
+    ctrl.highlightEl.style.height = `${rect.height}px`;
+  }, []);
+
+  /**
+   * Remove pinned highlight from DOM and clean up observers.
+   * L06: imperative DOM operation.
+   */
+  const removePinnedHighlight = useCallback(() => {
+    const ctrl = scanCtrlRef.current;
+    if (!ctrl) return;
+
+    // Clean up ResizeObserver
+    if (pinnedResizeObserverRef.current) {
+      pinnedResizeObserverRef.current.disconnect();
+      pinnedResizeObserverRef.current = null;
     }
+
+    // Clean up scroll listener
+    if (pinnedScrollHandlerRef.current) {
+      window.removeEventListener("scroll", pinnedScrollHandlerRef.current, true);
+      pinnedScrollHandlerRef.current = null;
+    }
+
+    pinnedElementRef.current = null;
+
+    // Remove highlight from DOM and clear its classes
+    if (ctrl.highlightEl.parentNode) {
+      ctrl.highlightEl.parentNode.removeChild(ctrl.highlightEl);
+    }
+    ctrl.highlightEl.style.display = "none";
+    ctrl.highlightEl.classList.remove("tug-inspector-highlight--pinned");
+    ctrl.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
+  }, []);
+
+  /**
+   * Pin the highlight rect on the selected element and set up position observers.
+   * Called after Scanning → Inspecting transition.
+   * L06: imperative DOM operation.
+   */
+  const pinHighlightOnElement = useCallback((el: HTMLElement) => {
+    const ctrl = scanCtrlRef.current;
+    if (!ctrl) return;
+
+    pinnedElementRef.current = el;
+
+    // Switch to pinned visual style
+    ctrl.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
+    ctrl.highlightEl.classList.add("tug-inspector-highlight--pinned");
+
+    // Update position immediately
+    const rect = el.getBoundingClientRect();
+    ctrl.highlightEl.style.top = `${rect.top}px`;
+    ctrl.highlightEl.style.left = `${rect.left}px`;
+    ctrl.highlightEl.style.width = `${rect.width}px`;
+    ctrl.highlightEl.style.height = `${rect.height}px`;
+    ctrl.highlightEl.style.display = "";
+
+    // Observe the element for size changes
+    const resizeObs = new ResizeObserver(() => {
+      updatePinnedHighlightPosition();
+    });
+    resizeObs.observe(el);
+    pinnedResizeObserverRef.current = resizeObs;
+
+    // Observe scroll events to reposition on scroll
+    const scrollHandler = () => {
+      updatePinnedHighlightPosition();
+    };
+    window.addEventListener("scroll", scrollHandler, true);
+    pinnedScrollHandlerRef.current = scrollHandler;
+  }, [updatePinnedHighlightPosition]);
+
+  const handleElementSelected = useCallback((el: HTMLElement) => {
+    // Transition: Scanning → Inspecting
+    modeRef.current = "inspecting";
+    if (containerRef.current) {
+      containerRef.current.setAttribute("data-inspect-mode", "inspecting");
+    }
+
+    // Pin the highlight on the selected element (highlight is still in DOM
+    // because ScanModeController.deactivate({ keepHighlight: true }) was called
+    // from _handleClick before invoking this callback).
+    pinHighlightOnElement(el);
 
     const computed = getComputedStyle(el);
     const bgColor = computed.getPropertyValue("background-color").trim();
@@ -322,30 +442,54 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
         setRenderKey((k) => k + 1);
       }
     }).catch(() => {});
-  }, []);
+  }, [pinHighlightOnElement]);
 
-  const handleReticleClick = useCallback(() => {
+  const handleInspectButtonClick = useCallback(() => {
     const ctrl = scanCtrlRef.current;
     if (!ctrl) return;
 
-    if (ctrl.isActive) {
-      ctrl.deactivate();
-      scanActiveRef.current = false;
+    const currentMode = modeRef.current;
+
+    if (currentMode === "rest") {
+      // Rest → Scanning
+      modeRef.current = "scanning";
       if (containerRef.current) {
-        containerRef.current.removeAttribute("data-scan-active");
+        containerRef.current.setAttribute("data-inspect-mode", "scanning");
       }
-    } else {
       ctrl.activate(handleElementSelected);
-      scanActiveRef.current = true;
+    } else if (currentMode === "scanning") {
+      // Scanning → Rest (cancel)
+      ctrl.deactivate(); // removes overlay AND highlight
+      modeRef.current = "rest";
       if (containerRef.current) {
-        containerRef.current.setAttribute("data-scan-active", "true");
+        containerRef.current.removeAttribute("data-inspect-mode");
+      }
+    } else if (currentMode === "inspecting") {
+      // Inspecting → Rest (done)
+      removePinnedHighlight();
+      inspectionDataRef.current = null;
+      modeRef.current = "rest";
+      if (containerRef.current) {
+        containerRef.current.removeAttribute("data-inspect-mode");
       }
     }
-    // Bump render key to update button appearance
+
     setRenderKey((k) => k + 1);
-  }, [handleElementSelected]);
+  }, [handleElementSelected, removePinnedHighlight]);
+
+  // Cleanup pinned highlight and observers when component unmounts.
+  useEffect(() => {
+    return () => {
+      const ctrl = scanCtrlRef.current;
+      if (ctrl && ctrl.isActive) {
+        ctrl.deactivate();
+      }
+      removePinnedHighlight();
+    };
+  }, [removePinnedHighlight]);
 
   const data = inspectionDataRef.current;
+  const mode = modeRef.current;
 
   // Build formula rows if formulasData is available
   let formulaRows: FormulaRow[] | null = null;
@@ -360,7 +504,20 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     );
   }
 
-  const isScanActive = scanCtrlRef.current?.isActive ?? false;
+  // Button label by mode
+  const buttonLabel =
+    mode === "scanning" ? "Cancel Inspection" :
+    mode === "inspecting" ? "Done Inspecting" :
+    "Inspect Element";
+
+  // Button CSS class -- active style for both scanning and inspecting
+  const buttonClass =
+    mode === "rest"
+      ? "si-card-inspect-button"
+      : "si-card-inspect-button si-card-inspect-button--active";
+
+  // aria-pressed reflects active scanning/inspecting state
+  const ariaPressed = mode !== "rest";
 
   // Suppress unused variable warning for cardId (required by contentFactory signature)
   void cardId;
@@ -371,15 +528,23 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
       className="si-card-content"
       data-testid="style-inspector-content"
     >
-      {/* Toolbar with reticle button */}
+      {/* Toolbar with inspect button */}
       <div className="si-card-toolbar">
         <button
-          className={`si-card-reticle-button${isScanActive ? " si-card-reticle-button--active" : ""}`}
-          onClick={handleReticleClick}
-          title="Scan element (click to activate reticle mode)"
+          className={buttonClass}
+          onClick={handleInspectButtonClick}
+          title={
+            mode === "scanning" ? "Cancel element inspection" :
+            mode === "inspecting" ? "Done inspecting — clear selection" :
+            "Inspect element (click to activate reticle mode)"
+          }
           data-testid="style-inspector-reticle-button"
-          aria-pressed={isScanActive}
-          aria-label="Toggle element scan mode"
+          aria-pressed={ariaPressed}
+          aria-label={
+            mode === "scanning" ? "Cancel element inspection" :
+            mode === "inspecting" ? "Done inspecting" :
+            "Inspect an element"
+          }
         >
           <svg
             width="14"
@@ -396,7 +561,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
             <line x1="0" y1="7" x2="3" y2="7" stroke="currentColor" strokeWidth="1.2" />
             <line x1="11" y1="7" x2="14" y2="7" stroke="currentColor" strokeWidth="1.2" />
           </svg>
-          <span>{isScanActive ? "Cancel Scan" : "Scan Element"}</span>
+          <span>{buttonLabel}</span>
         </button>
       </div>
 
@@ -406,7 +571,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
           /* Empty state */
           <div className="si-card-empty-state" data-testid="style-inspector-empty-state">
             <p className="si-card-empty-state__message">
-              Click "Scan Element" to inspect a UI element.
+              Click &quot;Inspect Element&quot; to inspect a UI element.
             </p>
           </div>
         ) : (

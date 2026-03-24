@@ -3,7 +3,7 @@
  *
  * `ScanModeController` manages a transparent full-viewport overlay that lets the
  * user hover over any element to highlight it, then click to select it. The
- * controller is activated by the reticle button in `StyleInspectorContent` and
+ * controller is activated by the inspect button in `StyleInspectorContent` and
  * automatically deactivates after a selection is made.
  *
  * Design decisions:
@@ -32,6 +32,23 @@ const OVERLAY_Z_INDEX = "999997";
 const SUPPRESSION_CLASS = "tug-scan-hover-suppressed";
 
 // ---------------------------------------------------------------------------
+// DeactivateOptions
+// ---------------------------------------------------------------------------
+
+/**
+ * Options for `deactivate()`.
+ *
+ * When `keepHighlight` is true, the highlight rect is NOT removed from the DOM
+ * on deactivate. The caller takes ownership of the highlight element (e.g., to
+ * pin it on a selected element). The caller is then responsible for removing
+ * the highlight from the DOM when appropriate.
+ */
+export interface DeactivateOptions {
+  /** When true, leaves highlightEl in the DOM after deactivating. Default: false. */
+  keepHighlight?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // ScanModeController
 // ---------------------------------------------------------------------------
 
@@ -46,6 +63,12 @@ const SUPPRESSION_CLASS = "tug-scan-hover-suppressed";
  * });
  * // Later:
  * ctrl.deactivate();
+ * ```
+ *
+ * To keep the highlight rect visible after selection (for pinning):
+ * ```ts
+ * ctrl.deactivate({ keepHighlight: true });
+ * // highlightEl remains in DOM with current position; caller manages removal
  * ```
  */
 export class ScanModeController {
@@ -137,22 +160,33 @@ export class ScanModeController {
   /**
    * Exit scan mode.
    *
-   * Removes the overlay and highlight rect from the DOM, detaches all listeners,
-   * and removes the hover-suppression class if present. A no-op if not active.
+   * Removes the overlay from the DOM and detaches all listeners.
+   * By default, also removes the highlight rect. Pass `{ keepHighlight: true }`
+   * to leave the highlight rect in the DOM — the caller then owns it.
+   *
+   * A no-op if not active.
+   *
+   * @param options.keepHighlight - When true, highlightEl is NOT removed from DOM.
    */
-  deactivate(): void {
+  deactivate(options: DeactivateOptions = {}): void {
     if (!this.active) return;
 
     this.active = false;
     this.onSelectCallback = null;
     this.hoveredEl = null;
 
-    // Remove overlay and highlight from DOM
+    // Always remove the overlay
     if (this.overlayEl.parentNode) {
       this.overlayEl.parentNode.removeChild(this.overlayEl);
     }
-    if (this.highlightEl.parentNode) {
-      this.highlightEl.parentNode.removeChild(this.highlightEl);
+
+    // Remove highlight unless caller requested to keep it
+    if (!options.keepHighlight) {
+      if (this.highlightEl.parentNode) {
+        this.highlightEl.parentNode.removeChild(this.highlightEl);
+      }
+      this.highlightEl.style.display = "none";
+      this.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
     }
 
     // Remove all event listeners
@@ -163,10 +197,6 @@ export class ScanModeController {
 
     // Remove hover suppression class if still present
     this._setSuppression(false);
-
-    // Hide highlight
-    this.highlightEl.style.display = "none";
-    this.highlightEl.classList.remove("tug-inspector-highlight--scan-suppressed");
   }
 
   // ---------------------------------------------------------------------------
@@ -202,7 +232,8 @@ export class ScanModeController {
    * Handle click on the overlay.
    *
    * Identifies the real element under cursor using the same pointer-events
-   * suppression technique, calls the onSelect callback, and deactivates.
+   * suppression technique, calls the onSelect callback, and deactivates
+   * while keeping the highlight rect in the DOM for the caller to pin.
    */
   private _handleClick(e: MouseEvent): void {
     // Find the real target (same technique as pointermove)
@@ -216,8 +247,8 @@ export class ScanModeController {
 
     const target = el as HTMLElement;
     const cb = this.onSelectCallback;
-    // Deactivate before calling callback so the card can re-activate if needed
-    this.deactivate();
+    // Deactivate before calling callback, keeping highlight for caller to pin
+    this.deactivate({ keepHighlight: true });
     if (cb) {
       cb(target);
     }

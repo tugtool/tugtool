@@ -30,6 +30,7 @@
  * |------------------------------|------------------------------|--------------|--------------------------------|
  * | oklch(0.72 0.18 200)         | (transparent overlay)        | accent       | Highlight ring in scan mode    |
  * | oklch(0.72 0.18 55)          | (transparent overlay)        | accent       | Highlight ring (option-key)    |
+ * | oklch(0.78 0.16 200)         | (transparent overlay)        | accent       | Highlight ring (pinned state)  |
  */
 
 /* ---------------------------------------------------------------------------
@@ -52,4 +53,15 @@
   border-style: dashed;
   border-color: oklch(0.72 0.18 55);
   background: oklch(0.72 0.18 55 / 0.08);
+}
+
+/* Pinned state: solid thicker border with slightly more visible background tint.
+   Applied when an element has been selected and the highlight is pinned on it.
+   Distinct from hover-tracking state -- no position transition animation. */
+.tug-inspector-highlight.tug-inspector-highlight--pinned {
+  border: 2px solid oklch(0.78 0.16 200);
+  background: oklch(0.78 0.16 200 / 0.12);
+  border-radius: 3px;
+  /* No position transition when pinned -- position is set imperatively on resize/scroll */
+  transition: none;
 }

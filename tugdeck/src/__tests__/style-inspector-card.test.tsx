@@ -4,7 +4,8 @@
  * Tests cover:
  * - registerStyleInspectorCard registers with componentId "style-inspector"
  * - StyleInspectorContent renders empty state when no element is selected
- * - StyleInspectorContent has a reticle button in its rendered output
+ * - StyleInspectorContent has an inspect button in its rendered output
+ * - Three-state button: rest / scanning / inspecting label and class assertions
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -12,7 +13,7 @@ import "./setup-rtl";
 
 import React from "react";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { render, act, cleanup } from "@testing-library/react";
+import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
 import { StyleInspectorContent, registerStyleInspectorCard } from "@/components/tugways/cards/style-inspector-card";
 import { getRegistration, _resetForTest } from "@/card-registry";
@@ -97,7 +98,7 @@ describe("StyleInspectorContent -- T-SI-02: renders empty state when no element 
     expect(emptyState).not.toBeNull();
   });
 
-  it("empty state contains instructional text", () => {
+  it("empty state contains instructional text referencing Inspect Element", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-2" />));
@@ -105,7 +106,7 @@ describe("StyleInspectorContent -- T-SI-02: renders empty state when no element 
 
     const emptyState = container.querySelector("[data-testid='style-inspector-empty-state']");
     expect(emptyState).not.toBeNull();
-    expect(emptyState!.textContent).toContain("Scan Element");
+    expect(emptyState!.textContent).toContain("Inspect Element");
   });
 
   it("does not render token chain sections in empty state", () => {
@@ -121,40 +122,41 @@ describe("StyleInspectorContent -- T-SI-02: renders empty state when no element 
 });
 
 // ============================================================================
-// T-SI-03: Reticle button is present in rendered output
+// T-SI-03: Inspect button is present in rendered output
 // ============================================================================
 
-describe("StyleInspectorContent -- T-SI-03: reticle button is present", () => {
-  it("renders a reticle button", () => {
+describe("StyleInspectorContent -- T-SI-03: inspect button is present", () => {
+  it("renders an inspect button", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-4" />));
     });
 
-    const reticleBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
-    expect(reticleBtn).not.toBeNull();
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
   });
 
-  it("reticle button is initially not in active state", () => {
+  it("inspect button is initially not in active state", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-5" />));
     });
 
-    const reticleBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
-    expect(reticleBtn).not.toBeNull();
-    expect(reticleBtn!.classList.contains("si-card-reticle-button--active")).toBe(false);
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
+    // Rest state: no --active modifier
+    expect(inspectBtn!.classList.contains("si-card-inspect-button--active")).toBe(false);
   });
 
-  it("reticle button has aria-label attribute", () => {
+  it("inspect button has aria-label attribute", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<StyleInspectorContent cardId="test-card-6" />));
     });
 
-    const reticleBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
-    expect(reticleBtn).not.toBeNull();
-    const ariaLabel = reticleBtn!.getAttribute("aria-label");
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
+    const ariaLabel = inspectBtn!.getAttribute("aria-label");
     expect(ariaLabel).not.toBeNull();
     expect(ariaLabel!.length).toBeGreaterThan(0);
   });
@@ -167,5 +169,95 @@ describe("StyleInspectorContent -- T-SI-03: reticle button is present", () => {
 
     const wrapper = container.querySelector("[data-testid='style-inspector-content']");
     expect(wrapper).not.toBeNull();
+  });
+
+  it("inspect button has si-card-inspect-button class (not reticle-button)", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-8" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
+    expect(inspectBtn!.classList.contains("si-card-inspect-button")).toBe(true);
+    expect(inspectBtn!.classList.contains("si-card-reticle-button")).toBe(false);
+  });
+});
+
+// ============================================================================
+// T-SI-04: Three-state button label assertions
+// ============================================================================
+
+describe("StyleInspectorContent -- T-SI-04: button labels by state", () => {
+  it("button shows 'Inspect Element' in rest state", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-9" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
+    expect(inspectBtn!.textContent).toContain("Inspect Element");
+  });
+
+  it("button transitions to scanning state on click, showing 'Cancel Inspection'", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-10" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
+
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+
+    // Should now show "Cancel Inspection"
+    expect(inspectBtn!.textContent).toContain("Cancel Inspection");
+    expect(inspectBtn!.classList.contains("si-card-inspect-button--active")).toBe(true);
+  });
+
+  it("button shows aria-pressed=true in scanning state", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-11" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
+
+    // Initially aria-pressed is false
+    expect(inspectBtn!.getAttribute("aria-pressed")).toBe("false");
+
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+
+    // After click (scanning), aria-pressed is true
+    expect(inspectBtn!.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("button returns to 'Inspect Element' after clicking Cancel Inspection", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<StyleInspectorContent cardId="test-card-12" />));
+    });
+
+    const inspectBtn = container.querySelector("[data-testid='style-inspector-reticle-button']");
+    expect(inspectBtn).not.toBeNull();
+
+    // Click to scan
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+    expect(inspectBtn!.textContent).toContain("Cancel Inspection");
+
+    // Click to cancel
+    act(() => {
+      fireEvent.click(inspectBtn!);
+    });
+    expect(inspectBtn!.textContent).toContain("Inspect Element");
+    expect(inspectBtn!.classList.contains("si-card-inspect-button--active")).toBe(false);
   });
 });
