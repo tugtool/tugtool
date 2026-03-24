@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-24T15:39:53Z
+---
+
+## step-5: Added Show Style Inspector menu item to Developer menu in AppDelegate.swift with Opt+Cmd+I shortcut, calling sendControl(show-style-inspector). Swift build succeeded.
+
+**Files changed:**
+- .tugtool/tugplan-inspector-card.md
+
+---
+
+---
 step: step-4
 date: 2025-03-24T15:35:49Z
 ---
