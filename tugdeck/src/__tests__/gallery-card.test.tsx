@@ -222,7 +222,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(titles).toContain("TugMarquee");
     expect(titles).toContain("TugCheckbox");
     expect(titles).toContain("TugSwitch");
-    expect(titles).toContain("Theme Generator");
+    expect(titles).toContain("Theme Accessibility");
     expect(titles).toContain("TugBadge");
   });
 

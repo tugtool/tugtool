@@ -44,8 +44,6 @@ const THEME_OVERRIDE_CSS = path.resolve(__dirname, "styles/tug-theme-override.cs
 const BASE_THEME_CSS = path.resolve(__dirname, "styles/tug-base-generated.css");
 /** Absolute path to shipped override CSS files. */
 export const SHIPPED_THEMES_CSS_DIR = path.resolve(__dirname, "styles/themes");
-/** Absolute path to shipped theme JSON files (legacy endpoint support). */
-export const SHIPPED_THEMES_JSON_DIR = path.resolve(__dirname, "themes");
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { BASE_THEME_NAME } = require("./src/theme-constants") as { BASE_THEME_NAME: string };
@@ -169,55 +167,13 @@ function controlTokenHotReload(): VitePlugin {
 // Handler functions are exported for unit testing with mocked fs.
 //
 // Only shipped themes are supported:
-//   Shipped theme JSON: tugdeck/themes/       (legacy read-only endpoint)
 //   Shipped theme CSS:  tugdeck/styles/themes (activation source of truth)
 // ---------------------------------------------------------------------------
-
-/** Back-compat alias for existing tests/imports. */
-export const SHIPPED_THEMES_DIR = SHIPPED_THEMES_JSON_DIR;
 
 // ---------------------------------------------------------------------------
 // Filesystem abstraction for testability
 // ---------------------------------------------------------------------------
 
-export interface FsReadImpl {
-  readdirSync: (p: string) => string[];
-  readFileSync: (p: string, enc: "utf-8") => string;
-  existsSync: (p: string) => boolean;
-}
-
-export interface FsWriteImpl extends FsReadImpl {
-  writeFileSync: (p: string, data: string, enc: "utf-8") => void;
-  mkdirSync: (p: string, opts: { recursive: boolean }) => void;
-  unlinkSync?: (p: string) => void;
-}
-
-// ---------------------------------------------------------------------------
-// handleThemesLoadJson — GET /__themes/<name>.json
-//
-// Looks only in shipped dir. Returns 404 if not found.
-// ---------------------------------------------------------------------------
-
-export function handleThemesLoadJson(
-  name: string,
-  fsImpl: FsReadImpl,
-  shippedDir: string,
-): { status: number; body: string; contentType: string } {
-  // Shipped themes use direct filename lookup
-  const shippedPath = path.join(shippedDir, `${name}.json`);
-  if (fsImpl.existsSync(shippedPath)) {
-    try {
-      const content = fsImpl.readFileSync(shippedPath, "utf-8");
-      return { status: 200, body: content, contentType: "application/json" };
-    } catch {
-      // Fall through to 404
-    }
-  }
-
-  return { status: 404, body: JSON.stringify({ error: `Theme '${name}' not found` }), contentType: "application/json" };
-}
-
-// ---------------------------------------------------------------------------
 // activateThemeOverride — shared logic for startup plugin and activate endpoint
 //
 // Copies shipped CSS into the override file (empty for base theme), parses the
@@ -336,7 +292,6 @@ export async function handleThemesActivate(
 
 /**
  * Vite plugin: theme API endpoints for the dev server.
- * GET  /__themes/<name>.json  — load shipped theme JSON
  * POST /__themes/activate     — activate a theme by rewriting the override file
  */
 function themeSaveLoadPlugin(): VitePlugin {
@@ -347,16 +302,6 @@ function themeSaveLoadPlugin(): VitePlugin {
         "/__themes",
         (req: import("http").IncomingMessage, res: import("http").ServerResponse, next: () => void) => {
           const url = req.url ?? "/";
-
-          if (req.method === "GET" && url.endsWith(".json")) {
-            const name = decodeURIComponent(url.replace(/^\//, "").slice(0, -5));
-            if (name && !name.includes("/")) {
-              const result = handleThemesLoadJson(name, fs as unknown as FsReadImpl, SHIPPED_THEMES_JSON_DIR);
-              res.writeHead(result.status, { "Content-Type": result.contentType });
-              res.end(result.body);
-              return;
-            }
-          }
 
           if (req.method === "POST" && url === "/activate") {
             let raw = "";

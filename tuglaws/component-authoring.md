@@ -6,6 +6,16 @@
 
 ---
 
+## Scope Boundary (This Pass)
+
+The current theme simplification pass does **not** rewrite every existing component token contract.
+
+- Keep existing component contracts stable unless a component-level change is explicitly required.
+- Do not introduce new ad-hoc theme logic in TSX/JS (no local recipe objects, no derivation helpers, no one-off color math).
+- New theme behavior must come from `--tug-*` tokens and CSS cascade only.
+
+---
+
 ## Files
 
 Every component produces exactly two files in `components/tugways/`:
@@ -319,6 +329,7 @@ Before a component is done:
 - [ ] `.tsx` follows the TSX structure (docstring, props, forwardRef, data-slot)
 - [ ] `.css` follows the CSS structure (@tug-pairings, @tug-renders-on, base → states → variants)
 - [ ] All colors via `--tug-*` tokens, zero hardcoded colors
+- [ ] No ad-hoc theme logic in component TSX/JS
 - [ ] `data-slot="tug-{name}"` on root element
 - [ ] Laws cited in module docstring
 - [ ] Props interface exported with JSDoc and `@selector` annotations

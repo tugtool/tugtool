@@ -18,8 +18,30 @@
  */
 
 import { oklchToHex, oklchToLinearSRGB, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, toneToL } from "./palette-engine";
-import type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-engine";
 import type { ElementSurfacePairing } from "./theme-pairings";
+
+export interface ResolvedColor {
+  L: number;
+  C: number;
+  h: number;
+  alpha?: number;
+}
+
+export interface ContrastResult {
+  fg: string;
+  bg: string;
+  wcagRatio: number;
+  contrast: number;
+  contrastPass: boolean;
+  role: string;
+}
+
+export interface CVDWarning {
+  type: CVDType;
+  tokenPair: [string, string];
+  description: string;
+  suggestion: string;
+}
 
 // ---------------------------------------------------------------------------
 // Re-export PairingEntry alias for compatibility with plan spec.
@@ -1017,7 +1039,6 @@ export function checkCVDDistinguishability(
 // ---------------------------------------------------------------------------
 
 export { oklchToHex } from "./palette-engine";
-export type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-engine";
 
 // ---------------------------------------------------------------------------
 // Perceptual contrast thresholds (normative) and WCAG ratio thresholds (informational)

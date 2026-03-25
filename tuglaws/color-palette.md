@@ -215,16 +215,16 @@ Each hue has independently derived sRGB and P3 chroma caps — binary-searched a
 2. **Base tier** — `--tug-*` semantic tokens (surface and element). Theme-specific chromatic choices live here. [D71, L17]
 3. **Component tier** — `--tug-<component>-*` aliases. Resolve to base tier in one hop. [D71, L17]
 
-Components consume base and component tokens. The palette tier provides the raw materials that the theme derivation engine uses to produce base tokens.
+Components consume base and component tokens. The palette tier provides the raw materials used by authored theme CSS tokens.
 
 ---
 
-## Theme Derivation
+## Theme Runtime Note
 
-The `ThemeRecipe` groups inputs into three sections:
+Theme runtime is CSS-first:
 
-- **Surface specs:** four `ThemeColorSpec` objects — `canvas`, `grid`, `frame`, `card` — each with explicit hue, tone, and intensity.
-- **Text spec:** `text.hue` and `text.intensity`; tone is derived by the engine for legibility. Optional `display` and `border` overrides default to `text.hue` and `surface.canvas.hue` respectively.
-- **Role spec:** shared `tone` and `intensity` plus seven vivid role hues — `action`, `accent`, `success`, `caution`, `danger`, `agent`, `data`.
+- base tokens are authored in `styles/tug-base-generated.css`
+- override tokens are authored in `styles/themes/*.css`
+- Vite/PostCSS expands `--tug-color(...)` to normal CSS in dev/build
 
-The theme engine resolves hue slots from these inputs, expands them into formula fields, and derives all 373 `--tug-*` tokens through the evaluation pipeline. [D70, D80, D82, D83]
+The palette feeds authored theme CSS through `--tug-color(...)` expansion in Vite/PostCSS.

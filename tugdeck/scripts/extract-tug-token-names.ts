@@ -6,7 +6,7 @@ const BASE_CSS = path.join(ROOT, "styles", "tug-base-generated.css");
 const THEMES_DIR = path.join(ROOT, "styles", "themes");
 const OUT_FILE = path.join(ROOT, "src", "generated", "tug-token-names.ts");
 
-function collectCssFiles(): string[] {
+export function collectCssFiles(): string[] {
   const files: string[] = [BASE_CSS];
   for (const name of fs.readdirSync(THEMES_DIR)) {
     if (name.endsWith(".css")) {
@@ -16,7 +16,7 @@ function collectCssFiles(): string[] {
   return files;
 }
 
-function extractTokenNames(cssText: string): string[] {
+export function extractTokenNames(cssText: string): string[] {
   const withoutComments = cssText.replace(/\/\*[\s\S]*?\*\//g, " ");
   const matches = withoutComments.matchAll(/--tug-[a-z0-9-]+(?=\s*:)/g);
   const names: string[] = [];
@@ -26,7 +26,7 @@ function extractTokenNames(cssText: string): string[] {
   return names;
 }
 
-function main(): void {
+export function main(): void {
   const all = new Set<string>();
   for (const file of collectCssFiles()) {
     const text = fs.readFileSync(file, "utf-8");
@@ -51,4 +51,6 @@ function main(): void {
   console.log(`Generated ${names.length} --tug-* names -> ${path.relative(ROOT, OUT_FILE)}`);
 }
 
-main();
+if (import.meta.main) {
+  main();
+}

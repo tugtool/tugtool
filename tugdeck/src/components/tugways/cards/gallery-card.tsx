@@ -1186,7 +1186,7 @@ export function registerGalleryCards(): void {
 
   // ---- gallery-theme-generator ----
   // Theme Generator: derives complete 264-token themes from seed colors + mood
-  // parameters. Uses theme-engine + theme-accessibility modules. [D04]
+  // parameters. Uses theme-accessibility module + live CSS snapshot data. [D04]
   registerCard({
     componentId: "gallery-theme-generator",
     contentFactory: (_cardId) => <GalleryThemeGeneratorContent />,
