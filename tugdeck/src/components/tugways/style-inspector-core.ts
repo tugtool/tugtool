@@ -144,9 +144,8 @@ export async function fetchFormulasData(): Promise<FormulasData | null> {
  * Render formula rows as a read-only display section.
  * Returns an HTMLElement containing formula field display, or a "(constant)" indicator.
  *
- * Note: `createFormulaSection` is dead production code retained until the formula
- * tests are migrated from `createFormulaSection` to `buildFormulaRows`. See
- * roadmap item in tugplan-inspector-card.md (#roadmap).
+ * Note: `createFormulaSection` is legacy DOM-based code. The current React-based
+ * inspector uses `FormulaSection` in style-inspector-card.tsx instead.
  *
  * @param rows - The formula rows to display
  * @param isConstant - Whether the token has no formula-driven fields
@@ -819,6 +818,15 @@ export function collectElementTugProperties(el: HTMLElement): string[] {
           if (prop.startsWith("--tug-")) {
             found.add(prop);
           }
+          // Also extract --tug-* token names from var() references in property values.
+          // Components like TugButton reference tokens in values, e.g.:
+          //   background-color: var(--tug-surface-control-primary-filled-accent-rest)
+          const val = style.getPropertyValue(prop);
+          if (val) {
+            for (const m of val.matchAll(/var\((--tug-[a-zA-Z0-9_-]+)/g)) {
+              found.add(m[1]);
+            }
+          }
         }
       } else {
         // Recurse into grouping rules (@media, @supports, @layer, etc.)
@@ -943,68 +951,4 @@ export function buildAllStateFormulaRows(
   return result;
 }
 
-/**
- * Build formula rows data from token chains and formulas data.
- *
- * Looks up the terminal token for each chain (bg, fg, border) in the reverse map,
- * collects formula rows, deduplicates by field name, and returns structured data.
- *
- * @param bgChain - Token chain result for background-color
- * @param fgChain - Token chain result for color
- * @param borderChain - Token chain result for border-color
- * @param formulasData - Formulas data fetched from the dev server
- * @param reverseMap - The reverse map to look up token-to-field mappings
- */
-export function buildFormulaRows(
-  bgChain: TokenChainResult,
-  fgChain: TokenChainResult,
-  borderChain: TokenChainResult,
-  formulasData: FormulasData,
-  reverseMap: ReverseMap
-): FormulaRow[] {
-  const allRows: FormulaRow[] = [];
-  const seenFields = new Set<string>();
-
-  const chains = [bgChain, fgChain, borderChain];
-  for (const chainResult of chains) {
-    if (!chainResult.originToken) continue;
-
-    // Get terminal token: last hop's property if chain is non-empty, otherwise originToken.
-    let terminalToken: string;
-    if (chainResult.chain.length > 0) {
-      terminalToken = chainResult.chain[chainResult.chain.length - 1].property;
-    } else {
-      terminalToken = chainResult.originToken;
-    }
-
-    const mappings = reverseMap.tokenToFields.get(terminalToken);
-    if (!mappings) continue;
-
-    // Determine if this is a structural token:
-    // structural = terminal value doesn't start with 'oklch(' AND token doesn't match palette
-    // AND chain doesn't end at palette.
-    const terminalValue = chainResult.terminalValue ?? "";
-    const isStructural =
-      !terminalValue.startsWith("oklch(") &&
-      !PALETTE_VAR_REGEX.test(terminalToken) &&
-      !chainResult.endsAtPalette;
-
-    for (const mapping of mappings) {
-      if (seenFields.has(mapping.field)) continue;
-      seenFields.add(mapping.field);
-
-      const rawValue = formulasData.formulas[mapping.field];
-      if (rawValue === undefined) continue;
-
-      allRows.push({
-        field: mapping.field,
-        value: rawValue,
-        property: mapping.property,
-        isStructural,
-      });
-    }
-  }
-
-  return allRows;
-}
 

@@ -9,9 +9,6 @@
  * - extractTugColorProvenance: parses hue family, preset, reads TugColor constants
  * - shortenNumbers: rounds floating-point numbers in CSS value strings
  * - buildDomPath: builds short DOM path strings
- * - buildFormulaRows: builds formula rows from token chains and formulas data
- * - createFormulaSection: renders formula rows as HTMLElement (retained for test coverage
- *   until migrated to buildFormulaRows-based tests; see roadmap #roadmap)
  * - collectElementTugProperties: collects --tug-* properties from matched CSS rules
  * - buildAllStateFormulaRows: groups formula rows by interaction state
  *
@@ -30,12 +27,10 @@ import {
   extractTugColorProvenance,
   shortenNumbers,
   buildDomPath,
-  buildFormulaRows,
-  createFormulaSection,
   collectElementTugProperties,
   buildAllStateFormulaRows,
 } from "@/components/tugways/style-inspector-core";
-import type { TokenChainResult, FormulasData } from "@/components/tugways/style-inspector-core";
+import type { FormulasData } from "@/components/tugways/style-inspector-core";
 import type { ReverseMap } from "@/components/tugways/formula-reverse-map";
 
 // ---------------------------------------------------------------------------
@@ -418,142 +413,6 @@ describe("resolveTokenChainForProperty integration", () => {
 
     document.body.style.removeProperty("--tug-surface-global-primary-normal-default-rest");
     document.body.style.removeProperty("--tug-cobalt-intense");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildFormulaRows
-// ---------------------------------------------------------------------------
-
-describe("buildFormulaRows", () => {
-  const makeEmptyChain = (): TokenChainResult => ({
-    originToken: null,
-    originLayer: "none",
-    chain: [],
-    endsAtPalette: false,
-    paletteVar: null,
-    terminalValue: null,
-    usedHeuristic: false,
-  });
-
-  const makeChainWithToken = (token: string, terminalValue: string): TokenChainResult => ({
-    originToken: token,
-    originLayer: "base",
-    chain: [{ property: token, value: terminalValue }],
-    endsAtPalette: false,
-    paletteVar: null,
-    terminalValue,
-    usedHeuristic: false,
-  });
-
-  it("returns empty array when all chains have no origin token", () => {
-    const formulasData: FormulasData = { formulas: {}, sources: {}, mode: "dark", themeName: "test" };
-    const reverseMap: ReverseMap = { tokenToFields: new Map() };
-
-    const result = buildFormulaRows(
-      makeEmptyChain(),
-      makeEmptyChain(),
-      makeEmptyChain(),
-      formulasData,
-      reverseMap
-    );
-    expect(result).toHaveLength(0);
-  });
-
-  it("returns rows when token maps to formula fields", () => {
-    const formulasData: FormulasData = {
-      formulas: { intensity: 0.7, tone: 0.5 },
-      sources: {},
-      mode: "dark",
-      themeName: "test",
-    };
-    const reverseMap: ReverseMap = {
-      tokenToFields: new Map([
-        ["--tug-test-bg", [
-          { field: "intensity", property: "intensity" },
-          { field: "tone", property: "tone" },
-        ]],
-      ]),
-    };
-
-    const bgChain = makeChainWithToken("--tug-test-bg", "oklch(0.5 0.2 240)");
-
-    const result = buildFormulaRows(
-      bgChain,
-      makeEmptyChain(),
-      makeEmptyChain(),
-      formulasData,
-      reverseMap
-    );
-    expect(result).toHaveLength(2);
-    expect(result[0].field).toBe("intensity");
-    expect(result[0].value).toBe(0.7);
-    expect(result[1].field).toBe("tone");
-    expect(result[1].value).toBe(0.5);
-  });
-
-  it("deduplicates formula rows by field name across chains", () => {
-    const formulasData: FormulasData = {
-      formulas: { intensity: 0.7 },
-      sources: {},
-      mode: "dark",
-      themeName: "test",
-    };
-    const reverseMap: ReverseMap = {
-      tokenToFields: new Map([
-        ["--tug-test-token", [{ field: "intensity", property: "intensity" }]],
-      ]),
-    };
-
-    const chain = makeChainWithToken("--tug-test-token", "oklch(0.5 0.2 240)");
-
-    const result = buildFormulaRows(chain, chain, makeEmptyChain(), formulasData, reverseMap);
-    // Same field from two chains -- deduplicated to one row
-    expect(result).toHaveLength(1);
-    expect(result[0].field).toBe("intensity");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// createFormulaSection (retained for test coverage until migrated)
-// ---------------------------------------------------------------------------
-
-describe("createFormulaSection", () => {
-  it("renders a (constant) indicator when rows are empty", () => {
-    const el = createFormulaSection([], true);
-    expect(el.className).toBe("tug-inspector-section");
-    expect(el.textContent).toContain("(constant)");
-  });
-
-  it("renders a (constant) indicator when isConstant is true", () => {
-    const el = createFormulaSection([], true);
-    expect(el.textContent).toContain("(constant)");
-  });
-
-  it("renders formula rows when provided", () => {
-    const rows = [
-      { field: "intensity", value: 0.7, property: "intensity" as const, isStructural: false },
-      { field: "tone", value: 0.5, property: "tone" as const, isStructural: false },
-    ];
-    const el = createFormulaSection(rows, false);
-    expect(el.querySelectorAll(".tug-inspector-formula-field").length).toBe(2);
-    expect(el.textContent).toContain("intensity");
-    expect(el.textContent).toContain("0.7");
-  });
-
-  it("renders structural label for structural rows", () => {
-    const rows = [
-      { field: "alpha", value: 0.5, property: "alpha" as const, isStructural: true },
-    ];
-    const el = createFormulaSection(rows, false);
-    expect(el.textContent).toContain("(applies on release)");
-  });
-
-  it("has a Formula title", () => {
-    const el = createFormulaSection([], false);
-    const titleEl = el.querySelector(".tug-inspector-section__title");
-    expect(titleEl).not.toBeNull();
-    expect(titleEl!.textContent).toBe("Formula");
   });
 });
 
