@@ -520,7 +520,7 @@ extension AppDelegate: BridgeDelegate {
 
     func bridgeThemeListUpdated(themes: [ThemeEntry], activeTheme: String?) {
         DispatchQueue.main.async {
-            self.cachedShippedThemes = themes.filter { $0.source == "shipped" }
+            self.cachedShippedThemes = themes
             if let name = activeTheme {
                 self.activeThemeName = name
             }
@@ -571,30 +571,8 @@ extension AppDelegate: NSMenuDelegate {
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
 
-        // Authored themes — scan ~/.tugtool/themes/ directly
-        let userThemesDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".tugtool/themes")
-        var authoredNames: [String] = []
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: userThemesDir.path) {
-            for file in files where file.hasSuffix(".json") {
-                let filePath = userThemesDir.appendingPathComponent(file)
-                if let data = try? Data(contentsOf: filePath),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let name = json["name"] as? String {
-                    authoredNames.append(name)
-                }
-            }
-        }
-        authoredNames.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-
         for entry in sortedShipped {
             menu.addItem(makeThemeItem(entry))
-        }
-        if !sortedShipped.isEmpty && !authoredNames.isEmpty {
-            menu.addItem(NSMenuItem.separator())
-        }
-        for name in authoredNames {
-            menu.addItem(makeThemeItem(ThemeEntry(name: name, source: "authored")))
         }
 
         // If no themes available yet, show a placeholder
@@ -602,21 +580,6 @@ extension AppDelegate: NSMenuDelegate {
             let placeholder = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
             placeholder.isEnabled = false
             menu.addItem(placeholder)
-        }
-
-        menu.addItem(NSMenuItem.separator())
-        let openFolder = NSMenuItem(title: "Custom Themes", action: #selector(openCustomThemesFolder), keyEquivalent: "")
-        menu.addItem(openFolder)
-    }
-
-    @objc private func openCustomThemesFolder() {
-        let themesDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".tugtool/themes")
-        if FileManager.default.fileExists(atPath: themesDir.path) {
-            NSWorkspace.shared.open(themesDir)
-        } else {
-            try? FileManager.default.createDirectory(at: themesDir, withIntermediateDirectories: true)
-            NSWorkspace.shared.open(themesDir)
         }
     }
 

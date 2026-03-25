@@ -4,7 +4,7 @@ import WebKit
 /// A cached theme entry pushed from the web view.
 struct ThemeEntry {
     let name: String
-    let source: String  // "shipped" or "authored"
+    let source: String  // always "shipped"
 }
 
 /// Protocol for bridge callbacks from WebKit to AppDelegate

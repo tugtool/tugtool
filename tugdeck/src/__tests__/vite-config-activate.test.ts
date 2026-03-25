@@ -20,38 +20,9 @@ import fs from "fs";
 import {
   handleThemesActivate,
   activateThemeOverride,
-  handleThemesSave,
   type FsWriteImpl,
   type ActivateResult,
-  type ThemeSaveBody,
 } from "../../vite.config";
-
-// ---------------------------------------------------------------------------
-// Minimal valid ThemeSpec used for legacy migration tests
-// ---------------------------------------------------------------------------
-
-const MINIMAL_RECIPE = {
-  name: "my-cool-theme",
-  mode: "dark",
-  surface: {
-    canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
-    grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
-    frame: { hue: "indigo-violet", tone: 16, intensity: 12 },
-    card: { hue: "indigo-violet", tone: 12, intensity: 5 },
-  },
-  text: { hue: "cobalt", intensity: 3 },
-  role: {
-    tone: 50,
-    intensity: 50,
-    accent: "orange",
-    action: "blue",
-    agent: "violet",
-    data: "teal",
-    success: "green",
-    caution: "yellow",
-    danger: "red",
-  },
-} as const;
 
 // ---------------------------------------------------------------------------
 // Paths (same constants as vite.config.ts)
@@ -59,8 +30,6 @@ const MINIMAL_RECIPE = {
 
 const TUGDECK_ROOT = path.resolve(__dirname, "../..");
 const SHIPPED_THEMES_DIR = path.join(TUGDECK_ROOT, "themes");
-// User dir doesn't exist in tests — mock fs returns empty for it.
-const USER_THEMES_DIR = path.join(TUGDECK_ROOT, "test-user-themes-does-not-exist");
 
 // Synthetic path used to capture writes — never written to real disk.
 const OVERRIDE_CSS_PATH = "/mock/tug-theme-override.css";
@@ -68,12 +37,11 @@ const OVERRIDE_CSS_PATH = "/mock/tug-theme-override.css";
 // ---------------------------------------------------------------------------
 // Mock FsWriteImpl factory
 //
-// - existsSync: returns true only for real shipped theme JSON files
-//   and false for the user dir and any path under USER_THEMES_DIR.
+// - existsSync: returns true only for real shipped theme JSON files.
 // - readFileSync: serves real shipped theme JSON from disk for valid paths;
 //   throws for unknown paths.
 // - writeFileSync: captures calls in an in-memory map (no disk I/O).
-// - readdirSync: returns [] (not needed for activate tests).
+// - readdirSync: returns [].
 // - mkdirSync: no-op.
 // ---------------------------------------------------------------------------
 
@@ -88,7 +56,7 @@ function makeMockFs(): MockFs {
     written,
 
     existsSync(p: string): boolean {
-      // Only shipped JSON files exist; user dir and override files do not.
+      // Only shipped JSON files exist.
       if (p.startsWith(SHIPPED_THEMES_DIR) && p.endsWith(".json")) {
         return fs.existsSync(p);
       }
@@ -118,54 +86,6 @@ function makeMockFs(): MockFs {
 }
 
 // ---------------------------------------------------------------------------
-// Mock factory for user-authored legacy files
-//
-// Extends makeMockFs to serve a synthetic user-authored theme file from
-// an in-memory map. The mock supports both legacy-format files (mode is
-// a stringified blob) and canonical-format files.
-// ---------------------------------------------------------------------------
-
-interface MockFsWithUserFiles extends MockFs {
-  userFiles: Map<string, string>;
-}
-
-function makeMockFsWithUserFile(fileName: string, content: string): MockFsWithUserFiles {
-  const base = makeMockFs();
-  const userFiles = new Map<string, string>([[path.join(USER_THEMES_DIR, fileName), content]]);
-
-  return {
-    ...base,
-    userFiles,
-
-    existsSync(p: string): boolean {
-      if (userFiles.has(p)) return true;
-      return base.existsSync(p);
-    },
-
-    readFileSync(p: string, enc: "utf-8"): string {
-      const userContent = userFiles.get(p);
-      if (userContent !== undefined) return userContent;
-      return base.readFileSync(p, enc);
-    },
-
-    readdirSync(p: string): string[] {
-      if (p === USER_THEMES_DIR) {
-        return Array.from(userFiles.keys()).map((fp) => path.basename(fp));
-      }
-      return base.readdirSync(p);
-    },
-
-    writeFileSync(p: string, data: string, enc: "utf-8"): void {
-      // Capture rewrites of user files in the userFiles map too.
-      if (userFiles.has(p)) {
-        userFiles.set(p, data);
-      }
-      base.writeFileSync(p, data, enc);
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -181,7 +101,6 @@ describe("activateThemeOverride", () => {
       "brio",
       mockFs,
       SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
     );
 
@@ -207,7 +126,6 @@ describe("activateThemeOverride", () => {
       "harmony",
       mockFs,
       SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
     );
 
@@ -232,99 +150,12 @@ describe("activateThemeOverride", () => {
         "nonexistent-theme-xyz",
         mockFs,
         SHIPPED_THEMES_DIR,
-        USER_THEMES_DIR,
         OVERRIDE_CSS_PATH,
       );
     }).toThrow("not found");
 
     // No files should have been written.
     expect(mockFs.written.size).toBe(0);
-  });
-});
-
-describe("activateThemeOverride — legacy migration", () => {
-  it("TC-LM1: legacy file with stringified mode is migrated and activates correctly", () => {
-    // Build a legacy-format file: the old client wrote { name, mode: JSON.stringify(fullRecipe) }.
-    // The inner mode blob is the full ThemeSpec fields minus name (the old client used safeName).
-    const innerRecipe = { ...MINIMAL_RECIPE };
-    const legacyFile = JSON.stringify({
-      name: "my-cool-theme",
-      mode: JSON.stringify(innerRecipe),
-      // Old format had no surface/text/role at top level — they were inside the stringified blob.
-    });
-
-    const mockFsLegacy = makeMockFsWithUserFile("abcd1234.json", legacyFile);
-
-    const result: ActivateResult = activateThemeOverride(
-      "my-cool-theme",
-      mockFsLegacy,
-      SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
-      OVERRIDE_CSS_PATH,
-    );
-
-    // Activation must succeed and return correct canvasParams.
-    expect(result.theme).toBe("my-cool-theme");
-    expect(result.canvasParams.hue).toBe("indigo-violet");
-    expect(typeof result.canvasParams.tone).toBe("number");
-    expect(typeof result.canvasParams.intensity).toBe("number");
-
-    // Override CSS must contain token declarations (non-Brio theme).
-    const overrideContents = mockFsLegacy.written.get(OVERRIDE_CSS_PATH);
-    expect(overrideContents).toBeDefined();
-    expect(overrideContents).toContain("--tug-");
-  });
-
-  it("TC-LM2: legacy file is rewritten in canonical format after migration", () => {
-    const innerRecipe = { ...MINIMAL_RECIPE };
-    const legacyFile = JSON.stringify({
-      name: "my-cool-theme",
-      mode: JSON.stringify(innerRecipe),
-    });
-
-    const userFilePath = path.join(USER_THEMES_DIR, "abcd1234.json");
-    const mockFsLegacy = makeMockFsWithUserFile("abcd1234.json", legacyFile);
-
-    activateThemeOverride(
-      "my-cool-theme",
-      mockFsLegacy,
-      SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
-      OVERRIDE_CSS_PATH,
-    );
-
-    // The user file must have been rewritten.
-    const rewrittenContent = mockFsLegacy.written.get(userFilePath);
-    expect(rewrittenContent).toBeDefined();
-
-    // The rewritten content must be valid JSON with mode as a mode string (not a blob).
-    const rewritten = JSON.parse(rewrittenContent!) as { mode: string; surface?: object };
-    expect(typeof rewritten.mode).toBe("string");
-    expect(rewritten.mode).not.toContain("{");
-    expect(rewritten.mode).toBe("dark");
-
-    // surface must be a top-level object in the rewritten file.
-    expect(typeof rewritten.surface).toBe("object");
-    expect(rewritten.surface).not.toBeNull();
-  });
-
-  it("TC-LM3: corrupt legacy file throws clear error message", () => {
-    const corruptFile = JSON.stringify({
-      name: "broken-theme",
-      mode: '{"this is not valid json because it is truncated...',
-    });
-
-    const mockFsCorrupt = makeMockFsWithUserFile("deadbeef.json", corruptFile);
-
-    expect(() => {
-      activateThemeOverride(
-        "broken-theme",
-        mockFsCorrupt,
-        SHIPPED_THEMES_DIR,
-        USER_THEMES_DIR,
-        OVERRIDE_CSS_PATH,
-      );
-    }).toThrow("corrupt mode data");
   });
 });
 
@@ -340,7 +171,6 @@ describe("handleThemesActivate", () => {
       { theme: "brio" },
       mockFs,
       SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
     );
 
@@ -363,7 +193,6 @@ describe("handleThemesActivate", () => {
       { theme: "harmony" },
       mockFs,
       SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
     );
 
@@ -385,7 +214,6 @@ describe("handleThemesActivate", () => {
       { theme: "nonexistent-theme-xyz" },
       mockFs,
       SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
     );
 
@@ -402,7 +230,6 @@ describe("handleThemesActivate", () => {
       { notTheme: "harmony" },
       mockFs,
       SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
     );
 
@@ -416,173 +243,11 @@ describe("handleThemesActivate", () => {
       "not-an-object",
       mockFs,
       SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
       OVERRIDE_CSS_PATH,
     );
 
     expect(response.status).toBe(400);
     const parsed = JSON.parse(response.body) as { error: string };
     expect(parsed.error).toContain("invalid request body");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Round-trip integration test: save then activate
-//
-// Uses a combined mock fs that:
-//   - Stores all writes in an in-memory map (written)
-//   - Reads back written files for subsequent reads
-//   - Falls through to real disk only for shipped theme JSON
-// ---------------------------------------------------------------------------
-
-describe("round-trip: save then activate", () => {
-  function makeRoundTripFs(): FsWriteImpl & { written: Map<string, string> } {
-    const written = new Map<string, string>();
-
-    return {
-      written,
-
-      existsSync(p: string): boolean {
-        if (written.has(p)) return true;
-        if (p.startsWith(SHIPPED_THEMES_DIR) && p.endsWith(".json")) {
-          return fs.existsSync(p);
-        }
-        return false;
-      },
-
-      readFileSync(p: string, _enc: "utf-8"): string {
-        const inMemory = written.get(p);
-        if (inMemory !== undefined) return inMemory;
-        if (p.startsWith(SHIPPED_THEMES_DIR) && p.endsWith(".json")) {
-          return fs.readFileSync(p, "utf-8");
-        }
-        throw new Error(`readFileSync: unexpected path in round-trip mock: ${p}`);
-      },
-
-      writeFileSync(p: string, data: string, _enc: "utf-8"): void {
-        written.set(p, data);
-      },
-
-      readdirSync(p: string): string[] {
-        // Return basenames of all in-memory user-dir files
-        const results: string[] = [];
-        for (const key of written.keys()) {
-          if (key.startsWith(p + "/") && key.endsWith(".json")) {
-            results.push(path.basename(key));
-          }
-        }
-        return results;
-      },
-
-      mkdirSync(_p: string, _opts?: { recursive: boolean }): void {
-        // no-op
-      },
-    };
-  }
-
-  it("RT1: save a valid ThemeSpec then activate it — succeeds with correct canvasParams", () => {
-    const roundTripFs = makeRoundTripFs();
-
-    const saveBody: ThemeSaveBody = {
-      name: "My Round-Trip Theme",
-      mode: "dark",
-      surface: {
-        canvas: { hue: "indigo-violet", tone: 5, intensity: 5 },
-        grid: { hue: "indigo-violet", tone: 12, intensity: 4 },
-        frame: { hue: "indigo-violet", tone: 16, intensity: 12 },
-        card: { hue: "indigo-violet", tone: 12, intensity: 5 },
-      },
-      text: { hue: "cobalt", intensity: 3 },
-      role: {
-        tone: 50,
-        intensity: 50,
-        accent: "orange",
-        action: "blue",
-        agent: "violet",
-        data: "teal",
-        success: "green",
-        caution: "yellow",
-        danger: "red",
-      },
-    };
-
-    // Step 1: save the theme
-    const saveResult = handleThemesSave(saveBody, roundTripFs, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
-    expect(saveResult.status).toBe(200);
-    expect(saveResult.themeName).toBe("My Round-Trip Theme");
-
-    // Step 2: activate the saved theme
-    const activateResult: ActivateResult = activateThemeOverride(
-      "My Round-Trip Theme",
-      roundTripFs,
-      SHIPPED_THEMES_DIR,
-      USER_THEMES_DIR,
-      OVERRIDE_CSS_PATH,
-    );
-
-    // Activation must succeed with correct return values
-    expect(activateResult.theme).toBe("My Round-Trip Theme");
-    expect(activateResult.canvasParams.hue).toBe("indigo-violet");
-    expect(typeof activateResult.canvasParams.tone).toBe("number");
-    expect(typeof activateResult.canvasParams.intensity).toBe("number");
-
-    // Override CSS must contain token declarations (non-Brio theme)
-    const overrideContents = roundTripFs.written.get(OVERRIDE_CSS_PATH);
-    expect(overrideContents).toBeDefined();
-    expect(overrideContents).toContain("--tug-");
-  });
-
-  it("RT2: saved JSON has mode as a short mode string (not a JSON blob)", () => {
-    const roundTripFs = makeRoundTripFs();
-
-    const saveBody: ThemeSaveBody = {
-      name: "Format Check Theme",
-      mode: "dark",
-      surface: {
-        canvas: { hue: "orange", tone: 10, intensity: 3 },
-        grid: { hue: "orange", tone: 13, intensity: 3 },
-        frame: { hue: "orange", tone: 17, intensity: 3 },
-        card: { hue: "orange", tone: 20, intensity: 2 },
-      },
-      text: { hue: "orange", intensity: 2 },
-      role: {
-        tone: 50,
-        intensity: 50,
-        accent: "orange",
-        action: "blue",
-        agent: "violet",
-        data: "teal",
-        success: "green",
-        caution: "yellow",
-        danger: "red",
-      },
-    };
-
-    const saveResult = handleThemesSave(saveBody, roundTripFs, SHIPPED_THEMES_DIR, USER_THEMES_DIR);
-    expect(saveResult.status).toBe(200);
-
-    // Find the saved JSON file (only one JSON under USER_THEMES_DIR)
-    let savedJson: string | undefined;
-    for (const [key, value] of roundTripFs.written.entries()) {
-      if (key.startsWith(USER_THEMES_DIR) && key.endsWith(".json")) {
-        savedJson = value;
-        break;
-      }
-    }
-    expect(savedJson).toBeDefined();
-
-    const parsed = JSON.parse(savedJson!) as { mode: string; surface: { canvas: { hue: string; tone: number; intensity: number } } };
-
-    // mode must be a short mode string, NOT a JSON blob
-    expect(typeof parsed.mode).toBe("string");
-    expect(parsed.mode).not.toContain("{");
-    expect(parsed.mode).toBe("dark");
-
-    // surface.canvas must have the expected fields
-    expect(typeof parsed.surface).toBe("object");
-    expect(parsed.surface).not.toBeNull();
-    expect(parsed.surface.canvas.hue).toBe("orange");
-    expect(typeof parsed.surface.canvas.tone).toBe("number");
-    expect(typeof parsed.surface.canvas.intensity).toBe("number");
   });
 });

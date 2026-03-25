@@ -1,48 +1,26 @@
 /**
  * gallery-theme-generator-content.tsx — Theme Generator gallery card.
  *
- * Mac-style document model:
- *   - Idle    — no theme loaded. Shows New / Open buttons.
- *   - Viewing — a shipped theme is loaded. Controls show values but are disabled.
- *   - Editing — an authored theme is loaded. Controls enabled. Auto-save fires 500ms
- *               after last change. Apply injects CSS app-wide after each save. [L06]
+ * Shows the active shipped theme's token output and accessibility diagnostics:
+ *   - Color pickers (read-only display of active theme)
+ *   - Token preview grid
+ *   - Contrast dashboard
+ *   - CVD preview strip
+ *   - Contrast diagnostics panel
  *
- * On open, loads the currently active app theme via GET /__themes/<name>.json.
- * Shipped themes open read-only (Viewing state).
- * Authored themes open for editing (Editing state).
- *
- * New flow: prompt for name (unique check via GET /__themes/list), select prototype,
- * copy via POST /__themes/save, enter Editing state. [D06]
- *
- * Open flow: list available themes via GET /__themes/list, load selected via
- * GET /__themes/<name>.json. Shipped=read-only, authored=editable. [D06]
- *
- * Auto-save: debounce at 500ms after last change, write JSON + CSS to
- * ~/.tugtool/themes/ via POST /__themes/save. Only active in Editing state.
- *
- * Apply: inject regenerated CSS app-wide via stylesheet injection after each
- * auto-save. Use deriveTheme() in-browser for immediate preview; disk write
- * is debounced. Appearance changes go through CSS and DOM, never React state. [L06]
- *
- * Recipe locked at creation time — displayed as a read-only label. [D09]
- *
- * After save, push updated theme list to Swift via themeListUpdated bridge message. [D10]
+ * On mount, loads the currently active app theme via GET /__themes/<name>.json.
+ * Controls are always read-only (shipped themes only).
  *
  * Rules of Tugways compliance:
- *   - Appearance changes through CSS custom properties on the preview container,
- *     not React state. [L06]
+ *   - Appearance changes through CSS custom properties, never React state. [L06]
  *   - useState only for local UI state (not external store).
  *   - No root.render() after initial mount.
- *
- * **Authoritative references:** [D06] Mac-style document model, [D09] Recipe locked,
- * [D10] Dynamic Swift Theme menu, Spec S05, (#generator-new-flow)
  *
  * @module components/tugways/cards/gallery-theme-generator-content
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import * as Popover from "@radix-ui/react-popover";
-import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
   type ThemeSpec,
@@ -66,7 +44,6 @@ import {
 } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
 import { TugButton } from "@/components/tugways/tug-button";
-import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
 import { TugToneStrip, TugIntensityStrip } from "@/components/tugways/tug-color-strip";
 import type { TugButtonEmphasis, TugButtonRole } from "@/components/tugways/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
@@ -75,15 +52,12 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
-import { TugInput } from "@/components/tugways/tug-input";
-import { loadSavedThemes, useOptionalThemeContext } from "@/contexts/theme-provider";
+import { useOptionalThemeContext } from "@/contexts/theme-provider";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const HUE_NAMES: readonly string[] = ADJACENCY_RING;
 
 /** Convert a ResolvedColor to an oklch() CSS string. */
 function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): string {
@@ -96,7 +70,7 @@ function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): s
  * Token names used to sample the actual resolved color for each surface hue.
  */
 const SURFACE_TOKENS: Record<string, string> = {
-  card: "--tug-surface-global-primary-normal-default-rest",
+  card: "--tug-surface-global-primary-normal-primary-rest",
   canvas: "--tug-surface-global-primary-normal-canvas-rest",
 };
 
@@ -123,17 +97,7 @@ const ROLE_TOKENS: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// ThemeListEntry — the { name, recipe, source } shape from /__themes/list
-// ---------------------------------------------------------------------------
-
-interface ThemeListEntry {
-  name: string;
-  mode: string;
-  source: "shipped" | "authored";
-}
-
-// ---------------------------------------------------------------------------
-// CompactHuePicker — compact row with color chip that opens a popover strip
+// CompactHuePicker — compact row with color chip (read-only, always disabled)
 // ---------------------------------------------------------------------------
 
 /**
@@ -148,91 +112,40 @@ function hueSwatchColor(hueName: string): string {
 function CompactHuePicker({
   label,
   selectedHue,
-  onSelect,
   testId,
   actualColor,
   preview,
-  disabled,
 }: {
   label: string;
   selectedHue: string;
-  onSelect: (hue: string) => void;
   testId: string;
   actualColor?: string;
   preview?: React.ReactNode;
-  disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
 
-  const handleSelect = useCallback(
-    (hue: string) => {
-      onSelect(hue);
-      setOpen(false);
-    },
-    [onSelect],
-  );
-
-  if (disabled) {
-    return (
-      <button
-        className="gtg-compact-hue-row"
-        data-testid={testId}
-        aria-label={`${label}: ${selectedHue} (read-only)`}
-        type="button"
-        disabled
-      >
-        {preview && <span className="gtg-hue-preview" aria-hidden="true">{preview}</span>}
-        <span className="gtg-compact-hue-label">{label}</span>
-        <span
-          className="gtg-compact-hue-chip"
-          style={{ backgroundColor: swatchColor }}
-          aria-hidden="true"
-        />
-        <span className="gtg-compact-hue-name">{selectedHue}</span>
-      </button>
-    );
-  }
-
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          className="gtg-compact-hue-row"
-          data-testid={testId}
-          aria-label={`${label}: ${selectedHue}. Click to change.`}
-          type="button"
-        >
-          {preview && <span className="gtg-hue-preview" aria-hidden="true">{preview}</span>}
-          <span className="gtg-compact-hue-label">{label}</span>
-          <span
-            className="gtg-compact-hue-chip"
-            style={{ backgroundColor: swatchColor }}
-            aria-hidden="true"
-          />
-          <span className="gtg-compact-hue-name">{selectedHue}</span>
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          className="gtg-compact-hue-popover"
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          collisionPadding={8}
-        >
-          <TugHueStrip
-            selectedHue={selectedHue}
-            onSelectHue={handleSelect}
-          />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+    <button
+      className="gtg-compact-hue-row"
+      data-testid={testId}
+      aria-label={`${label}: ${selectedHue} (read-only)`}
+      type="button"
+      disabled
+    >
+      {preview && <span className="gtg-hue-preview" aria-hidden="true">{preview}</span>}
+      <span className="gtg-compact-hue-label">{label}</span>
+      <span
+        className="gtg-compact-hue-chip"
+        style={{ backgroundColor: swatchColor }}
+        aria-hidden="true"
+      />
+      <span className="gtg-compact-hue-name">{selectedHue}</span>
+    </button>
   );
 }
 
 // ---------------------------------------------------------------------------
-// FullColorPicker — compact row that opens a popover with hue + tone + intensity strips
+// FullColorPicker — compact row (read-only, always disabled)
 // ---------------------------------------------------------------------------
 
 function FullColorPicker({
@@ -240,227 +153,72 @@ function FullColorPicker({
   selectedHue,
   tone,
   intensity,
-  onSelectHue,
-  onChangeTone,
-  onChangeIntensity,
   testId,
   actualColor,
-  disabled,
 }: {
   label: string;
   selectedHue: string;
   tone: number;
   intensity: number;
-  onSelectHue: (hue: string) => void;
-  onChangeTone: (tone: number) => void;
-  onChangeIntensity: (intensity: number) => void;
   testId: string;
   actualColor?: string;
-  disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
 
-  const handleSelectHue = useCallback(
-    (hue: string) => {
-      onSelectHue(hue);
-    },
-    [onSelectHue],
-  );
-
-  if (disabled) {
-    return (
-      <button
-        className="gtg-compact-hue-row"
-        data-testid={testId}
-        aria-label={`${label}: ${selectedHue}, tone ${tone}, intensity ${intensity} (read-only)`}
-        type="button"
-        disabled
-      >
-        <span className="gtg-compact-hue-label">{label}</span>
-        <span
-          className="gtg-compact-hue-chip"
-          style={{ backgroundColor: swatchColor }}
-          aria-hidden="true"
-        />
-        <span className="gtg-compact-hue-name">{selectedHue}</span>
-      </button>
-    );
-  }
-
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          className="gtg-compact-hue-row"
-          data-testid={testId}
-          aria-label={`${label}: ${selectedHue}, tone ${tone}, intensity ${intensity}. Click to change.`}
-          type="button"
-        >
-          <span className="gtg-compact-hue-label">{label}</span>
-          <span
-            className="gtg-compact-hue-chip"
-            style={{ backgroundColor: swatchColor }}
-            aria-hidden="true"
-          />
-          <span className="gtg-compact-hue-name">{selectedHue}</span>
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          className="gtg-full-color-popover"
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          collisionPadding={8}
-        >
-          <div className="gtg-full-color-popover-inner">
-            <div className="gtg-full-color-strip-row">
-              <span className="gtg-full-color-strip-label">Hue</span>
-              <div className="gtg-full-color-strip-track">
-                <TugHueStrip
-                  selectedHue={selectedHue}
-                  onSelectHue={handleSelectHue}
-                />
-              </div>
-            </div>
-            <div className="gtg-full-color-strip-row">
-              <span className="gtg-full-color-strip-label">Tone</span>
-              <div className="gtg-full-color-strip-track">
-                <TugToneStrip
-                  hue={selectedHue}
-                  intensity={intensity}
-                  value={tone}
-                  onChange={onChangeTone}
-                  data-testid={`${testId}-tone`}
-                />
-              </div>
-            </div>
-            <div className="gtg-full-color-strip-row">
-              <span className="gtg-full-color-strip-label">Intensity</span>
-              <div className="gtg-full-color-strip-track">
-                <TugIntensityStrip
-                  hue={selectedHue}
-                  tone={tone}
-                  value={intensity}
-                  onChange={onChangeIntensity}
-                  data-testid={`${testId}-intensity`}
-                />
-              </div>
-            </div>
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+    <button
+      className="gtg-compact-hue-row"
+      data-testid={testId}
+      aria-label={`${label}: ${selectedHue}, tone ${tone}, intensity ${intensity} (read-only)`}
+      type="button"
+      disabled
+    >
+      <span className="gtg-compact-hue-label">{label}</span>
+      <span
+        className="gtg-compact-hue-chip"
+        style={{ backgroundColor: swatchColor }}
+        aria-hidden="true"
+      />
+      <span className="gtg-compact-hue-name">{selectedHue}</span>
+    </button>
   );
 }
 
 // ---------------------------------------------------------------------------
-// HueIntensityPicker — compact row that opens a popover with hue + intensity strips
+// HueIntensityPicker — compact row (read-only, always disabled)
 // ---------------------------------------------------------------------------
 
 function HueIntensityPicker({
   label,
   selectedHue,
   intensity,
-  onSelectHue,
-  onChangeIntensity,
   testId,
   actualColor,
-  disabled,
 }: {
   label: string;
   selectedHue: string;
   intensity: number;
-  onSelectHue: (hue: string) => void;
-  onChangeIntensity: (intensity: number) => void;
   testId: string;
   actualColor?: string;
-  disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
-  const REPRESENTATIVE_TONE = 50;
-
-  const handleSelectHue = useCallback(
-    (hue: string) => {
-      onSelectHue(hue);
-    },
-    [onSelectHue],
-  );
-
-  if (disabled) {
-    return (
-      <button
-        className="gtg-compact-hue-row"
-        data-testid={testId}
-        aria-label={`${label}: ${selectedHue}, intensity ${intensity} (read-only)`}
-        type="button"
-        disabled
-      >
-        <span className="gtg-compact-hue-label">{label}</span>
-        <span
-          className="gtg-compact-hue-chip"
-          style={{ backgroundColor: swatchColor }}
-          aria-hidden="true"
-        />
-        <span className="gtg-compact-hue-name">{selectedHue}</span>
-      </button>
-    );
-  }
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          className="gtg-compact-hue-row"
-          data-testid={testId}
-          aria-label={`${label}: ${selectedHue}, intensity ${intensity}. Click to change.`}
-          type="button"
-        >
-          <span className="gtg-compact-hue-label">{label}</span>
-          <span
-            className="gtg-compact-hue-chip"
-            style={{ backgroundColor: swatchColor }}
-            aria-hidden="true"
-          />
-          <span className="gtg-compact-hue-name">{selectedHue}</span>
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          className="gtg-full-color-popover"
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          collisionPadding={8}
-        >
-          <div className="gtg-full-color-popover-inner">
-            <div className="gtg-full-color-strip-row">
-              <span className="gtg-full-color-strip-label">Hue</span>
-              <div className="gtg-full-color-strip-track">
-                <TugHueStrip
-                  selectedHue={selectedHue}
-                  onSelectHue={handleSelectHue}
-                />
-              </div>
-            </div>
-            <div className="gtg-full-color-strip-row">
-              <span className="gtg-full-color-strip-label">Intensity</span>
-              <div className="gtg-full-color-strip-track">
-                <TugIntensityStrip
-                  hue={selectedHue}
-                  tone={REPRESENTATIVE_TONE}
-                  value={intensity}
-                  onChange={onChangeIntensity}
-                  data-testid={`${testId}-intensity`}
-                />
-              </div>
-            </div>
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+    <button
+      className="gtg-compact-hue-row"
+      data-testid={testId}
+      aria-label={`${label}: ${selectedHue}, intensity ${intensity} (read-only)`}
+      type="button"
+      disabled
+    >
+      <span className="gtg-compact-hue-label">{label}</span>
+      <span
+        className="gtg-compact-hue-chip"
+        style={{ backgroundColor: swatchColor }}
+        aria-hidden="true"
+      />
+      <span className="gtg-compact-hue-name">{selectedHue}</span>
+    </button>
   );
 }
 
@@ -1165,7 +923,7 @@ function EmphasisRolePreview() {
 }
 
 // ---------------------------------------------------------------------------
-// ThemePreviewCard — color pickers for surface/text/role hues
+// ThemePreviewCard — color pickers for surface/text/role hues (read-only)
 // ---------------------------------------------------------------------------
 
 function ThemePreviewCard({
@@ -1175,9 +933,6 @@ function ThemePreviewCard({
   roles,
   roleTone,
   roleIntensity,
-  onRoleToneChange,
-  onRoleIntensityChange,
-  disabled,
 }: {
   resolvedColor: (key: string) => string;
   surface: Array<{
@@ -1186,9 +941,6 @@ function ThemePreviewCard({
     hue: string;
     tone: number;
     intensity: number;
-    setHue: (h: string) => void;
-    setTone: (t: number) => void;
-    setIntensity: (i: number) => void;
     testId: string;
   }>;
   text: {
@@ -1196,16 +948,11 @@ function ThemePreviewCard({
     label: string;
     hue: string;
     intensity: number;
-    setHue: (h: string) => void;
-    setIntensity: (i: number) => void;
     testId: string;
   };
-  roles: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
+  roles: Array<{ key: string; label: string; hue: string; testId: string }>;
   roleTone: number;
   roleIntensity: number;
-  onRoleToneChange: (t: number) => void;
-  onRoleIntensityChange: (i: number) => void;
-  disabled?: boolean;
 }) {
   const roleRepresentativeHue = roles[0]?.hue ?? "blue";
 
@@ -1222,12 +969,8 @@ function ThemePreviewCard({
               selectedHue={s.hue}
               tone={s.tone}
               intensity={s.intensity}
-              onSelectHue={s.setHue}
-              onChangeTone={s.setTone}
-              onChangeIntensity={s.setIntensity}
               testId={s.testId}
               actualColor={resolvedColor(s.key)}
-              disabled={disabled}
             />
           ))}
 
@@ -1236,11 +979,8 @@ function ThemePreviewCard({
             label={text.label}
             selectedHue={text.hue}
             intensity={text.intensity}
-            onSelectHue={text.setHue}
-            onChangeIntensity={text.setIntensity}
             testId={text.testId}
             actualColor={resolvedColor(text.key)}
-            disabled={disabled}
           />
         </div>
 
@@ -1252,10 +992,8 @@ function ThemePreviewCard({
               key={r.key}
               label={r.label}
               selectedHue={r.hue}
-              onSelect={r.set}
               testId={r.testId}
               actualColor={resolvedColor(r.key)}
-              disabled={disabled}
             />
           ))}
           <div className="gtg-role-tone-row">
@@ -1264,7 +1002,7 @@ function ThemePreviewCard({
               hue={roleRepresentativeHue}
               intensity={roleIntensity}
               value={roleTone}
-              onChange={disabled ? () => {} : onRoleToneChange}
+              onChange={() => {}}
               data-testid="gtg-role-tone-strip"
             />
           </div>
@@ -1274,7 +1012,7 @@ function ThemePreviewCard({
               hue={roleRepresentativeHue}
               tone={roleTone}
               value={roleIntensity}
-              onChange={disabled ? () => {} : onRoleIntensityChange}
+              onChange={() => {}}
               data-testid="gtg-role-intensity-strip"
             />
           </div>
@@ -1285,478 +1023,20 @@ function ThemePreviewCard({
 }
 
 // ---------------------------------------------------------------------------
-// NewThemeDialog — modal-ish inline dialog for New flow
-// ---------------------------------------------------------------------------
-
-/**
- * NewThemeDialog — presented as an overlay when the user clicks New.
- *
- * Step 1: Name entry with uniqueness validation against the live theme list.
- * Step 2: Prototype picker (shows available themes from GET /__themes/list).
- * On confirm: POST /__themes/save with copied recipe, then enter Editing state.
- */
-function NewThemeDialog({
-  onCreated,
-  onCancel,
-}: {
-  onCreated: (name: string, spec: ThemeSpec) => void;
-  onCancel: () => void;
-}) {
-  const [step, setStep] = useState<"name" | "prototype">("name");
-  const [newName, setNewName] = useState("");
-  const [nameError, setNameError] = useState<string | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
-  const [availableThemes, setAvailableThemes] = useState<ThemeListEntry[]>([]);
-  const [selectedPrototype, setSelectedPrototype] = useState<string>(BASE_THEME_NAME);
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const nameInputRef = useRef<HTMLInputElement>(null);
-
-  // Focus name input on mount
-  useEffect(() => {
-    nameInputRef.current?.focus();
-  }, []);
-
-  const handleNameSubmit = useCallback(async () => {
-    const trimmed = newName.trim();
-    if (trimmed === "") {
-      setNameError("Name is required");
-      return;
-    }
-    setIsValidating(true);
-    setNameError(null);
-    try {
-      const res = await fetch("/__themes/list");
-      if (res.ok) {
-        const data = (await res.json()) as { themes?: unknown[] };
-        const existingNames = new Set<string>();
-        if (Array.isArray(data.themes)) {
-          for (const entry of data.themes) {
-            if (typeof entry === "string") existingNames.add(entry);
-            else if (entry !== null && typeof entry === "object") {
-              const n = (entry as Record<string, unknown>).name;
-              if (typeof n === "string") existingNames.add(n);
-            }
-          }
-        }
-        if (existingNames.has(trimmed)) {
-          setNameError(`A theme named "${trimmed}" already exists`);
-          setIsValidating(false);
-          return;
-        }
-        // Build prototype list from themes
-        const entries: ThemeListEntry[] = [];
-        if (Array.isArray(data.themes)) {
-          for (const entry of data.themes) {
-            if (typeof entry === "string") {
-              entries.push({ name: entry, mode: "dark", source: "shipped" });
-            } else if (entry !== null && typeof entry === "object") {
-              const e = entry as Record<string, unknown>;
-              entries.push({
-                name: String(e.name ?? ""),
-                mode: String(e.mode ?? "dark"),
-                source: (e.source === "authored" ? "authored" : "shipped") as "shipped" | "authored",
-              });
-            }
-          }
-        }
-        // Ensure the base theme is always first in the prototype list
-        if (!entries.some((e) => e.name === BASE_THEME_NAME)) {
-          entries.unshift({ name: BASE_THEME_NAME, mode: "dark", source: "shipped" });
-        }
-        setAvailableThemes(entries);
-        setSelectedPrototype(entries[0]?.name ?? BASE_THEME_NAME);
-        setStep("prototype");
-      } else {
-        // Middleware unavailable — use base theme as the only fallback prototype
-        setAvailableThemes([
-          { name: BASE_THEME_NAME, mode: "dark", source: "shipped" },
-        ]);
-        setSelectedPrototype(BASE_THEME_NAME);
-        setStep("prototype");
-      }
-    } catch {
-      setAvailableThemes([
-        { name: BASE_THEME_NAME, mode: "dark", source: "shipped" },
-      ]);
-      setSelectedPrototype(BASE_THEME_NAME);
-      setStep("prototype");
-    }
-    setIsValidating(false);
-  }, [newName]);
-
-  const handleCreate = useCallback(async () => {
-    setIsCreating(true);
-    setCreateError(null);
-    try {
-      // Fetch prototype JSON
-      const protoRes = await fetch(`/__themes/${encodeURIComponent(selectedPrototype)}.json`);
-      let protoRecipe: ThemeSpec;
-      if (protoRes.ok) {
-        const raw = (await protoRes.json()) as unknown;
-        const err = validateRecipeJson(raw);
-        if (err !== null) {
-          setCreateError(`Prototype recipe invalid: ${err}`);
-          setIsCreating(false);
-          return;
-        }
-        protoRecipe = raw as ThemeSpec;
-      } else {
-        // Middleware unavailable — fall back to base theme recipe
-        protoRecipe = BASE_THEME_SPEC;
-      }
-
-      // Copy with new name
-      const newRecipe: ThemeSpec = { ...protoRecipe, name: newName.trim() };
-
-      // Save via POST /__themes/save — server derives CSS from recipe [D07]
-      const saveRes = await fetch("/__themes/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newRecipe),
-      });
-      if (!saveRes.ok) {
-        const body = (await saveRes.json().catch(() => ({ error: "Save failed" }))) as { error?: string };
-        setCreateError(body.error ?? "Save failed");
-        setIsCreating(false);
-        return;
-      }
-
-      onCreated(newRecipe.name, newRecipe);
-    } catch (err) {
-      setCreateError(String(err));
-      setIsCreating(false);
-    }
-  }, [newName, selectedPrototype, onCreated]);
-
-  return (
-    <div className="gtg-dialog-overlay" data-testid="gtg-new-dialog">
-      <div className="gtg-dialog">
-        {step === "name" ? (
-          <>
-            <div className="gtg-dialog-title">New Theme</div>
-            <div className="gtg-dialog-body">
-              <label className="gtg-dialog-label" htmlFor="gtg-new-theme-name">
-                Theme name
-              </label>
-              <TugInput
-                id="gtg-new-theme-name"
-                ref={nameInputRef}
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="my-theme"
-                size="sm"
-                data-testid="gtg-new-theme-name-input"
-                aria-label="New theme name"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleNameSubmit();
-                  if (e.key === "Escape") onCancel();
-                }}
-              />
-              {nameError !== null && (
-                <span className="gtg-dialog-error" data-testid="gtg-new-theme-name-error">
-                  {nameError}
-                </span>
-              )}
-            </div>
-            <div className="gtg-dialog-actions">
-              <TugButton
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                onClick={onCancel}
-                data-testid="gtg-new-dialog-cancel"
-              >
-                Cancel
-              </TugButton>
-              <TugButton
-                emphasis="filled"
-                role="accent"
-                size="sm"
-                onClick={() => { void handleNameSubmit(); }}
-                disabled={isValidating || newName.trim() === ""}
-                data-testid="gtg-new-dialog-next"
-              >
-                {isValidating ? "Checking…" : "Next"}
-              </TugButton>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="gtg-dialog-title">Choose Prototype</div>
-            <div className="gtg-dialog-body">
-              <div className="gtg-dialog-label">Start from:</div>
-              <div className="gtg-prototype-list" data-testid="gtg-prototype-list">
-                {availableThemes.map((t) => (
-                  <button
-                    key={t.name}
-                    className={`gtg-prototype-item${selectedPrototype === t.name ? " gtg-prototype-item--selected" : ""}`}
-                    type="button"
-                    onClick={() => setSelectedPrototype(t.name)}
-                    data-testid={`gtg-prototype-option-${t.name}`}
-                  >
-                    <span className="gtg-prototype-name">{t.name}</span>
-                    <span className="gtg-prototype-meta">{t.mode} · {t.source}</span>
-                  </button>
-                ))}
-              </div>
-              {createError !== null && (
-                <span className="gtg-dialog-error" data-testid="gtg-create-error">
-                  {createError}
-                </span>
-              )}
-            </div>
-            <div className="gtg-dialog-actions">
-              <TugButton
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                onClick={() => setStep("name")}
-                data-testid="gtg-new-dialog-back"
-              >
-                Back
-              </TugButton>
-              <TugButton
-                emphasis="filled"
-                role="accent"
-                size="sm"
-                onClick={() => { void handleCreate(); }}
-                disabled={isCreating}
-                data-testid="gtg-new-dialog-create"
-              >
-                {isCreating ? "Creating…" : "Create"}
-              </TugButton>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// OpenThemeDialog — modal-ish inline dialog for Open flow
-// ---------------------------------------------------------------------------
-
-function OpenThemeDialog({
-  onSelected,
-  onCancel,
-}: {
-  onSelected: (name: string, spec: ThemeSpec, isShipped: boolean) => void;
-  onCancel: () => void;
-}) {
-  const [themes, setThemes] = useState<ThemeListEntry[]>([]);
-  const [selected, setSelected] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isOpening, setIsOpening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const doLoad = async () => {
-      try {
-        const res = await fetch("/__themes/list");
-        const entries: ThemeListEntry[] = [];
-        if (res.ok) {
-          const data = (await res.json()) as { themes?: unknown[] };
-          if (Array.isArray(data.themes)) {
-            for (const entry of data.themes) {
-              if (typeof entry === "string") {
-                entries.push({ name: entry, mode: "dark", source: "shipped" });
-              } else if (entry !== null && typeof entry === "object") {
-                const e = entry as Record<string, unknown>;
-                entries.push({
-                  name: String(e.name ?? ""),
-                  mode: String(e.mode ?? "dark"),
-                  source: (e.source === "authored" ? "authored" : "shipped") as "shipped" | "authored",
-                });
-              }
-            }
-          }
-        }
-        // Ensure the base theme is always first
-        if (!entries.some((e) => e.name === BASE_THEME_NAME)) {
-          entries.unshift({ name: BASE_THEME_NAME, mode: "dark", source: "shipped" });
-        }
-        setThemes(entries);
-        setSelected(entries[0]?.name ?? BASE_THEME_NAME);
-      } catch {
-        setThemes([
-          { name: BASE_THEME_NAME, mode: "dark", source: "shipped" },
-        ]);
-        setSelected(BASE_THEME_NAME);
-      }
-      setIsLoading(false);
-    };
-    void doLoad();
-  }, []);
-
-  const handleOpen = useCallback(async () => {
-    if (!selected) return;
-    setIsOpening(true);
-    setError(null);
-    try {
-      const res = await fetch(`/__themes/${encodeURIComponent(selected)}.json`);
-      let spec: ThemeSpec;
-      if (res.ok) {
-        const raw = (await res.json()) as unknown;
-        const err = validateRecipeJson(raw);
-        if (err !== null) {
-          setError(`Invalid recipe: ${err}`);
-          setIsOpening(false);
-          return;
-        }
-        spec = raw as ThemeSpec;
-      } else {
-        // Middleware unavailable — fall back to base theme recipe
-        spec = BASE_THEME_SPEC;
-      }
-      const selectedEntry = themes.find((t) => t.name === selected);
-      const shipped = selectedEntry?.source === "shipped";
-      onSelected(selected, spec, shipped);
-    } catch (err) {
-      setError(String(err));
-      setIsOpening(false);
-    }
-  }, [selected, themes, onSelected]);
-
-  return (
-    <div className="gtg-dialog-overlay" data-testid="gtg-open-dialog">
-      <div className="gtg-dialog">
-        <div className="gtg-dialog-title">Open Theme</div>
-        <div className="gtg-dialog-body">
-          {isLoading ? (
-            <div className="gtg-dialog-loading" data-testid="gtg-open-dialog-loading">Loading themes…</div>
-          ) : (
-            <div className="gtg-prototype-list" data-testid="gtg-open-theme-list">
-              {themes.map((t) => (
-                <button
-                  key={t.name}
-                  className={`gtg-prototype-item${selected === t.name ? " gtg-prototype-item--selected" : ""}`}
-                  type="button"
-                  onClick={() => setSelected(t.name)}
-                  data-testid={`gtg-open-theme-option-${t.name}`}
-                >
-                  <span className="gtg-prototype-name">{t.name}</span>
-                  <span className="gtg-prototype-meta">
-                    {t.mode} · {t.source === "shipped" ? "read-only" : "editable"}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          {error !== null && (
-            <span className="gtg-dialog-error" data-testid="gtg-open-error">
-              {error}
-            </span>
-          )}
-        </div>
-        <div className="gtg-dialog-actions">
-          <TugButton
-            emphasis="ghost"
-            role="action"
-            size="sm"
-            onClick={onCancel}
-            data-testid="gtg-open-dialog-cancel"
-          >
-            Cancel
-          </TugButton>
-          <TugButton
-            emphasis="filled"
-            role="accent"
-            size="sm"
-            onClick={() => { void handleOpen(); }}
-            disabled={isOpening || isLoading || !selected}
-            data-testid="gtg-open-dialog-open"
-          >
-            {isOpening ? "Opening…" : "Open"}
-          </TugButton>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// pushThemeListToSwift — push updated theme list via Swift bridge
-// ---------------------------------------------------------------------------
-
-/**
- * After a theme save or theme switch, push the updated theme list to the Swift
- * bridge so it can refresh its cached menu. Pass the currently active theme
- * name so the Swift handler can update activeThemeName in the same call. [D10]
- */
-async function pushThemeListToSwift(activeTheme?: string): Promise<void> {
-  try {
-    const res = await fetch("/__themes/list");
-    if (!res.ok) return;
-    const data = (await res.json()) as { themes?: unknown[] };
-    const themes: Array<{ name: string; mode: string; source: string }> = [];
-    if (Array.isArray(data.themes)) {
-      for (const entry of data.themes) {
-        if (typeof entry === "string") {
-          themes.push({ name: entry, mode: "dark", source: "shipped" });
-        } else if (entry !== null && typeof entry === "object") {
-          const e = entry as Record<string, unknown>;
-          themes.push({
-            name: String(e.name ?? ""),
-            mode: String(e.mode ?? "dark"),
-            source: String(e.source ?? "shipped"),
-          });
-        }
-      }
-    }
-    const payload: { themes: typeof themes; activeTheme?: string } = { themes };
-    if (activeTheme !== undefined) payload.activeTheme = activeTheme;
-    (window as unknown as {
-      webkit?: {
-        messageHandlers?: {
-          themeListUpdated?: { postMessage: (v: unknown) => void };
-        };
-      };
-    }).webkit?.messageHandlers?.themeListUpdated?.postMessage(payload);
-  } catch {
-    // Bridge unavailable (tests, non-Mac) — ignore
-  }
-}
-
-// ---------------------------------------------------------------------------
 // GalleryThemeGeneratorContent — main component
 // ---------------------------------------------------------------------------
-
-type GeneratorState = "idle" | "viewing" | "editing";
 
 /**
  * GalleryThemeGeneratorContent — Theme Generator gallery card tab.
  *
- * Implements the Mac-style document model per [D06]:
- *   - Idle:    No theme loaded. Shows New / Open buttons.
- *   - Viewing: A shipped theme is loaded. Controls show values but are disabled.
- *   - Editing: An authored theme is loaded. Controls enabled. Auto-save 500ms.
- *
- * On mount, loads the active app theme (if a TugThemeProvider is in scope).
- * Recipe displayed as a read-only label — no Dark/Light toggle. [D09]
- *
- * Preview section updates on color changes via CSS custom properties. [L06]
+ * Shows the active shipped theme's token output and accessibility diagnostics.
+ * Controls are always read-only. On mount, loads the active app theme.
  */
 export function GalleryThemeGeneratorContent() {
   const themeCtx = useOptionalThemeContext();
 
   // ---------------------------------------------------------------------------
-  // Document model state
-  // ---------------------------------------------------------------------------
-
-  const [generatorState, setGeneratorState] = useState<GeneratorState>("idle");
-  const [currentThemeName, setCurrentThemeName] = useState<string | null>(null);
-  const [isShipped, setIsShipped] = useState(false);
-  const [showNewDialog, setShowNewDialog] = useState(false);
-  const [showOpenDialog, setShowOpenDialog] = useState(false);
-
-  // Auto-save status
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ---------------------------------------------------------------------------
-  // Recipe field state
+  // Recipe field state (loaded from active theme, read-only display)
   // ---------------------------------------------------------------------------
 
   const [recipeName, setRecipeName] = useState<string>(BASE_THEME_NAME);
@@ -1787,65 +1067,6 @@ export function GalleryThemeGeneratorContent() {
 
   // Derived theme output — updated whenever recipe fields change
   const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(BASE_THEME_SPEC));
-
-  // ---------------------------------------------------------------------------
-  // Load active theme on mount
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    const themeName = themeCtx?.theme ?? BASE_THEME_NAME;
-    const doLoad = async () => {
-      try {
-        // Fetch theme list to determine source (shipped vs authored)
-        let shipped = false;
-        try {
-          const listRes = await fetch("/__themes/list");
-          if (listRes.ok) {
-            const listData = (await listRes.json()) as { themes?: unknown[] };
-            if (Array.isArray(listData.themes)) {
-              for (const entry of listData.themes) {
-                if (entry !== null && typeof entry === "object") {
-                  const e = entry as Record<string, unknown>;
-                  if (e.name === themeName) {
-                    shipped = e.source === "shipped";
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        } catch {
-          // List fetch failed — default to not shipped (editable)
-        }
-
-        const res = await fetch(`/__themes/${encodeURIComponent(themeName)}.json`);
-        let spec: ThemeSpec;
-        if (res.ok) {
-          const raw = (await res.json()) as unknown;
-          const err = validateRecipeJson(raw);
-          if (err !== null) {
-            // Invalid — show idle
-            return;
-          }
-          spec = raw as ThemeSpec;
-        } else {
-          // Middleware unavailable — fall back to base theme recipe
-          spec = BASE_THEME_SPEC;
-        }
-        loadRecipeIntoState(spec);
-        setCurrentThemeName(themeName);
-        setIsShipped(shipped);
-        setGeneratorState(shipped ? "viewing" : "editing");
-      } catch {
-        // Network error — stay idle
-      }
-    };
-    void doLoad();
-    // Re-run whenever the active theme changes (e.g. set-theme from Swift menu).
-    // loadRecipeIntoState is intentionally omitted: it is declared after this
-    // useEffect (useCallback below) and its deps are [] so it is stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [themeCtx?.theme]);
 
   // ---------------------------------------------------------------------------
   // Load recipe into local state fields
@@ -1881,135 +1102,33 @@ export function GalleryThemeGeneratorContent() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Re-derive theme when any recipe field changes
+  // Load active theme on mount / when active theme changes
   // ---------------------------------------------------------------------------
 
-  const currentRecipe = useMemo<ThemeSpec>(
-    () => ({
-      name: recipeName,
-      mode: recipeMode,
-      surface: {
-        canvas: { hue: canvasHue, tone: canvasTone, intensity: canvasIntensity },
-        grid: { hue: gridHue, tone: gridTone, intensity: gridIntensity },
-        frame: { hue: frameHue, tone: frameTone, intensity: frameIntensity },
-        card: { hue: cardHue, tone: cardTone, intensity: cardIntensity },
-      },
-      text: { hue: contentHue, intensity: textIntensity },
-      role: { tone: roleTone, intensity: roleIntensity, accent: accentHue, action: activeHue, agent: agentHue, data: dataHue, success: successHue, caution: cautionHue, danger: dangerHue },
-    }),
-    [
-      recipeName, recipeMode,
-      frameHue, frameTone, frameIntensity,
-      cardHue, cardTone, cardIntensity,
-      canvasHue, canvasTone, canvasIntensity,
-      gridHue, gridTone, gridIntensity,
-      contentHue, textIntensity,
-      roleTone, roleIntensity,
-      accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
-    ],
-  );
-
-  // Re-derive and apply preview on recipe change (Editing state only)
   useEffect(() => {
-    if (generatorState === "idle") return;
-    const output = deriveTheme(currentRecipe);
-    setThemeOutput(output);
-
-    // Live preview via activate endpoint will be wired in step 9.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    recipeMode,
-    frameHue, frameTone, frameIntensity,
-    cardHue, cardTone, cardIntensity,
-    canvasHue, canvasTone, canvasIntensity,
-    gridHue, gridTone, gridIntensity,
-    contentHue, textIntensity,
-    roleTone, roleIntensity,
-    accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
-  ]);
-
-  // ---------------------------------------------------------------------------
-  // Auto-save — debounced 500ms after last change, Editing state only
-  // ---------------------------------------------------------------------------
-
-  const performSave = useCallback(async (spec: ThemeSpec) => {
-    setSaveStatus("saving");
-    try {
-      // Server derives CSS from spec — no client-side CSS generation needed [D07]
-      const res = await fetch("/__themes/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(spec),
-      });
-      if (res.ok) {
-        setSaveStatus("saved");
-        setTimeout(() => setSaveStatus("idle"), 2000);
-        // Push updated theme list to Swift bridge with active theme name [D10]
-        void pushThemeListToSwift(spec.name);
-      } else {
-        setSaveStatus("error");
-      }
-    } catch {
-      setSaveStatus("error");
-    }
-  }, []);
-
-  // Trigger auto-save debounce when recipe changes in editing state
-  useEffect(() => {
-    if (generatorState !== "editing" || currentThemeName === null) return;
-
-    // Clear any pending timer
-    if (autoSaveTimerRef.current !== null) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-    autoSaveTimerRef.current = setTimeout(() => {
-      void performSave(currentRecipe);
-    }, 500);
-
-    return () => {
-      if (autoSaveTimerRef.current !== null) {
-        clearTimeout(autoSaveTimerRef.current);
+    const themeName = themeCtx?.theme ?? BASE_THEME_NAME;
+    const doLoad = async () => {
+      try {
+        const res = await fetch(`/__themes/${encodeURIComponent(themeName)}.json`);
+        let spec: ThemeSpec;
+        if (res.ok) {
+          const raw = (await res.json()) as unknown;
+          const err = validateRecipeJson(raw);
+          if (err !== null) {
+            return;
+          }
+          spec = raw as ThemeSpec;
+        } else {
+          spec = BASE_THEME_SPEC;
+        }
+        loadRecipeIntoState(spec);
+      } catch {
+        // Network error — keep current state
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    generatorState, currentThemeName,
-    recipeMode,
-    frameHue, frameTone, frameIntensity,
-    cardHue, cardTone, cardIntensity,
-    canvasHue, canvasTone, canvasIntensity,
-    gridHue, gridTone, gridIntensity,
-    contentHue, textIntensity,
-    roleTone, roleIntensity,
-    accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue,
-  ]);
-
-  // ---------------------------------------------------------------------------
-  // New / Open dialog handlers
-  // ---------------------------------------------------------------------------
-
-  const handleNewCreated = useCallback((name: string, spec: ThemeSpec) => {
-    setShowNewDialog(false);
-    loadRecipeIntoState(spec);
-    setCurrentThemeName(name);
-    setIsShipped(false);
-    setGeneratorState("editing");
-    setSaveStatus("idle");
-    // Apply theme via context (activate endpoint wired in step 9).
-    if (themeCtx) themeCtx.setTheme(name);
-    void pushThemeListToSwift(name);
-  }, [loadRecipeIntoState, themeCtx]);
-
-  const handleOpenSelected = useCallback((name: string, spec: ThemeSpec, shipped: boolean) => {
-    setShowOpenDialog(false);
-    loadRecipeIntoState(spec);
-    setCurrentThemeName(name);
-    setIsShipped(shipped);
-    setGeneratorState(shipped ? "viewing" : "editing");
-    setSaveStatus("idle");
-    // Apply via theme context if available
-    if (themeCtx) themeCtx.setTheme(name);
-  }, [loadRecipeIntoState, themeCtx]);
+    void doLoad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themeCtx?.theme]);
 
   // ---------------------------------------------------------------------------
   // Derived values for the preview
@@ -2080,8 +1199,6 @@ export function GalleryThemeGeneratorContent() {
     [themeOutput],
   );
 
-  const isReadOnly = generatorState === "viewing" || generatorState === "idle";
-
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -2089,110 +1206,55 @@ export function GalleryThemeGeneratorContent() {
   return (
     <div className="cg-content gtg-content" data-testid="gallery-theme-generator-content">
 
-      {/* ---- Dialogs (rendered as overlays) ---- */}
-      {showNewDialog && (
-        <NewThemeDialog
-          onCreated={handleNewCreated}
-          onCancel={() => setShowNewDialog(false)}
-        />
-      )}
-      {showOpenDialog && (
-        <OpenThemeDialog
-          onSelected={handleOpenSelected}
-          onCancel={() => setShowOpenDialog(false)}
-        />
-      )}
-
-      {/* ---- Header: document actions + theme info ---- */}
+      {/* ---- Header: theme info ---- */}
       <div className="gtg-header-row" data-testid="gtg-doc-header">
-        <div className="gtg-doc-actions">
-          <TugButton
-            emphasis="outlined"
-            role="action"
-            size="sm"
-            onClick={() => setShowNewDialog(true)}
-            data-testid="gtg-new-btn"
+        <div className="gtg-doc-info" data-testid="gtg-doc-info">
+          <span className="gtg-doc-name" data-testid="gtg-doc-name">
+            {recipeName}
+          </span>
+          <span
+            className="gtg-doc-recipe-label"
+            data-testid="gtg-doc-recipe-label"
+            title="Recipe (dark or light)"
           >
-            New
-          </TugButton>
-          <TugButton
-            emphasis="outlined"
-            role="action"
-            size="sm"
-            onClick={() => setShowOpenDialog(true)}
-            data-testid="gtg-open-btn"
-          >
-            Open
-          </TugButton>
+            {recipeMode}
+          </span>
+          <span className="gtg-doc-readonly-badge" data-testid="gtg-doc-readonly-badge">
+            read-only
+          </span>
         </div>
-
-        {generatorState !== "idle" && (
-          <div className="gtg-doc-info" data-testid="gtg-doc-info">
-            <span className="gtg-doc-name" data-testid="gtg-doc-name">
-              {currentThemeName ?? recipeName}
-            </span>
-            <span
-              className="gtg-doc-recipe-label"
-              data-testid="gtg-doc-recipe-label"
-              title="Recipe (dark or light) is set at creation time and cannot be changed"
-            >
-              {recipeMode}
-            </span>
-            {isShipped && (
-              <span className="gtg-doc-readonly-badge" data-testid="gtg-doc-readonly-badge">
-                read-only
-              </span>
-            )}
-            {generatorState === "editing" && (
-              <span className="gtg-doc-save-status" data-testid="gtg-doc-save-status">
-                {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : saveStatus === "error" ? "Save failed" : ""}
-              </span>
-            )}
-          </div>
-        )}
-
-        {generatorState === "idle" && (
-          <div className="gtg-idle-hint" data-testid="gtg-idle-hint">
-            Click New to create a theme, or Open to edit an existing one.
-          </div>
-        )}
       </div>
 
-      {/* ---- Color pickers ---- */}
+      {/* ---- Color pickers (read-only display) ---- */}
       <div data-testid="gtg-role-hues">
         <div className="cg-section">
           <div className="cg-section-title">Colors</div>
           <ThemePreviewCard
             resolvedColor={resolvedColor}
-            disabled={isReadOnly}
             surface={[
-              { key: "canvas", label: "Canvas", hue: canvasHue, tone: canvasTone, intensity: canvasIntensity, setHue: setCanvasHue, setTone: setCanvasTone, setIntensity: setCanvasIntensity, testId: "gtg-canvas-hue" },
-              { key: "grid", label: "Grid", hue: gridHue, tone: gridTone, intensity: gridIntensity, setHue: setGridHue, setTone: setGridTone, setIntensity: setGridIntensity, testId: "gtg-grid-hue" },
-              { key: "frame", label: "Frame", hue: frameHue, tone: frameTone, intensity: frameIntensity, setHue: setFrameHue, setTone: setFrameTone, setIntensity: setFrameIntensity, testId: "gtg-frame-hue" },
-              { key: "card", label: "Card", hue: cardHue, tone: cardTone, intensity: cardIntensity, setHue: setCardHue, setTone: setCardTone, setIntensity: setCardIntensity, testId: "gtg-card-hue" },
+              { key: "canvas", label: "Canvas", hue: canvasHue, tone: canvasTone, intensity: canvasIntensity, testId: "gtg-canvas-hue" },
+              { key: "grid", label: "Grid", hue: gridHue, tone: gridTone, intensity: gridIntensity, testId: "gtg-grid-hue" },
+              { key: "frame", label: "Frame", hue: frameHue, tone: frameTone, intensity: frameIntensity, testId: "gtg-frame-hue" },
+              { key: "card", label: "Card", hue: cardHue, tone: cardTone, intensity: cardIntensity, testId: "gtg-card-hue" },
             ]}
             text={{
               key: "content",
               label: "Content",
               hue: contentHue,
               intensity: textIntensity,
-              setHue: setContentHue,
-              setIntensity: setTextIntensity,
               testId: "gtg-content-hue",
             }}
             roles={[
-              { key: "accent", label: "Accent", hue: accentHue, set: setAccentHue, testId: "gtg-role-hue-accent" },
-              { key: "action", label: "Action", hue: activeHue, set: setActiveHue, testId: "gtg-role-hue-action" },
-              { key: "agent", label: "Agent", hue: agentHue, set: setAgentHue, testId: "gtg-role-hue-agent" },
-              { key: "data", label: "Data", hue: dataHue, set: setDataHue, testId: "gtg-role-hue-data" },
-              { key: "success", label: "Success", hue: successHue, set: setSuccessHue, testId: "gtg-role-hue-success" },
-              { key: "caution", label: "Caution", hue: cautionHue, set: setCautionHue, testId: "gtg-role-hue-caution" },
-              { key: "danger", label: "Danger", hue: dangerHue, set: setDangerHue, testId: "gtg-role-hue-danger" },
+              { key: "accent", label: "Accent", hue: accentHue, testId: "gtg-role-hue-accent" },
+              { key: "action", label: "Action", hue: activeHue, testId: "gtg-role-hue-action" },
+              { key: "agent", label: "Agent", hue: agentHue, testId: "gtg-role-hue-agent" },
+              { key: "data", label: "Data", hue: dataHue, testId: "gtg-role-hue-data" },
+              { key: "success", label: "Success", hue: successHue, testId: "gtg-role-hue-success" },
+              { key: "caution", label: "Caution", hue: cautionHue, testId: "gtg-role-hue-caution" },
+              { key: "danger", label: "Danger", hue: dangerHue, testId: "gtg-role-hue-danger" },
             ]}
             roleTone={roleTone}
             roleIntensity={roleIntensity}
-            onRoleToneChange={setRoleTone}
-            onRoleIntensityChange={setRoleIntensity}
           />
         </div>
 

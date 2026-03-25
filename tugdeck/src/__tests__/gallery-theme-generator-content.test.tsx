@@ -1,17 +1,13 @@
 /**
- * gallery-theme-generator-content tests — Mac-style document model.
+ * gallery-theme-generator-content tests.
  *
  * Tests cover behavioral properties:
  * - T6.2: gallery-theme-generator componentId is registered
  * - T6.3: GalleryThemeGeneratorContent renders without errors
- * - New flow: dialog renders, name validation, prototype picker
- * - Open flow: dialog renders, theme list loading
- * - Viewing state: read-only — pickers disabled
- * - Editing state: pickers enabled, auto-save fires
- * - Recipe label: recipe field displayed read-only (no Dark/Light toggle)
+ * - Initial state: loads active theme on mount
+ * - Read-only display: pickers always disabled
  * - T10.3: Novel recipe end-to-end (derive → validate → export roundtrip)
  * - T-ACC-3: CVD distinguishability (green/red under protanopia)
- * - Role hue selectors interaction
  * - Emphasis x role preview rendering
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -20,7 +16,7 @@ import "./setup-rtl";
 
 import React from "react";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { render, act, cleanup, fireEvent } from "@testing-library/react";
+import { render, act, cleanup } from "@testing-library/react";
 import postcss from "postcss";
 import postcssTugColor from "../../postcss-tug-color";
 
@@ -40,54 +36,26 @@ import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings
 import { TugThemeProvider } from "@/contexts/theme-provider";
 
 // ---------------------------------------------------------------------------
-// simulateInput — trigger React's onChange by accessing React internal props.
-//
-// In bun 1.3.9 + happy-dom, fireEvent.change does not trigger React's synthetic
-// onChange for controlled inputs. This helper accesses the __reactProps key on
-// the DOM element to call onChange directly, which correctly updates React state.
-// ---------------------------------------------------------------------------
-
-function simulateInput(el: HTMLElement, value: string): void {
-  const propsKey = Object.keys(el).find((k) => k.startsWith("__reactProps"));
-  if (propsKey) {
-    const props = (el as Record<string, Record<string, (e: { target: { value: string } }) => void>>)[propsKey];
-    if (typeof props?.onChange === "function") {
-      act(() => { props.onChange({ target: { value } }); });
-      return;
-    }
-  }
-  // Fallback: use fireEvent.change (may not trigger re-render in all environments)
-  act(() => { fireEvent.change(el, { target: { value } }); });
-}
-
-// ---------------------------------------------------------------------------
-// Mock fetch helper — returns theme list + theme JSON
+// Mock fetch helper — returns theme JSON
 // ---------------------------------------------------------------------------
 
 function mockFetch(options: {
-  themes?: Array<{ name: string; mode: string; source: string }>;
   themeJson?: Record<string, ThemeSpec>;
-  saveOk?: boolean;
 } = {}): () => void {
-  const themes = options.themes ?? [
-    { name: "brio", mode: "dark", source: "shipped" },
-    { name: "harmony", mode: "light", source: "shipped" },
-  ];
   const themeJson: Record<string, ThemeSpec> = {
     brio: brioJson as ThemeSpec,
     harmony: harmonyJson as ThemeSpec,
     ...(options.themeJson ?? {}),
   };
-  const saveOk = options.saveOk ?? true;
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
     if (url === "/__themes/list") {
-      return new Response(JSON.stringify({ themes }), { status: 200 });
-    }
-    if (url === "/__themes/save") {
-      return new Response(JSON.stringify({ ok: true }), { status: saveOk ? 200 : 500 });
+      return new Response(JSON.stringify({ themes: [
+        { name: "brio", mode: "dark", source: "shipped" },
+        { name: "harmony", mode: "light", source: "shipped" },
+      ] }), { status: 200 });
     }
     const jsonMatch = url.match(/\/__themes\/(.+)\.json$/);
     if (jsonMatch) {
@@ -96,10 +64,6 @@ function mockFetch(options: {
         return new Response(JSON.stringify(themeJson[name]), { status: 200 });
       }
       return new Response("", { status: 404 });
-    }
-    const cssMatch = url.match(/\/__themes\/(.+)\.css$/);
-    if (cssMatch) {
-      return new Response("body {}", { status: 200 });
     }
     return new Response("", { status: 404 });
   };
@@ -155,19 +119,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     }
   });
 
-  it("renders New and Open buttons", () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      expect(container.querySelector("[data-testid='gtg-new-btn']")).not.toBeNull();
-      expect(container.querySelector("[data-testid='gtg-open-btn']")).not.toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("does not render mode toggle buttons (removed per D09)", () => {
+  it("does not render mode toggle buttons", () => {
     const restoreFetch = mockFetch();
     let container!: HTMLElement;
     try {
@@ -179,7 +131,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     }
   });
 
-  it("does not render mood sliders (removed)", () => {
+  it("does not render mood sliders", () => {
     const restoreFetch = mockFetch();
     let container!: HTMLElement;
     try {
@@ -218,6 +170,19 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
       restoreFetch();
     }
   });
+
+  it("always shows read-only badge", async () => {
+    const restoreFetch = mockFetch();
+    let container!: HTMLElement;
+    try {
+      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      const readonlyBadge = container.querySelector("[data-testid='gtg-doc-readonly-badge']");
+      expect(readonlyBadge).not.toBeNull();
+    } finally {
+      restoreFetch();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -238,17 +203,16 @@ describe("GalleryThemeGeneratorContent – initial state loads active theme", ()
         ));
       });
       await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-      // Should enter viewing state (brio is shipped)
       const docInfo = container.querySelector("[data-testid='gtg-doc-info']");
       expect(docInfo).not.toBeNull();
-      const readonlyBadge = container.querySelector("[data-testid='gtg-doc-readonly-badge']");
-      expect(readonlyBadge).not.toBeNull();
+      const docName = container.querySelector("[data-testid='gtg-doc-name']");
+      expect(docName).not.toBeNull();
     } finally {
       restoreFetch();
     }
   });
 
-  it("shows recipe label (read-only, not a toggle button)", async () => {
+  it("shows recipe label as a read-only span (not a button)", async () => {
     const restoreFetch = mockFetch();
     let container!: HTMLElement;
     try {
@@ -260,349 +224,30 @@ describe("GalleryThemeGeneratorContent – initial state loads active theme", ()
       await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
       const recipeLabel = container.querySelector("[data-testid='gtg-doc-recipe-label']");
       expect(recipeLabel).not.toBeNull();
-      // It should be a span (read-only), NOT a button
       expect(recipeLabel!.tagName.toLowerCase()).not.toBe("button");
     } finally {
       restoreFetch();
     }
   });
+});
 
-  it("shows idle hint when no theme is loaded (network fails)", async () => {
-    // Simulate network failure
-    const orig = globalThis.fetch;
-    globalThis.fetch = async () => { throw new Error("network error"); };
+// ---------------------------------------------------------------------------
+// Read-only display — pickers are always disabled
+// ---------------------------------------------------------------------------
+
+describe("GalleryThemeGeneratorContent – read-only pickers", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("hue pickers are always disabled (shipped themes are read-only)", async () => {
+    const restoreFetch = mockFetch();
     let container!: HTMLElement;
     try {
       act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
       await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-      const hint = container.querySelector("[data-testid='gtg-idle-hint']");
-      expect(hint).not.toBeNull();
-    } finally {
-      globalThis.fetch = orig;
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// New flow
-// ---------------------------------------------------------------------------
-
-describe("GalleryThemeGeneratorContent – New flow", () => {
-  beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("clicking New opens the new-theme dialog", () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      const newBtn = container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement;
-      act(() => { fireEvent.click(newBtn); });
-      expect(container.querySelector("[data-testid='gtg-new-dialog']")).not.toBeNull();
-      expect(container.querySelector("[data-testid='gtg-new-theme-name-input']")).not.toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("New dialog has a name input and Next/Cancel buttons", () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement); });
-      expect(container.querySelector("[data-testid='gtg-new-theme-name-input']")).not.toBeNull();
-      expect(container.querySelector("[data-testid='gtg-new-dialog-next']")).not.toBeNull();
-      expect(container.querySelector("[data-testid='gtg-new-dialog-cancel']")).not.toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("Cancel closes the New dialog", () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement); });
-      expect(container.querySelector("[data-testid='gtg-new-dialog']")).not.toBeNull();
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-dialog-cancel']") as HTMLElement); });
-      expect(container.querySelector("[data-testid='gtg-new-dialog']")).toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("Next button is disabled when name is empty", () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement); });
-      const nextBtn = container.querySelector("[data-testid='gtg-new-dialog-next']") as HTMLButtonElement;
-      expect(nextBtn.disabled).toBe(true);
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("shows name error when submitted name already exists", async () => {
-    const restoreFetch = mockFetch({
-      themes: [
-        { name: "brio", mode: "dark", source: "shipped" },
-        { name: "my-theme", mode: "dark", source: "authored" },
-      ],
-    });
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement); });
-      const nameInput = container.querySelector("[data-testid='gtg-new-theme-name-input']") as HTMLInputElement;
-      simulateInput(nameInput, "my-theme");
-      // Click Next and await async fetch + state update in one act boundary
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-new-dialog-next']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 50));
-      });
-      const error = container.querySelector("[data-testid='gtg-new-theme-name-error']");
-      expect(error).not.toBeNull();
-      expect(error!.textContent).toContain("already exists");
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("step 2 shows prototype list after valid name entered", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement); });
-      const nameInput = container.querySelector("[data-testid='gtg-new-theme-name-input']") as HTMLInputElement;
-      simulateInput(nameInput, "cool-theme");
-      // Click Next and await async fetch + state update to reach step 2 in one act boundary
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-new-dialog-next']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 50));
-      });
-      expect(container.querySelector("[data-testid='gtg-prototype-list']")).not.toBeNull();
-      expect(container.querySelector("[data-testid='gtg-new-dialog-create']")).not.toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("Back button returns to name step from prototype step", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement); });
-      const nameInput = container.querySelector("[data-testid='gtg-new-theme-name-input']") as HTMLInputElement;
-      simulateInput(nameInput, "cool-theme");
-      // Click Next and await async fetch + state update to reach step 2 in one act boundary
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-new-dialog-next']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 50));
-      });
-      expect(container.querySelector("[data-testid='gtg-new-dialog-back']")).not.toBeNull();
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-dialog-back']") as HTMLElement); });
-      expect(container.querySelector("[data-testid='gtg-new-theme-name-input']")).not.toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("creating a theme enters Editing state and hides dialog", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement); });
-      const nameInput = container.querySelector("[data-testid='gtg-new-theme-name-input']") as HTMLInputElement;
-      simulateInput(nameInput, "cool-theme");
-      // Click Next and await async fetch + state update to reach step 2 in one act boundary
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-new-dialog-next']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 50));
-      });
-      expect(container.querySelector("[data-testid='gtg-new-dialog-create']")).not.toBeNull();
-      // Click Create and await creation flow to complete in one act boundary
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-new-dialog-create']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 50));
-      });
-      expect(container.querySelector("[data-testid='gtg-new-dialog']")).toBeNull();
-      // Doc info should show theme name
-      const docName = container.querySelector("[data-testid='gtg-doc-name']");
-      expect(docName).not.toBeNull();
-      expect(docName!.textContent).toBe("cool-theme");
-      // No read-only badge (authored theme)
-      expect(container.querySelector("[data-testid='gtg-doc-readonly-badge']")).toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Open flow
-// ---------------------------------------------------------------------------
-
-describe("GalleryThemeGeneratorContent – Open flow", () => {
-  beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("clicking Open opens the open-theme dialog", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-btn']") as HTMLElement); });
-      expect(container.querySelector("[data-testid='gtg-open-dialog']")).not.toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("Open dialog cancel closes it", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-btn']") as HTMLElement); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-dialog-cancel']") as HTMLElement); });
-      expect(container.querySelector("[data-testid='gtg-open-dialog']")).toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("Open dialog loads theme list and shows brio", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-btn']") as HTMLElement); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      expect(container.querySelector("[data-testid='gtg-open-theme-option-brio']")).not.toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("opening a shipped theme enters Viewing state (read-only)", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-btn']") as HTMLElement); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      // Select brio (should already be selected, or we click it)
-      const brioOption = container.querySelector("[data-testid='gtg-open-theme-option-brio']") as HTMLElement;
-      if (brioOption) act(() => { fireEvent.click(brioOption); });
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-open-dialog-open']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 20));
-      });
-      // Should show read-only badge
-      const readonlyBadge = container.querySelector("[data-testid='gtg-doc-readonly-badge']");
-      expect(readonlyBadge).not.toBeNull();
-      // Dialog should be closed
-      expect(container.querySelector("[data-testid='gtg-open-dialog']")).toBeNull();
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("opening an authored theme enters Editing state (no read-only badge)", async () => {
-    const authoredTheme: ThemeSpec = { ...brio, name: "my-authored" };
-    const restoreFetch = mockFetch({
-      themes: [
-        { name: "brio", mode: "dark", source: "shipped" },
-        { name: "my-authored", mode: "dark", source: "authored" },
-      ],
-      themeJson: { "my-authored": authoredTheme },
-    });
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-btn']") as HTMLElement); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      const authoredOption = container.querySelector("[data-testid='gtg-open-theme-option-my-authored']") as HTMLElement;
-      expect(authoredOption).not.toBeNull();
-      act(() => { fireEvent.click(authoredOption); });
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-open-dialog-open']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 20));
-      });
-      // Should NOT show read-only badge (authored = editable)
-      expect(container.querySelector("[data-testid='gtg-doc-readonly-badge']")).toBeNull();
-      const docName = container.querySelector("[data-testid='gtg-doc-name']");
-      expect(docName!.textContent).toBe("my-authored");
-    } finally {
-      restoreFetch();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Viewing state — read-only pickers
-// ---------------------------------------------------------------------------
-
-describe("GalleryThemeGeneratorContent – Viewing state (shipped theme, read-only)", () => {
-  beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("in Viewing state, hue pickers are disabled", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      // Load brio (shipped) via open dialog
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-btn']") as HTMLElement); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      const brioOption = container.querySelector("[data-testid='gtg-open-theme-option-brio']") as HTMLElement;
-      if (brioOption) act(() => { fireEvent.click(brioOption); });
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-open-dialog-open']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 20));
-      });
-      // Check that hue pickers are disabled
       const canvasPicker = container.querySelector("[data-testid='gtg-canvas-hue']") as HTMLButtonElement;
       expect(canvasPicker).not.toBeNull();
       expect(canvasPicker.disabled).toBe(true);
-    } finally {
-      restoreFetch();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Recipe label — no Dark/Light toggle
-// ---------------------------------------------------------------------------
-
-describe("GalleryThemeGeneratorContent – recipe label (D09)", () => {
-  beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("after loading a theme, shows recipe (dark/light) as a read-only label", async () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-btn']") as HTMLElement); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      const brioOption = container.querySelector("[data-testid='gtg-open-theme-option-brio']") as HTMLElement;
-      if (brioOption) act(() => { fireEvent.click(brioOption); });
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-open-dialog-open']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 20));
-      });
-      const recipeLabel = container.querySelector("[data-testid='gtg-doc-recipe-label']");
-      expect(recipeLabel).not.toBeNull();
-      expect(recipeLabel!.textContent?.toLowerCase()).toBe("dark");
     } finally {
       restoreFetch();
     }
@@ -618,67 +263,6 @@ describe("GalleryThemeGeneratorContent – recipe label (D09)", () => {
       expect(container.querySelector("[data-testid='gtg-mode-light']")).toBeNull();
     } finally {
       restoreFetch();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Auto-save — Editing state only
-// ---------------------------------------------------------------------------
-
-describe("GalleryThemeGeneratorContent – auto-save (Editing state)", () => {
-  beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("after creating a theme, auto-save fires within ~600ms and shows saved status", async () => {
-    const saveCalls: string[] = [];
-    const orig = globalThis.fetch;
-    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/__themes/list") {
-        return new Response(JSON.stringify({ themes: [
-          { name: "brio", mode: "dark", source: "shipped" },
-        ] }), { status: 200 });
-      }
-      if (url === "/__themes/save") {
-        saveCalls.push(String(init?.body ?? ""));
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      const jsonMatch = url.match(/\/__themes\/(.+)\.json$/);
-      if (jsonMatch) {
-        return new Response(JSON.stringify(brioJson), { status: 200 });
-      }
-      return new Response("", { status: 404 });
-    };
-
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      // Open new dialog
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-new-btn']") as HTMLElement); });
-      const nameInput = container.querySelector("[data-testid='gtg-new-theme-name-input']") as HTMLInputElement;
-      simulateInput(nameInput, "auto-save-test");
-      // Go to prototype step — must wait for fetch + async state updates in one act boundary
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-new-dialog-next']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 50));
-      });
-      // Create (we are now in step 2 of the dialog)
-      const createBtn = container.querySelector("[data-testid='gtg-new-dialog-create']") as HTMLElement | null;
-      if (!createBtn) {
-        // Prototype step wasn't reached — skip auto-save test gracefully
-        return;
-      }
-      await act(async () => {
-        fireEvent.click(createBtn);
-        await new Promise((r) => setTimeout(r, 50));
-      });
-      // Wait for auto-save timer (500ms + buffer)
-      await act(async () => { await new Promise((r) => setTimeout(r, 600)); });
-      // Save should have been called (once for initial creation + once for auto-save)
-      expect(saveCalls.length).toBeGreaterThanOrEqual(1);
-    } finally {
-      globalThis.fetch = orig;
     }
   });
 });
@@ -814,96 +398,6 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
     const output = deriveTheme(greenRedRecipe);
     const warnings = checkCVDDistinguishability(output.resolved, CVD_SEMANTIC_PAIRS);
     expect(warnings.filter((w) => w.type === "protanopia").length).toBeGreaterThan(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Role hue selectors
-// ---------------------------------------------------------------------------
-
-describe("GalleryThemeGeneratorContent – role hue selectors", () => {
-  beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("renders 12 hue pickers (4 surface + 1 text + 7 role) in the preview section", () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      const preview = container.querySelector("[data-testid='gtg-role-hues']");
-      expect(preview).not.toBeNull();
-      expect(preview!.querySelectorAll(".gtg-compact-hue-row").length).toBe(12);
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("each role hue picker button has the correct data-testid", () => {
-    const restoreFetch = mockFetch();
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      const roleIds = [
-        "gtg-role-hue-accent", "gtg-role-hue-action", "gtg-role-hue-agent",
-        "gtg-role-hue-data", "gtg-role-hue-success", "gtg-role-hue-caution", "gtg-role-hue-danger",
-      ];
-      for (const id of roleIds) {
-        expect(container.querySelector(`[data-testid='${id}']`)).not.toBeNull();
-      }
-    } finally {
-      restoreFetch();
-    }
-  });
-
-  it("changing a role hue updates the derived theme output", () => {
-    const withRed = deriveTheme({
-      name: "test", description: "Test recipe with red destructive hue.", mode: "dark",
-      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, frame: { hue: "violet", tone: 16, intensity: 12 }, card: { hue: "violet", tone: 8, intensity: 5 } },
-      text: { hue: "cobalt", intensity: 3 },
-      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "red" },
-    });
-    const withPink = deriveTheme({
-      name: "test", description: "Test recipe with pink destructive hue.", mode: "dark",
-      surface: { canvas: { hue: "violet", tone: 5, intensity: 5 }, grid: { hue: "violet", tone: 12, intensity: 4 }, frame: { hue: "violet", tone: 16, intensity: 12 }, card: { hue: "violet", tone: 8, intensity: 5 } },
-      text: { hue: "cobalt", intensity: 3 },
-      role: { tone: 50, intensity: 50, accent: "orange", action: "blue", agent: "violet", data: "teal", success: "green", caution: "yellow", danger: "pink" },
-    });
-    expect(withRed.tokens["--tug-element-tone-fill-normal-danger-rest"]).not.toBe(
-      withPink.tokens["--tug-element-tone-fill-normal-danger-rest"],
-    );
-  });
-
-  it("in Editing state, clicking a compact role row opens the popover with a TugHueStrip", async () => {
-    const authoredTheme: ThemeSpec = { ...brio, name: "my-edited" };
-    const restoreFetch = mockFetch({
-      themes: [
-        { name: "brio", mode: "dark", source: "shipped" },
-        { name: "my-edited", mode: "dark", source: "authored" },
-      ],
-      themeJson: { "my-edited": authoredTheme },
-    });
-    let container!: HTMLElement;
-    try {
-      act(() => { ({ container } = render(<GalleryThemeGeneratorContent />)); });
-      // Open in editing state
-      act(() => { fireEvent.click(container.querySelector("[data-testid='gtg-open-btn']") as HTMLElement); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      const option = container.querySelector("[data-testid='gtg-open-theme-option-my-edited']") as HTMLElement;
-      act(() => { fireEvent.click(option); });
-      await act(async () => {
-        fireEvent.click(container.querySelector("[data-testid='gtg-open-dialog-open']") as HTMLElement);
-        await new Promise((r) => setTimeout(r, 20));
-      });
-      // Now in editing state — click the accent hue picker
-      const accentRow = container.querySelector("[data-testid='gtg-role-hue-accent']") as HTMLElement;
-      expect(accentRow.hasAttribute("disabled")).toBe(false);
-      act(() => { fireEvent.click(accentRow); });
-      const popoverContent = document.body.querySelector(".gtg-compact-hue-popover");
-      expect(popoverContent).not.toBeNull();
-      expect(popoverContent!.querySelector(".tug-hue-strip")).not.toBeNull();
-    } finally {
-      restoreFetch();
-    }
   });
 });
 
