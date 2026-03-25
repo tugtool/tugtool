@@ -103,7 +103,7 @@ Create three JSON map files, one per prefix migration:
 - `rename-tugc.json` — palette tokens: `"red-h"` → `"tugc-red-h"`
 - `rename-tugx.json` — extensions: `"card-border"` → `"tugx-card-border"`
 
-These can be generated programmatically from the existing seed-rename-map.ts and by scanning tug-base-generated.css + tug-palette.css.
+These should be generated programmatically by a new `generate-rename-maps.ts` script that scans all `.css` files under `tugdeck/styles/` for `--tug-*` declarations and classifies each token using a shared `token-classify.ts` module. The classifier implements the classification rules from the table above, importing `HUE_FAMILIES` and `NAMED_GRAYS` from `palette-engine.ts` for palette detection. Both `generate-rename-maps.ts` and `verify-pairings.ts` import from `token-classify.ts` — no duplicated classification logic.
 
 **Step 2: Extend the rename script**
 
@@ -133,23 +133,48 @@ bun run audit:tokens rename --map rename-tugc.json --apply --verify
 bun run audit:tokens rename --map rename-tug7.json --apply --verify
 ```
 
-**Step 5: Update the PostCSS plugin**
+**Step 5: Update dynamic template-literal references**
 
-`postcss-tug-color.ts` expands `--tug-color(...)` at build time. The output of expansion references palette variables. Update to emit `--tugc-` prefixed references.
+The bulk rename catches literal token strings but misses dynamically constructed names. These files need manual updates:
 
-**Step 6: Update the palette generator**
+| File | What to update |
+|------|---------------|
+| `cards/gallery-palette-content.tsx` | Template literals: `` `--tug-${hueName}-canonical-l` `` → `` `--tugc-${hueName}-canonical-l` `` (and `-h`, `-peak-c`) |
+| `style-inspector-overlay.ts` | `PALETTE_VAR_REGEX` from `/^--tug-/` to `/^--tugc-/`; dynamic `getPropertyValue` calls; `startsWith("--tug-")` checks at lines ~486-492 |
+| `verify-pairings.ts` | `resolveToken()` prefix logic — import from `token-classify.ts` instead of hardcoding `--tug-` |
+| `vite.config.ts` | Regex matching `--tug-host-canvas-color` → `--tugx-host-canvas-color` |
+| `theme-provider.tsx` | `getPropertyValue("--tug-host-canvas-color")` → `--tugx-host-canvas-color` (lines ~60, 63) |
 
-`generate-tug-palette.ts` generates `tug-palette.css` with `--tug-{hue}-*` variables. Update to emit `--tugc-{hue}-*`.
+After updates, verify: `grep -r '--tug-\${' tugdeck/src/` should return zero results.
 
-**Step 7: Update the token extractor**
+**Step 6: Update generators and tooling**
 
-`extract-tug-token-names.ts` scans for `--tug-` prefixed properties. Update to scan for all four prefixes and classify accordingly.
+| File | What to update |
+|------|---------------|
+| `generate-tug-palette.ts` | Emit `--tugc-{hue}-*` instead of `--tug-{hue}-*` |
+| `extract-tug-token-names.ts` | Scan for all four prefixes |
+| `audit-tokens.ts` | All `--tug-` regex patterns, `.replace("--tug-", "")` calls, `startsWith("--tug-")` checks — use a shared `stripTugPrefix()` helper |
+| `seed-rename-map.ts` | Update short names to reflect new prefixes |
+
+Note: `postcss-tug-color.ts` does NOT need changes — it expands `--tug-color()` to inline `oklch()` values and never emits `var()` references.
+
+**Step 7: Update test assertions**
+
+| File | What to update |
+|------|---------------|
+| `palette-engine.test.ts` | ~10 assertions checking `--tug-{hue}-h:` → `--tugc-` |
+| `style-inspector-overlay.test.ts` | ~108 `PALETTE_VAR_REGEX` test assertions → `--tugc-` |
+| `gallery-palette-content.test.tsx` | Assertion `toContain("var(--tug-garnet-")` → `--tugc-garnet-` |
+| `theme-activate-endpoint.test.ts` | Verify bulk rename handled `--tug-host-canvas-color` → `--tugx-` |
+| `theme-production-link-swap.test.tsx` | Verify bulk rename handled `--tug-host-canvas-color` → `--tugx-` |
+
+Also verify: `theme-pairings.ts` (~835 literal token references) was correctly handled by the bulk rename.
 
 **Step 8: Regenerate and verify**
 
 ```bash
 cd tugdeck && bun run generate:palette
-cd tugdeck && bun run generate:tokens
+cd tugdeck && bun run extract:tug-token-names
 cd tugdeck && bun run build
 cd tugdeck && bun run audit:tokens lint
 ```
