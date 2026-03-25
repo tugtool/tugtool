@@ -43,14 +43,11 @@ if (!container) {
 //            Tab state fetch depends on tab IDs from the deserialized layout,
 //            so it cannot be parallelized with the layout fetch itself.
 (async () => {
-  // Phase 1: parallel fetch of layout, theme, focused card ID, and theme list.
-  // The theme list is fetched here so we can push it to the Swift bridge via
-  // themeListUpdated on first open. [D10]
-  const [layout, theme, focusedCardId, themeListRes] = await Promise.all([
+  // Phase 1: parallel fetch of layout, theme, and focused card ID.
+  const [layout, theme, focusedCardId] = await Promise.all([
     fetchLayoutWithRetry(),
     fetchThemeWithRetry(),
     fetchDeckStateWithRetry(),
-    fetch("/__themes/list").then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
 
   const initialTheme = (theme as string) ?? BASE_THEME_NAME;
@@ -162,22 +159,15 @@ if (!container) {
   };
 
   // Signal frontend readiness to native app (enables menu items).
-  // Also push the theme list fetched during startup so the Swift Theme menu
-  // is populated on first launch without waiting for a user save. [D10]
   connection.onOpen(() => {
     const webkit = (window as unknown as {
       webkit?: {
         messageHandlers?: {
           frontendReady?: { postMessage: (v: unknown) => void };
-          themeListUpdated?: { postMessage: (v: unknown) => void };
         };
       };
     }).webkit;
     webkit?.messageHandlers?.frontendReady?.postMessage({});
-    if (themeListRes !== null) {
-      const themes = (themeListRes as { themes?: unknown[] }).themes ?? [];
-      webkit?.messageHandlers?.themeListUpdated?.postMessage({ themes, activeTheme: initialTheme });
-    }
   });
 
   // Connect to the server.

@@ -16,7 +16,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Theme menu state
     private var themeMenu: NSMenu!
-    private var cachedShippedThemes: [ThemeEntry] = []
     private var activeThemeName: String?
 
     /// The name of the base theme — must match BASE_THEME_NAME in tugdeck/src/theme-constants.ts.
@@ -518,15 +517,6 @@ extension AppDelegate: BridgeDelegate {
         window.updateBackgroundColor(color)
     }
 
-    func bridgeThemeListUpdated(themes: [ThemeEntry], activeTheme: String?) {
-        DispatchQueue.main.async {
-            self.cachedShippedThemes = themes
-            if let name = activeTheme {
-                self.activeThemeName = name
-            }
-        }
-    }
-
     func bridgeDevBadge(backend: Bool, app: Bool) {
         let diamond = "◆ "
         if let item = restartMenuItem {
@@ -561,33 +551,38 @@ extension AppDelegate: NSMenuDelegate {
         guard menu === themeMenu else { return }
         menu.removeAllItems()
 
-        // Active theme name comes from bridgeThemeListUpdated (set via the bridge callback).
-        // No file read needed — tugbank is the source of truth for the active theme.
-
-        // Shipped themes from bridge cache — sort base theme first, then alphabetical
-        let sortedShipped = cachedShippedThemes.sorted { a, b in
-            if a.name.lowercased() == baseThemeName { return true }
-            if b.name.lowercased() == baseThemeName { return false }
-            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        // Read theme names directly from the shipped themes directory on disk.
+        // sourceTreePath is the tugtool repo root; themes are at tugdeck/themes/*.json.
+        var themeNames: [String] = []
+        if let root = sourceTreePath {
+            let themesDir = (root as NSString).appendingPathComponent("tugdeck/themes")
+            if let files = try? FileManager.default.contentsOfDirectory(atPath: themesDir) {
+                themeNames = files
+                    .filter { $0.hasSuffix(".json") }
+                    .map { ($0 as NSString).deletingPathExtension }
+            }
         }
 
-        for entry in sortedShipped {
-            menu.addItem(makeThemeItem(entry))
+        // Sort: base theme first, then alphabetical
+        themeNames.sort { a, b in
+            if a.lowercased() == baseThemeName { return true }
+            if b.lowercased() == baseThemeName { return false }
+            return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
         }
 
-        // If no themes available yet, show a placeholder
+        for name in themeNames {
+            let item = NSMenuItem(title: name.capitalized, action: #selector(selectTheme(_:)), keyEquivalent: "")
+            item.representedObject = name
+            item.state = (name == activeThemeName) ? .on : .off
+            menu.addItem(item)
+        }
+
+        // If no themes found, show a placeholder
         if menu.items.isEmpty {
-            let placeholder = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
+            let placeholder = NSMenuItem(title: "No themes found", action: nil, keyEquivalent: "")
             placeholder.isEnabled = false
             menu.addItem(placeholder)
         }
-    }
-
-    private func makeThemeItem(_ entry: ThemeEntry) -> NSMenuItem {
-        let item = NSMenuItem(title: entry.name.capitalized, action: #selector(selectTheme(_:)), keyEquivalent: "")
-        item.representedObject = entry.name
-        item.state = (entry.name == activeThemeName) ? .on : .off
-        return item
     }
 }
 

@@ -223,12 +223,6 @@ function controlTokenHotReload(): VitePlugin {
 /** Absolute path to the shipped theme JSON files. */
 export const SHIPPED_THEMES_DIR = path.resolve(__dirname, "themes");
 
-export interface ThemeListEntry {
-  name: string;
-  mode: string;
-  source: "shipped";
-}
-
 // ---------------------------------------------------------------------------
 // Filesystem abstraction for testability
 // ---------------------------------------------------------------------------
@@ -243,46 +237,6 @@ export interface FsWriteImpl extends FsReadImpl {
   writeFileSync: (p: string, data: string, enc: "utf-8") => void;
   mkdirSync: (p: string, opts: { recursive: boolean }) => void;
   unlinkSync?: (p: string) => void;
-}
-
-// ---------------------------------------------------------------------------
-// handleThemesList — GET /__themes/list
-//
-// Returns all shipped themes sorted alphabetically with base theme first.
-// ---------------------------------------------------------------------------
-
-export function handleThemesList(
-  fsImpl: FsReadImpl,
-  shippedDir: string,
-): { status: number; body: string } {
-  const entries: ThemeListEntry[] = [];
-
-  // Read shipped themes
-  let shippedFiles: string[] = [];
-  try {
-    shippedFiles = fsImpl.readdirSync(shippedDir).filter((f) => f.endsWith(".json"));
-  } catch {
-    shippedFiles = [];
-  }
-  for (const file of shippedFiles) {
-    const name = file.slice(0, -5); // strip .json
-    try {
-      const raw = fsImpl.readFileSync(path.join(shippedDir, file), "utf-8");
-      const parsed = JSON.parse(raw) as { mode?: string };
-      entries.push({ name, mode: parsed.mode ?? "dark", source: "shipped" });
-    } catch {
-      // Skip malformed files
-    }
-  }
-
-  // Sort: base theme first, then alphabetical
-  entries.sort((a, b) => {
-    if (a.name === BASE_THEME_NAME) return -1;
-    if (b.name === BASE_THEME_NAME) return 1;
-    return a.name.localeCompare(b.name);
-  });
-
-  return { status: 200, body: JSON.stringify({ themes: entries }) };
 }
 
 // ---------------------------------------------------------------------------
@@ -471,7 +425,6 @@ export async function handleThemesActivate(
 
 /**
  * Vite plugin: theme API endpoints for the dev server.
- * GET  /__themes/list         — list available shipped themes
  * GET  /__themes/<name>.json  — load shipped theme JSON
  * POST /__themes/activate     — activate a theme by rewriting the override file
  */
@@ -483,13 +436,6 @@ function themeSaveLoadPlugin(): VitePlugin {
         "/__themes",
         (req: import("http").IncomingMessage, res: import("http").ServerResponse, next: () => void) => {
           const url = req.url ?? "/";
-
-          if (req.method === "GET" && url === "/list") {
-            const result = handleThemesList(fs as unknown as FsReadImpl, SHIPPED_THEMES_DIR);
-            res.writeHead(result.status, { "Content-Type": "application/json" });
-            res.end(result.body);
-            return;
-          }
 
           if (req.method === "GET" && url.endsWith(".json")) {
             const name = decodeURIComponent(url.replace(/^\//, "").slice(0, -5));
