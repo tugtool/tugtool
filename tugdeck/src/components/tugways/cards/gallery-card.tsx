@@ -97,7 +97,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-marquee",            title: "TugMarquee",           closable: true },
   { id: "template", componentId: "gallery-checkbox",           title: "TugCheckbox",          closable: true },
   { id: "template", componentId: "gallery-switch",             title: "TugSwitch",            closable: true },
-  { id: "template", componentId: "gallery-theme-generator",   title: "Theme Generator",      closable: true },
+  { id: "template", componentId: "gallery-theme-generator",   title: "Theme Accessibility",   closable: true },
   { id: "template", componentId: "gallery-badge",             title: "TugBadge",             closable: true },
 ];
 
@@ -1190,7 +1190,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-theme-generator",
     contentFactory: (_cardId) => <GalleryThemeGeneratorContent />,
-    defaultMeta: { title: "Theme Generator", icon: "Paintbrush", closable: true },
+    defaultMeta: { title: "Theme Accessibility", icon: "Paintbrush", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
