@@ -188,8 +188,22 @@ body {
 
   /* Card — Title Bar */
   --tug-surface-card-primary-normal-titlebar-active: --tug-color(blue, i: 2, t: 99);
-  --tug-surface-card-primary-normal-titlebar-inactive: --tug-color(blue, i: 2, t: 45);
+  --tug-surface-card-primary-normal-titlebar-inactive: --tug-color(blue, i: 2, t: 65);
   --tug-surface-card-primary-normal-titlebar-collapsed: --tug-color(blue, i: 2, t: 90);
+
+  /* Card — Title Bar Element Tokens */
+  --tug-element-card-text-normal-title-active: --tug-color(indigo, i: 4, t: 8);
+  --tug-element-card-text-normal-title-inactive: --tug-color(indigo, i: 4, t: 40);
+  --tug-element-card-icon-normal-title-active: --tug-color(sky, i: 80, t: 20);
+  --tug-element-card-icon-normal-title-inactive: --tug-color(indigo, i: 8, t: 40);
+  --tug-element-card-icon-normal-title-hover: --tug-color(indigo, i: 6, t: 29);
+
+  /* Card — Title Bar Control Buttons (ghost-style) */
+  --tug-element-card-control-normal-titlebar-rest: --tug-color(indigo, i: 8, t: 29);
+  --tug-element-card-control-normal-titlebar-hover: --tug-color(indigo, i: 6, t: 15);
+  --tug-element-card-control-normal-titlebar-active: --tug-color(indigo, i: 6, t: 8);
+  --tug-surface-card-control-normal-titlebar-hover: --tug-color(black, a: 6);
+  --tug-surface-card-control-normal-titlebar-active: --tug-color(black, a: 12);
 
   /* Card — Findbar Highlights */
   --tug-surface-card-primary-normal-findmatch-rest: --tug-color(yellow, i: 50, t: 50, a: 30);

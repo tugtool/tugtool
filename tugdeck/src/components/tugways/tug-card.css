@@ -8,10 +8,13 @@
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
  * | --tug-card-border (card-border)                  | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
- * | --tug-card-title-fg (card-title-fg)              | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | content      | .tugcard-title (color)               |
- * | --tug-card-title-fg (card-title-fg)              | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | content      | .tugcard-title (color)               |
+ * | --tug-card-title-fg-active (card-title-fg-active) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | content      | .card-frame[data-focused="true"] .tugcard-title (color) |
+ * | --tug-card-title-fg-inactive (card-title-fg-inactive) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | content      | .tugcard-title (color)               |
  * | --tug-card-title-bar-icon-active (card-title-bar-icon-active) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
  * | --tug-card-title-bar-icon-inactive (card-title-bar-icon-inactive) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
+ * | --tug-card-control-fg-rest (card-control-fg-rest) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-title-bar-controls .tug-button (color) |
+ * | --tug-card-control-fg-rest (card-control-fg-rest) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-title-bar-controls .tug-button (color) |
+ * | --tug-card-control-fg-hover (card-control-fg-hover) | --tug-surface-card-control-normal-titlebar-hover (surface-card-control-normal-titlebar-hover) | control      | .card-title-bar-controls .tug-button:hover (color) |
  * | --tug-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
  * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
  */
@@ -29,12 +32,23 @@ body {
   --tug-card-title-bar-bg-active: var(--tug-surface-card-primary-normal-titlebar-active);
   --tug-card-title-bar-bg-inactive: var(--tug-surface-card-primary-normal-titlebar-inactive);
   --tug-card-title-bar-bg-collapsed: var(--tug-surface-card-primary-normal-titlebar-collapsed);
-  --tug-card-title-bar-fg: var(--tug-element-global-text-normal-default-rest);
-  --tug-card-title-fg: var(--tug-element-cardTitle-text-normal-plain-rest);
-  --tug-card-title-bar-icon-active: var(--tug-element-global-icon-normal-active-rest);
-  --tug-card-title-bar-icon-inactive: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-card-title-bar-icon-hover: var(--tug-element-global-text-normal-muted-rest);
   --tug-card-title-bar-divider: var(--tug-element-global-divider-normal-default-rest);
+
+  /* --- Card Title Bar — Title Text --- */
+  --tug-card-title-fg-active: var(--tug-element-card-text-normal-title-active);
+  --tug-card-title-fg-inactive: var(--tug-element-card-text-normal-title-inactive);
+
+  /* --- Card Title Bar — Left Icon --- */
+  --tug-card-title-bar-icon-active: var(--tug-element-card-icon-normal-title-active);
+  --tug-card-title-bar-icon-inactive: var(--tug-element-card-icon-normal-title-inactive);
+  --tug-card-title-bar-icon-hover: var(--tug-element-card-icon-normal-title-hover);
+
+  /* --- Card Title Bar — Control Buttons (ghost-style) --- */
+  --tug-card-control-fg-rest: var(--tug-element-card-control-normal-titlebar-rest);
+  --tug-card-control-fg-hover: var(--tug-element-card-control-normal-titlebar-hover);
+  --tug-card-control-fg-active: var(--tug-element-card-control-normal-titlebar-active);
+  --tug-card-control-bg-hover: var(--tug-surface-card-control-normal-titlebar-hover);
+  --tug-card-control-bg-active: var(--tug-surface-card-control-normal-titlebar-active);
 
   /* --- Card Accessory / Findbar --- */
   --tug-card-accessory-bg: var(--tug-surface-global-primary-normal-sunken-rest);
@@ -150,7 +164,7 @@ body {
    Title bar title
    ========================================================================= */
 
-/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-inactive, --tug-surface-card-primary-normal-titlebar-active */
+/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-inactive */
 .tugcard-title {
   flex: 1;
   overflow: hidden;
@@ -158,8 +172,13 @@ body {
   white-space: nowrap;
   font-size: var(--tug-font-size-sm);
   font-weight: 500;
-  color: var(--tug-card-title-fg);
+  color: var(--tug-card-title-fg-inactive);
   pointer-events: none;
+}
+
+/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-active */
+.card-frame[data-focused="true"] .tugcard-title {
+  color: var(--tug-card-title-fg-active);
 }
 
 /* ============================================================================
@@ -206,6 +225,28 @@ body {
   align-items: center;
   flex-shrink: 0;
   margin-left: var(--tug-space-xs);
+}
+
+/* Override ghost button styling for card title bar controls */
+/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-active, --tug-surface-card-primary-normal-titlebar-inactive */
+.card-title-bar-controls .tug-button {
+  color: var(--tug-card-control-fg-rest);
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.card-title-bar-controls .tug-button:hover:not(:disabled) {
+  color: var(--tug-card-control-fg-hover);
+  background-color: var(--tug-card-control-bg-hover);
+}
+
+.card-title-bar-controls .tug-button:active:not(:disabled) {
+  color: var(--tug-card-control-fg-active);
+  background-color: var(--tug-card-control-bg-active);
+}
+
+.card-title-bar-controls .tug-button svg {
+  color: inherit;
 }
 
 /* ============================================================================
