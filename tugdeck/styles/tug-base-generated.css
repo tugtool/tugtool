@@ -220,6 +220,10 @@ body {
   --tug-element-card-border-normal-titlebarOff-hover: --tug-color(indigo-violet, i: 8, t: 30);
   --tug-element-card-border-normal-titlebarOff-active: --tug-color(indigo-violet, i: 8, t: 30);
 
+  /* Card — Inactive Content Overlay */
+  --tug-surface-card-primary-normal-contentDim-color: --tug-color(gray, t: 50);
+  --tug-surface-card-primary-normal-contentDim-blend: saturation;
+
   /* Card — Findbar Highlights */
   --tug-surface-card-primary-normal-findmatch-rest: --tug-color(yellow, i: 50, t: 50, a: 30);
   --tug-surface-card-primary-normal-findmatch-active: --tug-color(orange, i: 50, t: 50, a: 50);

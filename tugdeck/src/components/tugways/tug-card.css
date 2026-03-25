@@ -66,6 +66,10 @@ body {
   --tug-card-control-off-border-hover: var(--tug-element-card-border-normal-titlebarOff-hover);
   --tug-card-control-off-border-active: var(--tug-element-card-border-normal-titlebarOff-active);
 
+  /* --- Card Inactive Content Overlay --- */
+  --tug-card-content-dim-color: var(--tug-surface-card-primary-normal-contentDim-color);
+  --tug-card-content-dim-blend: var(--tug-surface-card-primary-normal-contentDim-blend);
+
   /* --- Card Accessory / Findbar --- */
   --tug-card-accessory-bg: var(--tug-surface-global-primary-normal-sunken-rest);
   --tug-card-accessory-border: var(--tug-element-global-border-normal-default-rest);
@@ -310,12 +314,23 @@ body {
    ========================================================================= */
 
 .tugcard-content {
+  position: relative;
   flex: 1;
   overflow: auto;
   background-color: var(--tug-card-bg);
   min-height: 0; /* needed for flex children to allow scroll */
   user-select: text;
   overscroll-behavior: contain;
+}
+
+.card-frame[data-focused="false"] .tugcard-content::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--tug-card-content-dim-color);
+  mix-blend-mode: var(--tug-card-content-dim-blend);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /*
