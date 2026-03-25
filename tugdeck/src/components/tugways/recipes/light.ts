@@ -21,8 +21,14 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
   const roleTone = spec.role.tone;
   const roleIntensity = spec.role.intensity;
 
-  // Design intent: near-black text on light background (canvas-87 → ~8).
-  const primaryTextTone = canvasTone - 87;
+  // Base tone: the reference lightness for all content-area formulas.
+  // Defaults to canvasTone, so existing themes (harmony) are unchanged.
+  // Set surface.base in the theme JSON to decouple the canvas background
+  // from content-area derivations (e.g., dark canvas with light content).
+  const baseTone = spec.surface.base ?? canvasTone;
+
+  // Design intent: near-black text on light background (base-87 → ~8).
+  const primaryTextTone = baseTone - 87;
 
   return {
     // ===== Canvas Darkness =====
@@ -30,13 +36,13 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     surfaceCanvasTone: canvasTone,
 
     // ===== Surface Layering =====
-    surfaceSunkenTone: canvasTone - 7,
-    surfaceDefaultTone: canvasTone - 5,
-    surfaceRaisedTone: canvasTone - 3,
-    surfaceOverlayTone: canvasTone - 2,
-    surfaceInsetTone: canvasTone - 9,
-    surfaceContentTone: canvasTone - 9,
-    surfaceScreenTone: canvasTone - 10,
+    surfaceSunkenTone: baseTone - 7,
+    surfaceDefaultTone: baseTone - 5,
+    surfaceRaisedTone: baseTone - 3,
+    surfaceOverlayTone: baseTone - 2,
+    surfaceInsetTone: baseTone - 9,
+    surfaceContentTone: baseTone - 9,
+    surfaceScreenTone: baseTone - 10,
 
     // ===== Surface Coloring =====
     atmosphereIntensity: canvasIntensity,
@@ -82,14 +88,14 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     dividerDefaultIntensity: 7,
     dividerMutedIntensity: 5,
     // borderRoleTone is shifted darker on light backgrounds to maintain role contrast
-    borderRoleTone: canvasTone - 55,
-    semanticRoleTone: canvasTone - 60,
+    borderRoleTone: baseTone - 55,
+    semanticRoleTone: baseTone - 60,
 
     // ===== Card Frame Style =====
     cardFrameActiveIntensity: frameIntensity,
     cardFrameActiveTone: frameTone,
     cardFrameInactiveIntensity: 5,
-    cardFrameInactiveTone: canvasTone - 5,
+    cardFrameInactiveTone: baseTone - 5,
 
     // ===== Shadow Depth =====
     shadowXsAlpha: 10,
@@ -145,7 +151,7 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     ghostIconHoverIntensity: 4,
     ghostIconActiveIntensity: 4,
     ghostBorderIntensity: 20,
-    ghostBorderTone: canvasTone - 60,
+    ghostBorderTone: baseTone - 60,
     ghostTextRestToneLight: 0,
     ghostTextHoverToneLight: 0,
     ghostTextActiveToneLight: 0,
@@ -161,10 +167,10 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     badgeTintedTextIntensity: 72,
     badgeTintedTextTone: primaryTextTone + 7,
     badgeTintedSurfaceIntensity: 65,
-    badgeTintedSurfaceTone: canvasTone - 15,
+    badgeTintedSurfaceTone: baseTone - 15,
     badgeTintedSurfaceAlpha: 20,
     badgeTintedBorderIntensity: 50,
-    badgeTintedBorderTone: canvasTone - 55,
+    badgeTintedBorderTone: baseTone - 55,
     badgeTintedBorderAlpha: 40,
 
     // ===== Icon Style =====
@@ -177,16 +183,16 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     tabTextActiveTone: primaryTextTone + 2,
 
     // ===== Toggle Style =====
-    toggleTrackOnHoverTone: canvasTone - 60,
-    toggleThumbDisabledTone: canvasTone - 30,
+    toggleTrackOnHoverTone: baseTone - 60,
+    toggleThumbDisabledTone: baseTone - 30,
     toggleTrackDisabledIntensity: 5,
 
     // ===== Field Style =====
-    fieldSurfaceRestTone: canvasTone - 4,
-    fieldSurfaceHoverTone: canvasTone - 7,
-    fieldSurfaceFocusTone: canvasTone - 3,
-    fieldSurfaceDisabledTone: canvasTone - 1,
-    fieldSurfaceReadOnlyTone: canvasTone - 7,
+    fieldSurfaceRestTone: baseTone - 4,
+    fieldSurfaceHoverTone: baseTone - 7,
+    fieldSurfaceFocusTone: baseTone - 3,
+    fieldSurfaceDisabledTone: baseTone - 1,
+    fieldSurfaceReadOnlyTone: baseTone - 7,
     fieldSurfaceRestIntensity: 5,
     disabledSurfaceIntensity: 4,
     disabledBorderIntensity: 6,
@@ -194,7 +200,7 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     // ===== Signal / Accent Tones =====
     accentSubtleTone: roleTone,
     // cautionSurfaceTone aligns with semanticRoleTone to maintain role-color contrast
-    cautionSurfaceTone: canvasTone - 60,
+    cautionSurfaceTone: baseTone - 60,
 
     // ===== Hue Slot Dispatch =====
     surfaceAppHueSlot: "canvas",
@@ -248,36 +254,36 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
 
     // ===== Computed Tone Override =====
     disabledTextToneComputed: primaryTextTone + 54,
-    disabledBorderToneOverride: canvasTone - 23,
-    toggleTrackOffToneOverride: canvasTone - 23,
-    toggleDisabledToneOverride: canvasTone - 15,
-    borderStrongToneComputed: canvasTone - 55,
+    disabledBorderToneOverride: baseTone - 23,
+    toggleTrackOffToneOverride: baseTone - 23,
+    toggleDisabledToneOverride: baseTone - 15,
+    borderStrongToneComputed: baseTone - 55,
 
     // ===== Computed Surface Tones =====
     surfaceApp: canvasTone,
     surfaceCanvas: canvasTone,
-    surfaceGrid: canvasTone - 3,
-    surfaceSunken: canvasTone - 7,
-    surfaceDefault: canvasTone - 5,
-    surfaceRaised: canvasTone - 3,
-    surfaceOverlay: canvasTone - 2,
-    surfaceInset: canvasTone - 9,
-    surfaceContent: canvasTone - 9,
-    surfaceScreen: canvasTone - 10,
+    surfaceGrid: baseTone - 3,
+    surfaceSunken: baseTone - 7,
+    surfaceDefault: baseTone - 5,
+    surfaceRaised: baseTone - 3,
+    surfaceOverlay: baseTone - 2,
+    surfaceInset: baseTone - 9,
+    surfaceContent: baseTone - 9,
+    surfaceScreen: baseTone - 10,
     surfaceCardBody: cardBodyTone,
 
     // ===== Computed Divider Tones =====
-    dividerDefault: canvasTone - 17,
-    dividerMuted: canvasTone - 13,
+    dividerDefault: baseTone - 17,
+    dividerMuted: baseTone - 13,
 
     // ===== Computed Control Tones =====
-    disabledSurfaceTone: canvasTone - 17,
-    disabledBorderTone: canvasTone - 23,
-    outlinedSurfaceRestTone: canvasTone - 7,
-    outlinedSurfaceHoverTone: canvasTone - 2,
-    outlinedSurfaceActiveTone: canvasTone - 2,
-    toggleTrackOffTone: canvasTone - 23,
-    toggleDisabledTone: canvasTone - 15,
+    disabledSurfaceTone: baseTone - 17,
+    disabledBorderTone: baseTone - 23,
+    outlinedSurfaceRestTone: baseTone - 7,
+    outlinedSurfaceHoverTone: baseTone - 2,
+    outlinedSurfaceActiveTone: baseTone - 2,
+    toggleTrackOffTone: baseTone - 23,
+    toggleDisabledTone: baseTone - 15,
 
     // ===== Computed Signal Intensity =====
     roleIntensity: Math.round(roleIntensity),
@@ -295,7 +301,7 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     // ===== Selection Mode =====
     selectionInactiveSemanticMode: false,
     selectionSurfaceInactiveIntensity: 8,
-    selectionSurfaceInactiveTone: canvasTone - 15,
+    selectionSurfaceInactiveTone: baseTone - 15,
     selectionSurfaceInactiveAlpha: 30,
 
     // ===== Signal Intensity Value =====

@@ -289,6 +289,11 @@ export interface ThemeSpec {
     frame: ThemeColorSpec;
     /** Card body surface: hue + tone + intensity. */
     card: ThemeColorSpec;
+    /** Base reference tone for content-area formulas (text, borders, controls).
+     *  When omitted, defaults to canvas.tone. Set this to decouple the canvas
+     *  background darkness from the content-area lightness — e.g., a dark steel
+     *  blue canvas with light content areas. */
+    base?: number;
   };
 
   text: {

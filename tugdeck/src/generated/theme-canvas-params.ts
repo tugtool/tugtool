@@ -12,6 +12,7 @@
 import type { CanvasColorParams } from "../canvas-color";
 
 export const THEME_CANVAS_PARAMS: Record<string, CanvasColorParams> = {
+  "bluenote": { hue: "cobalt", tone: 60, intensity: 3 },
   "brio": { hue: "indigo-violet", tone: 5, intensity: 2 },
   "harmony": { hue: "indigo-violet", tone: 95, intensity: 3 },
 };
