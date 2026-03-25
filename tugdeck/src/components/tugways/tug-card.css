@@ -21,9 +21,9 @@ body {
   /* --- Card --- */
   --tug-card-bg: var(--tug-surface-global-primary-normal-overlay-rest);
   --tug-card-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 40);
-  --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 20);
-  --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 15);
+  --tug-card-shadow-active: 0 2px 8px var(--tug-element-global-shadow-normal-md-rest);
+  --tug-card-shadow-inactive: 0 1px 4px var(--tug-element-global-shadow-normal-xs-rest);
+  --tug-card-dim-overlay: var(--tug-surface-overlay-primary-normal-highlight-rest);
 
   /* --- Card Title Bar --- */
   --tug-card-title-bar-bg-active: var(--tug-surface-tab-primary-normal-plain-active);
