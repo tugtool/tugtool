@@ -115,6 +115,7 @@ body {
   min-height: var(--tug-chrome-height);
   padding: 0 var(--tug-space-md);
   background-color: var(--tug-card-title-bar-bg-inactive);
+  border-bottom: 1px solid var(--tug-card-title-bar-divider);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
