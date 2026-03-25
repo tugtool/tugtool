@@ -702,7 +702,8 @@ function loadPairingMap(): { element: string; surface: string }[] | null {
  * Results are sorted alphabetically by relative path for deterministic output.
  */
 function discoverTokenFiles(): string[] {
-  const TOKEN_REFERENCE = "--tug-";
+  // Match any of the four prefix variants so files are discovered after renames.
+  const TOKEN_PREFIXES = ["--tug7-", "--tugc-", "--tugx-", "--tug-"];
   const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git"]);
   const EXCLUDED_FILES = new Set([
     path.join(TUGDECK, "scripts/audit-tokens.ts"),
@@ -741,7 +742,7 @@ function discoverTokenFiles(): string[] {
         } catch {
           continue;
         }
-        if (content.includes(TOKEN_REFERENCE)) {
+        if (TOKEN_PREFIXES.some((prefix) => content.includes(prefix))) {
           results.push(full);
         }
       }
@@ -769,7 +770,20 @@ interface RenameOptions {
 
 /**
  * Load and parse an external JSON rename map file.
- * The file must contain a JSON object mapping old short names to new short names.
+ *
+ * Two formats are supported, auto-detected by key shape:
+ *
+ * 1. **Short-name format** (legacy): keys and values are short names (the part
+ *    after `--tug-`), e.g. `"element-global-text-normal-plain-rest"`.
+ *    The `--tug-` prefix is prepended/appended by cmdRename.
+ *
+ * 2. **Full-name format** (new): keys and values are full CSS property names
+ *    starting with `--`, e.g. `"--tug-red-h": "--tugc-red-h"`.
+ *    cmdRename uses these values directly without prepending any prefix.
+ *
+ * Detection: if the first key starts with `--`, the map is treated as
+ * full-name format.
+ *
  * Throws on parse errors or invalid format; exits with code 1 on error.
  */
 function loadExternalMap(mapPath: string): Record<string, string> {
@@ -808,6 +822,33 @@ function loadExternalMap(mapPath: string): Record<string, string> {
   return map;
 }
 
+/**
+ * Detect whether a rename map uses full-name format (keys start with `--`).
+ * Returns true if the map is non-empty and the first key starts with `--`.
+ */
+function isFullNameMap(map: Record<string, string>): boolean {
+  const firstKey = Object.keys(map)[0];
+  return firstKey !== undefined && firstKey.startsWith("--");
+}
+
+/**
+ * Strip any `--tug-`, `--tug7-`, `--tugc-`, `--tugx-` prefix from a full
+ * CSS property name to obtain the bare short name for TS map-key matching.
+ *
+ * Examples:
+ *   "--tug-element-foo"   → "element-foo"
+ *   "--tug7-element-foo"  → "element-foo"
+ *   "--tugc-red-h"        → "red-h"
+ *   "--tugx-card-border"  → "card-border"
+ */
+function stripTugPrefix(fullName: string): string {
+  if (fullName.startsWith("--tug7-")) return fullName.slice("--tug7-".length);
+  if (fullName.startsWith("--tugc-")) return fullName.slice("--tugc-".length);
+  if (fullName.startsWith("--tugx-")) return fullName.slice("--tugx-".length);
+  if (fullName.startsWith("--tug-")) return fullName.slice("--tug-".length);
+  return fullName;
+}
+
 function cmdRename(opts: RenameOptions): void {
   const { apply, mapPath, verify, stats } = opts;
 
@@ -819,6 +860,8 @@ function cmdRename(opts: RenameOptions): void {
     process.exit(1);
   }
   const activeMap: Record<string, string> = loadExternalMap(mapPath);
+
+  const fullNameMode = isFullNameMap(activeMap);
 
   if (verify) {
     // --verify mode: scan for stale references using the same patterns as rename
@@ -838,11 +881,13 @@ function cmdRename(opts: RenameOptions): void {
       const lines = content.split("\n");
       const relativePath = path.relative(TUGDECK, filePath);
 
-      for (const [oldShort, newShort] of Object.entries(activeMap)) {
+      for (const [oldKey, newKey] of Object.entries(activeMap)) {
         // Skip identity mappings
-        if (oldShort === newShort) continue;
+        if (oldKey === newKey) continue;
 
-        const oldFull = `--tug-${oldShort}`;
+        const oldFull = fullNameMode ? oldKey : `--tug-${oldKey}`;
+        const oldShort = fullNameMode ? stripTugPrefix(oldKey) : oldKey;
+
         const escapedOld = oldFull.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const cssRegex = new RegExp(`${escapedOld}(?=[^\\w-]|$)`, "g");
 
@@ -895,8 +940,10 @@ function cmdRename(opts: RenameOptions): void {
       }
       let count = 0;
 
-      for (const [oldShort] of renameEntries) {
-        const oldFull = `--tug-${oldShort}`;
+      for (const [oldKey] of renameEntries) {
+        const oldFull = fullNameMode ? oldKey : `--tug-${oldKey}`;
+        const oldShort = fullNameMode ? stripTugPrefix(oldKey) : oldKey;
+
         const escapedOld = oldFull.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const cssRegex = new RegExp(`${escapedOld}(?=[^\\w-]|$)`, "g");
         const cssMatches = content.match(cssRegex);
@@ -943,10 +990,16 @@ function cmdRename(opts: RenameOptions): void {
     const replacements: string[] = [];
     let count = 0;
 
-    for (const [oldShort, newShort] of Object.entries(activeMap)) {
-      // Replace in CSS custom property names: --tug-{old}
-      const oldFull = `--tug-${oldShort}`;
-      const newFull = `--tug-${newShort}`;
+    for (const [oldKey, newKey] of Object.entries(activeMap)) {
+      // In full-name mode, keys and values are already full CSS property names.
+      // In short-name mode, prepend --tug- to get the full names.
+      const oldFull = fullNameMode ? oldKey : `--tug-${oldKey}`;
+      const newFull = fullNameMode ? newKey : `--tug-${newKey}`;
+
+      // For bare-string TS map-key replacement, derive short names by stripping
+      // any tug prefix variant from both sides.
+      const oldShort = fullNameMode ? stripTugPrefix(oldKey) : oldKey;
+      const newShort = fullNameMode ? stripTugPrefix(newKey) : newKey;
 
       // Use word-boundary-aware replacement to avoid partial matches.
       // In CSS/TS, token names are delimited by: `, ;, ), :, whitespace, or end-of-string

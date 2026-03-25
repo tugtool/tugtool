@@ -7,3 +7,8 @@ styles/*.golden
 
 # Runtime theme override file (written by Vite plugin and activate endpoint)
 styles/tug-theme-override.css
+
+# Generated token rename maps (build artifacts — regenerate with bun run generate:rename-maps)
+rename-tug7.json
+rename-tugc.json
+rename-tugx.json
