@@ -66,9 +66,11 @@ body {
   --tug-card-control-off-border-hover: var(--tug-element-card-border-normal-titlebarOff-hover);
   --tug-card-control-off-border-active: var(--tug-element-card-border-normal-titlebarOff-active);
 
-  /* --- Card Inactive Content Overlay --- */
-  --tug-card-content-dim-color: var(--tug-surface-card-primary-normal-contentDim-color);
-  --tug-card-content-dim-blend: var(--tug-surface-card-primary-normal-contentDim-blend);
+  /* --- Card Inactive Content Overlay (two layers) --- */
+  --tug-card-content-dim-desat-color: var(--tug-surface-card-primary-normal-contentDimDesat-color);
+  --tug-card-content-dim-desat-amount: var(--tug-surface-card-primary-normal-contentDimDesat-amount);
+  --tug-card-content-dim-wash-color: var(--tug-surface-card-primary-normal-contentDimWash-color);
+  --tug-card-content-dim-wash-blend: var(--tug-surface-card-primary-normal-contentDimWash-blend);
 
   /* --- Card Accessory / Findbar --- */
   --tug-card-accessory-bg: var(--tug-surface-global-primary-normal-sunken-rest);
@@ -323,14 +325,28 @@ body {
   overscroll-behavior: contain;
 }
 
+/* Layer 1: partial saturation reduction — desaturates colored content.
+   Opacity controls the strength: 0 = no effect, 1 = full desaturation. */
+.card-frame[data-focused="false"] .tugcard-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--tug-card-content-dim-desat-color);
+  mix-blend-mode: saturation;
+  opacity: var(--tug-card-content-dim-desat-amount);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Layer 2: lightness wash — dims achromatic content (screen for dark, multiply for light) */
 .card-frame[data-focused="false"] .tugcard-content::after {
   content: "";
   position: absolute;
   inset: 0;
-  background-color: var(--tug-card-content-dim-color);
-  mix-blend-mode: var(--tug-card-content-dim-blend);
+  background-color: var(--tug-card-content-dim-wash-color);
+  mix-blend-mode: var(--tug-card-content-dim-wash-blend);
   pointer-events: none;
-  z-index: 1;
+  z-index: 2;
 }
 
 /*
