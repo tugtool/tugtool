@@ -8,11 +8,10 @@ import { initActionDispatch } from "./action-dispatch";
 import { fetchLayoutWithRetry, fetchThemeWithRetry, fetchTabStatesWithRetry, fetchDeckStateWithRetry } from "./settings-api";
 import {
   sendCanvasColor,
-  registerInitialCanvasParams,
-  deriveCanvasParams,
+  activateProductionTheme,
+  readHostCanvasColorFromAppliedCss,
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
-import { BASE_THEME_SPEC } from "./generated/base-theme";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
@@ -52,34 +51,17 @@ if (!container) {
 
   const initialTheme = (theme as string) ?? BASE_THEME_NAME;
 
-  // Fetch the active theme's JSON spec for canvas color derivation.
-  // For the base theme, use the statically generated spec. For other themes,
-  // fetch from the middleware. [D08] Canvas color derived from theme JSON at runtime.
-  let cachedActiveSpec: typeof BASE_THEME_SPEC | null = null;
-  if (initialTheme !== BASE_THEME_NAME) {
-    const jsonResult = await fetch(`/__themes/${encodeURIComponent(initialTheme)}.json`)
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null);
-    if (jsonResult !== null) {
-      cachedActiveSpec = jsonResult as typeof BASE_THEME_SPEC;
-    }
+  // Production startup: apply saved non-base override before first render so
+  // the app does not flash brio and then restyle.
+  if (import.meta.env.PROD) {
+    await activateProductionTheme(initialTheme);
   }
 
-  // Derive canvas color params from the active theme spec. For the base theme,
-  // use the generated BASE_THEME_SPEC. For other themes, use the fetched spec.
-  // Run deriveTheme() to get the DERIVED surfaceCanvasIntensity value.
-  // [D08] Canvas color derived from theme JSON at runtime, Spec S04.
-  const activeSpec = initialTheme === BASE_THEME_NAME
-    ? BASE_THEME_SPEC
-    : (cachedActiveSpec ?? BASE_THEME_SPEC);
-  const canvasParams = deriveCanvasParams(activeSpec);
-
-  // Register canvas params for TugThemeProvider's on-mount effect.
-  registerInitialCanvasParams(canvasParams);
-
-  // Sync canvas color to Swift bridge so UserDefaults gets the correct
-  // background color on startup before the user switches themes.
-  sendCanvasColor(canvasParams);
+  // Sync canvas color to Swift bridge from the applied CSS metadata token.
+  const initialHostCanvasColor = readHostCanvasColorFromAppliedCss();
+  if (initialHostCanvasColor !== null) {
+    sendCanvasColor(initialHostCanvasColor);
+  }
 
   // Initialize motion observer early so data-tug-motion attribute is set before
   // DeckManager construction. The cleanup function is intentionally not stored
