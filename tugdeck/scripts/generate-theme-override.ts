@@ -9,6 +9,7 @@
  */
 
 import { generateThemeCSS } from "../src/theme-css-generator";
+import { deriveTheme } from "../src/components/tugways/theme-engine";
 import type { ThemeSpec } from "../src/components/tugways/theme-engine";
 import * as fs from "fs";
 
@@ -20,25 +21,19 @@ if (!jsonPath || !outputPath) {
 }
 
 const raw = fs.readFileSync(jsonPath, "utf-8");
-let parsed = JSON.parse(raw) as ThemeSpec & { mode: unknown };
+const spec = JSON.parse(raw) as ThemeSpec;
 
-// Legacy migration guard: detect old format where mode is a stringified JSON blob.
-if (typeof parsed.mode === "string" && (parsed.mode as string).startsWith("{")) {
-  let unwrapped: ThemeSpec;
-  try {
-    unwrapped = JSON.parse(parsed.mode as string) as ThemeSpec;
-  } catch {
-    console.error(`Theme has corrupt recipe data in ${jsonPath}`);
-    process.exit(1);
-  }
-  // Rewrite file in canonical format (best-effort).
-  try {
-    fs.writeFileSync(jsonPath, JSON.stringify(unwrapped, null, 2), "utf-8");
-  } catch {
-    // Rewrite failed — theme still works for this session.
-  }
-  parsed = unwrapped as typeof parsed;
-}
-
-const css = generateThemeCSS(parsed as ThemeSpec);
+const css = generateThemeCSS(spec);
 fs.writeFileSync(outputPath, css, "utf-8");
+
+// Output canvas params as JSON to stdout for the activate endpoint.
+const output = deriveTheme(spec);
+const result = {
+  theme: spec.name ?? "",
+  canvasParams: {
+    hue: spec.surface.canvas.hue,
+    tone: output.formulas.surfaceCanvasTone,
+    intensity: output.formulas.surfaceCanvasIntensity,
+  },
+};
+process.stdout.write(JSON.stringify(result));

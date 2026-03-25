@@ -305,59 +305,47 @@ export interface ActivateResult {
  */
 export function activateThemeOverride(
   themeName: string,
-  fsImpl: FsWriteImpl,
   shippedDir: string,
   overrideCssPath: string,
 ): ActivateResult {
   if (themeName === BASE_THEME_NAME) {
-    fsImpl.writeFileSync(overrideCssPath, EMPTY_OVERRIDE, "utf-8");
-
-    // Base theme canvas params: derived from the base theme's JSON recipe.
-    // Dynamic path construction prevents Vite's static config-dep scanner from
-    // tracing through theme-engine → recipes/* and registering them as config deps.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { deriveTheme } = require([".", "src", "components", "tugways", "theme-engine"].join("/")) as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => import("./src/components/tugways/theme-engine").ThemeOutput };
-    const baseRaw = fsImpl.readFileSync(path.join(shippedDir, `${BASE_THEME_NAME}.json`), "utf-8");
-    const baseSpec = JSON.parse(baseRaw) as import("./src/components/tugways/theme-engine").ThemeSpec;
-    const baseOutput = deriveTheme(baseSpec);
-    return {
-      theme: BASE_THEME_NAME,
-      canvasParams: {
-        hue: baseSpec.surface.canvas.hue,
-        tone: baseOutput.formulas.surfaceCanvasTone,
-        intensity: baseOutput.formulas.surfaceCanvasIntensity,
-      },
-    };
+    fs.writeFileSync(overrideCssPath, EMPTY_OVERRIDE, "utf-8");
+    // For base theme, run the subprocess to get canvasParams.
+    const jsonPath = path.join(shippedDir, `${BASE_THEME_NAME}.json`);
+    const script = path.resolve(__dirname, "scripts/generate-theme-override.ts");
+    // The subprocess writes CSS and outputs canvasParams JSON to stdout.
+    // For base theme, the CSS will be overwritten with EMPTY_OVERRIDE above,
+    // but we need the subprocess to derive canvasParams.
+    const stdout = execSync(`bun run ${script} ${JSON.stringify(jsonPath)} ${JSON.stringify(overrideCssPath)}`, {
+      cwd: __dirname,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    // Restore empty override (subprocess wrote the full CSS)
+    fs.writeFileSync(overrideCssPath, EMPTY_OVERRIDE, "utf-8");
+    try {
+      return JSON.parse(stdout.trim()) as ActivateResult;
+    } catch {
+      return { theme: BASE_THEME_NAME, canvasParams: { hue: "indigo", tone: 95, intensity: 3 } };
+    }
   }
 
-  // Locate theme JSON in shipped dir only.
-  const shippedJsonPath = path.join(shippedDir, `${themeName}.json`);
-  if (!fsImpl.existsSync(shippedJsonPath)) {
+  const jsonPath = path.join(shippedDir, `${themeName}.json`);
+  if (!fs.existsSync(jsonPath)) {
     throw new Error(`Theme '${themeName}' not found`);
   }
 
-  const raw = fsImpl.readFileSync(shippedJsonPath, "utf-8");
-  const spec = JSON.parse(raw) as import("./src/components/tugways/theme-engine").ThemeSpec;
-
-  // Dynamic path construction prevents Vite's static config-dep scanner from
-  // tracing through theme-engine → recipes/* and registering them as config deps.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { generateThemeCSS } = require([".", "src", "theme-css-generator"].join("/")) as { generateThemeCSS: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => string };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { deriveTheme } = require([".", "src", "components", "tugways", "theme-engine"].join("/")) as { deriveTheme: (r: import("./src/components/tugways/theme-engine").ThemeSpec) => import("./src/components/tugways/theme-engine").ThemeOutput };
-
-  const css = generateThemeCSS(spec);
-  fsImpl.writeFileSync(overrideCssPath, css, "utf-8");
-
-  const themeOutput = deriveTheme(spec);
-  return {
-    theme: themeName,
-    canvasParams: {
-      hue: spec.surface.canvas.hue,
-      tone: themeOutput.formulas.surfaceCanvasTone,
-      intensity: themeOutput.formulas.surfaceCanvasIntensity,
-    },
-  };
+  const script = path.resolve(__dirname, "scripts/generate-theme-override.ts");
+  const stdout = execSync(`bun run ${script} ${JSON.stringify(jsonPath)} ${JSON.stringify(overrideCssPath)}`, {
+    cwd: __dirname,
+    encoding: "utf-8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  try {
+    return JSON.parse(stdout.trim()) as ActivateResult;
+  } catch {
+    return { theme: themeName, canvasParams: { hue: "orange", tone: 45, intensity: 50 } };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -392,7 +380,6 @@ function withMutex(fn: () => Promise<void>): Promise<void> {
 
 export async function handleThemesActivate(
   body: unknown,
-  fsImpl: FsWriteImpl,
   shippedDir: string,
   overrideCssPath: string,
 ): Promise<{ status: number; body: string }> {
@@ -409,7 +396,7 @@ export async function handleThemesActivate(
   return new Promise<{ status: number; body: string }>((resolve) => {
     withMutex(async () => {
       try {
-        const result = activateThemeOverride(name, fsImpl, shippedDir, overrideCssPath);
+        const result = activateThemeOverride(name, shippedDir, overrideCssPath);
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -459,7 +446,7 @@ function themeSaveLoadPlugin(): VitePlugin {
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              handleThemesActivate(body, fs as unknown as FsWriteImpl, SHIPPED_THEMES_DIR, THEME_OVERRIDE_CSS).then((result) => {
+              handleThemesActivate(body, SHIPPED_THEMES_DIR, THEME_OVERRIDE_CSS).then((result) => {
                 res.writeHead(result.status, { "Content-Type": "application/json" });
                 res.end(result.body);
               }).catch((err) => {

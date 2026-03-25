@@ -551,6 +551,28 @@ extension AppDelegate: NSMenuDelegate {
         guard menu === themeMenu else { return }
         menu.removeAllItems()
 
+        // Read active theme from tugbank if not yet known.
+        if activeThemeName == nil {
+            if let tugbankPath = ProcessManager.which("tugbank") {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: tugbankPath)
+                proc.arguments = ["read", "dev.tugtool.app", "theme"]
+                let pipe = Pipe()
+                proc.standardOutput = pipe
+                proc.standardError = FileHandle.nullDevice
+                try? proc.run()
+                proc.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !raw.isEmpty {
+                    activeThemeName = raw
+                }
+            }
+            if activeThemeName == nil {
+                activeThemeName = baseThemeName
+            }
+        }
+
         // Read theme names directly from the shipped themes directory on disk.
         // sourceTreePath is the tugtool repo root; themes are at tugdeck/themes/*.json.
         var themeNames: [String] = []
