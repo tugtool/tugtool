@@ -96,12 +96,13 @@ Production keeps the current basic model:
 Changes in this refactor:
 
 - the production theme file is the built form of `styles/themes/<name>.css`
-- after the link loads, read `--tug-host-canvas-color` from the applied CSS and send it to Swift
-- if switching back to `brio`, remove the override link and read `--tug-host-canvas-color` from the base CSS
+- after the link loads, read `--tug-host-canvas-color` from the applied CSS, normalize it to a literal `#rrggbb` string, and send that to Swift
+- if switching back to `brio`, remove the override link, read `--tug-host-canvas-color` from the base CSS, normalize it to `#rrggbb`, and send that to Swift
 
 Important startup requirement:
 
-- in production, if the saved initial theme is not `brio`, `TugThemeProvider` must apply that theme on mount before the user interacts with the app
+- in production, if the saved initial theme is not `brio`, the initial override theme must be applied before first visible paint (not merely after interactive mount) so the app does not flash `brio` and then restyle
+- startup mechanism (single rule): in `main.tsx`, before mounting React, synchronously insert/update `<link id="tug-theme-override">` for non-`brio` and await its `load` event before first render; for `brio`, ensure the override link is absent
 
 The current startup path does not reliably do this without `THEME_CANVAS_PARAMS`. This refactor must fix it.
 
@@ -130,12 +131,16 @@ What is removed:
 
 ### 7. Tests Stay Thin
 
-The only theme-specific automated tests required after this refactor are:
+Keep the test surface thin, but not so thin that the new enumeration path is untested.
+
+Required automated tests after this refactor:
 
 1. a thin dev test for `POST /__themes/activate`
 2. a thin production test for the link-swap behavior
+3. a small extractor test for the `TUG_TOKEN_NAMES` build-time scan
+4. a small snapshot-helper test covering runtime value capture and probe-based color resolution
 
-Delete formula/recipe/theme-engine/theme-generator UI tests. They are coupled to the system being removed.
+Delete formula/recipe/theme-engine/theme-generator UI tests that are coupled to the system being removed.
 
 ## Runtime Contract After Simplification
 
@@ -144,7 +149,7 @@ Delete formula/recipe/theme-engine/theme-generator UI tests. They are coupled to
 | Base theme | `styles/tug-base-generated.css` imported normally | built app CSS |
 | Active override | `styles/tug-theme-override.css` copied from `styles/themes/<name>.css` | `<link id="tug-theme-override" href="/assets/themes/<name>.css">` |
 | Theme activation | `POST /__themes/activate` copies CSS file | `activateProductionTheme()` swaps/removes link |
-| Host canvas color | parsed from source CSS and returned by endpoint | read from applied CSS after link load |
+| Host canvas color | parsed from source CSS and returned by endpoint as `#rrggbb` | read from applied CSS after link load, normalized to `#rrggbb` before sending to Swift |
 | Theme source | repo CSS files | built CSS assets derived from repo CSS files |
 | PostCSS role | expand `--tug-color(...)` during Vite CSS HMR | expand `--tug-color(...)` during `vite build` |
 
@@ -283,15 +288,17 @@ Exit criteria:
    - remove the initial JSON fetch for `/__themes/<name>.json`
    - remove `registerInitialCanvasParams(...)`
    - stop deriving canvas params before React mounts
+   - ensure the saved non-`brio` theme is applied before first visible paint, not after a later provider effect
 3. Remove the old canvas derivation path:
    - `canvas-color.ts` can be deleted if nothing else needs it
-   - `sendCanvasColor()` becomes a simple "post this hex string to Swift" helper
+   - `sendCanvasColor()` becomes a simple "post this normalized `#rrggbb` string to Swift" helper
 
 Exit criteria:
 
 - initial theme is applied correctly in production
 - switching themes in production loads the right built CSS file
 - Swift host color sync works in dev and production without derivation
+- production startup does not visibly flash `brio` before an override theme is applied
 
 ### Phase 3 — Rebuild The Accessibility Card Around Live CSS
 
@@ -314,6 +321,7 @@ Exit criteria:
 
 - the card works with only live CSS applied to the page
 - the card has no import from `theme-engine.ts`
+- any still-needed shared types/helpers used by `theme-accessibility.ts` are extracted or redefined before `theme-engine.ts` is deleted; this is not just a mechanical import cleanup
 - the card still shows token inventory, contrast results, and CVD preview
 - token inventory rows are driven by the build-derived name list plus live cascade values, not stylesheet walking
 
@@ -352,6 +360,8 @@ Keep only:
 
 - one thin test for `POST /__themes/activate`
 - one thin test for production link swap
+- one small extractor test for the `TUG_TOKEN_NAMES` build-time scan
+- one small snapshot-helper test for runtime value capture / color probing
 
 Delete or gut:
 
@@ -374,7 +384,7 @@ Rewrite docs:
 - `tugdeck/src/contexts/theme-provider.tsx`
 - `tugdeck/src/main.tsx`
 - `tugdeck/src/components/tugways/cards/gallery-theme-generator-content.tsx`
-- `tugdeck/src/components/tugways/theme-accessibility.ts` (type cleanup only)
+- `tugdeck/src/components/tugways/theme-accessibility.ts` (extract or redefine any remaining shared types/helpers needed after `theme-engine.ts` deletion)
 - `tugdeck/styles/tug-base-generated.css`
 - `tugdeck/styles/themes/harmony.css`
 
@@ -384,6 +394,8 @@ Rewrite docs:
 - **`TUG_TOKEN_NAMES`** delivery (Vite virtual module or `extract:tug-token-names` + generated inventory module)
 - a live theme snapshot helper for the accessibility card
 - thin tests for activate endpoint and production link swap
+- one small extractor test for the `TUG_TOKEN_NAMES` scan rules
+- one small snapshot-helper test for runtime value capture / color probing
 
 ### Delete
 
@@ -403,7 +415,7 @@ This refactor is complete when all of the following are true:
 6. Switching themes in production is a simple CSS link swap.
 7. Swift host color sync works from the explicit `--tug-host-canvas-color` property.
 8. The Theme Accessibility card works from live CSS only.
-9. Only the two thin tests remain for theme switching behavior.
+9. The remaining theme-specific tests are the two thin theme-switching tests plus one small extractor test and one small snapshot-helper test for the accessibility card path.
 10. No generated TS theme metadata files remain (`ThemeSpec`, canvas params, base-theme TS). A read-only **`TUG_TOKEN_NAMES`** list extracted from source CSS for the accessibility card is allowed — it is inventory only, not derivation — and a virtual module is preferred over a committed generated file.
 
 ## Notes
