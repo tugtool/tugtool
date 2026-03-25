@@ -45,27 +45,165 @@
 
 Update `tuglaws/component-authoring.md` to codify the token-to-component contract. No code changes — pure documentation.
 
-### What to Formalize
+### What to Add
 
-**1. Every component declares its token vocabulary via `@tug-pairings`.**
+Six additions to the authoring guide, each drawn from patterns that already exist in the reference implementations (tug-checkbox, tug-switch) but aren't yet documented as requirements.
 
-This convention exists — checkbox and switch do it perfectly. The gap is enforcement: badge, skeleton, and marquee are loose. The authoring guide should state that `@tug-pairings` is mandatory and define what a compliant table looks like, using checkbox as the canonical example.
+---
 
-**2. Compositional components declare delegation, not pairings.**
+### 1. Dual-Format @tug-pairings (Mandatory)
 
-tug-popup-button has no CSS. It composes TugButton and TugPopupMenu. The authoring guide should explicitly address this: a compositional component documents which child components it delegates styling to, rather than declaring its own pairings. A new `@tug-delegates` annotation or a documented pattern in the CSS file header.
+**What exists today:** The authoring guide shows only the compact machine-readable format. Checkbox and switch CSS files actually have *two* formats — a compact block for `audit-tokens lint` and an expanded table for human/agent readability.
 
-**3. Effect plane tokens get their own declaration pattern.**
+**What to add:** Document that both formats are required, and specify the expanded table format with its four columns.
 
-Card overlay tokens (`--tug-effect-card-*`) don't participate in contrast pairing but still need to be declared. The pairings table could have an `effect` section, or effect tokens could use a separate `@tug-effects` annotation.
+Compact block (machine-readable, what audit-tokens parses):
 
-**4. Strengthen the `@selector` requirement.**
+```css
+/* @tug-pairings {
+  --tug-element-checkmark-icon-normal-plain-rest  | --tug-surface-toggle-track-normal-on-rest  | control
+  --tug-element-field-text-normal-label-rest      | --tug-surface-global-primary-normal-default-rest | content
+} */
+```
 
-Every prop that produces a CSS-targetable state change must have a `@selector` annotation. This is the bridge between the TSX API and the CSS — it tells a coding agent exactly which selector to use when styling a prop's visual effect.
+Expanded table (human/agent-readable, documents the CSS context):
+
+```css
+/**
+ * @tug-pairings
+ * | Element                              | Surface                              | Role    | Context                          |
+ * |--------------------------------------|--------------------------------------|---------|----------------------------------|
+ * | --tug-element-checkmark-icon-...rest  | --tug-surface-toggle-track-...rest   | control | .tug-checkbox-indicator (color)  |
+ * | --tug-element-field-text-...rest      | --tug-surface-global-primary-...rest | content | .tug-checkbox-label (color)      |
+ */
+```
+
+The Context column is the key addition — it tells a coding agent exactly which CSS rule creates the pairing. This is what makes the table actionable: an agent reading the pairings table can navigate directly to the rule that needs attention.
+
+**Components with no contrast pairings** (e.g., skeleton) still open with the annotation:
+
+```css
+/* @tug-pairings: none — decorative/animation only, no foreground-on-background contrast */
+```
+
+---
+
+### 2. Component-Tier Alias Rules
+
+**What exists today:** tug-card.css defines `--tug-card-*` aliases in `body {}` that resolve to base-tier `--tug-*` tokens. Checkbox and switch use base tokens directly. L17 says "one hop" but doesn't say when to use aliases vs direct tokens.
+
+**What to add:** A decision rule for when to use component-tier aliases:
+
+- **Use base tokens directly** when the component is simple (< 5 token references) and the seven-slot names are clear in context. Checkbox, switch, input, label, badge, skeleton, marquee all use this pattern.
+- **Use component-tier aliases** when the component is complex (many sub-parts, many tokens, tokens referenced from multiple CSS rules) and a shorter alias improves readability. Card and tab-bar use this pattern.
+- Component aliases are defined in `body {}` at the top of the CSS file, after @tug-pairings and before base styles.
+- Every alias must resolve to a base-tier `--tug-*` token in one hop. [L17]
+
+```css
+body {
+  /* Card aliases — resolve to base tier in one hop [L17] */
+  --tug-card-border: var(--tug-element-global-border-normal-default-rest);
+  --tug-card-bg: var(--tug-surface-global-primary-normal-overlay-rest);
+}
+```
+
+---
+
+### 3. @selector Annotations (Strengthened Requirement)
+
+**What exists today:** The authoring guide mentions `@selector` but doesn't mandate it. Checkbox and switch have comprehensive `@selector` annotations on every prop that affects CSS. Badge, label, skeleton, marquee are missing them.
+
+**What to add:** Make the requirement explicit and show the exact patterns from the reference implementations.
+
+**Rule:** Every prop that produces a CSS-targetable state change MUST have a `@selector` annotation. This is the bridge between the TSX API and the CSS — it tells a coding agent exactly which CSS selector to use when styling a prop's visual effect.
+
+Patterns from the reference implementations:
+
+```typescript
+/** @selector [data-state="checked"] | [data-state="unchecked"] | [data-state="indeterminate"] */
+checked?: TugCheckedState;
+
+/** @selector .tug-checkbox-size-sm | .tug-checkbox-size-md | .tug-checkbox-size-lg
+ *  @default "md" */
+size?: TugCheckboxSize;
+
+/** @selector :disabled | [data-disabled]
+ *  @default false */
+disabled?: boolean;
+
+/** @selector [data-role="<role>"]
+ *  @default "option" */
+role?: TugCheckboxRole;
+```
+
+Props that do NOT need `@selector`: callback props (`onCheckedChange`), string data props (`name`, `value`, `aria-label`), and `className` (always passed through to `cn()`).
+
+---
+
+### 4. Compositional Components
+
+**What exists today:** tug-popup-button has no CSS file. It composes TugButton and TugPopupMenu. The authoring guide doesn't address this pattern.
+
+**What to add:** A new "Compositional Components" section in the Component Patterns area.
+
+A compositional component:
+- Produces only a `.tsx` file — no `.css` file needed.
+- Documents delegation in its module docstring: which child components it renders and which styling responsibilities are delegated.
+- Does not need `@tug-pairings` — its children own the pairings.
+- Still needs: exported props interface with JSDoc, `data-slot` on the root element, law citations.
+
+```typescript
+/**
+ * TugPopupButton — Convenience popup button composing TugPopupMenu + TugButton.
+ *
+ * Styling delegated to TugButton (trigger appearance) and TugPopupMenu (dropdown).
+ * No component CSS — this is a pure composition.
+ *
+ * Laws: [L11] controls emit actions, [L19] authoring guide
+ */
+```
+
+---
+
+### 5. Effect Plane Token Declaration
+
+**What exists today:** Card overlay tokens use `--tug-effect-card-*` (after the token naming refinement). These carry non-color values (amounts, blend modes) and don't participate in contrast pairing. The authoring guide only covers element/surface pairings.
+
+**What to add:** An `@tug-effects` section in the CSS file header for components that use effect-plane tokens. These are declared separately from @tug-pairings because they don't have element/surface pairing semantics.
+
+```css
+/* @tug-effects {
+  --tug-effect-card-desat-normal-dim-inactive     | desaturation overlay color
+  --tug-effect-card-desat-normal-amount-inactive   | desaturation intensity (0-1)
+  --tug-effect-card-wash-normal-dim-inactive       | wash overlay color
+  --tug-effect-card-wash-normal-blend-inactive     | wash blend mode
+} */
+```
+
+Format: `token | description`. No contrast role — effect tokens define parameters, not rendered colors.
+
+Most components will not have effect tokens. This section is only needed when a component uses the `effect` plane.
+
+---
+
+### 6. Module Docstring Law Citations (Updated)
+
+**What exists today:** The authoring guide says to cite laws and decisions. Checkbox and switch cite [L06], [L15], [L16], [L19]. Some older components cite spec references ("Spec S06") that are plan artifacts, not tuglaws.
+
+**What to add:** Standardize the citations. Module docstrings must cite tuglaws (`[L##]`) and design decisions (`[D##]`) only. Plan spec references (`Spec S##`) must be removed — they are implementation history, not governing law. The minimum set for any component:
+
+- [L06] appearance via CSS (all components)
+- [L15] token-driven states (interactive controls)
+- [L16] pairings declared (components with CSS)
+- [L19] component authoring guide (all components)
+
+Plus any component-specific laws (e.g., [L11] for controls that emit actions, [L09] for card composition).
+
+---
 
 ### Deliverable
 
-Updated `tuglaws/component-authoring.md` with these four rules formalized.
+Updated `tuglaws/component-authoring.md` with these six additions. The checklist at the bottom of the guide updated to reference the new requirements. No code changes.
 
 ---
 
