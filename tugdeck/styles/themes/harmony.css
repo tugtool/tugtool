@@ -63,7 +63,7 @@ body {
 
   /* Surface — Global */
   --tug-surface-global-primary-normal-app-rest: --tug-color(indigo, i: 3, t: 95);
-  --tug-surface-global-primary-normal-canvas-rest: --tug-color(sky, i: 15, t: 35);
+  --tug-surface-global-primary-normal-canvas-rest: --tug-color(sky, i: 10, t: 35);
   --tug-surface-global-primary-normal-content-rest: --tug-color(indigo, i: 2, t: 100);
   --tug-surface-global-primary-normal-control-rest: var(--tug-surface-control-primary-outlined-action-rest);
   --tug-surface-global-primary-normal-default-rest: --tug-color(indigo, i: 3, t: 98);
@@ -180,11 +180,20 @@ body {
   --tug-element-tab-text-normal-plain-hover: --tug-color(indigo, i: 4, t: 10);
   --tug-element-tab-text-normal-plain-rest: --tug-color(indigo, i: 8, t: 29);
   --tug-element-tabClose-text-normal-plain-hover: --tug-color(indigo, i: 4, t: 10);
-  --tug-surface-tab-primary-normal-plain-active: --tug-color(sky, i: 3, t: 98);
+  --tug-surface-tab-primary-normal-plain-active: --tug-color(sky, i: 2, t: 99);
   --tug-surface-tab-primary-normal-plain-collapsed: --tug-color(indigo, i: 5, t: 90);
   --tug-surface-tab-primary-normal-plain-hover: --tug-color(white, a: 8);
   --tug-surface-tab-primary-normal-plain-inactive: --tug-color(indigo, i: 5, t: 80);
   --tug-surface-tabClose-primary-normal-plain-hover: --tug-color(white, a: 12);
+
+  /* Card — Title Bar */
+  --tug-surface-card-primary-normal-titlebar-active: --tug-color(blue, i: 2, t: 99);
+  --tug-surface-card-primary-normal-titlebar-inactive: --tug-color(blue, i: 2, t: 45);
+  --tug-surface-card-primary-normal-titlebar-collapsed: --tug-color(blue, i: 2, t: 90);
+
+  /* Card — Findbar Highlights */
+  --tug-surface-card-primary-normal-findmatch-rest: --tug-color(yellow, i: 50, t: 50, a: 30);
+  --tug-surface-card-primary-normal-findmatch-active: --tug-color(orange, i: 50, t: 50, a: 50);
 
   /* Control — Disabled */
   --tug-control-disabled-opacity: 0.5;

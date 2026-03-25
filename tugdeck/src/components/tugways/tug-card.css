@@ -8,10 +8,10 @@
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
  * | --tug-card-border (card-border)                  | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
- * | --tug-card-title-fg (card-title-fg)              | --tug-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | content      | .tugcard-title (color)               |
- * | --tug-card-title-fg (card-title-fg)              | --tug-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | content      | .tugcard-title (color)               |
- * | --tug-card-title-bar-icon-active (card-title-bar-icon-active) | --tug-surface-tab-primary-normal-plain-active (surface-tab-primary-normal-plain-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
- * | --tug-card-title-bar-icon-inactive (card-title-bar-icon-inactive) | --tug-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
+ * | --tug-card-title-fg (card-title-fg)              | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | content      | .tugcard-title (color)               |
+ * | --tug-card-title-fg (card-title-fg)              | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | content      | .tugcard-title (color)               |
+ * | --tug-card-title-bar-icon-active (card-title-bar-icon-active) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
+ * | --tug-card-title-bar-icon-inactive (card-title-bar-icon-inactive) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
  * | --tug-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
  * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
  */
@@ -26,9 +26,9 @@ body {
   --tug-card-dim-overlay: var(--tug-surface-overlay-primary-normal-highlight-rest);
 
   /* --- Card Title Bar --- */
-  --tug-card-title-bar-bg-active: var(--tug-surface-tab-primary-normal-plain-active);
-  --tug-card-title-bar-bg-inactive: var(--tug-surface-tab-primary-normal-plain-inactive);
-  --tug-card-title-bar-bg-collapsed: var(--tug-surface-tab-primary-normal-plain-collapsed);
+  --tug-card-title-bar-bg-active: var(--tug-surface-card-primary-normal-titlebar-active);
+  --tug-card-title-bar-bg-inactive: var(--tug-surface-card-primary-normal-titlebar-inactive);
+  --tug-card-title-bar-bg-collapsed: var(--tug-surface-card-primary-normal-titlebar-collapsed);
   --tug-card-title-bar-fg: var(--tug-element-global-text-normal-default-rest);
   --tug-card-title-fg: var(--tug-element-cardTitle-text-normal-plain-rest);
   --tug-card-title-bar-icon-active: var(--tug-element-global-icon-normal-active-rest);
@@ -41,8 +41,8 @@ body {
   --tug-card-accessory-border: var(--tug-element-global-border-normal-default-rest);
   --tug-card-findbar-bg: var(--tug-surface-field-primary-normal-plain-focus);
   --tug-card-findbar-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-card-findbar-match: --tug-color(yellow, i: 50, t: 50, a: 30);
-  --tug-card-findbar-match-active: --tug-color(orange, i: 50, t: 50, a: 50);
+  --tug-card-findbar-match: var(--tug-surface-card-primary-normal-findmatch-rest);
+  --tug-card-findbar-match-active: var(--tug-surface-card-primary-normal-findmatch-active);
 }
 
 /* ============================================================================
@@ -54,7 +54,7 @@ body {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  background-color: var(--tug-card-bg);
   border: 1px solid var(--tug-card-border);
   border-radius: var(--tug-radius-md);
   overflow: hidden;
@@ -150,7 +150,7 @@ body {
    Title bar title
    ========================================================================= */
 
-/* @tug-renders-on: --tug-surface-tab-primary-normal-plain-inactive, --tug-surface-tab-primary-normal-plain-active */
+/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-inactive, --tug-surface-card-primary-normal-titlebar-active */
 .tugcard-title {
   flex: 1;
   overflow: hidden;
@@ -182,12 +182,12 @@ body {
   height: 100%;
 }
 
-/* @tug-renders-on: --tug-surface-tab-primary-normal-plain-active */
+/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-active */
 .card-frame[data-focused="true"] .tugcard-icon {
   color: var(--tug-card-title-bar-icon-active);
 }
 
-/* @tug-renders-on: --tug-surface-tab-primary-normal-plain-inactive */
+/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-inactive */
 .card-frame[data-focused="false"] .tugcard-icon {
   color: var(--tug-card-title-bar-icon-inactive);
 }
@@ -218,7 +218,7 @@ body {
  */
 .tugcard-accessory {
   flex-shrink: 0;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  background-color: var(--tug-card-bg);
   border-bottom: 1px solid var(--tug-card-border);
 }
 
@@ -233,7 +233,7 @@ body {
 .tugcard-content {
   flex: 1;
   overflow: auto;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  background-color: var(--tug-card-bg);
   min-height: 0; /* needed for flex children to allow scroll */
   user-select: text;
   overscroll-behavior: contain;

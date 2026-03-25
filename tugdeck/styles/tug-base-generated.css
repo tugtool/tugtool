@@ -186,6 +186,15 @@ body {
   --tug-surface-tab-primary-normal-plain-inactive: --tug-color(indigo-violet, i: 4, t: 14);
   --tug-surface-tabClose-primary-normal-plain-hover: --tug-color(white, a: 12);
 
+  /* Card — Title Bar */
+  --tug-surface-card-primary-normal-titlebar-active: --tug-color(indigo-violet, i: 15, t: 15);
+  --tug-surface-card-primary-normal-titlebar-inactive: --tug-color(indigo-violet, i: 4, t: 14);
+  --tug-surface-card-primary-normal-titlebar-collapsed: --tug-color(indigo-violet, i: 4, t: 14);
+
+  /* Card — Findbar Highlights */
+  --tug-surface-card-primary-normal-findmatch-rest: --tug-color(yellow, i: 50, t: 50, a: 30);
+  --tug-surface-card-primary-normal-findmatch-active: --tug-color(orange, i: 50, t: 50, a: 50);
+
   /* Control — Disabled */
   --tug-control-disabled-opacity: 0.5;
 
