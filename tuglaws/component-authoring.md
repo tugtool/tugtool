@@ -55,7 +55,8 @@ Opens every file. States what the component does, not how it evolved.
  * Wraps @radix-ui/react-switch. Supports size variants, inline label,
  * disabled state, and role-based color injection.
  *
- * Laws: [L06] appearance via CSS, [L15] token-driven states, [L16] pairings declared
+ * Laws: [L06] appearance via CSS, [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide
  * Decisions: [D05] component token naming
  */
 ```
@@ -65,6 +66,19 @@ Rules:
 - Second paragraph: implementation details (what it wraps, what it supports)
 - Laws and Decisions: cite every law and decision the component obeys
 - No history, no "Phase N", no "replaces X", no spec references from plans
+
+**Standardized citation set:** Every component docstring must cite the minimum set of governing laws:
+
+| Citation | Meaning | Required For |
+|----------|---------|-------------|
+| [L06] | Appearance changes via CSS/DOM, never React state | All components |
+| [L15] | Token-driven states; color transitions only | Interactive controls |
+| [L16] | Every foreground rule declares its rendering surface | Components with CSS |
+| [L19] | Component authoring guide | All components |
+
+Add component-specific laws on top of this minimum (e.g., [L11] for controls that emit actions, [L09] for card composition).
+
+**Plan spec references are prohibited.** Docstrings must cite tuglaws (`[L##]`) and design decisions (`[D##]`) only. References like `Spec S04` or `Spec S##` are implementation history from plan artifacts — they are not governing law and must not appear in module docstrings.
 
 ### Props Interface
 
@@ -92,6 +106,44 @@ Rules:
 - Omit and redefine props whose semantics change (e.g., `role`, `size`)
 - `@selector` annotations map props to CSS selectors — this is how styling agents find the right hook
 - `@default` annotations document defaults
+
+**`@selector` is mandatory for every CSS-targetable prop.** A prop is CSS-targetable if its value affects which CSS selector applies — data attributes, class variants, pseudo-classes. The `@selector` annotation is the bridge between the TSX API and the CSS: it tells a coding agent exactly which selector to write when styling a prop's visual effect.
+
+Patterns from the reference implementations (tug-checkbox.tsx):
+
+```typescript
+/**
+ * Controlled checked state. Supports true, false, or "indeterminate".
+ * @selector [data-state="checked"] | [data-state="unchecked"] | [data-state="indeterminate"]
+ */
+checked?: TugCheckedState;
+
+/**
+ * Visual size variant.
+ * @selector .tug-checkbox-size-sm | .tug-checkbox-size-md | .tug-checkbox-size-lg
+ * @default "md"
+ */
+size?: TugCheckboxSize;
+
+/**
+ * Disables the checkbox.
+ * @selector :disabled | [data-disabled]
+ * @default false
+ */
+disabled?: boolean;
+
+/**
+ * Semantic role for the checked/indeterminate on-state color.
+ * @selector [data-role="<role>"]
+ * @default "option"
+ */
+role?: TugCheckboxRole;
+```
+
+Props that do **not** need `@selector`:
+- Callback props (`onCheckedChange`, `onClick`, `onChange`)
+- String data props (`name`, `value`, `aria-label`)
+- `className` — always passed through to `cn()`, no selector needed
 
 ### Component
 
@@ -160,14 +212,38 @@ Every `.css` file follows this structure in this order:
 
 Opens every CSS file. Declares every foreground-on-background relationship the component creates. Machine-readable by `audit-tokens lint`. [L16]
 
+**Both formats are required** — the compact block for tooling, the expanded table for human and agent readability.
+
+**Compact block** (machine-readable — what `audit-tokens lint` parses):
+
 ```css
 /* @tug-pairings {
-  --tug-element-toggle-thumb-normal-plain-rest  |  --tug-surface-toggle-track-normal-on-rest   | content
-  --tug-element-toggle-thumb-normal-plain-rest  |  --tug-surface-toggle-track-normal-off-rest  | content
+  --tug-element-checkmark-icon-normal-plain-rest  | --tug-surface-toggle-track-normal-on-rest  | control
+  --tug-element-field-text-normal-label-rest      | --tug-surface-global-primary-normal-default-rest | content
 } */
 ```
 
 Format: `element-token | surface-token | contrast-role`
+
+**Expanded table** (human/agent-readable — documents the CSS context):
+
+```css
+/**
+ * @tug-pairings
+ * | Element                              | Surface                              | Role    | Context                          |
+ * |--------------------------------------|--------------------------------------|---------|----------------------------------|
+ * | --tug-element-checkmark-icon-...rest  | --tug-surface-toggle-track-...rest   | control | .tug-checkbox-indicator (color)  |
+ * | --tug-element-field-text-...rest      | --tug-surface-global-primary-...rest | content | .tug-checkbox-label (color)      |
+ */
+```
+
+The **Context column** is the key addition in the expanded table. It specifies exactly which CSS rule creates the pairing (`selector (property)`). A coding agent reading the pairings table can navigate directly to the rule that needs attention.
+
+**Components with no contrast pairings** (decorative or animation-only components) still open with the annotation so tooling knows the absence is intentional:
+
+```css
+/* @tug-pairings: none — decorative/animation only, no foreground-on-background contrast */
+```
 
 ### @tug-renders-on Annotations
 
@@ -180,6 +256,23 @@ Every CSS rule that sets `color`, `fill`, `stroke`, or `border-color` without se
 }
 ```
 
+### @tug-effects Declaration
+
+Components that use effect-plane tokens (`--tug-effect-*`) declare them in a separate `@tug-effects` block in the CSS file header, after `@tug-pairings`. Effect tokens carry non-color values — amounts, blend modes, opacity levels — and do not participate in contrast pairing.
+
+```css
+/* @tug-effects {
+  --tug-effect-card-desat-normal-dim-inactive     | desaturation overlay color
+  --tug-effect-card-desat-normal-amount-inactive   | desaturation intensity (0-1)
+  --tug-effect-card-wash-normal-dim-inactive       | wash overlay color
+  --tug-effect-card-wash-normal-blend-inactive     | wash blend mode
+} */
+```
+
+Format: `token | description`. No contrast role — effect tokens define rendering parameters, not rendered colors.
+
+Most components will not have effect tokens. Include this section only when the component uses the `effect` plane.
+
 ### Token Usage
 
 All colors come from `--tug-*` tokens. Never hardcode colors. [L15, T##]
@@ -191,6 +284,25 @@ All colors come from `--tug-*` tokens. Never hardcode colors. [L15, T##]
 /* Wrong */
 .tug-input { background-color: oklch(0.15 0.01 260); }
 ```
+
+### Component-Tier Alias Rules
+
+Some components define short `--tug-{component}-*` aliases that resolve to base-tier `--tug-*` tokens. The decision rule:
+
+- **Use base tokens directly** when the component is simple (fewer than 5 token references) and the seven-slot names are clear in context. Checkbox, switch, input, label, badge, skeleton, and marquee all use this pattern.
+- **Use component-tier aliases** when the component is complex — many sub-parts, many tokens, or tokens referenced from multiple CSS rules — and shorter aliases improve readability. Card and tab-bar use this pattern.
+
+When aliases are used, define them in `body {}` at the top of the CSS file, after `@tug-pairings` and before base styles. Every alias must resolve to a base-tier `--tug-*` token in **one hop**. [L17]
+
+```css
+body {
+  /* Card aliases — resolve to base tier in one hop [L17] */
+  --tug-card-border: var(--tug-element-global-border-normal-default-rest);
+  --tug-card-bg: var(--tug-surface-global-primary-normal-overlay-rest);
+}
+```
+
+Never chain aliases (`--tug-card-bg: var(--tug-card-other-alias)`) — that is a second hop and violates [L17].
 
 ### State Selectors
 
@@ -245,6 +357,30 @@ For selection controls where a single structural design takes on different role 
 - JS injection: set `--tug-toggle-on-color` as an inline style to the role's tone token
 - Three branches: default role (neutral color), non-default roles (tone map lookup), accent (no injection, CSS default)
 - This is pure appearance-zone work [L06] — no React state, no re-render
+
+### Compositional Components
+
+For components that produce no visual output of their own, but compose two or more tugways components into a unified API.
+
+**When to use:** When a common composition pattern (e.g., TugPopupMenu + TugButton) warrants a dedicated component to reduce caller boilerplate, but the visual identity is fully owned by the child components.
+
+**Implementation:**
+- Produces only a `.tsx` file — no `.css` file.
+- Documents delegation in its module docstring: which child components it renders and which styling responsibilities are delegated to them.
+- Does not need `@tug-pairings` — its children own the pairings.
+- Still needs: exported props interface with JSDoc, `data-slot` on the root element, and law citations.
+- Use a plain function (not `forwardRef`) unless a ref to the DOM root is needed.
+
+```typescript
+/**
+ * TugPopupButton — Convenience popup button composing TugPopupMenu + TugButton.
+ *
+ * Styling delegated to TugButton (trigger appearance) and TugPopupMenu (dropdown).
+ * No component CSS — this is a pure composition.
+ *
+ * Laws: [L11] controls emit actions, [L19] authoring guide
+ */
+```
 
 ### Field Controls
 
@@ -331,8 +467,12 @@ Before a component is done:
 - [ ] All colors via `--tug-*` tokens, zero hardcoded colors
 - [ ] No ad-hoc theme logic in component TSX/JS
 - [ ] `data-slot="tug-{name}"` on root element
-- [ ] Laws cited in module docstring
-- [ ] Props interface exported with JSDoc and `@selector` annotations
+- [ ] Module docstring cites minimum law set ([L06], [L15] if interactive, [L16] if CSS, [L19]) plus any component-specific laws; no `Spec S##` references
+- [ ] Props interface exported with JSDoc; every CSS-targetable prop has `@selector` annotation
+- [ ] `@tug-pairings` present in both compact and expanded-table formats; components with no pairings use `@tug-pairings: none`
+- [ ] Component-tier aliases (if used) defined in `body {}` and resolve to base tokens in one hop [L17]
+- [ ] `@tug-effects` block present if the component uses `--tug-effect-*` tokens
+- [ ] Compositional components (no CSS): delegation documented in module docstring; no `@tug-pairings` needed
 - [ ] Keyboard accessible (Tab, Enter/Space, Escape)
 - [ ] `bun run build` exits 0
 - [ ] `bun run test` exits 0
