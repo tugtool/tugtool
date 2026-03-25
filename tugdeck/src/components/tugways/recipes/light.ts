@@ -108,7 +108,7 @@ export function lightRecipe(spec: ThemeSpec): DerivationFormulas {
     filledSurfaceActiveTone: Math.max(0, Math.min(100, spec.role.tone - 10)),
 
     // ===== Outlined Control Style =====
-    outlinedTextRestTone: primaryTextTone,
+    outlinedTextRestTone: 8,
     outlinedTextHoverTone: primaryTextTone,
     outlinedTextActiveTone: primaryTextTone,
     outlinedTextIntensity: 4,

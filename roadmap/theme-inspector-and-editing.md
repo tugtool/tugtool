@@ -373,6 +373,52 @@ smell, not a solution.
   (not `(constant)`)
 - `bun run check`, `bun run test`, `bun run audit:tokens` pass
 
+### Phase A4 — Fix pseudo-class matching in collectElementTugProperties
+
+**Bug:** After editing a formula value, the FORMULA section loses
+its hover/active state groups and shows only rest-state formulas.
+Initial inspection works because the element may still have hover
+state from the scan click.
+
+**Root cause:** `collectElementTugProperties` calls
+`el.matches(rule.selectorText)` on each CSS rule. For a rule like
+`.tug-button-filled-accent:hover`, this only returns true when the
+element is CURRENTLY being hovered. After an HMR update, the user's
+mouse is on the inspector card, not the inspected element — so
+`:hover` rules don't match, and their `var(--tug-*)` references
+are never collected.
+
+The same problem affects `:active`, `:focus`, and `:disabled`
+pseudo-class selectors.
+
+**Fix:** Before calling `el.matches()`, strip interaction
+pseudo-classes from the selector. We want rules that COULD apply
+to the element in any state, not rules that match its current state.
+
+In `collectElementTugProperties`, replace:
+
+```typescript
+matches = target.matches(rule.selectorText);
+```
+
+with:
+
+```typescript
+const stripped = rule.selectorText.replace(
+  /:(?:hover|active|focus|focus-visible|focus-within|disabled)/g, ""
+);
+matches = target.matches(stripped);
+```
+
+This is a one-line change inside the existing function. No new
+functions, no new data flow, no new props.
+
+**Verification:**
+
+- Inspect a TugButton → see REST and HOVER state groups
+- Edit a formula value → after HMR, REST and HOVER groups persist
+- Inspect a tug-tab → see its formula fields across states
+
 ### Phase B — Code Audit and Cleanup
 
 1. **Audit `style-inspector-core.ts`**: Remove any dead code left

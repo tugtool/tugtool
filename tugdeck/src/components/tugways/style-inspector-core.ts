@@ -806,7 +806,19 @@ export function collectElementTugProperties(el: HTMLElement): string[] {
       if (rule instanceof CSSStyleRule) {
         let matches = false;
         try {
-          matches = target.matches(rule.selectorText);
+          // Strip interaction pseudo-classes so we match rules for ALL
+          // interaction states, not just the element's current state.
+          // 1. Remove :not(...) groups (they contain :disabled, [aria-disabled],
+          //    [data-disabled] — all state-dependent conditions we want to ignore)
+          // 2. Remove bare interaction pseudo-classes (:hover, :active, etc.)
+          // Structural selectors like [data-state="checked"] are kept — they
+          // distinguish component variants, not transient interaction states.
+          const stripped = rule.selectorText
+            .replace(/:not\([^)]*\)/g, "")
+            .replace(/:(?:hover|active|focus|focus-visible|focus-within|disabled|read-only)/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+          matches = stripped.length > 0 && target.matches(stripped);
         } catch {
           continue; // invalid selector
         }
