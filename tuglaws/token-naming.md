@@ -34,24 +34,27 @@ One value. Slot 0 is always `tug`, identifying the token as part of the tug desi
 
 ### Plane
 
-Two values. Any tool can determine element/surface classification by reading slot 1.
+Three values. Any tool can determine element/surface/effect classification by reading slot 1.
 
 | Value | Meaning | [L18] |
 |-------|---------|-------|
 | `element` | Visible marks: text, icons, borders, shadows, dividers, fills | `--tug-element-*` |
 | `surface` | Fields behind elements: backgrounds, tracks | `--tug-surface-*` |
+| `effect` | Visual effect parameters: filter colors, amounts, blend modes, durations, easings | `--tug-effect-*` |
+
+Note: `effect` tokens do not participate in contrast pairing — they are parameters, not rendered colors.
 
 ### Component
 
 The UI component or system the token belongs to.
 
-`global` · `control` · `tab` · `tabClose` · `tone` · `field` · `badge` · `selection` · `checkmark` · `toggle` · `radio` · `overlay` · `highlight`
+`global` · `control` · `tab` · `tone` · `field` · `badge` · `selection` · `checkmark` · `toggle` · `radio` · `overlay` · `highlight` · `card`
 
 ### Constituent
 
 The structural sub-part within a component. Different values are valid for each plane.
 
-**Element constituents:** `text` · `icon` · `border` · `shadow` · `divider` · `fill` · `thumb` · `dot`
+**Element constituents:** `text` · `icon` · `border` · `shadow` · `divider` · `fill` · `thumb` · `dot` · `close` · `title` · `control`
 
 **Surface constituents:** `primary` · `track`
 
@@ -83,13 +86,13 @@ Roles fall into several categories:
 
 **Surface purposes:** `app` · `canvas` · `raised` · `sunken` · `inset` · `content` · `screen` · `control` · `dim` · `scrim`
 
-**Highlight purposes:** `hover` · `dropTarget` · `preview` · `inspectorTarget` · `snapGuide` · `flash` · `highlight`
+**Highlight purposes:** `hover` · `drop` · `preview` · `inspector` · `snap` · `flash` · `highlight`
 
 ### State
 
 The interaction condition. Every token has a state — non-interactive tokens use `rest`.
 
-`rest` · `hover` · `active` · `focus` · `disabled` · `readOnly` · `mixed` · `inactive` · `collapsed`
+`rest` · `hover` · `active` · `focus` · `disabled` · `readonly` · `mixed` · `inactive` · `collapsed`
 
 ---
 
@@ -105,9 +108,27 @@ These rules make seven-slot parsing deterministic:
 
 **`link` is a role; interaction is a state.** Link text decomposes as `role=link` + `state=hover`. Example: `tug-element-global-text-normal-link-hover`.
 
-**Field text types are roles.** `label`, `placeholder`, and `required` are roles (persistent characteristics). `disabled` and `readOnly` are states. Example: `tug-element-field-text-normal-label-rest`.
+**Field text types are roles.** `label`, `placeholder`, and `required` are roles (persistent characteristics). `disabled` and `readonly` are states. Example: `tug-element-field-text-normal-label-rest`.
 
 **Dual-slot values.** Some values appear in both role and state slots. `hover` is a role when it names a highlight surface's purpose (`tug-surface-highlight-primary-normal-hover-rest`) and a state when it names an interaction condition (`tug-element-global-text-normal-link-hover`). `mixed` is a role for toggle tracks (`tug-surface-toggle-track-normal-mixed-rest`) and a state for checkmarks (`tug-element-checkmark-icon-normal-plain-mixed`). The slot determines the meaning.
+
+---
+
+## camelCase Convention
+
+**Slot values are single lowercase words.** When a slot value is genuinely multi-word — the concept cannot be decomposed by placing parts in different slots — use **camelCase**. This is the sanctioned escape hatch: it keeps the seven-slot parser deterministic (split on `-`, get exactly 7 segments) while remaining readable.
+
+Before introducing a camelCase value, verify:
+1. Can the concept split across component + constituent? (e.g., `tabClose` → `tab` + `close`)
+2. Can context move to a CSS selector? (e.g., `titlebarOn` → `plain` + selector for focused card)
+3. Can a suffix be dropped because the component slot already provides context? (e.g., `dropTarget` → `drop` when component is `highlight`)
+
+If all three answers are no, camelCase is correct.
+
+**Sanctioned camelCase values:**
+
+- **On-surface roles:** `onAccent` · `onDanger` · `onSuccess` · `onCaution` — foreground color for use on a named surface (standard design-system pattern)
+- **Accent variants:** `accentCool` · `accentSubtle` — role variants where the base role is modified by a quality that is ambiguous without the base
 
 ---
 

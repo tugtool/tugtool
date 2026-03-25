@@ -11,12 +11,12 @@
  * Naming convention — all structured tokens use the seven-slot format:
  *   <namespace>-<plane>-<component>-<constituent>-<emphasis>-<role>-<state>
  *       plane:       element | surface
- *       component:   global | control | tab | tabClose | tone | field | badge | selection | checkmark | toggle | radio | overlay | highlight
+ *       component:   global | control | tab | tone | field | badge | selection | checkmark | toggle | radio | overlay | highlight | card
  *       constituent: (element) text | icon | border | shadow | divider | fill | thumb | dot
  *                    (surface) primary | track
  *       emphasis:    normal | filled | outlined | ghost | tinted
  *       role:        plain | default | accent | action | option | danger | agent | data | success | caution | ...
- *       state:       rest | hover | active | focus | disabled | readOnly | mixed | inactive | collapsed
+ *       state:       rest | hover | active | focus | disabled | readonly | mixed | inactive | collapsed
  *                    (all tokens have a state; non-interactive and default-state tokens use `rest`)
  *   - Non-color tokens: identity mapping (unchanged)
  */
@@ -125,7 +125,7 @@ export const SEED_RENAME_MAP: Record<string, string> = {
   "surface-tab-primary-normal-plain-collapsed": "surface-tab-primary-normal-plain-collapsed",
   "surface-tab-primary-normal-plain-hover": "surface-tab-primary-normal-plain-hover",
   "surface-tab-primary-normal-plain-inactive": "surface-tab-primary-normal-plain-inactive",
-  "surface-tabClose-primary-normal-plain-hover": "surface-tabClose-primary-normal-plain-hover",
+  "surface-tab-close-normal-plain-hover": "surface-tab-close-normal-plain-hover",
 
   // ---------------------------------------------------------------------------
   // ELEMENT — tab (4 tokens)
@@ -133,7 +133,7 @@ export const SEED_RENAME_MAP: Record<string, string> = {
   "element-tab-text-normal-plain-active": "element-tab-text-normal-plain-active",
   "element-tab-text-normal-plain-hover": "element-tab-text-normal-plain-hover",
   "element-tab-text-normal-plain-rest": "element-tab-text-normal-plain-rest",
-  "element-tabClose-text-normal-plain-hover": "element-tabClose-text-normal-plain-hover",
+  "element-tab-close-normal-plain-hover": "element-tab-close-normal-plain-hover",
 
   // ---------------------------------------------------------------------------
   // SURFACE — control: disabled, highlighted, selected (5 tokens)
@@ -370,7 +370,7 @@ export const SEED_RENAME_MAP: Record<string, string> = {
   "surface-field-primary-normal-plain-hover": "surface-field-primary-normal-plain-hover",
   "surface-field-primary-normal-plain-focus": "surface-field-primary-normal-plain-focus",
   "surface-field-primary-normal-plain-disabled": "surface-field-primary-normal-plain-disabled",
-  "surface-field-primary-normal-plain-readOnly": "surface-field-primary-normal-plain-readOnly",
+  "surface-field-primary-normal-plain-readonly": "surface-field-primary-normal-plain-readonly",
 
   // ---------------------------------------------------------------------------
   // ELEMENT — field text (6 tokens)
@@ -379,7 +379,7 @@ export const SEED_RENAME_MAP: Record<string, string> = {
   "element-field-text-normal-plain-disabled": "element-field-text-normal-plain-disabled",
   "element-field-text-normal-label-rest": "element-field-text-normal-label-rest",
   "element-field-text-normal-placeholder-rest": "element-field-text-normal-placeholder-rest",
-  "element-field-text-normal-plain-readOnly": "element-field-text-normal-plain-readOnly",
+  "element-field-text-normal-plain-readonly": "element-field-text-normal-plain-readonly",
   "element-field-text-normal-required-rest": "element-field-text-normal-required-rest",
 
   // ---------------------------------------------------------------------------
@@ -389,7 +389,7 @@ export const SEED_RENAME_MAP: Record<string, string> = {
   "element-field-border-normal-plain-hover": "element-field-border-normal-plain-hover",
   "element-field-border-normal-plain-active": "element-field-border-normal-plain-active",
   "element-field-border-normal-plain-disabled": "element-field-border-normal-plain-disabled",
-  "element-field-border-normal-plain-readOnly": "element-field-border-normal-plain-readOnly",
+  "element-field-border-normal-plain-readonly": "element-field-border-normal-plain-readonly",
   "element-field-border-normal-danger-rest": "element-field-border-normal-danger-rest",
   "element-field-border-normal-success-rest": "element-field-border-normal-success-rest",
 
@@ -450,10 +450,10 @@ export const SEED_RENAME_MAP: Record<string, string> = {
   "element-tone-fill-normal-caution-rest": "element-tone-fill-normal-caution-rest",
   "element-tone-fill-normal-danger-rest": "element-tone-fill-normal-danger-rest",
   "surface-highlight-primary-normal-hover-rest": "surface-highlight-primary-normal-hover-rest",
-  "surface-highlight-primary-normal-dropTarget-rest": "surface-highlight-primary-normal-dropTarget-rest",
+  "surface-highlight-primary-normal-drop-rest": "surface-highlight-primary-normal-drop-rest",
   "surface-highlight-primary-normal-preview-rest": "surface-highlight-primary-normal-preview-rest",
-  "surface-highlight-primary-normal-inspectorTarget-rest": "surface-highlight-primary-normal-inspectorTarget-rest",
-  "surface-highlight-primary-normal-snapGuide-rest": "surface-highlight-primary-normal-snapGuide-rest",
+  "surface-highlight-primary-normal-inspector-rest": "surface-highlight-primary-normal-inspector-rest",
+  "surface-highlight-primary-normal-snap-rest": "surface-highlight-primary-normal-snap-rest",
   "surface-highlight-primary-normal-flash-rest": "surface-highlight-primary-normal-flash-rest",
   "surface-overlay-primary-normal-dim-rest": "surface-overlay-primary-normal-dim-rest",
   "surface-overlay-primary-normal-scrim-rest": "surface-overlay-primary-normal-scrim-rest",

@@ -977,8 +977,8 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "decorative",
   },
   {
-    element: "--tug-element-field-text-normal-plain-readOnly",
-    surface: "--tug-surface-field-primary-normal-plain-readOnly",
+    element: "--tug-element-field-text-normal-plain-readonly",
+    surface: "--tug-surface-field-primary-normal-plain-readonly",
     role: "informational",
   },
   {
@@ -1301,12 +1301,12 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
   // close button hover fg over close bg hover (semi-transparent over tab-bg-inactive).
   {
-    element: "--tug-element-tabClose-text-normal-plain-hover",
+    element: "--tug-element-tab-close-normal-plain-hover",
     surface: "--tug-surface-tab-primary-normal-plain-inactive",
     role: "control",
   },
   {
-    element: "--tug-element-tabClose-text-normal-plain-hover",
+    element: "--tug-element-tab-close-normal-plain-hover",
     surface: "--tug-surface-global-primary-normal-sunken-rest",
     role: "control",
   },
@@ -1787,7 +1787,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // These pairings cover --tug-card-title-bar-fg (fg-default) used by other
   // title-bar elements (icons, labels) on the tab-bar backgrounds. The card
   // title itself (.tugcard-title) now uses its own dedicated token
-  // (element-cardTitle-text-normal-plain-rest) — see Step 7 additions below.
+  // (element-card-title-normal-plain-rest) — see Step 7 additions below.
   {
     element: "--tug-element-global-text-normal-default-rest",
     surface: "--tug-surface-tab-primary-normal-plain-active",
@@ -2187,8 +2187,8 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
   // Tab close button hover — tab-close-bg-hover has alpha 12%, decorative
   {
-    element: "--tug-element-tabClose-text-normal-plain-hover",
-    surface: "--tug-surface-tabClose-primary-normal-plain-hover",
+    element: "--tug-element-tab-close-normal-plain-hover",
+    surface: "--tug-surface-tab-close-normal-plain-hover",
     role: "decorative",
   },
   // Tab bar surface-control: add/overflow buttons and border accents
@@ -2205,16 +2205,16 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // =========================================================================
   // Card title token pairings (Step 7 additions)
-  // element-cardTitle-text-normal-plain-rest renders as .tugcard-title text
+  // element-card-title-normal-plain-rest renders as .tugcard-title text
   // on both active and inactive tab-bar backgrounds (tug-card.css [D06]).
   // =========================================================================
   {
-    element: "--tug-element-cardTitle-text-normal-plain-rest",
+    element: "--tug-element-card-title-normal-plain-rest",
     surface: "--tug-surface-tab-primary-normal-plain-active",
     role: "display",
   },
   {
-    element: "--tug-element-cardTitle-text-normal-plain-rest",
+    element: "--tug-element-card-title-normal-plain-rest",
     surface: "--tug-surface-tab-primary-normal-plain-inactive",
     role: "display",
   },
@@ -2364,7 +2364,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // =========================================================================
   // Input field border variants on field backgrounds (Step 6 additions)
-  // disabled and readOnly borders are intentionally subtle — same structural
+  // disabled and readonly borders are intentionally subtle — same structural
   // constraint as field-border-rest/hover (already in KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS
   // in the test). parentSurface set to surface-default so enforceContrastFloor
   // skips these during derivation (they render over a parent surface, not directly
@@ -2377,8 +2377,8 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     parentSurface: "--tug-surface-global-primary-normal-default-rest",
   },
   {
-    element: "--tug-element-field-border-normal-plain-readOnly",
-    surface: "--tug-surface-field-primary-normal-plain-readOnly",
+    element: "--tug-element-field-border-normal-plain-readonly",
+    surface: "--tug-surface-field-primary-normal-plain-readonly",
     role: "decorative",
     parentSurface: "--tug-surface-global-primary-normal-default-rest",
   },

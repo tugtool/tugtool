@@ -1165,7 +1165,7 @@ function guessRole(
   if (elementShortName.startsWith("element-control-")) return "control";
 
   // Card title tokens
-  if (elementShortName.startsWith("element-cardTitle-")) return "display";
+  if (elementShortName.startsWith("element-card-title-")) return "display";
 
   // Badge and tone tokens are informational
   if (
@@ -1195,7 +1195,7 @@ function guessRole(
     elementShortName.includes("subtle") ||
     elementShortName.includes("placeholder") ||
     elementShortName.includes("disabled") ||
-    elementShortName.includes("readOnly")
+    elementShortName.includes("readonly")
   )
     return "informational";
 

@@ -168,23 +168,23 @@ body {
   --tug-surface-selection-primary-normal-plain-rest: --tug-color(blue, i: 50, t: 50, a: 40);
 
   /* Surface — Highlight */
-  --tug-surface-highlight-primary-normal-dropTarget-rest: --tug-color(blue, i: 50, t: 50, a: 18);
+  --tug-surface-highlight-primary-normal-drop-rest: --tug-color(blue, i: 50, t: 50, a: 18);
   --tug-surface-highlight-primary-normal-flash-rest: --tug-color(orange, i: 50, t: 50, a: 35);
   --tug-surface-highlight-primary-normal-hover-rest: --tug-color(white, i: 0, t: 100, a: 5);
-  --tug-surface-highlight-primary-normal-inspectorTarget-rest: --tug-color(blue, i: 50, t: 50, a: 22);
+  --tug-surface-highlight-primary-normal-inspector-rest: --tug-color(blue, i: 50, t: 50, a: 22);
   --tug-surface-highlight-primary-normal-preview-rest: --tug-color(blue, i: 50, t: 50, a: 12);
-  --tug-surface-highlight-primary-normal-snapGuide-rest: --tug-color(blue, i: 50, t: 50, a: 50);
+  --tug-surface-highlight-primary-normal-snap-rest: --tug-color(blue, i: 50, t: 50, a: 50);
 
   /* Tab */
   --tug-element-tab-text-normal-plain-active: --tug-color(indigo, i: 3, t: 90);
   --tug-element-tab-text-normal-plain-hover: --tug-color(indigo, i: 3, t: 90);
   --tug-element-tab-text-normal-plain-rest: --tug-color(indigo, i: 7, t: 64);
-  --tug-element-tabClose-text-normal-plain-hover: --tug-color(indigo, i: 3, t: 90);
+  --tug-element-tab-close-normal-plain-hover: --tug-color(indigo, i: 3, t: 90);
   --tug-surface-tab-primary-normal-plain-active: --tug-color(indigo-violet, i: 15, t: 15);
   --tug-surface-tab-primary-normal-plain-collapsed: --tug-color(indigo-violet, i: 4, t: 14);
   --tug-surface-tab-primary-normal-plain-hover: --tug-color(white, a: 8);
   --tug-surface-tab-primary-normal-plain-inactive: --tug-color(indigo-violet, i: 4, t: 14);
-  --tug-surface-tabClose-primary-normal-plain-hover: --tug-color(white, a: 12);
+  --tug-surface-tab-close-normal-plain-hover: --tug-color(white, a: 12);
 
   /* Card — Title Bar */
   --tug-surface-card-primary-normal-titlebar-active: --tug-color(indigo-violet, i: 15, t: 15);
@@ -199,32 +199,32 @@ body {
   --tug-element-card-icon-normal-title-hover: --tug-color(indigo-violet, i: 5, t: 66);
 
   /* Card — Title Bar Control Buttons (ghost-style, focused card) */
-  --tug-element-card-control-normal-titlebarOn-rest: --tug-color(indigo-violet, i: 7, t: 64);
-  --tug-element-card-control-normal-titlebarOn-hover: --tug-color(indigo-violet, i: 5, t: 80);
-  --tug-element-card-control-normal-titlebarOn-active: --tug-color(indigo-violet, i: 5, t: 90);
-  --tug-surface-card-control-normal-titlebarOn-rest: transparent;
-  --tug-surface-card-control-normal-titlebarOn-hover: --tug-color(white, a: 10);
-  --tug-surface-card-control-normal-titlebarOn-active: --tug-color(white, a: 20);
-  --tug-element-card-border-normal-titlebarOn-rest: transparent;
-  --tug-element-card-border-normal-titlebarOn-hover: --tug-color(indigo-violet, i: 10, t: 40);
-  --tug-element-card-border-normal-titlebarOn-active: --tug-color(indigo-violet, i: 10, t: 40);
+  --tug-element-card-control-normal-plain-rest: --tug-color(indigo-violet, i: 7, t: 64);
+  --tug-element-card-control-normal-plain-hover: --tug-color(indigo-violet, i: 5, t: 80);
+  --tug-element-card-control-normal-plain-active: --tug-color(indigo-violet, i: 5, t: 90);
+  --tug-surface-card-control-normal-plain-rest: transparent;
+  --tug-surface-card-control-normal-plain-hover: --tug-color(white, a: 10);
+  --tug-surface-card-control-normal-plain-active: --tug-color(white, a: 20);
+  --tug-element-card-border-normal-plain-rest: transparent;
+  --tug-element-card-border-normal-plain-hover: --tug-color(indigo-violet, i: 10, t: 40);
+  --tug-element-card-border-normal-plain-active: --tug-color(indigo-violet, i: 10, t: 40);
 
   /* Card — Title Bar Control Buttons (ghost-style, unfocused card) */
-  --tug-element-card-control-normal-titlebarOff-rest: --tug-color(indigo-violet, i: 5, t: 45);
-  --tug-element-card-control-normal-titlebarOff-hover: --tug-color(indigo-violet, i: 5, t: 65);
-  --tug-element-card-control-normal-titlebarOff-active: --tug-color(indigo-violet, i: 5, t: 80);
-  --tug-surface-card-control-normal-titlebarOff-rest: transparent;
-  --tug-surface-card-control-normal-titlebarOff-hover: --tug-color(white, a: 8);
-  --tug-surface-card-control-normal-titlebarOff-active: --tug-color(white, a: 15);
-  --tug-element-card-border-normal-titlebarOff-rest: transparent;
-  --tug-element-card-border-normal-titlebarOff-hover: --tug-color(indigo-violet, i: 8, t: 30);
-  --tug-element-card-border-normal-titlebarOff-active: --tug-color(indigo-violet, i: 8, t: 30);
+  --tug-element-card-control-normal-muted-rest: --tug-color(indigo-violet, i: 5, t: 45);
+  --tug-element-card-control-normal-muted-hover: --tug-color(indigo-violet, i: 5, t: 65);
+  --tug-element-card-control-normal-muted-active: --tug-color(indigo-violet, i: 5, t: 80);
+  --tug-surface-card-control-normal-muted-rest: transparent;
+  --tug-surface-card-control-normal-muted-hover: --tug-color(white, a: 8);
+  --tug-surface-card-control-normal-muted-active: --tug-color(white, a: 15);
+  --tug-element-card-border-normal-muted-rest: transparent;
+  --tug-element-card-border-normal-muted-hover: --tug-color(indigo-violet, i: 8, t: 30);
+  --tug-element-card-border-normal-muted-active: --tug-color(indigo-violet, i: 8, t: 30);
 
   /* Card — Inactive Content Overlay (two layers: desaturate + wash) */
-  --tug-surface-card-primary-normal-contentDimDesat-color: --tug-color(gray, t: 30);
-  --tug-surface-card-primary-normal-contentDimDesat-amount: 0.1;
-  --tug-surface-card-primary-normal-contentDimWash-color: --tug-color(gray, t: 0, a: 5);
-  --tug-surface-card-primary-normal-contentDimWash-blend: multiply;
+  --tug-effect-card-desat-normal-dim-inactive: --tug-color(gray, t: 30);
+  --tug-effect-card-desat-normal-amount-inactive: 0.1;
+  --tug-effect-card-wash-normal-dim-inactive: --tug-color(gray, t: 0, a: 5);
+  --tug-effect-card-wash-normal-blend-inactive: multiply;
 
   /* Card — Findbar Highlights */
   --tug-surface-card-primary-normal-findmatch-rest: --tug-color(yellow, i: 50, t: 50, a: 30);
@@ -577,7 +577,7 @@ body {
   --tug-element-field-border-normal-plain-active: --tug-color(blue);
   --tug-element-field-border-normal-plain-disabled: --tug-color(indigo-violet, i: 6, t: 17);
   --tug-element-field-border-normal-plain-hover: --tug-color(indigo-cobalt, i: 7, t: 56);
-  --tug-element-field-border-normal-plain-readOnly: --tug-color(indigo-violet, i: 6, t: 17);
+  --tug-element-field-border-normal-plain-readonly: --tug-color(indigo-violet, i: 6, t: 17);
   --tug-element-field-border-normal-plain-rest: --tug-color(indigo, i: 6, t: 56);
   --tug-element-field-border-normal-success-rest: --tug-color(green);
   --tug-element-field-fill-normal-caution-rest: --tug-color(yellow);
@@ -586,13 +586,13 @@ body {
   --tug-element-field-text-normal-label-rest: --tug-color(indigo, i: 3, t: 94);
   --tug-element-field-text-normal-placeholder-rest: --tug-color(indigo, i: 6, t: 51);
   --tug-element-field-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 7, t: 23);
-  --tug-element-field-text-normal-plain-readOnly: --tug-color(indigo, i: 5, t: 66);
+  --tug-element-field-text-normal-plain-readonly: --tug-color(indigo, i: 5, t: 66);
   --tug-element-field-text-normal-plain-rest: --tug-color(indigo, i: 3, t: 94);
   --tug-element-field-text-normal-required-rest: --tug-color(red, t: 69);
   --tug-surface-field-primary-normal-plain-disabled: --tug-color(indigo-violet, i: 5, t: 6);
   --tug-surface-field-primary-normal-plain-focus: --tug-color(indigo-violet, i: 4, t: 7);
   --tug-surface-field-primary-normal-plain-hover: --tug-color(violet, i: 5, t: 11);
-  --tug-surface-field-primary-normal-plain-readOnly: --tug-color(violet, i: 5, t: 11);
+  --tug-surface-field-primary-normal-plain-readonly: --tug-color(violet, i: 5, t: 11);
   --tug-surface-field-primary-normal-plain-rest: --tug-color(indigo-violet, i: 5, t: 8);
 
   /* Toggle */
@@ -691,5 +691,5 @@ body {
   --tug-surface-badge-primary-tinted-success-rest: --tug-color(green, i: 65, t: 60, a: 15);
 
   /* Other */
-  --tug-element-cardTitle-text-normal-plain-rest: --tug-color(indigo, i: 3, t: 94);
+  --tug-element-card-title-normal-plain-rest: --tug-color(indigo, i: 3, t: 94);
 }

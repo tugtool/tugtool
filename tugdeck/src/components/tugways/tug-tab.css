@@ -31,8 +31,8 @@ body {
   --tug-tab-fg-hover: var(--tug-element-tab-text-normal-plain-hover);
   --tug-tab-fg-active: var(--tug-element-tab-text-normal-plain-active);
   --tug-tab-fg-compact: var(--tug-element-global-text-normal-muted-rest);
-  --tug-tab-close-bg-hover: var(--tug-surface-tabClose-primary-normal-plain-hover);
-  --tug-tab-close-fg-hover: var(--tug-element-tabClose-text-normal-plain-hover);
+  --tug-tab-close-bg-hover: var(--tug-surface-tab-close-normal-plain-hover);
+  --tug-tab-close-fg-hover: var(--tug-element-tab-close-normal-plain-hover);
   --tug-tab-underline-active: var(--tug-element-global-fill-normal-accent-rest);
   --tug-tab-dropTarget-bg: var(--tug-surface-highlight-primary-normal-preview-rest);
   --tug-tab-dropTarget-border: var(--tug-element-global-icon-normal-active-rest);
