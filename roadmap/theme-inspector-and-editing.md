@@ -317,6 +317,62 @@ This approach:
 - Produces a focused list of exactly the formula fields that
   control the element the user is looking at
 
+### Phase A3 — Fix All-State Formula Collection (Phase A2 was incomplete)
+
+**What Phase A2 got wrong:**
+
+Phase A2 added `collectElementTugProperties` which scans matched CSS
+rules for property **names** starting with `--tug-`. This works for
+components that define custom property aliases (e.g., tug-tab defines
+`--tug-tab-bg-rest: var(--tug-surface-tab-...)`). But it completely
+misses components that reference `--tug-*` tokens via `var()` in
+standard CSS properties (e.g., a button's rule sets
+`background-color: var(--tug-surface-control-primary-filled-accent-rest)`).
+The `--tug-*` token is in the property VALUE, not the property NAME.
+
+Result: TugButton shows `(constant)` — a regression from before
+Phase A2, where `buildFormulaRows` at least found the rest-state
+formulas from the three traced chains.
+
+Phase A2 also kept `buildFormulaRows` as a "fallback" path in
+`FormulaSection`, creating two competing code paths. That's a code
+smell, not a solution.
+
+**What Phase A3 fixes:**
+
+1. `collectElementTugProperties` must collect `--tug-*` tokens from
+   TWO sources in matched rules:
+   - Property **names** starting with `--tug-` (custom property
+     aliases like `--tug-tab-bg-rest`)
+   - `var(--tug-...)` references in property **values** (like
+     `background-color: var(--tug-surface-control-...)`)
+
+   Use `matchAll(/var\((--tug-[a-zA-Z0-9_-]+)/g)` on each property
+   value to extract all `--tug-*` token references.
+
+2. Remove `buildFormulaRows` entirely. `FormulaSection` takes
+   `allStateFormulas: Map<string, FormulaRow[]>` — no `rows` prop,
+   no fallback, no null check. One path.
+
+3. Remove `formulaRows` variable and the `buildFormulaRows` call
+   from `StyleInspectorContent`. The `allStateFormulas` field on
+   `InspectionData` is the only formula data source.
+
+4. Remove the `buildFormulaRows` import from `style-inspector-card.tsx`.
+
+5. Remove the `buildFormulaRows` function from
+   `style-inspector-core.ts` if nothing else imports it. Check
+   whether tests or other files reference it — if so, remove those
+   references too.
+
+**Verification:**
+
+- TugButton must show rest, hover, and active formula groups
+  (not `(constant)`)
+- tug-tab must show its formula fields across states
+  (not `(constant)`)
+- `bun run check`, `bun run test`, `bun run audit:tokens` pass
+
 ### Phase B — Code Audit and Cleanup
 
 1. **Audit `style-inspector-core.ts`**: Remove any dead code left
