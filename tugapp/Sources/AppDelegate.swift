@@ -573,26 +573,30 @@ extension AppDelegate: NSMenuDelegate {
             }
         }
 
-        // Read theme names directly from the shipped themes directory on disk.
-        // sourceTreePath is the tugtool repo root; themes are at tugdeck/themes/*.json.
-        var themeNames: [String] = []
+        // Read theme names directly from shipped CSS files on disk.
+        // sourceTreePath is the tugtool repo root; override themes are at
+        // tugdeck/styles/themes/*.css, and base theme is always "brio".
+        var themeNames = Set<String>([baseThemeName])
         if let root = sourceTreePath {
-            let themesDir = (root as NSString).appendingPathComponent("tugdeck/themes")
+            let themesDir = (root as NSString).appendingPathComponent("tugdeck/styles/themes")
             if let files = try? FileManager.default.contentsOfDirectory(atPath: themesDir) {
-                themeNames = files
-                    .filter { $0.hasSuffix(".json") }
+                let discovered = files
+                    .filter { $0.hasSuffix(".css") }
                     .map { ($0 as NSString).deletingPathExtension }
+                for name in discovered {
+                    themeNames.insert(name)
+                }
             }
         }
 
         // Sort: base theme first, then alphabetical
-        themeNames.sort { a, b in
+        let sortedThemeNames = themeNames.sorted { a, b in
             if a.lowercased() == baseThemeName { return true }
             if b.lowercased() == baseThemeName { return false }
             return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
         }
 
-        for name in themeNames {
+        for name in sortedThemeNames {
             let item = NSMenuItem(title: name.capitalized, action: #selector(selectTheme(_:)), keyEquivalent: "")
             item.representedObject = name
             item.state = (name == activeThemeName) ? .on : .off
