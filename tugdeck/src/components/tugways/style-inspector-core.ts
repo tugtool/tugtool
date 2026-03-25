@@ -777,6 +777,172 @@ export function buildDomPath(el: HTMLElement): string {
   return parts.join(" > ");
 }
 
+// ---------------------------------------------------------------------------
+// All-state formula helpers (Phase A2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk the inspected element's matched CSS rules and collect all --tug-*
+ * custom property names defined in any rule that matches the element.
+ *
+ * Also checks ancestor elements up to 4 levels deep, since tug tokens are
+ * often defined on parent containers like body or wrapper divs.
+ *
+ * Same try/catch pattern as walkRulesForToken for cross-origin safety.
+ *
+ * Returns a deduplicated array of --tug-* property names.
+ */
+export function collectElementTugProperties(el: HTMLElement): string[] {
+  const found = new Set<string>();
+
+  function walkRulesForTugProps(rules: CSSRuleList, target: HTMLElement): void {
+    for (let i = 0; i < rules.length; i++) {
+      let rule: CSSRule;
+      try {
+        rule = rules[i];
+      } catch {
+        continue;
+      }
+
+      if (rule instanceof CSSStyleRule) {
+        let matches = false;
+        try {
+          matches = target.matches(rule.selectorText);
+        } catch {
+          continue; // invalid selector
+        }
+        if (!matches) continue;
+
+        const style = rule.style;
+        for (let j = 0; j < style.length; j++) {
+          const prop = style[j];
+          if (prop.startsWith("--tug-")) {
+            found.add(prop);
+          }
+        }
+      } else {
+        // Recurse into grouping rules (@media, @supports, @layer, etc.)
+        let nested: CSSRuleList | undefined;
+        try {
+          if ("cssRules" in rule) {
+            nested = (rule as CSSGroupingRule).cssRules;
+          }
+        } catch {
+          continue;
+        }
+        if (nested) {
+          walkRulesForTugProps(nested, target);
+        }
+      }
+    }
+  }
+
+  // Walk the element and up to 4 ancestors
+  let current: HTMLElement | null = el;
+  let depth = 0;
+
+  while (current && depth <= 4) {
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        walkRulesForTugProps(sheet.cssRules, current);
+      } catch {
+        continue;
+      }
+    }
+    current = current.parentElement as HTMLElement | null;
+    depth++;
+  }
+
+  return Array.from(found);
+}
+
+/**
+ * Parse the interaction state from a --tug-* property name suffix.
+ * Returns 'rest', 'hover', 'active', or 'disabled'.
+ * Defaults to 'rest' if no recognized suffix is found.
+ */
+function parseInteractionState(propertyName: string): string {
+  if (propertyName.endsWith("-hover")) return "hover";
+  if (propertyName.endsWith("-active")) return "active";
+  if (propertyName.endsWith("-disabled")) return "disabled";
+  return "rest";
+}
+
+/**
+ * Build formula rows grouped by interaction state from a list of --tug-*
+ * custom property names.
+ *
+ * For each property:
+ *   1. Resolve the var() chain via resolveTokenChain
+ *   2. Get the terminal token (last hop's property, or the property itself)
+ *   3. Look up reverseMap.tokenToFields for formula field mappings
+ *   4. Parse interaction state from the property name suffix
+ *   5. Insert rows into the Map keyed by state name
+ *
+ * Deduplicates by field name within each state group.
+ *
+ * Returns Map<string, FormulaRow[]> where keys are state names
+ * ('rest', 'hover', 'active', 'disabled').
+ */
+export function buildAllStateFormulaRows(
+  tugProperties: string[],
+  formulasData: FormulasData,
+  reverseMap: ReverseMap
+): Map<string, FormulaRow[]> {
+  const result = new Map<string, FormulaRow[]>();
+  // Track seen fields per state to deduplicate
+  const seenByState = new Map<string, Set<string>>();
+
+  for (const prop of tugProperties) {
+    const chain = resolveTokenChain(prop);
+
+    // Get the terminal token: last hop's property if chain is non-empty,
+    // otherwise the property itself.
+    let terminalToken: string;
+    if (chain.length > 0) {
+      terminalToken = chain[chain.length - 1].property;
+    } else {
+      terminalToken = prop;
+    }
+
+    const mappings = reverseMap.tokenToFields.get(terminalToken);
+    if (!mappings || mappings.length === 0) continue;
+
+    const state = parseInteractionState(prop);
+
+    if (!result.has(state)) {
+      result.set(state, []);
+      seenByState.set(state, new Set());
+    }
+    const rows = result.get(state)!;
+    const seenFields = seenByState.get(state)!;
+
+    // Determine structural flag from chain
+    const terminalValue = chain.length > 0 ? chain[chain.length - 1].value : "";
+    const isStructural =
+      !!terminalValue &&
+      !terminalValue.startsWith("oklch(") &&
+      !PALETTE_VAR_REGEX.test(terminalToken);
+
+    for (const mapping of mappings) {
+      if (seenFields.has(mapping.field)) continue;
+      seenFields.add(mapping.field);
+
+      const rawValue = formulasData.formulas[mapping.field];
+      if (rawValue === undefined) continue;
+
+      rows.push({
+        field: mapping.field,
+        value: rawValue,
+        property: mapping.property,
+        isStructural,
+      });
+    }
+  }
+
+  return result;
+}
+
 /**
  * Build formula rows data from token chains and formulas data.
  *

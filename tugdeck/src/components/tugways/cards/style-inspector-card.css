@@ -315,6 +315,43 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Formula state grouping -- all-state formula display (Phase A2)
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-formula-state {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+/**
+ * State sub-header label (rest / hover / active / disabled).
+ * Subtle uppercase label, smaller and lighter than .tug-inspector-section__title.
+ *
+ * @tug-pairings (addendum)
+ * | Element token                                               | Surface token                                    | Role         | Context                         |
+ * |-------------------------------------------------------------|--------------------------------------------------|--------------|---------------------------------|
+ * | --tug-element-global-text-normal-subtle-rest                | --tug-surface-global-primary-normal-content-rest | informational | Formula state sub-header label |
+ */
+.tug-inspector-formula-state__label {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--tug-element-global-text-normal-subtle-rest);
+  font-weight: 500;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--tug-element-global-divider-normal-separator-rest);
+}
+
+.tug-inspector-formula-state:first-child .tug-inspector-formula-state__label {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ---------------------------------------------------------------------------
    Editable formula value -- click-to-edit in FormulaSection
    --------------------------------------------------------------------------- */
 

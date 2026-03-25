@@ -49,6 +49,8 @@ import {
   resolveTokenChainForProperty,
   fetchFormulasData,
   buildFormulaRows,
+  collectElementTugProperties,
+  buildAllStateFormulaRows,
   extractTugColorProvenance,
   buildDomPath,
   shortenNumbers,
@@ -154,6 +156,8 @@ interface InspectionData {
   timing: number;
   motionOn: boolean;
   formulasData: FormulasData | null;
+  /** All-state formula rows grouped by interaction state (rest/hover/active/disabled). Null until formulasData loads. */
+  allStateFormulas: Map<string, FormulaRow[]> | null;
 }
 
 /** Button mode enum for the three-state inspect button. */
@@ -312,14 +316,95 @@ function ChainSection({
 // ---------------------------------------------------------------------------
 
 /**
+ * FormulaRowItem renders a single formula row with inline editing support.
+ */
+function FormulaRowItem({ row, sources, defaults }: {
+  row: FormulaRow;
+  sources: Record<string, string>;
+  defaults: Record<string, number | string | boolean>;
+}) {
+  return (
+    <div className="tug-inspector-formula-field" key={row.field}>
+      <span className="tug-inspector-formula-field__name">{row.field}</span>
+      <span className="tug-inspector-row__value--dim"> = </span>
+      <FormulaChipValue row={row} sources={sources} />
+      <span className="tug-inspector-formula-field__type">{row.property}</span>
+      {row.isStructural && (
+        <span className="tug-inspector-formula__release-label">(applies on release)</span>
+      )}
+      <FormulaDefault row={row} defaults={defaults} />
+    </div>
+  );
+}
+
+/**
  * FormulaSection renders formula rows with inline editing support.
+ *
+ * When allStateFormulas is provided (non-null):
+ *   - If empty (no states have rows): shows (constant)
+ *   - If one state has rows: renders those rows directly (no state header)
+ *   - If multiple states have rows: renders each state group with a sub-header label
+ *
+ * Falls back to the legacy `rows` prop when allStateFormulas is null
+ * (formulasData not yet loaded).
+ *
  * Uses FormulaChipValue for the value display (supports click-to-edit).
  */
-function FormulaSection({ rows, sources, defaults }: {
+function FormulaSection({ allStateFormulas, rows, sources, defaults }: {
+  allStateFormulas: Map<string, FormulaRow[]> | null;
   rows: FormulaRow[];
   sources: Record<string, string>;
   defaults: Record<string, number | string | boolean>;
 }) {
+  // If allStateFormulas is available, use it; otherwise fall back to legacy rows.
+  if (allStateFormulas !== null) {
+    // Collect non-empty states in display order
+    const stateOrder = ["rest", "hover", "active", "disabled"];
+    const activeStates = stateOrder.filter(
+      (s) => (allStateFormulas.get(s)?.length ?? 0) > 0
+    );
+    // Also include any states not in the canonical order
+    for (const [s, stateRows] of allStateFormulas) {
+      if (!stateOrder.includes(s) && stateRows.length > 0) {
+        activeStates.push(s);
+      }
+    }
+
+    const isConstant = activeStates.length === 0;
+    const multiState = activeStates.length > 1;
+
+    return (
+      <div className="tug-inspector-section">
+        <div className="tug-inspector-section__title">Formula</div>
+        {isConstant ? (
+          <div className="tug-inspector-row">
+            <span className="tug-inspector-row__value tug-inspector-row__value--dim">(constant)</span>
+          </div>
+        ) : (
+          activeStates.map((state) => {
+            const stateRows = allStateFormulas.get(state) ?? [];
+            return (
+              <div key={state} className="tug-inspector-formula-state">
+                {multiState && (
+                  <div className="tug-inspector-formula-state__label">{state}</div>
+                )}
+                {stateRows.map((row) => (
+                  <FormulaRowItem
+                    key={row.field}
+                    row={row}
+                    sources={sources}
+                    defaults={defaults}
+                  />
+                ))}
+              </div>
+            );
+          })
+        )}
+      </div>
+    );
+  }
+
+  // Fallback: legacy rows before allStateFormulas is computed
   const isConstant = rows.length === 0;
 
   return (
@@ -331,16 +416,12 @@ function FormulaSection({ rows, sources, defaults }: {
         </div>
       ) : (
         rows.map((row) => (
-          <div className="tug-inspector-formula-field" key={row.field}>
-            <span className="tug-inspector-formula-field__name">{row.field}</span>
-            <span className="tug-inspector-row__value--dim"> = </span>
-            <FormulaChipValue row={row} sources={sources} />
-            <span className="tug-inspector-formula-field__type">{row.property}</span>
-            {row.isStructural && (
-              <span className="tug-inspector-formula__release-label">(applies on release)</span>
-            )}
-            <FormulaDefault row={row} defaults={defaults} />
-          </div>
+          <FormulaRowItem
+            key={row.field}
+            row={row}
+            sources={sources}
+            defaults={defaults}
+          />
         ))
       )}
     </div>
@@ -830,6 +911,7 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
       timing,
       motionOn,
       formulasData: null,
+      allStateFormulas: null,
     };
     setRenderKey((k) => k + 1);
 
@@ -837,9 +919,16 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
     const targetEl = el;
     fetchFormulasData().then((data) => {
       if (inspectionDataRef.current && inspectionDataRef.current.el === targetEl) {
+        let allStateFormulas: Map<string, FormulaRow[]> | null = null;
+        if (data) {
+          const reverseMap = getReverseMap();
+          const tugProps = collectElementTugProperties(targetEl);
+          allStateFormulas = buildAllStateFormulaRows(tugProps, data, reverseMap);
+        }
         inspectionDataRef.current = {
           ...inspectionDataRef.current,
           formulasData: data,
+          allStateFormulas,
         };
         setRenderKey((k) => k + 1);
       }
@@ -976,9 +1065,13 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
         ) {
           return;
         }
+        const reverseMap = getReverseMap();
+        const tugProps = collectElementTugProperties(targetEl);
+        const allStateFormulas = buildAllStateFormulaRows(tugProps, data, reverseMap);
         inspectionDataRef.current = {
           ...inspectionDataRef.current,
           formulasData: data,
+          allStateFormulas,
         };
         setRenderKey((k) => k + 1);
       }).catch(() => {});
@@ -993,8 +1086,8 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
   const data = inspectionDataRef.current;
   const mode = modeRef.current;
 
-  // Build formula rows if formulasData is available
-  let formulaRows: FormulaRow[] | null = null;
+  // Build legacy formula rows (used as fallback before allStateFormulas loads)
+  let formulaRows: FormulaRow[] = [];
   if (data && data.formulasData) {
     const reverseMap = getReverseMap();
     formulaRows = buildFormulaRows(
@@ -1132,9 +1225,14 @@ export function StyleInspectorContent({ cardId }: { cardId: string }) {
               property="border-color"
             />
 
-            {/* Formula provenance section */}
-            {formulaRows !== null && (
-              <FormulaSection rows={formulaRows} sources={data.formulasData?.sources ?? {}} defaults={data.formulasData?.defaults ?? {}} />
+            {/* Formula provenance section — shows when formulasData is loaded or as fallback */}
+            {(data.allStateFormulas !== null || formulaRows.length > 0) && (
+              <FormulaSection
+                allStateFormulas={data.allStateFormulas}
+                rows={formulaRows}
+                sources={data.formulasData?.sources ?? {}}
+                defaults={data.formulasData?.defaults ?? {}}
+              />
             )}
           </>
         )}

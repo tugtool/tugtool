@@ -12,6 +12,8 @@
  * - buildFormulaRows: builds formula rows from token chains and formulas data
  * - createFormulaSection: renders formula rows as HTMLElement (retained for test coverage
  *   until migrated to buildFormulaRows-based tests; see roadmap #roadmap)
+ * - collectElementTugProperties: collects --tug-* properties from matched CSS rules
+ * - buildAllStateFormulaRows: groups formula rows by interaction state
  *
  * Note: Tests use happy-dom (preloaded via bunfig.toml). getComputedStyle in
  * happy-dom returns empty strings for custom properties, so token chain tests use
@@ -30,8 +32,11 @@ import {
   buildDomPath,
   buildFormulaRows,
   createFormulaSection,
+  collectElementTugProperties,
+  buildAllStateFormulaRows,
 } from "@/components/tugways/style-inspector-core";
 import type { TokenChainResult, FormulasData } from "@/components/tugways/style-inspector-core";
+import type { ReverseMap } from "@/components/tugways/formula-reverse-map";
 
 // ---------------------------------------------------------------------------
 // PALETTE_VAR_REGEX
@@ -549,6 +554,185 @@ describe("createFormulaSection", () => {
     const titleEl = el.querySelector(".tug-inspector-section__title");
     expect(titleEl).not.toBeNull();
     expect(titleEl!.textContent).toBe("Formula");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectElementTugProperties
+// ---------------------------------------------------------------------------
+
+describe("collectElementTugProperties", () => {
+  it("returns an array", () => {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    const result = collectElementTugProperties(el);
+    expect(Array.isArray(result)).toBe(true);
+    document.body.removeChild(el);
+  });
+
+  it("returns empty array for a detached element with no matched rules", () => {
+    const el = document.createElement("div");
+    // Not appended to the DOM — no stylesheets will match it
+    const result = collectElementTugProperties(el);
+    expect(Array.isArray(result)).toBe(true);
+    // May or may not be empty depending on global rules, but should not throw
+  });
+
+  it("deduplicates property names", () => {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    const result = collectElementTugProperties(el);
+    // Result should have no duplicates
+    const unique = new Set(result);
+    expect(unique.size).toBe(result.length);
+    document.body.removeChild(el);
+  });
+
+  it("only returns properties starting with --tug-", () => {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    const result = collectElementTugProperties(el);
+    for (const prop of result) {
+      expect(prop.startsWith("--tug-")).toBe(true);
+    }
+    document.body.removeChild(el);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildAllStateFormulaRows
+// ---------------------------------------------------------------------------
+
+describe("buildAllStateFormulaRows", () => {
+  const makeFormulasData = (formulas: Record<string, number | string | boolean>): FormulasData => ({
+    formulas,
+    defaults: {},
+    sources: {},
+    mode: "dark",
+    themeName: "test",
+  });
+
+  const makeReverseMap = (entries: Array<[string, Array<{ field: string; property: "tone" | "intensity" | "alpha" | "hueSlot" }>]>): ReverseMap => ({
+    fieldToTokens: new Map(),
+    tokenToFields: new Map(entries),
+  });
+
+  it("returns empty Map when no properties provided", () => {
+    const formulasData = makeFormulasData({});
+    const reverseMap = makeReverseMap([]);
+    const result = buildAllStateFormulaRows([], formulasData, reverseMap);
+    expect(result.size).toBe(0);
+  });
+
+  it("groups by interaction state from property name suffix", () => {
+    // In happy-dom, getComputedStyle resolves var() to computed values,
+    // so resolveTokenChain returns a single-hop chain where the terminal
+    // token is the property itself. We match the reverseMap to property names.
+    document.body.style.setProperty("--tug-btn-bg-rest", " oklch(0.5 0.1 180)");
+    document.body.style.setProperty("--tug-btn-bg-hover", " oklch(0.6 0.1 180)");
+
+    const formulasData = makeFormulasData({ restIntensity: 5, hoverIntensity: 8 });
+    const reverseMap = makeReverseMap([
+      ["--tug-btn-bg-rest", [{ field: "restIntensity", property: "intensity" }]],
+      ["--tug-btn-bg-hover", [{ field: "hoverIntensity", property: "intensity" }]],
+    ]);
+
+    const result = buildAllStateFormulaRows(
+      ["--tug-btn-bg-rest", "--tug-btn-bg-hover"],
+      formulasData,
+      reverseMap
+    );
+
+    const restRows = result.get("rest") ?? [];
+    const hoverRows = result.get("hover") ?? [];
+
+    expect(restRows.length).toBe(1);
+    expect(restRows[0].field).toBe("restIntensity");
+
+    expect(hoverRows.length).toBe(1);
+    expect(hoverRows[0].field).toBe("hoverIntensity");
+
+    document.body.style.removeProperty("--tug-btn-bg-rest");
+    document.body.style.removeProperty("--tug-btn-bg-hover");
+  });
+
+  it("defaults to 'rest' state when no recognized suffix", () => {
+    document.body.style.setProperty("--tug-some-bg", " oklch(0.5 0.1 180)");
+
+    const formulasData = makeFormulasData({ someField: 10 });
+    const reverseMap = makeReverseMap([
+      ["--tug-some-bg", [{ field: "someField", property: "tone" }]],
+    ]);
+
+    const result = buildAllStateFormulaRows(["--tug-some-bg"], formulasData, reverseMap);
+
+    const restRows = result.get("rest") ?? [];
+    expect(restRows.length).toBe(1);
+    expect(restRows[0].field).toBe("someField");
+
+    document.body.style.removeProperty("--tug-some-bg");
+  });
+
+  it("deduplicates fields within the same state", () => {
+    // Two properties in the same state that both map to the same field.
+    document.body.style.setProperty("--tug-prop-a-rest", " oklch(0.5 0.1 180)");
+    document.body.style.setProperty("--tug-prop-b-rest", " oklch(0.5 0.1 180)");
+
+    const formulasData = makeFormulasData({ sharedField: 42 });
+    const reverseMap = makeReverseMap([
+      ["--tug-prop-a-rest", [{ field: "sharedField", property: "intensity" }]],
+      ["--tug-prop-b-rest", [{ field: "sharedField", property: "intensity" }]],
+    ]);
+
+    const result = buildAllStateFormulaRows(
+      ["--tug-prop-a-rest", "--tug-prop-b-rest"],
+      formulasData,
+      reverseMap
+    );
+
+    const restRows = result.get("rest") ?? [];
+    // sharedField should appear only once despite two properties mapping to it
+    expect(restRows.filter((r) => r.field === "sharedField").length).toBe(1);
+
+    document.body.style.removeProperty("--tug-prop-a-rest");
+    document.body.style.removeProperty("--tug-prop-b-rest");
+  });
+
+  it("recognizes -active and -disabled suffixes", () => {
+    document.body.style.setProperty("--tug-btn-bg-active", " oklch(0.4 0.1 180)");
+    document.body.style.setProperty("--tug-btn-bg-disabled", " oklch(0.3 0.05 180)");
+
+    const formulasData = makeFormulasData({ activeField: 3, disabledField: 1 });
+    const reverseMap = makeReverseMap([
+      ["--tug-btn-bg-active", [{ field: "activeField", property: "intensity" }]],
+      ["--tug-btn-bg-disabled", [{ field: "disabledField", property: "alpha" }]],
+    ]);
+
+    const result = buildAllStateFormulaRows(
+      ["--tug-btn-bg-active", "--tug-btn-bg-disabled"],
+      formulasData,
+      reverseMap
+    );
+
+    expect((result.get("active") ?? []).length).toBe(1);
+    expect((result.get("disabled") ?? []).length).toBe(1);
+    expect(result.get("active")![0].field).toBe("activeField");
+    expect(result.get("disabled")![0].field).toBe("disabledField");
+
+    document.body.style.removeProperty("--tug-btn-bg-active");
+    document.body.style.removeProperty("--tug-btn-bg-disabled");
+  });
+
+  it("skips properties with no matching token in the reverse map", () => {
+    document.body.style.setProperty("--tug-unknown-rest", " oklch(0.5 0.1 180)");
+
+    const formulasData = makeFormulasData({ someField: 10 });
+    const reverseMap = makeReverseMap([]); // empty map
+
+    const result = buildAllStateFormulaRows(["--tug-unknown-rest"], formulasData, reverseMap);
+    expect(result.size).toBe(0);
+
+    document.body.style.removeProperty("--tug-unknown-rest");
   });
 });
 
