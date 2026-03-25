@@ -12,9 +12,10 @@
  * | --tug-card-title-fg-inactive (card-title-fg-inactive) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | content      | .tugcard-title (color)               |
  * | --tug-card-title-bar-icon-active (card-title-bar-icon-active) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
  * | --tug-card-title-bar-icon-inactive (card-title-bar-icon-inactive) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
- * | --tug-card-control-fg-rest (card-control-fg-rest) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-title-bar-controls .tug-button (color) |
- * | --tug-card-control-fg-rest (card-control-fg-rest) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-title-bar-controls .tug-button (color) |
- * | --tug-card-control-fg-hover (card-control-fg-hover) | --tug-surface-card-control-normal-titlebar-hover (surface-card-control-normal-titlebar-hover) | control      | .card-title-bar-controls .tug-button:hover (color) |
+ * | --tug-card-control-on-fg-rest (card-control-on-fg-rest) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button (color) |
+ * | --tug-card-control-on-fg-hover (card-control-on-fg-hover) | --tug-surface-card-control-normal-titlebarOn-hover (surface-card-control-normal-titlebarOn-hover) | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover (color) |
+ * | --tug-card-control-off-fg-rest (card-control-off-fg-rest) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button (color) |
+ * | --tug-card-control-off-fg-hover (card-control-off-fg-hover) | --tug-surface-card-control-normal-titlebarOff-hover (surface-card-control-normal-titlebarOff-hover) | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover (color) |
  * | --tug-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
  * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
  */
@@ -43,12 +44,27 @@ body {
   --tug-card-title-bar-icon-inactive: var(--tug-element-card-icon-normal-title-inactive);
   --tug-card-title-bar-icon-hover: var(--tug-element-card-icon-normal-title-hover);
 
-  /* --- Card Title Bar — Control Buttons (ghost-style) --- */
-  --tug-card-control-fg-rest: var(--tug-element-card-control-normal-titlebar-rest);
-  --tug-card-control-fg-hover: var(--tug-element-card-control-normal-titlebar-hover);
-  --tug-card-control-fg-active: var(--tug-element-card-control-normal-titlebar-active);
-  --tug-card-control-bg-hover: var(--tug-surface-card-control-normal-titlebar-hover);
-  --tug-card-control-bg-active: var(--tug-surface-card-control-normal-titlebar-active);
+  /* --- Card Title Bar — Control Buttons (focused card) --- */
+  --tug-card-control-on-fg-rest: var(--tug-element-card-control-normal-titlebarOn-rest);
+  --tug-card-control-on-fg-hover: var(--tug-element-card-control-normal-titlebarOn-hover);
+  --tug-card-control-on-fg-active: var(--tug-element-card-control-normal-titlebarOn-active);
+  --tug-card-control-on-bg-rest: var(--tug-surface-card-control-normal-titlebarOn-rest);
+  --tug-card-control-on-bg-hover: var(--tug-surface-card-control-normal-titlebarOn-hover);
+  --tug-card-control-on-bg-active: var(--tug-surface-card-control-normal-titlebarOn-active);
+  --tug-card-control-on-border-rest: var(--tug-element-card-border-normal-titlebarOn-rest);
+  --tug-card-control-on-border-hover: var(--tug-element-card-border-normal-titlebarOn-hover);
+  --tug-card-control-on-border-active: var(--tug-element-card-border-normal-titlebarOn-active);
+
+  /* --- Card Title Bar — Control Buttons (unfocused card) --- */
+  --tug-card-control-off-fg-rest: var(--tug-element-card-control-normal-titlebarOff-rest);
+  --tug-card-control-off-fg-hover: var(--tug-element-card-control-normal-titlebarOff-hover);
+  --tug-card-control-off-fg-active: var(--tug-element-card-control-normal-titlebarOff-active);
+  --tug-card-control-off-bg-rest: var(--tug-surface-card-control-normal-titlebarOff-rest);
+  --tug-card-control-off-bg-hover: var(--tug-surface-card-control-normal-titlebarOff-hover);
+  --tug-card-control-off-bg-active: var(--tug-surface-card-control-normal-titlebarOff-active);
+  --tug-card-control-off-border-rest: var(--tug-element-card-border-normal-titlebarOff-rest);
+  --tug-card-control-off-border-hover: var(--tug-element-card-border-normal-titlebarOff-hover);
+  --tug-card-control-off-border-active: var(--tug-element-card-border-normal-titlebarOff-active);
 
   /* --- Card Accessory / Findbar --- */
   --tug-card-accessory-bg: var(--tug-surface-global-primary-normal-sunken-rest);
@@ -227,22 +243,44 @@ body {
   margin-left: var(--tug-space-xs);
 }
 
-/* Override ghost button styling for card title bar controls */
-/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-active, --tug-surface-card-primary-normal-titlebar-inactive */
-.card-title-bar-controls .tug-button {
-  color: var(--tug-card-control-fg-rest);
-  background-color: transparent;
-  border-color: transparent;
+/* Card title bar control buttons — focused card (titlebarOn) */
+/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-active */
+.card-frame[data-focused="true"] .card-title-bar-controls .tug-button {
+  color: var(--tug-card-control-on-fg-rest);
+  background-color: var(--tug-card-control-on-bg-rest);
+  border-color: var(--tug-card-control-on-border-rest);
 }
 
-.card-title-bar-controls .tug-button:hover:not(:disabled) {
-  color: var(--tug-card-control-fg-hover);
-  background-color: var(--tug-card-control-bg-hover);
+.card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover:not(:disabled) {
+  color: var(--tug-card-control-on-fg-hover);
+  background-color: var(--tug-card-control-on-bg-hover);
+  border-color: var(--tug-card-control-on-border-hover);
 }
 
-.card-title-bar-controls .tug-button:active:not(:disabled) {
-  color: var(--tug-card-control-fg-active);
-  background-color: var(--tug-card-control-bg-active);
+.card-frame[data-focused="true"] .card-title-bar-controls .tug-button:active:not(:disabled) {
+  color: var(--tug-card-control-on-fg-active);
+  background-color: var(--tug-card-control-on-bg-active);
+  border-color: var(--tug-card-control-on-border-active);
+}
+
+/* Card title bar control buttons — unfocused card (titlebarOff) */
+/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-inactive */
+.card-frame[data-focused="false"] .card-title-bar-controls .tug-button {
+  color: var(--tug-card-control-off-fg-rest);
+  background-color: var(--tug-card-control-off-bg-rest);
+  border-color: var(--tug-card-control-off-border-rest);
+}
+
+.card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover:not(:disabled) {
+  color: var(--tug-card-control-off-fg-hover);
+  background-color: var(--tug-card-control-off-bg-hover);
+  border-color: var(--tug-card-control-off-border-hover);
+}
+
+.card-frame[data-focused="false"] .card-title-bar-controls .tug-button:active:not(:disabled) {
+  color: var(--tug-card-control-off-fg-active);
+  background-color: var(--tug-card-control-off-bg-active);
+  border-color: var(--tug-card-control-off-border-active);
 }
 
 .card-title-bar-controls .tug-button svg {
