@@ -489,6 +489,19 @@ if critic_feedback.recommendation == "ESCALATE":
 
 ```
 if conformance_feedback.recommendation == "REVISE" or critic_feedback.recommendation == "REVISE":
+
+    # Declining-threshold override: after round 1, if the critic's only REVISE-triggering
+    # findings are MEDIUM (no HIGH or CRITICAL), treat critic as APPROVE.
+    # The critic's own recommendation logic should already handle this on re-review,
+    # but this is the orchestrator safety net.
+    if revision_count >= 1
+       and conformance_feedback.recommendation == "APPROVE"
+       and critic_feedback.recommendation == "REVISE"
+       and no finding in critic_feedback.findings has severity "HIGH" or "CRITICAL":
+        # Override: treat as both APPROVE. MEDIUM findings become implementation notes.
+        # Advance to overviewer gate (Step 5, "Both APPROVE" branch).
+        GO TO overviewer gate
+
     # Auto-revise: no user prompt. Go directly to author.
     # Clarifying questions (if any) are passed to the author as context via critic_feedback.
     # The author resolves them from the codebase or makes reasonable choices.

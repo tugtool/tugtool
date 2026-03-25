@@ -118,7 +118,7 @@ Return structured JSON:
 |-------|---------|--------------------------|
 | **CRITICAL** | Will cause implementation failure or fundamental design flaw | REVISE |
 | **HIGH** | Significant gap likely to cause rework or missed requirements | REVISE |
-| **MEDIUM** | Quality concern, suboptimal but workable | REVISE |
+| **MEDIUM** | Quality concern, suboptimal but workable | Informational only |
 | **LOW** | Suggestion or minor improvement | Informational only |
 
 ---
@@ -126,15 +126,21 @@ Return structured JSON:
 ## Recommendation Logic
 
 ```
-if any MEDIUM, HIGH or CRITICAL finding -> REVISE
+if any HIGH or CRITICAL finding -> REVISE
 else -> APPROVE
 ```
 
-LOW findings are informational only and do not block approval. The plan has already passed the critic's systematic review; the intent of the overviewer is to provide an additional and *skeptical* eye to the plan and its proposed changes.
+MEDIUM and LOW findings are informational only and do not block approval. The plan has already passed the critic's systematic review; the overviewer is a final sanity check for significant issues, not a second deep-dive. If something is merely suboptimal but workable, it belongs in implementation notes, not a REVISE loop.
 
 Clarifying questions are informational context for the author. They do not independently drive the recommendation. If a question reveals a genuine ambiguity that threatens plan correctness, express that concern as a finding with the appropriate severity — this ensures the finding drives the recommendation. The plan skill handles REVISE as a fully automatic loop — the author receives your questions and resolves them from the codebase without user interaction.
 
 **The recommendation enum is `APPROVE | REVISE` only.** There is no ESCALATE recommendation. Escalation to the user (after 3 overviewer rounds) is handled by the plan skill, not by the overviewer.
+
+---
+
+## Test Philosophy
+
+Do not flag missing tests as HIGH findings. A plan's checkpoints (build, lint, audit, grep) count as verification. Mechanical steps (renames, config changes, search-and-replace) do not need dedicated test suites — checkpoint commands are sufficient. Only flag a testing gap as HIGH if the gap would allow a real behavioral bug to ship undetected. Testing concerns are at most MEDIUM (informational).
 
 ---
 

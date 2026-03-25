@@ -223,6 +223,13 @@ Exception: Skip `tugplan-skeleton.md` and `tugplan-implementation-log.md` when c
 
 6. **References are exhaustive**: Steps must cite all relevant decisions, specs, tables, and anchors.
 
+7. **Tests: less is more.** Every test in a plan creates ongoing maintenance burden. Apply these principles:
+   - **Mechanical steps need no dedicated tests.** Renames, moves, search-and-replace, config changes — checkpoint commands (build, lint, audit, grep) are sufficient verification. Do not add test tasks for these steps.
+   - **Test behavior at boundaries, not implementation details.** A test that breaks on any internal refactor is a liability, not an asset.
+   - **Do not test framework guarantees.** If the framework handles it, trust it.
+   - **Prefer fewer, broader integration tests** over many narrow unit tests. Five well-chosen tests beat twenty-five mechanical ones.
+   - **Checkpoint commands count as verification.** A step with `cargo build`, `bun run audit:tokens lint`, or grep checks does not also need a separate test suite.
+
 ## Example Workflow
 
 **Input (first spawn):**

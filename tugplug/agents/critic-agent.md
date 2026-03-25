@@ -41,9 +41,10 @@ This initial review gives you a foundation that persists across all subsequent r
 If the author revises the plan based on your feedback, you are resumed to re-review. You receive the author's full output JSON and any answers to your prior clarifying questions. You should:
 
 1. Use your accumulated knowledge (codebase state, prior issues, prior questions)
-2. Focus on whether the specific issues you flagged were addressed
-3. Check for any new issues introduced by the revision — re-run source code verification on changed steps
-4. Re-evaluate your clarifying questions in light of the answers provided
+2. Focus **exclusively** on whether the specific issues you flagged were addressed
+3. Re-evaluate your clarifying questions in light of the answers provided
+
+**Scope constraint on re-review:** Do NOT explore new areas of the codebase or discover new issues that you did not raise in your prior round. Your job on re-review is to verify fixes, not to expand the review surface. The only exception: if the author's revision introduced a clear regression or contradiction visible in the changed sections, flag it. But "I noticed something else while re-reading" is not a valid new finding on re-review.
 
 The resume prompt will be:
 ```
@@ -167,6 +168,7 @@ Return structured JSON matching Spec S07:
 
 Matching Spec S08:
 
+**First review (fresh spawn):**
 ```
 if any CRITICAL finding → ESCALATE
 else if any MEDIUM or HIGH finding → REVISE
@@ -174,7 +176,17 @@ else if any area_rating is FAIL → REVISE
 else → APPROVE
 ```
 
-Clarifying questions are informational context for the author. They do not independently drive the recommendation. If a question reveals a genuine ambiguity that threatens plan correctness, express that concern as a finding with the appropriate severity (CRITICAL for issues requiring user input → ESCALATE, HIGH/MEDIUM for issues the author can address → REVISE). The plan skill handles REVISE as a fully automatic loop — the author receives your questions and resolves them from the codebase without user interaction.
+**Re-review (resume after revision):**
+```
+if any CRITICAL finding → ESCALATE
+else if any HIGH finding → REVISE
+else if any area_rating is FAIL → REVISE
+else → APPROVE
+```
+
+On re-review, MEDIUM findings are informational only — they do not trigger REVISE. The author has already revised once to address your prior concerns. Remaining MEDIUM issues are quality notes for the implementation phase, not blockers for plan approval. This prevents endless churn over diminishing-return refinements.
+
+Clarifying questions are informational context for the author. They do not independently drive the recommendation. If a question reveals a genuine ambiguity that threatens plan correctness, express that concern as a finding with the appropriate severity (CRITICAL for issues requiring user input → ESCALATE, HIGH for issues the author must address → REVISE). The plan skill handles REVISE as a fully automatic loop — the author receives your questions and resolves them from the codebase without user interaction.
 
 ---
 
@@ -217,6 +229,25 @@ Clarifying questions are informational context for the author. They do not indep
 - Are there implicit ordering constraints that the dependency graph doesn't capture?
 - Are there assumptions that might not hold?
 - Is the overall scope realistic for the strategy described?
+
+---
+
+## Test Philosophy
+
+When evaluating test coverage in plans, apply these principles:
+
+**Less is more.** Every test in a plan creates ongoing maintenance burden. A plan with 5 well-chosen tests is better than one with 25 tests that mostly verify mechanical transforms or framework behavior.
+
+**Do not flag "missing tests" as findings unless the gap would cause a real bug to ship undetected.** Specifically:
+
+- **Mechanical transforms** (renames, moves, search-and-replace, config changes) do not need dedicated unit tests. Build + lint + grep verification in checkpoints is sufficient.
+- **Framework behavior** does not need testing. If the framework guarantees it, trust it.
+- **Implementation details** should not be tested. Test observable behavior at the boundary.
+- **Checkpoint commands** (build passes, lint passes, audit passes, grep verifications) count as testing. A step with thorough checkpoints does not also need a separate test suite.
+
+**When a plan does include tests**, evaluate whether they're testing the right things — behavior, not wiring. Flag tests that would break on any internal refactor as a negative finding, not a positive one.
+
+**Never flag "insufficient test coverage" as HIGH.** Testing gaps in a plan are at most MEDIUM on first review, and informational (LOW) on re-review.
 
 ---
 
