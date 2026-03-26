@@ -1,5 +1,5 @@
 /**
- * TugPopupButton -- convenience popup button composing TugPopupMenu + TugButton.
+ * TugPopupButton — convenience popup button composing TugPopupMenu + TugButton.
  *
  * TugPopupButton is a macOS-style popup button with a fixed visual identity:
  *   emphasis="outlined", role="option", rounded="none", ChevronDown trailing icon.
@@ -7,10 +7,12 @@
  * These defaults are intentionally not configurable. [D04] Callers who need a
  * different trigger appearance use TugPopupMenu directly with their own trigger.
  *
- * **Authoritative references:**
- * - [D04] TugPopupButton defaults are not configurable
- * - [D02] TugPopupMenu takes a single ReactNode trigger prop
- * - Spec S04: TugPopupButtonProps interface
+ * Styling delegated to TugButton (trigger appearance) and TugPopupMenu (dropdown).
+ * No component CSS — this is a pure composition.
+ *
+ * Laws: [L11] controls emit actions, [L19] component authoring guide
+ * Decisions: [D02] TugPopupMenu takes a single ReactNode trigger prop,
+ *            [D04] TugPopupButton defaults are not configurable
  */
 
 import React from "react";
@@ -24,7 +26,7 @@ import type { TugPopupMenuItem } from "./tug-popup-menu";
 // when they also use TugPopupButton.
 export type { TugPopupMenuItem };
 
-// ---- Types (Spec S04) ----
+// ---- Types ----
 
 /**
  * Props for TugPopupButton.
@@ -32,8 +34,6 @@ export type { TugPopupMenuItem };
  * TugPopupButton always renders a TugButton with emphasis="outlined",
  * role="option", rounded="none", and a ChevronDown trailing icon.
  * These are fixed; pass label, items, onSelect, and optional size/className.
- *
- * **Authoritative reference:** Spec S04 TugPopupButtonProps.
  */
 export interface TugPopupButtonProps {
   /** Label content rendered inside the trigger button. */
