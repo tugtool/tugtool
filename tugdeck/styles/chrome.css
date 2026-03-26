@@ -35,15 +35,6 @@
   transition: none;
 }
 
-/* ---- Card shadow: inactive by default, active when focused ---- */
-.tugcard {
-  box-shadow: var(--tugx-card-shadow-inactive);
-}
-
-.card-frame[data-focused="true"] .tugcard {
-  box-shadow: var(--tugx-card-shadow-active);
-}
-
 /* ---- Card focus: border-radius on focused, dim overlay on unfocused ---- */
 .card-frame[data-focused="true"] {
   border-radius: var(--tug-radius-md);

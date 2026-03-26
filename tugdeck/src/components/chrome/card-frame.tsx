@@ -28,6 +28,37 @@ import { CARD_TITLE_BAR_HEIGHT } from "../tugways/tug-card";
 let nextFlashId = 0;
 
 // ---------------------------------------------------------------------------
+// snapshotCardRects
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot all .card-frame[data-card-id] elements as canvas-relative Rects.
+ * Optionally excludes a card by ID.
+ */
+function snapshotCardRects(
+  canvasBounds: DOMRect | null,
+  excludeId?: string,
+): { id: string; rect: Rect }[] {
+  const results: { id: string; rect: Rect }[] = [];
+  const els = document.querySelectorAll<HTMLElement>('.card-frame[data-card-id]');
+  els.forEach((el) => {
+    const cid = el.getAttribute('data-card-id');
+    if (!cid || cid === excludeId) return;
+    const domRect = el.getBoundingClientRect();
+    results.push({
+      id: cid,
+      rect: {
+        x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+        y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+        width: domRect.width,
+        height: domRect.height,
+      },
+    });
+  });
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Shadow extension constant
 //
 // px beyond border-box for exterior edges in clip-path: inset().
@@ -352,20 +383,7 @@ export function CardFrame({
       // Snapshot other card rects at drag-start for snap computation. [D04]
       // Convert to canvas-relative coordinates by subtracting canvas bounds offset.
       const canvasBounds = dragCanvasBounds.current;
-      dragOtherRects.current = [];
-      const cardFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
-      cardFrameEls.forEach((el) => {
-        const cid = el.getAttribute("data-card-id");
-        if (!cid || cid === id) return;
-        const domRect = el.getBoundingClientRect();
-        const rect: Rect = {
-          x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
-          y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
-          width: domRect.width,
-          height: domRect.height,
-        };
-        dragOtherRects.current.push({ id: cid, rect });
-      });
+      dragOtherRects.current = snapshotCardRects(canvasBounds, id);
 
       // Compute set membership at drag-start for set-move behavior. [D02]
       // Build allCardRects with this card prepended.
@@ -419,10 +437,10 @@ export function CardFrame({
         let setBBoxTop = cardTop;
         let setBBoxRight = cardRight;
         let setBBoxBottom = cardBottom;
-        for (const origin of dragSetOrigins.current) {
+        for (let i = 0; i < dragSetOrigins.current.length; i++) {
+          const origin = dragSetOrigins.current[i];
           // member frame dimensions from the DOM element (already pushed into dragSetMembers)
-          const memberIdx = dragSetOrigins.current.indexOf(origin);
-          const memberEl = dragSetMembers.current[memberIdx]?.el;
+          const memberEl = dragSetMembers.current[i]?.el;
           if (!memberEl) continue;
           const mRight = origin.x + memberEl.offsetWidth;
           const mBottom = origin.y + memberEl.offsetHeight;
@@ -790,38 +808,12 @@ export function CardFrame({
 
       // Snapshot canvas bounds and other card rects for resize snapping. [D04]
       const resizeCanvasBounds = frame.parentElement?.getBoundingClientRect() ?? null;
-      const resizeOtherRects: Rect[] = [];
-      const cardFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
-      cardFrameEls.forEach((el) => {
-        const cid = el.getAttribute("data-card-id");
-        if (!cid || cid === id) return;
-        const domRect = el.getBoundingClientRect();
-        resizeOtherRects.push({
-          x: domRect.left - (resizeCanvasBounds ? resizeCanvasBounds.left : 0),
-          y: domRect.top - (resizeCanvasBounds ? resizeCanvasBounds.top : 0),
-          width: domRect.width,
-          height: domRect.height,
-        });
-      });
+      const resizeOtherCardRects = snapshotCardRects(resizeCanvasBounds, id);
+      const resizeOtherRects = resizeOtherCardRects.map((r) => r.rect);
 
       // Snapshot set membership at resize-start for post-resize flash detection. [D54]
       // Build all card rects (including this card) and find which set this card belongs to.
-      const resizeAllRects: { id: string; rect: Rect }[] = [];
-      const resizeAllFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
-      resizeAllFrameEls.forEach((el) => {
-        const cid = el.getAttribute("data-card-id");
-        if (!cid) return;
-        const domRect = el.getBoundingClientRect();
-        resizeAllRects.push({
-          id: cid,
-          rect: {
-            x: domRect.left - (resizeCanvasBounds ? resizeCanvasBounds.left : 0),
-            y: domRect.top - (resizeCanvasBounds ? resizeCanvasBounds.top : 0),
-            width: domRect.width,
-            height: domRect.height,
-          },
-        });
-      });
+      const resizeAllRects = snapshotCardRects(resizeCanvasBounds);
       const resizePreSharedEdges = findSharedEdges(resizeAllRects);
       const resizePreSets = computeSets(
         resizeAllRects.map((c) => c.id),

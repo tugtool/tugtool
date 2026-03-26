@@ -115,6 +115,7 @@ body {
   border: 1px solid var(--tugx-card-border);
   border-radius: var(--tug-radius-md);
   overflow: hidden;
+  box-shadow: var(--tugx-card-shadow-inactive);
 }
 
 /* ============================================================================
@@ -158,6 +159,11 @@ body {
 
 .card-frame[data-focused="true"] .tugcard--collapsed {
   background-color: var(--tugx-card-title-bar-bg-active);
+}
+
+/* ---- Card shadow: active when focused ---- */
+.card-frame[data-focused="true"] .tugcard {
+  box-shadow: var(--tugx-card-shadow-active);
 }
 
 /* ============================================================================
