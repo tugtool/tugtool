@@ -213,15 +213,49 @@ export function CardFrame({
   );
 
   // ---------------------------------------------------------------------------
-  // Drag mechanic
+  // Drag system
+  //
+  // The drag mechanic is a three-phase state machine:
+  //
+  //   1. START (handleDragStart): snapshot all state, set up pointer capture,
+  //      build caches for snap/set/merge hit-testing, attach move/up listeners.
+  //
+  //   2. FRAME (applyDragFrame, called via rAF from onPointerMove): compute
+  //      clamped position, apply snap or set-move or free-drag, detect break-out,
+  //      hit-test tab bars for merge feedback. All DOM mutations are appearance-zone.
+  //
+  //   3. END (onPointerUp): commit final position to store, handle merge-on-drop,
+  //      flash set perimeter, clean up listeners and state.
+  //
+  // All drag state lives in refs — zero React re-renders during drag. The three
+  // nested functions (applyDragFrame, onPointerMove, onPointerUp) close over
+  // drag-start snapshots captured in handleDragStart. This closure architecture
+  // is intentional: the functions MUST see the drag-start state, and passing
+  // 15+ parameters would be worse than nesting.
+  //
+  // Three drag modes (determined per-frame in applyDragFrame):
+  //   - Free drag: solo card, no modifier. Position = clamped pointer delta.
+  //   - Snap mode: solo card + Alt held. Position snapped to other card edges.
+  //   - Set-move: card is in a set, no modifier. All set members move together.
+  //
+  // Break-out: pressing Alt during set-move detaches this card from the set,
+  // commits set member positions, and transitions to snap mode.
+  //
+  // Merge: dragging over another card's tab bar highlights the drop target.
+  // Releasing on the tab bar merges this card's active tab into the target.
   // ---------------------------------------------------------------------------
 
-  // All drag state lives in refs -- zero React re-renders during drag.
+  // Whether a drag gesture is currently active.
   const dragActive = useRef(false);
+  // Pending rAF handle; null when no frame is scheduled.
   const dragRafId = useRef<number | null>(null);
+  // Client-space pointer coordinates captured at pointer-down.
   const dragStartPointer = useRef({ x: 0, y: 0 });
+  // Canvas-relative card position captured at pointer-down.
   const dragStartPosition = useRef({ x: 0, y: 0 });
+  // Canvas bounding rect snapshotted at drag-start; used for all clamping.
   const dragCanvasBounds = useRef<DOMRect | null>(null);
+  // Most recent client-space pointer coordinates from onPointerMove.
   const latestDragPointer = useRef({ x: 0, y: 0 });
 
   // Track the tab bar element currently highlighted as a merge drop target.
@@ -235,19 +269,19 @@ export function CardFrame({
   const dragTabBarCache = useRef<Array<{ cardId: string; rect: DOMRect; el: HTMLElement }>>([]);
 
   // Snap-related refs [D01, D03, D04]
-  // Other card rects snapshotted at drag-start (canvas-relative, keyed by id). [D04]
+  // Canvas-relative rects of all other cards, snapshotted at drag-start for computeSnap. [D04]
   const dragOtherRects = useRef<{ id: string; rect: Rect }[]>([]);
-  // Active snap guide DOM elements for cleanup. [D03]
+  // Active snap guide DOM elements; cleared on drop and on each rAF if guides change. [D03]
   const dragGuideEls = useRef<HTMLElement[]>([]);
-  // Set member card ids and frame elements (empty if not in a set). [D02]
+  // Set member card IDs and their frame elements, excluding the dragged card. [D02]
   const dragSetMembers = useRef<{ id: string; el: HTMLElement }[]>([]);
-  // Parallel to dragSetMembers: original DOM positions at drag-start. [D02]
+  // Canvas-relative top-left positions of each dragSetMembers entry at drag-start. [D02]
   const dragSetOrigins = useRef<{ x: number; y: number }[]>([]);
-  // Snap modifier state from latest pointer event. [D01]
+  // Whether the snap modifier (Alt) was held as of the most recent pointermove. [D01]
   const latestSnapModifier = useRef(false);
-  // Previous frame's snap modifier value for break-out transition detection. [D05]
+  // Snap modifier value from the previous rAF; compared each frame to detect break-out. [D05]
   const prevSnapModifier = useRef(false);
-  // Most recent snap result, carried from rAF closure to onPointerUp. [D01]
+  // Snap result computed in the last rAF; read in onPointerUp to finalise snapped position. [D01]
   const lastSnapResult = useRef<SnapResult | null>(null);
   // Computed border width of the .tugcard element, read once at drag-start. [D56]
   // Passed to computeSnap so adjacent card borders collapse into a single visual line.
@@ -363,6 +397,10 @@ export function CardFrame({
       // conflict with pointer-driven position updates. [D07, chrome.css]
       frame.setAttribute("data-gesture", "true");
 
+      // === PHASE 1: SNAPSHOT ===
+      // Capture all state needed for the drag gesture. Everything below runs
+      // once at pointer-down and is read (not written) during the drag.
+
       // Snapshot canvas bounds and drag start state once.
       dragCanvasBounds.current = frame.parentElement?.getBoundingClientRect() ?? null;
       dragActive.current = true;
@@ -469,9 +507,18 @@ export function CardFrame({
       prevSnapModifier.current = false;
       lastSnapResult.current = null;
 
+      // === PHASE 2: FRAME (rAF callback) ===
+      // Called once per animation frame during drag. Computes position,
+      // applies snap/set-move/free-drag, detects break-out, hit-tests merge.
+      // All mutations are appearance-zone (direct DOM, no React state).
       function applyDragFrame() {
         dragRafId.current = null;
         if (!dragActive.current) return;
+        // Compute clamped position. Two paths:
+        //   - Set-move: clamp the entire set bounding box within the canvas,
+        //     then recover this card's position within the set.
+        //   - Solo: clamp just this card's frame within the canvas.
+        //
         // During set-move, clamp using the full set bounding box so no set member
         // can be dragged outside the canvas. During solo drag, use just the frame size. [D02]
         //
@@ -626,6 +673,7 @@ export function CardFrame({
         setDragDropTarget(found);
       }
 
+      // === POINTER HANDLERS ===
       function onPointerMove(e: PointerEvent) {
         latestDragPointer.current = { x: e.clientX, y: e.clientY };
         // Update snap modifier state from pointer event. [D01]
@@ -635,6 +683,9 @@ export function CardFrame({
         }
       }
 
+      // === PHASE 3: DROP ===
+      // Pointer released. Commit final position to store, handle merge,
+      // flash set perimeter, clean up listeners and reset all drag state.
       function onPointerUp(e: PointerEvent) {
         if (!dragActive.current) return;
         dragActive.current = false;
@@ -671,7 +722,9 @@ export function CardFrame({
               const insertIndex = computeMergeInsertIndex(entry.el, cx);
               onCardMerged(id, entry.cardId, insertIndex);
               dragTabBarCache.current = [];
-              // Reset all snap/set state before returning.
+              // Reset all drag state. This block appears in both the merge path
+              // and normal drop path — intentionally duplicated for clarity over
+              // a shared helper, since the two paths have different preceding logic.
               dragOtherRects.current = [];
               dragSetMembers.current = [];
               dragSetOrigins.current = [];
@@ -748,7 +801,9 @@ export function CardFrame({
         // Flash set perimeter / break-out flash on drop. [D54, D55]
         postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement);
 
-        // Reset all snap/set state.
+        // Reset all drag state. This block appears in both the merge path
+        // and normal drop path — intentionally duplicated for clarity over
+        // a shared helper, since the two paths have different preceding logic.
         dragOtherRects.current = [];
         dragSetMembers.current = [];
         dragSetOrigins.current = [];
@@ -769,7 +824,11 @@ export function CardFrame({
   );
 
   // ---------------------------------------------------------------------------
-  // Resize mechanic
+  // Resize system
+  //
+  // Same three-phase pattern as drag: snapshot at start, rAF frame updates,
+  // commit on pointer-up. Supports 8 edge/corner handles, min-size clamping,
+  // sash co-resize (shared edge between set members), and snap-to-edge.
   // ---------------------------------------------------------------------------
 
   // Snap guide DOM elements for resize (separate from drag guides). [D03]
