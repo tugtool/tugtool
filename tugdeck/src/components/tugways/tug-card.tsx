@@ -1,17 +1,7 @@
 /**
- * Tugcard -- composition component for card chrome and responder integration.
+ * Tugcard — composition root for card chrome and responder integration.
  *
- * **Authoritative references:**
- * - design-system-concepts.md Concept 6, [D01] Tugcard composition,
- *   [D03] CardFrame/Tugcard separation, [D05] Dynamic min-size,
- *   [D07] Tugcard responder node
- * - Spec S01 TugcardProps, Spec S07 Tugcard internal layout
- * - Phase 5b: [D01] Tab state is props-driven, [D03] Tab bar uses accessory
- *   slot, [D04] Inactive tabs unmount, [D05] Header follows active tab,
- *   [D07] Selection saved/restored on tab switch, Spec S02 extended props
- *
- * ## Visual Stack (Spec S07)
- *
+ * Visual stack:
  * ```
  * CardFrame (absolute positioning, drag handles, resize handles)
  *   └─ Tugcard (flex column)
@@ -21,43 +11,17 @@
  *             └─ children (active tab content or single card content)
  * ```
  *
- * ## Responsibilities
+ * Renders header chrome (title, icon, controls), tab management when
+ * multi-tab, responder node registration, selection boundary, and
+ * persistence (scroll/selection/content state save/restore on tab switch).
  *
- * - Render header chrome (title, optional icon, close button)
- * - When tabs.length > 1: render TugTabBar in the accessory slot; header
- *   title/icon follow the active tab's registration metadata ([D05])
- * - Register as a responder node with `close`, `selectAll`, `previousTab`,
- *   `nextTab`, `minimize`, `toggleMenu`, `find`
- * - Wrap children in `<ResponderScope>` for child responder registration
- * - Wrap children in `<TugcardDataProvider>` (feed subscription wired in Phase 6)
- * - Compute total min-size and report via `onMinSizeChange`
- * - Gate child mounting by feed arrival (feedless cards mount immediately)
- * - Call `onDragStart` from the header on pointer-down
- * - Save/restore selection on tab switch using SelectionGuard ([D07])
- *
- * ## CardTitleBar
- *
- * Title bar with control buttons and window-shade collapse.
- * Height is driven by --tug-chrome-height (defined in tug.css).
- * Icon sizes are CSS-driven via .tugcard-icon and .tug-button svg rules.
- *
- * - Control buttons: close, collapse (chevron), menu (horizontal ellipsis)
- * - Close button: pointer-capture pattern to suppress browser focus/selection side effects
- * - Collapse toggle: ChevronDown (expanded) / ChevronUp (collapsed)
- * - Double-click on title bar surface toggles collapse
- * - Drag: calls onDragStart on pointer-down on title bar surface
- *
- * ### Close button pointer-capture note (Step 7)
- *
- * The close button uses `setPointerCapture` on `pointerdown` to suppress
- * browser focus/selection side effects. When Step 7 wraps this button in
- * `TugConfirmPopover`, the pointer capture may conflict with Radix Popover's
- * focus management. Step 7 must verify that pointer capture is released before
- * the popover opens, or switch the close button to a standard click handler.
+ * Laws: [L06] appearance via CSS/DOM, [L09] card composition, [L19] component authoring guide
+ * Decisions: [D01] Tugcard composition, [D03] CardFrame/Tugcard separation, [D07] responder node
  *
  * @module components/tugways/tug-card
  */
 
+import "./tug-card.css";
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { icons } from "lucide-react";
 import type { FeedIdValue } from "../../protocol";
@@ -75,7 +39,6 @@ import { TugcardPropertyContext } from "./hooks/use-property-store";
 import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
 import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
-import "./tug-card.css";
 
 // ===========================================================================
 // CardTitleBar
@@ -97,17 +60,21 @@ export const CARD_TITLE_BAR_HEIGHT = 36;
 
 /**
  * Props for the CardTitleBar component.
- *
- * **Authoritative reference:** Step 3 Artifacts, CardTitleBar props interface.
  */
 export interface CardTitleBarProps {
   /** Display title for the card title bar. */
   title: string;
   /** Lucide icon name. Renders the icon via lucide-react lookup when provided. */
   icon?: string;
-  /** Whether to show the close button. Default: true. */
+  /**
+   * Whether to show the close button.
+   * @default true
+   */
   closable?: boolean;
-  /** Whether the card is currently collapsed. */
+  /**
+   * Whether the card is currently collapsed.
+   * @selector [aria-expanded]
+   */
   collapsed: boolean;
   /** Called when the collapse/expand button is clicked or title bar is double-clicked. */
   onCollapse: () => void;
@@ -173,8 +140,10 @@ export function CardTitleBar({
   //
   // click: keyboard fallback (Enter/Space).
   //
-  // Note for Step 7: pointer capture may conflict with Radix Popover's focus
-  // management. See module-level comment above.
+  // Note: pointer capture may conflict with Radix Popover's focus management
+  // if this button is ever wrapped in a confirm popover. Verify that pointer
+  // capture is released before the popover opens, or switch to a standard
+  // click handler.
   // ---------------------------------------------------------------------------
 
   const handleClosePointerDown = useCallback(
@@ -253,6 +222,7 @@ export function CardTitleBar({
   return (
     <div
       className="tugcard-title-bar"
+      data-slot="tug-card-title-bar"
       onPointerDown={handleTitleBarPointerDown}
       onDoubleClick={handleTitleBarDoubleClick}
       data-testid="tugcard-title-bar"
@@ -354,12 +324,10 @@ function noop(): void {}
 
 /**
  * Card metadata controlling default appearance and behavior.
- *
- * **Authoritative reference:** Spec S01 TugcardMeta.
  */
 export interface TugcardMeta {
   title: string;
-  /** Lucide icon name (reserved for Phase 5+; rendered as text placeholder for now). */
+  /** Lucide icon name. Rendered via lucide-react lookup when provided. */
   icon?: string;
   /** Whether the card can be closed. Default: true. */
   closable?: boolean;
@@ -367,8 +335,6 @@ export interface TugcardMeta {
 
 /**
  * Props for the Tugcard composition component.
- *
- * **Authoritative reference:** Spec S01 TugcardProps, Spec S02 extended tab props.
  */
 export interface TugcardProps {
   /** Unique card instance ID. Passed to the responder chain. */
@@ -377,7 +343,7 @@ export interface TugcardProps {
   meta: TugcardMeta;
   /** Feed IDs to subscribe to. Empty array = feedless card (children mount immediately). */
   feedIds: readonly FeedIdValue[];
-  /** Custom decode function per feed. Default: JSON parse. Wired in Phase 6. */
+  /** Custom decode function per feed. Default: JSON parse. */
   decode?: (feedId: FeedIdValue, bytes: Uint8Array) => unknown;
   /**
    * Minimum content area size.
@@ -396,6 +362,8 @@ export interface TugcardProps {
   /**
    * Whether the card is collapsed (title bar only, content hidden).
    * Forwarded from CardState.collapsed via CardFrame.
+   * @selector .tugcard--collapsed
+   * @default false
    */
   collapsed?: boolean;
   /**
@@ -406,7 +374,7 @@ export interface TugcardProps {
   /** Card-specific content components. */
   children: React.ReactNode;
 
-  // ---- Phase 5b tab props (Spec S02) ----
+  // ---- Tab props ----
 
   /** All tabs on this card. When provided and length > 1, the tab bar appears. */
   tabs?: TabItem[];
@@ -419,22 +387,16 @@ export interface TugcardProps {
   /** Called when the user picks a new card type from the [+] type picker. */
   onTabAdd?: (componentId: string) => void;
 
-  // ---- Phase 5b3 props ----
-
   /**
    * Card-level title prefix. When non-empty, the header displays
    * `"${cardTitle}: ${effectiveMeta.title}"`. When empty or omitted,
-   * the header displays `effectiveMeta.title` alone.
-   *
-   * **Authoritative reference:** [D04] Card title field, Spec S06.
+   * the header displays `effectiveMeta.title` alone. [D04]
    */
   cardTitle?: string;
   /**
    * Families of card types to show in the [+] type picker.
    * Forwarded to TugTabBar when the multi-tab accessory is active.
-   * Defaults to `["standard"]` when omitted.
-   *
-   * **Authoritative reference:** [D03] acceptsFamilies field, Spec S05.
+   * Defaults to `["standard"]` when omitted. [D03]
    */
   acceptedFamilies?: readonly string[];
 }
@@ -481,18 +443,18 @@ export function Tugcard({
   cardTitle,
   acceptedFamilies,
 }: TugcardProps) {
-  // Phase 5f: access the DeckManager store for tab state read/write.
+  // Access the DeckManager store for tab state read/write.
   const store = useDeckManager();
 
   // ---------------------------------------------------------------------------
-  // Content area ref (Phase 5a: selection boundary + selectAll action)
+  // Content area ref (selection boundary + selectAll action)
   // ---------------------------------------------------------------------------
 
   // Ref to the content area div. Used by:
   //   - useSelectionBoundary: registers this element with SelectionGuard so
   //     selection is contained within card boundaries ([D02], [D03])
   //   - selectAll action: calls selectAllChildren on this element ([D06])
-  //   - Phase 5f: read scrollLeft/scrollTop for tab state capture
+  //   - read scrollLeft/scrollTop for tab state capture
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Make this card the first responder when clicked anywhere on the card.
@@ -503,11 +465,11 @@ export function Tugcard({
 
   // Register the content area as a selection boundary with SelectionGuard.
   // Uses useLayoutEffect (Rule of Tug #3) so the boundary is available when
-  // Tugcard's selection-restore useLayoutEffect fires. ([D02], Spec S02)
+  // Tugcard's selection-restore useLayoutEffect fires. ([D02])
   useSelectionBoundary(cardId, contentRef);
 
   // ---------------------------------------------------------------------------
-  // Phase 5d4: PropertyStore registration ([D01], [D04])
+  // PropertyStore registration ([D01], [D04])
   // ---------------------------------------------------------------------------
 
   // Holds the PropertyStore registered by card content via usePropertyStore.
@@ -528,12 +490,12 @@ export function Tugcard({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Phase 5f: Persistence callbacks (Step 4, Spec S04, [D02])
+  // Persistence callbacks ([D02])
   // ---------------------------------------------------------------------------
 
   // Holds the save/restore callbacks registered by card content via
-  // useTugcardPersistence (added in Step 6). null when no card content has
-  // registered. Read synchronously in saveCurrentTabState (Rule #5 — ref).
+  // useTugcardPersistence. null when no card content has registered.
+  // Read synchronously in saveCurrentTabState (Rule #5 — ref).
   const persistenceCallbacksRef = useRef<TugcardPersistenceCallbacks | null>(null);
 
   // Stable registration callback provided to TugcardPersistenceContext.
@@ -547,7 +509,7 @@ export function Tugcard({
   );
 
   // ---------------------------------------------------------------------------
-  // Phase 5b: Tab state refs (for stable responder actions, Rule of Tug #5)
+  // Tab state refs (for stable responder actions, Rule of Tug #5)
   // ---------------------------------------------------------------------------
 
   // Responder actions are registered once at mount via useLayoutEffect inside
@@ -563,7 +525,7 @@ export function Tugcard({
   onTabSelectRef.current = onTabSelect;
 
   // ---------------------------------------------------------------------------
-  // Phase 5f: saveCurrentTabState helper (Steps 4 & 5, [D01], #lifecycle-flow)
+  // saveCurrentTabState helper ([D01], #lifecycle-flow)
   // ---------------------------------------------------------------------------
 
   // Stored in a ref so that handleTabSelect, handlePreviousTab, and handleNextTab
@@ -607,10 +569,10 @@ export function Tugcard({
     [onTabSelect],
   );
 
-  // Phase 5f3: Save callback registration with DeckManager (Step 3, [D01], Spec S01).
+  // Register a stable save callback with DeckManager ([D01]).
   //
-  // Register a stable wrapper around saveCurrentTabStateRef.current so DeckManager
-  // can call it on visibilitychange and beforeunload. The wrapper dereferences
+  // Wraps saveCurrentTabStateRef.current so DeckManager can call it on
+  // visibilitychange and beforeunload. The wrapper dereferences
   // saveCurrentTabStateRef.current at call time — NOT at registration time — because
   // saveCurrentTabStateRef.current is reassigned every render (it captures inline
   // closures). Passing saveCurrentTabStateRef.current directly would snapshot the
@@ -677,15 +639,13 @@ export function Tugcard({
     };
   }, [markDirty, cardId]);
 
-  // Phase 5f4: Pending scroll/selection refs for the onContentReady callback path.
+  // Pending scroll/selection refs for the onContentReady callback path.
   // Tugcard stores the values to restore here before calling onRestore, then reads
-  // them in the onContentReady callback (after child DOM commits). ([D04], Spec S03)
+  // them in the onContentReady callback (after child DOM commits). ([D04])
   const pendingScrollRef = useRef<{ x: number; y: number } | null>(null);
   const pendingSelectionRef = useRef<SavedSelection | null>(null);
 
-  // Phase 5f4: Activation restore — deterministic child-driven ready callback.
-  //
-  // Replaces the double-RAF timing bet from Phase 5f3. ([D78], [D79], Rule 11, Rule 12)
+  // Activation restore — deterministic child-driven ready callback. ([D78], [D79])
   //
   // Two paths:
   //
@@ -695,13 +655,11 @@ export function Tugcard({
   //     and calls the onContentReady callback we write here. At that point, the DOM
   //     reflects the restored content and scroll/selection can be applied safely.
   //     visibility:hidden is applied only when bag.scroll exists to suppress the
-  //     one-frame wrong-scroll-position flash. Content-only restores skip hiding.
-  //     ([D04], Spec S03 persist path)
+  //     one-frame wrong-scroll-position flash. Content-only restores skip hiding. ([D04])
   //
   //   DIRECT-APPLY FALLBACK (no persistence registered, OR bag.content undefined):
   //     No child re-render is triggered, so the DOM is already stable. Scroll and
-  //     selection are applied directly in the effect body without hiding.
-  //     ([D04], Spec S03 direct-apply fallback)
+  //     selection are applied directly in the effect body without hiding. ([D04])
   //
   // Cleanup resets pending refs, clears the restorePendingRef flag (cancels a stale
   // pending callback on rapid tab switch), and restores visibility if hidden. ([D05])
@@ -740,7 +698,7 @@ export function Tugcard({
 
       // Write the onContentReady callback into the callbacks object.
       // The child's no-deps useLayoutEffect (in useTugcardPersistence) will call
-      // this after the child's DOM commits. ([D01], [D02], Spec S02)
+      // this after the child's DOM commits. ([D01], [D02])
       persistenceCallbacksRef.current!.onContentReady = () => {
         // Apply scroll from pending ref (DOM height is now stable after child commit).
         if (contentEl && pendingScrollRef.current !== null) {
@@ -786,7 +744,7 @@ export function Tugcard({
       // --- DIRECT-APPLY FALLBACK ---
       // No persistence registered, or bag.content is undefined (no child setState).
       // The DOM is already stable — apply scroll and selection directly.
-      // No visibility hiding needed. ([D04], Spec S03 direct-apply fallback)
+      // No visibility hiding needed. ([D04])
       if (contentEl && bag.scroll !== undefined) {
         contentEl.scrollLeft = bag.scroll.x;
         contentEl.scrollTop = bag.scroll.y;
@@ -815,7 +773,7 @@ export function Tugcard({
   }, []);
 
   // previousTab / nextTab: read from refs so closures never go stale (Rule #5).
-  // Phase 5f: call saveCurrentTabState before switching so keyboard-driven tab
+  // Call saveCurrentTabState before switching so keyboard-driven tab
   // switches preserve scroll, selection, and card content state ([#lifecycle-flow]).
   const handlePreviousTab = useCallback(() => {
     const currentTabs = tabsRef.current;
@@ -848,12 +806,12 @@ export function Tugcard({
       selectAll: (_event: ActionEvent) => handleSelectAll(),
       previousTab: (_event: ActionEvent) => handlePreviousTab(),
       nextTab: (_event: ActionEvent) => handleNextTab(),
-      // Phase 5 stubs: minimize, toggleMenu, find are no-ops until later phases
+      // Stubs: minimize, toggleMenu, find are no-ops until implemented.
       minimize: (_event: ActionEvent) => {},
       toggleMenu: (_event: ActionEvent) => {},
       find: (_event: ActionEvent) => {},
-      // Phase 5d4: route incoming setProperty actions to the registered PropertyStore.
-      // Payload shape: { path: string, value: unknown, source?: string } (Spec S06).
+      // Route incoming setProperty actions to the registered PropertyStore.
+      // Payload shape: { path: string, value: unknown, source?: string }.
       // No-op when no PropertyStore is registered (card does not support inspection).
       setProperty: (event: ActionEvent) => {
         const store = propertyStoreRef.current;
@@ -866,7 +824,7 @@ export function Tugcard({
   });
 
   // ---------------------------------------------------------------------------
-  // Phase 5b: Resolve header metadata from active tab (D05)
+  // Resolve header metadata from active tab ([D05])
   // ---------------------------------------------------------------------------
 
   // When multiple tabs are present, the header title/icon follow the active tab.
@@ -890,7 +848,7 @@ export function Tugcard({
     : effectiveMeta.title;
 
   // ---------------------------------------------------------------------------
-  // Phase 5b: Build accessory slot content (D03)
+  // Build accessory slot content ([D03])
   // ---------------------------------------------------------------------------
 
   // When tabs.length > 1, render TugTabBar in the accessory slot.
@@ -942,7 +900,7 @@ export function Tugcard({
   }, [onMinSizeChange, totalMinWidth, totalMinHeight]);
 
   // ---------------------------------------------------------------------------
-  // Feed state (Phase 6 stub)
+  // Feed state (stub — feeds not yet wired)
   // ---------------------------------------------------------------------------
 
   const feedsReady = feedIds.length === 0;
@@ -965,6 +923,7 @@ export function Tugcard({
   return (
     <div
       className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
+      data-slot="tug-card"
       data-card-id={cardId}
       data-collapsed={collapsed ? "true" : "false"}
       onPointerDown={handleCardPointerDown}
@@ -996,7 +955,7 @@ export function Tugcard({
       >
         {/* Accessory slot: TugTabBar when tabs.length > 1, else original accessory or 0px.
             data-card-id is used by TabDragCoordinator to identify single-tab card
-            drop targets (tier-2 hit-test cache entry, [D05, Spec S07]). */}
+            drop targets (tier-2 hit-test cache entry, [D05]). */}
         <div
           ref={accessoryRef}
           className="tugcard-accessory"
@@ -1011,12 +970,12 @@ export function Tugcard({
         <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
           <TugcardDataProvider feedData={emptyFeedData.current}>
             <ResponderScope>
-              {/* Phase 5d4: provide PropertyStore registration callback to card content.
+              {/* Provide PropertyStore registration callback to card content.
                   Card content calls usePropertyStore() which reads this context and
                   calls registerPropertyStore in useLayoutEffect. [D01] */}
               <TugcardPropertyContext value={registerPropertyStore}>
-                {/* Phase 5f Step 4: provide persistence registration callback to card content.
-                    Card content calls useTugcardPersistence() (Step 6) which reads this
+                {/* Provide persistence registration callback to card content.
+                    Card content calls useTugcardPersistence() which reads this
                     context and registers its save/restore callbacks in useLayoutEffect. [D02] */}
                 <TugcardPersistenceContext value={registerPersistenceCallbacks}>
                   <TugcardDirtyContext value={markDirty}>

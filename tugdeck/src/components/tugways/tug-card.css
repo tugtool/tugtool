@@ -3,23 +3,44 @@
    Component Token Definitions
    ========================================================================= */
 
+/* @tug-pairings {
+ *   --tug7-element-global-border-normal-default-rest       | --tug7-surface-global-primary-normal-default-rest          | informational | .tugcard (border)
+ *   --tug7-element-card-text-normal-title-active           | --tug7-surface-card-primary-normal-titlebar-active         | content       | .card-frame[data-focused="true"] .tugcard-title (color)
+ *   --tug7-element-card-text-normal-title-inactive         | --tug7-surface-card-primary-normal-titlebar-inactive       | content       | .tugcard-title (color)
+ *   --tug7-element-card-icon-normal-title-active           | --tug7-surface-card-primary-normal-titlebar-active         | control       | .card-frame[data-focused="true"] .tugcard-icon (color)
+ *   --tug7-element-card-icon-normal-title-inactive         | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .card-frame[data-focused="false"] .tugcard-icon (color)
+ *   --tug7-element-card-control-normal-plain-rest          | --tug7-surface-card-primary-normal-titlebar-active         | control       | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button (color)
+ *   --tug7-element-card-control-normal-plain-hover         | --tug7-surface-card-control-normal-plain-hover             | control       | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover (color)
+ *   --tug7-element-card-control-normal-muted-rest          | --tug7-surface-card-primary-normal-titlebar-inactive       | control       | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button (color)
+ *   --tug7-element-card-control-normal-muted-hover         | --tug7-surface-card-control-normal-muted-hover             | control       | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover (color)
+ *   --tug7-element-selection-text-normal-plain-rest        | --tug7-surface-selection-primary-normal-plain-rest         | content       | ::highlight(card-selection) (color)
+ *   --tug7-element-global-text-normal-muted-rest           | --tug7-surface-global-primary-normal-default-rest          | informational | .tugcard-loading (color)
+ * } */
+
 /**
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tugx-card-border (card-border)                  | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
- * | --tugx-card-title-fg-active (card-title-fg-active) | --tug7-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | content      | .card-frame[data-focused="true"] .tugcard-title (color) |
- * | --tugx-card-title-fg-inactive (card-title-fg-inactive) | --tug7-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | content      | .tugcard-title (color)               |
- * | --tugx-card-title-bar-icon-active (card-title-bar-icon-active) | --tug7-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
- * | --tugx-card-title-bar-icon-inactive (card-title-bar-icon-inactive) | --tug7-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
- * | --tugx-card-control-on-fg-rest (card-control-on-fg-rest) | --tug7-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button (color) |
- * | --tugx-card-control-on-fg-hover (card-control-on-fg-hover) | --tug7-surface-card-control-normal-plain-hover (surface-card-control-normal-plain-hover) | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover (color) |
- * | --tugx-card-control-off-fg-rest (card-control-off-fg-rest) | --tug7-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button (color) |
- * | --tugx-card-control-off-fg-hover (card-control-off-fg-hover) | --tug7-surface-card-control-normal-muted-hover (surface-card-control-normal-muted-hover) | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover (color) |
- * | --tug7-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug7-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
- * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
+ * | --tugx-card-border                               | --tug7-surface-global-primary-normal-default-rest | informational | .tugcard (border)                    |
+ * | --tugx-card-title-fg-active                      | --tug7-surface-card-primary-normal-titlebar-active | content      | .card-frame[data-focused="true"] .tugcard-title (color) |
+ * | --tugx-card-title-fg-inactive                    | --tug7-surface-card-primary-normal-titlebar-inactive | content      | .tugcard-title (color)               |
+ * | --tugx-card-title-bar-icon-active                | --tug7-surface-card-primary-normal-titlebar-active | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
+ * | --tugx-card-title-bar-icon-inactive              | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
+ * | --tugx-card-control-on-fg-rest                   | --tug7-surface-card-primary-normal-titlebar-active | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button (color) |
+ * | --tugx-card-control-on-fg-hover                  | --tug7-surface-card-control-normal-plain-hover   | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover (color) |
+ * | --tugx-card-control-off-fg-rest                  | --tug7-surface-card-primary-normal-titlebar-inactive | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button (color) |
+ * | --tugx-card-control-off-fg-hover                 | --tug7-surface-card-control-normal-muted-hover   | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover (color) |
+ * | --tug7-element-selection-text-normal-plain-rest  | --tug7-surface-selection-primary-normal-plain-rest | content      | ::highlight(card-selection) (color)  |
+ * | --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-default-rest | informational | .tugcard-loading (color)             |
  */
 
+
+/* @tug-effects {
+ *   --tug7-effect-card-desat-normal-dim-inactive     | desaturation overlay color
+ *   --tug7-effect-card-desat-normal-amount-inactive   | desaturation intensity (0-1)
+ *   --tug7-effect-card-wash-normal-dim-inactive       | wash overlay color
+ *   --tug7-effect-card-wash-normal-blend-inactive     | wash blend mode
+ * } */
 
 body {
   /* --- Card --- */
@@ -399,7 +420,7 @@ body {
 }
 
 /* ============================================================================
-   Loading placeholder (Phase 5 -- feeds not yet wired)
+   Loading placeholder (feeds not yet wired)
    ========================================================================= */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
