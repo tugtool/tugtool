@@ -104,11 +104,21 @@ export class DeckManager implements IDeckManagerStore {
   };
 
   /**
+   * Set to true by prepareForReload() so the beforeunload handler can skip
+   * the redundant keepalive flush (which fails in WKWebView during navigation).
+   */
+  private reloadPending = false;
+
+  /**
    * Bound handler for the window beforeunload event.
    * Uses keepalive: true so the browser dispatches the fetch even during
    * page teardown (per corrected D49).
+   *
+   * Skipped when reloadPending is true because prepareForReload() already
+   * flushed without keepalive before location.reload() was called.
    */
   private readonly handleBeforeUnload = (): void => {
+    if (this.reloadPending) return;
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyTabStates({ keepalive: true });
   };
@@ -555,6 +565,21 @@ export class DeckManager implements IDeckManagerStore {
   saveAndFlush(): void {
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyTabStates();
+  }
+
+  /**
+   * Save all card states, flush to tugbank with a normal (non-keepalive) fetch,
+   * and set reloadPending so the beforeunload handler skips its redundant
+   * keepalive flush.
+   *
+   * Called by the "reload" action handler in action-dispatch.ts immediately
+   * before location.reload(). This avoids the WKWebView CORS error that occurs
+   * when a keepalive fetch is dispatched during page navigation.
+   */
+  prepareForReload(): void {
+    this.saveCallbacks.forEach((cb) => cb());
+    this.flushDirtyTabStates();
+    this.reloadPending = true;
   }
 
   // ---- Tab management (Spec S03) ----

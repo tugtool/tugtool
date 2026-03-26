@@ -1480,6 +1480,47 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
   });
 
   /**
+   * T05b: prepareForReload() flushes without keepalive and sets reloadPending,
+   * so a subsequent beforeunload event skips the flush entirely.
+   */
+  it("T05b: prepareForReload() causes beforeunload to skip flush", async () => {
+    const calls: string[] = [];
+    manager.registerSaveCallback("card-e", () => calls.push("card-e"));
+
+    // Mark a tab as dirty.
+    manager.setTabState("tab-z", { scroll: { x: 5, y: 10 } });
+
+    const fetchedInits: RequestInit[] = [];
+    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+      if (init) fetchedInits.push(init);
+      return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
+    };
+
+    // Call prepareForReload — flushes once, sets reloadPending.
+    manager.prepareForReload();
+
+    // Wait a tick for the fire-and-forget fetch.
+    await new Promise((r) => setTimeout(r, 0));
+
+    const countAfterPrepare = fetchedInits.length;
+    expect(countAfterPrepare).toBeGreaterThan(0);
+
+    // The flush from prepareForReload must NOT use keepalive.
+    const keepaliveInits = fetchedInits.filter((init) => init.keepalive === true);
+    expect(keepaliveInits.length).toBe(0);
+
+    // Now simulate beforeunload — it must be a no-op because reloadPending is true.
+    window.dispatchEvent(new Event("beforeunload"));
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    // No additional fetches should have fired.
+    expect(fetchedInits.length).toBe(countAfterPrepare);
+
+    globalThis.fetch = _noopFetch;
+  });
+
+  /**
    * T06: destroy() removes the event listeners — a subsequent visibilitychange
    * must NOT call the registered callbacks.
    */

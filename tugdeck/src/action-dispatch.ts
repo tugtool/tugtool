@@ -135,15 +135,15 @@ export function initActionDispatch(
   // Register built-in handlers
 
   // reload: Reload page with dedup guard.
-  // Explicitly save+flush tab states (no keepalive) before reloading so
-  // data is persisted without triggering WKWebView CORS errors on keepalive
-  // fetches during page navigation (which beforeunload would otherwise cause).
+  // prepareForReload() saves+flushes with a normal fetch and sets reloadPending
+  // on DeckManager so the beforeunload handler skips the redundant keepalive
+  // flush (which fails in WKWebView during page navigation with CORS errors).
   registerAction("reload", () => {
     if (reloadPending) {
       return;
     }
     reloadPending = true;
-    deckManager.saveAndFlush();
+    deckManager.prepareForReload();
     location.reload();
   });
 

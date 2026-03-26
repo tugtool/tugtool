@@ -11,20 +11,20 @@ import { FeedId } from "../protocol";
 import type { ActionEvent } from "../components/tugways/responder-chain";
 
 // Minimal mock DeckManager.
-// addCard and saveAndFlush are stubs that record calls; other methods are omitted.
+// addCard and prepareForReload are stubs that record calls; other methods are omitted.
 function createMockDeckManager() {
   const addCardCalls: string[] = [];
-  let saveAndFlushCallCount = 0;
+  let prepareForReloadCallCount = 0;
   return {
     addCard(componentId: string): string | null {
       addCardCalls.push(componentId);
       return null;
     },
-    saveAndFlush(): void {
-      saveAndFlushCallCount++;
+    prepareForReload(): void {
+      prepareForReloadCallCount++;
     },
     _addCardCalls: addCardCalls,
-    get _saveAndFlushCallCount() { return saveAndFlushCallCount; },
+    get _prepareForReloadCallCount() { return prepareForReloadCallCount; },
   };
 }
 
@@ -158,6 +158,22 @@ describe("initActionDispatch: reload", () => {
     });
   });
 
+  it("calls prepareForReload() before location.reload()", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+
+    Object.defineProperty(globalThis, "location", {
+      value: { reload: () => {} },
+      writable: true,
+      configurable: true,
+    });
+
+    initActionDispatch(conn as any, deck as any);
+    dispatchAction({ action: "reload" });
+
+    expect(deck._prepareForReloadCallCount).toBe(1);
+  });
+
   it("deduplicates: second reload is ignored", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
@@ -174,6 +190,23 @@ describe("initActionDispatch: reload", () => {
     dispatchAction({ action: "reload" });
 
     expect(reloadCount).toBe(1);
+  });
+
+  it("deduplicates: prepareForReload called only once even when reload dispatched twice", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+
+    Object.defineProperty(globalThis, "location", {
+      value: { reload: () => {} },
+      writable: true,
+      configurable: true,
+    });
+
+    initActionDispatch(conn as any, deck as any);
+    dispatchAction({ action: "reload" });
+    dispatchAction({ action: "reload" });
+
+    expect(deck._prepareForReloadCallCount).toBe(1);
   });
 });
 
