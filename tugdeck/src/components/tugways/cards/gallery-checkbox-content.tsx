@@ -20,7 +20,6 @@ import type { TugCheckboxRole, TugCheckboxSize, TugCheckedState } from "@/compon
 const ALL_SIZES: TugCheckboxSize[] = ["sm", "md", "lg"];
 
 const ALL_ROLES: TugCheckboxRole[] = [
-  "accent",
   "action",
   "agent",
   "data",

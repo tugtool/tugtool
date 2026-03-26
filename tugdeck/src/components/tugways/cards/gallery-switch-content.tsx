@@ -20,7 +20,6 @@ import type { TugSwitchRole, TugSwitchSize } from "@/components/tugways/tug-swit
 const ALL_SIZES: TugSwitchSize[] = ["sm", "md", "lg"];
 
 const ALL_ROLES: TugSwitchRole[] = [
-  "accent",
   "action",
   "agent",
   "data",

@@ -29,14 +29,13 @@ export type TugCheckedState = boolean | "indeterminate";
 /**
  * Semantic role for the checkbox on-state color.
  *
- * Every role injects a --tug7-surface-toggle-primary-normal-{role}-* token.
- * "option" is a calm neutral; "accent" is the brand color; others are signal colors.
+ * Omit the role prop (or leave undefined) for the theme's accent color.
+ * Explicit roles override with a semantic signal color.
  *
  * @selector [data-role="<role>"]
  */
 export type TugCheckboxRole =
   | "option"
-  | "accent"
   | "action"
   | "agent"
   | "data"
@@ -48,10 +47,10 @@ export type TugCheckboxRole =
  * Maps role prop values to toggle-primary token suffixes.
  * The prop API uses "action" but the token system uses "active"
  * (e.g., --tug7-surface-toggle-primary-normal-active-rest).
+ * "accent" is not in this map — it's the implicit default when no role is provided.
  */
 const ROLE_TOKEN_MAP: Record<string, string> = {
   option:  "option",
-  accent:  "accent",
   action:  "active",
   agent:   "agent",
   data:    "data",
@@ -99,14 +98,13 @@ export interface TugCheckboxProps {
   /** Accessibility label when no visible label is provided. */
   "aria-label"?: string;
   /**
-   * Semantic role for the checked/indeterminate on-state color.
-   * Injects --tugx-toggle-on-color and --tugx-toggle-on-hover-color as inline
-   * CSS custom properties using --tug7-surface-toggle-primary-normal-{role}-* tokens.
+   * Semantic role for the on-state color. Omit for the theme's accent color.
+   * Injects --tugx-toggle-on-color, --tugx-toggle-on-hover-color, and
+   * --tugx-toggle-disabled-color as inline CSS custom properties.
    *
-   * Every role (including "option" and "accent") follows the same path — no special cases. [L06]
+   * Single path, zero branches. [L06]
    *
    * @selector [data-role="<role>"]
-   * @default "option"
    */
   role?: TugCheckboxRole;
 }
@@ -127,19 +125,19 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       required = false,
       className,
       "aria-label": ariaLabel,
-      role = "option",
+      role,
     },
     ref,
   ) {
-    // Role injection — every role uses a surface-toggle-primary token. [L06]
-    // No special cases. A checkbox fill is a surface, not a foreground mark.
-    const tokenSuffix = ROLE_TOKEN_MAP[role] ?? role;
+    // Role injection — every path injects surface-toggle-primary tokens. [L06]
+    // No role prop = accent. Single path, zero branches.
+    const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
     const roleStyle = {
       "--tugx-toggle-on-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-rest)`,
       "--tugx-toggle-on-hover-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-hover)`,
       "--tugx-toggle-disabled-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-disabled)`,
     } as React.CSSProperties;
-    const dataRole = role === "accent" ? undefined : role;
+    const dataRole = role;
 
     const checkboxNode = (
       <CheckboxPrimitive.Root

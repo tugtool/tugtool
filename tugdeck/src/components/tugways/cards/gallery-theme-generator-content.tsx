@@ -76,7 +76,7 @@ const BUTTON_EMPHASES: TugButtonEmphasis[] = ["filled", "outlined", "ghost"];
 const BADGE_EMPHASES: TugBadgeEmphasis[] = ["filled", "outlined", "ghost"];
 const BUTTON_ROLES: TugButtonRole[] = ["accent", "action", "data", "danger"];
 const BADGE_ROLES: TugBadgeRole[] = ["accent", "action", "agent", "data", "success", "caution", "danger"];
-const SELECTION_ROLES: TugCheckboxRole[] = ["accent", "action", "agent", "data", "success", "caution", "danger"];
+const SELECTION_ROLES: TugCheckboxRole[] = ["action", "agent", "data", "success", "caution", "danger"];
 
 function EmphasisRolePreview() {
   return (

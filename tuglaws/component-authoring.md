@@ -94,8 +94,8 @@ export interface TugSwitchProps {
   label?: string;
   /** Visual size. @default "md" */
   size?: "sm" | "md" | "lg";
-  /** Semantic role for color injection. @default "accent" */
-  role?: "accent" | "action" | "agent" | "data" | "success" | "caution" | "danger" | "option";
+  /** Semantic role for color injection. No role = accent. @selector [data-role="<role>"] */
+  role?: "action" | "agent" | "data" | "success" | "caution" | "danger" | "option";
   /** @selector [aria-disabled="true"] */
   disabled?: boolean;
 }
@@ -133,9 +133,8 @@ size?: TugCheckboxSize;
 disabled?: boolean;
 
 /**
- * Semantic role for the checked/indeterminate on-state color.
+ * Semantic role for the on-state color. Omit for the theme's accent color.
  * @selector [data-role="<role>"]
- * @default "option"
  */
 role?: TugCheckboxRole;
 ```
@@ -151,7 +150,7 @@ Use `React.forwardRef` for any component that wraps a DOM element or Radix primi
 
 ```typescript
 export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
-  function TugSwitch({ checked, onCheckedChange, label, size = "md", role = "accent", disabled, ...rest }, ref) {
+  function TugSwitch({ checked, onCheckedChange, label, size = "md", role, disabled, ...rest }, ref) {
     // ...
     return (
       <Switch.Root
@@ -364,11 +363,26 @@ For selection controls where a single structural design takes on different role 
 
 **When to use:** Checkboxes, switches, radio buttons — controls where the visual structure is identical across roles but the active/on color changes.
 
+**The default is accent.** When no `role` prop is specified, controls use the theme's accent color. The `role` prop exists for when you need something *other than* the default: a semantic signal (danger, success), a functional indicator (action, data, agent), or a deliberately subdued appearance (option).
+
+**Role semantics:**
+
+| Role | Purpose | Example |
+|------|---------|---------|
+| *(none/accent)* | Brand color. The default. "This is on." | Any checkbox, switch, radio |
+| `action` | Primary action indicator. The return-key button. | Dialog confirm, chat send |
+| `danger` | Destructive/irreversible operation. | Delete, disconnect, remove |
+| `data` | Operation with a cost (tokens, API calls, data transfer). | "Enable AI suggestions" |
+| `agent` | AI/autonomous operation involved. | "Let agent handle this" |
+| `caution` | Proceed with care. Less severe than danger. | Override warning |
+| `success` | Positive confirmation or good state. | Completion indicator |
+| `option` | Deliberately subdued. Calm, neutral. | Dense settings panel |
+
 **Implementation:**
-- Prop: `role` with a default (typically `"accent"`)
-- CSS fallback: `var(--tug-toggle-on-color, var(--tug7-surface-toggle-track-normal-on-rest))`
-- JS injection: set `--tug-toggle-on-color` as an inline style to the role's tone token
-- Three branches: default role (neutral color), non-default roles (tone map lookup), accent (no injection, CSS default)
+- Prop: `role` (optional). Omitting it gives accent. `"accent"` is not in the type union — it's the implicit default.
+- JS injection: every path (including default) injects `--tugx-toggle-on-color`, `--tugx-toggle-on-hover-color`, and `--tugx-toggle-disabled-color` as inline styles pointing to the appropriate `--tug7-surface-toggle-{constituent}-normal-{role}-{state}` tokens.
+- Single path, zero branches: `const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";`
+- `data-role` attribute: set only when an explicit role prop is provided. Default (accent) emits no `data-role`.
 - This is pure appearance-zone work [L06] — no React state, no re-render
 
 ### Compositional Components
