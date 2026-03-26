@@ -23,7 +23,7 @@
 
 import "./tug-card.css";
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { icons } from "lucide-react";
+import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
 import type { FeedIdValue } from "../../protocol";
 import type { TabItem, TabStateBag } from "../../layout-tree";
 import { selectionGuard } from "./selection-guard";
@@ -39,6 +39,7 @@ import { TugcardPropertyContext } from "./hooks/use-property-store";
 import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
 import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
+import { TugButton } from "./internal/tug-button";
 
 // ===========================================================================
 // CardTitleBar
@@ -172,8 +173,7 @@ export function CardTitleBar({
   );
 
   const handleCloseClick = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
+    () => {
       onClose?.();
     },
     [onClose],
@@ -191,8 +191,7 @@ export function CardTitleBar({
   );
 
   const handleCollapseClick = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
+    () => {
       onCollapse();
     },
     [onCollapse],
@@ -202,22 +201,11 @@ export function CardTitleBar({
   // Render
   // ---------------------------------------------------------------------------
 
-  // Resolve lucide icon component.
+  // Resolve lucide icon component for card title icon (dynamic, varies by card type).
   const IconComponent =
     icon && icons[icon as keyof typeof icons]
       ? icons[icon as keyof typeof icons]
       : null;
-
-  // Chevron: ChevronDown when expanded (collapsed=false), ChevronUp when collapsed.
-  const ChevronIcon = collapsed
-    ? icons["ChevronUp" as keyof typeof icons]
-    : icons["ChevronDown" as keyof typeof icons];
-
-  // Menu: horizontal ellipsis.
-  const EllipsisIcon = icons["Ellipsis" as keyof typeof icons];
-
-  // Close: X icon.
-  const XIcon = icons["X" as keyof typeof icons];
 
   return (
     <div
@@ -242,43 +230,46 @@ export function CardTitleBar({
       {/* Control buttons — ghost icon buttons */}
       <div className="card-title-bar-controls" data-testid="card-title-bar-controls">
         {/* Menu button (leftmost) */}
-        <button
-          type="button"
-          className="tug-button tug-button-ghost-action tug-button-icon-sm"
-          onPointerDown={(e) => e.stopPropagation()}
+        <TugButton
+          subtype="icon"
+          emphasis="ghost"
+          role="action"
+          size="sm"
+          icon={<Ellipsis />}
+          onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
           aria-label="Card menu"
           data-testid="card-title-bar-menu-button"
-        >
-          {EllipsisIcon && React.createElement(EllipsisIcon)}
-        </button>
+        />
 
         {/* Collapse/expand chevron (middle) */}
-        <button
-          type="button"
-          className="tug-button tug-button-ghost-action tug-button-icon-sm"
+        <TugButton
+          subtype="icon"
+          emphasis="ghost"
+          role="action"
+          size="sm"
+          icon={collapsed ? <ChevronUp /> : <ChevronDown />}
           onPointerDown={handleCollapsePointerDown}
           onClick={handleCollapseClick}
           aria-label={collapsed ? "Expand card" : "Collapse card"}
           aria-expanded={!collapsed}
           data-testid="card-title-bar-collapse-button"
-        >
-          {ChevronIcon && React.createElement(ChevronIcon)}
-        </button>
+        />
 
         {/* Close button (rightmost) */}
         {closable && (
-          <button
-            type="button"
-            className="tug-button tug-button-ghost-action tug-button-icon-sm"
+          <TugButton
+            subtype="icon"
+            emphasis="ghost"
+            role="action"
+            size="sm"
+            icon={<X />}
             data-no-activate
             onPointerDown={handleClosePointerDown}
             onPointerUp={handleClosePointerUp}
             onClick={handleCloseClick}
             aria-label="Close card"
             data-testid="tugcard-close-button"
-          >
-            {XIcon && React.createElement(XIcon)}
-          </button>
+          />
         )}
       </div>
     </div>
