@@ -4,7 +4,7 @@
  * Tests cover:
  * - hexToOklch(): conversion matches known reference values
  * - isHexInsideFunction(): correctly identifies standalone vs. in-function hex
- * - convertValueHexToTugColor(): #ffffff → var(--tug-white), inline function preservation
+ * - convertValueHexToTugColor(): #ffffff → var(--tugc-white), inline function preservation
  * - Hex values inside CSS comments are not modified (PostCSS AST separates them)
  * - convertCSSFile() integration: AST walk preserves comments, non-hex values
  * - oklchDeltaE(): Euclidean distance in OKLCH space
@@ -206,12 +206,12 @@ describe("isHexInsideFunction()", () => {
 // ---------------------------------------------------------------------------
 
 describe("convertValueHexToTugColor()", () => {
-  it("#ffffff → var(--tug-white)", () => {
-    expect(convertValueHexToTugColor("#ffffff")).toBe("var(--tug-white)");
+  it("#ffffff → var(--tugc-white)", () => {
+    expect(convertValueHexToTugColor("#ffffff")).toBe("var(--tugc-white)");
   });
 
-  it("#FFFFFF (uppercase) → var(--tug-white)", () => {
-    expect(convertValueHexToTugColor("#FFFFFF")).toBe("var(--tug-white)");
+  it("#FFFFFF (uppercase) → var(--tugc-white)", () => {
+    expect(convertValueHexToTugColor("#FFFFFF")).toBe("var(--tugc-white)");
   });
 
   it("standalone hex → --tug-color(hue, i: intensity, t: tone)", () => {
@@ -314,16 +314,16 @@ describe("convertCSSFile(): structure preservation", () => {
     expect(result).toContain("linear-gradient(to right, currentColor 20%, transparent)");
   });
 
-  it("#ffffff → var(--tug-white) through the full file conversion pipeline", () => {
+  it("#ffffff → var(--tugc-white) through the full file conversion pipeline", () => {
     const tmpFile = join(os.tmpdir(), `test-white-${Date.now()}.css`);
-    const css = "body { --tug-element-toggle-thumb-normal-plain-rest: #ffffff; }";
+    const css = "body { --tug7-element-toggle-thumb-normal-plain-rest: #ffffff; }";
 
     writeFileSync(tmpFile, css, "utf8");
     convertCSSFile(tmpFile);
     const result = readFileSync(tmpFile, "utf8");
     unlinkSync(tmpFile);
 
-    expect(result).toContain("var(--tug-white)");
+    expect(result).toContain("var(--tugc-white)");
     expect(result).not.toContain("#ffffff");
   });
 

@@ -7,78 +7,78 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-card-border (card-border)                  | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
- * | --tug-card-title-fg-active (card-title-fg-active) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | content      | .card-frame[data-focused="true"] .tugcard-title (color) |
- * | --tug-card-title-fg-inactive (card-title-fg-inactive) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | content      | .tugcard-title (color)               |
- * | --tug-card-title-bar-icon-active (card-title-bar-icon-active) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
- * | --tug-card-title-bar-icon-inactive (card-title-bar-icon-inactive) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
- * | --tug-card-control-on-fg-rest (card-control-on-fg-rest) | --tug-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button (color) |
- * | --tug-card-control-on-fg-hover (card-control-on-fg-hover) | --tug-surface-card-control-normal-plain-hover (surface-card-control-normal-plain-hover) | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover (color) |
- * | --tug-card-control-off-fg-rest (card-control-off-fg-rest) | --tug-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button (color) |
- * | --tug-card-control-off-fg-hover (card-control-off-fg-hover) | --tug-surface-card-control-normal-muted-hover (surface-card-control-normal-muted-hover) | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover (color) |
- * | --tug-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
- * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
+ * | --tugx-card-border (card-border)                  | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard (border)                    |
+ * | --tugx-card-title-fg-active (card-title-fg-active) | --tug7-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | content      | .card-frame[data-focused="true"] .tugcard-title (color) |
+ * | --tugx-card-title-fg-inactive (card-title-fg-inactive) | --tug7-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | content      | .tugcard-title (color)               |
+ * | --tugx-card-title-bar-icon-active (card-title-bar-icon-active) | --tug7-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .tugcard-icon (color) |
+ * | --tugx-card-title-bar-icon-inactive (card-title-bar-icon-inactive) | --tug7-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .tugcard-icon (color) |
+ * | --tugx-card-control-on-fg-rest (card-control-on-fg-rest) | --tug7-surface-card-primary-normal-titlebar-active (surface-card-primary-normal-titlebar-active) | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button (color) |
+ * | --tugx-card-control-on-fg-hover (card-control-on-fg-hover) | --tug7-surface-card-control-normal-plain-hover (surface-card-control-normal-plain-hover) | control      | .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover (color) |
+ * | --tugx-card-control-off-fg-rest (card-control-off-fg-rest) | --tug7-surface-card-primary-normal-titlebar-inactive (surface-card-primary-normal-titlebar-inactive) | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button (color) |
+ * | --tugx-card-control-off-fg-hover (card-control-off-fg-hover) | --tug7-surface-card-control-normal-muted-hover (surface-card-control-normal-muted-hover) | control      | .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover (color) |
+ * | --tug7-element-selection-text-normal-plain-rest (element-selection-text-normal-plain-rest) | --tug7-surface-selection-primary-normal-plain-rest (surface-selection-primary-normal-plain-rest) | content      | ::highlight(card-selection) (color)  |
+ * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tugcard-loading (color)             |
  */
 
 
 body {
   /* --- Card --- */
-  --tug-card-bg: var(--tug-surface-global-primary-normal-overlay-rest);
-  --tug-card-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-card-shadow-active: 0 2px 8px var(--tug-element-global-shadow-normal-md-rest);
-  --tug-card-shadow-inactive: 0 1px 4px var(--tug-element-global-shadow-normal-xs-rest);
-  --tug-card-dim-overlay: var(--tug-surface-overlay-primary-normal-highlight-rest);
+  --tugx-card-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-card-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-card-shadow-active: 0 2px 8px var(--tug7-element-global-shadow-normal-md-rest);
+  --tugx-card-shadow-inactive: 0 1px 4px var(--tug7-element-global-shadow-normal-xs-rest);
+  --tugx-card-dim-overlay: var(--tug7-surface-overlay-primary-normal-highlight-rest);
 
   /* --- Card Title Bar --- */
-  --tug-card-title-bar-bg-active: var(--tug-surface-card-primary-normal-titlebar-active);
-  --tug-card-title-bar-bg-inactive: var(--tug-surface-card-primary-normal-titlebar-inactive);
-  --tug-card-title-bar-bg-collapsed: var(--tug-surface-card-primary-normal-titlebar-collapsed);
-  --tug-card-title-bar-divider: var(--tug-element-global-divider-normal-default-rest);
+  --tugx-card-title-bar-bg-active: var(--tug7-surface-card-primary-normal-titlebar-active);
+  --tugx-card-title-bar-bg-inactive: var(--tug7-surface-card-primary-normal-titlebar-inactive);
+  --tugx-card-title-bar-bg-collapsed: var(--tug7-surface-card-primary-normal-titlebar-collapsed);
+  --tugx-card-title-bar-divider: var(--tug7-element-global-divider-normal-default-rest);
 
   /* --- Card Title Bar — Title Text --- */
-  --tug-card-title-fg-active: var(--tug-element-card-text-normal-title-active);
-  --tug-card-title-fg-inactive: var(--tug-element-card-text-normal-title-inactive);
+  --tugx-card-title-fg-active: var(--tug7-element-card-text-normal-title-active);
+  --tugx-card-title-fg-inactive: var(--tug7-element-card-text-normal-title-inactive);
 
   /* --- Card Title Bar — Left Icon --- */
-  --tug-card-title-bar-icon-active: var(--tug-element-card-icon-normal-title-active);
-  --tug-card-title-bar-icon-inactive: var(--tug-element-card-icon-normal-title-inactive);
-  --tug-card-title-bar-icon-hover: var(--tug-element-card-icon-normal-title-hover);
+  --tugx-card-title-bar-icon-active: var(--tug7-element-card-icon-normal-title-active);
+  --tugx-card-title-bar-icon-inactive: var(--tug7-element-card-icon-normal-title-inactive);
+  --tugx-card-title-bar-icon-hover: var(--tug7-element-card-icon-normal-title-hover);
 
   /* --- Card Title Bar — Control Buttons (focused card) --- */
-  --tug-card-control-on-fg-rest: var(--tug-element-card-control-normal-plain-rest);
-  --tug-card-control-on-fg-hover: var(--tug-element-card-control-normal-plain-hover);
-  --tug-card-control-on-fg-active: var(--tug-element-card-control-normal-plain-active);
-  --tug-card-control-on-bg-rest: var(--tug-surface-card-control-normal-plain-rest);
-  --tug-card-control-on-bg-hover: var(--tug-surface-card-control-normal-plain-hover);
-  --tug-card-control-on-bg-active: var(--tug-surface-card-control-normal-plain-active);
-  --tug-card-control-on-border-rest: var(--tug-element-card-border-normal-plain-rest);
-  --tug-card-control-on-border-hover: var(--tug-element-card-border-normal-plain-hover);
-  --tug-card-control-on-border-active: var(--tug-element-card-border-normal-plain-active);
+  --tugx-card-control-on-fg-rest: var(--tug7-element-card-control-normal-plain-rest);
+  --tugx-card-control-on-fg-hover: var(--tug7-element-card-control-normal-plain-hover);
+  --tugx-card-control-on-fg-active: var(--tug7-element-card-control-normal-plain-active);
+  --tugx-card-control-on-bg-rest: var(--tug7-surface-card-control-normal-plain-rest);
+  --tugx-card-control-on-bg-hover: var(--tug7-surface-card-control-normal-plain-hover);
+  --tugx-card-control-on-bg-active: var(--tug7-surface-card-control-normal-plain-active);
+  --tugx-card-control-on-border-rest: var(--tug7-element-card-border-normal-plain-rest);
+  --tugx-card-control-on-border-hover: var(--tug7-element-card-border-normal-plain-hover);
+  --tugx-card-control-on-border-active: var(--tug7-element-card-border-normal-plain-active);
 
   /* --- Card Title Bar — Control Buttons (unfocused card) --- */
-  --tug-card-control-off-fg-rest: var(--tug-element-card-control-normal-muted-rest);
-  --tug-card-control-off-fg-hover: var(--tug-element-card-control-normal-muted-hover);
-  --tug-card-control-off-fg-active: var(--tug-element-card-control-normal-muted-active);
-  --tug-card-control-off-bg-rest: var(--tug-surface-card-control-normal-muted-rest);
-  --tug-card-control-off-bg-hover: var(--tug-surface-card-control-normal-muted-hover);
-  --tug-card-control-off-bg-active: var(--tug-surface-card-control-normal-muted-active);
-  --tug-card-control-off-border-rest: var(--tug-element-card-border-normal-muted-rest);
-  --tug-card-control-off-border-hover: var(--tug-element-card-border-normal-muted-hover);
-  --tug-card-control-off-border-active: var(--tug-element-card-border-normal-muted-active);
+  --tugx-card-control-off-fg-rest: var(--tug7-element-card-control-normal-muted-rest);
+  --tugx-card-control-off-fg-hover: var(--tug7-element-card-control-normal-muted-hover);
+  --tugx-card-control-off-fg-active: var(--tug7-element-card-control-normal-muted-active);
+  --tugx-card-control-off-bg-rest: var(--tug7-surface-card-control-normal-muted-rest);
+  --tugx-card-control-off-bg-hover: var(--tug7-surface-card-control-normal-muted-hover);
+  --tugx-card-control-off-bg-active: var(--tug7-surface-card-control-normal-muted-active);
+  --tugx-card-control-off-border-rest: var(--tug7-element-card-border-normal-muted-rest);
+  --tugx-card-control-off-border-hover: var(--tug7-element-card-border-normal-muted-hover);
+  --tugx-card-control-off-border-active: var(--tug7-element-card-border-normal-muted-active);
 
   /* --- Card Inactive Content Overlay (two layers) --- */
-  --tug-card-content-dim-desat-color: var(--tug-effect-card-desat-normal-dim-inactive);
-  --tug-card-content-dim-desat-amount: var(--tug-effect-card-desat-normal-amount-inactive);
-  --tug-card-content-dim-wash-color: var(--tug-effect-card-wash-normal-dim-inactive);
-  --tug-card-content-dim-wash-blend: var(--tug-effect-card-wash-normal-blend-inactive);
+  --tugx-card-content-dim-desat-color: var(--tug7-effect-card-desat-normal-dim-inactive);
+  --tugx-card-content-dim-desat-amount: var(--tug7-effect-card-desat-normal-amount-inactive);
+  --tugx-card-content-dim-wash-color: var(--tug7-effect-card-wash-normal-dim-inactive);
+  --tugx-card-content-dim-wash-blend: var(--tug7-effect-card-wash-normal-blend-inactive);
 
   /* --- Card Accessory / Findbar --- */
-  --tug-card-accessory-bg: var(--tug-surface-global-primary-normal-sunken-rest);
-  --tug-card-accessory-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-card-findbar-bg: var(--tug-surface-field-primary-normal-plain-focus);
-  --tug-card-findbar-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-card-findbar-match: var(--tug-surface-card-primary-normal-findmatch-rest);
-  --tug-card-findbar-match-active: var(--tug-surface-card-primary-normal-findmatch-active);
+  --tugx-card-accessory-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
+  --tugx-card-accessory-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-card-findbar-bg: var(--tug7-surface-field-primary-normal-plain-focus);
+  --tugx-card-findbar-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-card-findbar-match: var(--tug7-surface-card-primary-normal-findmatch-rest);
+  --tugx-card-findbar-match-active: var(--tug7-surface-card-primary-normal-findmatch-active);
 }
 
 /* ============================================================================
@@ -90,8 +90,8 @@ body {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background-color: var(--tug-card-bg);
-  border: 1px solid var(--tug-card-border);
+  background-color: var(--tugx-card-bg);
+  border: 1px solid var(--tugx-card-border);
   border-radius: var(--tug-radius-md);
   overflow: hidden;
 }
@@ -132,11 +132,11 @@ body {
 
 .tugcard--collapsed {
   overflow: hidden;
-  background-color: var(--tug-card-title-bar-bg-inactive);
+  background-color: var(--tugx-card-title-bar-bg-inactive);
 }
 
 .card-frame[data-focused="true"] .tugcard--collapsed {
-  background-color: var(--tug-card-title-bar-bg-active);
+  background-color: var(--tugx-card-title-bar-bg-active);
 }
 
 /* ============================================================================
@@ -150,8 +150,8 @@ body {
   height: var(--tug-chrome-height);
   min-height: var(--tug-chrome-height);
   padding: 0 var(--tug-space-md);
-  background-color: var(--tug-card-title-bar-bg-inactive);
-  border-bottom: 1px solid var(--tug-card-title-bar-divider);
+  background-color: var(--tugx-card-title-bar-bg-inactive);
+  border-bottom: 1px solid var(--tugx-card-title-bar-divider);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
@@ -175,7 +175,7 @@ body {
  * which is the ancestor of the Tugcard.
  */
 .card-frame[data-focused="true"] .tugcard-title-bar {
-  background-color: var(--tug-card-title-bar-bg-active);
+  background-color: var(--tugx-card-title-bar-bg-active);
 }
 
 .tugcard-title-bar:active {
@@ -186,7 +186,7 @@ body {
    Title bar title
    ========================================================================= */
 
-/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-inactive */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
 .tugcard-title {
   flex: 1;
   overflow: hidden;
@@ -194,13 +194,13 @@ body {
   white-space: nowrap;
   font-size: var(--tug-font-size-sm);
   font-weight: 500;
-  color: var(--tug-card-title-fg-inactive);
+  color: var(--tugx-card-title-fg-inactive);
   pointer-events: none;
 }
 
-/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-active */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
 .card-frame[data-focused="true"] .tugcard-title {
-  color: var(--tug-card-title-fg-active);
+  color: var(--tugx-card-title-fg-active);
 }
 
 /* ============================================================================
@@ -223,14 +223,14 @@ body {
   height: 100%;
 }
 
-/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-active */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
 .card-frame[data-focused="true"] .tugcard-icon {
-  color: var(--tug-card-title-bar-icon-active);
+  color: var(--tugx-card-title-bar-icon-active);
 }
 
-/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-inactive */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
 .card-frame[data-focused="false"] .tugcard-icon {
-  color: var(--tug-card-title-bar-icon-inactive);
+  color: var(--tugx-card-title-bar-icon-inactive);
 }
 
 /* ============================================================================
@@ -250,43 +250,43 @@ body {
 }
 
 /* Card title bar control buttons — focused card (plain role) */
-/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-active */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
 .card-frame[data-focused="true"] .card-title-bar-controls .tug-button {
-  color: var(--tug-card-control-on-fg-rest);
-  background-color: var(--tug-card-control-on-bg-rest);
-  border-color: var(--tug-card-control-on-border-rest);
+  color: var(--tugx-card-control-on-fg-rest);
+  background-color: var(--tugx-card-control-on-bg-rest);
+  border-color: var(--tugx-card-control-on-border-rest);
 }
 
 .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:hover:not(:disabled) {
-  color: var(--tug-card-control-on-fg-hover);
-  background-color: var(--tug-card-control-on-bg-hover);
-  border-color: var(--tug-card-control-on-border-hover);
+  color: var(--tugx-card-control-on-fg-hover);
+  background-color: var(--tugx-card-control-on-bg-hover);
+  border-color: var(--tugx-card-control-on-border-hover);
 }
 
 .card-frame[data-focused="true"] .card-title-bar-controls .tug-button:active:not(:disabled) {
-  color: var(--tug-card-control-on-fg-active);
-  background-color: var(--tug-card-control-on-bg-active);
-  border-color: var(--tug-card-control-on-border-active);
+  color: var(--tugx-card-control-on-fg-active);
+  background-color: var(--tugx-card-control-on-bg-active);
+  border-color: var(--tugx-card-control-on-border-active);
 }
 
 /* Card title bar control buttons — unfocused card (muted role) */
-/* @tug-renders-on: --tug-surface-card-primary-normal-titlebar-inactive */
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
 .card-frame[data-focused="false"] .card-title-bar-controls .tug-button {
-  color: var(--tug-card-control-off-fg-rest);
-  background-color: var(--tug-card-control-off-bg-rest);
-  border-color: var(--tug-card-control-off-border-rest);
+  color: var(--tugx-card-control-off-fg-rest);
+  background-color: var(--tugx-card-control-off-bg-rest);
+  border-color: var(--tugx-card-control-off-border-rest);
 }
 
 .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:hover:not(:disabled) {
-  color: var(--tug-card-control-off-fg-hover);
-  background-color: var(--tug-card-control-off-bg-hover);
-  border-color: var(--tug-card-control-off-border-hover);
+  color: var(--tugx-card-control-off-fg-hover);
+  background-color: var(--tugx-card-control-off-bg-hover);
+  border-color: var(--tugx-card-control-off-border-hover);
 }
 
 .card-frame[data-focused="false"] .card-title-bar-controls .tug-button:active:not(:disabled) {
-  color: var(--tug-card-control-off-fg-active);
-  background-color: var(--tug-card-control-off-bg-active);
-  border-color: var(--tug-card-control-off-border-active);
+  color: var(--tugx-card-control-off-fg-active);
+  background-color: var(--tugx-card-control-off-bg-active);
+  border-color: var(--tugx-card-control-off-border-active);
 }
 
 .card-title-bar-controls .tug-button svg {
@@ -303,8 +303,8 @@ body {
  */
 .tugcard-accessory {
   flex-shrink: 0;
-  background-color: var(--tug-card-bg);
-  border-bottom: 1px solid var(--tug-card-border);
+  background-color: var(--tugx-card-bg);
+  border-bottom: 1px solid var(--tugx-card-border);
 }
 
 .tugcard-accessory:empty {
@@ -319,7 +319,7 @@ body {
   position: relative;
   flex: 1;
   overflow: auto;
-  background-color: var(--tug-card-bg);
+  background-color: var(--tugx-card-bg);
   min-height: 0; /* needed for flex children to allow scroll */
   user-select: text;
   overscroll-behavior: contain;
@@ -331,9 +331,9 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  background-color: var(--tug-card-content-dim-desat-color);
+  background-color: var(--tugx-card-content-dim-desat-color);
   mix-blend-mode: saturation;
-  opacity: var(--tug-card-content-dim-desat-amount);
+  opacity: var(--tugx-card-content-dim-desat-amount);
   pointer-events: none;
   z-index: 1;
 }
@@ -343,8 +343,8 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  background-color: var(--tug-card-content-dim-wash-color);
-  mix-blend-mode: var(--tug-card-content-dim-wash-blend);
+  background-color: var(--tugx-card-content-dim-wash-color);
+  mix-blend-mode: var(--tugx-card-content-dim-wash-blend);
   pointer-events: none;
   z-index: 2;
 }
@@ -373,8 +373,8 @@ body {
  * every selectionchange event. This is the ONLY visible selection rendering.
  */
 ::highlight(card-selection) {
-  background-color: var(--tug-surface-selection-primary-normal-plain-rest);
-  color: var(--tug-element-selection-text-normal-plain-rest);
+  background-color: var(--tug7-surface-selection-primary-normal-plain-rest);
+  color: var(--tug7-element-selection-text-normal-plain-rest);
 }
 
 /*
@@ -386,7 +386,7 @@ body {
  * delete/add — no intermediate empty state, no flash.
  */
 ::highlight(inactive-selection) {
-  background-color: var(--tug-surface-selection-primary-normal-plain-inactive);
+  background-color: var(--tug7-surface-selection-primary-normal-plain-inactive);
   color: inherit;
 }
 
@@ -402,12 +402,12 @@ body {
    Loading placeholder (Phase 5 -- feeds not yet wired)
    ========================================================================= */
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tugcard-loading {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   font-size: var(--tug-font-size-sm);
 }

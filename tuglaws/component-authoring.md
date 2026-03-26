@@ -218,8 +218,8 @@ Opens every CSS file. Declares every foreground-on-background relationship the c
 
 ```css
 /* @tug-pairings {
-  --tug-element-checkmark-icon-normal-plain-rest  | --tug-surface-toggle-track-normal-on-rest  | control
-  --tug-element-field-text-normal-label-rest      | --tug-surface-global-primary-normal-default-rest | content
+  --tug7-element-checkmark-icon-normal-plain-rest  | --tug7-surface-toggle-track-normal-on-rest  | control
+  --tug7-element-field-text-normal-label-rest      | --tug7-surface-global-primary-normal-default-rest | content
 } */
 ```
 
@@ -232,8 +232,8 @@ Format: `element-token | surface-token | contrast-role`
  * @tug-pairings
  * | Element                              | Surface                              | Role    | Context                          |
  * |--------------------------------------|--------------------------------------|---------|----------------------------------|
- * | --tug-element-checkmark-icon-...rest  | --tug-surface-toggle-track-...rest   | control | .tug-checkbox-indicator (color)  |
- * | --tug-element-field-text-...rest      | --tug-surface-global-primary-...rest | content | .tug-checkbox-label (color)      |
+ * | --tug7-element-checkmark-icon-...rest  | --tug7-surface-toggle-track-...rest   | control | .tug-checkbox-indicator (color)  |
+ * | --tug7-element-field-text-...rest      | --tug7-surface-global-primary-...rest | content | .tug-checkbox-label (color)      |
  */
 ```
 
@@ -250,22 +250,22 @@ The **Context column** is the key addition in the expanded table. It specifies e
 Every CSS rule that sets `color`, `fill`, `stroke`, or `border-color` without setting `background-color` in the same rule must include this annotation: [L16]
 
 ```css
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-label {
-  color: var(--tug-element-field-text-normal-label-rest);
+  color: var(--tug7-element-field-text-normal-label-rest);
 }
 ```
 
 ### @tug-effects Declaration
 
-Components that use effect-plane tokens (`--tug-effect-*`) declare them in a separate `@tug-effects` block in the CSS file header, after `@tug-pairings`. Effect tokens carry non-color values — amounts, blend modes, opacity levels — and do not participate in contrast pairing.
+Components that use effect-plane tokens (`--tug7-effect-*`) declare them in a separate `@tug-effects` block in the CSS file header, after `@tug-pairings`. Effect tokens carry non-color values — amounts, blend modes, opacity levels — and do not participate in contrast pairing.
 
 ```css
 /* @tug-effects {
-  --tug-effect-card-desat-normal-dim-inactive     | desaturation overlay color
-  --tug-effect-card-desat-normal-amount-inactive   | desaturation intensity (0-1)
-  --tug-effect-card-wash-normal-dim-inactive       | wash overlay color
-  --tug-effect-card-wash-normal-blend-inactive     | wash blend mode
+  --tug7-effect-card-desat-normal-dim-inactive     | desaturation overlay color
+  --tug7-effect-card-desat-normal-amount-inactive   | desaturation intensity (0-1)
+  --tug7-effect-card-wash-normal-dim-inactive       | wash overlay color
+  --tug7-effect-card-wash-normal-blend-inactive     | wash blend mode
 } */
 ```
 
@@ -279,7 +279,7 @@ All colors come from `--tug-*` tokens. Never hardcode colors. [L15, T##]
 
 ```css
 /* Correct */
-.tug-input { background-color: var(--tug-surface-field-primary-normal-plain-rest); }
+.tug-input { background-color: var(--tug7-surface-field-primary-normal-plain-rest); }
 
 /* Wrong */
 .tug-input { background-color: oklch(0.15 0.01 260); }
@@ -287,22 +287,22 @@ All colors come from `--tug-*` tokens. Never hardcode colors. [L15, T##]
 
 ### Component-Tier Alias Rules
 
-Some components define short `--tug-{component}-*` aliases that resolve to base-tier `--tug-*` tokens. The decision rule:
+Some components define short `--tugx-{component}-*` aliases that resolve to base-tier `--tug7-*` tokens. The decision rule:
 
 - **Use base tokens directly** when the component is simple (fewer than 5 token references) and the seven-slot names are clear in context. Checkbox, switch, input, label, badge, skeleton, and marquee all use this pattern.
 - **Use component-tier aliases** when the component is complex — many sub-parts, many tokens, or tokens referenced from multiple CSS rules — and shorter aliases improve readability. Card and tab-bar use this pattern.
 
-When aliases are used, define them in `body {}` at the top of the CSS file, after `@tug-pairings` and before base styles. Every alias must resolve to a base-tier `--tug-*` token in **one hop**. [L17]
+When aliases are used, define them in `body {}` at the top of the CSS file, after `@tug-pairings` and before base styles. Every alias must resolve to a base-tier `--tug7-*` token in **one hop**. [L17]
 
 ```css
 body {
   /* Card aliases — resolve to base tier in one hop [L17] */
-  --tug-card-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-card-bg: var(--tug-surface-global-primary-normal-overlay-rest);
+  --tugx-card-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-card-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
 }
 ```
 
-Never chain aliases (`--tug-card-bg: var(--tug-card-other-alias)`) — that is a second hop and violates [L17].
+Never chain aliases (`--tugx-card-bg: var(--tugx-card-other-alias)`) — that is a second hop and violates [L17].
 
 ### State Selectors
 
@@ -343,7 +343,7 @@ For components with multiple visual emphases (filled, outlined, ghost) crossed w
 **Implementation:**
 - Props: `emphasis` and `role` (or combined into a variant prop)
 - CSS class: `.tug-{name}-{emphasis}-{role}`
-- Tokens: `--tug-surface-control-primary-{emphasis}-{role}-{state}` for backgrounds, `--tug-element-control-{constituent}-{emphasis}-{role}-{state}` for foregrounds
+- Tokens: `--tug7-surface-control-primary-{emphasis}-{role}-{state}` for backgrounds, `--tug7-element-control-{constituent}-{emphasis}-{role}-{state}` for foregrounds
 
 ### Role Color Injection
 
@@ -353,7 +353,7 @@ For selection controls where a single structural design takes on different role 
 
 **Implementation:**
 - Prop: `role` with a default (typically `"accent"`)
-- CSS fallback: `var(--tug-toggle-on-color, var(--tug-surface-toggle-track-normal-on-rest))`
+- CSS fallback: `var(--tug-toggle-on-color, var(--tug7-surface-toggle-track-normal-on-rest))`
 - JS injection: set `--tug-toggle-on-color` as an inline style to the role's tone token
 - Three branches: default role (neutral color), non-default roles (tone map lookup), accent (no injection, CSS default)
 - This is pure appearance-zone work [L06] — no React state, no re-render
@@ -389,7 +389,7 @@ For form inputs that follow the field token family.
 **When to use:** Text inputs, textareas, selects — form fields with rest/hover/focus/disabled/readOnly states and optional validation.
 
 **Implementation:**
-- Tokens: `--tug-surface-field-primary-*` for backgrounds, `--tug-element-field-{text,border}-*` for foregrounds
+- Tokens: `--tug7-surface-field-primary-*` for backgrounds, `--tug7-element-field-{text,border}-*` for foregrounds
 - States: rest → hover → focus → disabled → readOnly
 - Validation: `[aria-invalid="true"]` overrides border color (but not focus state)
 - Size variants via class
@@ -471,7 +471,7 @@ Before a component is done:
 - [ ] Props interface exported with JSDoc; every CSS-targetable prop has `@selector` annotation
 - [ ] `@tug-pairings` present in both compact and expanded-table formats; components with no pairings use `@tug-pairings: none`
 - [ ] Component-tier aliases (if used) defined in `body {}` and resolve to base tokens in one hop [L17]
-- [ ] `@tug-effects` block present if the component uses `--tug-effect-*` tokens
+- [ ] `@tug-effects` block present if the component uses `--tug7-effect-*` tokens
 - [ ] Compositional components (no CSS): delegation documented in module docstring; no `@tug-pairings` needed
 - [ ] Keyboard accessible (Tab, Enter/Space, Escape)
 - [ ] `bun run build` exits 0
@@ -491,7 +491,7 @@ Tokens follow the seven-slot convention from [token-naming.md](token-naming.md):
 
 | Slot | Purpose |
 |------|---------|
-| namespace | Always `tug`. Identifies the design system. |
+| namespace | Always `tug7`. Identifies the design system and seven-slot convention. |
 | plane | `element` (visible marks) or `surface` (backgrounds) |
 | component | `global`, `control`, `field`, `toggle`, `badge`, etc. |
 | constituent | `text`, `icon`, `border`, `shadow`, `primary`, `track`, etc. |
@@ -509,5 +509,5 @@ Tokens follow the seven-slot convention from [token-naming.md](token-naming.md):
 | [L06] | Appearance changes via CSS/DOM, never React state | All components |
 | [L15] | Token-driven control states; color transitions only | Interactive controls |
 | [L16] | Every foreground rule declares its rendering surface | All CSS files |
-| [L17] | Component aliases resolve to `--tug-*` in one hop | Component-tier tokens |
+| [L17] | Component aliases (`--tugx-*`) resolve to `--tug7-*` in one hop | Component-tier tokens |
 | [L18] | Element/surface vocabulary | All token usage |

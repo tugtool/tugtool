@@ -140,32 +140,32 @@ Presets and adjacency compose: `cobalt-indigo-intense` resolves the hue first (b
 ### Per-Hue Constants (3 per hue × 48 = 144 variables)
 
 ```css
---tug-{hue}-h: {angle};
---tug-{hue}-canonical-l: {L};
---tug-{hue}-peak-c: {peakChroma};
+--tugc-{hue}-h: {angle};
+--tugc-{hue}-canonical-l: {L};
+--tugc-{hue}-peak-c: {peakChroma};
 ```
 
 ### Named Gray Variables
 
 ```css
---tug-gray-pitch: oklch(0.22 0 0);
---tug-gray-ink: oklch(0.29 0 0);
---tug-gray-charcoal: oklch(0.36 0 0);
---tug-gray-carbon: oklch(0.43 0 0);
---tug-gray-graphite: oklch(0.5 0 0);
---tug-gray-vellum: oklch(0.592 0 0);
---tug-gray-parchment: oklch(0.684 0 0);
---tug-gray-linen: oklch(0.776 0 0);
---tug-gray-paper: oklch(0.868 0 0);
---tug-black: oklch(0 0 0);
---tug-white: oklch(1 0 0);
+--tugc-gray-pitch: oklch(0.22 0 0);
+--tugc-gray-ink: oklch(0.29 0 0);
+--tugc-gray-charcoal: oklch(0.36 0 0);
+--tugc-gray-carbon: oklch(0.43 0 0);
+--tugc-gray-graphite: oklch(0.5 0 0);
+--tugc-gray-vellum: oklch(0.592 0 0);
+--tugc-gray-parchment: oklch(0.684 0 0);
+--tugc-gray-linen: oklch(0.776 0 0);
+--tugc-gray-paper: oklch(0.868 0 0);
+--tugc-black: oklch(0 0 0);
+--tugc-white: oklch(1 0 0);
 ```
 
 ### Global Anchors
 
 ```css
---tug-l-dark: 0.15;
---tug-l-light: 0.96;
+--tugc-l-dark: 0.15;
+--tugc-l-light: 0.96;
 ```
 
 All palette variables are scoped to `body {}`.
@@ -203,7 +203,7 @@ Returns an `oklch(L C h)` CSS string. Used for color pickers, data visualization
 
 ## P3 Gamut
 
-On Display P3 screens, `@media (color-gamut: p3)` overrides `--tug-{hue}-peak-c` with wider chroma caps. Since all formulas reference `peak-c`, colors automatically become richer on P3 displays. No per-preset overrides needed.
+On Display P3 screens, `@media (color-gamut: p3)` overrides `--tugc-{hue}-peak-c` with wider chroma caps. Since all formulas reference `peak-c`, colors automatically become richer on P3 displays. No per-preset overrides needed.
 
 Each hue has independently derived sRGB and P3 chroma caps — binary-searched against the gamut boundary, not interpolated from neighbors.
 
@@ -211,9 +211,9 @@ Each hue has independently derived sRGB and P3 chroma caps — binary-searched a
 
 ## Three-Tier Token Architecture
 
-1. **Palette tier** — `--tug-{hue}-*` per-hue constants and `--tug-gray-*` named grays. Theme-independent.
-2. **Base tier** — `--tug-*` semantic tokens (surface and element). Theme-specific chromatic choices live here. [D71, L17]
-3. **Component tier** — `--tug-<component>-*` aliases. Resolve to base tier in one hop. [D71, L17]
+1. **Palette tier** — `--tugc-{hue}-*` per-hue constants and `--tugc-gray-*` named grays. Theme-independent.
+2. **Base tier** — `--tug7-*` seven-slot semantic tokens (surface and element). Theme-specific chromatic choices live here. [D71, L17]
+3. **Component tier** — `--tugx-<component>-*` aliases. Resolve to base tier in one hop. [D71, L17]
 
 Components consume base and component tokens. The palette tier provides the raw materials used by authored theme CSS tokens.
 

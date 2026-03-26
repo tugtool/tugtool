@@ -38,13 +38,13 @@ import { oklchToTugColor } from "./palette-engine";
  * with optional preset suffix (intense, muted, light, dark).
  *
  * Deliberately anchored to the full token name (^...$) to avoid false-matching
- * global constants like `--tug-l-dark` or per-hue internals like
- * `--tug-orange-canonical-l`.
+ * global constants like `--tugc-l-dark` or per-hue internals like
+ * `--tugc-orange-canonical-l`.
  *
  * Spec S02 (#s02-token-chain-algorithm)
  */
 export const PALETTE_VAR_REGEX =
-  /^--tug-(cherry|red|tomato|flame|orange|amber|gold|yellow|lime|green|mint|teal|cyan|sky|blue|cobalt|violet|purple|plum|pink|rose|magenta|berry|coral)(-(intense|muted|light|dark))?$/;
+  /^--tugc-(cherry|red|tomato|flame|orange|amber|gold|yellow|lime|green|mint|teal|cyan|sky|blue|cobalt|violet|purple|plum|pink|rose|magenta|berry|coral)(-(intense|muted|light|dark))?$/;
 
 // ---------------------------------------------------------------------------
 // Token chain types
@@ -104,11 +104,11 @@ function shortenNumbers(s: string): string {
  * Used by the token discovery strategy (Spec S03 step 1-2).
  */
 const CLASS_TO_COMP_FAMILY: Record<string, string> = {
-  "tug-tab-bar": "--tug-tab",
-  "tug-tab": "--tug-tab",
-  tugcard: "--tug-card",
-  "tugcard-title-bar": "--tug-card",
-  "tug-dropdown": "--tug-dropdown",
+  "tug-tab-bar": "--tugx-tab",
+  "tug-tab": "--tugx-tab",
+  tugcard: "--tugx-card",
+  "tugcard-title-bar": "--tugx-card",
+  "tug-dropdown": "--tugx-dropdown",
 };
 
 /**
@@ -117,30 +117,30 @@ const CLASS_TO_COMP_FAMILY: Record<string, string> = {
  * Spec S03 step 3.
  */
 const COMP_FAMILY_TOKENS: Record<string, string[]> = {
-  "--tug-tab": [
-    "--tug-tab-bar-bg",
-    "--tug-tab-bg-active",
-    "--tug-tab-fg-active",
-    "--tug-tab-underline-active",
-    "--tug-tab-bg-rest",
-    "--tug-tab-fg-rest",
-    "--tug-tab-bg-hover",
+  "--tugx-tab": [
+    "--tugx-tab-bar-bg",
+    "--tugx-tab-bg-active",
+    "--tugx-tab-fg-active",
+    "--tugx-tab-underline-active",
+    "--tugx-tab-bg-rest",
+    "--tugx-tab-fg-rest",
+    "--tugx-tab-bg-hover",
   ],
-  "--tug-card": [
-    "--tug-card-bg",
-    "--tug-card-border",
-    "--tug-card-title-bar-bg-active",
-    "--tug-card-title-bar-fg",
-    "--tug-card-title-bar-divider",
-    "--tug-card-shadow-active",
+  "--tugx-card": [
+    "--tugx-card-bg",
+    "--tugx-card-border",
+    "--tugx-card-title-bar-bg-active",
+    "--tugx-card-title-fg-active",
+    "--tugx-card-title-fg-inactive",
+    "--tugx-card-title-bar-divider",
+    "--tugx-card-shadow-active",
   ],
-  "--tug-dropdown": [
-    "--tug-dropdown-bg",
-    "--tug-dropdown-border",
-    "--tug-dropdown-item-fg",
-    "--tug-dropdown-item-bg-hover",
-    "--tug-dropdown-item-hover-fg",
-    "--tug-dropdown-shadow",
+  "--tugx-dropdown": [
+    "--tugx-dropdown-bg",
+    "--tugx-dropdown-border",
+    "--tugx-dropdown-item-fg",
+    "--tugx-dropdown-item-bg-hover",
+    "--tugx-dropdown-shadow",
   ],
 };
 
@@ -150,36 +150,36 @@ const COMP_FAMILY_TOKENS: Record<string, string[]> = {
  */
 const BASE_TOKEN_FALLBACKS: Record<string, string[]> = {
   "background-color": [
-    "--tug-surface-global-primary-normal-default-rest",
-    "--tug-surface-global-primary-normal-raised-rest",
-    "--tug-surface-global-primary-normal-overlay-rest",
-    "--tug-element-global-fill-normal-accent-rest",
-    "--tug-element-global-fill-normal-accentCool-rest",
-    "--tug-surface-control-primary-filled-accent-rest",
-    "--tug-surface-control-primary-outlined-action-rest",
-    "--tug-tab-bar-bg",
-    "--tug-card-bg",
-    "--tug-tab-active-bg",
-    "--tug-tab-rest-bg",
+    "--tug7-surface-global-primary-normal-default-rest",
+    "--tug7-surface-global-primary-normal-raised-rest",
+    "--tug7-surface-global-primary-normal-overlay-rest",
+    "--tug7-element-global-fill-normal-accent-rest",
+    "--tug7-element-global-fill-normal-accentCool-rest",
+    "--tug7-surface-control-primary-filled-accent-rest",
+    "--tug7-surface-control-primary-outlined-action-rest",
+    "--tugx-tab-bar-bg",
+    "--tugx-tab-bg-active",
+    "--tugx-tab-bg-rest",
+    "--tugx-card-bg",
   ],
   color: [
-    "--tug-element-global-text-normal-default-rest",
-    "--tug-element-global-text-normal-muted-rest",
-    "--tug-element-global-text-normal-subtle-rest",
-    "--tug-element-global-fill-normal-accent-rest",
-    "--tug-element-control-text-filled-accent-rest",
-    "--tug-element-control-text-outlined-action-rest",
-    "--tug-tab-active-fg",
-    "--tug-tab-rest-fg",
-    "--tug-card-title-bar-fg",
+    "--tug7-element-global-text-normal-default-rest",
+    "--tug7-element-global-text-normal-muted-rest",
+    "--tug7-element-global-text-normal-subtle-rest",
+    "--tug7-element-global-fill-normal-accent-rest",
+    "--tug7-element-control-text-filled-accent-rest",
+    "--tug7-element-control-text-outlined-action-rest",
+    "--tugx-tab-fg-active",
+    "--tugx-tab-fg-rest",
+    "--tugx-card-title-fg-active",
+    "--tugx-card-title-fg-inactive",
   ],
   "border-color": [
-    "--tug-element-global-border-normal-default-rest",
-    "--tug-element-global-border-normal-muted-rest",
-    "--tug-element-global-fill-normal-accent-rest",
-    "--tug-tab-active-border",
-    "--tug-tab-bar-border",
-    "--tug-card-border",
+    "--tug7-element-global-border-normal-default-rest",
+    "--tug7-element-global-border-normal-muted-rest",
+    "--tug7-element-global-fill-normal-accent-rest",
+    "--tugx-tab-underline-active",
+    "--tugx-card-border",
   ],
 };
 
@@ -481,14 +481,15 @@ export class StyleInspectorOverlay {
     const cssToken = this.findTokenFromCSSRules(el, property);
     if (cssToken) {
       result.originToken = cssToken;
-      // Check if it's a component-level token (--tug-<component>-* but not --tug-*)
+      // Check if it's a component-level token (--tugx-* extension alias)
       const isComponentToken =
-        cssToken.startsWith("--tug-") &&
-        !cssToken.startsWith("--tug-") &&
+        cssToken.startsWith("--tugx-") &&
         !PALETTE_VAR_REGEX.test(cssToken);
       if (isComponentToken) {
         result.originLayer = "comp";
       } else if (
+        cssToken.startsWith("--tug7-") ||
+        cssToken.startsWith("--tugc-") ||
         cssToken.startsWith("--tug-") ||
         PALETTE_VAR_REGEX.test(cssToken)
       ) {
@@ -631,13 +632,13 @@ export class StyleInspectorOverlay {
     const preset = m[3] ?? "canonical";
 
     const canonicalL = getComputedStyle(document.body)
-      .getPropertyValue(`--tug-${hue}-canonical-l`)
+      .getPropertyValue(`--tugc-${hue}-canonical-l`)
       .trim();
     const peakC = getComputedStyle(document.body)
-      .getPropertyValue(`--tug-${hue}-peak-c`)
+      .getPropertyValue(`--tugc-${hue}-peak-c`)
       .trim();
     const hueAngle = getComputedStyle(document.body)
-      .getPropertyValue(`--tug-${hue}-h`)
+      .getPropertyValue(`--tugc-${hue}-h`)
       .trim();
 
     return { hue, preset, canonicalL, peakC, hueAngle };
@@ -698,7 +699,7 @@ export class StyleInspectorOverlay {
    * Matches any var(--*) reference, not just --tug-* tokens, so that
    * Tailwind/shadcn variables (e.g. --color-secondary-foreground) are also found.
    *
-   * Returns the custom property name (e.g. '--tug-element-global-fill-normal-accentCool-rest'
+   * Returns the custom property name (e.g. '--tug7-element-global-fill-normal-accentCool-rest'
    * or '--color-secondary-foreground') or null.
    */
   private findTokenFromCSSRules(

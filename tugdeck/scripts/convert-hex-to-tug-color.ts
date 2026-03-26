@@ -9,7 +9,7 @@
  * preserved unchanged. Comments are separate AST nodes and are never visited,
  * so hex references in comments are automatically preserved.
  *
- * Special case: #ffffff → var(--tug-white)
+ * Special case: #ffffff → var(--tugc-white)
  *
  * Usage (run from the tugdeck directory):
  *   bun run scripts/convert-hex-to-tug-color.ts <css-file-path> [--validate]
@@ -230,7 +230,7 @@ export function isHexInsideFunction(value: string, hexIndex: number): boolean {
 
 /**
  * Convert all standalone hex values in a CSS declaration value string to
- * --tug-color() notation (or var(--tug-white) for #ffffff).
+ * --tug-color() notation (or var(--tugc-white) for #ffffff).
  *
  * Hex values inside function calls are left unchanged.
  * Non-hex values are left unchanged.
@@ -255,7 +255,7 @@ export function convertValueHexToTugColor(value: string): string {
 
     let replacement: string;
     if (hex === "#ffffff") {
-      replacement = "var(--tug-white)";
+      replacement = "var(--tugc-white)";
     } else {
       const oklch = hexToOklch(hex);
       if (!oklch) continue;
@@ -384,7 +384,7 @@ export function validateRoundTrip(
 
   // For each declaration in the converted AST that was changed, compare
   convertedRoot.walkDecls((decl: Declaration) => {
-    if (!decl.value.includes("--tug-color(") && !decl.value.includes("var(--tug-white)")) return;
+    if (!decl.value.includes("--tug-color(") && !decl.value.includes("var(--tugc-white)")) return;
 
     const origValue = originalValues.get(decl.prop);
     if (!origValue) return;

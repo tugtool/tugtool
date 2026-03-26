@@ -120,11 +120,11 @@ interface TokenEntry {
 function extractTokens(): TokenEntry[] {
   const css = fs.readFileSync(GENERATED_CSS, "utf-8");
   const tokens: TokenEntry[] = [];
-  const re = /^\s*(--tug-[\w-]+)\s*:\s*(.+?)\s*;/gm;
+  const re = /^\s*(--(?:tug7|tugc|tugx|tug)-[\w-]+)\s*:\s*(.+?)\s*;/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(css)) !== null) {
     const fullName = m[1];
-    const shortName = fullName.replace("--tug-", "");
+    const shortName = stripTugPrefix(fullName);
     tokens.push({
       fullName,
       shortName,
@@ -205,7 +205,7 @@ function extractAliases(css: string): AliasMap {
   const bodyBlocks = extractBodyBlocks(css);
   for (const block of bodyBlocks) {
     // Match any var() reference, not just --tug-*
-    const re = /^\s*(--tug-[\w-]+)\s*:\s*var\((--tug-[\w-]+)\)\s*;/gm;
+    const re = /^\s*(--(?:tug7|tugc|tugx|tug)-[\w-]+)\s*:\s*var\((--(?:tug7|tugc|tugx|tug)-[\w-]+)\)\s*;/gm;
     let m: RegExpExecArray | null;
     while ((m = re.exec(block)) !== null) {
       aliases[m[1]] = m[2];
@@ -238,11 +238,24 @@ function extractBodyBlocks(css: string): string[] {
   return blocks;
 }
 
+/**
+ * Returns true if a token name is a "base" token (tug7, tugc, or plain tug scale)
+ * that should NOT be followed further through alias chains.
+ * --tugx- extension aliases are NOT base tokens and should be followed.
+ */
+function isBaseTugToken(name: string): boolean {
+  return (
+    name.startsWith("--tug7-") ||
+    name.startsWith("--tugc-") ||
+    (name.startsWith("--tug-") && !name.startsWith("--tugx-"))
+  );
+}
+
 /** Resolve a token reference through the alias map, following multi-hop chains. */
 function resolveToken(token: string, aliases: AliasMap): string {
   const visited = new Set<string>();
   let current = token;
-  while (!current.startsWith("--tug-") && !visited.has(current)) {
+  while (!isBaseTugToken(current) && !visited.has(current)) {
     visited.add(current);
     const next = aliases[current];
     if (!next) break;
@@ -256,7 +269,7 @@ function resolveToken(token: string, aliases: AliasMap): string {
  * Returns the first --tug-* token found.
  */
 function extractVarRef(value: string): string | null {
-  const m = value.match(/var\((--tug-[\w-]+)/);
+  const m = value.match(/var\((--(?:tug7|tugc|tugx|tug)-[\w-]+)/);
   return m ? m[1] : null;
 }
 
@@ -292,20 +305,20 @@ const SURFACE_PROPERTIES = new Set(["background-color", "background"]);
  * [D02] Alias chain flattening.
  */
 const COMPAT_ALIAS_ALLOWLIST = new Set([
-  "--tug-dropdown-bg",
-  "--tug-dropdown-fg",
-  "--tug-dropdown-border",
-  "--tug-dropdown-shadow",
-  "--tug-dropdown-item-bg-hover",
-  "--tug-dropdown-item-bg-selected",
-  "--tug-dropdown-item-fg",
-  "--tug-dropdown-item-fg-disabled",
-  "--tug-dropdown-item-fg-danger",
-  "--tug-dropdown-item-meta",
-  "--tug-dropdown-item-shortcut",
-  "--tug-dropdown-item-icon",
-  "--tug-dropdown-item-icon-danger",
-  "--tug-dropdown-item-chevron",
+  "--tugx-dropdown-bg",
+  "--tugx-dropdown-fg",
+  "--tugx-dropdown-border",
+  "--tugx-dropdown-shadow",
+  "--tugx-dropdown-item-bg-hover",
+  "--tugx-dropdown-item-bg-selected",
+  "--tugx-dropdown-item-fg",
+  "--tugx-dropdown-item-fg-disabled",
+  "--tugx-dropdown-item-fg-danger",
+  "--tugx-dropdown-item-meta",
+  "--tugx-dropdown-item-shortcut",
+  "--tugx-dropdown-item-icon",
+  "--tugx-dropdown-item-icon-danger",
+  "--tugx-dropdown-item-chevron",
 ]);
 
 interface CssRule {
@@ -386,7 +399,7 @@ function parseRendersOnAnnotations(css: string): Map<string, string[]> {
     const surfaces = m[1]
       .split(",")
       .map((s) => s.trim())
-      .filter((s) => s.startsWith("--tug-"));
+      .filter((s) => s.startsWith("--tug7-") || s.startsWith("--tugc-") || s.startsWith("--tugx-") || s.startsWith("--tug-"));
 
     if (surfaces.length === 0) continue;
 
@@ -578,8 +591,8 @@ function cmdPairings(): void {
   for (const [file, pairings] of byFile) {
     console.log(`--- ${file} (${pairings.length} pairings) ---`);
     for (const p of pairings) {
-      const resolvedEl = p.elementResolved.replace("--tug-", "");
-      const resolvedSf = p.surfaceResolved.replace("--tug-", "");
+      const resolvedEl = stripTugPrefix(p.elementResolved);
+      const resolvedSf = stripTugPrefix(p.surfaceResolved);
       console.log(
         `  ${p.elementProperty.padEnd(16)} ${resolvedEl.padEnd(45)} on  ${resolvedSf}`,
       );
@@ -624,7 +637,7 @@ function cmdPairings(): void {
     console.log(`Pairings in CSS but NOT in pairing map (gaps): ${gaps.length}`);
     for (const g of gaps) {
       console.log(
-        `  ${g.elementResolved.replace("--tug-", "").padEnd(45)} on  ${g.surfaceResolved.replace("--tug-", "")}  [${g.file}]`,
+        `  ${stripTugPrefix(g.elementResolved).padEnd(45)} on  ${stripTugPrefix(g.surfaceResolved)}  [${g.file}]`,
       );
     }
 
@@ -634,27 +647,27 @@ function cmdPairings(): void {
     if (orphans.length > 0 && orphans.length <= 20) {
       for (const o of orphans) {
         console.log(
-          `  ${o.element.replace("--tug-", "").padEnd(45)} on  ${o.surface.replace("--tug-", "")}`,
+          `  ${stripTugPrefix(o.element).padEnd(45)} on  ${stripTugPrefix(o.surface)}`,
         );
       }
     } else if (orphans.length > 20) {
       console.log(`  (showing first 20)`);
       for (const o of orphans.slice(0, 20)) {
         console.log(
-          `  ${o.element.replace("--tug-", "").padEnd(45)} on  ${o.surface.replace("--tug-", "")}`,
+          `  ${stripTugPrefix(o.element).padEnd(45)} on  ${stripTugPrefix(o.surface)}`,
         );
       }
     }
 
-    // Flag the known critical gap
+    // Flag the known critical gap (updated for four-prefix rename)
     const criticalGap = gaps.find(
       (g) =>
-        g.elementResolved === "--tug-fg-default" &&
-        g.surfaceResolved === "--tug-tab-bg-active",
+        g.elementResolved === "--tug7-element-global-text-normal-default-rest" &&
+        g.surfaceResolved === "--tugx-tab-bg-active",
     );
     if (criticalGap) {
       console.log(
-        `\n⚠ CRITICAL GAP CONFIRMED: fg-default on tab-bg-active (card title bar)`,
+        `\n⚠ CRITICAL GAP CONFIRMED: element-global-text-normal-default-rest on tab-bg-active (card title bar)`,
       );
     }
   }
@@ -680,7 +693,7 @@ function loadPairingMap(): { element: string; surface: string }[] | null {
   if (!fs.existsSync(PAIRING_MAP_PATH)) return null;
   const src = fs.readFileSync(PAIRING_MAP_PATH, "utf-8");
   const entries: { element: string; surface: string }[] = [];
-  const re = /element:\s*"(--tug-[\w-]+)"[\s\S]*?surface:\s*"(--tug-[\w-]+)"/g;
+  const re = /element:\s*"(--(?:tug7|tugc|tugx|tug)-[\w-]+)"[\s\S]*?surface:\s*"(--(?:tug7|tugc|tugx|tug)-[\w-]+)"/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
     entries.push({ element: m[1], surface: m[2] });
@@ -1149,9 +1162,9 @@ function cmdInject(apply: boolean): void {
     );
     for (const p of pairings) {
       const elAlias = p.elementRaw;
-      const elBase = p.elementResolved.replace("--tug-", "");
+      const elBase = stripTugPrefix(p.elementResolved);
       const sfAlias = p.surfaceRaw;
-      const sfBase = p.surfaceResolved.replace("--tug-", "");
+      const sfBase = stripTugPrefix(p.surfaceResolved);
       const role = guessRole(elBase, p.elementProperty);
       const context = `${p.selector} (${p.elementProperty})`;
 
@@ -1288,22 +1301,18 @@ function cmdVerify(): void {
     }
 
     // Parse table rows
+    // Row format: | --tugx-foo (foo-short) | --tug7-bar (bar-short) | role | context |
+    // Capture the full --tug*- token name from the start of each element/surface cell.
     const tableContent = blockMatch[1];
     const rowRe =
-      /\|\s*[\w-]+[^|]*\(([\w-]+)\)\s*\|\s*[\w-]+[^|]*\(([\w-]+)\)\s*\|/g;
+      /\|\s*(--(?:tug7|tugc|tugx|tug)-[\w-]+)[^|]*\|\s*(--(?:tug7|tugc|tugx|tug)-[\w-]+)[^|]*\|/g;
     let m: RegExpExecArray | null;
     while ((m = rowRe.exec(tableContent)) !== null) {
-      const elShort = m[1];
-      const sfShort = m[2];
-      // Skip rows where the short name is not a valid token short-name.
-      // Valid short names do not start with "--" (those are raw CSS custom
-      // properties captured from the full name, not from inside the parens)
-      // and are not reserved words like "hardcoded" used in documentation rows.
-      if (elShort.startsWith("-") || sfShort.startsWith("-")) continue;
-      if (elShort === "hardcoded" || sfShort === "hardcoded") continue;
+      const elFull = m[1].trim();
+      const sfFull = m[2].trim();
       cssPairings.push({
-        element: `--tug-${elShort}`,
-        surface: `--tug-${sfShort}`,
+        element: elFull,
+        surface: sfFull,
         file: basename,
       });
     }
@@ -1327,7 +1336,7 @@ function cmdVerify(): void {
     console.log(`\n⚠ GAPS: ${gaps.length} pairings in CSS but NOT in pairing map:`);
     for (const g of gaps) {
       console.log(
-        `  ${g.element.replace("--tug-", "").padEnd(45)} on  ${g.surface.replace("--tug-", "")}  [${g.file}]`,
+        `  ${stripTugPrefix(g.element).padEnd(45)} on  ${stripTugPrefix(g.surface)}  [${g.file}]`,
       );
     }
   }
@@ -1450,14 +1459,14 @@ function checkAliasChainDepth(
     // Skip compat allowlist entries
     if (COMPAT_ALIAS_ALLOWLIST.has(alias)) continue;
 
-    // Target must be a --tug-* token (1-hop rule)
-    if (!target.startsWith("--tug-")) {
+    // Target must be a base tug token (1-hop rule): --tug7-, --tugc-, or --tug- (scale)
+    if (!isBaseTugToken(target)) {
       // Count hops: follow the chain to find total depth
       const globalAliases = buildGlobalAliases();
       let hops = 0;
       let current = alias;
       const visited = new Set<string>();
-      while (!current.startsWith("--tug-") && !visited.has(current)) {
+      while (!isBaseTugToken(current) && !visited.has(current)) {
         visited.add(current);
         const next = globalAliases[current];
         if (!next) break;

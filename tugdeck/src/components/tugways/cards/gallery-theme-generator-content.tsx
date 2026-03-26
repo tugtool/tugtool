@@ -36,13 +36,13 @@ const CVD_TYPE_LABELS: Record<CVDType, string> = {
 };
 
 const CVD_SEMANTIC_TOKENS: Array<{ token: string; label: string }> = [
-  { token: "--tug-element-tone-fill-normal-accent-rest", label: "Accent" },
-  { token: "--tug-element-tone-fill-normal-active-rest", label: "Active" },
-  { token: "--tug-element-tone-fill-normal-agent-rest", label: "Agent" },
-  { token: "--tug-element-tone-fill-normal-data-rest", label: "Data" },
-  { token: "--tug-element-tone-fill-normal-success-rest", label: "Success" },
-  { token: "--tug-element-tone-fill-normal-caution-rest", label: "Caution" },
-  { token: "--tug-element-tone-fill-normal-danger-rest", label: "Danger" },
+  { token: "--tug7-element-tone-fill-normal-accent-rest", label: "Accent" },
+  { token: "--tug7-element-tone-fill-normal-active-rest", label: "Active" },
+  { token: "--tug7-element-tone-fill-normal-agent-rest", label: "Agent" },
+  { token: "--tug7-element-tone-fill-normal-data-rest", label: "Data" },
+  { token: "--tug7-element-tone-fill-normal-success-rest", label: "Success" },
+  { token: "--tug7-element-tone-fill-normal-caution-rest", label: "Caution" },
+  { token: "--tug7-element-tone-fill-normal-danger-rest", label: "Danger" },
 ];
 
 function linearSrgbToHex(linear: { r: number; g: number; b: number }): string {
@@ -230,7 +230,7 @@ export function GalleryThemeGeneratorContent() {
         <div className="gtg-dash-summary" data-testid="gtg-dash-summary">
           <span className="gtg-dash-summary-count" data-testid="gtg-dash-summary-count">{passCount}/{checkedCount}</span>
           <span>pairs pass contrast</span>
-          <span style={{ color: "var(--tug-element-global-text-normal-muted-rest)", marginLeft: "4px" }}>
+          <span style={{ color: "var(--tug7-element-global-text-normal-muted-rest)", marginLeft: "4px" }}>
             ({contrastResults.length} total pairs)
           </span>
         </div>

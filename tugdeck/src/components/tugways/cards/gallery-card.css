@@ -7,14 +7,14 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-section-title (color)            |
- * | --tug-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-controls (border)                |
- * | --tug-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .cg-control-select (color)           |
- * | --tug-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select (border)          |
- * | --tug-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select:focus (border-color) |
- * | --tug-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-mutation-box (border)            |
- * | --tug-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-demo-status code (color)         |
- * | --tug-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-cascade-source (color)           |
+ * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-section-title (color)            |
+ * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-controls (border)                |
+ * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .cg-control-select (color)           |
+ * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select (border)          |
+ * | --tug7-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .cg-control-select:focus (border-color) |
+ * | --tug7-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-mutation-box (border)            |
+ * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-demo-status code (color)         |
+ * | --tug7-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-cascade-source (color)           |
  */
 
 
@@ -36,13 +36,13 @@
   gap: 16px;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-section-title {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   user-select: none;
 }
 
@@ -55,8 +55,8 @@
   align-items: center;
   gap: 16px;
   padding: 10px 14px;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
   flex-wrap: wrap;
 }
@@ -67,10 +67,10 @@
   gap: 6px;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-control-label {
   font-size: 11px;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   user-select: none;
   white-space: nowrap;
 }
@@ -78,24 +78,24 @@
 .cg-control-select {
   font-size: 12px;
   font-family: var(--tug-font-family-sans);
-  color: var(--tug-element-global-text-normal-default-rest);
-  background-color: var(--tug-surface-global-primary-normal-control-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-xs);
   padding: 2px 6px;
   cursor: pointer;
   outline: none;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-control-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
 .cg-control-select:focus {
-  border-color: var(--tug-element-global-fill-normal-accentCool-rest);
+  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
 }
 
 .cg-control-checkbox {
   width: 14px;
   height: 14px;
-  accent-color: var(--tug-element-global-fill-normal-accent-rest);
+  accent-color: var(--tug7-element-global-fill-normal-accent-rest);
   cursor: pointer;
 }
 
@@ -116,11 +116,11 @@
   gap: 8px;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-subtype-label {
   font-size: 11px;
   font-weight: 500;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   font-style: italic;
   user-select: none;
 }
@@ -132,10 +132,10 @@
   flex-wrap: wrap;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-variant-label {
   font-size: 10px;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   width: 76px;
   flex-shrink: 0;
   user-select: none;
@@ -153,7 +153,7 @@
 
 .cg-divider {
   height: 1px;
-  background-color: var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-element-global-border-normal-default-rest);
   margin: 4px 0;
 }
 
@@ -176,13 +176,13 @@
 .cg-mutation-box {
   width: 120px;
   height: 60px;
-  background-color: var(--demo-bg, var(--tug-surface-global-primary-normal-default-rest));
-  border: 1px solid var(--tug-element-global-fill-normal-accentCool-rest);
+  background-color: var(--demo-bg, var(--tug7-surface-global-primary-normal-default-rest));
+  border: 1px solid var(--tug7-element-global-fill-normal-accentCool-rest);
   border-radius: var(--tug-radius-sm);
 }
 
 .cg-mutation-box.demo-highlighted {
-  outline: 2px solid var(--tug-element-global-fill-normal-accent-rest);
+  outline: 2px solid var(--tug7-element-global-fill-normal-accent-rest);
   outline-offset: 2px;
 }
 
@@ -211,9 +211,9 @@
 .cg-demo-trigger {
   font-size: 12px;
   font-family: var(--tug-font-family-sans);
-  color: var(--tug-element-global-text-normal-default-rest);
-  background-color: var(--tug-surface-global-primary-normal-control-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
   padding: 5px 12px;
   cursor: pointer;
@@ -222,22 +222,22 @@
 
 .cg-demo-trigger:hover,
 .cg-demo-trigger[data-state="open"] {
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
 }
 
 /* Shared status line for both demos */
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-demo-status {
   font-size: 11px;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   user-select: none;
 }
 
 .cg-demo-status code {
   font-family: var(--tug-font-family-mono);
-  color: var(--tug-element-global-text-normal-default-rest);
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-xs);
   padding: 1px 5px;
 }
@@ -251,8 +251,8 @@
   position: relative;
   width: 100%;
   height: 140px;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
   overflow: hidden;
 }
@@ -280,14 +280,14 @@
   width: 40px;
   height: 28px;
   padding: 2px;
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-xs);
-  background: var(--tug-surface-global-primary-normal-control-rest);
+  background: var(--tug7-surface-global-primary-normal-control-rest);
   cursor: pointer;
 }
 
 /* Hue swatch: draggable strip showing a full-spectrum gradient. */
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-hue-swatch {
   width: 200px;
   height: 28px;
@@ -303,7 +303,7 @@
     hsl(360, 70%, 60%)
   );
   cursor: ew-resize;
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   touch-action: none;
   user-select: none;
 }
@@ -319,7 +319,7 @@
 .cg-position-slider {
   width: 180px;
   cursor: pointer;
-  accent-color: var(--tug-element-global-fill-normal-accent-rest);
+  accent-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 
 /* Cascade reader display table. */
@@ -331,37 +331,37 @@
   max-width: 420px;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-cascade-table tr + tr td {
-  border-top: 1px solid var(--tug-element-global-border-normal-default-rest);
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-cascade-prop {
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   padding: 4px 10px 4px 0;
   width: 140px;
   user-select: none;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-cascade-source {
-  color: var(--tug-element-global-fill-normal-accent-rest);
+  color: var(--tug7-element-global-fill-normal-accent-rest);
   padding: 4px 10px;
   width: 80px;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-cascade-value {
-  color: var(--tug-element-global-text-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
   padding: 4px 0;
 }
 
 /* Small description text used in demo sections. */
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-description {
   font-size: 11px;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   line-height: 1.5;
   margin: 0;
 }
@@ -395,22 +395,22 @@
 .cg-st-range {
   flex: 0 0 180px;
   cursor: pointer;
-  accent-color: var(--tug-element-global-fill-normal-accent-rest);
+  accent-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-st-value {
   flex: 0 0 36px;
   font-size: 11px;
   font-family: var(--tug-font-family-mono);
-  color: var(--tug-element-global-text-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
   text-align: right;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-st-note {
   font-size: 10px;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   font-style: italic;
   flex: 1;
   min-width: 0;
@@ -425,8 +425,8 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 14px;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
   font-family: var(--tug-font-family-mono);
   font-size: 11px;
@@ -438,16 +438,16 @@
   gap: 16px;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-st-readout-fn {
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   width: 200px;
   flex-shrink: 0;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-st-readout-value {
-  color: var(--tug-element-global-fill-normal-accentCool-rest);
+  color: var(--tug7-element-global-fill-normal-accentCool-rest);
   font-weight: 600;
 }
 
@@ -457,8 +457,8 @@
   flex-direction: column;
   gap: 32px;
   padding: 16px;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
 }
 
@@ -512,7 +512,7 @@
   width: 0.2em;
   height: 0.5em;
   border-radius: 50%;
-  background-color: var(--tug-spinner, currentColor);
+  background-color: var(--tugx-spinner, currentColor);
   animation: tug-petals-fade calc(800ms * var(--tug-timing, 1)) var(--tug-motion-easing-standard) infinite,
              tug-petals-scale calc(800ms * var(--tug-timing, 1)) var(--tug-motion-easing-standard) infinite;
 }
@@ -568,7 +568,7 @@
   height: var(--tug-pole-height);
   width: 100%;
   border-radius: calc(var(--tug-pole-height) / 2);
-  background-color: var(--tug-progress-track, #3a3e46);
+  background-color: var(--tugx-progress-track, #3a3e46);
   overflow: hidden;
   position: relative;
 }
@@ -579,8 +579,8 @@
   border-radius: inherit;
   background-image: repeating-linear-gradient(
     -45deg,
-    var(--tug-progress-fill, #ff8a38) 0px,
-    var(--tug-progress-fill, #ff8a38) 5px,
+    var(--tugx-progress-fill, #ff8a38) 0px,
+    var(--tugx-progress-fill, #ff8a38) 5px,
     transparent 5px,
     transparent 10px
   );
@@ -606,8 +606,8 @@
   gap: 12px;
   padding: 16px;
   min-width: 120px;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
@@ -619,10 +619,10 @@
   gap: 12px;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-anim-physics-label {
   font-size: 10px;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   width: 50px;
   flex-shrink: 0;
   user-select: none;
@@ -634,7 +634,7 @@
   min-width: 0;
   height: 24px;
   border-radius: var(--tug-radius-xs);
-  background-color: var(--tug-surface-global-primary-normal-control-rest);
+  background-color: var(--tug7-surface-global-primary-normal-control-rest);
   overflow: hidden;
 }
 
@@ -652,16 +652,16 @@
 }
 
 .cg-anim-dot-spring {
-  background-color: var(--tug-element-global-fill-normal-accent-rest);
+  background-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 
 .cg-anim-dot-gravity {
-  background-color: var(--tug-element-global-fill-normal-accentCool-rest);
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
   top: 0;
 }
 
 .cg-anim-dot-friction {
-  background-color: var(--tug-accent-warm-default, var(--tug-element-global-fill-normal-accent-rest));
+  background-color: var(--tug-accent-warm-default, var(--tug7-element-global-fill-normal-accent-rest));
 }
 
 /* --- Duration Tokens --- */
@@ -671,8 +671,8 @@
   height: 40px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
@@ -682,18 +682,18 @@
   width: 24px;
   height: 24px;
   border-radius: var(--tug-radius-xs);
-  background-color: var(--tug-element-global-fill-normal-accent-rest);
+  background-color: var(--tug7-element-global-fill-normal-accent-rest);
   margin-left: 8px;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-anim-token-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
   font-size: 10px;
   font-family: var(--tug-font-family-mono);
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 .cg-anim-token-entry {
@@ -702,14 +702,14 @@
   align-items: center;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-anim-token-entry code {
-  color: var(--tug-element-global-text-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-anim-token-entry span {
-  color: var(--tug-element-global-fill-normal-accentCool-rest);
+  color: var(--tug7-element-global-fill-normal-accentCool-rest);
   font-weight: 600;
 }
 
@@ -720,8 +720,8 @@
   height: 48px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
@@ -731,7 +731,7 @@
   width: 32px;
   height: 32px;
   border-radius: var(--tug-radius-sm);
-  background-color: var(--tug-element-global-fill-normal-accent-rest);
+  background-color: var(--tug7-element-global-fill-normal-accent-rest);
   margin-left: 8px;
 }
 
@@ -742,8 +742,8 @@
   height: 48px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
@@ -753,33 +753,33 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background-color: var(--tug-element-global-fill-normal-accentCool-rest);
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
   margin-left: 8px;
 }
 
 /* --- Shared: percentage slider control row --- */
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-anim-pct-row {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 10px;
-  color: var(--tug-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
   user-select: none;
 }
 
 .cg-anim-pct-range {
   width: 100px;
   cursor: pointer;
-  accent-color: var(--tug-element-global-fill-normal-accent-rest);
+  accent-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-anim-pct-value {
   font-family: var(--tug-font-family-mono);
   font-size: 10px;
-  color: var(--tug-element-global-text-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
   width: 32px;
   text-align: right;
 }

@@ -109,14 +109,14 @@ body {
   --chart-5: var(--tug-chart-series-violet); /* legacy-token-allowlist */
 
   /* Shiki CSS variable bridge tokens (Spec S01) */
-  --syntax-foreground: var(--tug-element-global-text-normal-default-rest);
-  --syntax-background: var(--tug-surface-global-primary-normal-control-rest);
+  --syntax-foreground: var(--tug7-element-global-text-normal-default-rest);
+  --syntax-background: var(--tug7-surface-global-primary-normal-control-rest);
   --syntax-token-keyword: var(--tug-syntax-keyword);
   --syntax-token-string: var(--tug-syntax-string);
-  --syntax-token-comment: var(--tug-syntax-comment);
+  --syntax-token-comment: var(--tugx-syntax-comment);
   --syntax-token-function: var(--tug-syntax-function);
   --syntax-token-constant: var(--tug-syntax-constant);
-  --syntax-token-punctuation: var(--tug-syntax-punctuation);
+  --syntax-token-punctuation: var(--tugx-syntax-punctuation);
   --syntax-token-parameter: var(--tug-syntax-variable);
   --syntax-token-string-expression: var(--tug-syntax-string);
   --syntax-token-link: var(--tug-syntax-keyword);
@@ -136,14 +136,14 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--tug-element-global-border-normal-default-rest);
+  background: var(--tug7-element-global-border-normal-default-rest);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--tug-element-global-border-normal-muted-rest);
+  background: var(--tug7-element-global-border-normal-muted-rest);
   border: 2px solid transparent;
   background-clip: padding-box;
 }

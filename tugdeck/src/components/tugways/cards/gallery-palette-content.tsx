@@ -131,7 +131,7 @@ function LCurveEditor({
         y={CURVE_PAD.top}
         width={PLOT_W}
         height={PLOT_H}
-        fill="var(--tug-surface-global-primary-normal-default-rest, #1a1a1a)"
+        fill="var(--tug7-surface-global-primary-normal-default-rest, #1a1a1a)"
         rx={4}
       />
 
@@ -143,7 +143,7 @@ function LCurveEditor({
             y1={lToY(l)}
             x2={CURVE_PAD.left + PLOT_W}
             y2={lToY(l)}
-            stroke="var(--tug-element-global-border-normal-default-rest, #333)"
+            stroke="var(--tug7-element-global-border-normal-default-rest, #333)"
             strokeWidth={0.5}
           />
           <text
@@ -161,7 +161,7 @@ function LCurveEditor({
       <polyline
         points={polyPoints}
         fill="none"
-        stroke="var(--tug-element-global-text-normal-muted-rest, #888)"
+        stroke="var(--tug7-element-global-text-normal-muted-rest, #888)"
         strokeWidth={1.5}
         strokeLinejoin="round"
       />
@@ -191,7 +191,7 @@ function LCurveEditor({
                 cy={cy}
                 r={9}
                 fill="none"
-                stroke="var(--tug-element-global-fill-normal-accent-rest, #0066cc)"
+                stroke="var(--tug7-element-global-fill-normal-accent-rest, #0066cc)"
                 strokeWidth={2}
               />
             )}
@@ -201,7 +201,7 @@ function LCurveEditor({
               cy={cy}
               r={6}
               fill={dotColor}
-              stroke={isSelected ? "var(--tug-element-global-fill-normal-accent-rest, #0066cc)" : "var(--tug-element-global-border-normal-default-rest, #555)"}
+              stroke={isSelected ? "var(--tug7-element-global-fill-normal-accent-rest, #0066cc)" : "var(--tug7-element-global-border-normal-default-rest, #555)"}
               strokeWidth={1.5}
               style={{ cursor: "ns-resize" }}
               onPointerDown={(e) => handlePointerDown(name, e)}
@@ -367,14 +367,14 @@ function CssFormulaExport({
   const formula = [
     `oklch(`,
     `  calc(`,
-    `    var(--tug-l-dark)`,
+    `    var(--tugc-l-dark)`,
     `    + clamp(0, ${tone}, 50)`,
-    `      * (var(--tug-${hueName}-canonical-l) - var(--tug-l-dark)) / 50`,
+    `      * (var(--tugc-${hueName}-canonical-l) - var(--tugc-l-dark)) / 50`,
     `    + (clamp(50, ${tone}, 100) - 50)`,
-    `      * (var(--tug-l-light) - var(--tug-${hueName}-canonical-l)) / 50`,
+    `      * (var(--tugc-l-light) - var(--tugc-${hueName}-canonical-l)) / 50`,
     `  )`,
-    `  calc(${intensity} / 100 * var(--tug-${hueName}-peak-c))`,
-    `  var(--tug-${hueName}-h)`,
+    `  calc(${intensity} / 100 * var(--tugc-${hueName}-peak-c))`,
+    `  var(--tugc-${hueName}-h)`,
     `)`,
   ].join("\n");
 

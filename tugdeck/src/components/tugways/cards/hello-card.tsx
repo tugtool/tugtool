@@ -32,7 +32,7 @@ export function HelloCardContent() {
         height: "100%",
         gap: "8px",
         padding: "16px",
-        color: "var(--tug-element-global-text-normal-default-rest)",
+        color: "var(--tug7-element-global-text-normal-default-rest)",
         fontFamily: "var(--tug-font-family-sans)",
       }}
     >
@@ -42,7 +42,7 @@ export function HelloCardContent() {
           margin: 0,
           fontSize: "1.25rem",
           fontWeight: 600,
-          color: "var(--tug-element-global-text-normal-default-rest)",
+          color: "var(--tug7-element-global-text-normal-default-rest)",
         }}
       >
         Hello
@@ -52,7 +52,7 @@ export function HelloCardContent() {
         style={{
           margin: 0,
           fontSize: "0.875rem",
-          color: "var(--tug-element-global-text-normal-muted-rest, var(--tug-element-global-text-normal-default-rest))",
+          color: "var(--tug7-element-global-text-normal-muted-rest, var(--tug7-element-global-text-normal-default-rest))",
         }}
       >
         This is a test card.

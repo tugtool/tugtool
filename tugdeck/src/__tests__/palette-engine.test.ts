@@ -480,39 +480,39 @@ const TUG_PALETTE_CSS = readFileSync(
 describe("tug-palette.css — per-hue constants", () => {
   it("contains all 48 --tug-{hue}-h variables", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-h:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tugc-${hue}-h:`);
     }
   });
 
   it("all 48 --tug-{hue}-h values match HUE_FAMILIES angles", () => {
     for (const [hue, angle] of Object.entries(HUE_FAMILIES)) {
-      const pattern = new RegExp(`--tug-${hue}-h:\\s*${angle};`);
+      const pattern = new RegExp(`--tugc-${hue}-h:\\s*${angle};`);
       expect(TUG_PALETTE_CSS).toMatch(pattern);
     }
   });
 
   it("contains all 48 --tug-{hue}-canonical-l variables", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canonical-l:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tugc-${hue}-canonical-l:`);
     }
   });
 
   it("contains all 48 --tug-{hue}-peak-c variables", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-peak-c:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tugc-${hue}-peak-c:`);
     }
   });
 
   it("total per-hue constant count is 144 (48 hues × 3 constants)", () => {
-    const hVars     = (TUG_PALETTE_CSS.match(/--tug-\w+-h:\s*\d+(?:\.\d+)?;/g) ?? []).filter(v => !v.includes("peak"));
-    const canonLVars = TUG_PALETTE_CSS.match(/--tug-\w+-canonical-l:\s*[\d.]+;/g) ?? [];
-    const peakCVars  = TUG_PALETTE_CSS.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
+    const hVars     = (TUG_PALETTE_CSS.match(/--tugc-\w+-h:\s*\d+(?:\.\d+)?;/g) ?? []).filter(v => !v.includes("peak"));
+    const canonLVars = TUG_PALETTE_CSS.match(/--tugc-\w+-canonical-l:\s*[\d.]+;/g) ?? [];
+    const peakCVars  = TUG_PALETTE_CSS.match(/--tugc-\w+-peak-c:\s*[\d.]+;/g) ?? [];
     // Only count the sRGB block (before @media if any, otherwise use full file)
     const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
     const srgbBlock = mediaIdx >= 0 ? TUG_PALETTE_CSS.slice(0, mediaIdx) : TUG_PALETTE_CSS;
-    const srgbH      = (srgbBlock.match(/--tug-\w+-h:\s*\d+(?:\.\d+)?;/g) ?? []).filter(v => !v.includes("peak"));
-    const srgbCanonL = srgbBlock.match(/--tug-\w+-canonical-l:\s*[\d.]+;/g) ?? [];
-    const srgbPeakC  = srgbBlock.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
+    const srgbH      = (srgbBlock.match(/--tugc-\w+-h:\s*\d+(?:\.\d+)?;/g) ?? []).filter(v => !v.includes("peak"));
+    const srgbCanonL = srgbBlock.match(/--tugc-\w+-canonical-l:\s*[\d.]+;/g) ?? [];
+    const srgbPeakC  = srgbBlock.match(/--tugc-\w+-peak-c:\s*[\d.]+;/g) ?? [];
     expect(srgbH.length).toBe(48);
     expect(srgbCanonL.length).toBe(48);
     expect(srgbPeakC.length).toBe(48);
@@ -521,12 +521,12 @@ describe("tug-palette.css — per-hue constants", () => {
 });
 
 describe("tug-palette.css — global lightness anchors", () => {
-  it("contains --tug-l-dark: 0.15", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-l-dark: 0.15;");
+  it("contains --tugc-l-dark: 0.15", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tugc-l-dark: 0.15;");
   });
 
-  it("contains --tug-l-light: 0.96", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-l-light: 0.96;");
+  it("contains --tugc-l-light: 0.96", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tugc-l-light: 0.96;");
   });
 });
 
@@ -536,27 +536,27 @@ describe("tug-palette.css — preset variables removed (unified into TugColor)",
   // plugin from --tug-color(hue-preset) syntax in tug-base.css and theme files.
 
   it("does NOT contain chromatic preset variables for red (removed, use --tug-color())", () => {
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-red:");
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-light:");
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-dark:");
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-intense:");
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-muted:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tugc-red:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tugc-red-light:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tugc-red-dark:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tugc-red-intense:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tugc-red-muted:");
   });
 
   it("does NOT contain any chromatic preset variables for any of the 48 hues", () => {
     const presetSuffixes = ["", "-light", "-dark", "-intense", "-muted"];
     for (const hue of Object.keys(HUE_FAMILIES)) {
       for (const suffix of presetSuffixes) {
-        expect(TUG_PALETTE_CSS).not.toContain(`--tug-${hue}${suffix}:`);
+        expect(TUG_PALETTE_CSS).not.toContain(`--tugc-${hue}${suffix}:`);
       }
     }
   });
 
   it("still contains per-hue constants (h, canonical-l, peak-c) for all 48 hues", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-h:`);
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canonical-l:`);
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-peak-c:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tugc-${hue}-h:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tugc-${hue}-canonical-l:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tugc-${hue}-peak-c:`);
     }
   });
 
@@ -567,19 +567,19 @@ describe("tug-palette.css — preset variables removed (unified into TugColor)",
 
 describe("tug-palette.css — named gray ramp and anchors", () => {
   it("contains exactly 9 named gray variables (pitch through paper)", () => {
-    const namedGrayVars = TUG_PALETTE_CSS.match(/--tug-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
+    const namedGrayVars = TUG_PALETTE_CSS.match(/--tugc-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
     expect(namedGrayVars.length).toBe(9);
   });
 
-  it("contains --tug-gray-pitch through --tug-gray-paper in the correct order", () => {
+  it("contains --tugc-gray-pitch through --tugc-gray-paper in the correct order", () => {
     const names = ["pitch", "ink", "charcoal", "carbon", "graphite", "vellum", "parchment", "linen", "paper"];
     for (const name of names) {
-      expect(TUG_PALETTE_CSS).toContain(`--tug-gray-${name}:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tugc-gray-${name}:`);
     }
     // Verify order: each name appears before the next in the file
     for (let i = 0; i < names.length - 1; i++) {
-      const idxA = TUG_PALETTE_CSS.indexOf(`--tug-gray-${names[i]}:`);
-      const idxB = TUG_PALETTE_CSS.indexOf(`--tug-gray-${names[i + 1]}:`);
+      const idxA = TUG_PALETTE_CSS.indexOf(`--tugc-gray-${names[i]}:`);
+      const idxB = TUG_PALETTE_CSS.indexOf(`--tugc-gray-${names[i + 1]}:`);
       expect(idxA).toBeLessThan(idxB);
     }
   });
@@ -597,32 +597,32 @@ describe("tug-palette.css — named gray ramp and anchors", () => {
       paper:     "oklch(0.868 0 0)",
     };
     for (const [name, value] of Object.entries(expected)) {
-      expect(TUG_PALETTE_CSS).toContain(`--tug-gray-${name}: ${value}`);
+      expect(TUG_PALETTE_CSS).toContain(`--tugc-gray-${name}: ${value}`);
     }
   });
 
   it("does NOT contain numeric gray variables --tug-gray-10 through --tug-gray-90 as declarations", () => {
     // Match only CSS declarations (colon + value), not comment text
     for (let tone = 10; tone <= 90; tone += 10) {
-      expect(TUG_PALETTE_CSS).not.toMatch(new RegExp(`--tug-gray-${tone}\\s*:`));
+      expect(TUG_PALETTE_CSS).not.toMatch(new RegExp(`--tugc-gray-${tone}\\s*:`));
     }
   });
 
   it("does NOT contain --tug-gray-0 or --tug-gray-100 as declarations (dropped per D05)", () => {
-    expect(TUG_PALETTE_CSS).not.toMatch(/--tug-gray-0\s*:/);
-    expect(TUG_PALETTE_CSS).not.toMatch(/--tug-gray-100\s*:/);
+    expect(TUG_PALETTE_CSS).not.toMatch(/--tugc-gray-0\s*:/);
+    expect(TUG_PALETTE_CSS).not.toMatch(/--tugc-gray-100\s*:/);
   });
 
-  it("contains --tug-black: oklch(0 0 0)", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-black: oklch(0 0 0)");
+  it("contains --tugc-black: oklch(0 0 0)", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tugc-black: oklch(0 0 0)");
   });
 
-  it("contains --tug-white: oklch(1 0 0)", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-white: oklch(1 0 0)");
+  it("contains --tugc-white: oklch(1 0 0)", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tugc-white: oklch(1 0 0)");
   });
 
   it("all named gray variables use C=0 (achromatic)", () => {
-    const namedGrayLines = TUG_PALETTE_CSS.match(/--tug-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
+    const namedGrayLines = TUG_PALETTE_CSS.match(/--tugc-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
     expect(namedGrayLines.length).toBeGreaterThan(0);
     for (const line of namedGrayLines) {
       expect(line).toMatch(/oklch\([\d.]+ 0 0\)/);

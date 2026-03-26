@@ -122,16 +122,16 @@ export function GalleryMarqueeContent() {
       <div className="cg-section">
         <div className="cg-section-title">With Icons</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "280px" }}>
-          <TugMarquee icon={<Music />} iconColor="var(--tug-element-global-fill-normal-accent-rest)">
+          <TugMarquee icon={<Music />} iconColor="var(--tug7-element-global-fill-normal-accent-rest)">
             {SONG_TEXT}
           </TugMarquee>
-          <TugMarquee icon={<Radio />} iconColor="var(--tug-element-field-fill-normal-success-rest)">
+          <TugMarquee icon={<Radio />} iconColor="var(--tug7-element-field-fill-normal-success-rest)">
             {MEDIUM_TEXT}
           </TugMarquee>
           <TugMarquee icon={<Folder />}>
             {PATH_TEXT}
           </TugMarquee>
-          <TugMarquee icon={<Disc3 />} iconColor="var(--tug-element-global-fill-normal-accentCool-rest)">
+          <TugMarquee icon={<Disc3 />} iconColor="var(--tug7-element-global-fill-normal-accentCool-rest)">
             {SHORT_TEXT}
           </TugMarquee>
         </div>

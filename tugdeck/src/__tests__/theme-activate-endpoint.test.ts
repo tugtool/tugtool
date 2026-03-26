@@ -14,7 +14,7 @@ describe("theme activate endpoint (thin)", () => {
       fs.mkdirSync(themesCssDir, { recursive: true });
       fs.writeFileSync(
         path.join(themesCssDir, "harmony.css"),
-        "body { --tug-host-canvas-color: #e7eaf0; --tug-sample: #123456; }",
+        "body { --tugx-host-canvas-color: #e7eaf0; --tug-sample: #123456; }",
         "utf-8",
       );
 
@@ -27,7 +27,7 @@ describe("theme activate endpoint (thin)", () => {
       expect(result.status).toBe(200);
       expect(result.body).toContain("\"theme\":\"harmony\"");
       expect(result.body).toContain("\"hostCanvasColor\":\"#e7eaf0\"");
-      expect(fs.readFileSync(overrideCssPath, "utf-8")).toContain("--tug-host-canvas-color: #e7eaf0;");
+      expect(fs.readFileSync(overrideCssPath, "utf-8")).toContain("--tugx-host-canvas-color: #e7eaf0;");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

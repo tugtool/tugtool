@@ -20,8 +20,8 @@
 /**
  * @tug-pairings
  * No foreground-on-background text or icon pairings. The skeleton is a purely
- * decorative animated block. Background cycles between tug-skeleton-base and
- * tug-skeleton-highlight — no text renders on it.
+ * decorative animated block. Background cycles between tugx-skeleton-base and
+ * tugx-skeleton-highlight — no text renders on it.
  */
 
 /* ============================================================================
@@ -33,8 +33,8 @@
  * Matches shadcn/ui Skeleton approach — always visible, never disappears.
  */
 @keyframes td-shimmer {
-  0%, 100% { background-color: var(--tug-skeleton-base); }
-  50%      { background-color: var(--tug-skeleton-highlight); }
+  0%, 100% { background-color: var(--tugx-skeleton-base); }
+  50%      { background-color: var(--tugx-skeleton-highlight); }
 }
 
 /* ============================================================================
@@ -42,7 +42,7 @@
    ============================================================================ */
 
 .tug-skeleton {
-  background-color: var(--tug-skeleton-base);
+  background-color: var(--tugx-skeleton-base);
   animation: td-shimmer 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   border-radius: var(--tug-radius-sm);
   display: block;

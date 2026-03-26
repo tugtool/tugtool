@@ -7,11 +7,11 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-marquee (color)                 |
+ * | --tug7-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-marquee (color)                 |
  */
 
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-marquee {
   display: flex;
   align-items: center;
@@ -21,7 +21,7 @@
   font-weight: 500;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-element-field-text-normal-label-rest);
+  color: var(--tug7-element-field-text-normal-label-rest);
   min-width: 0;
 }
 

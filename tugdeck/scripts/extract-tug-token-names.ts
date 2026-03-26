@@ -18,7 +18,7 @@ export function collectCssFiles(): string[] {
 
 export function extractTokenNames(cssText: string): string[] {
   const withoutComments = cssText.replace(/\/\*[\s\S]*?\*\//g, " ");
-  const matches = withoutComments.matchAll(/--tug-[a-z0-9-]+(?=\s*:)/g);
+  const matches = withoutComments.matchAll(/--(?:tug7|tugc|tugx|tug)-[a-zA-Z0-9-]+(?=\s*:)/g);
   const names: string[] = [];
   for (const match of matches) {
     names.push(match[0]);
@@ -48,7 +48,7 @@ export function main(): void {
   ].join("\n");
   fs.writeFileSync(OUT_FILE, out, "utf-8");
   // eslint-disable-next-line no-console
-  console.log(`Generated ${names.length} --tug-* names -> ${path.relative(ROOT, OUT_FILE)}`);
+  console.log(`Generated ${names.length} --tug7-/--tugc-/--tugx-/--tug- names -> ${path.relative(ROOT, OUT_FILE)}`);
 }
 
 if (import.meta.main) {

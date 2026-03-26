@@ -250,7 +250,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     const snippet = container.querySelector("[data-testid='gp-formula-snippet']");
     const text = snippet!.textContent ?? "";
     // First hue is garnet (ADJACENCY_RING order) — formula should reference garnet CSS vars
-    expect(text).toContain("var(--tug-garnet-");
+    expect(text).toContain("var(--tugc-garnet-");
   });
 
   it("CSS formula copy button is rendered", () => {

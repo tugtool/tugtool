@@ -1,25 +1,25 @@
 /* @tug-pairings {
-  --tug-surface-toggle-track-normal-off-rest       | --tug-surface-global-primary-normal-default-rest | informational
-  --tug-surface-toggle-track-normal-off-hover      | --tug-surface-global-primary-normal-default-rest | informational
-  --tug-element-checkmark-icon-normal-plain-rest   | --tug-surface-toggle-track-normal-on-rest        | control
-  --tug-element-checkmark-icon-normal-plain-mixed  | --tug-surface-toggle-track-normal-mixed-rest     | control
-  --tug-element-field-text-normal-label-rest       | --tug-surface-global-primary-normal-default-rest | content
+  --tug7-surface-toggle-track-normal-off-rest       | --tug7-surface-global-primary-normal-default-rest | informational
+  --tug7-surface-toggle-track-normal-off-hover      | --tug7-surface-global-primary-normal-default-rest | informational
+  --tug7-element-checkmark-icon-normal-plain-rest   | --tug7-surface-toggle-track-normal-on-rest        | control
+  --tug7-element-checkmark-icon-normal-plain-mixed  | --tug7-surface-toggle-track-normal-mixed-rest     | control
+  --tug7-element-field-text-normal-label-rest       | --tug7-surface-global-primary-normal-default-rest | content
 } */
 
 /**
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug-surface-toggle-track-normal-off-rest (surface-toggle-track-normal-off-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-checkbox (border)               |
- * | --tug-surface-toggle-track-normal-off-hover (surface-toggle-track-normal-off-hover) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-checkbox:hover:not(:disabled):not([data-disabled]) (border-color) |
- * | --tug-toggle-on-color (toggle-on-color)          | --tug-toggle-on-color (toggle-on-color)          | informational | .tug-checkbox[data-state="checked"] (border-color) |
- * | --tug-surface-toggle-track-normal-on-hover (surface-toggle-track-normal-on-hover) | --tug-surface-toggle-track-normal-on-hover (surface-toggle-track-normal-on-hover) | informational | .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
- * | --tug-toggle-on-hover-color (toggle-on-hover-color) | --tug-toggle-on-hover-color (toggle-on-hover-color) | informational | .tug-checkbox[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) (border-color) |
- * | --tug-surface-toggle-track-normal-mixed-hover (surface-toggle-track-normal-mixed-hover) | --tug-surface-toggle-track-normal-mixed-hover (surface-toggle-track-normal-mixed-hover) | informational | .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
- * | --tug-surface-toggle-track-normal-plain-disabled (surface-toggle-track-normal-plain-disabled) | --tug-surface-toggle-track-normal-plain-disabled (surface-toggle-track-normal-plain-disabled) | informational | .tug-checkbox:disabled, .tug-checkbox[data-disabled] (border-color) |
- * | --tug-element-checkmark-icon-normal-plain-rest (element-checkmark-icon-normal-plain-rest) | --tug-surface-toggle-track-normal-on-rest (surface-toggle-track-normal-on-rest) | control      | .tug-checkbox-indicator (color)      |
- * | --tug-element-checkmark-icon-normal-plain-mixed (element-checkmark-icon-normal-plain-mixed) | --tug-surface-toggle-track-normal-mixed-rest (surface-toggle-track-normal-mixed-rest) | control      | .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator (color) |
- * | --tug-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-checkbox-label (color)          |
+ * | --tug7-surface-toggle-track-normal-off-rest (surface-toggle-track-normal-off-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-checkbox (border)               |
+ * | --tug7-surface-toggle-track-normal-off-hover (surface-toggle-track-normal-off-hover) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .tug-checkbox:hover:not(:disabled):not([data-disabled]) (border-color) |
+ * | --tugx-toggle-on-color (toggle-on-color)          | --tugx-toggle-on-color (toggle-on-color)          | informational | .tug-checkbox[data-state="checked"] (border-color) |
+ * | --tug7-surface-toggle-track-normal-on-hover (surface-toggle-track-normal-on-hover) | --tug7-surface-toggle-track-normal-on-hover (surface-toggle-track-normal-on-hover) | informational | .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
+ * | --tugx-toggle-on-hover-color (toggle-on-hover-color) | --tugx-toggle-on-hover-color (toggle-on-hover-color) | informational | .tug-checkbox[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) (border-color) |
+ * | --tug7-surface-toggle-track-normal-mixed-hover (surface-toggle-track-normal-mixed-hover) | --tug7-surface-toggle-track-normal-mixed-hover (surface-toggle-track-normal-mixed-hover) | informational | .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) (border-color) |
+ * | --tug7-surface-toggle-track-normal-plain-disabled (surface-toggle-track-normal-plain-disabled) | --tug7-surface-toggle-track-normal-plain-disabled (surface-toggle-track-normal-plain-disabled) | informational | .tug-checkbox:disabled, .tug-checkbox[data-disabled] (border-color) |
+ * | --tug7-element-checkmark-icon-normal-plain-rest (element-checkmark-icon-normal-plain-rest) | --tug7-surface-toggle-track-normal-on-rest (surface-toggle-track-normal-on-rest) | control      | .tug-checkbox-indicator (color)      |
+ * | --tug7-element-checkmark-icon-normal-plain-mixed (element-checkmark-icon-normal-plain-mixed) | --tug7-surface-toggle-track-normal-mixed-rest (surface-toggle-track-normal-mixed-rest) | control      | .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator (color) |
+ * | --tug7-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-checkbox-label (color)          |
  */
 
 
@@ -27,13 +27,13 @@
    Checkbox Root (.tug-checkbox)
    ========================================================================= */
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-checkbox {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border: 1px solid var(--tug-surface-toggle-track-normal-off-rest);
+  border: 1px solid var(--tug7-surface-toggle-track-normal-off-rest);
   border-radius: 0.25rem; /* 4px */
   background-color: transparent;
   cursor: pointer;
@@ -61,54 +61,54 @@
 
 /* ---- States: rest → hover → active → focus → disabled ---- */
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-checkbox:hover:not(:disabled):not([data-disabled]) {
-  border-color: var(--tug-surface-toggle-track-normal-off-hover);
+  border-color: var(--tug7-surface-toggle-track-normal-off-hover);
 }
 
 /* ---- Checked ---- */
 
 .tug-checkbox[data-state="checked"] {
-  background-color: var(--tug-toggle-on-color, var(--tug-surface-toggle-track-normal-on-rest));
-  border-color: var(--tug-toggle-on-color, var(--tug-surface-toggle-track-normal-on-rest));
+  background-color: var(--tugx-toggle-on-color, var(--tug7-surface-toggle-track-normal-on-rest));
+  border-color: var(--tugx-toggle-on-color, var(--tug7-surface-toggle-track-normal-on-rest));
 }
 
 /* Default hover (no role) — uses pre-computed hover token */
 .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
-  background-color: var(--tug-surface-toggle-track-normal-on-hover);
-  border-color: var(--tug-surface-toggle-track-normal-on-hover);
+  background-color: var(--tug7-surface-toggle-track-normal-on-hover);
+  border-color: var(--tug7-surface-toggle-track-normal-on-hover);
 }
 
 /* Role hover — uses injected color-mix value */
 .tug-checkbox[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) {
-  background-color: var(--tug-toggle-on-hover-color);
-  border-color: var(--tug-toggle-on-hover-color);
+  background-color: var(--tugx-toggle-on-hover-color);
+  border-color: var(--tugx-toggle-on-hover-color);
 }
 
 /* ---- Indeterminate (mixed) ---- */
 
 /* Indeterminate inherits role color so it reads as "partially in this role". */
 .tug-checkbox[data-state="indeterminate"] {
-  background-color: var(--tug-toggle-on-color, var(--tug-surface-toggle-track-normal-mixed-rest));
-  border-color: var(--tug-toggle-on-color, var(--tug-surface-toggle-track-normal-mixed-rest));
+  background-color: var(--tugx-toggle-on-color, var(--tug7-surface-toggle-track-normal-mixed-rest));
+  border-color: var(--tugx-toggle-on-color, var(--tug7-surface-toggle-track-normal-mixed-rest));
 }
 
 /* Default hover (no role) for indeterminate */
 .tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
-  background-color: var(--tug-surface-toggle-track-normal-mixed-hover);
-  border-color: var(--tug-surface-toggle-track-normal-mixed-hover);
+  background-color: var(--tug7-surface-toggle-track-normal-mixed-hover);
+  border-color: var(--tug7-surface-toggle-track-normal-mixed-hover);
 }
 
 /* Role hover for indeterminate */
 .tug-checkbox[data-state="indeterminate"][data-role]:hover:not(:disabled):not([data-disabled]) {
-  background-color: var(--tug-toggle-on-hover-color);
-  border-color: var(--tug-toggle-on-hover-color);
+  background-color: var(--tugx-toggle-on-hover-color);
+  border-color: var(--tugx-toggle-on-hover-color);
 }
 
 /* ---- Focus ---- */
 
 .tug-checkbox:focus-visible {
-  outline: 2px solid var(--tug-element-global-fill-normal-accentCool-rest);
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
   outline-offset: 2px;
 }
 
@@ -116,27 +116,27 @@
 
 .tug-checkbox:disabled,
 .tug-checkbox[data-disabled] {
-  background-color: var(--tug-surface-toggle-track-normal-plain-disabled);
-  border-color: var(--tug-surface-toggle-track-normal-plain-disabled);
+  background-color: var(--tug7-surface-toggle-track-normal-plain-disabled);
+  border-color: var(--tug7-surface-toggle-track-normal-plain-disabled);
   cursor: not-allowed;
-  opacity: var(--tug-control-disabled-opacity);
+  opacity: var(--tugx-control-disabled-opacity);
 }
 
 /* ============================================================================
    Indicator (.tug-checkbox-indicator)
    ========================================================================= */
 
-/* @tug-renders-on: --tug-surface-toggle-track-normal-on-rest */
+/* @tug-renders-on: --tug7-surface-toggle-track-normal-on-rest */
 .tug-checkbox-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--tug-element-checkmark-icon-normal-plain-rest);
+  color: var(--tug7-element-checkmark-icon-normal-plain-rest);
 }
 
-/* @tug-renders-on: --tug-surface-toggle-track-normal-mixed-rest */
+/* @tug-renders-on: --tug7-surface-toggle-track-normal-mixed-rest */
 .tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator {
-  color: var(--tug-element-checkmark-icon-normal-plain-mixed);
+  color: var(--tug7-element-checkmark-icon-normal-plain-mixed);
 }
 
 .tug-checkbox-indicator svg {
@@ -195,19 +195,19 @@
   cursor: not-allowed;
 }
 
-/* @tug-renders-on: --tug-surface-global-primary-normal-default-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-checkbox-label {
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 400;
   line-height: 1.4;
   letter-spacing: 0.01em;
-  color: var(--tug-element-field-text-normal-label-rest);
+  color: var(--tug7-element-field-text-normal-label-rest);
   user-select: none;
 }
 
 .tug-checkbox-wrapper-disabled .tug-checkbox-label {
-  opacity: var(--tug-control-disabled-opacity);
+  opacity: var(--tugx-control-disabled-opacity);
 }
 
 /* Label size variants */

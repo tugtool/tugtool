@@ -66,6 +66,8 @@ function extractStandaloneHex(css: string): string[] {
   for (const line of lines) {
     const trimmed = line.trim();
     if (trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+    // --tugx-host-canvas-color is the Swift bridge contract — intentionally a literal hex
+    if (trimmed.includes("--tugx-host-canvas-color")) continue;
     const hexPattern = /#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-fA-F])/g;
     let m;
     while ((m = hexPattern.exec(trimmed)) !== null) {

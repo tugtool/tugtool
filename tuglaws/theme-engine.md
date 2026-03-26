@@ -44,7 +44,7 @@ Each theme CSS file must define:
 
 ```css
 body {
-  --tug-host-canvas-color: #rrggbb;
+  --tugx-host-canvas-color: #rrggbb;
 }
 ```
 
@@ -77,4 +77,4 @@ PostCSS is used for CSS processing:
 - Authoring syntax `--tug-color(...)` remains in source CSS.
 - `postcss-tug-color` expands to regular CSS during Vite dev/build.
 
-The system intentionally duplicates one value per theme (`--tug-host-canvas-color`) to keep runtime simple and explicit.
+The system intentionally duplicates one value per theme (`--tugx-host-canvas-color`) to keep runtime simple and explicit.

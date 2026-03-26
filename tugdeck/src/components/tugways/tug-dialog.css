@@ -2,7 +2,7 @@
  * TugDialog + Sheet + Toast + Alert + Badge + Status + Progress + Banner + Kbd component tokens.
  *
  * Token prefix: --tug-dialog-*, --tug-sheet-*, --tug-toast-*, --tug-alert-*,
- *               --tug-badge-*, --tug-status-*, --tug-progress-*, --tug-spinner,
+ *               --tug-badge-*, --tug-status-*, --tug-progress-*, --tugx-spinner,
  *               --tug-skeleton-*, --tug-emptyState-*, --tug-banner-*, --tug-kbd-*
  * Drops the "base" segment per CSS reorganization.
  * No CSS rules yet — tokens only.
@@ -12,39 +12,39 @@
  * @tug-pairings
  * | Element                                     | Surface                                        | Role         | Context                                         |
  * |---------------------------------------------|------------------------------------------------|--------------|-------------------------------------------------|
- * | --tug-dialog-fg (element-global-text-normal-default-rest)                | --tug-dialog-bg (surface-global-primary-normal-overlay-rest)              | content      | Dialog body text on dialog background           |
- * | --tug-alert-fg (element-global-text-normal-default-rest)                 | --tug-alert-bg (surface-global-primary-normal-default-rest)               | content      | Alert body text on alert background             |
- * | --tug-toast-info-fg (element-global-text-normal-default-rest)            | --tug-toast-info-bg (surface-global-primary-normal-default-rest)          | content      | Toast info text on toast background             |
- * | --tug-badge-neutral-fg (element-global-text-normal-muted-rest)           | --tug-badge-neutral-bg (element-global-divider-normal-default-rest)       | informational | Neutral badge text on divider-default background |
- * | --tug-kbd-fg (element-global-text-normal-muted-rest)                     | --tug-kbd-bg (surface-global-primary-normal-default-rest)                 | informational | Keyboard shortcut badge text on surface-default |
+ * | --tugx-dialog-fg (element-global-text-normal-default-rest)                | --tugx-dialog-bg (surface-global-primary-normal-overlay-rest)              | content      | Dialog body text on dialog background           |
+ * | --tugx-alert-fg (element-global-text-normal-default-rest)                 | --tugx-alert-bg (surface-global-primary-normal-default-rest)               | content      | Alert body text on alert background             |
+ * | --tugx-toast-info-fg (element-global-text-normal-default-rest)            | --tugx-toast-info-bg (surface-global-primary-normal-default-rest)          | content      | Toast info text on toast background             |
+ * | --tugx-badge-neutral-fg (element-global-text-normal-muted-rest)           | --tugx-badge-neutral-bg (element-global-divider-normal-default-rest)       | informational | Neutral badge text on divider-default background |
+ * | --tugx-kbd-fg (element-global-text-normal-muted-rest)                     | --tugx-kbd-bg (surface-global-primary-normal-default-rest)                 | informational | Keyboard shortcut badge text on surface-default |
  */
 
 body {
   /* --- Dialog / Sheet / Toast / Alert --- */
-  --tug-dialog-bg: var(--tug-surface-global-primary-normal-overlay-rest);
-  --tug-dialog-fg: var(--tug-element-global-text-normal-default-rest);
-  --tug-dialog-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-sheet-bg: var(--tug-surface-global-primary-normal-overlay-rest);
-  --tug-sheet-fg: var(--tug-element-global-text-normal-default-rest);
-  --tug-sheet-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-toast-info-bg: var(--tug-surface-global-primary-normal-default-rest);
-  --tug-toast-info-fg: var(--tug-element-global-text-normal-default-rest);
-  --tug-alert-bg: var(--tug-surface-global-primary-normal-default-rest);
-  --tug-alert-fg: var(--tug-element-global-text-normal-default-rest);
+  --tugx-dialog-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-dialog-fg: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-dialog-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-sheet-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-sheet-fg: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-sheet-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-toast-info-bg: var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-toast-info-fg: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-alert-bg: var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-alert-fg: var(--tug7-element-global-text-normal-default-rest);
 
   /* --- Status / Badge / Progress / Skeleton / Banner --- */
-  --tug-badge-neutral-bg: var(--tug-element-global-divider-normal-default-rest);
-  --tug-badge-neutral-fg: var(--tug-element-global-text-normal-muted-rest);
-  --tug-badge-accent-bg: --tug-color(orange, i: 50, t: 50, a: 20);
-  --tug-badge-accent-fg: var(--tug-element-global-fill-normal-accent-rest);
-  --tug-progress-track: var(--tug-element-global-divider-normal-separator-rest);
-  --tug-progress-fill: var(--tug-element-global-fill-normal-accent-rest);
-  --tug-spinner: var(--tug-element-global-fill-normal-accent-rest);
-  --tug-skeleton-base: --tug-color(violet, i: 5, t: 20);
-  --tug-skeleton-highlight: --tug-color(indigo, i: 7, t: 28);
-  --tug-emptyState-fg: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-emptyState-icon: var(--tug-element-global-border-normal-default-rest);
-  --tug-kbd-bg: var(--tug-surface-global-primary-normal-default-rest);
-  --tug-kbd-fg: var(--tug-element-global-text-normal-muted-rest);
-  --tug-kbd-border: var(--tug-element-global-border-normal-default-rest);
+  --tugx-badge-neutral-bg: var(--tug7-element-global-divider-normal-default-rest);
+  --tugx-badge-neutral-fg: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-badge-accent-bg: --tug-color(orange, i: 50, t: 50, a: 20);
+  --tugx-badge-accent-fg: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-progress-track: var(--tug7-element-global-divider-normal-separator-rest);
+  --tugx-progress-fill: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-spinner: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-skeleton-base: --tug-color(violet, i: 5, t: 20);
+  --tugx-skeleton-highlight: --tug-color(indigo, i: 7, t: 28);
+  --tugx-emptyState-fg: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-emptyState-icon: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-kbd-bg: var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-kbd-fg: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-kbd-border: var(--tug7-element-global-border-normal-default-rest);
 }

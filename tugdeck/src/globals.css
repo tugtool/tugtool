@@ -19,11 +19,11 @@ body {
 
 body {
   font-family: var(--tug-font-family-sans);
-  color: var(--tug-element-global-text-normal-default-rest);
-  background-color: var(--tug-surface-global-primary-normal-canvas-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-canvas-rest);
   background-image:
-    linear-gradient(var(--tug-surface-global-primary-normal-grid-rest) 1px, transparent 1px),
-    linear-gradient(90deg, var(--tug-surface-global-primary-normal-grid-rest) 1px, transparent 1px);
+    linear-gradient(var(--tug7-surface-global-primary-normal-grid-rest) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tug7-surface-global-primary-normal-grid-rest) 1px, transparent 1px);
   background-size: 24px 24px;
   user-select: none;
 }

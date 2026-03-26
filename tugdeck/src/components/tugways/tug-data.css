@@ -1,7 +1,7 @@
 /**
  * TugData — Table, List, Stat, Chart, Gauge component tokens.
  *
- * Token prefix: --tug-table-*, --tug-list-*, --tug-stat-*, --tug-chart-*, --tug-gauge-*
+ * Token prefix: --tugx-table-*, --tugx-list-*, --tugx-stat-*, --tugx-chart-*, --tugx-gauge-*
  * Drops the "base" segment per CSS reorganization.
  * No CSS rules yet — tokens only.
  */
@@ -10,57 +10,57 @@
  * @tug-pairings
  * | Element                                      | Surface                                           | Role         | Context                                             |
  * |----------------------------------------------|---------------------------------------------------|--------------|-----------------------------------------------------|
- * | --tug-table-header-fg (element-global-text-normal-muted-rest)             | --tug-table-header-bg (surface-global-primary-normal-sunken-rest)            | informational | Table header cell text on sunken header background  |
- * | --tug-stat-value (element-global-text-normal-default-rest)                | parent surface (ambient surface-default/raised)   | content      | Stat value text                                     |
- * | --tug-stat-label (element-global-text-normal-subtle-rest)                 | parent surface (ambient surface-default/raised)   | informational | Stat label text                                     |
+ * | --tugx-table-header-fg (element-global-text-normal-muted-rest)             | --tugx-table-header-bg (surface-global-primary-normal-sunken-rest)            | informational | Table header cell text on sunken header background  |
+ * | --tugx-stat-value (element-global-text-normal-default-rest)                | parent surface (ambient surface-default/raised)   | content      | Stat value text                                     |
+ * | --tugx-stat-label (element-global-text-normal-subtle-rest)                 | parent surface (ambient surface-default/raised)   | informational | Stat label text                                     |
  */
 
 body {
   /* --- Table / List --- */
-  --tug-table-header-bg: var(--tug-surface-global-primary-normal-sunken-rest);
-  --tug-table-header-fg: var(--tug-element-global-text-normal-muted-rest);
-  --tug-table-row-bg: transparent;
-  --tug-table-row-bg-striped: --tug-color(white, i: 0, t: 100, a: 2);
-  --tug-table-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-table-row-bg-selected: var(--tug-surface-control-primary-normal-highlighted-rest);
-  --tug-table-row-border: var(--tug-element-global-divider-normal-muted-rest);
-  --tug-table-cell-divider: var(--tug-element-global-divider-normal-default-rest);
-  --tug-table-sortIndicator: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-list-row-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-list-row-selected: var(--tug-surface-control-primary-normal-highlighted-rest);
+  --tugx-table-header-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
+  --tugx-table-header-fg: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-table-row-bg: transparent;
+  --tugx-table-row-bg-striped: --tug-color(white, i: 0, t: 100, a: 2);
+  --tugx-table-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
+  --tugx-table-row-bg-selected: var(--tug7-surface-control-primary-normal-highlighted-rest);
+  --tugx-table-row-border: var(--tug7-element-global-divider-normal-muted-rest);
+  --tugx-table-cell-divider: var(--tug7-element-global-divider-normal-default-rest);
+  --tugx-table-sortIndicator: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-list-row-hover: --tug-color(white, i: 0, t: 100, a: 4);
+  --tugx-list-row-selected: var(--tug7-surface-control-primary-normal-highlighted-rest);
 
   /* --- Stat / Trend --- */
-  --tug-stat-label: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-stat-value: var(--tug-element-global-text-normal-default-rest);
-  --tug-stat-trend-positive: var(--tug-element-tone-fill-normal-success-rest);
-  --tug-stat-trend-negative: var(--tug-element-tone-fill-normal-danger-rest);
-  --tug-stat-trend-neutral: var(--tug-element-global-text-normal-subtle-rest);
+  --tugx-stat-label: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-stat-value: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-stat-trend-positive: var(--tug7-element-tone-fill-normal-success-rest);
+  --tugx-stat-trend-negative: var(--tug7-element-tone-fill-normal-danger-rest);
+  --tugx-stat-trend-neutral: var(--tug7-element-global-text-normal-subtle-rest);
 
   /* --- Chart Series (palette var() references — Phase 5d5e) --- */
-  --tug-chart-series-warm: --tug-color(orange);
-  --tug-chart-series-cool: --tug-color(cyan);
-  --tug-chart-series-violet: --tug-color(violet);
-  --tug-chart-series-rose: --tug-color(red);
-  --tug-chart-series-verdant: --tug-color(green);
-  --tug-chart-series-golden: --tug-color(yellow);
-  --tug-chart-series-orchid: --tug-color(pink);
-  --tug-chart-series-coral: --tug-color(coral-muted);
+  --tugx-chart-series-warm: --tug-color(orange);
+  --tugx-chart-series-cool: --tug-color(cyan);
+  --tugx-chart-series-violet: --tug-color(violet);
+  --tugx-chart-series-rose: --tug-color(red);
+  --tugx-chart-series-verdant: --tug-color(green);
+  --tugx-chart-series-golden: --tug-color(yellow);
+  --tugx-chart-series-orchid: --tug-color(pink);
+  --tugx-chart-series-coral: --tug-color(coral-muted);
   /* Chart infrastructure tokens */
-  --tug-chart-grid: var(--tug-surface-overlay-primary-normal-highlight-rest);
-  --tug-chart-axis: var(--tug-element-global-border-normal-default-rest);
-  --tug-chart-tick: var(--tug-element-global-border-normal-default-rest);
-  --tug-chart-threshold-warning: var(--tug-element-tone-fill-normal-caution-rest);
-  --tug-chart-threshold-danger: var(--tug-element-tone-fill-normal-danger-rest);
+  --tugx-chart-grid: var(--tug7-surface-overlay-primary-normal-highlight-rest);
+  --tugx-chart-axis: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-chart-tick: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-chart-threshold-warning: var(--tug7-element-tone-fill-normal-caution-rest);
+  --tugx-chart-threshold-danger: var(--tug7-element-tone-fill-normal-danger-rest);
 
   /* --- Gauge --- */
-  --tug-gauge-track: var(--tug-element-global-divider-normal-separator-rest);
-  --tug-gauge-fill: var(--tug-element-global-fill-normal-accent-rest);
-  --tug-gauge-needle: var(--tug-element-global-text-normal-default-rest);
-  --tug-gauge-tick-major: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-gauge-tick-minor: var(--tug-element-global-text-normal-plain-disabled);
-  --tug-gauge-readout: var(--tug-element-global-text-normal-default-rest);
-  --tug-gauge-threshold-warning: var(--tug-element-tone-fill-normal-caution-rest);
-  --tug-gauge-threshold-danger: var(--tug-element-tone-fill-normal-danger-rest);
-  --tug-gauge-unit: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-gauge-annotation: var(--tug-element-global-text-normal-subtle-rest);
+  --tugx-gauge-track: var(--tug7-element-global-divider-normal-separator-rest);
+  --tugx-gauge-fill: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-gauge-needle: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-gauge-tick-major: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-gauge-tick-minor: var(--tug7-element-global-text-normal-plain-disabled);
+  --tugx-gauge-readout: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-gauge-threshold-warning: var(--tug7-element-tone-fill-normal-caution-rest);
+  --tugx-gauge-threshold-danger: var(--tug7-element-tone-fill-normal-danger-rest);
+  --tugx-gauge-unit: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-gauge-annotation: var(--tug7-element-global-text-normal-subtle-rest);
 }

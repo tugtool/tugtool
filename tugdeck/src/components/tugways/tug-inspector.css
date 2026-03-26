@@ -1,7 +1,7 @@
 /**
  * TugInspector + DevOverlay component tokens.
  *
- * Token prefix: --tug-inspector-*, --tug-dev-overlay-*
+ * Token prefix: --tugx-inspector-*, --tugx-dev-overlay-*
  * Drops the "base" segment per CSS reorganization.
  * No CSS rules here — the actual inspector overlay uses hardcoded oklch
  * values in style-inspector-overlay.css for dev tooling purposes.
@@ -12,37 +12,37 @@
  * @tug-pairings
  * | Element                                              | Surface                                            | Role         | Context                                           |
  * |------------------------------------------------------|----------------------------------------------------|--------------|---------------------------------------------------|
- * | --tug-inspector-emptyState-fg (element-global-text-normal-subtle-rest)            | --tug-inspector-panel-bg (surface-global-primary-normal-sunken-rest)          | informational | Inspector empty-state text on panel background    |
- * | --tug-dev-overlay-fg (element-global-text-normal-default-rest)                    | --tug-dev-overlay-bg (hardcoded oklch, dark)       | content      | Dev overlay text (bg is hardcoded, not a token)   |
+ * | --tugx-inspector-emptyState-fg (element-global-text-normal-subtle-rest)            | --tugx-inspector-panel-bg (surface-global-primary-normal-sunken-rest)          | informational | Inspector empty-state text on panel background    |
+ * | --tugx-dev-overlay-fg (element-global-text-normal-default-rest)                    | --tugx-dev-overlay-bg (hardcoded oklch, dark)       | content      | Dev overlay text (bg is hardcoded, not a token)   |
  */
 
 body {
-  --tug-inspector-panel-bg: var(--tug-surface-global-primary-normal-sunken-rest);
-  --tug-inspector-panel-border: var(--tug-element-global-divider-normal-default-rest);
-  --tug-inspector-panel-bg-pinned: var(--tug-surface-global-primary-normal-default-rest);
-  --tug-inspector-section-bg: var(--tug-surface-global-primary-normal-control-rest);
-  --tug-inspector-field-bg: var(--tug-surface-field-primary-normal-plain-focus);
-  --tug-inspector-field-border: var(--tug-element-global-divider-normal-default-rest);
-  --tug-inspector-field-readOnly: var(--tug-surface-global-primary-normal-sunken-rest);
-  --tug-inspector-field-inherited: --tug-color(cyan, i: 50, t: 50, a: 8);
-  --tug-inspector-field-default: --tug-color(violet, i: 5, t: 11);
-  --tug-inspector-field-preview: --tug-color(orange, i: 50, t: 50, a: 10);
-  --tug-inspector-field-cancelled: --tug-color(red, i: 50, t: 50, a: 10);
-  --tug-inspector-target-outline: var(--tug-element-global-icon-normal-active-rest);
-  --tug-inspector-preview-outline: var(--tug-element-global-fill-normal-accent-rest);
-  --tug-inspector-source-token: --tug-color(violet);
-  --tug-inspector-source-class: --tug-color(green);
-  --tug-inspector-source-inline: --tug-color(yellow);
-  --tug-inspector-source-preview: --tug-color(coral-muted);
-  --tug-inspector-emptyState-fg: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-inspector-emptyState-icon: var(--tug-element-global-border-normal-default-rest);
-  --tug-inspector-swatch-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-inspector-scrub-track: var(--tug-element-global-divider-normal-separator-rest);
-  --tug-inspector-scrub-thumb: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-inspector-scrub-active: var(--tug-element-global-fill-normal-accent-rest);
-  --tug-dev-overlay-bg: --tug-color(indigo-violet, i: 4, t: 7, a: 92);
-  --tug-dev-overlay-fg: var(--tug-element-global-text-normal-default-rest);
-  --tug-dev-overlay-border: var(--tug-element-global-border-normal-default-rest);
-  --tug-dev-overlay-targetHighlight: --tug-color(cyan, i: 50, t: 50, a: 30);
-  --tug-dev-overlay-targetDim: --tug-color(black, i: 0, t: 0, a: 50);
+  --tugx-inspector-panel-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
+  --tugx-inspector-panel-border: var(--tug7-element-global-divider-normal-default-rest);
+  --tugx-inspector-panel-bg-pinned: var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-inspector-section-bg: var(--tug7-surface-global-primary-normal-control-rest);
+  --tugx-inspector-field-bg: var(--tug7-surface-field-primary-normal-plain-focus);
+  --tugx-inspector-field-border: var(--tug7-element-global-divider-normal-default-rest);
+  --tugx-inspector-field-readOnly: var(--tug7-surface-global-primary-normal-sunken-rest);
+  --tugx-inspector-field-inherited: --tug-color(cyan, i: 50, t: 50, a: 8);
+  --tugx-inspector-field-default: --tug-color(violet, i: 5, t: 11);
+  --tugx-inspector-field-preview: --tug-color(orange, i: 50, t: 50, a: 10);
+  --tugx-inspector-field-cancelled: --tug-color(red, i: 50, t: 50, a: 10);
+  --tugx-inspector-target-outline: var(--tug7-element-global-icon-normal-active-rest);
+  --tugx-inspector-preview-outline: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-inspector-source-token: --tug-color(violet);
+  --tugx-inspector-source-class: --tug-color(green);
+  --tugx-inspector-source-inline: --tug-color(yellow);
+  --tugx-inspector-source-preview: --tug-color(coral-muted);
+  --tugx-inspector-emptyState-fg: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-inspector-emptyState-icon: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-inspector-swatch-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-inspector-scrub-track: var(--tug7-element-global-divider-normal-separator-rest);
+  --tugx-inspector-scrub-thumb: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-inspector-scrub-active: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-dev-overlay-bg: --tug-color(indigo-violet, i: 4, t: 7, a: 92);
+  --tugx-dev-overlay-fg: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-dev-overlay-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-dev-overlay-targetHighlight: --tug-color(cyan, i: 50, t: 50, a: 30);
+  --tugx-dev-overlay-targetDim: --tug-color(black, i: 0, t: 0, a: 50);
 }

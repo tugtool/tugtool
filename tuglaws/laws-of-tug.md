@@ -58,6 +58,6 @@
 
 **L16. Every color-setting rule declares its rendering surface.** If a CSS rule sets `color`, `fill`, or `border-color` without setting `background-color` in the same rule, it must include a `@tug-renders-on` annotation naming its surface token. Rules that set both foreground and background are self-documenting. `audit-tokens lint` enforces this. [D81, D83]
 
-**L17. Component alias tokens resolve to `--tug-*` in one hop.** No alias-to-alias chains. Every component alias must point directly to its `--tug-*` target. `audit-tokens lint` flags multi-hop chains. [D71]
+**L17. Component alias tokens (`--tugx-*`) resolve to `--tug7-*` in one hop.** No alias-to-alias chains. Every component alias must point directly to its `--tug7-*` target. `audit-tokens lint` flags multi-hop chains. [D71]
 
-**L18. Use element/surface as the canonical vocabulary.** Tokens producing visible marks (text, icons, borders) are *elements* (`--tug-element-*`). Tokens defining the field behind them are *surfaces* (`--tug-surface-*`). Contrast pairing means an element token rendered on a surface token. [D71, D82]
+**L18. Use element/surface as the canonical vocabulary.** Tokens producing visible marks (text, icons, borders) are *elements* (`--tug7-element-*`). Tokens defining the field behind them are *surfaces* (`--tug7-surface-*`). Contrast pairing means an element token rendered on a surface token. [D71, D82]

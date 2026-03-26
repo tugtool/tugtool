@@ -10,7 +10,7 @@
  *
  * Production mode: Theme switching swaps a <link id="tug-theme-override">
  * element pointing to the pre-built per-theme CSS asset. Host canvas color
- * is read from CSS metadata token --tug-host-canvas-color after the override
+ * is read from CSS metadata token --tugx-host-canvas-color after the override
  * stylesheet is applied. [D08]
  *
  * Spec S01 (#settheme-flow), [D01] Single override file, [D03] Activate endpoint,
@@ -57,10 +57,10 @@ function normalizeColorToHex(raw: string): string | null {
 }
 
 export function readHostCanvasColorFromAppliedCss(): string | null {
-  const fromBody = getComputedStyle(document.body).getPropertyValue("--tug-host-canvas-color");
+  const fromBody = getComputedStyle(document.body).getPropertyValue("--tugx-host-canvas-color");
   const normalizedBody = normalizeColorToHex(fromBody);
   if (normalizedBody) return normalizedBody;
-  const fromRoot = getComputedStyle(document.documentElement).getPropertyValue("--tug-host-canvas-color");
+  const fromRoot = getComputedStyle(document.documentElement).getPropertyValue("--tugx-host-canvas-color");
   return normalizeColorToHex(fromRoot);
 }
 

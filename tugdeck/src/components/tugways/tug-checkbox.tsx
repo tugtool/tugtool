@@ -48,7 +48,7 @@ export type TugCheckboxRole =
 /**
  * Maps non-option, non-accent role prop values to tone token suffixes.
  * Necessary because the prop API uses "action" but tone tokens use "active"
- * (e.g., --tug-element-tone-fill-normal-active-rest, not --tug-tone-action).
+ * (e.g., --tug7-element-tone-fill-normal-active-rest, not --tug-tone-action).
  */
 const ROLE_TONE_MAP: Record<string, string> = {
   action:  "active",
@@ -99,10 +99,10 @@ export interface TugCheckboxProps {
   "aria-label"?: string;
   /**
    * Semantic role for the checked/indeterminate on-state color.
-   * Injects --tug-toggle-on-color and --tug-toggle-on-hover-color as inline
+   * Injects --tugx-toggle-on-color and --tugx-toggle-on-hover-color as inline
    * CSS custom properties; CSS falls back to global tokens when not set.
    *
-   * "option" uses --tug-element-global-text-normal-muted-rest (neutral/achromatic).
+   * "option" uses --tug7-element-global-text-normal-muted-rest (neutral/achromatic).
    * "accent" suppresses injection and falls back to the CSS default (accent token).
    * All other roles inject the corresponding --tug-element-tone-fill-* token. [L06]
    *
@@ -136,7 +136,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     //
     // Branch 1 — "option": inject fg-muted directly (neutral/achromatic).
     //   The option role does not map to any --tug-tone-* token; it uses
-    //   --tug-element-global-text-normal-muted-rest for a calm, achromatic on-state.
+    //   --tug7-element-global-text-normal-muted-rest for a calm, achromatic on-state.
     //
     // Branch 2 — other non-accent roles (action/agent/data/success/caution/danger):
     //   inject the corresponding --tug-tone-* token via ROLE_TONE_MAP.
@@ -147,15 +147,15 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
 
     if (role === "option") {
       roleStyle = {
-        "--tug-toggle-on-color": "var(--tug-element-global-text-normal-muted-rest)",
-        "--tug-toggle-on-hover-color": "var(--tug-element-global-text-normal-subtle-rest)",
+        "--tugx-toggle-on-color": "var(--tug7-element-global-text-normal-muted-rest)",
+        "--tugx-toggle-on-hover-color": "var(--tug7-element-global-text-normal-subtle-rest)",
       } as React.CSSProperties;
       dataRole = "option";
     } else if (role !== "accent" && ROLE_TONE_MAP[role] !== undefined) {
       const toneSuffix = ROLE_TONE_MAP[role];
       roleStyle = {
-        "--tug-toggle-on-color": `var(--tug-element-tone-fill-normal-${toneSuffix}-rest)`,
-        "--tug-toggle-on-hover-color": `color-mix(in oklch, var(--tug-element-tone-fill-normal-${toneSuffix}-rest), white 15%)`,
+        "--tugx-toggle-on-color": `var(--tug7-element-tone-fill-normal-${toneSuffix}-rest)`,
+        "--tugx-toggle-on-hover-color": `color-mix(in oklch, var(--tug7-element-tone-fill-normal-${toneSuffix}-rest), white 15%)`,
       } as React.CSSProperties;
       dataRole = role;
     }

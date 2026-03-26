@@ -129,10 +129,10 @@ export function TugPopupMenu({
     // directly, so we must resolve to concrete color values. [D01]
     const computed = getComputedStyle(target);
     const blinkBg = computed
-      .getPropertyValue("--tug-surface-control-primary-filled-action-active")
+      .getPropertyValue("--tug7-surface-control-primary-filled-action-active")
       .trim() || "transparent";
     const blinkFg = computed
-      .getPropertyValue("--tug-element-control-text-filled-action-active")
+      .getPropertyValue("--tug7-element-control-text-filled-action-active")
       .trim() || "inherit";
 
     // Read the standard easing value at runtime -- WAAPI does not resolve

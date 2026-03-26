@@ -11,25 +11,25 @@
  * @tug-pairings
  * | Element                                            | Surface                                               | Role         | Context                                         |
  * |----------------------------------------------------|-------------------------------------------------------|--------------|-------------------------------------------------|
- * | --tug-dock-button-fg (element-global-text-normal-subtle-rest)                   | --tug-dock-bg (surface-field-primary-normal-plain-focus)                        | control      | Dock button icon on dock background             |
- * | --tug-dock-button-badge-fg (element-global-text-normal-inverse-rest)            | --tug-dock-button-badge-bg (element-tone-fill-normal-danger-rest)   | control      | Dock button notification badge on danger bg     |
- * | --tug-surface-global-primary-normal-grid-rest (surface-global-primary-normal-grid-rest) | --tug-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | canvas | Grid line on canvas background (barely visible) |
+ * | --tugx-dock-button-fg (element-global-text-normal-subtle-rest)                   | --tugx-dock-bg (surface-field-primary-normal-plain-focus)                        | control      | Dock button icon on dock background             |
+ * | --tugx-dock-button-badge-fg (element-global-text-normal-inverse-rest)            | --tugx-dock-button-badge-bg (element-tone-fill-normal-danger-rest)   | control      | Dock button notification badge on danger bg     |
+ * | --tug7-surface-global-primary-normal-grid-rest (surface-global-primary-normal-grid-rest) | --tug7-surface-global-primary-normal-canvas-rest (surface-global-primary-normal-canvas-rest) | canvas | Grid line on canvas background (barely visible) |
  */
 
 body {
   /* --- Dock --- */
-  --tug-dock-bg: var(--tug-surface-field-primary-normal-plain-focus);
-  --tug-dock-border: var(--tug-element-global-divider-normal-default-rest);
-  --tug-dock-indicator: var(--tug-element-global-fill-normal-accent-rest);
-  --tug-dock-menu-caret: var(--tug-element-global-text-normal-subtle-rest);
+  --tugx-dock-bg: var(--tug7-surface-field-primary-normal-plain-focus);
+  --tugx-dock-border: var(--tug7-element-global-divider-normal-default-rest);
+  --tugx-dock-indicator: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-dock-menu-caret: var(--tug7-element-global-text-normal-subtle-rest);
   --tug-dock-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
   --tug-dock-button-bg-active: --tug-color(white, i: 0, t: 100, a: 12);
-  --tug-dock-button-fg: var(--tug-element-global-text-normal-subtle-rest);
-  --tug-dock-button-fg-active: var(--tug-element-global-fill-normal-accent-rest);
-  --tug-dock-button-fg-attention: var(--tug-element-tone-fill-normal-caution-rest);
-  --tug-dock-button-badge-bg: var(--tug-element-tone-fill-normal-danger-rest);
-  --tug-dock-button-badge-fg: var(--tug-element-global-text-normal-inverse-rest);
-  --tug-dock-button-insertIndicator: var(--tug-element-global-icon-normal-active-rest);
+  --tugx-dock-button-fg: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-dock-button-fg-active: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-dock-button-fg-attention: var(--tug7-element-tone-fill-normal-caution-rest);
+  --tugx-dock-button-badge-bg: var(--tug7-element-tone-fill-normal-danger-rest);
+  --tugx-dock-button-badge-fg: var(--tug7-element-global-text-normal-inverse-rest);
+  --tugx-dock-button-insertIndicator: var(--tug7-element-global-icon-normal-active-rest);
 
   /* --- Canvas / Grid --- */
   --tug-canvas-grid-emphasis: --tug-color(white, i: 0, t: 100, a: 10);

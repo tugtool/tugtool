@@ -2,10 +2,10 @@
  * TugSwitch role prop tests.
  *
  * Tests cover:
- * - role="agent" injects --tug-toggle-on-color and sets data-role
+ * - role="agent" injects --tugx-toggle-on-color and sets data-role
  * - role="action" maps to tone-active via ROLE_TONE_MAP
  * - no role prop: injects option-role fg-muted style and sets data-role="option" (new default)
- * - role="option": injects --tug-toggle-on-color: var(--tug-element-global-text-normal-muted-rest) and sets data-role="option"
+ * - role="option": injects --tugx-toggle-on-color: var(--tug7-element-global-text-normal-muted-rest) and sets data-role="option"
  * - role="accent" (explicit): no inline style injected, no data-role attribute
  *
  * [D03] Selection control role via inline CSS custom property injection
@@ -24,11 +24,11 @@ afterEach(() => {
 });
 
 describe("TugSwitch role prop", () => {
-  it('role="agent" injects --tug-toggle-on-color set to var(--tug-element-tone-fill-normal-agent-rest)', () => {
+  it('role="agent" injects --tugx-toggle-on-color set to var(--tug7-element-tone-fill-normal-agent-rest)', () => {
     const { getByRole } = render(<TugSwitch role="agent" aria-label="test" />);
     const switchEl = getByRole("switch");
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-color")).toBe(
-      "var(--tug-element-tone-fill-normal-agent-rest)",
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-color")).toBe(
+      "var(--tug7-element-tone-fill-normal-agent-rest)",
     );
   });
 
@@ -38,32 +38,32 @@ describe("TugSwitch role prop", () => {
     expect(switchEl.getAttribute("data-role")).toBe("agent");
   });
 
-  it('role="action" maps to --tug-element-tone-fill-normal-active-rest via ROLE_TONE_MAP', () => {
+  it('role="action" maps to --tug7-element-tone-fill-normal-active-rest via ROLE_TONE_MAP', () => {
     const { getByRole } = render(<TugSwitch role="action" aria-label="test" />);
     const switchEl = getByRole("switch");
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-color")).toBe(
-      "var(--tug-element-tone-fill-normal-active-rest)",
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-color")).toBe(
+      "var(--tug7-element-tone-fill-normal-active-rest)",
     );
   });
 
-  it('role="action" injects --tug-toggle-on-hover-color with color-mix using active tone', () => {
+  it('role="action" injects --tugx-toggle-on-hover-color with color-mix using active tone', () => {
     const { getByRole } = render(<TugSwitch role="action" aria-label="test" />);
     const switchEl = getByRole("switch");
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe(
-      "color-mix(in oklch, var(--tug-element-tone-fill-normal-active-rest), white 15%)",
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-hover-color")).toBe(
+      "color-mix(in oklch, var(--tug7-element-tone-fill-normal-active-rest), white 15%)",
     );
   });
 
-  it("no role prop: injects option-role style (--tug-toggle-on-color: var(--tug-element-global-text-normal-muted-rest))", () => {
+  it("no role prop: injects option-role style (--tugx-toggle-on-color: var(--tug7-element-global-text-normal-muted-rest))", () => {
     // With option as the default role, omitting the role prop now DOES inject
     // inline style using fg-muted (neutral/achromatic). [D06]
     const { getByRole } = render(<TugSwitch aria-label="test" />);
     const switchEl = getByRole("switch");
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-color")).toBe(
-      "var(--tug-element-global-text-normal-muted-rest)",
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-color")).toBe(
+      "var(--tug7-element-global-text-normal-muted-rest)",
     );
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe(
-      "var(--tug-element-global-text-normal-subtle-rest)",
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-hover-color")).toBe(
+      "var(--tug7-element-global-text-normal-subtle-rest)",
     );
   });
 
@@ -75,17 +75,17 @@ describe("TugSwitch role prop", () => {
     expect(switchEl.getAttribute("data-role")).toBe("option");
   });
 
-  it('role="option": injects --tug-toggle-on-color: var(--tug-element-global-text-normal-muted-rest)', () => {
+  it('role="option": injects --tugx-toggle-on-color: var(--tug7-element-global-text-normal-muted-rest)', () => {
     // The option role uses fg-muted directly rather than a --tug-tone-*
     // token. This is intentional: option is neutral/achromatic and does not
     // have a dedicated role hue in the tone system. [D06]
     const { getByRole } = render(<TugSwitch role="option" aria-label="test" />);
     const switchEl = getByRole("switch");
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-color")).toBe(
-      "var(--tug-element-global-text-normal-muted-rest)",
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-color")).toBe(
+      "var(--tug7-element-global-text-normal-muted-rest)",
     );
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe(
-      "var(--tug-element-global-text-normal-subtle-rest)",
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-hover-color")).toBe(
+      "var(--tug7-element-global-text-normal-subtle-rest)",
     );
     expect(switchEl.getAttribute("data-role")).toBe("option");
   });
@@ -93,8 +93,8 @@ describe("TugSwitch role prop", () => {
   it('role="accent": does NOT inject inline style (accent falls back to CSS default token)', () => {
     const { getByRole } = render(<TugSwitch role="accent" aria-label="test" />);
     const switchEl = getByRole("switch");
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-color")).toBe("");
-    expect(switchEl.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe("");
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-color")).toBe("");
+    expect(switchEl.style.getPropertyValue("--tugx-toggle-on-hover-color")).toBe("");
   });
 
   it('role="accent": does NOT set data-role attribute', () => {

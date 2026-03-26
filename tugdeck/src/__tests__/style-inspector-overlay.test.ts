@@ -56,44 +56,44 @@ function makeKeyup(key: string, shiftKey: boolean = false, altKey: boolean = fal
 
 describe("PALETTE_VAR_REGEX", () => {
   it("matches bare hue names", () => {
-    expect(PALETTE_VAR_REGEX.test("--tug-orange")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-cobalt")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-cyan")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-cherry")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-coral")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-cobalt")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-cyan")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-cherry")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-coral")).toBe(true);
   });
 
   it("matches hue names with valid preset suffixes", () => {
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-intense")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-muted")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-light")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-dark")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-cobalt-intense")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-intense")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-muted")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-light")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-dark")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tugc-cobalt-intense")).toBe(true);
   });
 
   it("does NOT match removed preset suffixes (accent, subtle, deep)", () => {
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-accent")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-subtle")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-deep")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-accent")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-subtle")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-deep")).toBe(false);
   });
 
   it("does NOT match global constants", () => {
-    expect(PALETTE_VAR_REGEX.test("--tug-l-dark")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-l-light")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-element-global-fill-normal-accent-rest")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-tab-bar-bg")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-l-dark")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-l-light")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tug7-element-global-fill-normal-accent-rest")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugx-tab-bar-bg")).toBe(false);
     expect(PALETTE_VAR_REGEX.test("--tug-zoom")).toBe(false);
   });
 
   it("does NOT match per-hue internal constants", () => {
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-h")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-canonical-l")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-peak-c")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-h")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-canonical-l")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-peak-c")).toBe(false);
   });
 
   it("does NOT match invalid preset suffixes", () => {
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-bright")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-primary")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-bright")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tugc-orange-primary")).toBe(false);
   });
 
   it("matches all 24 known hue families", () => {
@@ -103,7 +103,7 @@ describe("PALETTE_VAR_REGEX", () => {
       "violet", "purple", "plum", "pink", "rose", "magenta", "berry", "coral",
     ];
     for (const hue of hues) {
-      expect(PALETTE_VAR_REGEX.test(`--tug-${hue}`)).toBe(true);
+      expect(PALETTE_VAR_REGEX.test(`--tugc-${hue}`)).toBe(true);
     }
   });
 });
@@ -385,12 +385,12 @@ describe("StyleInspectorOverlay -- resolveTokenChain", () => {
 
   afterEach(() => {
     // Clean up any custom properties set on body
-    document.body.style.removeProperty("--tug-tab-bar-bg");
-    document.body.style.removeProperty("--tug-tab-bar-bg");
-    document.body.style.removeProperty("--tug-orange");
-    document.body.style.removeProperty("--tug-element-global-fill-normal-accentCool-rest");
-    document.body.style.removeProperty("--tug-cobalt-intense");
-    document.body.style.removeProperty("--tug-test-token");
+    document.body.style.removeProperty("--tugx-tab-bar-bg");
+    document.body.style.removeProperty("--tugx-tab-bar-bg");
+    document.body.style.removeProperty("--tugc-orange");
+    document.body.style.removeProperty("--tug7-element-global-fill-normal-accentCool-rest");
+    document.body.style.removeProperty("--tugc-cobalt-intense");
+    document.body.style.removeProperty("--tugc-test-token");
 
     if (overlay.highlightEl.parentNode) {
       overlay.highlightEl.parentNode.removeChild(overlay.highlightEl);
@@ -402,50 +402,50 @@ describe("StyleInspectorOverlay -- resolveTokenChain", () => {
   });
 
   it("returns empty chain for a property with no value on body", () => {
-    const chain = overlay.resolveTokenChain("--tug-nonexistent-token");
+    const chain = overlay.resolveTokenChain("--tugc-nonexistent-token");
     expect(chain).toHaveLength(0);
   });
 
   it("walks a two-hop chain from base to palette variable", () => {
-    // Set up: --tug-element-global-fill-normal-accentCool-rest -> var(--tug-cobalt-intense)
-    //         --tug-cobalt-intense (palette var -- chain terminates here)
-    document.body.style.setProperty("--tug-element-global-fill-normal-accentCool-rest", " var(--tug-cobalt-intense)");
-    document.body.style.setProperty("--tug-cobalt-intense", " oklch(0.5 0.2 240)");
+    // Set up: --tug7-element-global-fill-normal-accentCool-rest -> var(--tugc-cobalt-intense)
+    //         --tugc-cobalt-intense (palette var -- chain terminates here)
+    document.body.style.setProperty("--tug7-element-global-fill-normal-accentCool-rest", " var(--tugc-cobalt-intense)");
+    document.body.style.setProperty("--tugc-cobalt-intense", " oklch(0.5 0.2 240)");
 
-    const chain = overlay.resolveTokenChain("--tug-element-global-fill-normal-accentCool-rest");
+    const chain = overlay.resolveTokenChain("--tug7-element-global-fill-normal-accentCool-rest");
     expect(chain.length).toBeGreaterThanOrEqual(1);
     // First hop: base token
-    expect(chain[0].property).toBe("--tug-element-global-fill-normal-accentCool-rest");
+    expect(chain[0].property).toBe("--tug7-element-global-fill-normal-accentCool-rest");
 
     // Second hop should be cobalt-intense (palette var, stops there)
     if (chain.length >= 2) {
-      expect(chain[1].property).toBe("--tug-cobalt-intense");
+      expect(chain[1].property).toBe("--tugc-cobalt-intense");
     }
   });
 
   it("terminates at PALETTE_VAR_REGEX match and does not walk into oklch expression", () => {
-    document.body.style.setProperty("--tug-orange-intense", " oklch(0.7 0.2 55)");
+    document.body.style.setProperty("--tugc-orange-intense", " oklch(0.7 0.2 55)");
 
-    const chain = overlay.resolveTokenChain("--tug-orange-intense");
-    // Should stop at --tug-orange-intense itself (palette var)
+    const chain = overlay.resolveTokenChain("--tugc-orange-intense");
+    // Should stop at --tugc-orange-intense itself (palette var)
     expect(chain.length).toBe(1);
-    expect(chain[0].property).toBe("--tug-orange-intense");
+    expect(chain[0].property).toBe("--tugc-orange-intense");
   });
 
   it("terminates when value starts with oklch(", () => {
-    document.body.style.setProperty("--tug-test-token", " oklch(0.5 0.1 180)");
+    document.body.style.setProperty("--tugc-test-token", " oklch(0.5 0.1 180)");
 
-    const chain = overlay.resolveTokenChain("--tug-test-token");
+    const chain = overlay.resolveTokenChain("--tugc-test-token");
     expect(chain.length).toBe(1);
     expect(chain[0].value.trim()).toMatch(/^oklch\(/);
   });
 
   it("terminates when value has no var() reference (literal terminal)", () => {
-    document.body.style.setProperty("--tug-test-token", " #ff0000");
+    document.body.style.setProperty("--tugc-test-token", " #ff0000");
 
-    const chain = overlay.resolveTokenChain("--tug-test-token");
+    const chain = overlay.resolveTokenChain("--tugc-test-token");
     expect(chain.length).toBe(1);
-    expect(chain[0].property).toBe("--tug-test-token");
+    expect(chain[0].property).toBe("--tugc-test-token");
     expect(chain[0].value.trim()).toBe("#ff0000");
   });
 
@@ -456,14 +456,14 @@ describe("StyleInspectorOverlay -- resolveTokenChain", () => {
     // through the PALETTE_VAR_REGEX and resolveTokenChain logic by inspecting
     // the regex directly: non-tug-prefixed var() references won't match
     // /var\((--[a-zA-Z0-9_-]+)/ for walk continuation purposes, and the chain terminates.
-    const varMatch = " var(--other-prop)".match(/var\((--tug-[a-zA-Z0-9_-]+)/);
+    const varMatch = " var(--other-prop)".match(/var\((--(?:tug7|tugc|tugx|tug)-[a-zA-Z0-9_-]+)/);
     expect(varMatch).toBeNull(); // non-tug var() reference is not followed
 
     // Also verify that tug-prefixed references DO match (walk is attempted).
     // Use the actual var() regex from resolveTokenChain which handles camelCase token names.
-    const tugMatch = " var(--tug-element-global-fill-normal-accentCool-rest)".match(/var\((--[a-zA-Z0-9_-]+)/);
+    const tugMatch = " var(--tug7-element-global-fill-normal-accentCool-rest)".match(/var\((--[a-zA-Z0-9_-]+)/);
     expect(tugMatch).not.toBeNull();
-    expect(tugMatch![1]).toBe("--tug-element-global-fill-normal-accentCool-rest");
+    expect(tugMatch![1]).toBe("--tug7-element-global-fill-normal-accentCool-rest");
   });
 
   it("cycle guard is implemented with a seen Set", () => {
@@ -476,7 +476,7 @@ describe("StyleInspectorOverlay -- resolveTokenChain", () => {
     //
     // We verify this by starting from a property with no value (empty chain)
     // and confirming the loop exits cleanly.
-    const chain = overlay.resolveTokenChain("--tug-nonexistent-cycle-test");
+    const chain = overlay.resolveTokenChain("--tugc-nonexistent-cycle-test");
     expect(chain.length).toBe(0); // clean exit, no hang
   });
 });
@@ -496,15 +496,15 @@ describe("StyleInspectorOverlay -- extractTugColorProvenance", () => {
   });
 
   afterEach(() => {
-    document.body.style.removeProperty("--tug-orange-canonical-l");
-    document.body.style.removeProperty("--tug-orange-peak-c");
-    document.body.style.removeProperty("--tug-orange-h");
-    document.body.style.removeProperty("--tug-cyan-canonical-l");
-    document.body.style.removeProperty("--tug-cyan-peak-c");
-    document.body.style.removeProperty("--tug-cyan-h");
-    document.body.style.removeProperty("--tug-cobalt-canonical-l");
-    document.body.style.removeProperty("--tug-cobalt-peak-c");
-    document.body.style.removeProperty("--tug-cobalt-h");
+    document.body.style.removeProperty("--tugc-orange-canonical-l");
+    document.body.style.removeProperty("--tugc-orange-peak-c");
+    document.body.style.removeProperty("--tugc-orange-h");
+    document.body.style.removeProperty("--tugc-cyan-canonical-l");
+    document.body.style.removeProperty("--tugc-cyan-peak-c");
+    document.body.style.removeProperty("--tugc-cyan-h");
+    document.body.style.removeProperty("--tugc-cobalt-canonical-l");
+    document.body.style.removeProperty("--tugc-cobalt-peak-c");
+    document.body.style.removeProperty("--tugc-cobalt-h");
 
     if (overlay.highlightEl.parentNode) {
       overlay.highlightEl.parentNode.removeChild(overlay.highlightEl);
@@ -516,39 +516,39 @@ describe("StyleInspectorOverlay -- extractTugColorProvenance", () => {
   });
 
   it("returns null for non-palette token names", () => {
-    expect(overlay.extractTugColorProvenance("--tug-element-global-fill-normal-accent-rest")).toBeNull();
-    expect(overlay.extractTugColorProvenance("--tug-l-dark")).toBeNull();
+    expect(overlay.extractTugColorProvenance("--tug7-element-global-fill-normal-accent-rest")).toBeNull();
+    expect(overlay.extractTugColorProvenance("--tugc-l-dark")).toBeNull();
     expect(overlay.extractTugColorProvenance("--tug-zoom")).toBeNull();
   });
 
-  it("extractTugColorProvenance('--tug-orange-light') returns { hue: 'orange', preset: 'light' }", () => {
-    document.body.style.setProperty("--tug-orange-canonical-l", " 0.780");
-    document.body.style.setProperty("--tug-orange-peak-c", " 0.266");
-    document.body.style.setProperty("--tug-orange-h", " 55");
+  it("extractTugColorProvenance('--tugc-orange-light') returns { hue: 'orange', preset: 'light' }", () => {
+    document.body.style.setProperty("--tugc-orange-canonical-l", " 0.780");
+    document.body.style.setProperty("--tugc-orange-peak-c", " 0.266");
+    document.body.style.setProperty("--tugc-orange-h", " 55");
 
-    const result = overlay.extractTugColorProvenance("--tug-orange-light");
+    const result = overlay.extractTugColorProvenance("--tugc-orange-light");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("orange");
     expect(result!.preset).toBe("light");
   });
 
-  it("extractTugColorProvenance('--tug-cyan') returns { hue: 'cyan', preset: 'canonical' }", () => {
-    document.body.style.setProperty("--tug-cyan-canonical-l", " 0.750");
-    document.body.style.setProperty("--tug-cyan-peak-c", " 0.180");
-    document.body.style.setProperty("--tug-cyan-h", " 192");
+  it("extractTugColorProvenance('--tugc-cyan') returns { hue: 'cyan', preset: 'canonical' }", () => {
+    document.body.style.setProperty("--tugc-cyan-canonical-l", " 0.750");
+    document.body.style.setProperty("--tugc-cyan-peak-c", " 0.180");
+    document.body.style.setProperty("--tugc-cyan-h", " 192");
 
-    const result = overlay.extractTugColorProvenance("--tug-cyan");
+    const result = overlay.extractTugColorProvenance("--tugc-cyan");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("cyan");
     expect(result!.preset).toBe("canonical");
   });
 
-  it("extractTugColorProvenance('--tug-cobalt-intense') returns { hue: 'cobalt', preset: 'intense' }", () => {
-    document.body.style.setProperty("--tug-cobalt-canonical-l", " 0.680");
-    document.body.style.setProperty("--tug-cobalt-peak-c", " 0.220");
-    document.body.style.setProperty("--tug-cobalt-h", " 240");
+  it("extractTugColorProvenance('--tugc-cobalt-intense') returns { hue: 'cobalt', preset: 'intense' }", () => {
+    document.body.style.setProperty("--tugc-cobalt-canonical-l", " 0.680");
+    document.body.style.setProperty("--tugc-cobalt-peak-c", " 0.220");
+    document.body.style.setProperty("--tugc-cobalt-h", " 240");
 
-    const result = overlay.extractTugColorProvenance("--tug-cobalt-intense");
+    const result = overlay.extractTugColorProvenance("--tugc-cobalt-intense");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("cobalt");
     expect(result!.preset).toBe("intense");
@@ -558,7 +558,7 @@ describe("StyleInspectorOverlay -- extractTugColorProvenance", () => {
   });
 
   it("returns empty strings for TugColor constants when not set on body", () => {
-    const result = overlay.extractTugColorProvenance("--tug-orange");
+    const result = overlay.extractTugColorProvenance("--tugc-orange");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("orange");
     expect(result!.preset).toBe("canonical");
@@ -584,9 +584,9 @@ describe("StyleInspectorOverlay -- resolveTokenChain three-layer chain", () => {
   });
 
   afterEach(() => {
-    document.body.style.removeProperty("--tug-tab-bar-bg");
-    document.body.style.removeProperty("--tug-tab-bar-bg");
-    document.body.style.removeProperty("--tug-cobalt-intense");
+    document.body.style.removeProperty("--tugx-tab-bar-bg");
+    document.body.style.removeProperty("--tugx-tab-bar-bg");
+    document.body.style.removeProperty("--tugc-cobalt-intense");
 
     overlay.highlightEl.parentNode?.removeChild(overlay.highlightEl);
     overlay.panelEl.parentNode?.removeChild(overlay.panelEl);
@@ -594,39 +594,39 @@ describe("StyleInspectorOverlay -- resolveTokenChain three-layer chain", () => {
   });
 
   it("walks a three-layer chain: comp -> base -> terminal hex", () => {
-    // Simulate: --tug-tab-bar-bg -> var(--tug-tab-bar-bg) -> #1a1d24
-    document.body.style.setProperty("--tug-tab-bar-bg", " var(--tug-tab-bar-bg)");
-    document.body.style.setProperty("--tug-tab-bar-bg", " #1a1d24");
+    // Simulate: --tugx-tab-bar-bg -> var(--tugx-tab-bar-bg) -> #1a1d24
+    document.body.style.setProperty("--tugx-tab-bar-bg", " var(--tugx-tab-bar-bg)");
+    document.body.style.setProperty("--tugx-tab-bar-bg", " #1a1d24");
 
-    const chain = overlay.resolveTokenChain("--tug-tab-bar-bg");
+    const chain = overlay.resolveTokenChain("--tugx-tab-bar-bg");
 
     // Should have at least one hop (comp token)
     expect(chain.length).toBeGreaterThanOrEqual(1);
-    expect(chain[0].property).toBe("--tug-tab-bar-bg");
+    expect(chain[0].property).toBe("--tugx-tab-bar-bg");
 
     // If happy-dom propagates the var() walk, should have two hops
     if (chain.length >= 2) {
-      expect(chain[1].property).toBe("--tug-tab-bar-bg");
+      expect(chain[1].property).toBe("--tugx-tab-bar-bg");
       expect(chain[1].value.trim()).toBe("#1a1d24");
     }
   });
 
   it("walks two-layer chromatic chain: base -> palette var (stops at palette)", () => {
-    // Simulate: --tug-element-global-fill-normal-accentCool-rest -> var(--tug-cobalt-intense)
-    // --tug-cobalt-intense is a palette var, so chain stops there
-    document.body.style.setProperty("--tug-element-global-fill-normal-accentCool-rest", " var(--tug-cobalt-intense)");
-    document.body.style.setProperty("--tug-cobalt-intense", " oklch(0.5 0.2 240)");
+    // Simulate: --tug7-element-global-fill-normal-accentCool-rest -> var(--tugc-cobalt-intense)
+    // --tugc-cobalt-intense is a palette var, so chain stops there
+    document.body.style.setProperty("--tug7-element-global-fill-normal-accentCool-rest", " var(--tugc-cobalt-intense)");
+    document.body.style.setProperty("--tugc-cobalt-intense", " oklch(0.5 0.2 240)");
 
-    const chain = overlay.resolveTokenChain("--tug-element-global-fill-normal-accentCool-rest");
+    const chain = overlay.resolveTokenChain("--tug7-element-global-fill-normal-accentCool-rest");
 
     expect(chain.length).toBeGreaterThanOrEqual(1);
-    expect(chain[0].property).toBe("--tug-element-global-fill-normal-accentCool-rest");
+    expect(chain[0].property).toBe("--tug7-element-global-fill-normal-accentCool-rest");
 
     // If two hops: second hop is the palette var
     if (chain.length >= 2) {
-      expect(chain[1].property).toBe("--tug-cobalt-intense");
+      expect(chain[1].property).toBe("--tugc-cobalt-intense");
       // Chain stops at palette var — PALETTE_VAR_REGEX must match
-      expect(PALETTE_VAR_REGEX.test("--tug-cobalt-intense")).toBe(true);
+      expect(PALETTE_VAR_REGEX.test("--tugc-cobalt-intense")).toBe(true);
     }
   });
 });
@@ -646,8 +646,8 @@ describe("StyleInspectorOverlay -- resolveTokenChainForProperty integration", ()
   });
 
   afterEach(() => {
-    document.body.style.removeProperty("--tug-surface-global-primary-normal-default-rest");
-    document.body.style.removeProperty("--tug-test-literal");
+    document.body.style.removeProperty("--tug7-surface-global-primary-normal-default-rest");
+    document.body.style.removeProperty("--tugc-test-literal");
 
     overlay.highlightEl.parentNode?.removeChild(overlay.highlightEl);
     overlay.panelEl.parentNode?.removeChild(overlay.panelEl);
@@ -683,10 +683,10 @@ describe("StyleInspectorOverlay -- resolveTokenChainForProperty integration", ()
     // (no var() reference, not oklch), it marks usedHeuristic: true as a Risk R01
     // indicator that the browser may have pre-resolved the var() chain.
     //
-    // We simulate this by setting --tug-surface-global-primary-normal-default-rest to a literal hex value
+    // We simulate this by setting --tug7-surface-global-primary-normal-default-rest to a literal hex value
     // (no var() reference), which is what happens when the browser fully resolves
     // the custom property before we can read the intermediate value.
-    document.body.style.setProperty("--tug-surface-global-primary-normal-default-rest", " #1a1d24");
+    document.body.style.setProperty("--tug7-surface-global-primary-normal-default-rest", " #1a1d24");
 
     const el = document.createElement("div");
     el.style.backgroundColor = "#1a1d24";
@@ -695,7 +695,7 @@ describe("StyleInspectorOverlay -- resolveTokenChainForProperty integration", ()
     const result = overlay.resolveTokenChainForProperty(el, "background-color", "#1a1d24");
 
     // If the token was found and chain has exactly one hop with no var(), heuristic flag set
-    if (result.originToken === "--tug-surface-global-primary-normal-default-rest" && result.chain.length === 1) {
+    if (result.originToken === "--tug7-surface-global-primary-normal-default-rest" && result.chain.length === 1) {
       expect(result.usedHeuristic).toBe(true);
     } else {
       // If token discovery didn't match (happy-dom computed style mismatch),
@@ -704,26 +704,26 @@ describe("StyleInspectorOverlay -- resolveTokenChainForProperty integration", ()
     }
 
     document.body.removeChild(el);
-    document.body.style.removeProperty("--tug-surface-global-primary-normal-default-rest");
+    document.body.style.removeProperty("--tug7-surface-global-primary-normal-default-rest");
   });
 
   it("endsAtPalette is true when chain terminates at a palette variable", () => {
     // Set up a base token that points to a palette variable
-    document.body.style.setProperty("--tug-surface-global-primary-normal-default-rest", " var(--tug-cobalt-intense)");
-    document.body.style.setProperty("--tug-cobalt-intense", " oklch(0.5 0.2 240)");
+    document.body.style.setProperty("--tug7-surface-global-primary-normal-default-rest", " var(--tugc-cobalt-intense)");
+    document.body.style.setProperty("--tugc-cobalt-intense", " oklch(0.5 0.2 240)");
 
     // Create an element that in theory uses this token (we check resolution directly)
-    const chain = overlay.resolveTokenChain("--tug-surface-global-primary-normal-default-rest");
+    const chain = overlay.resolveTokenChain("--tug7-surface-global-primary-normal-default-rest");
 
     // If two hops, last one should be cobalt-intense (palette var)
     if (chain.length >= 2) {
       const last = chain[chain.length - 1];
       expect(PALETTE_VAR_REGEX.test(last.property)).toBe(true);
-      expect(last.property).toBe("--tug-cobalt-intense");
+      expect(last.property).toBe("--tugc-cobalt-intense");
     }
 
-    document.body.style.removeProperty("--tug-surface-global-primary-normal-default-rest");
-    document.body.style.removeProperty("--tug-cobalt-intense");
+    document.body.style.removeProperty("--tug7-surface-global-primary-normal-default-rest");
+    document.body.style.removeProperty("--tugc-cobalt-intense");
   });
 });
 

@@ -30,7 +30,7 @@
 
 **D70.** Color palette is OKLCH-based. 24 hue families with intensity/tone axes, 5 convenience presets per hue, neutral ramp, P3 gamut support, pure CSS formulas. [L15]
 
-**D71.** Three-tier token naming: `--tug-{hue}[-preset]` (palette), `--tug-*` (semantic surface and element tokens), `--tug-<component>-*` (component alias). [L17, L18]
+**D71.** Four-prefix token naming: `--tugc-{hue}[-preset]` (palette), `--tug7-*` (seven-slot semantic surface and element tokens), `--tugx-<component>-*` (component alias), `--tug-*` (scale/dimension). [L17, L18]
 
 **D72.** Global dimension scale via `--tug-zoom` multiplier on `:root`.
 

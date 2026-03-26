@@ -70,11 +70,11 @@ function findThemeCssPath(themeName: string, themesCssDir: string): string | nul
   return fs.existsSync(cssPath) ? cssPath : null;
 }
 
-/** Tiny CSS metadata parser for --tug-host-canvas-color (literal #rrggbb only). */
+/** Tiny CSS metadata parser for --tugx-host-canvas-color (literal #rrggbb only). */
 export function parseHostCanvasColor(cssText: string): string | null {
   // Strip block comments so commented declarations are ignored.
   const withoutComments = cssText.replace(/\/\*[\s\S]*?\*\//g, " ");
-  const match = withoutComments.match(/--tug-host-canvas-color\s*:\s*(#[0-9a-fA-F]{6})\s*;/);
+  const match = withoutComments.match(/--tugx-host-canvas-color\s*:\s*(#[0-9a-fA-F]{6})\s*;/);
   return match ? match[1].toLowerCase() : null;
 }
 
@@ -177,7 +177,7 @@ function controlTokenHotReload(): VitePlugin {
 // activateThemeOverride — shared logic for startup plugin and activate endpoint
 //
 // Copies shipped CSS into the override file (empty for base theme), parses the
-// source CSS metadata token --tug-host-canvas-color, and returns
+// source CSS metadata token --tugx-host-canvas-color, and returns
 // { theme, hostCanvasColor }.
 // ---------------------------------------------------------------------------
 
@@ -193,7 +193,7 @@ export interface ActivateResult {
  *
  * - For the base theme: writes EMPTY_OVERRIDE to overrideCssPath.
  * - For non-base themes: copies CSS from styles/themes/<name>.css to overrideCssPath.
- * - Parses --tug-host-canvas-color from the source CSS file.
+ * - Parses --tugx-host-canvas-color from the source CSS file.
  * - Throws if source CSS is missing or host color metadata is missing/invalid.
  *
  * The active theme name is persisted to tugbank by the client-side settings-api.ts
@@ -209,7 +209,7 @@ export function activateThemeOverride(
     const baseCss = fs.readFileSync(BASE_THEME_CSS, "utf-8");
     const hostCanvasColor = parseHostCanvasColor(baseCss);
     if (!hostCanvasColor) {
-      throw new Error(`Missing or invalid --tug-host-canvas-color in ${BASE_THEME_CSS}`);
+      throw new Error(`Missing or invalid --tugx-host-canvas-color in ${BASE_THEME_CSS}`);
     }
     return { theme: BASE_THEME_NAME, hostCanvasColor };
   }
@@ -222,7 +222,7 @@ export function activateThemeOverride(
   const css = fs.readFileSync(cssPath, "utf-8");
   const hostCanvasColor = parseHostCanvasColor(css);
   if (!hostCanvasColor) {
-    throw new Error(`Missing or invalid --tug-host-canvas-color in ${cssPath}`);
+    throw new Error(`Missing or invalid --tugx-host-canvas-color in ${cssPath}`);
   }
   fs.writeFileSync(overrideCssPath, css, "utf-8");
   return { theme: themeName, hostCanvasColor };

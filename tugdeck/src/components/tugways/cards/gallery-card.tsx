@@ -457,7 +457,7 @@ export function MutationModelDemo() {
   const [classOn, setClassOn] = useState(false);
   const [styleOn, setStyleOn] = useState(false);
 
-  useCSSVar(boxRef, "--demo-bg", varOn ? "var(--tug-element-global-fill-normal-accent-rest)" : "var(--tug-surface-global-primary-normal-default-rest)");
+  useCSSVar(boxRef, "--demo-bg", varOn ? "var(--tug7-element-global-fill-normal-accent-rest)" : "var(--tug7-surface-global-primary-normal-default-rest)");
   useDOMClass(boxRef, "demo-highlighted", classOn);
   useDOMStyle(boxRef, "border-width", styleOn ? "3px" : "1px");
 
@@ -863,10 +863,10 @@ export function GalleryTitleBarContent() {
         <div className="cg-section-title">CardTitleBar — Live Demo</div>
         <div
           style={{
-            border: "1px solid var(--tug-card-border)",
+            border: "1px solid var(--tugx-card-border)",
             borderRadius: "var(--tug-radius-md)",
             overflow: "hidden",
-            background: "var(--tug-card-title-bar-bg-inactive)",
+            background: "var(--tugx-card-title-bar-bg-inactive)",
           }}
           data-testid="gallery-card-title-bar-demo"
         >
@@ -882,9 +882,9 @@ export function GalleryTitleBarContent() {
             <div
               style={{
                 padding: "12px",
-                background: "var(--tug-surface-global-primary-normal-default-rest)",
+                background: "var(--tug7-surface-global-primary-normal-default-rest)",
                 fontSize: "12px",
-                color: "var(--tug-element-global-text-normal-muted-rest)",
+                color: "var(--tug7-element-global-text-normal-muted-rest)",
                 minHeight: "48px",
               }}
             >

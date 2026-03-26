@@ -28,7 +28,7 @@
  * useDOMStyle(ref, "border-width", isThick ? "3px" : "1px");
  * useDOMStyle(ref, "opacity", isVisible ? "1" : "0");
  * // Pass empty string to remove the property entirely:
- * useDOMStyle(ref, "border-color", overrideActive ? "var(--tug-element-global-fill-normal-accent-rest)" : "");
+ * useDOMStyle(ref, "border-color", overrideActive ? "var(--tug7-element-global-fill-normal-accent-rest)" : "");
  * ```
  *
  * @module hooks/use-dom-style

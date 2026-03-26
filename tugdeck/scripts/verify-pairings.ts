@@ -32,6 +32,7 @@
 
 import { readFileSync, readdirSync } from "fs";
 import { join, resolve } from "path";
+import { classifyTokenShortName } from "./token-classify";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -130,12 +131,17 @@ function resolveToken(raw: string): string | null {
   if (!baseTokenMatch) return null;
   const tokenName = baseTokenMatch[1];
 
-  // If it is already a --tug-* token, use it directly
-  if (tokenName.startsWith("--tug-")) {
+  // If it is already a renamed token (any of the four prefixes), use it directly
+  if (
+    tokenName.startsWith("--tug7-") ||
+    tokenName.startsWith("--tugc-") ||
+    tokenName.startsWith("--tugx-") ||
+    tokenName.startsWith("--tug-")
+  ) {
     return tokenName;
   }
 
-  // Component alias (--tug-*): extract the resolved name from the parenthetical
+  // Component alias: extract the resolved name from the parenthetical
   const parenMatch = trimmed.match(/\(([^)]+)\)/);
   if (!parenMatch) {
     // No parenthetical — cannot resolve; skip
@@ -147,13 +153,20 @@ function resolveToken(raw: string): string | null {
   const resolvedRaw = parenMatch[1].split(",")[0].trim();
 
   // The resolved name is a short name like "fg-default" or "tab-bg-active"
-  // Prepend --tug- to get the full base token name
+  // Import classifyTokenShortName to determine the correct prefix
   if (!resolvedRaw || resolvedRaw.includes(" ")) {
     // Multi-word descriptions like "ambient" — not a token short name
     return null;
   }
 
-  return `--tug-${resolvedRaw}`;
+  // Use classifyTokenShortName to determine the correct new prefix
+  const category = classifyTokenShortName(resolvedRaw);
+  const prefix =
+    category === "tug7" ? "--tug7-" :
+    category === "tugc" ? "--tugc-" :
+    category === "tugx" ? "--tugx-" :
+    "--tug-";
+  return `${prefix}${resolvedRaw}`;
 }
 
 /**

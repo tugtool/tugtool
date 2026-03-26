@@ -74,16 +74,16 @@ lines.push(` *   2. tug-base.css    — semantic tokens (reference palette vars)
 lines.push(` *   3. theme/*.css       — theme overrides (can override per-hue constants)`);
 lines.push(` *`);
 lines.push(` * All variables are scoped to \`body\` to match tug-base.css cascade scope.`);
-lines.push(` * Theme files can override individual --tug-{hue}-* constants to tune colors.`);
+lines.push(` * Theme files can override individual --tugc-{hue}-* constants to tune colors.`);
 lines.push(` *`);
 lines.push(` * Per-hue constant names:`);
-lines.push(` *   --tug-{hue}-h            OKLCH hue angle (degrees) from HUE_FAMILIES`);
-lines.push(` *   --tug-{hue}-canonical-l  Canonical lightness at intensity=50, tone=50`);
-lines.push(` *   --tug-{hue}-peak-c       Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE (${PEAK_C_SCALE})`);
+lines.push(` *   --tugc-{hue}-h            OKLCH hue angle (degrees) from HUE_FAMILIES`);
+lines.push(` *   --tugc-{hue}-canonical-l  Canonical lightness at intensity=50, tone=50`);
+lines.push(` *   --tugc-{hue}-peak-c       Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE (${PEAK_C_SCALE})`);
 lines.push(` *`);
 lines.push(` * Global constants:`);
-lines.push(` *   --tug-l-dark   Lightness at tone=0 (${fmt(L_DARK)})`);
-lines.push(` *   --tug-l-light  Lightness at tone=100 (${fmt(L_LIGHT)})`);
+lines.push(` *   --tugc-l-dark   Lightness at tone=0 (${fmt(L_DARK)})`);
+lines.push(` *   --tugc-l-light  Lightness at tone=100 (${fmt(L_LIGHT)})`);
 lines.push(` */`);
 lines.push(``);
 
@@ -95,8 +95,8 @@ lines.push(`  /* ---------------------------------------------------------------
 lines.push(`   * Global lightness anchors`);
 lines.push(`   * Source: L_DARK = ${fmt(L_DARK)}, L_LIGHT = ${fmt(L_LIGHT)} from palette-engine.ts`);
 lines.push(`   * ------------------------------------------------------------------------- */`);
-lines.push(`  --tug-l-dark: ${fmt(L_DARK)};`);
-lines.push(`  --tug-l-light: ${fmt(L_LIGHT)};`);
+lines.push(`  --tugc-l-dark: ${fmt(L_DARK)};`);
+lines.push(`  --tugc-l-light: ${fmt(L_LIGHT)};`);
 lines.push(``);
 
 // Per-hue constants (144 = 48 x 3)
@@ -113,15 +113,15 @@ for (const hue of HUE_ORDER) {
   const peakC = maxC * PEAK_C_SCALE;
 
   lines.push(`  /* ${hue} — hue angle ${h} */`);
-  lines.push(`  --tug-${hue}-h: ${h};`);
-  lines.push(`  --tug-${hue}-canonical-l: ${fmt(canonL, 3)};`);
-  lines.push(`  --tug-${hue}-peak-c: ${fmt(peakC, 3)};`);
+  lines.push(`  --tugc-${hue}-h: ${h};`);
+  lines.push(`  --tugc-${hue}-canonical-l: ${fmt(canonL, 3)};`);
+  lines.push(`  --tugc-${hue}-peak-c: ${fmt(peakC, 3)};`);
   lines.push(``);
 }
 
 // Named gray ramp (9 descriptive names, pitch through paper) + black/white anchors.
-// Endpoint variables --tug-gray-0 and --tug-gray-100 are dropped per [D05]; use
-// --tug-black and --tug-white for the true endpoints.
+// Endpoint variables --tugc-gray-0 and --tugc-gray-100 are dropped per [D05]; use
+// --tugc-black and --tugc-white for the true endpoints.
 //
 // Name-to-tone mapping from NAMED_GRAYS (palette-engine.ts):
 //   pitch=10, ink=20, charcoal=30, carbon=40, graphite=50,
@@ -135,16 +135,16 @@ const NAMED_GRAY_ORDER = Object.keys(NAMED_GRAYS); // pitch … paper in definit
 lines.push(`  /* -------------------------------------------------------------------------`);
 lines.push(`   * Named gray ramp (9 descriptive names: pitch through paper)`);
 lines.push(`   * C=0 for all named grays (achromatic). Fixed L values from ACHROMATIC_L_VALUES.`);
-lines.push(`   * Endpoint variables --tug-gray-0 / --tug-gray-100 removed (see D05).`);
-lines.push(`   * --tug-black and --tug-white are the true achromatic endpoints.`);
+lines.push(`   * Endpoint variables --tugc-gray-0 / --tugc-gray-100 removed (see D05).`);
+lines.push(`   * --tugc-black and --tugc-white are the true achromatic endpoints.`);
 lines.push(`   * ------------------------------------------------------------------------- */`);
 
 for (const name of NAMED_GRAY_ORDER) {
   const L = ACHROMATIC_L_VALUES[name];
-  lines.push(`  --tug-gray-${name}: oklch(${fmt(L, 4)} 0 0);`);
+  lines.push(`  --tugc-gray-${name}: oklch(${fmt(L, 4)} 0 0);`);
 }
-lines.push(`  --tug-black: oklch(0 0 0);`);
-lines.push(`  --tug-white: oklch(1 0 0);`);
+lines.push(`  --tugc-black: oklch(0 0 0);`);
+lines.push(`  --tugc-white: oklch(1 0 0);`);
 lines.push(`}`);
 lines.push(``);
 
