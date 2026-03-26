@@ -16,7 +16,7 @@ import { TugPopupMenu } from "@/components/tugways/tug-popup-menu";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import type { TugButtonSize } from "@/components/tugways/internal/tug-button";
-import "./gallery-popup-button.css";
+import "./gallery-popup-button-content.css";
 
 // ---- Sample data ----
 

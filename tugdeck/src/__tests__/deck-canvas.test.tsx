@@ -37,7 +37,7 @@ import { DeckManagerContext } from "@/deck-manager-context";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
 import { registerHelloWorldCard } from "@/components/tugways/cards/hello-world-card";
-import { registerGalleryCards } from "@/components/tugways/cards/gallery-card";
+import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
 import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 

@@ -49,7 +49,7 @@ import { TugButton } from "@/components/tugways/internal/tug-button";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { DeckManagerContext } from "@/deck-manager-context";
 import { _resetForTest } from "@/card-registry";
-import { registerGalleryCards } from "@/components/tugways/cards/gallery-card";
+import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { CardState, DeckState } from "@/layout-tree";
 

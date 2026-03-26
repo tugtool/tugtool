@@ -19,16 +19,15 @@ import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import {
   registerGalleryCards,
   GALLERY_DEFAULT_TABS,
-  GalleryButtonsContent,
-  GalleryChainActionsContent,
-  GalleryMutationContent,
-  GalleryTabBarContent,
   GalleryDropdownContent,
-  GalleryDefaultButtonContent,
   GalleryMutationTxContent,
   GalleryBadgeContent,
-  TugTabBarDemo,
-} from "@/components/tugways/cards/gallery-card";
+} from "@/components/tugways/cards/gallery-registrations";
+import { GalleryButtonsContent } from "@/components/tugways/cards/gallery-push-button-content";
+import { GalleryChainActionsContent } from "@/components/tugways/cards/gallery-chain-actions-content";
+import { GalleryMutationContent } from "@/components/tugways/cards/gallery-mutation-content";
+import { GalleryTabBarContent, TugTabBarDemo } from "@/components/tugways/cards/gallery-tab-bar-content";
+import { GalleryDefaultButtonContent } from "@/components/tugways/cards/gallery-default-button-content";
 import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props-content";
 import { GalleryPaletteContent } from "@/components/tugways/cards/gallery-palette-content";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";

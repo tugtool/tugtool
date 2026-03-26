@@ -13,7 +13,7 @@ import {
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
-import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
+import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
 import { selectionGuard } from "./components/tugways/selection-guard";

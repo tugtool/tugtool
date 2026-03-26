@@ -3,7 +3,7 @@
  *
  * Self-contained mockup using custom CSS classes (badge-mockup-*).
  * Does NOT touch the real TugBadge component, tug-badge.css, or any
- * theme tokens. All styles are in gallery-badge-mockup.css.
+ * theme tokens. All styles are in gallery-badge-content.css.
  *
  * Explores visual differentiation between badges and buttons via:
  *   - Sliders for fg intensity/tone, bg intensity/tone/alpha, corner radius
@@ -17,7 +17,7 @@ import {
   tugColor,
   DEFAULT_CANONICAL_L,
 } from "@/components/tugways/palette-engine";
-import "./gallery-badge-mockup.css";
+import "./gallery-badge-content.css";
 
 // ---- Types ----
 
