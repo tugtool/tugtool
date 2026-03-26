@@ -1,5 +1,5 @@
 /**
- * gallery-observable-props.tsx -- GalleryObservablePropsContent demo component.
+ * gallery-observable-props.tsx -- GalleryObservableProps demo component.
  *
  * Demonstrates the full PropertyStore round-trip:
  *   1. Card content registers a PropertyStore via usePropertyStore().
@@ -82,11 +82,11 @@ const DEMO_INITIAL_VALUES: Record<string, unknown> = {
 const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
 
 // ---------------------------------------------------------------------------
-// GalleryObservablePropsContent
+// GalleryObservableProps
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryObservablePropsContent -- gallery tab demo for the PropertyStore
+ * GalleryObservableProps -- gallery tab demo for the PropertyStore
  * observable-properties pipeline.
  *
  * Accepts the `cardId` prop from contentFactory so it can target setProperty
@@ -112,7 +112,7 @@ const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
  *
  * Spec S07 (#s07-gallery-demo)
  */
-export function GalleryObservablePropsContent({ cardId }: { cardId: string }) {
+export function GalleryObservableProps({ cardId }: { cardId: string }) {
   const manager = useRequiredResponderChain();
 
   // Register the PropertyStore with Tugcard via context callback.

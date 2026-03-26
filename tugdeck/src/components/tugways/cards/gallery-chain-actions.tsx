@@ -1,5 +1,5 @@
 /**
- * GalleryChainActionsContent -- chain-action button demos.
+ * GalleryChainActions -- chain-action button demos.
  *
  * Demonstrates chain-action TugButton mode: buttons whose visibility and
  * enablement depend on the responder chain. Also includes an ActionEvent
@@ -92,11 +92,11 @@ function ActionEventDemo() {
 }
 
 // ---------------------------------------------------------------------------
-// GalleryChainActionsContent
+// GalleryChainActions
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryChainActionsContent -- chain-action button demos.
+ * GalleryChainActions -- chain-action button demos.
  *
  * Demonstrates chain-action TugButton mode: buttons whose visibility and
  * enablement depend on the responder chain. Also includes an ActionEvent
@@ -104,7 +104,7 @@ function ActionEventDemo() {
  *
  * **Authoritative reference:** [D01] gallery-chain-actions componentId.
  */
-export function GalleryChainActionsContent() {
+export function GalleryChainActions() {
   return (
     <div className="cg-content" data-testid="gallery-chain-actions">
       <div className="cg-section">

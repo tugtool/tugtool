@@ -83,11 +83,11 @@ function SliderRow({ label, id, min, max, step, value, onChange, onCommit, note 
 }
 
 // ---------------------------------------------------------------------------
-// GalleryScaleTimingContent
+// GalleryScaleTiming
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryScaleTimingContent -- Scale & Timing demo tab.
+ * GalleryScaleTiming -- Scale & Timing demo tab.
  *
  * Provides sliders and toggles for the global CSS multipliers.
  * Sets CSS custom properties directly on document.documentElement
@@ -98,7 +98,7 @@ function SliderRow({ label, id, min, max, step, value, onChange, onCommit, note 
  *
  * **Authoritative reference:** Spec S08 (#s08-gallery-tab)
  */
-export function GalleryScaleTimingContent() {
+export function GalleryScaleTiming() {
   const [scale, setScaleState] = useState(DEFAULT_SCALE);
   const [timing, setTimingState] = useState(DEFAULT_TIMING);
   const [motionOn, setMotionOnState] = useState(DEFAULT_MOTION);

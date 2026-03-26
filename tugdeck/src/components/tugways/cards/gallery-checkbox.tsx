@@ -30,10 +30,10 @@ const ALL_ROLES: TugCheckboxRole[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// GalleryCheckboxContent
+// GalleryCheckbox
 // ---------------------------------------------------------------------------
 
-export function GalleryCheckboxContent() {
+export function GalleryCheckbox() {
   // Controlled state for the interactive demo
   const [checked1, setChecked1] = useState<TugCheckedState>(false);
   const [checked2, setChecked2] = useState<TugCheckedState>(true);

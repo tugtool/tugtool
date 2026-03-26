@@ -24,26 +24,26 @@ import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import type { TabItem } from "@/layout-tree";
-import { GalleryButtonsContent } from "./gallery-push-button";
-import { GalleryChainActionsContent } from "./gallery-chain-actions";
-import { GalleryMutationContent } from "./gallery-mutation";
-import { GalleryTabBarContent } from "./gallery-tab-bar";
-import { GalleryDefaultButtonContent } from "./gallery-default-button";
-import { GalleryTitleBarContent } from "./gallery-title-bar";
-import { GalleryMutationTxContent } from "./gallery-mutation-tx";
-import { GalleryObservablePropsContent } from "./gallery-observable-props";
-import { GalleryPaletteContent } from "./gallery-palette";
-import { GalleryScaleTimingContent } from "./gallery-scale-timing";
-import { GalleryCascadeInspectorContent } from "./gallery-cascade-inspector";
-import { GalleryAnimatorContent } from "./gallery-animator";
-import { GallerySkeletonContent } from "./gallery-skeleton";
-import { GalleryInputContent } from "./gallery-input";
-import { GalleryLabelContent } from "./gallery-label";
-import { GalleryMarqueeContent } from "./gallery-marquee";
-import { GalleryCheckboxContent } from "./gallery-checkbox";
-import { GallerySwitchContent } from "./gallery-switch";
-import { GalleryThemeGeneratorContent } from "./gallery-theme-generator";
-import { GalleryPopupButtonContent } from "./gallery-popup-button";
+import { GalleryPushButton } from "./gallery-push-button";
+import { GalleryChainActions } from "./gallery-chain-actions";
+import { GalleryMutation } from "./gallery-mutation";
+import { GalleryTabBar } from "./gallery-tab-bar";
+import { GalleryDefaultButton } from "./gallery-default-button";
+import { GalleryTitleBar } from "./gallery-title-bar";
+import { GalleryMutationTx } from "./gallery-mutation-tx";
+import { GalleryObservableProps } from "./gallery-observable-props";
+import { GalleryPalette } from "./gallery-palette";
+import { GalleryScaleTiming } from "./gallery-scale-timing";
+import { GalleryCascadeInspector } from "./gallery-cascade-inspector";
+import { GalleryAnimator } from "./gallery-animator";
+import { GallerySkeleton } from "./gallery-skeleton";
+import { GalleryInput } from "./gallery-input";
+import { GalleryLabel } from "./gallery-label";
+import { GalleryMarquee } from "./gallery-marquee";
+import { GalleryCheckbox } from "./gallery-checkbox";
+import { GallerySwitch } from "./gallery-switch";
+import { GalleryThemeGenerator } from "./gallery-theme-generator";
+import { GalleryPopupButton } from "./gallery-popup-button";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -84,14 +84,14 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// GalleryDropdownContent
+// GalleryDropdown
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryDropdownContent -- delegates to GalleryPopupButtonContent.
+ * GalleryDropdown -- delegates to GalleryPopupButton.
  */
-export function GalleryDropdownContent() {
-  return <GalleryPopupButtonContent />;
+export function GalleryDropdown() {
+  return <GalleryPopupButton />;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ export function TugPopupButtonDemo() {
 }
 
 // ---------------------------------------------------------------------------
-// GalleryBadgeContent
+// GalleryBadge
 // ---------------------------------------------------------------------------
 
 /** All role combinations for the TugBadge showcase matrix */
@@ -140,11 +140,11 @@ const ALL_BADGE_SIZES: TugBadgeSize[] = ["sm", "md", "lg"];
 const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
 
 /**
- * GalleryBadgeContent -- TugBadge showcase gallery tab.
+ * GalleryBadge -- TugBadge showcase gallery tab.
  *
  * Shows tinted and ghost emphasis across all 7 roles at all sizes.
  */
-export function GalleryBadgeContent() {
+export function GalleryBadge() {
   return (
     <div className="cg-content" data-testid="gallery-badge">
 
@@ -218,7 +218,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-buttons (entry-point: carries defaultTabs + defaultTitle) ----
   registerCard({
     componentId: "gallery-buttons",
-    contentFactory: (_cardId) => <GalleryButtonsContent />,
+    contentFactory: (_cardId) => <GalleryPushButton />,
     defaultMeta: { title: "TugPushButton", icon: "MousePointerClick", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -229,7 +229,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-chain-actions ----
   registerCard({
     componentId: "gallery-chain-actions",
-    contentFactory: (_cardId) => <GalleryChainActionsContent />,
+    contentFactory: (_cardId) => <GalleryChainActions />,
     defaultMeta: { title: "Chain Actions", icon: "Zap", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -238,7 +238,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-mutation ----
   registerCard({
     componentId: "gallery-mutation",
-    contentFactory: (_cardId) => <GalleryMutationContent />,
+    contentFactory: (_cardId) => <GalleryMutation />,
     defaultMeta: { title: "Mutation Model", icon: "GitBranch", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -247,7 +247,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-tabbar ----
   registerCard({
     componentId: "gallery-tabbar",
-    contentFactory: (_cardId) => <GalleryTabBarContent />,
+    contentFactory: (_cardId) => <GalleryTabBar />,
     defaultMeta: { title: "TugTabBar", icon: "PanelTop", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -256,7 +256,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-dropdown ----
   registerCard({
     componentId: "gallery-dropdown",
-    contentFactory: (_cardId) => <GalleryDropdownContent />,
+    contentFactory: (_cardId) => <GalleryDropdown />,
     defaultMeta: { title: "TugPopupButton", icon: "ChevronDown", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -265,7 +265,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-default-button ----
   registerCard({
     componentId: "gallery-default-button",
-    contentFactory: (_cardId) => <GalleryDefaultButtonContent />,
+    contentFactory: (_cardId) => <GalleryDefaultButton />,
     defaultMeta: { title: "Default Button", icon: "CornerDownLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -274,7 +274,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-mutation-tx ----
   registerCard({
     componentId: "gallery-mutation-tx",
-    contentFactory: (_cardId) => <GalleryMutationTxContent />,
+    contentFactory: (_cardId) => <GalleryMutationTx />,
     defaultMeta: { title: "Mutation Transactions", icon: "Layers", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -282,12 +282,12 @@ export function registerGalleryCards(): void {
 
   // ---- gallery-observable-props ----
   // This is the first gallery tab to use the cardId argument from contentFactory.
-  // The cardId is passed through to GalleryObservablePropsContent so inspector
+  // The cardId is passed through to GalleryObservableProps so inspector
   // controls can direct setProperty actions to the correct Tugcard responder node
   // via dispatchTo. [D04] Spec S07 (#s07-gallery-demo)
   registerCard({
     componentId: "gallery-observable-props",
-    contentFactory: (cardId) => <GalleryObservablePropsContent cardId={cardId} />,
+    contentFactory: (cardId) => <GalleryObservableProps cardId={cardId} />,
     defaultMeta: { title: "Observable Props", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -296,7 +296,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-palette ----
   registerCard({
     componentId: "gallery-palette",
-    contentFactory: (_cardId) => <GalleryPaletteContent />,
+    contentFactory: (_cardId) => <GalleryPalette />,
     defaultMeta: { title: "Palette Engine", icon: "Palette", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -305,7 +305,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-scale-timing ----
   registerCard({
     componentId: "gallery-scale-timing",
-    contentFactory: (_cardId) => <GalleryScaleTimingContent />,
+    contentFactory: (_cardId) => <GalleryScaleTiming />,
     defaultMeta: { title: "Scale & Timing", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -314,7 +314,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-cascade-inspector ----
   registerCard({
     componentId: "gallery-cascade-inspector",
-    contentFactory: (_cardId) => <GalleryCascadeInspectorContent />,
+    contentFactory: (_cardId) => <GalleryCascadeInspector />,
     defaultMeta: { title: "Cascade Inspector", icon: "Search", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -323,7 +323,7 @@ export function registerGalleryCards(): void {
   // ---- gallery-animator ----
   registerCard({
     componentId: "gallery-animator",
-    contentFactory: (_cardId) => <GalleryAnimatorContent />,
+    contentFactory: (_cardId) => <GalleryAnimator />,
     defaultMeta: { title: "TugAnimator", icon: "Play", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -334,7 +334,7 @@ export function registerGalleryCards(): void {
   // Gets its own tab rather than living in the animator tab. [D04]
   registerCard({
     componentId: "gallery-skeleton",
-    contentFactory: (_cardId) => <GallerySkeletonContent />,
+    contentFactory: (_cardId) => <GallerySkeleton />,
     defaultMeta: { title: "TugSkeleton", icon: "Loader", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -345,7 +345,7 @@ export function registerGalleryCards(): void {
   // Demonstrates window-shade collapse behavior. [D07]
   registerCard({
     componentId: "gallery-title-bar",
-    contentFactory: (_cardId) => <GalleryTitleBarContent />,
+    contentFactory: (_cardId) => <GalleryTitleBar />,
     defaultMeta: { title: "Title Bar", icon: "PanelTop", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -355,7 +355,7 @@ export function registerGalleryCards(): void {
   // Step 4, Component 1: TugInput — native input wrapper with field tokens.
   registerCard({
     componentId: "gallery-input",
-    contentFactory: (_cardId) => <GalleryInputContent />,
+    contentFactory: (_cardId) => <GalleryInput />,
     defaultMeta: { title: "TugInput", icon: "TextCursorInput", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -365,7 +365,7 @@ export function registerGalleryCards(): void {
   // Step 4, Component 2: TugLabel — Radix Label wrapper with multiline, ellipsis, icon.
   registerCard({
     componentId: "gallery-label",
-    contentFactory: (_cardId) => <GalleryLabelContent />,
+    contentFactory: (_cardId) => <GalleryLabel />,
     defaultMeta: { title: "TugLabel", icon: "Type", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -375,7 +375,7 @@ export function registerGalleryCards(): void {
   // Step 4, Component 2a: TugMarquee — single-line scrolling label.
   registerCard({
     componentId: "gallery-marquee",
-    contentFactory: (_cardId) => <GalleryMarqueeContent />,
+    contentFactory: (_cardId) => <GalleryMarquee />,
     defaultMeta: { title: "TugMarquee", icon: "MoveHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -385,7 +385,7 @@ export function registerGalleryCards(): void {
   // Step 4, Component 3: TugCheckbox — Radix Checkbox wrapper with toggle tokens.
   registerCard({
     componentId: "gallery-checkbox",
-    contentFactory: (_cardId) => <GalleryCheckboxContent />,
+    contentFactory: (_cardId) => <GalleryCheckbox />,
     defaultMeta: { title: "TugCheckbox", icon: "CheckSquare", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -395,7 +395,7 @@ export function registerGalleryCards(): void {
   // Step 4, Component 4: TugSwitch — Radix Switch wrapper with toggle track/thumb tokens.
   registerCard({
     componentId: "gallery-switch",
-    contentFactory: (_cardId) => <GallerySwitchContent />,
+    contentFactory: (_cardId) => <GallerySwitch />,
     defaultMeta: { title: "TugSwitch", icon: "ToggleRight", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -406,7 +406,7 @@ export function registerGalleryCards(): void {
   // parameters. Uses theme-accessibility module + live CSS snapshot data. [D04]
   registerCard({
     componentId: "gallery-theme-generator",
-    contentFactory: (_cardId) => <GalleryThemeGeneratorContent />,
+    contentFactory: (_cardId) => <GalleryThemeGenerator />,
     defaultMeta: { title: "Theme Accessibility", icon: "Paintbrush", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -417,7 +417,7 @@ export function registerGalleryCards(): void {
   // at all three sizes, with interactive preview controls. [D06]
   registerCard({
     componentId: "gallery-badge",
-    contentFactory: (_cardId) => <GalleryBadgeContent />,
+    contentFactory: (_cardId) => <GalleryBadge />,
     defaultMeta: { title: "TugBadge", icon: "Tag", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
@@ -425,5 +425,5 @@ export function registerGalleryCards(): void {
 
 }
 
-// Re-export GalleryMutationTxContent so tests can import it from either location.
-export { GalleryMutationTxContent };
+// Re-export GalleryMutationTx so tests can import it from either location.
+export { GalleryMutationTx };

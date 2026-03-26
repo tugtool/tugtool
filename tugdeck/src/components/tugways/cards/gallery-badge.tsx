@@ -1,5 +1,5 @@
 /**
- * GalleryBadgeMockupContent — exploratory badge redesign gallery tab.
+ * GalleryBadgeMockup — exploratory badge redesign gallery tab.
  *
  * Self-contained mockup using custom CSS classes (badge-mockup-*).
  * Does NOT touch the real TugBadge component, tug-badge.css, or any
@@ -166,7 +166,7 @@ const DEFAULTS: Record<string, number> = {
   radius: 2,
 };
 
-export function GalleryBadgeMockupContent() {
+export function GalleryBadgeMockup() {
   const [fgIntensity, setFgIntensity] = useState(DEFAULTS.fgIntensity);
   const [fgTone, setFgTone] = useState(DEFAULTS.fgTone);
 

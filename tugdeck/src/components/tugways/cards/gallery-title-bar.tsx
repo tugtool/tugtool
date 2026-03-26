@@ -1,5 +1,5 @@
 /**
- * GalleryTitleBarContent -- interactive demo of CardTitleBar controls.
+ * GalleryTitleBar -- interactive demo of CardTitleBar controls.
  *
  * Shows a CardTitleBar in isolation (outside a real Tugcard frame) with interactive
  * controls for toggling the collapsed state and selecting the icon.
@@ -16,11 +16,11 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 
 // ---------------------------------------------------------------------------
-// GalleryTitleBarContent
+// GalleryTitleBar
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryTitleBarContent -- interactive demo of CardTitleBar controls.
+ * GalleryTitleBar -- interactive demo of CardTitleBar controls.
  *
  * Shows a CardTitleBar in isolation (outside a real Tugcard frame) with interactive
  * controls for toggling the collapsed state and selecting the icon.
@@ -28,7 +28,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
  * [D07] Window-shade collapse
  * Step 3: Card Frame & Title Bar
  */
-export function GalleryTitleBarContent() {
+export function GalleryTitleBar() {
   const [collapsed, setCollapsed] = useState(false);
   const [iconName, setIconName] = useState<string>("Layout");
   const [closable, setClosable] = useState(true);

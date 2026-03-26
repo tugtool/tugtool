@@ -1,5 +1,5 @@
 /**
- * GalleryButtonsContent -- TugButton interactive preview + full matrix.
+ * GalleryPushButton -- TugButton interactive preview + full matrix.
  *
  * Extracted from `gallery-card.tsx` for use as a standalone gallery card tab.
  * Contains the preview controls (variant, size, disabled, loading) and renders
@@ -104,11 +104,11 @@ function SubtypeButton({
 }
 
 // ---------------------------------------------------------------------------
-// GalleryButtonsContent
+// GalleryPushButton
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryButtonsContent -- TugButton interactive preview + full matrix.
+ * GalleryPushButton -- TugButton interactive preview + full matrix.
  *
  * Extracted from `ComponentGallery` for use as a standalone gallery card tab.
  * Contains the preview controls (variant, size, disabled, loading) and renders
@@ -116,7 +116,7 @@ function SubtypeButton({
  *
  * **Authoritative reference:** [D01] gallery-buttons componentId.
  */
-export function GalleryButtonsContent() {
+export function GalleryPushButton() {
   const [previewEmphasis, setPreviewEmphasis] = useState<TugButtonEmphasis>("outlined");
   // undefined means "accent (default)" — no role prop passed to the button
   const [previewRole, setPreviewRole] = useState<TugButtonRole | undefined>(undefined);

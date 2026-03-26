@@ -1,8 +1,8 @@
 /**
- * GalleryScaleTimingContent tests -- Scale & Timing demo tab.
+ * GalleryScaleTiming tests -- Scale & Timing demo tab.
  *
  * Tests cover:
- * - GalleryScaleTimingContent renders without errors
+ * - GalleryScaleTiming renders without errors
  * - Scale slider is present with correct range and default value
  * - Scale slider sets --tug-zoom on :root via onCommit (pointer release)
  * - Timing slider sets --tug-timing on :root continuously
@@ -22,7 +22,7 @@ import React from "react";
 import { describe, it, expect, afterEach } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
-import { GalleryScaleTimingContent } from "@/components/tugways/cards/gallery-scale-timing";
+import { GalleryScaleTiming } from "@/components/tugways/cards/gallery-scale-timing";
 
 // ---------------------------------------------------------------------------
 // Helper: invoke a React input element's onChange handler directly.
@@ -72,7 +72,7 @@ function invokeRangeOnPointerUp(el: HTMLInputElement, value: string): void {
 // Render tests
 // ---------------------------------------------------------------------------
 
-describe("GalleryScaleTimingContent – renders without errors", () => {
+describe("GalleryScaleTiming – renders without errors", () => {
   afterEach(() => {
     cleanup();
     document.documentElement.style.removeProperty("--tug-zoom");
@@ -85,7 +85,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
     let container!: HTMLElement;
     expect(() => {
       act(() => {
-        ({ container } = render(<GalleryScaleTimingContent />));
+        ({ container } = render(<GalleryScaleTiming />));
       });
     }).not.toThrow();
     expect(container.querySelector("[data-testid='gallery-scale-timing']")).not.toBeNull();
@@ -94,7 +94,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
   it("renders the JS helper readout section", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     expect(container.querySelector("[data-testid='st-readout']")).not.toBeNull();
   });
@@ -102,7 +102,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
   it("renders the live preview section", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     expect(container.querySelector("[data-testid='st-preview']")).not.toBeNull();
   });
@@ -110,7 +110,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
   it("preview section contains buttons", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const preview = container.querySelector("[data-testid='st-preview']")!;
     const buttons = preview.querySelectorAll("button");
@@ -120,7 +120,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
   it("renders the scale range input with correct attributes", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     expect(scaleInput).not.toBeNull();
@@ -133,7 +133,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
   it("renders the timing range input with correct attributes", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const timingInput = container.querySelector("#st-timing") as HTMLInputElement;
     expect(timingInput).not.toBeNull();
@@ -146,7 +146,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
   it("renders the motion toggle checkbox checked by default", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const motionCheck = container.querySelector("#st-motion") as HTMLInputElement;
     expect(motionCheck).not.toBeNull();
@@ -159,7 +159,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
 // Slider interactions
 // ---------------------------------------------------------------------------
 
-describe("GalleryScaleTimingContent – slider interactions", () => {
+describe("GalleryScaleTiming – slider interactions", () => {
   afterEach(() => {
     cleanup();
     document.documentElement.style.removeProperty("--tug-zoom");
@@ -171,7 +171,7 @@ describe("GalleryScaleTimingContent – slider interactions", () => {
   it("scale slider onCommit (pointer up) sets --tug-zoom on :root", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.5");
@@ -183,7 +183,7 @@ describe("GalleryScaleTimingContent – slider interactions", () => {
   it("scale slider onChange alone does NOT set --tug-zoom (deferred to commit)", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.5");
@@ -195,7 +195,7 @@ describe("GalleryScaleTimingContent – slider interactions", () => {
   it("after scale commit, preview area still renders buttons", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.25");
@@ -209,7 +209,7 @@ describe("GalleryScaleTimingContent – slider interactions", () => {
   it("timing slider onChange sets --tug-timing on :root", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const timingInput = container.querySelector("#st-timing") as HTMLInputElement;
     invokeRangeOnChange(timingInput, "5");
@@ -220,7 +220,7 @@ describe("GalleryScaleTimingContent – slider interactions", () => {
   it("unchecking motion toggle sets data-tug-motion='off' on body", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const motionCheck = container.querySelector("#st-motion") as HTMLInputElement;
     act(() => { fireEvent.click(motionCheck); });
@@ -230,7 +230,7 @@ describe("GalleryScaleTimingContent – slider interactions", () => {
   it("re-checking motion toggle removes data-tug-motion from body", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
+      ({ container } = render(<GalleryScaleTiming />));
     });
     const motionCheck = container.querySelector("#st-motion") as HTMLInputElement;
     act(() => { fireEvent.click(motionCheck); }); // off
@@ -243,7 +243,7 @@ describe("GalleryScaleTimingContent – slider interactions", () => {
 // Cleanup on unmount
 // ---------------------------------------------------------------------------
 
-describe("GalleryScaleTimingContent – cleanup on unmount", () => {
+describe("GalleryScaleTiming – cleanup on unmount", () => {
   afterEach(() => {
     cleanup();
     document.documentElement.style.removeProperty("--tug-zoom");
@@ -256,7 +256,7 @@ describe("GalleryScaleTimingContent – cleanup on unmount", () => {
     let container!: HTMLElement;
     let unmount!: () => void;
     act(() => {
-      ({ container, unmount } = render(<GalleryScaleTimingContent />));
+      ({ container, unmount } = render(<GalleryScaleTiming />));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.5");
@@ -270,7 +270,7 @@ describe("GalleryScaleTimingContent – cleanup on unmount", () => {
     let container!: HTMLElement;
     let unmount!: () => void;
     act(() => {
-      ({ container, unmount } = render(<GalleryScaleTimingContent />));
+      ({ container, unmount } = render(<GalleryScaleTiming />));
     });
     act(() => { fireEvent.click(container.querySelector("#st-motion") as HTMLInputElement); });
     expect(document.body.getAttribute("data-tug-motion")).toBe("off");

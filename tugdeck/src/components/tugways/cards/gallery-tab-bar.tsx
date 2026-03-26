@@ -1,5 +1,5 @@
 /**
- * GalleryTabBarContent -- TugTabBar demo wrapped for gallery card tab.
+ * GalleryTabBar -- TugTabBar demo wrapped for gallery card tab.
  *
  * **Authoritative reference:** [D01] gallery-tabbar componentId.
  *
@@ -140,15 +140,15 @@ export function TugTabBarDemo() {
 }
 
 // ---------------------------------------------------------------------------
-// GalleryTabBarContent
+// GalleryTabBar
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryTabBarContent -- TugTabBar demo wrapped for gallery card tab.
+ * GalleryTabBar -- TugTabBar demo wrapped for gallery card tab.
  *
  * **Authoritative reference:** [D01] gallery-tabbar componentId.
  */
-export function GalleryTabBarContent() {
+export function GalleryTabBar() {
   return (
     <div className="cg-content" data-testid="gallery-tabbar">
       <div className="cg-section">

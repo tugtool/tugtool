@@ -1,8 +1,8 @@
 /**
- * GalleryPaletteContent tests — HueIntensityTone editor.
+ * GalleryPalette tests — HueIntensityTone editor.
  *
  * Tests cover:
- * - GalleryPaletteContent renders without errors
+ * - GalleryPalette renders without errors
  * - Canonical strip: 48 swatches with oklch colors
  * - L curve editor: 48 draggable points
  * - VibValPicker: appears on selection, 441 cells (21x21), drag updates swatch,
@@ -20,7 +20,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
 import {
-  GalleryPaletteContent,
+  GalleryPalette,
   buildExportPayload,
   parseImportPayload,
 } from "@/components/tugways/cards/gallery-palette";
@@ -30,14 +30,14 @@ import { tugColor, MAX_CHROMA_FOR_HUE } from "@/components/tugways/palette-engin
 // Render tests
 // ---------------------------------------------------------------------------
 
-describe("GalleryPaletteContent – renders without errors", () => {
+describe("GalleryPalette – renders without errors", () => {
   afterEach(() => { cleanup(); });
 
   it("renders without throwing", () => {
     let container!: HTMLElement;
     expect(() => {
       act(() => {
-        ({ container } = render(<GalleryPaletteContent />));
+        ({ container } = render(<GalleryPalette />));
       });
     }).not.toThrow();
     expect(container.querySelector("[data-testid='gallery-palette']")).not.toBeNull();
@@ -46,7 +46,7 @@ describe("GalleryPaletteContent – renders without errors", () => {
   it("renders the canonical strip", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     expect(container.querySelector("[data-testid='gp-canonical-strip']")).not.toBeNull();
   });
@@ -54,7 +54,7 @@ describe("GalleryPaletteContent – renders without errors", () => {
   it("renders the L curve editor", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     expect(container.querySelector("[data-testid='gp-curve-editor']")).not.toBeNull();
   });
@@ -64,13 +64,13 @@ describe("GalleryPaletteContent – renders without errors", () => {
 // Canonical strip
 // ---------------------------------------------------------------------------
 
-describe("GalleryPaletteContent – canonical strip", () => {
+describe("GalleryPalette – canonical strip", () => {
   afterEach(() => { cleanup(); });
 
   it("renders exactly 48 canonical swatches", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const strip = container.querySelector("[data-testid='gp-canonical-strip']")!;
     expect(strip).not.toBeNull();
@@ -81,7 +81,7 @@ describe("GalleryPaletteContent – canonical strip", () => {
   it("each canonical swatch has a data-color with oklch value", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     swatches.forEach((s) => {
@@ -95,13 +95,13 @@ describe("GalleryPaletteContent – canonical strip", () => {
 // L curve editor
 // ---------------------------------------------------------------------------
 
-describe("GalleryPaletteContent – L curve editor", () => {
+describe("GalleryPalette – L curve editor", () => {
   afterEach(() => { cleanup(); });
 
   it("renders 48 draggable curve points", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const points = container.querySelectorAll("[data-testid^='gp-curve-point-']");
     expect(points.length).toBe(48);
@@ -112,13 +112,13 @@ describe("GalleryPaletteContent – L curve editor", () => {
 // VibValPicker
 // ---------------------------------------------------------------------------
 
-describe("GalleryPaletteContent – VibValPicker", () => {
+describe("GalleryPalette – VibValPicker", () => {
   afterEach(() => { cleanup(); });
 
   it("does not render the picker when no hue is selected", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     expect(container.querySelector("[data-testid='gp-picker-outer']")).toBeNull();
   });
@@ -126,7 +126,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("renders the picker when a canonical swatch is clicked", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
@@ -138,7 +138,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("picker renders exactly 441 colored cells (21x21 grid)", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
@@ -151,7 +151,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("picker result swatch has data-color with oklch value", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
@@ -166,7 +166,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("picker result swatch data-color updates after pointer drag", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
@@ -197,7 +197,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("preset overlay renders exactly 5 preset dots", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
@@ -210,7 +210,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("preset dots have correct data-preset names", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
@@ -224,7 +224,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("CSS formula export renders with calc( and clamp( patterns", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
@@ -240,7 +240,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("CSS formula export contains the selected hue's CSS variable names", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     // Click the first swatch (garnet — ADJACENCY_RING order)
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
@@ -256,7 +256,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
   it("CSS formula copy button is rendered", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
@@ -415,13 +415,13 @@ describe("round-trip: buildExportPayload -> parseImportPayload", () => {
 // TugAchromaticStrip — T-ACHROMATIC-RENDER, T-ACHROMATIC-THREE
 // ---------------------------------------------------------------------------
 
-describe("GalleryPaletteContent – achromatic strip", () => {
+describe("GalleryPalette – achromatic strip", () => {
   afterEach(() => { cleanup(); });
 
   it("T-ACHROMATIC-RENDER: renders the achromatic strip container", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const strip = container.querySelector("[data-testid='tug-achromatic-strip']");
     expect(strip).not.toBeNull();
@@ -430,7 +430,7 @@ describe("GalleryPaletteContent – achromatic strip", () => {
   it("T-ACHROMATIC-TEN: achromatic strip contains 11 swatches: black, pitch…paper, white", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
     expect(strip).not.toBeNull();
@@ -452,7 +452,7 @@ describe("GalleryPaletteContent – achromatic strip", () => {
   it("T-ACHROMATIC-NAMES: all 9 named gray swatches use descriptive names", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
     const swatches = strip.querySelectorAll("[data-testid='gp-achromatic-swatch']");
@@ -465,7 +465,7 @@ describe("GalleryPaletteContent – achromatic strip", () => {
   it("T-ACHROMATIC-LABELS: swatch labels show descriptive names not 'gray-NN'", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
     const labels = strip.querySelectorAll(".gp-achromatic-label");
@@ -481,7 +481,7 @@ describe("GalleryPaletteContent – achromatic strip", () => {
   it("T-ACHROMATIC-COLORS: all swatches have C=0 oklch colors", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
     const swatches = strip.querySelectorAll("[data-testid='gp-achromatic-swatch']");
@@ -496,13 +496,13 @@ describe("GalleryPaletteContent – achromatic strip", () => {
 // Export/import UI elements
 // ---------------------------------------------------------------------------
 
-describe("GalleryPaletteContent – export/import UI", () => {
+describe("GalleryPalette – export/import UI", () => {
   afterEach(() => { cleanup(); });
 
   it("renders the Export JSON button", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     expect(container.querySelector("[data-testid='gp-export-btn']")).not.toBeNull();
   });
@@ -510,7 +510,7 @@ describe("GalleryPaletteContent – export/import UI", () => {
   it("renders the Import JSON button and hidden file input", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     expect(container.querySelector("[data-testid='gp-import-btn']")).not.toBeNull();
     const fileInput = container.querySelector("[data-testid='gp-import-file-input']") as HTMLInputElement;
@@ -522,7 +522,7 @@ describe("GalleryPaletteContent – export/import UI", () => {
   it("renders the Reset button", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryPaletteContent />));
+      ({ container } = render(<GalleryPalette />));
     });
     expect(container.querySelector("[data-testid='gp-reset-btn']")).not.toBeNull();
   });

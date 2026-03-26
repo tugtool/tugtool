@@ -499,16 +499,16 @@ function NamedSlotsDemo() {
 }
 
 // ---------------------------------------------------------------------------
-// GalleryAnimatorContent
+// GalleryAnimator
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryAnimatorContent -- TugAnimator interactive demo tab.
+ * GalleryAnimator -- TugAnimator interactive demo tab.
  *
  * Four sections: physics solvers, duration tokens, cancellation modes,
  * and named slot coordination.
  */
-export function GalleryAnimatorContent() {
+export function GalleryAnimator() {
   return (
     <div className="cg-content" data-testid="gallery-animator">
       <PhysicsCurvesDemo />

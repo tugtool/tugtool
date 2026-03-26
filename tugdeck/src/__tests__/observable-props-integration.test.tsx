@@ -34,7 +34,7 @@ import { render, act, cleanup } from "@testing-library/react";
 import { PropertyStore } from "@/components/tugways/property-store";
 import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/property-store";
 import { GALLERY_DEFAULT_TABS, registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
-import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props";
+import { GalleryObservableProps } from "@/components/tugways/cards/gallery-observable-props";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { Tugcard } from "@/components/tugways/tug-card";
 import { _resetForTest } from "@/card-registry";
@@ -62,7 +62,7 @@ function makeStore() {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: render GalleryObservablePropsContent inside a fully-wired Tugcard
+// Helper: render GalleryObservableProps inside a fully-wired Tugcard
 // ---------------------------------------------------------------------------
 
 function renderObservableProps(cardId = "obs-int-card") {
@@ -73,7 +73,7 @@ function renderObservableProps(cardId = "obs-int-card") {
       withDeckManager(
         <ResponderChainContext.Provider value={manager}>
           <Tugcard cardId={cardId} meta={{ title: "Test" }} feedIds={[]}>
-            <GalleryObservablePropsContent cardId={cardId} />
+            <GalleryObservableProps cardId={cardId} />
           </Tugcard>
         </ResponderChainContext.Provider>
       )
@@ -227,7 +227,7 @@ describe("Task 3: Card-side changes notify inspector (store.set → controls upd
 
   /**
    * A helper card content that exposes the PropertyStore via a ref and then
-   * renders GalleryObservablePropsContent's useSyncExternalStore pattern in
+   * renders GalleryObservableProps's useSyncExternalStore pattern in
    * isolation using a simple Probe component.
    *
    * For task 3 we need to call store.set() directly (simulating a card-side
@@ -278,7 +278,7 @@ describe("Task 3: Card-side changes notify inspector (store.set → controls upd
 // Task 4: Source attribution prevents circular updates (cross-reference)
 // ---------------------------------------------------------------------------
 // The [D03] guard is directly tested in gallery-card.test.tsx under
-// "GalleryObservablePropsContent – source attribution observer [D03]".
+// "GalleryObservableProps – source attribution observer [D03]".
 // Here we add a pure-PropertyStore unit test confirming the store itself
 // never loops — it always notifies all observers unconditionally, and it is
 // the observer's responsibility to guard. [D03]

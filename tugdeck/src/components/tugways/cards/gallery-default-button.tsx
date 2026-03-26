@@ -1,5 +1,5 @@
 /**
- * GalleryDefaultButtonContent -- default button registration + Enter-key demo.
+ * GalleryDefaultButton -- default button registration + Enter-key demo.
  *
  * Renders a primary "Confirm" button and a secondary "Cancel" button. The
  * Confirm button is registered as the default button via useLayoutEffect on
@@ -21,11 +21,11 @@ import { useRequiredResponderChain } from "@/components/tugways/responder-chain-
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 
 // ---------------------------------------------------------------------------
-// GalleryDefaultButtonContent
+// GalleryDefaultButton
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryDefaultButtonContent -- default button registration + Enter-key demo.
+ * GalleryDefaultButton -- default button registration + Enter-key demo.
  *
  * Renders a primary "Confirm" button and a secondary "Cancel" button. The
  * Confirm button is registered as the default button via useLayoutEffect on
@@ -39,7 +39,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
  *
  * **Authoritative reference:** [D01] gallery-default-button componentId.
  */
-export function GalleryDefaultButtonContent() {
+export function GalleryDefaultButton() {
   const manager = useRequiredResponderChain();
   const confirmContainerRef = useRef<HTMLSpanElement | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);

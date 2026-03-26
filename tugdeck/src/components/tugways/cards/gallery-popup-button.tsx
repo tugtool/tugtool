@@ -1,5 +1,5 @@
 /**
- * GalleryPopupButtonContent — TugPopupButton gallery tab with design sliders.
+ * GalleryPopupButton — TugPopupButton gallery tab with design sliders.
  *
  * Provides interactive controls for tuning button and menu border-radius,
  * plus demos of TugPopupButton in various contexts.
@@ -43,7 +43,7 @@ const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
 
 // ---- Content ----
 
-export function GalleryPopupButtonContent() {
+export function GalleryPopupButton() {
   const [lastSelected, setLastSelected] = useState<string | null>(null);
 
   return (

@@ -1,5 +1,5 @@
 /**
- * mutation-tx-demo.test.tsx -- Integration tests for GalleryMutationTxContent.
+ * mutation-tx-demo.test.tsx -- Integration tests for GalleryMutationTx.
  *
  * Verifies the action-phase-to-transaction lifecycle by simulating control
  * interactions and asserting both DOM mutations and cascade reader display
@@ -20,7 +20,7 @@ import React from "react";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
-import { GalleryMutationTxContent } from "@/components/tugways/cards/gallery-mutation-tx";
+import { GalleryMutationTx } from "@/components/tugways/cards/gallery-mutation-tx";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { mutationTransactionManager } from "@/components/tugways/mutation-transaction";
 import { _resetForTest } from "@/card-registry";
@@ -34,7 +34,7 @@ function renderDemo() {
   act(() => {
     ({ container } = render(
       <ResponderChainProvider>
-        <GalleryMutationTxContent />
+        <GalleryMutationTx />
       </ResponderChainProvider>
     ));
   });
@@ -66,7 +66,7 @@ afterEach(() => {
 // Color input demo -- previewColor action lifecycle
 // ---------------------------------------------------------------------------
 
-describe("GalleryMutationTxContent – color input dispatches ActionEvents", () => {
+describe("GalleryMutationTx – color input dispatches ActionEvents", () => {
   it("first input event begins a transaction and previews background-color", () => {
     const container = renderDemo();
     const mockCard = getMockCard(container);
@@ -146,7 +146,7 @@ describe("GalleryMutationTxContent – color input dispatches ActionEvents", () 
 // Hue swatch demo -- previewHue action lifecycle
 // ---------------------------------------------------------------------------
 
-describe("GalleryMutationTxContent – hue swatch pointer-scrub", () => {
+describe("GalleryMutationTx – hue swatch pointer-scrub", () => {
   it("pointerdown begins a transaction on the mock card", () => {
     const container = renderDemo();
     const mockCard = getMockCard(container);
@@ -205,7 +205,7 @@ describe("GalleryMutationTxContent – hue swatch pointer-scrub", () => {
 // Position sliders demo -- previewPosition action lifecycle
 // ---------------------------------------------------------------------------
 
-describe("GalleryMutationTxContent – position sliders", () => {
+describe("GalleryMutationTx – position sliders", () => {
   it("pointerdown on slider-x begins a transaction for left+top", () => {
     const container = renderDemo();
     const mockCard = getMockCard(container);
@@ -281,7 +281,7 @@ describe("GalleryMutationTxContent – position sliders", () => {
 // Cascade reader display panel -- direct DOM writes
 // ---------------------------------------------------------------------------
 
-describe("GalleryMutationTxContent – cascade reader display panel", () => {
+describe("GalleryMutationTx – cascade reader display panel", () => {
   it("display spans are present in the DOM", () => {
     const container = renderDemo();
 

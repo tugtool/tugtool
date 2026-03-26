@@ -19,17 +19,17 @@ import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import {
   registerGalleryCards,
   GALLERY_DEFAULT_TABS,
-  GalleryDropdownContent,
-  GalleryMutationTxContent,
-  GalleryBadgeContent,
+  GalleryDropdown,
+  GalleryMutationTx,
+  GalleryBadge,
 } from "@/components/tugways/cards/gallery-registrations";
-import { GalleryButtonsContent } from "@/components/tugways/cards/gallery-push-button";
-import { GalleryChainActionsContent } from "@/components/tugways/cards/gallery-chain-actions";
-import { GalleryMutationContent } from "@/components/tugways/cards/gallery-mutation";
-import { GalleryTabBarContent, TugTabBarDemo } from "@/components/tugways/cards/gallery-tab-bar";
-import { GalleryDefaultButtonContent } from "@/components/tugways/cards/gallery-default-button";
-import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props";
-import { GalleryPaletteContent } from "@/components/tugways/cards/gallery-palette";
+import { GalleryPushButton } from "@/components/tugways/cards/gallery-push-button";
+import { GalleryChainActions } from "@/components/tugways/cards/gallery-chain-actions";
+import { GalleryMutation } from "@/components/tugways/cards/gallery-mutation";
+import { GalleryTabBar, TugTabBarDemo } from "@/components/tugways/cards/gallery-tab-bar";
+import { GalleryDefaultButton } from "@/components/tugways/cards/gallery-default-button";
+import { GalleryObservableProps } from "@/components/tugways/cards/gallery-observable-props";
+import { GalleryPalette } from "@/components/tugways/cards/gallery-palette";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { Tugcard } from "@/components/tugways/tug-card";
 import { getRegistration, _resetForTest } from "@/card-registry";
@@ -312,7 +312,7 @@ describe("DeckManager.addCard('gallery-buttons') creates twenty-one-tab gallery 
 // Content component render tests
 // ---------------------------------------------------------------------------
 
-describe("GalleryButtonsContent – renders without errors", () => {
+describe("GalleryPushButton – renders without errors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -322,7 +322,7 @@ describe("GalleryButtonsContent – renders without errors", () => {
       act(() => {
         ({ container } = render(
           <ResponderChainProvider>
-            <GalleryButtonsContent />
+            <GalleryPushButton />
           </ResponderChainProvider>
         ));
       });
@@ -331,7 +331,7 @@ describe("GalleryButtonsContent – renders without errors", () => {
   });
 });
 
-describe("GalleryChainActionsContent – renders without errors", () => {
+describe("GalleryChainActions – renders without errors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -341,7 +341,7 @@ describe("GalleryChainActionsContent – renders without errors", () => {
       act(() => {
         ({ container } = render(
           <ResponderChainProvider>
-            <GalleryChainActionsContent />
+            <GalleryChainActions />
           </ResponderChainProvider>
         ));
       });
@@ -350,7 +350,7 @@ describe("GalleryChainActionsContent – renders without errors", () => {
   });
 });
 
-describe("GalleryMutationContent – renders without errors", () => {
+describe("GalleryMutation – renders without errors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -358,14 +358,14 @@ describe("GalleryMutationContent – renders without errors", () => {
     let container!: HTMLElement;
     expect(() => {
       act(() => {
-        ({ container } = render(<GalleryMutationContent />));
+        ({ container } = render(<GalleryMutation />));
       });
     }).not.toThrow();
     expect(container.querySelector("[data-testid='gallery-mutation']")).not.toBeNull();
   });
 });
 
-describe("GalleryTabBarContent – renders without errors", () => {
+describe("GalleryTabBar – renders without errors", () => {
   beforeEach(() => {
     _resetForTest();
     // TugTabBar calls getAllRegistrations for the type picker -- register a card
@@ -378,14 +378,14 @@ describe("GalleryTabBarContent – renders without errors", () => {
     let container!: HTMLElement;
     expect(() => {
       act(() => {
-        ({ container } = render(<GalleryTabBarContent />));
+        ({ container } = render(<GalleryTabBar />));
       });
     }).not.toThrow();
     expect(container.querySelector("[data-testid='gallery-tabbar']")).not.toBeNull();
   });
 });
 
-describe("GalleryDropdownContent – renders without errors", () => {
+describe("GalleryDropdown – renders without errors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -393,14 +393,14 @@ describe("GalleryDropdownContent – renders without errors", () => {
     let container!: HTMLElement;
     expect(() => {
       act(() => {
-        ({ container } = render(<GalleryDropdownContent />));
+        ({ container } = render(<GalleryDropdown />));
       });
     }).not.toThrow();
     expect(container.querySelector("[data-testid='gallery-popup-button']")).not.toBeNull();
   });
 });
 
-describe("GalleryDefaultButtonContent – renders without errors", () => {
+describe("GalleryDefaultButton – renders without errors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -410,7 +410,7 @@ describe("GalleryDefaultButtonContent – renders without errors", () => {
       act(() => {
         ({ container } = render(
           <ResponderChainProvider>
-            <GalleryDefaultButtonContent />
+            <GalleryDefaultButton />
           </ResponderChainProvider>
         ));
       });
@@ -423,7 +423,7 @@ describe("GalleryDefaultButtonContent – renders without errors", () => {
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryDefaultButtonContent />
+          <GalleryDefaultButton />
         </ResponderChainProvider>
       ));
     });
@@ -435,7 +435,7 @@ describe("GalleryDefaultButtonContent – renders without errors", () => {
   });
 });
 
-describe("GalleryMutationTxContent – renders without errors", () => {
+describe("GalleryMutationTx – renders without errors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -445,7 +445,7 @@ describe("GalleryMutationTxContent – renders without errors", () => {
       act(() => {
         ({ container } = render(
           <ResponderChainProvider>
-            <GalleryMutationTxContent />
+            <GalleryMutationTx />
           </ResponderChainProvider>
         ));
       });
@@ -458,7 +458,7 @@ describe("GalleryMutationTxContent – renders without errors", () => {
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryMutationTxContent />
+          <GalleryMutationTx />
         </ResponderChainProvider>
       ));
     });
@@ -476,7 +476,7 @@ describe("GalleryMutationTxContent – renders without errors", () => {
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryMutationTxContent />
+          <GalleryMutationTx />
         </ResponderChainProvider>
       ));
     });
@@ -488,7 +488,7 @@ describe("GalleryMutationTxContent – renders without errors", () => {
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryMutationTxContent />
+          <GalleryMutationTx />
         </ResponderChainProvider>
       ));
     });
@@ -502,7 +502,7 @@ describe("GalleryMutationTxContent – renders without errors", () => {
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryMutationTxContent />
+          <GalleryMutationTx />
         </ResponderChainProvider>
       ));
     });
@@ -516,7 +516,7 @@ describe("GalleryMutationTxContent – renders without errors", () => {
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryMutationTxContent />
+          <GalleryMutationTx />
         </ResponderChainProvider>
       ));
     });
@@ -530,10 +530,10 @@ describe("GalleryMutationTxContent – renders without errors", () => {
 });
 
 // ---------------------------------------------------------------------------
-// GalleryPaletteContent -- step-5 render test
+// GalleryPalette -- step-5 render test
 // ---------------------------------------------------------------------------
 
-describe("GalleryPaletteContent – renders without errors", () => {
+describe("GalleryPalette – renders without errors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -541,7 +541,7 @@ describe("GalleryPaletteContent – renders without errors", () => {
     let container!: HTMLElement;
     expect(() => {
       act(() => {
-        ({ container } = render(<GalleryPaletteContent />));
+        ({ container } = render(<GalleryPalette />));
       });
     }).not.toThrow();
     expect(container.querySelector("[data-testid='gallery-palette']")).not.toBeNull();
@@ -549,21 +549,21 @@ describe("GalleryPaletteContent – renders without errors", () => {
 });
 
 // ---------------------------------------------------------------------------
-// GalleryCascadeInspectorContent -- step-3 render test (Phase 5d5f)
+// GalleryCascadeInspector -- step-3 render test (Phase 5d5f)
 // ---------------------------------------------------------------------------
 
-describe("GalleryCascadeInspectorContent – renders without errors", () => {
+describe("GalleryCascadeInspector – renders without errors", () => {
   beforeEach(() => { _resetForTest(); registerGalleryCards(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
   it("renders without throwing", () => {
-    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector");
+    const { GalleryCascadeInspector } = require("@/components/tugways/cards/gallery-cascade-inspector");
     let container!: HTMLElement;
     expect(() => {
       act(() => {
         ({ container } = render(
           <ResponderChainProvider>
-            <GalleryCascadeInspectorContent />
+            <GalleryCascadeInspector />
           </ResponderChainProvider>
         ));
       });
@@ -572,12 +572,12 @@ describe("GalleryCascadeInspectorContent – renders without errors", () => {
   });
 
   it("renders the activation instructions", () => {
-    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector");
+    const { GalleryCascadeInspector } = require("@/components/tugways/cards/gallery-cascade-inspector");
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryCascadeInspectorContent />
+          <GalleryCascadeInspector />
         </ResponderChainProvider>
       ));
     });
@@ -585,12 +585,12 @@ describe("GalleryCascadeInspectorContent – renders without errors", () => {
   });
 
   it("renders all five inspectable sample elements", () => {
-    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector");
+    const { GalleryCascadeInspector } = require("@/components/tugways/cards/gallery-cascade-inspector");
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryCascadeInspectorContent />
+          <GalleryCascadeInspector />
         </ResponderChainProvider>
       ));
     });
@@ -830,17 +830,17 @@ describe("TugTabBarDemo – T18: overflow status reflects tab additions", () => 
 });
 
 // ---------------------------------------------------------------------------
-// GalleryObservablePropsContent -- step-4 tests
+// GalleryObservableProps -- step-4 tests
 // ---------------------------------------------------------------------------
 
 /**
- * Render GalleryObservablePropsContent inside a full ResponderChainManager so
+ * Render GalleryObservableProps inside a full ResponderChainManager so
  * that dispatchTo calls in the inspector controls can be verified.
  * The content needs a TugcardPropertyContext to register its PropertyStore with
  * Tugcard. We render it inside a real Tugcard for the full wiring, or use the
  * ResponderChainContext directly for simpler unit-style tests.
  */
-describe("GalleryObservablePropsContent – renders without errors", () => {
+describe("GalleryObservableProps – renders without errors", () => {
   beforeEach(() => { _resetForTest(); registerGalleryCards(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -854,7 +854,7 @@ describe("GalleryObservablePropsContent – renders without errors", () => {
       act(() => {
         ({ container } = render(
           <ResponderChainContext.Provider value={manager}>
-            <GalleryObservablePropsContent cardId="obs-props-card" />
+            <GalleryObservableProps cardId="obs-props-card" />
           </ResponderChainContext.Provider>
         ));
       });
@@ -870,7 +870,7 @@ describe("GalleryObservablePropsContent – renders without errors", () => {
     act(() => {
       ({ container } = render(
         <ResponderChainContext.Provider value={manager}>
-          <GalleryObservablePropsContent cardId="obs-props-card" />
+          <GalleryObservableProps cardId="obs-props-card" />
         </ResponderChainContext.Provider>
       ));
     });
@@ -880,7 +880,7 @@ describe("GalleryObservablePropsContent – renders without errors", () => {
   });
 });
 
-describe("GalleryObservablePropsContent – inspector controls dispatch setProperty", () => {
+describe("GalleryObservableProps – inspector controls dispatch setProperty", () => {
   beforeEach(() => { _resetForTest(); registerGalleryCards(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -901,7 +901,7 @@ describe("GalleryObservablePropsContent – inspector controls dispatch setPrope
         withDeckManager(
           <ResponderChainContext.Provider value={manager}>
             <Tugcard cardId="obs-card" meta={{ title: "Test" }} feedIds={[]}>
-              <GalleryObservablePropsContent cardId="obs-card" />
+              <GalleryObservableProps cardId="obs-card" />
             </Tugcard>
           </ResponderChainContext.Provider>
         )
@@ -984,10 +984,10 @@ describe("GalleryObservablePropsContent – inspector controls dispatch setPrope
 });
 
 // ---------------------------------------------------------------------------
-// GalleryObservablePropsContent – [D03] source attribution / circular guard
+// GalleryObservableProps – [D03] source attribution / circular guard
 // ---------------------------------------------------------------------------
 
-describe("GalleryObservablePropsContent – source attribution observer [D03]", () => {
+describe("GalleryObservableProps – source attribution observer [D03]", () => {
   beforeEach(() => { _resetForTest(); registerGalleryCards(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -1001,7 +1001,7 @@ describe("GalleryObservablePropsContent – source attribution observer [D03]", 
         withDeckManager(
           <ResponderChainContext.Provider value={manager}>
             <Tugcard cardId="obs-card" meta={{ title: "Test" }} feedIds={[]}>
-              <GalleryObservablePropsContent cardId="obs-card" />
+              <GalleryObservableProps cardId="obs-card" />
             </Tugcard>
           </ResponderChainContext.Provider>
         )
@@ -1046,7 +1046,7 @@ describe("GalleryObservablePropsContent – source attribution observer [D03]", 
         withDeckManager(
           <ResponderChainContext.Provider value={manager}>
             <Tugcard cardId="obs-card2" meta={{ title: "Test" }} feedIds={[]}>
-              <GalleryObservablePropsContent cardId="obs-card2" />
+              <GalleryObservableProps cardId="obs-card2" />
             </Tugcard>
           </ResponderChainContext.Provider>
         )
@@ -1085,7 +1085,7 @@ describe("GalleryObservablePropsContent – source attribution observer [D03]", 
         withDeckManager(
           <ResponderChainContext.Provider value={manager}>
             <Tugcard cardId="obs-card3" meta={{ title: "Test" }} feedIds={[]}>
-              <GalleryObservablePropsContent cardId="obs-card3" />
+              <GalleryObservableProps cardId="obs-card3" />
             </Tugcard>
           </ResponderChainContext.Provider>
         )
@@ -1120,10 +1120,10 @@ describe("GalleryObservablePropsContent – source attribution observer [D03]", 
 });
 
 // ---------------------------------------------------------------------------
-// GalleryBadgeContent -- step-7 render test
+// GalleryBadge -- step-7 render test
 // ---------------------------------------------------------------------------
 
-describe("GalleryBadgeContent – renders without errors", () => {
+describe("GalleryBadge – renders without errors", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -1131,7 +1131,7 @@ describe("GalleryBadgeContent – renders without errors", () => {
     let container!: HTMLElement;
     expect(() => {
       act(() => {
-        ({ container } = render(<GalleryBadgeContent />));
+        ({ container } = render(<GalleryBadge />));
       });
     }).not.toThrow();
     expect(container.querySelector("[data-testid='gallery-badge']")).not.toBeNull();
@@ -1140,7 +1140,7 @@ describe("GalleryBadgeContent – renders without errors", () => {
   it("renders TugBadge elements in the full matrix", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryBadgeContent />));
+      ({ container } = render(<GalleryBadge />));
     });
     // 21 combos × 3 sizes = 63 badges in the full matrix,
     // plus 3 more in the interactive preview row = 66 total

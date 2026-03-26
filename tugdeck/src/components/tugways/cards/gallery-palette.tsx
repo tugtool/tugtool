@@ -584,10 +584,10 @@ export function parseImportPayload(jsonString: string): Record<string, number> {
 }
 
 // ---------------------------------------------------------------------------
-// GalleryPaletteContent — main component
+// GalleryPalette — main component
 // ---------------------------------------------------------------------------
 
-export function GalleryPaletteContent() {
+export function GalleryPalette() {
   const [canonicalL, setCanonicalL] = useState<Record<string, number>>(
     () => ({ ...DEFAULT_CANONICAL_L }),
   );

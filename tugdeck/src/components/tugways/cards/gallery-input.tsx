@@ -22,10 +22,10 @@ const ALL_SIZES: TugInputSize[] = ["sm", "md", "lg"];
 const ALL_VALIDATIONS: TugInputValidation[] = ["default", "invalid", "valid", "warning"];
 
 // ---------------------------------------------------------------------------
-// GalleryInputContent
+// GalleryInput
 // ---------------------------------------------------------------------------
 
-export function GalleryInputContent() {
+export function GalleryInput() {
   return (
     <div className="cg-content" data-testid="gallery-input">
 

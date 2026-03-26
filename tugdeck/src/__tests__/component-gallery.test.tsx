@@ -21,12 +21,12 @@ import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { _resetForTest, getRegistration } from "@/card-registry";
-import { registerGalleryCards, GalleryDropdownContent } from "@/components/tugways/cards/gallery-registrations";
-import { GalleryButtonsContent } from "@/components/tugways/cards/gallery-push-button";
-import { GalleryChainActionsContent } from "@/components/tugways/cards/gallery-chain-actions";
-import { GalleryMutationContent } from "@/components/tugways/cards/gallery-mutation";
-import { GalleryTabBarContent } from "@/components/tugways/cards/gallery-tab-bar";
-import { GalleryDefaultButtonContent } from "@/components/tugways/cards/gallery-default-button";
+import { registerGalleryCards, GalleryDropdown } from "@/components/tugways/cards/gallery-registrations";
+import { GalleryPushButton } from "@/components/tugways/cards/gallery-push-button";
+import { GalleryChainActions } from "@/components/tugways/cards/gallery-chain-actions";
+import { GalleryMutation } from "@/components/tugways/cards/gallery-mutation";
+import { GalleryTabBar } from "@/components/tugways/cards/gallery-tab-bar";
+import { GalleryDefaultButton } from "@/components/tugways/cards/gallery-default-button";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
@@ -122,13 +122,13 @@ describe("registerGalleryCards – card registry integration", () => {
 // Content components -- render without errors
 // ============================================================================
 
-describe("GalleryButtonsContent – renders without errors", () => {
+describe("GalleryPushButton – renders without errors", () => {
   it("renders the gallery-buttons content", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryButtonsContent />
+          <GalleryPushButton />
         </ResponderChainProvider>
       ));
     });
@@ -136,14 +136,14 @@ describe("GalleryButtonsContent – renders without errors", () => {
   });
 });
 
-describe("GalleryChainActionsContent – renders without errors", () => {
+describe("GalleryChainActions – renders without errors", () => {
   it("renders the gallery-chain-actions content", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
           <FakeDeckCanvas>
-            <GalleryChainActionsContent />
+            <GalleryChainActions />
           </FakeDeckCanvas>
         </ResponderChainProvider>
       ));
@@ -152,43 +152,43 @@ describe("GalleryChainActionsContent – renders without errors", () => {
   });
 });
 
-describe("GalleryMutationContent – renders without errors", () => {
+describe("GalleryMutation – renders without errors", () => {
   it("renders the gallery-mutation content", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryMutationContent />));
+      ({ container } = render(<GalleryMutation />));
     });
     expect(container.querySelector("[data-testid='gallery-mutation']")).not.toBeNull();
   });
 });
 
-describe("GalleryTabBarContent – renders without errors", () => {
+describe("GalleryTabBar – renders without errors", () => {
   it("renders the gallery-tabbar content", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryTabBarContent />));
+      ({ container } = render(<GalleryTabBar />));
     });
     expect(container.querySelector("[data-testid='gallery-tabbar']")).not.toBeNull();
   });
 });
 
-describe("GalleryDropdownContent – renders without errors", () => {
+describe("GalleryDropdown – renders without errors", () => {
   it("renders the gallery-dropdown content", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(<GalleryDropdownContent />));
+      ({ container } = render(<GalleryDropdown />));
     });
     expect(container.querySelector("[data-testid='gallery-popup-button']")).not.toBeNull();
   });
 });
 
-describe("GalleryDefaultButtonContent – renders without errors", () => {
+describe("GalleryDefaultButton – renders without errors", () => {
   it("renders the gallery-default-button content", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <GalleryDefaultButtonContent />
+          <GalleryDefaultButton />
         </ResponderChainProvider>
       ));
     });
@@ -200,14 +200,14 @@ describe("GalleryDefaultButtonContent – renders without errors", () => {
 // Responder chain walk: chain-action buttons dispatch through DeckCanvas
 // ============================================================================
 
-describe("GalleryChainActionsContent – chain-action button dispatches to DeckCanvas", () => {
+describe("GalleryChainActions – chain-action button dispatches to DeckCanvas", () => {
   it("'Cycle Card' button is visible and enabled when DeckCanvas responder is in the chain", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
           <FakeDeckCanvas>
-            <GalleryChainActionsContent />
+            <GalleryChainActions />
           </FakeDeckCanvas>
         </ResponderChainProvider>
       ));
@@ -233,7 +233,7 @@ describe("GalleryChainActionsContent – chain-action button dispatches to DeckC
       });
       return (
         <ResponderScope>
-          <GalleryChainActionsContent />
+          <GalleryChainActions />
         </ResponderScope>
       );
     }
@@ -264,7 +264,7 @@ describe("GalleryChainActionsContent – chain-action button dispatches to DeckC
       ({ container } = render(
         <ResponderChainProvider>
           <FakeDeckCanvas>
-            <GalleryChainActionsContent />
+            <GalleryChainActions />
           </FakeDeckCanvas>
         </ResponderChainProvider>
       ));

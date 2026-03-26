@@ -1,5 +1,5 @@
 /**
- * gallery-mutation-tx.tsx -- GalleryMutationTxContent demo component.
+ * gallery-mutation-tx.tsx -- GalleryMutationTx demo component.
  *
  * Demonstrates the MutationTransaction / MutationTransactionManager / StyleCascadeReader
  * pipeline with three interaction models:
@@ -58,11 +58,11 @@ function xToHue(clientX: number, rect: DOMRect): number {
 }
 
 // ---------------------------------------------------------------------------
-// GalleryMutationTxContent
+// GalleryMutationTx
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryMutationTxContent -- gallery tab demo for MutationTransaction pipeline.
+ * GalleryMutationTx -- gallery tab demo for MutationTransaction pipeline.
  *
  * Renders three demo sections, a shared positioned mock card element, and a
  * cascade reader display panel. All live-preview mutations are CSS/DOM only;
@@ -82,7 +82,7 @@ function xToHue(clientX: number, rect: DOMRect): number {
  *
  * **Authoritative references:** [D04], [D05], [D06], Rule of Tug #9, #10.
  */
-export function GalleryMutationTxContent() {
+export function GalleryMutationTx() {
   const manager = useRequiredResponderChain();
 
   // Ref to the mock card element -- target for all three transaction demos.

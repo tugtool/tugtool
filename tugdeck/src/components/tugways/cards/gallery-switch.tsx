@@ -30,10 +30,10 @@ const ALL_ROLES: TugSwitchRole[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// GallerySwitchContent
+// GallerySwitch
 // ---------------------------------------------------------------------------
 
-export function GallerySwitchContent() {
+export function GallerySwitch() {
   // Controlled state for the interactive demo
   const [enabled1, setEnabled1] = useState(false);
   const [enabled2, setEnabled2] = useState(true);

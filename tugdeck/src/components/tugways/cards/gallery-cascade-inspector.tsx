@@ -41,11 +41,11 @@ const INSPECTOR_DEMO_ITEMS: TugPopupMenuItem[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// GalleryCascadeInspectorContent
+// GalleryCascadeInspector
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryCascadeInspectorContent -- gallery tab content with inspectable demo elements.
+ * GalleryCascadeInspector -- gallery tab content with inspectable demo elements.
  *
  * Renders a set of sample elements that exercise all token chain depths so that
  * the Shift+Option cascade inspector can be verified against real token resolution
@@ -55,7 +55,7 @@ const INSPECTOR_DEMO_ITEMS: TugPopupMenuItem[] = [
  *
  * **Authoritative reference:** [D06] Gallery tab (#d06-gallery-tab)
  */
-export function GalleryCascadeInspectorContent() {
+export function GalleryCascadeInspector() {
   const [dropdownSelected, setDropdownSelected] = useState<string | null>(null);
 
   return (

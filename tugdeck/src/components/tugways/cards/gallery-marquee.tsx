@@ -31,10 +31,10 @@ const PATH_TEXT =
 const SONG_TEXT = "Aphex Twin — Selected Ambient Works 85-92 — Xtal (7:26)";
 
 // ---------------------------------------------------------------------------
-// GalleryMarqueeContent
+// GalleryMarquee
 // ---------------------------------------------------------------------------
 
-export function GalleryMarqueeContent() {
+export function GalleryMarquee() {
   return (
     <div className="cg-content" data-testid="gallery-marquee">
 

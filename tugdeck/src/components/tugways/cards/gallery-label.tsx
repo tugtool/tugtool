@@ -24,10 +24,10 @@ const PATH_TEXT =
   "/Users/kocienda/Documents/Projects/tugways/src/components/tugways/cards/gallery-label.tsx";
 
 // ---------------------------------------------------------------------------
-// GalleryLabelContent
+// GalleryLabel
 // ---------------------------------------------------------------------------
 
-export function GalleryLabelContent() {
+export function GalleryLabel() {
   return (
     <div className="cg-content" data-testid="gallery-label">
 

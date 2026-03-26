@@ -9,10 +9,10 @@ import React from "react";
 import { TugSkeleton, TugSkeletonGroup } from "@/components/tugways/tug-skeleton";
 
 // ---------------------------------------------------------------------------
-// GallerySkeletonContent
+// GallerySkeleton
 // ---------------------------------------------------------------------------
 
-export function GallerySkeletonContent() {
+export function GallerySkeleton() {
   return (
     <div className="cg-content" data-testid="gallery-skeleton">
 

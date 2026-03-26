@@ -1,5 +1,5 @@
 /**
- * GalleryMutationContent -- mutation model demo wrapped for gallery card tab.
+ * GalleryMutation -- mutation model demo wrapped for gallery card tab.
  *
  * Also exports MutationModelDemo for use in tests and other contexts.
  *
@@ -76,15 +76,15 @@ export function MutationModelDemo() {
 }
 
 // ---------------------------------------------------------------------------
-// GalleryMutationContent
+// GalleryMutation
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryMutationContent -- mutation model demo wrapped for gallery card tab.
+ * GalleryMutation -- mutation model demo wrapped for gallery card tab.
  *
  * **Authoritative reference:** [D01] gallery-mutation componentId.
  */
-export function GalleryMutationContent() {
+export function GalleryMutation() {
   return (
     <div className="cg-content" data-testid="gallery-mutation">
       <div className="cg-section">

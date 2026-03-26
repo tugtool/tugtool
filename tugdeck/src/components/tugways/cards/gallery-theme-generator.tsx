@@ -127,7 +127,7 @@ function EmphasisRolePreview() {
   );
 }
 
-export function GalleryThemeGeneratorContent() {
+export function GalleryThemeGenerator() {
   const themeCtx = useOptionalThemeContext();
   const themeName = themeCtx?.theme ?? "brio";
 
