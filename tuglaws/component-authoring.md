@@ -222,6 +222,8 @@ Components must be high-quality, carefully reviewed code. The following bugs hav
 
 **Conditional rendering must not create asymmetric behavior.** When a component has two rendering paths (e.g., with-label vs without-label), both paths must handle `className`, `...rest`, and `ref` consistently. If `className` goes on a wrapper in one path, it must go on the root element in the other — never silently dropped.
 
+**Inline `style` must be merged, not replaced.** If a component sets inline styles (width, height, gap), destructure `style` from rest and spread the caller's style into the component's: `style={{ width, height, ...style }}`. Without this, a caller passing `style={{ margin: '10px' }}` silently replaces the component's critical layout styles.
+
 **No dead code, no history comments.** Unused variables, pointless aliases (`const x = y;` where `y` could be used directly), and comments about what was removed ("sub-component removed", "Phase N") are noise. Delete them.
 
 ### Sub-Components

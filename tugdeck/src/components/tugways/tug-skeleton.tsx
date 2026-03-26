@@ -47,23 +47,22 @@ export interface TugSkeletonGroupProps
 
 export const TugSkeleton = React.forwardRef<HTMLDivElement, TugSkeletonProps>(
   function TugSkeleton(
-    { width = "100%", height = 14, radius, className, ...rest },
+    { width = "100%", height = 14, radius, className, style, ...rest },
     ref,
   ) {
-    const style: React.CSSProperties = {
+    const mergedStyle: React.CSSProperties = {
       width,
       height: `${height}px`,
+      ...(radius !== undefined && { borderRadius: radius }),
+      ...style,
     };
-    if (radius !== undefined) {
-      style.borderRadius = radius;
-    }
 
     return (
       <div
         ref={ref}
         data-slot="tug-skeleton"
         className={cn("tug-skeleton", className)}
-        style={style}
+        style={mergedStyle}
         aria-hidden="true"
         {...rest}
       />
@@ -76,13 +75,13 @@ export const TugSkeleton = React.forwardRef<HTMLDivElement, TugSkeletonProps>(
 export const TugSkeletonGroup = React.forwardRef<
   HTMLDivElement,
   TugSkeletonGroupProps
->(function TugSkeletonGroup({ gap = 8, children, className, ...rest }, ref) {
+>(function TugSkeletonGroup({ gap = 8, children, className, style, ...rest }, ref) {
   return (
     <div
       ref={ref}
       data-slot="tug-skeleton-group"
       className={cn("tug-skeleton-group", className)}
-      style={{ gap: `${gap}px` }}
+      style={{ gap: `${gap}px`, ...style }}
       {...rest}
     >
       {children}
