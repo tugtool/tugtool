@@ -1,20 +1,14 @@
 /**
- * gallery-label.tsx -- TugLabel demo tab for the Component Gallery.
+ * gallery-label.tsx -- TugLabel gallery card.
  *
  * Shows TugLabel in all sizes, ellipsis modes, with icons, and paired
  * with TugInput.
- *
- * Rules of Tugways compliance:
- *   - No React state drives appearance changes [D08, D09]
- *   - No root.render() after initial mount [D40, D42]
- *
- * @module components/tugways/cards/gallery-label
  */
 
 import React from "react";
 import { Tag, Info, AlertTriangle, Star, Folder } from "lucide-react";
 import { TugLabel } from "@/components/tugways/tug-label";
-import type { TugLabelSize, TugLabelEllipsis } from "@/components/tugways/tug-label";
+import type { TugLabelSize } from "@/components/tugways/tug-label";
 import { TugInput } from "@/components/tugways/tug-input";
 
 // ---------------------------------------------------------------------------

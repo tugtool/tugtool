@@ -20,15 +20,10 @@ import { cn } from "@/lib/utils";
 /** TugLabel size names — matches TugInput sizes */
 export type TugLabelSize = "sm" | "md" | "lg";
 
-/** Ellipsis mode for text truncation */
-export type TugLabelEllipsis = "none" | "end" | "start" | "middle";
-
 /** TugLabel props. */
-export interface TugLabelProps {
-  /** Text content of the label. */
+export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"label">, "children"> {
+  /** Text content of the label (string only — required for truncation). */
   children: string;
-  /** Associate with a form control via htmlFor. */
-  htmlFor?: string;
   /**
    * Size variant.
    * @selector .tug-label-size-sm | .tug-label-size-md | .tug-label-size-lg
@@ -42,10 +37,10 @@ export interface TugLabelProps {
   maxLines?: number;
   /**
    * Ellipsis mode when maxLines is exceeded.
-   * @selector .tug-label-ellipsis-end | .tug-label-ellipsis-start | .tug-label-ellipsis-middle
+   * @selector .tug-label-clamp-none | .tug-label-ellipsis-end | .tug-label-ellipsis-start | .tug-label-ellipsis-middle
    * @default "end"
    */
-  ellipsis?: TugLabelEllipsis;
+  ellipsis?: "none" | "end" | "start" | "middle";
   /**
    * Show required indicator (asterisk).
    * @default false
@@ -61,8 +56,6 @@ export interface TugLabelProps {
   icon?: React.ReactNode;
   /** Icon color (CSS color value or token). Defaults to label text color. */
   iconColor?: string;
-  /** Additional CSS class names. */
-  className?: string;
 }
 
 // ---- Truncation helpers ----
@@ -102,6 +95,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       icon,
       iconColor,
       className,
+      ...rest
     },
     ref,
   ) {
@@ -184,15 +178,12 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       ? truncatedText
       : children;
 
-    // CSS class for the text span (end ellipsis uses CSS-native line-clamp)
-    const useEndClamp =
-      maxLines !== undefined &&
-      maxLines > 0 &&
-      (ellipsis === "end" || ellipsis === "none");
+    const hasMaxLines = maxLines !== undefined && maxLines > 0;
 
     const textClassName = cn(
       "tug-label-text",
-      useEndClamp && ellipsis === "end" && "tug-label-ellipsis-end",
+      hasMaxLines && ellipsis === "none" && "tug-label-clamp-none",
+      hasMaxLines && ellipsis === "end" && "tug-label-ellipsis-end",
       needsJSTruncation && (
         ellipsis === "start" ? "tug-label-ellipsis-start" :
         ellipsis === "middle" ? "tug-label-ellipsis-middle" : undefined
@@ -206,11 +197,9 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       className,
     );
 
-    // Inline style for maxLines (used by CSS line-clamp)
-    const textStyle: React.CSSProperties = {};
-    if (maxLines !== undefined && maxLines > 0) {
-      (textStyle as Record<string, unknown>)["--tug-label-max-lines"] = maxLines;
-    }
+    const textStyle = hasMaxLines
+      ? { "--tug-label-max-lines": maxLines } as React.CSSProperties
+      : undefined;
 
     return (
       <LabelPrimitive.Root
@@ -218,6 +207,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
         data-slot="tug-label"
         htmlFor={htmlFor}
         className={labelClassName}
+        {...rest}
       >
         {icon && (
           <span

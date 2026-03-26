@@ -83,19 +83,26 @@
   overflow-wrap: break-word;
 }
 
+/* ---- Clamp without ellipsis (ellipsis="none" + maxLines) ---- */
+
+.tug-label-clamp-none {
+  overflow: hidden;
+  /* max-height = line-height × maxLines; line-height is inherited from .tug-label (1.4) */
+  max-height: calc(1.4em * var(--tug-label-max-lines));
+}
+
 /* ---- End Ellipsis (CSS-native via -webkit-line-clamp) ---- */
 
 .tug-label-ellipsis-end {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  /* -webkit-line-clamp set via inline style (--tug-label-max-lines) */
   -webkit-line-clamp: var(--tug-label-max-lines);
 }
 
 /* ---- Start / Middle Ellipsis ---- */
 /* These modes are handled in JS by truncating the text content.
-   CSS just ensures single-line overflow is hidden. */
+   CSS just ensures overflow is hidden within maxLines. */
 
 .tug-label-ellipsis-start,
 .tug-label-ellipsis-middle {
