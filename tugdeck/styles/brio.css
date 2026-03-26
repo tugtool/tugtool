@@ -1,7 +1,7 @@
 /**
  * @theme-name Brio
  *
- * Brio's canonical values are defined as defaults in tug-base.css (body { --tug-* }).
+ * Brio's canonical values are defined in styles/themes/brio.css.
  * This file exists for symmetry with other theme files and future override capability.
  */
 body {

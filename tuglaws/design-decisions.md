@@ -10,7 +10,7 @@
 
 **D02.** Two-directory storage with unique names. Shipped themes in `tugdeck/themes/` (version-controlled, read-only). Authored themes in `~/.tugtool/themes/` (user data, not in repo). Names are unique across both directories — middleware checks authored first, then shipped, but uniqueness means no shadowing.
 
-**D03.** Every theme is a peer — no base layer, no override cascade. Switching themes copies the selected theme's complete CSS file into `styles/tug-active-theme.css`. For brio, the source is `tug-base-generated.css`. For harmony, the source is `styles/themes/harmony.css`. The active theme file is always complete; it is never empty. There is no `styles/themes/brio.css` file. [L06]
+**D03.** Every theme is a peer — no base layer, no override cascade. Switching themes copies the selected theme's complete CSS file into `styles/tug-active-theme.css`. For brio, the source is `styles/themes/brio.css`. For harmony, the source is `styles/themes/harmony.css`. The active theme file is always complete; it is never empty. [L06]
 
 **D04.** `contrastSearch()`, `darkRecipe()`, `lightRecipe()`, and `RECIPE_REGISTRY` are defined in `theme-engine.ts`. `RECIPE_REGISTRY` is the only derivation dispatch path — all `deriveTheme()` calls route through it.
 

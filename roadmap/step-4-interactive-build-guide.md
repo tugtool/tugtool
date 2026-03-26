@@ -6,7 +6,7 @@ Build each form control / display component **one at a time**, interactively. Fo
 
 1. **Build** — `.tsx` + `.css` using `--tug-base-control-*` stateful tokens
 2. **Gallery** — Add a section to the Component Gallery with all variants and states
-3. **Tune** — Adjust token values in dev tools / `tug-base.css` until the look is right across all themes
+3. **Tune** — Adjust token values in dev tools / `tug.css` until the look is right across all themes
 4. **Test** — Write unit tests for rendering, keyboard nav, accessibility
 5. **Commit** — Lock it in, move to the next component
 
@@ -38,7 +38,7 @@ Priority is downstream need (Settings card needs inputs, checkboxes, switches, s
 
 ## Token Pattern Per Component
 
-Interactive controls (1-9) use `--tug-base-control-{variant}-{property}-{state}` tokens from `tug-base.css`. The pattern established by TugButton:
+Interactive controls (1-9) use `--tug-base-control-{variant}-{property}-{state}` tokens from `styles/themes/brio.css`. The pattern established by TugButton:
 
 ```
 bg:     rest / hover / active / disabled
@@ -66,7 +66,7 @@ Each component's gallery section shows:
 - `.css` file in `components/tugways/`
 - Gallery section added
 - Looks correct across Brio, Bluenote, Harmony
-- Token changes in `tug-base.css` visibly affect the component
+- Token changes in `styles/themes/brio.css` visibly affect the component
 - Unit tests pass
 - `bun run build` exits 0
 - `bun test` exits 0

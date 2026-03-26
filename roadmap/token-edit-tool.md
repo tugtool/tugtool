@@ -117,7 +117,7 @@ Optional filter on the `--tug-color()` parameters:
 
 ## `--theme` Resolution
 
-- `--theme brio` → `tugdeck/styles/tug-base-generated.css`
+- `--theme brio` → `tugdeck/styles/themes/brio.css`
 - `--theme harmony` → `tugdeck/styles/themes/harmony.css`
 - Any other name → `tugdeck/styles/themes/<name>.css`
 

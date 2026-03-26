@@ -32,7 +32,7 @@
  * (only one child remains: `.tug-tab-icon`).
  *
  * **Any change here MUST be accompanied by a matching CSS token update in
- * tug-base.css.**
+ * tug.css.**
  */
 export const ICON_ONLY_TAB_WIDTH = 30;
 

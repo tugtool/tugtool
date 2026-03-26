@@ -1,7 +1,7 @@
 /**
  * Step 8 integration: round-trip verification across all converted theme tokens.
  *
- * For every --tug-color() call in tug-base.css + tug-base-generated.css:
+ * For every --tug-color() call in tug.css + styles/themes/brio.css:
  * 1. Expand via the PostCSS plugin to get an oklch() string.
  * 2. Run oklchToTugColor() on the expanded oklch.
  * 3. Re-expand the recovered --tug-color() call via the plugin.
@@ -9,12 +9,11 @@
  *
  * Also verifies:
  * - tug-palette.css is unmodified (no --tug-color() calls).
- * - brio.css is unmodified (no --tug-color() calls).
- * - Zero standalone hex values remain in tug-base.css body{} block.
+ * - Zero standalone hex values remain in tug.css body{} block.
+ * - styles/themes/brio.css: after plugin expansion, zero --tug-color() remain.
  *
- * Note: --tug-* tokens now live in tug-base-generated.css, which is
- * @imported by tug-base.css inside body {}. Both files are read for checks
- * that involve the token declarations.
+ * Note: --tug-* tokens live in styles/themes/brio.css. Both tug.css and
+ * brio.css are read for checks that involve the token declarations.
  */
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "fs";
@@ -87,10 +86,10 @@ function extractStandaloneHex(css: string): string[] {
   return standaloneHex;
 }
 
-// Read combined theme CSS (tug-base.css hand-authored portion + tug-base-generated.css tokens)
+// Read combined theme CSS (tug.css entry point + styles/themes/brio.css tokens)
 function readCombinedThemeCSS(): string {
-  const base = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
-  const generated = readFileSync(join(STYLES_DIR, "tug-base-generated.css"), "utf8");
+  const base = readFileSync(join(STYLES_DIR, "tug.css"), "utf8");
+  const generated = readFileSync(join(STYLES_DIR, "themes", "brio.css"), "utf8");
   return base + "\n" + generated;
 }
 
@@ -105,20 +104,13 @@ describe("Step 8: tug-palette.css is unmodified", () => {
   });
 });
 
-describe("Step 8: brio.css is unmodified", () => {
-  it("contains no --tug-color() calls", () => {
-    const css = readFileSync(join(STYLES_DIR, "brio.css"), "utf8");
-    expect(extractTugColorCalls(css)).toHaveLength(0);
-  });
-});
-
 describe("Step 8: zero standalone hex values in theme files", () => {
-  it("tug-base.css has no standalone hex values", () => {
-    const css = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
+  it("tug.css has no standalone hex values", () => {
+    const css = readFileSync(join(STYLES_DIR, "tug.css"), "utf8");
     expect(extractStandaloneHex(css)).toHaveLength(0);
   });
-  it("tug-base-generated.css has no standalone hex values", () => {
-    const css = readFileSync(join(STYLES_DIR, "tug-base-generated.css"), "utf8");
+  it("styles/themes/brio.css has no standalone hex values", () => {
+    const css = readFileSync(join(STYLES_DIR, "themes", "brio.css"), "utf8");
     expect(extractStandaloneHex(css)).toHaveLength(0);
   });
 });
@@ -128,9 +120,8 @@ describe("Step 8: zero standalone hex values in theme files", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
-  // tug-base.css @imports tug-base-generated.css for the token block.
-  // Read both files combined to get all --tug-color() calls.
-  it("tug-base (combined): every --tug-color() call expands to a parseable oklch()", () => {
+  // Read tug.css + brio.css combined to get all --tug-color() calls.
+  it("tug (combined): every --tug-color() call expands to a parseable oklch()", () => {
     const css = readCombinedThemeCSS();
     const calls = extractTugColorCalls(css);
     expect(calls.length).toBeGreaterThan(0);
@@ -156,9 +147,8 @@ describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () => {
-  // tug-base.css @imports tug-base-generated.css for the token block.
-  // Read both files combined to get all --tug-color() calls.
-  it("tug-base (combined): round-trip stays within delta-E < 0.02 for all tokens", () => {
+  // Read tug.css + brio.css combined to get all --tug-color() calls.
+  it("tug (combined): round-trip stays within delta-E < 0.02 for all tokens", () => {
     const css = readCombinedThemeCSS();
     const calls = extractTugColorCalls(css);
 
@@ -199,7 +189,7 @@ describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () 
 
     if (failures.length > 0) {
       const report = failures.map(f => `  ${f.call}: delta-E=${f.dE.toFixed(4)}`).join("\n");
-      throw new Error(`${failures.length} round-trip failure(s) in tug-base (combined):\n${report}`);
+      throw new Error(`${failures.length} round-trip failure(s) in tug (combined):\n${report}`);
     }
   });
 });
@@ -209,9 +199,9 @@ describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () 
 // ---------------------------------------------------------------------------
 
 describe("Step 8: --tug-color() calls are fully expanded in theme files", () => {
-  it("tug-base-generated.css: processing through plugin produces zero --tug-color() in declaration values", () => {
-    // tug-base-generated.css contains its own body {} block with all token declarations
-    const css = readFileSync(join(STYLES_DIR, "tug-base-generated.css"), "utf8");
+  it("styles/themes/brio.css: processing through plugin produces zero --tug-color() in declaration values", () => {
+    // brio.css contains its own body {} block with all token declarations
+    const css = readFileSync(join(STYLES_DIR, "themes", "brio.css"), "utf8");
     const result = expandTugColorInCSS(css);
     const root = postcss.parse(result);
     const remaining: string[] = [];

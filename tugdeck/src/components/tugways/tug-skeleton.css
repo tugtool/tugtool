@@ -7,7 +7,7 @@
  *
  * No explicit @media (prefers-reduced-motion) rule is needed here — the global
  * body[data-tug-motion="off"] * { animation-duration: 0s !important } rule in
- * tug-base.css already suppresses all CSS animations (including this pulse)
+ * tug.css already suppresses all CSS animations (including this pulse)
  * when reduced motion is active. The skeleton renders as a static placeholder
  * in that case. [D04]
  *

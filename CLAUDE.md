@@ -47,7 +47,7 @@ All `--tug-*` tokens are generated from JSON theme files in `tugdeck/themes/` vi
 bun run generate:tokens
 ```
 
-The script is `tugdeck/scripts/generate-tug-tokens.ts`. Brio output goes to `tugdeck/styles/tug-base-generated.css` (imported by `tug-base.css`). Other themes write to `tugdeck/styles/themes/<name>.css`. The generated block is bounded by `@generated:tokens:begin` / `@generated:tokens:end` markers.
+The script is `tugdeck/scripts/generate-tug-tokens.ts`. Brio output goes to `tugdeck/styles/themes/brio.css`. Other themes write to `tugdeck/styles/themes/<name>.css`. The generated block is bounded by `@generated:tokens:begin` / `@generated:tokens:end` markers.
 
 ## Tugdeck — Laws of Tug
 

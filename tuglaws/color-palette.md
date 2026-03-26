@@ -223,8 +223,7 @@ Components consume base and component tokens. The palette tier provides the raw 
 
 Theme runtime is CSS-first:
 
-- base tokens are authored in `styles/tug-base-generated.css`
-- override tokens are authored in `styles/themes/*.css`
+- theme tokens are authored in `styles/themes/*.css` (brio, harmony, and others)
 - Vite/PostCSS expands `--tug-color(...)` to normal CSS in dev/build
 
 The palette feeds authored theme CSS through `--tug-color(...)` expansion in Vite/PostCSS.

@@ -1,8 +1,8 @@
 # Token Inventory Baseline
 
-**Purpose:** Authoritative snapshot of all `--tug-base-*` tokens extracted from `tug-base-generated.css` as of 2026-03-18, with classification status for the token audit and pairing extraction plan.
+**Purpose:** Authoritative snapshot of all `--tug-base-*` tokens extracted from `styles/themes/brio.css` as of 2026-03-18, with classification status for the token audit and pairing extraction plan.
 
-**Source:** `tugdeck/styles/tug-base-generated.css` (regenerated via `bun run generate:tokens`)
+**Source:** `tugdeck/styles/themes/brio.css`
 
 **Total token count:** 373
 

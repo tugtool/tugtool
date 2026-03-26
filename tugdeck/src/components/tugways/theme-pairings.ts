@@ -41,7 +41,7 @@ export interface ElementSurfacePairing {
  * that governs minimum contrast requirements. Perceptual contrast is the normative
  * gate; WCAG 2.x ratio is retained as informational secondary data.
  *
- * Pairs are sourced from component CSS files and tug-base.css token usage.
+ * Pairs are sourced from component CSS files and tug.css token usage.
  * All token names are CSS custom property names (with the `--` prefix).
  */
 export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [

@@ -17,19 +17,19 @@ import postcssTugColor from "./postcss-tug-color";
  * Solution:
  *   1. Exclude palette-engine.ts from Vite's watcher (prevents auto-restart).
  *   2. Use fs.watchFile in our plugin to detect changes independently.
- *   3. Touch tug-base.css to trigger normal CSS HMR.
+ *   3. Touch tug.css to trigger normal CSS HMR.
  *   4. PostCSS plugin re-reads presets from disk on mtime change.
  *
  * Result: edit palette-engine.ts → colors update seamlessly via CSS HMR.
  */
 function paletteHotReload(): VitePlugin {
   const paletteEngine = path.resolve(__dirname, "src/components/tugways/palette-engine.ts");
-  const tugBase = path.resolve(__dirname, "styles/tug-base.css");
+  const tugBase = path.resolve(__dirname, "styles/tug.css");
   return {
     name: "palette-hot-reload",
     configureServer() {
       fs.watchFile(paletteEngine, { interval: 300 }, () => {
-        // Touch tug-base.css so Vite sees a CSS change and re-runs PostCSS.
+        // Touch tug.css so Vite sees a CSS change and re-runs PostCSS.
         // The PostCSS plugin re-reads presets from disk via mtime check.
         const now = new Date();
         fs.utimesSync(tugBase, now, now);
@@ -40,8 +40,8 @@ function paletteHotReload(): VitePlugin {
 
 /** Absolute path to the active theme CSS file in the Vite module graph. */
 const THEME_ACTIVE_CSS = path.resolve(__dirname, "styles/tug-active-theme.css");
-/** Absolute path to the base theme CSS file (brio source). */
-const BASE_THEME_CSS = path.resolve(__dirname, "styles/tug-base-generated.css");
+/** Absolute path to the brio theme CSS file. */
+const BASE_THEME_CSS = path.resolve(__dirname, "styles/themes/brio.css");
 /** Absolute path to shipped override CSS files. */
 export const SHIPPED_THEMES_CSS_DIR = path.resolve(__dirname, "styles/themes");
 
@@ -78,7 +78,7 @@ export function parseHostCanvasColor(cssText: string): string | null {
 /**
  * Copy the active theme's complete CSS into tug-active-theme.css.
  *
- * - For brio (or missing/default): copies tug-base-generated.css.
+ * - For brio (or missing/default): copies styles/themes/brio.css.
  * - For any other theme: copies styles/themes/<name>.css.
  * - The file is always a complete theme; it is never empty.
  */
@@ -112,7 +112,7 @@ function copyActiveThemeToFile(themeName: string, activeCssPath: string): void {
  * complete CSS at startup, before Vite processes any CSS.
  *
  * - Reads the active theme name from tugbank via `tugbank read dev.tugtool.app theme`.
- * - For brio (or missing/default): copies tug-base-generated.css into tug-active-theme.css.
+ * - For brio (or missing/default): copies styles/themes/brio.css into tug-active-theme.css.
  * - For any other theme: copies styles/themes/<name>.css into tug-active-theme.css.
  * - The file is always a complete theme; it is never empty.
  * - Same logic for both dev and build modes — no special cases.
@@ -131,8 +131,7 @@ function themeLoaderPlugin(): VitePlugin {
  * Vite plugin: when a theme source file changes, re-copy the active theme
  * into tug-active-theme.css so the app receives standard CSS HMR updates.
  *
- * Watches both styles/themes/*.css (non-brio themes) and tug-base-generated.css
- * (brio's source file).
+ * Watches styles/themes/*.css (all themes including brio).
  */
 function controlTokenHotReload(): VitePlugin {
   function reloadActiveTheme() {
@@ -144,10 +143,6 @@ function controlTokenHotReload(): VitePlugin {
     name: "control-token-hot-reload",
     handleHotUpdate({ file }) {
       if (file.startsWith(SHIPPED_THEMES_CSS_DIR) && file.endsWith(".css")) {
-        reloadActiveTheme();
-        return [];
-      }
-      if (file === BASE_THEME_CSS) {
         reloadActiveTheme();
         return [];
       }
@@ -181,7 +176,7 @@ export interface ActivateResult {
  * Activate a theme by writing the complete theme CSS into activeCssPath.
  * Returns { theme, hostCanvasColor } on success.
  *
- * - For the base theme (brio): copies tug-base-generated.css to activeCssPath.
+ * - For the base theme (brio): copies styles/themes/brio.css to activeCssPath.
  * - For non-base themes: copies CSS from styles/themes/<name>.css to activeCssPath.
  * - Parses --tugx-host-canvas-color from the source CSS file.
  * - Throws if source CSS is missing or host color metadata is missing/invalid.

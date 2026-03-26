@@ -1,5 +1,5 @@
 @import "../styles/tug-palette.css";
-@import "../styles/tug-base.css";
+@import "../styles/tug.css";
 /* Component token files (token definitions; rules are colocated with component TSX imports) */
 @import "./components/tugways/tug-dock.css";
 @import "./components/tugways/tug-dialog.css";

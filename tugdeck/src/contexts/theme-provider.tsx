@@ -6,7 +6,7 @@
  * Dev mode: Theme switching posts to POST /__themes/activate, which copies the
  * selected theme's complete CSS into tug-active-theme.css through Vite's CSS
  * pipeline so PostCSS expands all --tug-color() tokens correctly. Brio copies
- * tug-base-generated.css; all other themes copy their own CSS file. The active
+ * styles/themes/brio.css; all other themes copy their own CSS file. The active
  * theme file is always complete; it is never empty.
  *
  * Production mode: Theme switching swaps a <link id="tug-theme-override">

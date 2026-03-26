@@ -2,12 +2,11 @@ import fs from "fs";
 import path from "path";
 
 const ROOT = path.resolve(__dirname, "..");
-const BASE_CSS = path.join(ROOT, "styles", "tug-base-generated.css");
 const THEMES_DIR = path.join(ROOT, "styles", "themes");
 const OUT_FILE = path.join(ROOT, "src", "generated", "tug-token-names.ts");
 
 export function collectCssFiles(): string[] {
-  const files: string[] = [BASE_CSS];
+  const files: string[] = [];
   for (const name of fs.readdirSync(THEMES_DIR)) {
     if (name.endsWith(".css")) {
       files.push(path.join(THEMES_DIR, name));
@@ -38,7 +37,7 @@ export function main(): void {
   const out = [
     "/**",
     " * tug-token-names.ts — GENERATED token inventory for Theme Accessibility.",
-    " * Source scan: styles/tug-base-generated.css + styles/themes/*.css",
+    " * Source scan: styles/themes/*.css",
     " */",
     "",
     "export const TUG_TOKEN_NAMES: readonly string[] = [",

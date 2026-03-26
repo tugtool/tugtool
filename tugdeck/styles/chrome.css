@@ -3,7 +3,7 @@
  * Retains rules that are clearer as CSS than Tailwind utilities:
  * resize handle hit areas, snap guide borders, virtual sash hover, flash overlays.
  * All other chrome styles are Tailwind utilities on React components.
- * Replaces cards-chrome.css (404 lines, now deleted). Uses --tug-* tokens from tug-base.css.
+ * Replaces cards-chrome.css (404 lines, now deleted). Uses --tug-* tokens from tug.css.
  */
 
 /* ---- Resize handles: 8px hit area on each edge/corner ---- */

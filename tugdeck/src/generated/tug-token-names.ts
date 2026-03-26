@@ -1,6 +1,6 @@
 /**
  * tug-token-names.ts — GENERATED token inventory for Theme Accessibility.
- * Source scan: styles/tug-base-generated.css + styles/themes/*.css
+ * Source scan: styles/themes/*.css
  */
 
 export const TUG_TOKEN_NAMES: readonly string[] = [

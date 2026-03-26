@@ -1,13 +1,12 @@
 /**
  * Tugways Token Architecture — Phase 5d5e
  *
- * Defines the --tug-* semantic token layer (source of truth).
- * Also includes font-face declarations, global multiplier tokens (:root),
- * motion-off rules, and scrollbar styling.
+ * Main CSS entry point. Includes font-face declarations, global multiplier
+ * tokens (:root), motion-off rules, Shiki bridge tokens, and scrollbar styling.
  *
  * Import order (enforced in globals.css):
  *   1. tug-palette.css     — TugColor palette constants (--tug-{hue}-h, --tug-{hue}-canonical-l, --tug-{hue}-peak-c)
- *   2. tug-base.css        — Fonts, multipliers, motion rules, Tier 2 base tokens (--tug-*), scrollbars [this file]
+ *   2. tug.css             — Fonts, multipliers, motion rules, scrollbars [this file]
  *   3. Component CSS files — Tier 3 component tokens (--tug-<component>-*)
  *
  * Chromatic color tokens use --tug-color() notation, expanded to oklch() at build
@@ -18,7 +17,7 @@
  *
  * The active theme's complete token declarations are loaded via tug-active-theme.css.
  * That file is written by the Vite plugin (themeLoaderPlugin) at startup and on
- * theme switch — brio copies tug-base-generated.css, harmony copies themes/harmony.css.
+ * theme switch — brio copies styles/themes/brio.css, harmony copies styles/themes/harmony.css.
  * The file is always a complete theme; it is never empty.
  */
 
