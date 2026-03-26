@@ -25,7 +25,41 @@ tug-{name}.tsx    — component implementation
 tug-{name}.css    — all styles
 ```
 
-One component per file pair. No sub-directories, no barrel exports, no index files. The file name is the component name in kebab-case with the `tug-` prefix.
+One component per file pair. No barrel exports, no index files. The file name is the component name in kebab-case with the `tug-` prefix.
+
+### Public vs Internal
+
+Components at the top level of `components/tugways/` are the **public API** — what app code imports directly. Components in `components/tugways/internal/` are **building blocks** — infrastructure composed by other tugways components, not intended for direct use by app code.
+
+```
+tugways/
+  tug-push-button.tsx    ← public: app code uses this for standalone action buttons
+  tug-popup-button.tsx   ← public: app code uses this for dropdown triggers
+  tug-checkbox.tsx        ← public: app code uses this
+  tug-switch.tsx          ← public: app code uses this
+  tug-input.tsx           ← public: app code uses this
+  ...
+  internal/
+    tug-button.tsx        ← building block: composed by TugPushButton, TugPopupButton, TugTabBar
+    tug-button.css        ← building block: button styling
+```
+
+The directory structure is the signal. A developer scanning `tugways/` sees the components they should use. The `internal/` folder tells them "these are not for you."
+
+**Rules for internal components:**
+
+- Follow all the same authoring rules as public components (docstring, `data-slot`, `@tug-pairings`, `forwardRef`, etc.)
+- Module docstring opens with a clear statement: "Internal building block — app code should use [public component] instead."
+- Internal components are imported by relative path (`./internal/tug-button`), never from a barrel export
+- Public components that wrap an internal component should re-export the types app code needs (e.g., `TugButtonEmphasis`, `TugButtonRole`, `TugButtonSize`)
+
+**When to make a component internal:**
+
+- It provides infrastructure that multiple public components compose (TugButton → TugPushButton, TugPopupButton, TugTabBar)
+- App code should never import it directly — there's always a more appropriate public component
+- Moving it to `internal/` reduces confusion about which component to choose
+
+Most components are public. Internal components are the exception, not the rule.
 
 ---
 
@@ -501,6 +535,7 @@ Before a component is done:
 - [ ] Component-tier aliases (if used) defined in `body {}` and resolve to base tokens in one hop [L17]
 - [ ] `@tug-effects` block present if the component uses `--tug7-effect-*` tokens
 - [ ] Compositional components (no CSS): delegation documented in module docstring; no `@tug-pairings` needed
+- [ ] Internal components: lives in `internal/`, docstring says "Internal building block — use [public component] instead", public wrapper re-exports needed types
 - [ ] Keyboard accessible (Tab, Enter/Space, Escape)
 - [ ] `bun run build` exits 0
 - [ ] `bun run test` exits 0
