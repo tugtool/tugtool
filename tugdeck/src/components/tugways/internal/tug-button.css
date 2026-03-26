@@ -787,19 +787,6 @@
 }
 
 /* ============================================================================
-   Push Button: Uppercase Typography Wrapper
-   ========================================================================= */
-
-/*
- * TugPushButton adds uppercase styling to TugButton for standalone action
- * buttons. Applied as an additional class alongside .tug-button.
- */
-.tug-push-button {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-/* ============================================================================
    Loading State
    ========================================================================= */
 

@@ -8,6 +8,8 @@
  * Decisions: [D02] emphasis x role system
  */
 
+import "./tug-push-button.css";
+
 import React from "react";
 import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";

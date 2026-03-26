@@ -1,0 +1,6 @@
+/* @tug-pairings: none — styling delegated to internal/tug-button.css; this file adds typography only */
+
+.tug-push-button {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
