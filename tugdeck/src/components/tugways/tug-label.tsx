@@ -1,24 +1,19 @@
 /**
- * TugLabel -- tugways public API for labels.
+ * TugLabel — label for form controls.
  *
- * Wraps Radix Label for click-to-focus behavior on associated controls.
- * All visual states driven by --tug-field-* tokens.
+ * Wraps @radix-ui/react-label for click-to-focus behavior. Supports size
+ * variants, multiline with ellipsis truncation (end/start/middle), leading
+ * icon, required indicator, and disabled state. All colors via --tug7-* tokens.
  *
- * Features:
- *   - Multiline text: wraps at component width, up to `maxLines`
- *   - Ellipsis truncation: `end` (CSS-native), `start`, `middle` (JS-computed)
- *   - Optional leading icon with configurable color via `iconColor`
- *   - Required indicator (asterisk)
- *   - Size variants matching TugInput
- *
- * [D04] Token-driven control state model
- * [D05] Component token naming: --tug-field-*
+ * Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authoring guide
+ * Decisions: [D04] token-driven control states, [D05] component token naming
  */
+
+import "./tug-label.css";
 
 import React, { useRef, useLayoutEffect, useState, useCallback } from "react";
 import * as LabelPrimitive from "@radix-ui/react-label";
 import { cn } from "@/lib/utils";
-import "./tug-label.css";
 
 // ---- Types ----
 
@@ -28,29 +23,45 @@ export type TugLabelSize = "sm" | "md" | "lg";
 /** Ellipsis mode for text truncation */
 export type TugLabelEllipsis = "none" | "end" | "start" | "middle";
 
-/**
- * TugLabel props.
- */
+/** TugLabel props. */
 export interface TugLabelProps {
-  /** Text content of the label */
+  /** Text content of the label. */
   children: string;
-  /** Associate with a form control via htmlFor */
+  /** Associate with a form control via htmlFor. */
   htmlFor?: string;
-  /** Size variant. Default: "md" */
+  /**
+   * Size variant.
+   * @selector .tug-label-size-sm | .tug-label-size-md | .tug-label-size-lg
+   * @default "md"
+   */
   size?: TugLabelSize;
-  /** Maximum number of lines before truncation. Default: unlimited */
+  /**
+   * Maximum number of lines before truncation.
+   * @default unlimited
+   */
   maxLines?: number;
-  /** Ellipsis mode when maxLines is exceeded. Default: "end" */
+  /**
+   * Ellipsis mode when maxLines is exceeded.
+   * @selector .tug-label-ellipsis-end | .tug-label-ellipsis-start | .tug-label-ellipsis-middle
+   * @default "end"
+   */
   ellipsis?: TugLabelEllipsis;
-  /** Show required indicator (asterisk). Default: false */
+  /**
+   * Show required indicator (asterisk).
+   * @default false
+   */
   required?: boolean;
-  /** Disabled appearance. Default: false */
+  /**
+   * Disabled appearance.
+   * @selector .tug-label-disabled
+   * @default false
+   */
   disabled?: boolean;
-  /** Leading icon (React node, typically a Lucide icon) */
+  /** Leading icon (React node, typically a Lucide icon). */
   icon?: React.ReactNode;
   /** Icon color (CSS color value or token). Defaults to label text color. */
   iconColor?: string;
-  /** Additional CSS class names */
+  /** Additional CSS class names. */
   className?: string;
 }
 
@@ -204,6 +215,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
     return (
       <LabelPrimitive.Root
         ref={ref}
+        data-slot="tug-label"
         htmlFor={htmlFor}
         className={labelClassName}
       >

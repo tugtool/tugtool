@@ -3,12 +3,19 @@
    Base Label
    ========================================================================= */
 
+/* @tug-pairings {
+ *   ".tug-label":          element=field-text-normal-label-rest    surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-required": element=field-text-normal-required-rest surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-disabled": element=field-text-normal-plain-disabled surface=surface-global-primary-normal-default-rest
+ * } */
+
 /**
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug7-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-label (color)                   |
- * | --tug7-element-field-text-normal-required-rest (element-field-text-normal-required-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-label-required (color)          |
+ * | --tug7-element-field-text-normal-label-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label (color)                   |
+ * | --tug7-element-field-text-normal-required-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-required (color)          |
+ * | --tug7-element-field-text-normal-plain-disabled | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-disabled (color)          |
  */
 
 
@@ -113,6 +120,6 @@
    ========================================================================= */
 
 .tug-label-disabled {
-  opacity: var(--tugx-control-disabled-opacity);
+  color: var(--tug7-element-field-text-normal-plain-disabled);
   cursor: not-allowed;
 }
