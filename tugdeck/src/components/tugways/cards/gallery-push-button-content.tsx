@@ -11,8 +11,7 @@
  */
 
 import React, { useState } from "react";
-import { Star } from "lucide-react";
-import { TugButton } from "@/components/tugways/internal/tug-button";
+import { Star, ChevronDown } from "lucide-react";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
@@ -24,22 +23,32 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 
 /** All Table T01 emphasis x role combinations for the full matrix [D02, Table T01] */
 export const ALL_COMBOS: Array<{ emphasis: TugButtonEmphasis; role: TugButtonRole }> = [
+  // filled × all roles
   { emphasis: "filled",   role: "accent"  },
   { emphasis: "filled",   role: "action"  },
   { emphasis: "filled",   role: "danger"  },
+  { emphasis: "filled",   role: "data"    },
+  { emphasis: "filled",   role: "option"  },
+  // outlined × representative roles
+  { emphasis: "outlined", role: "accent"  },
   { emphasis: "outlined", role: "action"  },
+  { emphasis: "outlined", role: "danger"  },
+  // ghost × representative roles
+  { emphasis: "ghost",    role: "accent"  },
   { emphasis: "ghost",    role: "action"  },
   { emphasis: "ghost",    role: "danger"  },
 ];
 export const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
 export const ALL_SUBTYPES: TugButtonSubtype[] = ["text", "icon", "icon-text"];
+export const ALL_ROLES: TugButtonRole[] = ["accent", "action", "data", "danger", "option"];
+export const ALL_ROUNDED = ["none", "sm", "md", "lg", "full"] as const;
 
 // ---------------------------------------------------------------------------
 // SubtypeButton helper
 // ---------------------------------------------------------------------------
 
 /**
- * Renders the appropriate TugButton for a given subtype/variant/size combination
+ * Renders the appropriate TugPushButton for a given subtype/variant/size combination
  * in the full matrix display.
  */
 function SubtypeButton({
@@ -66,7 +75,7 @@ function SubtypeButton({
 
     case "icon":
       return (
-        <TugButton
+        <TugPushButton
           subtype="icon"
           emphasis={emphasis}
           role={role}
@@ -109,14 +118,32 @@ function SubtypeButton({
  */
 export function GalleryButtonsContent() {
   const [previewEmphasis, setPreviewEmphasis] = useState<TugButtonEmphasis>("outlined");
-  const [previewRole, setPreviewRole] = useState<TugButtonRole>("action");
+  // undefined means "accent (default)" — no role prop passed to the button
+  const [previewRole, setPreviewRole] = useState<TugButtonRole | undefined>(undefined);
   const [previewSize, setPreviewSize] = useState<TugButtonSize>("md");
   const [previewDisabled, setPreviewDisabled] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // Label for the role dropdown: undefined → "accent (default)"
+  const roleDropdownLabel = previewRole === undefined ? "accent (default)" : previewRole;
+
+  // Role dropdown items: first item is "accent (default)" which maps to undefined
+  const roleItems = [
+    { id: "__default__", label: "accent (default)" },
+    ...ALL_ROLES.filter((r) => r !== "accent").map((r) => ({ id: r, label: r })),
+  ];
+
+  const handleRoleSelect = (id: string) => {
+    if (id === "__default__") {
+      setPreviewRole(undefined);
+    } else {
+      setPreviewRole(id as TugButtonRole);
+    }
+  };
+
   return (
     <div className="cg-content" data-testid="gallery-buttons-content">
-      {/* ---- Interactive Controls ---- */}
+      {/* ---- Preview Controls ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Preview Controls</div>
         <div className="cg-controls">
@@ -135,13 +162,10 @@ export function GalleryButtonsContent() {
           <div className="cg-control-group">
             <span className="cg-control-label">Role</span>
             <TugPopupButton
-              label={previewRole}
+              label={roleDropdownLabel}
               size="sm"
-              items={(["accent", "action", "agent", "data", "danger"] as TugButtonRole[]).map((v) => ({
-                id: v,
-                label: v,
-              }))}
-              onSelect={(id) => setPreviewRole(id as TugButtonRole)}
+              items={roleItems}
+              onSelect={handleRoleSelect}
             />
           </div>
 
@@ -193,7 +217,7 @@ export function GalleryButtonsContent() {
           >
             Push
           </TugPushButton>
-          <TugButton
+          <TugPushButton
             subtype="icon"
             emphasis={previewEmphasis}
             role={previewRole}
@@ -213,6 +237,149 @@ export function GalleryButtonsContent() {
             icon={<Star size={14} />}
           >
             Icon + Text
+          </TugPushButton>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Trailing Icon ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugPushButton — Trailing Icon</div>
+        <div className="cg-variant-row">
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="md"
+            trailingIcon={<ChevronDown size={14} />}
+          >
+            Options
+          </TugPushButton>
+          <TugPushButton
+            emphasis="filled"
+            role="accent"
+            size="md"
+            trailingIcon={<ChevronDown size={14} />}
+          >
+            Select
+          </TugPushButton>
+          <TugPushButton
+            subtype="icon-text"
+            emphasis="outlined"
+            role="action"
+            size="md"
+            icon={<Star size={14} />}
+            trailingIcon={<ChevronDown size={14} />}
+          >
+            More
+          </TugPushButton>
+          <TugPushButton
+            emphasis="ghost"
+            role="action"
+            size="sm"
+            trailingIcon={<ChevronDown size={12} />}
+          >
+            Dropdown
+          </TugPushButton>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Rounded ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugPushButton — Border Radius (rounded prop)</div>
+        <div className="cg-variant-row">
+          {ALL_ROUNDED.map((r) => (
+            <TugPushButton
+              key={r}
+              emphasis="filled"
+              role="action"
+              size="md"
+              rounded={r}
+            >
+              {r}
+            </TugPushButton>
+          ))}
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Disabled (static) ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugPushButton — Disabled States</div>
+        <div className="cg-variant-row">
+          <TugPushButton emphasis="filled" role="action" size="md" disabled>
+            Filled
+          </TugPushButton>
+          <TugPushButton emphasis="outlined" role="action" size="md" disabled>
+            Outlined
+          </TugPushButton>
+          <TugPushButton emphasis="ghost" role="action" size="md" disabled>
+            Ghost
+          </TugPushButton>
+          <TugPushButton
+            subtype="icon"
+            emphasis="filled"
+            role="action"
+            size="md"
+            icon={<Star size={14} />}
+            aria-label="Disabled icon"
+            disabled
+          />
+          <TugPushButton
+            subtype="icon-text"
+            emphasis="outlined"
+            role="action"
+            size="md"
+            icon={<Star size={14} />}
+            disabled
+          >
+            Icon+Text
+          </TugPushButton>
+          <TugPushButton emphasis="filled" role="danger" size="md" disabled>
+            Danger
+          </TugPushButton>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Loading (static) ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugPushButton — Loading States</div>
+        <div className="cg-variant-row">
+          <TugPushButton emphasis="filled" role="action" size="md" loading>
+            Filled
+          </TugPushButton>
+          <TugPushButton emphasis="outlined" role="action" size="md" loading>
+            Outlined
+          </TugPushButton>
+          <TugPushButton emphasis="ghost" role="action" size="md" loading>
+            Ghost
+          </TugPushButton>
+          <TugPushButton
+            subtype="icon"
+            emphasis="filled"
+            role="action"
+            size="md"
+            icon={<Star size={14} />}
+            aria-label="Loading icon"
+            loading
+          />
+          <TugPushButton
+            subtype="icon-text"
+            emphasis="outlined"
+            role="action"
+            size="md"
+            icon={<Star size={14} />}
+            loading
+          >
+            Icon+Text
+          </TugPushButton>
+          <TugPushButton emphasis="filled" role="accent" size="md" loading>
+            Accent
           </TugPushButton>
         </div>
       </div>
