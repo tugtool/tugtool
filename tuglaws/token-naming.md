@@ -75,7 +75,7 @@ The UI component or system the token belongs to.
 
 The structural sub-part within a component. Different values are valid for each plane.
 
-**Element constituents:** `text` · `icon` · `border` · `shadow` · `divider` · `fill` · `thumb` · `dot` · `close` · `title` · `control`
+**Element constituents:** `text` · `icon` · `border` · `shadow` · `divider` · `fill` · `outline` · `thumb` · `dot` · `close` · `title` · `control`
 
 **Surface constituents:** `primary` · `track`
 

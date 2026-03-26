@@ -123,6 +123,7 @@ body {
   /* Element — Fill (Accent) */
   --tug7-element-global-fill-normal-accent-rest: --tug-color(orange, i: 100, t: 90);
   --tug7-element-global-fill-normal-accentCool-rest: --tug-color(indigo, i: 100, t: 10);
+  --tug7-element-global-outline-normal-accentCool-rest: --tug-color(indigo, i: 100, t: 10);
   --tug7-element-global-fill-normal-accentSubtle-rest: --tug-color(orange, t: 45, a: 10);
 
   /* Tone */
