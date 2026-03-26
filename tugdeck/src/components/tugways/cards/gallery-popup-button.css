@@ -1,90 +1,18 @@
 
 /* ============================================================================
-   Slider controls
+   Gallery: TugPopupButton + TugPopupMenu
    ========================================================================= */
 
 /**
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gpb-control-group-title (color)     |
- * | --tug7-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gpb-slider-label (color)            |
- * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .gpb-reset:hover (color)             |
- * | --tug7-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug7-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | informational | .gpb-context-bar (border)            |
- * | --tug7-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug7-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | informational | .gpb-context-label (color)           |
+ * | --tug7-element-global-text-normal-subtle-rest    | --tug7-surface-global-primary-normal-default-rest | informational | .gpb-demo-label (color)             |
+ * | --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-default-rest | informational | .gpb-status (color)                 |
+ * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-primary-normal-default-rest | content      | .gpb-status code (color)            |
+ * | --tug7-element-global-border-normal-muted-rest   | --tug7-surface-global-primary-normal-inset-rest  | informational | .gpb-context-bar (border)            |
+ * | --tug7-element-global-text-normal-subtle-rest    | --tug7-surface-global-primary-normal-inset-rest  | informational | .gpb-context-label (color)           |
  */
-
-
-.gpb-controls {
-  display: flex;
-  gap: 2rem;
-  flex-wrap: wrap;
-}
-
-.gpb-control-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  min-width: 12rem;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gpb-control-group-title {
-  font-size: 0.625rem;
-  font-weight: 600;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 0.125rem;
-}
-
-.gpb-slider {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gpb-slider-label {
-  font-size: 0.625rem;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-  min-width: 3rem;
-  text-align: right;
-}
-
-.gpb-slider-input {
-  flex: 1;
-  height: 4px;
-  accent-color: var(--tug7-element-tone-fill-normal-active-rest);
-  cursor: pointer;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gpb-slider-value {
-  font-size: 0.625rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  min-width: 2.5rem;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gpb-reset {
-  background: none;
-  border: none;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-  font-size: 0.625rem;
-  cursor: pointer;
-  padding: 0 0.25rem;
-  margin-left: 0.5rem;
-  text-transform: lowercase;
-  letter-spacing: 0.02em;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gpb-reset:hover {
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
 
 /* ============================================================================
    Demo layout

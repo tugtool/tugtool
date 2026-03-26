@@ -1,12 +1,8 @@
 /**
- * GalleryPopupButton — TugPopupButton gallery tab with design sliders.
+ * GalleryPopupButton — TugPopupButton and TugPopupMenu demos for the Component Gallery.
  *
- * Provides interactive controls for tuning button and menu border-radius,
- * plus demos of TugPopupButton in various contexts.
- *
- * Because Radix renders the menu content into a portal at the document root,
- * CSS custom property scoping does not work. Instead, a <style> element is
- * injected into <head> with the slider-driven overrides.
+ * Shows TugPopupButton (the convenience wrapper with fixed outlined-option style)
+ * and TugPopupMenu (the headless menu composed with custom triggers).
  */
 
 import React, { useState } from "react";
@@ -51,7 +47,7 @@ export function GalleryPopupButton() {
 
       {/* ---- Standard TugPopupButton (outlined-option) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPopupButton — Standard (outlined-option)</div>
+        <div className="cg-section-title">TugPopupButton — Convenience Wrapper</div>
         <div className="gpb-demo-row">
           {ALL_SIZES.map((size) => (
             <div key={size} className="gpb-demo-item">
@@ -76,7 +72,7 @@ export function GalleryPopupButton() {
 
       {/* ---- Custom triggers via TugPopupMenu ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugPopupMenu — Custom Triggers</div>
+        <div className="cg-section-title">TugPopupMenu — Direct Usage (Custom Triggers)</div>
         <div className="gpb-demo-row">
           <div className="gpb-demo-item">
             <span className="gpb-demo-label">filled-accent</span>
