@@ -7,8 +7,8 @@
  *
  * **Authoritative references:**
  * - [L06] Appearance changes go through CSS and DOM, never React state
- * - [L16] Components accept and forward arbitrary HTML attributes via rest props
- * - [L19] Presentational components use forwardRef for ref forwarding
+ * - [L16] Every foreground rule declares its rendering surface
+ * - [L19] Component authoring guide
  * - [D01] DOM measurement for full widths, fixed constant for icon-only
  * - [D02] Overflow state split across appearance and structural zones
  * - [D03] Tab bar uses the Tugcard accessory slot
@@ -17,6 +17,7 @@
 
 import "./tug-tab-bar.css";
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { icons } from "lucide-react";
 import type { TabItem } from "@/layout-tree";
 import { getAllRegistrations } from "@/card-registry";
@@ -70,15 +71,12 @@ export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div
 // ---- Helpers ----
 
 /**
- * Render a lucide icon by name, or null if the name is absent or unrecognised.
- * Mirrors the pattern in tugcard.tsx.
- */
-/**
  * Fallback icon name used when a registration does not specify an icon.
  * Ensures all tabs render an icon and can collapse to icon-only mode.
  */
 const DEFAULT_TAB_ICON = "Diamond";
 
+/** Render a lucide icon by name, or null if the name is absent or unrecognised. */
 function renderIcon(iconName: string | undefined): React.ReactNode {
   const name = iconName ?? DEFAULT_TAB_ICON;
   const IconComponent = icons[name as keyof typeof icons] ?? icons[DEFAULT_TAB_ICON as keyof typeof icons];
@@ -355,6 +353,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     onTabAdd,
     acceptedFamilies,
     onOverflowChange,
+    className,
     ...rest
   }: TugTabBarProps,
   ref,
@@ -423,7 +422,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   return (
     <div
       ref={setRefs}
-      className="tug-tab-bar"
+      className={cn("tug-tab-bar", className)}
       role="tablist"
       data-slot="tug-tab-bar"
       data-testid="tug-tab-bar"

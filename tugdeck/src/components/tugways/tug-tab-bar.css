@@ -11,7 +11,7 @@
  *   --tugx-tab-close-fg-hover | --tugx-tab-close-bg-hover | content
  *   --tug7-element-global-text-normal-muted-rest | --tug7-surface-tab-primary-normal-plain-inactive | informational
  *   --tug7-element-control-text-ghost-option-active | --tug7-surface-control-primary-ghost-option-active | control
- *   --tug7-surface-global-primary-normal-default-rest | --tugx-tab-badge-bg | content
+ *   --tug7-element-global-text-normal-inverse-rest | --tugx-tab-badge-bg | content
  *   --tug7-element-global-border-normal-default-rest | --tug7-surface-global-primary-normal-control-rest | informational
  *   --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-control-rest | content
  *   --tug7-element-global-fill-normal-accent-rest | --tug7-surface-global-primary-normal-control-rest | content
@@ -28,7 +28,7 @@
  * | --tugx-tab-close-fg-hover                        | --tugx-tab-close-bg-hover                        | content      | .tug-tab-close:hover (color)         |
  * | --tug7-element-global-text-normal-muted-rest      | --tug7-surface-tab-primary-normal-plain-inactive | informational | .tug-tab-bar .tug-tab-add (color)    |
  * | --tug7-element-control-text-ghost-option-active   | --tug7-surface-control-primary-ghost-option-active | control    | .tug-tab-bar .tug-tab-add[data-state="open"] (color) |
- * | --tug7-surface-global-primary-normal-default-rest | --tugx-tab-badge-bg                              | content      | .tug-tab-overflow-badge (color)      |
+ * | --tug7-element-global-text-normal-inverse-rest    | --tugx-tab-badge-bg                              | content      | .tug-tab-overflow-badge (color)      |
  * | --tug7-element-global-border-normal-default-rest  | --tug7-surface-global-primary-normal-control-rest | informational | .tug-tab-ghost (border)             |
  * | --tug7-element-global-text-normal-default-rest    | --tug7-surface-global-primary-normal-control-rest | content     | .tug-tab-ghost (color)               |
  * | --tug7-element-global-fill-normal-accent-rest     | --tug7-surface-global-primary-normal-control-rest | content     | .tug-tab-bar[data-drop-target="true"] (border-bottom-color) |
@@ -273,7 +273,7 @@ body {
   padding: 0 var(--tug-space-xs);
   border-radius: var(--tug-radius-lg);
   background-color: var(--tugx-tab-badge-bg);
-  color: var(--tug7-surface-global-primary-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-inverse-rest);
   font-size: var(--tug-font-size-2xs);
   font-weight: 600;
   line-height: 1;
