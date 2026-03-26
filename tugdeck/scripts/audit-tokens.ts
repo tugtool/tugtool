@@ -43,7 +43,7 @@ const PAIRING_MAP_PATH = path.join(TUGWAYS, "theme-pairings.ts");
 const COMPONENT_CSS_FILES = [
   "tug-button.css",
   "tug-card.css",
-  "tug-tab.css",
+  "tug-tab-bar.css",
   "tug-menu.css",
   "tug-dialog.css",
   "tug-badge.css",

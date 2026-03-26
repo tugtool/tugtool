@@ -1,23 +1,21 @@
 /**
- * TugTabBar -- presentational tab strip for multi-tab Tugcards.
+ * TugTabBar — presentational tab strip for multi-tab Tugcards.
  *
  * Renders in the Tugcard accessory slot when a card has more than one tab.
  * Purely presentational: no DeckManager coupling. All state changes flow
  * through callback props to DeckManager which updates CardState.
  *
  * **Authoritative references:**
+ * - [L06] Appearance changes go through CSS and DOM, never React state
+ * - [L16] Components accept and forward arbitrary HTML attributes via rest props
+ * - [L19] Presentational components use forwardRef for ref forwarding
  * - [D01] DOM measurement for full widths, fixed constant for icon-only
  * - [D02] Overflow state split across appearance and structural zones
  * - [D03] Tab bar uses the Tugcard accessory slot
  * - [D04] Replace overflow-x: auto with overflow-x: hidden
- * - Spec S01: TugTabBarProps
- * - Spec S03: DOM data attributes for overflow state
- * - Spec S08: Tab drag initiation (threshold + coordinator.startDrag)
- * - Table T01: Tab visual states
- * - (#s01-tab-bar-props, #t01-tab-visual-states, #d03-tab-bar-accessory,
- *   #s08-tab-bar-drag-init, #tab-bar-drag-integration)
  */
 
+import "./tug-tab-bar.css";
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { icons } from "lucide-react";
 import type { TabItem } from "@/layout-tree";
@@ -32,16 +30,13 @@ import {
   OVERFLOW_BUTTON_WIDTH,
   type TabMeasurement,
 } from "@/tab-overflow";
-import "./tug-tab.css";
 
-// ---- Types (Spec S01) ----
+// ---- Types ----
 
 /**
  * Props for TugTabBar.
- *
- * **Authoritative reference:** Spec S01 TugTabBarProps.
  */
-export interface TugTabBarProps {
+export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div">, "role"> {
   /** Unique card instance ID. Stamped as data-card-id on the bar div so the
    *  TabDragCoordinator's hit-test cache can locate this bar at drag-start. */
   cardId: string;
@@ -60,7 +55,7 @@ export interface TugTabBarProps {
    * Only registrations whose `family` matches one of these strings appear.
    * Defaults to `["standard"]` when omitted.
    *
-   * **Authoritative reference:** [D03] acceptsFamilies field, Spec S05.
+   * **Authoritative reference:** [D03] acceptsFamilies field.
    */
   acceptedFamilies?: readonly string[];
   /**
@@ -97,11 +92,11 @@ function renderIcon(iconName: string | undefined): React.ReactNode {
  * useTabOverflow -- ResizeObserver-driven tab overflow management.
  *
  * Attaches a ResizeObserver to the tab bar container. On each observation:
- * 1. Guards against mutations during an active drag gesture [Risk R03].
+ * 1. Guards against mutations during an active drag gesture.
  * 2. Measures tab widths via getBoundingClientRect (appearance-zone reads).
  * 3. Calls computeOverflow() to partition tabs into visible/collapsed/overflow.
  * 4. Applies per-tab data-overflow attributes imperatively via requestAnimationFrame
- *    (appearance-zone writes, no React state) [D02, D08, D09].
+ *    (appearance-zone writes, no React state) [D02].
  * 5. Updates overflowTabs React state only when the set of overflow IDs
  *    changes (structural-zone change: controls overflow button rendering) [D02].
  *
@@ -113,12 +108,8 @@ function renderIcon(iconName: string | undefined): React.ReactNode {
  * The ResizeObserver handles container resize automatically (card resize,
  * window resize) via its observation of the bar element.
  *
- * **Authoritative references:**
- * - [D01] DOM measurement, fixed constant for icon-only widths
- * - [D02] Appearance-zone vs. structural boundary
- * - Risk R01: ResizeObserver loop mitigated by requestAnimationFrame write deferral
- * - Risk R02: Measurement timing mitigated by useLayoutEffect
- * - Risk R03: Drag guard skips recalculation during active drag
+ * ResizeObserver loop is mitigated by requestAnimationFrame write deferral. [L06]
+ * Measurement timing is mitigated by useLayoutEffect. [L03]
  *
  * @param barRef    Ref to the tab bar container div.
  * @param tabs      Ordered array of tab items.
@@ -166,13 +157,13 @@ function useTabOverflow(
      * Called from the ResizeObserver callback (and immediately on first mount).
      *
      * Reads are synchronous; DOM attribute writes are deferred to RAF
-     * to avoid ResizeObserver loop warnings [Risk R01].
+     * to avoid ResizeObserver loop warnings.
      */
     function runOverflow() {
       const barEl = barRef.current;
       if (!barEl) return;
 
-      // [Risk R03] Skip recalculation during an active drag gesture.
+      // Skip recalculation during an active drag gesture.
       if (tabDragCoordinator.isDragging) return;
 
       // --- Measurements (synchronous reads) ---
@@ -234,7 +225,7 @@ function useTabOverflow(
         addButtonWidth,
       );
 
-      // --- DOM writes deferred to RAF [Risk R01] ---
+      // --- DOM writes deferred to RAF ---
 
       if (rafIdRef.current !== null) {
         cancelAnimationFrame(rafIdRef.current);
@@ -306,7 +297,7 @@ function useTabOverflow(
 
     // Attach ResizeObserver to the bar element. The observer fires after
     // layout (post-paint), ensuring getBoundingClientRect is accurate.
-    // [Risk R02] useLayoutEffect guarantees DOM is committed before attach.
+    // useLayoutEffect guarantees DOM is committed before attach. [L03]
     const observer = new ResizeObserver(() => {
       runOverflow();
     });
@@ -334,7 +325,7 @@ function useTabOverflow(
  * TugTabBar -- horizontal tab strip component.
  *
  * Renders each tab as a button with an optional icon and title.
- * The active tab has `data-active="true"` set for CSS targeting (Table T01).
+ * The active tab has `data-active="true"` set for CSS targeting.
  * A [+] button at the end opens a TugPopupMenu type picker listing all
  * registered card types; selecting one calls `onTabAdd(componentId)`.
  *
@@ -349,23 +340,37 @@ function useTabOverflow(
  * `tabDragCoordinator.startDrag()` is called, which acquires pointer capture
  * and takes over the drag gesture. Sub-threshold pointer moves do not
  * interfere with the click event sequence, so click-to-select still works.
- * [D01, Spec S08]
+ * [D01]
  *
  * All interactive elements have `user-select: none` (enforced in CSS).
- * All appearance changes go through CSS `data-active` attribute, never React state.
+ * All appearance changes go through CSS `data-active` attribute, never React state. [L06]
  */
-export function TugTabBar({
-  cardId,
-  tabs,
-  activeTabId,
-  onTabSelect,
-  onTabClose,
-  onTabAdd,
-  acceptedFamilies,
-  onOverflowChange,
-}: TugTabBarProps) {
+export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(function TugTabBar(
+  {
+    cardId,
+    tabs,
+    activeTabId,
+    onTabSelect,
+    onTabClose,
+    onTabAdd,
+    acceptedFamilies,
+    onOverflowChange,
+    ...rest
+  }: TugTabBarProps,
+  ref,
+) {
   // Ref for the tab bar container, used by useTabOverflow. [D02]
   const barRef = useRef<HTMLDivElement>(null);
+
+  // Merge the forwarded ref with the internal barRef.
+  const setRefs = (el: HTMLDivElement | null) => {
+    (barRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    if (typeof ref === "function") {
+      ref(el);
+    } else if (ref) {
+      (ref as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    }
+  };
 
   // Overflow hook: attaches ResizeObserver, applies appearance-zone DOM
   // attributes, returns structural-zone overflowTabs for dropdown rendering.
@@ -417,11 +422,13 @@ export function TugTabBar({
 
   return (
     <div
-      ref={barRef}
+      ref={setRefs}
       className="tug-tab-bar"
       role="tablist"
+      data-slot="tug-tab-bar"
       data-testid="tug-tab-bar"
       data-card-id={cardId}
+      {...rest}
     >
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
@@ -440,7 +447,7 @@ export function TugTabBar({
         const iconNode = renderIcon(iconName);
 
         /**
-         * Drag initiation with 5px threshold. [D01, Spec S08]
+         * Drag initiation with 5px threshold. [D01]
          *
          * On pointerdown: register document-level pointermove/pointerup to
          * track movement without acquiring pointer capture. This preserves the
@@ -561,4 +568,4 @@ export function TugTabBar({
       />
     </div>
   );
-}
+});

@@ -3,50 +3,50 @@
    Component Token Definitions
    ========================================================================= */
 
+/* @tug-pairings {
+ *   --tug7-element-global-border-normal-default-rest | --tugx-tab-bar-bg | content
+ *   --tugx-tab-fg-rest | --tug7-surface-tab-primary-normal-plain-inactive | content
+ *   --tugx-tab-fg-active | --tugx-tab-bg-active | content
+ *   --tugx-tab-fg-hover | --tugx-tab-bg-hover | content
+ *   --tugx-tab-close-fg-hover | --tugx-tab-close-bg-hover | content
+ *   --tug7-element-global-text-normal-muted-rest | --tug7-surface-tab-primary-normal-plain-inactive | informational
+ *   --tug7-element-control-text-ghost-option-active | --tug7-surface-control-primary-ghost-option-active | control
+ *   --tug7-surface-global-primary-normal-default-rest | --tugx-tab-badge-bg | content
+ *   --tug7-element-global-border-normal-default-rest | --tug7-surface-global-primary-normal-control-rest | informational
+ *   --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-control-rest | content
+ *   --tug7-element-global-fill-normal-accent-rest | --tug7-surface-global-primary-normal-control-rest | content
+ * } */
+
 /**
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tugx-tab-bar-bg (tab-bar-bg)                    | content      | .tug-tab-bar (border-bottom)         |
- * | --tugx-tab-fg-rest (tab-fg-rest)                  | --tug7-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | content      | .tug-tab (color)                     |
- * | --tugx-tab-fg-active (tab-fg-active)              | --tugx-tab-bg-active (tab-bg-active)              | content      | .tug-tab[data-active="true"] (color) |
- * | --tugx-tab-fg-hover (tab-fg-hover)                | --tugx-tab-bg-hover (tab-bg-hover)                | content      | .tug-tab:not([data-active="true"]):hover (color) |
- * | --tugx-tab-close-fg-hover (tab-close-fg-hover)    | --tugx-tab-close-bg-hover (tab-close-bg-hover)    | content      | .tug-tab-close:hover (color)         |
- * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-tab-primary-normal-plain-inactive (surface-tab-primary-normal-plain-inactive) | informational | .tug-tab-bar .tug-tab-add (color)    |
- * | --tug7-element-control-text-ghost-option-active (element-control-text-ghost-option-active) | --tug7-surface-control-primary-ghost-option-active (surface-control-primary-ghost-option-active) | control      | .tug-tab-bar .tug-tab-add[data-state="open"] (color) |
- * | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | --tugx-tab-badge-bg (tab-badge-bg)                | content      | .tug-tab-overflow-badge (color)      |
- * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | informational | .tug-tab-ghost (border)              |
- * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .tug-tab-ghost (color)               |
- * | --tug7-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug7-surface-global-primary-normal-control-rest (surface-global-primary-normal-control-rest) | content      | .tug-tab-bar[data-drop-target="true"] (border-bottom-color) |
+ * | --tug7-element-global-border-normal-default-rest | --tugx-tab-bar-bg                                | content      | .tug-tab-bar (border-bottom)         |
+ * | --tugx-tab-fg-rest                               | --tug7-surface-tab-primary-normal-plain-inactive | content      | .tug-tab (color)                     |
+ * | --tugx-tab-fg-active                             | --tugx-tab-bg-active                             | content      | .tug-tab[data-active="true"] (color) |
+ * | --tugx-tab-fg-hover                              | --tugx-tab-bg-hover                              | content      | .tug-tab:not([data-active="true"]):hover (color) |
+ * | --tugx-tab-close-fg-hover                        | --tugx-tab-close-bg-hover                        | content      | .tug-tab-close:hover (color)         |
+ * | --tug7-element-global-text-normal-muted-rest      | --tug7-surface-tab-primary-normal-plain-inactive | informational | .tug-tab-bar .tug-tab-add (color)    |
+ * | --tug7-element-control-text-ghost-option-active   | --tug7-surface-control-primary-ghost-option-active | control    | .tug-tab-bar .tug-tab-add[data-state="open"] (color) |
+ * | --tug7-surface-global-primary-normal-default-rest | --tugx-tab-badge-bg                              | content      | .tug-tab-overflow-badge (color)      |
+ * | --tug7-element-global-border-normal-default-rest  | --tug7-surface-global-primary-normal-control-rest | informational | .tug-tab-ghost (border)             |
+ * | --tug7-element-global-text-normal-default-rest    | --tug7-surface-global-primary-normal-control-rest | content     | .tug-tab-ghost (color)               |
+ * | --tug7-element-global-fill-normal-accent-rest     | --tug7-surface-global-primary-normal-control-rest | content     | .tug-tab-bar[data-drop-target="true"] (border-bottom-color) |
  */
 
 
 body {
   --tugx-tab-bar-bg: var(--tug7-surface-tab-primary-normal-plain-inactive);
-  --tugx-tab-bg-rest: transparent;
   --tugx-tab-bg-hover: var(--tug7-surface-tab-primary-normal-plain-hover);
   --tugx-tab-bg-active: var(--tug7-surface-tab-primary-normal-plain-active);
-  --tugx-tab-bg-compact: --tug-color(white, i: 0, t: 100, a: 4);
   --tugx-tab-fg-rest: var(--tug7-element-tab-text-normal-plain-rest);
   --tugx-tab-fg-hover: var(--tug7-element-tab-text-normal-plain-hover);
   --tugx-tab-fg-active: var(--tug7-element-tab-text-normal-plain-active);
-  --tugx-tab-fg-compact: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-tab-close-bg-hover: var(--tug7-surface-tab-close-normal-plain-hover);
   --tugx-tab-close-fg-hover: var(--tug7-element-tab-close-normal-plain-hover);
   --tugx-tab-underline-active: var(--tug7-element-global-fill-normal-accent-rest);
-  --tugx-tab-dropTarget-bg: var(--tug7-surface-highlight-primary-normal-preview-rest);
-  --tugx-tab-dropTarget-border: var(--tug7-element-global-icon-normal-active-rest);
   --tugx-tab-badge-bg: var(--tug7-element-global-fill-normal-accent-rest);
-  --tugx-tab-badge-fg: var(--tug7-element-global-text-normal-inverse-rest);
-  --tugx-tab-ghost-bg: --tug-color(white, i: 0, t: 100, a: 4);
-  --tugx-tab-ghost-border: --tug-color(white, i: 0, t: 100, a: 8);
   --tugx-tab-insertIndicator: var(--tug7-element-global-fill-normal-accent-rest);
-  --tugx-tab-overflow-trigger-bg: var(--tug7-surface-overlay-primary-normal-highlight-rest);
-  --tugx-tab-overflow-trigger-fg: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-tab-add-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
-  --tugx-tab-add-fg: var(--tug7-element-global-text-normal-subtle-rest);
-  --tugx-tab-typePicker-bg: var(--tug7-surface-global-primary-normal-default-rest);
-  --tugx-tab-typePicker-fg: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ============================================================================
@@ -65,7 +65,7 @@ body {
   border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
   user-select: none;
   /* Required so absolutely-positioned insertion indicator is positioned
-     relative to the tab bar (Spec S06). */
+     relative to the tab bar. */
   position: relative;
 }
 
@@ -99,22 +99,21 @@ body {
     color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
 }
 
-/* Active tab (Table T01) */
+/* Active tab */
 .tug-tab[data-active="true"] {
   background-color: var(--tugx-tab-bg-active);
   color: var(--tugx-tab-fg-active);
   box-shadow: inset 0 -2px 0 0 var(--tugx-tab-underline-active);
 }
 
-/* Inactive tab hover (Table T01) */
+/* Inactive tab hover */
 .tug-tab:not([data-active="true"]):hover {
   background-color: var(--tugx-tab-bg-hover);
   color: var(--tugx-tab-fg-hover);
 }
 
 /* ============================================================================
-   Tab Overflow States (Phase 5b4)
-   Spec S03: DOM data attributes for overflow state
+   Tab Overflow States
    [D02] Imperative DOM attribute application
    ============================================================================ */
 
@@ -160,7 +159,7 @@ body {
 }
 
 /* ============================================================================
-   Close Button (per Table T01)
+   Close Button
    ============================================================================ */
 
 .tug-tab-close {
@@ -184,12 +183,12 @@ body {
     background-color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
 }
 
-/* Close button always visible on active tab (Table T01) */
+/* Close button always visible on active tab */
 .tug-tab[data-active="true"] .tug-tab-close {
   opacity: 1;
 }
 
-/* Close button visible on hover for inactive tabs (Table T01) */
+/* Close button visible on hover for inactive tabs */
 .tug-tab:not([data-active="true"]):hover .tug-tab-close {
   opacity: 1;
 }
@@ -204,14 +203,13 @@ body {
    Add Tab [+] Button
    [D07] Tab bar triggers use TugButton with ghost-option role via TugPopupMenu
    [D10] Tab bar buttons adopt TugButton ghost-option hover
-   Spec S06: Tab bar trigger CSS overrides
    ============================================================================ */
 
 /*
  * .tug-tab-add is applied to a TugButton passed as the trigger prop to
  * TugPopupMenu. TugPopupMenu does not inject a trailing icon (no chevron). [D07]
  * Compound selector (specificity 0,2,0) overrides TugButton defaults (0,1,0).
- * border-radius uses !important because TugButton applies it via inline style. [S06]
+ * border-radius uses !important because TugButton applies it via inline style.
  */
 /* @tug-renders-on: --tug7-surface-tab-primary-normal-plain-inactive */
 .tug-tab-bar .tug-tab-add {
@@ -237,14 +235,13 @@ body {
    Overflow Popup Menu Button
    [D07] Tab bar triggers use TugButton with ghost-option role via TugPopupMenu
    [D10] Tab bar buttons adopt TugButton ghost-option hover
-   Spec S06: Tab bar trigger CSS overrides
    ============================================================================ */
 
 /*
  * .tug-tab-overflow-btn is applied to a TugButton passed as the trigger prop to
  * TugPopupMenu. TugPopupMenu does not inject a trailing icon (no chevron). [D07]
  * Compound selector (specificity 0,2,0) overrides TugButton defaults (0,1,0).
- * border-radius uses !important because TugButton applies it via inline style. [S06]
+ * border-radius uses !important because TugButton applies it via inline style.
  * Width matches OVERFLOW_BUTTON_WIDTH (40px) for measurement bootstrap.
  */
 /* @tug-renders-on: --tug7-surface-tab-primary-normal-plain-inactive */
@@ -284,8 +281,7 @@ body {
 }
 
 /* ============================================================================
-   Tab Drag Visual Feedback (Phase 5b2)
-   Spec S05: Ghost Tab, Spec S06: Insertion Indicator, Spec S07: Drop-Target
+   Tab Drag Visual Feedback
    ============================================================================ */
 
 /* Ghost tab -- imperatively created DOM element appended to #deck-container.
@@ -312,7 +308,7 @@ body {
 }
 
 /* Insertion indicator -- thin vertical bar injected into the targeted tab bar.
-   Positioned via style.left during drag. [Spec S06] */
+   Positioned via style.left during drag. */
 .tug-tab-insert-indicator {
   position: absolute;
   top: 0;
@@ -323,7 +319,7 @@ body {
   transition: left var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
 }
 
-/* Drop-target highlight on multi-tab card tab bars. [Spec S07] */
+/* Drop-target highlight on multi-tab card tab bars. */
 .tug-tab-bar[data-drop-target="true"] {
   background-color: var(--tug7-surface-global-primary-normal-control-rest);
   border-bottom-color: var(--tug7-element-global-fill-normal-accent-rest);
@@ -331,7 +327,7 @@ body {
 
 /* Drop-target highlight on single-tab card accessory divs.
    Reveals a visible drop zone for cards with no tab bar.
-   [D05, Spec S07] */
+   [D05] */
 .tugcard-accessory[data-drop-target="true"] {
   min-height: var(--tug-chrome-height);
   background-color: var(--tug7-surface-global-primary-normal-control-rest);
@@ -348,10 +344,10 @@ body {
 }
 
 /* ============================================================================
-   Card-Drag Merge Drop Target (Phase 5b5, [D45])
+   Card-Drag Merge Drop Target ([D45])
    Applied imperatively via data-card-drag-target="true" by CardFrame's
    drag handler during a card drag over another card's tab bar.
-   Appearance changes go through CSS and DOM, never React state. [Rule 4]
+   Appearance changes go through CSS and DOM, never React state. [L06]
    ============================================================================ */
 
 /* Highlight the target tab bar when a card frame is dragged over it. */
