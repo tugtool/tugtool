@@ -12,7 +12,7 @@ import {
   readHostCanvasColorFromAppliedCss,
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
-import { registerHelloCard } from "./components/tugways/cards/hello-card";
+import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
@@ -71,7 +71,7 @@ if (!container) {
   // Register card types before DeckManager construction so addCard("hello") works
   // from the first render. Additional card types (settings, about, etc.) will be
   // registered in Phase 9.
-  registerHelloCard();
+  registerHelloWorldCard();
   registerGalleryCards();
 
   // Initialize the cascade inspector in dev mode only. The cleanup function is

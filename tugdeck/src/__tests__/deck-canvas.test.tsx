@@ -36,7 +36,7 @@ import { ResponderChainProvider } from "@/components/tugways/responder-chain-pro
 import { DeckManagerContext } from "@/deck-manager-context";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
-import { registerHelloCard } from "@/components/tugways/cards/hello-card";
+import { registerHelloWorldCard } from "@/components/tugways/cards/hello-world-card";
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-card";
 import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
@@ -1131,9 +1131,9 @@ describe("DeckCanvas – T22: single-tab card accessory has data-card-id for dro
   afterEach(() => { _resetForTest(); cleanup(); });
 
   it("T22: single-tab Tugcard renders .tugcard-accessory[data-card-id] for coordinator merge target", () => {
-    // Use registerHelloCard whose factory renders a real <Tugcard>, which is
+    // Use registerHelloWorldCard whose factory renders a real <Tugcard>, which is
     // the component that sets data-card-id on .tugcard-accessory. [D05, Spec S07]
-    registerHelloCard();
+    registerHelloWorldCard();
 
     const singleTabCard: CardState = {
       id: "single-card",
