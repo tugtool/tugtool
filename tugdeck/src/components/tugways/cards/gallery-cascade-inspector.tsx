@@ -4,7 +4,7 @@
  * Interactive demo tab for the StyleInspectorOverlay cascade inspector.
  * Provides a set of sample elements that exercise all token chain depths:
  *
- *   (a) TugPopupButton -- full three-layer chain: --tug-dropdown-* -> --tug-* -> palette
+ *   (a) TugPopupButton -- full three-layer chain: --tugx-menu-* -> --tug-* -> palette
  *   (b) TugButton -- two-layer chain: --tug-* -> palette (no comp token)
  *   (c) Colored div using --tug7-element-global-fill-normal-accent-rest -- base -> palette chain
  *   (d) Div using --tug7-surface-global-primary-normal-raised-rest -- non-chromatic base token, terminal hex
@@ -73,13 +73,13 @@ export function GalleryCascadeInspector() {
 
       <div className="cg-divider" />
 
-      {/* ---- (a) TugPopupButton: three-layer chain --tug-dropdown-* -> --tug-* -> palette ---- */}
+      {/* ---- (a) TugPopupButton: three-layer chain --tugx-menu-* -> --tug-* -> palette ---- */}
       <div className="cg-section">
         <div className="cg-section-title">
           (a) TugPopupButton — three-layer chain
         </div>
         <p className="cg-description">
-          <code>--tug-dropdown-*</code> →{" "}
+          <code>--tugx-menu-*</code> →{" "}
           <code>--tug-*</code> → palette variable
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-dropdown">

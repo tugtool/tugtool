@@ -5,7 +5,6 @@
  * Composed by TugPopupButton (convenience wrapper) and TugTabBar (overflow/add menus).
  *
  * Wraps @radix-ui/react-dropdown-menu directly (no shadcn intermediary).
- * Unlike TugDropdown, TugPopupMenu does NOT own its trigger button.
  * Callers pass a `trigger` ReactNode; TugPopupMenu wraps it in a Radix
  * Trigger with asChild, so the caller's element becomes the trigger.
  *
@@ -13,12 +12,8 @@
  * presentation: TugPopupButton passes a styled TugButton; tab bar triggers
  * pass TugButton ghost-option elements without chevrons.
  *
- * CSS class names `tug-dropdown-content` and `tug-dropdown-item` are
- * preserved intentionally to avoid a CSS rename sweep. [D05]
- *
  * **Authoritative references:**
  * - [D02] TugPopupMenu takes a single ReactNode trigger prop
- * - [D05] Preserve CSS class names from TugDropdown
  *
  * **Law citations:** [L06] [L11] [L19]
  */
@@ -31,12 +26,7 @@ import { animate } from "@/components/tugways/tug-animator";
 
 // ---- Types ----
 
-/**
- * A single item in a TugPopupMenu.
- *
- * Identical to the former TugDropdownItem interface.
- * [D05] Preserves the same shape to ease migration.
- */
+/** A single item in a TugPopupMenu. */
 export interface TugPopupMenuItem {
   /** Unique identifier for this item. Passed to onSelect when clicked. */
   id: string;
@@ -86,11 +76,7 @@ export interface TugPopupMenuProps {
  * elements.
  *
  * The trigger is the caller-provided ReactNode, wrapped in Radix Trigger asChild.
- * This is the architectural inversion from TugDropdown: the trigger owns the menu
- * rather than the menu owning the trigger. [D02]
- *
- * CSS class names are preserved from TugDropdown (tug-dropdown-content,
- * tug-dropdown-item) to avoid a CSS rename sweep. [D05]
+ * The caller owns trigger presentation; the menu owns dropdown behavior. [D02]
  *
  * Selection behavior ([L06], [D01]):
  * - `onSelect` is intercepted; Radix close is prevented via event.preventDefault().
@@ -183,7 +169,7 @@ export function TugPopupMenu({
       </DropdownMenuPrimitive.Trigger>
       <DropdownMenuPrimitive.Portal>
         <DropdownMenuPrimitive.Content
-          className="tug-dropdown-content"
+          className="tug-menu-content"
           align={align}
           sideOffset={sideOffset}
           data-testid={dataTestId}
@@ -191,16 +177,16 @@ export function TugPopupMenu({
           {items.map((item) => (
             <DropdownMenuPrimitive.Item
               key={item.id}
-              className="tug-dropdown-item"
+              className="tug-menu-item"
               disabled={item.disabled}
               onSelect={(event) => handleItemSelect(item.id, event)}
             >
               {item.icon !== undefined && (
-                <span className="tug-dropdown-item-icon" aria-hidden="true">
+                <span className="tug-menu-item-icon" aria-hidden="true">
                   {item.icon}
                 </span>
               )}
-              <span className="tug-dropdown-item-label">{item.label}</span>
+              <span className="tug-menu-item-label">{item.label}</span>
             </DropdownMenuPrimitive.Item>
           ))}
         </DropdownMenuPrimitive.Content>

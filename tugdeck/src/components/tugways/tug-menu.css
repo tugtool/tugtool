@@ -22,9 +22,9 @@
  *   --tug7-element-control-text-filled-danger-active | --tug7-surface-control-primary-filled-danger-active | control
  *   --tug7-element-control-border-filled-danger-active | --tug7-surface-control-primary-filled-danger-active | control
  *   --tug7-element-control-icon-filled-danger-active | --tug7-surface-control-primary-filled-danger-active | control
- *   --tugx-dropdown-border | --tugx-dropdown-bg | informational
- *   --tugx-dropdown-fg | --tugx-dropdown-bg | content
- *   --tugx-dropdown-fg | --tug7-surface-global-primary-normal-overlay-rest | content
+ *   --tugx-menu-border | --tugx-menu-bg | informational
+ *   --tugx-menu-fg | --tugx-menu-bg | content
+ *   --tugx-menu-fg | --tug7-surface-global-primary-normal-overlay-rest | content
  *   --tug7-element-control-text-filled-action-hover | --tug7-surface-control-primary-filled-action-hover | control
  * } */
 
@@ -50,10 +50,10 @@
  * | --tug7-element-control-text-filled-danger-active | --tug7-surface-control-primary-filled-danger-active | control      | .tug-button-filled-danger[data-state="open"] |
  * | --tug7-element-control-border-filled-danger-active | --tug7-surface-control-primary-filled-danger-active | control      | .tug-button-filled-danger[data-state="open"] |
  * | --tug7-element-control-icon-filled-danger-active | --tug7-surface-control-primary-filled-danger-active | control      | .tug-button-filled-danger[data-state="open"] svg |
- * | --tugx-dropdown-border          | --tugx-dropdown-bg                  | informational | .tug-dropdown-content       |
- * | --tugx-dropdown-fg                  | --tugx-dropdown-bg                  | content      | .tug-dropdown-content        |
- * | --tugx-dropdown-fg                  | --tug7-surface-global-primary-normal-overlay-rest | content      | .tug-dropdown-item           |
- * | --tug7-element-control-text-filled-action-hover | --tug7-surface-control-primary-filled-action-hover | control      | .tug-dropdown-item:hover:not([data-disabled]), .tug-dropdown-item[data-highlighted]:not([data-disabled]) |
+ * | --tugx-menu-border          | --tugx-menu-bg                  | informational | .tug-menu-content       |
+ * | --tugx-menu-fg                  | --tugx-menu-bg                  | content      | .tug-menu-content        |
+ * | --tugx-menu-fg                  | --tug7-surface-global-primary-normal-overlay-rest | content      | .tug-menu-item           |
+ * | --tug7-element-control-text-filled-action-hover | --tug7-surface-control-primary-filled-action-hover | control      | .tug-menu-item:hover:not([data-disabled]), .tug-menu-item[data-highlighted]:not([data-disabled]) |
  */
 
 
@@ -80,21 +80,6 @@ body {
   --tugx-tooltip-fg: var(--tug7-element-global-text-normal-default-rest);
   --tugx-tooltip-border: var(--tug7-element-global-border-normal-default-rest);
 
-  /* --tug-dropdown-* aliases: resolve directly to --tug7-* tokens [L17] */
-  --tugx-dropdown-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
-  --tugx-dropdown-fg: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-dropdown-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-dropdown-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
-  --tugx-dropdown-item-bg-hover: var(--tug7-surface-control-primary-ghost-action-hover);
-  --tugx-dropdown-item-bg-selected: var(--tug7-element-global-fill-normal-accentSubtle-rest);
-  --tugx-dropdown-item-fg: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-dropdown-item-fg-disabled: var(--tug7-element-global-text-normal-plain-disabled);
-  --tugx-dropdown-item-fg-danger: var(--tug7-element-tone-fill-normal-danger-rest);
-  --tugx-dropdown-item-meta: var(--tug7-element-global-text-normal-subtle-rest);
-  --tugx-dropdown-item-shortcut: var(--tug7-element-global-text-normal-subtle-rest);
-  --tugx-dropdown-item-icon: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-dropdown-item-icon-danger: var(--tug7-element-tone-fill-normal-danger-rest);
-  --tugx-dropdown-item-chevron: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
 /* ============================================================================
@@ -141,7 +126,7 @@ body {
 }
 
 /* ============================================================================
-   Dropdown Trigger — highlighted while menu is open
+   Menu Trigger — highlighted while menu is open
    ============================================================================ */
 
 /*
@@ -226,7 +211,7 @@ body {
 }
 
 /* ============================================================================
-   Dropdown Content Panel
+   Menu Content Panel
    ============================================================================ */
 
 /*
@@ -234,24 +219,24 @@ body {
  * The content renders in a Radix portal at the document root, so z-index
  * conflicts with CardFrame are not an issue.
  */
-.tug-dropdown-content {
-  background-color: var(--tugx-dropdown-bg);
-  border: 1px solid var(--tugx-dropdown-border);
-  box-shadow: var(--tugx-dropdown-shadow);
+.tug-menu-content {
+  background-color: var(--tugx-menu-bg);
+  border: 1px solid var(--tugx-menu-border);
+  box-shadow: var(--tugx-menu-shadow);
   border-radius: var(--tug-radius-md);
-  color: var(--tugx-dropdown-fg);
+  color: var(--tugx-menu-fg);
   padding: var(--tug-space-xs);
   /* High z-index so the portal-rendered dropdown renders above all cards */
   z-index: 200;
 }
 
 /* ============================================================================
-   Dropdown Items
+   Menu Items
    ============================================================================ */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-overlay-rest */
-.tug-dropdown-item {
-  color: var(--tugx-dropdown-fg);
+.tug-menu-item {
+  color: var(--tugx-menu-fg);
   border-radius: var(--tug-radius-sm);
   cursor: default;
   user-select: none;
@@ -265,15 +250,15 @@ body {
 /*
  * Hover / focus state: filled-action style for strong visual feedback.
  */
-.tug-dropdown-item:hover:not([data-disabled]),
-.tug-dropdown-item[data-highlighted]:not([data-disabled]) {
+.tug-menu-item:hover:not([data-disabled]),
+.tug-menu-item[data-highlighted]:not([data-disabled]) {
   background-color: var(--tug7-surface-control-primary-filled-action-hover);
   color: var(--tug7-element-control-text-filled-action-hover);
   outline: none;
 }
 
 /* Disabled items: reduced opacity, no pointer interaction */
-.tug-dropdown-item[data-disabled] {
+.tug-menu-item[data-disabled] {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
@@ -283,7 +268,7 @@ body {
    Item Icon + Label Layout
    ============================================================================ */
 
-.tug-dropdown-item-icon {
+.tug-menu-item-icon {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
@@ -291,7 +276,7 @@ body {
   height: 1rem;
 }
 
-.tug-dropdown-item-label {
+.tug-menu-item-label {
   flex: 1;
   white-space: nowrap;
   overflow: hidden;

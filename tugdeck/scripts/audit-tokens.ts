@@ -296,30 +296,6 @@ const ELEMENT_PROPERTIES = new Set([
 /** Properties that carry background (surface) color. */
 const SURFACE_PROPERTIES = new Set(["background-color", "background"]);
 
-/**
- * Explicit allowlist of compat alias chains exempt from the 1-hop alias rule.
- * Each entry is the alias token (source) that is allowed to point to an intermediate
- * component alias rather than directly to a --tug-* token.
- *
- * Currently: --tug-dropdown-* -> --tug-menu-* compat layer (14 entries).
- * [D02] Alias chain flattening.
- */
-const COMPAT_ALIAS_ALLOWLIST = new Set([
-  "--tugx-dropdown-bg",
-  "--tugx-dropdown-fg",
-  "--tugx-dropdown-border",
-  "--tugx-dropdown-shadow",
-  "--tugx-dropdown-item-bg-hover",
-  "--tugx-dropdown-item-bg-selected",
-  "--tugx-dropdown-item-fg",
-  "--tugx-dropdown-item-fg-disabled",
-  "--tugx-dropdown-item-fg-danger",
-  "--tugx-dropdown-item-meta",
-  "--tugx-dropdown-item-shortcut",
-  "--tugx-dropdown-item-icon",
-  "--tugx-dropdown-item-icon-danger",
-  "--tugx-dropdown-item-chevron",
-]);
 
 interface CssRule {
   selector: string;
@@ -1441,8 +1417,7 @@ function checkAnnotationCompleteness(
 /**
  * Lint check 2: alias chain depth.
  *
- * Every alias in body {} blocks must resolve to --tug-* in exactly 1 hop,
- * unless the alias is in COMPAT_ALIAS_ALLOWLIST.
+ * Every alias in body {} blocks must resolve to --tug-* in exactly 1 hop.
  * Violation: MULTI_HOP_ALIAS: {file}: {alias} resolves through {count} hops (max 1)
  */
 function checkAliasChainDepth(
@@ -1456,9 +1431,6 @@ function checkAliasChainDepth(
   const localAliases = extractAliases(css);
 
   for (const [alias, target] of Object.entries(localAliases)) {
-    // Skip compat allowlist entries
-    if (COMPAT_ALIAS_ALLOWLIST.has(alias)) continue;
-
     // Target must be a base tug token (1-hop rule): --tug7-, --tugc-, or --tug- (scale)
     if (!isBaseTugToken(target)) {
       // Count hops: follow the chain to find total depth

@@ -108,7 +108,7 @@ const CLASS_TO_COMP_FAMILY: Record<string, string> = {
   "tug-tab": "--tugx-tab",
   tugcard: "--tugx-card",
   "tugcard-title-bar": "--tugx-card",
-  "tug-dropdown": "--tugx-dropdown",
+  "tug-menu": "--tugx-menu",
 };
 
 /**
@@ -135,12 +135,12 @@ const COMP_FAMILY_TOKENS: Record<string, string[]> = {
     "--tugx-card-title-bar-divider",
     "--tugx-card-shadow-active",
   ],
-  "--tugx-dropdown": [
-    "--tugx-dropdown-bg",
-    "--tugx-dropdown-border",
-    "--tugx-dropdown-item-fg",
-    "--tugx-dropdown-item-bg-hover",
-    "--tugx-dropdown-shadow",
+  "--tugx-menu": [
+    "--tugx-menu-bg",
+    "--tugx-menu-border",
+    "--tugx-menu-item-fg",
+    "--tugx-menu-item-bg-hover",
+    "--tugx-menu-shadow",
   ],
 };
 
