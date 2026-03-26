@@ -1,6 +1,7 @@
 /* Harmony — light theme. */
 body {
   --tugx-host-canvas-color: #e7eaf0;
+
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
   --tug-motion-duration-glacial: calc(500ms * var(--tug-timing));

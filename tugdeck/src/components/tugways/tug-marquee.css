@@ -3,13 +3,9 @@
    Base Marquee
    ========================================================================= */
 
-/**
- * @tug-pairings {
- *   ".tug-marquee": {
- *     "color": "--tug7-element-field-text-normal-label-rest"
- *   }
- * }
- */
+/* @tug-pairings {
+ *   --tug7-element-field-text-normal-label-rest | --tug7-surface-global-primary-normal-default-rest | content
+ * } */
 
 /**
  * @tug-pairings

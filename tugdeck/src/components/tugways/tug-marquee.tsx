@@ -101,12 +101,13 @@ export const TugMarquee = React.forwardRef<HTMLDivElement, TugMarqueeProps>(
       }
     }, []);
 
-    // Shared transitionend handler (assigned in scroll, needs stable ref)
+    // Shared transitionend handler (assigned in scroll, needs stable ref).
+    // Must be useCallback so cleanup and startCycle always share the same reference.
     const handleTransitionEndRef = useRef<(() => void) | null>(null);
 
-    function handleTransitionEnd() {
+    const handleTransitionEnd = useCallback(() => {
       handleTransitionEndRef.current?.();
-    }
+    }, []);
 
     const startCycle = useCallback(() => {
       const track = trackRef.current;

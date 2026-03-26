@@ -1,14 +1,7 @@
 /**
- * gallery-marquee.tsx -- TugMarquee demo tab for the Component Gallery.
+ * gallery-marquee.tsx -- TugMarquee gallery card.
  *
  * Shows TugMarquee with various text lengths, speeds, pause times, and icons.
- *
- * Rules of Tugways compliance:
- *   - Marquee animation is CSS-lane (Rule 13 — continuous, infinite)
- *   - No React state drives appearance changes [D08, D09]
- *   - No root.render() after initial mount [D40, D42]
- *
- * @module components/tugways/cards/gallery-marquee
  */
 
 import React from "react";
@@ -40,7 +33,7 @@ export function GalleryMarquee() {
 
       {/* ---- Short text (no animation) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Short Text (No Scroll)</div>
+        <div className="cg-section-title">TugMarquee — Short Text (No Scroll)</div>
         <p className="cg-description">
           Text fits within the container — stays static, no animation.
         </p>
@@ -53,7 +46,7 @@ export function GalleryMarquee() {
 
       {/* ---- Overflowing text (default settings) ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Overflowing Text (Default: 30px/s, 2s pause)</div>
+        <div className="cg-section-title">TugMarquee — Overflowing Text (Default: 30px/s, 2s pause)</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "280px" }}>
           <TugMarquee>{MEDIUM_TEXT}</TugMarquee>
           <TugMarquee>{LONG_TEXT}</TugMarquee>
@@ -64,7 +57,7 @@ export function GalleryMarquee() {
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Size Variants</div>
+        <div className="cg-section-title">TugMarquee — Size Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "280px" }}>
           {ALL_SIZES.map((size) => (
             <TugMarquee key={size} size={size}>
@@ -78,7 +71,7 @@ export function GalleryMarquee() {
 
       {/* ---- Speed Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Speed Variants</div>
+        <div className="cg-section-title">TugMarquee — Speed Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">Slow (15 px/s):</p>
@@ -99,7 +92,7 @@ export function GalleryMarquee() {
 
       {/* ---- Pause Time Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Pause Time Variants</div>
+        <div className="cg-section-title">TugMarquee — Pause Time Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">Short pause (500ms):</p>
@@ -120,7 +113,7 @@ export function GalleryMarquee() {
 
       {/* ---- With Icons ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Icons</div>
+        <div className="cg-section-title">TugMarquee — With Icons</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "280px" }}>
           <TugMarquee icon={<Music />} iconColor="var(--tug7-element-global-fill-normal-accent-rest)">
             {SONG_TEXT}
@@ -141,7 +134,7 @@ export function GalleryMarquee() {
 
       {/* ---- Animation Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Animation Disabled</div>
+        <div className="cg-section-title">TugMarquee — Animation Disabled</div>
         <p className="cg-description">
           <code>animate=false</code> — static with end ellipsis, even when text overflows.
         </p>
