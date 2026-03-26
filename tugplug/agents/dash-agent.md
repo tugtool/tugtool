@@ -149,7 +149,7 @@ Detect the project type from files in the worktree:
 | Project Type | Indicator File(s) | Build Command | Test Command |
 |--------------|-------------------|---------------|--------------|
 | Rust | `Cargo.toml` | `cargo build` | `cargo nextest run` or `cargo test` |
-| Node.js | `package.json` | `npm run build` (if script exists) | `npm test` |
+| Node.js | `package.json` | `bun run build` (if script exists) | `bun run test` |
 | Python | `pyproject.toml`, `setup.py` | Usually none | `pytest` or `python -m pytest` |
 | Go | `go.mod` | `go build ./...` | `go test ./...` |
 | Makefile | `Makefile` | `make` or `make build` | `make test` |
@@ -157,6 +157,13 @@ Detect the project type from files in the worktree:
 Use `cd {worktree_path} && <build_cmd>` and `cd {worktree_path} && <test_cmd>`.
 
 If build/test commands fail, include the error in your output and set the corresponding field to `false`.
+
+### Worktree Dependency Setup
+
+Git worktrees do not share `node_modules` or other dependency directories with the main repo. When a JS/TS build fails because dependencies are missing:
+
+1. Run `cd {worktree_path}/{package_dir} && bun install` to install dependencies fresh.
+2. **NEVER create symlinks to the main repo's `node_modules`.** Symlinks between worktrees and the main repo cause circular references that break builds in the main repo after the worktree is cleaned up. This has happened multiple times — it is a hard rule.
 
 ---
 
