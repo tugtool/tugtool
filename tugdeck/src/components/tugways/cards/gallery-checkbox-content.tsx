@@ -20,6 +20,7 @@ import type { TugCheckboxRole, TugCheckboxSize, TugCheckedState } from "@/compon
 const ALL_SIZES: TugCheckboxSize[] = ["sm", "md", "lg"];
 
 const ALL_ROLES: TugCheckboxRole[] = [
+  "option",
   "action",
   "agent",
   "data",
@@ -83,7 +84,7 @@ export function GalleryCheckboxContent() {
         <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
           <TugCheckbox aria-label="Option A" />
           <TugCheckbox aria-label="Option B" defaultChecked />
-          <TugCheckbox aria-label="Option C" checked="indeterminate" />
+          <TugCheckbox aria-label="Option C" defaultChecked />
         </div>
       </div>
 
@@ -128,11 +129,12 @@ export function GalleryCheckboxContent() {
       <div className="cg-section">
         <div className="cg-section-title">Role Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <TugCheckbox defaultChecked label="accent (default)" />
           {ALL_ROLES.map((role) => (
             <TugCheckbox
               key={role}
               role={role}
-              checked
+              defaultChecked
               label={role}
             />
           ))}

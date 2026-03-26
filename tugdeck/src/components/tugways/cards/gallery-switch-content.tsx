@@ -20,6 +20,7 @@ import type { TugSwitchRole, TugSwitchSize } from "@/components/tugways/tug-swit
 const ALL_SIZES: TugSwitchSize[] = ["sm", "md", "lg"];
 
 const ALL_ROLES: TugSwitchRole[] = [
+  "option",
   "action",
   "agent",
   "data",
@@ -110,11 +111,12 @@ export function GallerySwitchContent() {
       <div className="cg-section">
         <div className="cg-section-title">Role Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <TugSwitch defaultChecked label="accent (default)" />
           {ALL_ROLES.map((role) => (
             <TugSwitch
               key={role}
               role={role}
-              checked
+              defaultChecked
               label={role}
             />
           ))}
