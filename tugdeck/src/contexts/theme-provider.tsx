@@ -130,46 +130,6 @@ export async function activateProductionTheme(themeName: string): Promise<string
 }
 
 // ---------------------------------------------------------------------------
-// loadSavedThemes — query middleware for available saved themes
-// ---------------------------------------------------------------------------
-
-/**
- * Fetch the list of saved dynamic themes from the Vite dev middleware.
- * Returns an empty array if the endpoint is unavailable (e.g. in production).
- * Filters out shipped themes (source: "shipped") so they do not appear as
- * user-saved themes in the Theme Generator dropdown.
- *
- * Parses the middleware response format: { themes: [{ name, mode, source }] }
- * [D07][D08]
- */
-export async function loadSavedThemes(): Promise<string[]> {
-  try {
-    const res = await fetch("/__themes/list");
-    if (!res.ok) return [];
-    const data = (await res.json()) as { themes?: unknown[] };
-    if (!Array.isArray(data.themes)) return [];
-    const names: string[] = [];
-    for (const entry of data.themes) {
-      if (typeof entry === "string") {
-        // Legacy format: string[] — cannot determine source, skip (shipped themes only in legacy)
-        // Nothing to push; legacy string entries are all shipped themes.
-      } else if (entry !== null && typeof entry === "object") {
-        // New format: { name, mode, source }
-        const e = entry as Record<string, unknown>;
-        const name = e.name;
-        const source = e.source;
-        if (typeof name === "string" && source === "authored") {
-          names.push(name);
-        }
-      }
-    }
-    return names;
-  } catch {
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
 // ThemeContext
 // ---------------------------------------------------------------------------
 

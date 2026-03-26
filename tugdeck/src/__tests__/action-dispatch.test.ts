@@ -11,15 +11,20 @@ import { FeedId } from "../protocol";
 import type { ActionEvent } from "../components/tugways/responder-chain";
 
 // Minimal mock DeckManager.
-// addCard is a stub that records calls; other methods are omitted.
+// addCard and saveAndFlush are stubs that record calls; other methods are omitted.
 function createMockDeckManager() {
   const addCardCalls: string[] = [];
+  let saveAndFlushCallCount = 0;
   return {
     addCard(componentId: string): string | null {
       addCardCalls.push(componentId);
       return null;
     },
+    saveAndFlush(): void {
+      saveAndFlushCallCount++;
+    },
     _addCardCalls: addCardCalls,
+    get _saveAndFlushCallCount() { return saveAndFlushCallCount; },
   };
 }
 
