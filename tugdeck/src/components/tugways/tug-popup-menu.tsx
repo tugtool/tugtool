@@ -13,31 +13,26 @@
  * CSS class names `tug-dropdown-content` and `tug-dropdown-item` are
  * preserved intentionally to avoid a CSS rename sweep. [D05]
  *
- * TugDropdown owns its trigger button internally. Callers pass label,
- * emphasis, role, size, and icon props instead of a trigger ReactNode.
- * TugDropdown renders a TugButton with a ChevronDown trailing icon.
- *
  * **Authoritative references:**
  * - [D02] TugPopupMenu takes a single ReactNode trigger prop
  * - [D05] Preserve CSS class names from TugDropdown
- * - Spec S02: TugPopupMenuItem interface
- * - Spec S03: TugPopupMenuProps interface
+ *
+ * **Law citations:** [L06] [L11] [L19]
  */
+
+import "./tug-menu.css";
 
 import React, { useRef } from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
-import "./tug-menu.css";
 
-// ---- Types (Spec S02, S03) ----
+// ---- Types ----
 
 /**
  * A single item in a TugPopupMenu.
  *
  * Identical to the former TugDropdownItem interface.
  * [D05] Preserves the same shape to ease migration.
- *
- * **Authoritative reference:** Spec S02 TugPopupMenuItem.
  */
 export interface TugPopupMenuItem {
   /** Unique identifier for this item. Passed to onSelect when clicked. */
@@ -56,8 +51,6 @@ export interface TugPopupMenuItem {
  * TugPopupMenu is headless: the caller provides the trigger ReactNode.
  * The trigger element must accept Radix-injected props (ref, data-state,
  * aria-expanded, etc.) -- any HTML element or forwardRef component does.
- *
- * **Authoritative reference:** Spec S03 TugPopupMenuProps.
  */
 export interface TugPopupMenuProps {
   /** Trigger element. Wrapped in Radix Trigger asChild -- must accept ref. */
@@ -96,7 +89,7 @@ export interface TugPopupMenuProps {
  * CSS class names are preserved from TugDropdown (tug-dropdown-content,
  * tug-dropdown-item) to avoid a CSS rename sweep. [D05]
  *
- * Selection behavior (Rule 4 compliant, [D01]):
+ * Selection behavior ([L06], [D01]):
  * - `onSelect` is intercepted; Radix close is prevented via event.preventDefault().
  * - A double-blink background-color animation is driven by TugAnimator (programmatic
  *   lane, needs completion sequencing to know when to close the menu).
