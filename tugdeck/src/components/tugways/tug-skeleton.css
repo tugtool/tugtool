@@ -1,28 +1,18 @@
 /**
- * TugSkeleton styles -- CSS pulse animation for skeleton loading placeholders.
+ * TugSkeleton styles — CSS pulse animation for skeleton loading placeholders.
  *
- * Uses a gentle opacity pulse (à la shadcn/ui) rather than a sweeping shimmer.
- * The skeleton bar is always visible at its base color; it breathes between
- * full and half opacity over 2 seconds. [D04]
+ * Uses a gentle opacity pulse rather than a sweeping shimmer. The skeleton bar
+ * is always visible at its base color; it breathes between full and half opacity
+ * over 2 seconds.
  *
  * No explicit @media (prefers-reduced-motion) rule is needed here — the global
  * body[data-tug-motion="off"] * { animation-duration: 0s !important } rule in
- * tug.css already suppresses all CSS animations (including this pulse)
- * when reduced motion is active. The skeleton renders as a static placeholder
- * in that case. [D04]
- *
- * **Authoritative references:**
- * - [D04] TugSkeleton standalone with CSS shimmer
- * - [D05] Standalone skeleton tokens per theme
- * - Spec S01: TugSkeletonProps, TugSkeletonGroupProps
+ * tug.css already suppresses all CSS animations (including this pulse) when
+ * reduced motion is active. The skeleton renders as a static placeholder in
+ * that case.
  */
 
-/**
- * @tug-pairings
- * No foreground-on-background text or icon pairings. The skeleton is a purely
- * decorative animated block. Background cycles between tugx-skeleton-base and
- * tugx-skeleton-highlight — no text renders on it.
- */
+/* @tug-pairings: none — decorative shimmer placeholder, no foreground-on-background contrast */
 
 /* ============================================================================
    Pulse keyframe
