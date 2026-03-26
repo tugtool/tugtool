@@ -12,7 +12,9 @@ use tugcast_core::{FeedId, Frame};
 /// Dev mode state: source tree path for the dev session
 #[derive(Clone, Debug)]
 pub(crate) struct DevState {
-    /// Absolute path to the source tree root (parent of tugdeck/)
+    /// Absolute path to the source tree root (parent of tugdeck/).
+    /// Retained for test assertions and future extensibility.
+    #[allow(dead_code)]
     pub source_tree: PathBuf,
 }
 

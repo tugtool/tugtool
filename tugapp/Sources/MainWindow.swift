@@ -27,7 +27,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
         // Configure WKUserContentController for script message handlers
         contentController = WKUserContentController()
-        contentController.add(self, name: "chooseSourceTree")
+        contentController.add(self, name: "sourceTree")
         contentController.add(self, name: "setDevMode")
         contentController.add(self, name: "getSettings")
         contentController.add(self, name: "frontendReady")
@@ -103,7 +103,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     /// Clean up WKScriptMessageHandler registrations to break retain cycle
     func cleanupBridge() {
         guard !bridgeCleaned else { return }
-        contentController.removeScriptMessageHandler(forName: "chooseSourceTree")
+        contentController.removeScriptMessageHandler(forName: "sourceTree")
         contentController.removeScriptMessageHandler(forName: "setDevMode")
         contentController.removeScriptMessageHandler(forName: "getSettings")
         contentController.removeScriptMessageHandler(forName: "frontendReady")
@@ -200,20 +200,20 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 extension MainWindow: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         switch message.name {
-        case "chooseSourceTree":
+        case "sourceTree":
             bridgeDelegate?.bridgeChooseSourceTree { [weak self] path in
                 guard let self = self else { return }
                 if let path = path {
                     let escaped = self.escapeForJS(path)
                     self.webView.evaluateJavaScript("window.__tugBridge?.onSourceTreeSelected?.('\(escaped)')") { _, error in
                         if let error = error {
-                            NSLog("MainWindow: evaluateJavaScript failed for chooseSourceTree (selected): %@", error.localizedDescription)
+                            NSLog("MainWindow: evaluateJavaScript failed for sourceTree (selected): %@", error.localizedDescription)
                         }
                     }
                 } else {
                     self.webView.evaluateJavaScript("window.__tugBridge?.onSourceTreeCancelled?.()") { _, error in
                         if let error = error {
-                            NSLog("MainWindow: evaluateJavaScript failed for chooseSourceTree (cancelled): %@", error.localizedDescription)
+                            NSLog("MainWindow: evaluateJavaScript failed for sourceTree (cancelled): %@", error.localizedDescription)
                         }
                     }
                 }

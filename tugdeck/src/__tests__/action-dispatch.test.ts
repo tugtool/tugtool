@@ -120,9 +120,9 @@ describe("initActionDispatch: Control frame wiring", () => {
   });
 });
 
-// ---- reload_frontend handler ----
+// ---- reload handler ----
 
-describe("initActionDispatch: reload_frontend", () => {
+describe("initActionDispatch: reload", () => {
   beforeEach(() => {
     _resetForTest();
   });
@@ -141,7 +141,7 @@ describe("initActionDispatch: reload_frontend", () => {
     });
 
     initActionDispatch(conn as any, deck as any);
-    dispatchAction({ action: "reload_frontend" });
+    dispatchAction({ action: "reload" });
 
     expect(reloadCount).toBe(1);
 
@@ -153,7 +153,7 @@ describe("initActionDispatch: reload_frontend", () => {
     });
   });
 
-  it("deduplicates: second reload_frontend is ignored", () => {
+  it("deduplicates: second reload is ignored", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
 
@@ -165,36 +165,10 @@ describe("initActionDispatch: reload_frontend", () => {
     });
 
     initActionDispatch(conn as any, deck as any);
-    dispatchAction({ action: "reload_frontend" });
-    dispatchAction({ action: "reload_frontend" });
+    dispatchAction({ action: "reload" });
+    dispatchAction({ action: "reload" });
 
     expect(reloadCount).toBe(1);
-  });
-});
-
-// ---- reset handler ----
-
-describe("initActionDispatch: reset", () => {
-  beforeEach(() => {
-    _resetForTest();
-  });
-
-  it("calls localStorage.clear()", () => {
-    const conn = createMockConnection();
-    const deck = createMockDeckManager();
-
-    let clearCalled = false;
-    const origClear = globalThis.localStorage?.clear;
-    Object.defineProperty(globalThis, "localStorage", {
-      value: { clear: () => { clearCalled = true; }, getItem: () => null, setItem: () => {}, removeItem: () => {} },
-      writable: true,
-      configurable: true,
-    });
-
-    initActionDispatch(conn as any, deck as any);
-    dispatchAction({ action: "reset" });
-
-    expect(clearCalled).toBe(true);
   });
 });
 
@@ -242,9 +216,9 @@ describe("initActionDispatch: set-dev-mode", () => {
   });
 });
 
-// ---- choose-source-tree handler ----
+// ---- source-tree handler ----
 
-describe("initActionDispatch: choose-source-tree", () => {
+describe("initActionDispatch: source-tree", () => {
   beforeEach(() => {
     _resetForTest();
   });
@@ -254,7 +228,7 @@ describe("initActionDispatch: choose-source-tree", () => {
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
-    expect(() => dispatchAction({ action: "choose-source-tree" })).not.toThrow();
+    expect(() => dispatchAction({ action: "source-tree" })).not.toThrow();
   });
 
   it("calls webkit bridge when present", () => {
@@ -265,11 +239,11 @@ describe("initActionDispatch: choose-source-tree", () => {
     const posted: unknown[] = [];
     (globalThis as Record<string, unknown>).webkit = {
       messageHandlers: {
-        chooseSourceTree: { postMessage: (v: unknown) => posted.push(v) },
+        sourceTree: { postMessage: (v: unknown) => posted.push(v) },
       },
     };
 
-    dispatchAction({ action: "choose-source-tree" });
+    dispatchAction({ action: "source-tree" });
 
     expect(posted.length).toBe(1);
 
@@ -423,14 +397,14 @@ describe("initActionDispatch: show-card – T24: missing component logs warning"
   });
 });
 
-// ---- add-tab handler ([D06], [D09]) ----
+// ---- add-tab-to-active-card handler ([D06], [D09]) ----
 
-describe("initActionDispatch: add-tab", () => {
+describe("initActionDispatch: add-tab-to-active-card", () => {
   beforeEach(() => {
     _resetForTest();
   });
 
-  it("dispatches 'addTab' through the registered ResponderChainManager", () => {
+  it("dispatches 'addTabToActiveCard' through the registered ResponderChainManager", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -445,10 +419,10 @@ describe("initActionDispatch: add-tab", () => {
     };
     registerResponderChainManager(stubManager as any);
 
-    dispatchAction({ action: "add-tab" });
+    dispatchAction({ action: "add-tab-to-active-card" });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toEqual({ action: "addTab", phase: "discrete" });
+    expect(dispatched[0]).toEqual({ action: "addTabToActiveCard", phase: "discrete" });
   });
 
   it("warns and does not throw when no ResponderChainManager is registered", () => {
@@ -457,7 +431,7 @@ describe("initActionDispatch: add-tab", () => {
     initActionDispatch(conn as any, deck as any);
 
     // No registerResponderChainManager call -- ref is null after _resetForTest.
-    expect(() => dispatchAction({ action: "add-tab" })).not.toThrow();
+    expect(() => dispatchAction({ action: "add-tab-to-active-card" })).not.toThrow();
   });
 
   it("uses the most recently registered manager (last-registration-wins)", () => {
@@ -470,10 +444,10 @@ describe("initActionDispatch: add-tab", () => {
     registerResponderChainManager({ dispatch: (e: ActionEvent) => { first.push(e); return true; } } as any);
     registerResponderChainManager({ dispatch: (e: ActionEvent) => { second.push(e); return true; } } as any);
 
-    dispatchAction({ action: "add-tab" });
+    dispatchAction({ action: "add-tab-to-active-card" });
 
     expect(first.length).toBe(0);
     expect(second.length).toBe(1);
-    expect(second[0]).toEqual({ action: "addTab", phase: "discrete" });
+    expect(second[0]).toEqual({ action: "addTabToActiveCard", phase: "discrete" });
   });
 });

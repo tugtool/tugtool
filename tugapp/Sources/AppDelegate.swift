@@ -8,11 +8,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastAuthURL: String?
     private var vitePort: Int = TugConfig.defaultVitePort
     private var developerMenu: NSMenuItem!
-    private var sourceTreeMenuItem: NSMenuItem?
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
-    private var restartMenuItem: NSMenuItem?
-    private var relaunchMenuItem: NSMenuItem?
 
     // Theme menu state
     private var themeMenu: NSMenu!
@@ -63,7 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // No source tree -- sendDevMode needs the source tree; show error alert
                 let alert = NSAlert()
                 alert.messageText = "Source Tree Required"
-                alert.informativeText = "Tug requires a source tree to serve the frontend.\nGo to Developer > Choose Source Tree... to set one."
+                alert.informativeText = "Tug requires a source tree to serve the frontend.\nGo to Developer > Source Tree... to set one."
                 alert.alertStyle = .warning
                 alert.runModal()
                 return
@@ -246,29 +243,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(developerMenu)
         let devMenu = NSMenu(title: "Developer")
         developerMenu.submenu = devMenu
-        devMenu.addItem(NSMenuItem(title: "Reload Frontend", action: #selector(reloadFrontend(_:)), keyEquivalent: "r"))
-        let restartItem = NSMenuItem(title: "Restart Server", action: #selector(restartServer(_:)), keyEquivalent: "r", modifierMask: [.command, .shift])
-        devMenu.addItem(restartItem)
-        restartMenuItem = restartItem
-        let relaunchItem = NSMenuItem(title: "Relaunch App", action: #selector(relaunchApp(_:)), keyEquivalent: "r", modifierMask: [.command, .option, .shift])
-        devMenu.addItem(relaunchItem)
-        relaunchMenuItem = relaunchItem
-        devMenu.addItem(NSMenuItem(title: "Reset Everything", action: #selector(resetEverything(_:)), keyEquivalent: "r", modifierMask: [.command, .option]))
+        devMenu.addItem(NSMenuItem(title: "Reload", action: #selector(reload(_:)), keyEquivalent: "r"))
         devMenu.addItem(NSMenuItem.separator())
-        devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(openWebInspector(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
+        devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Show Test Card", action: #selector(showTestCard(_:)), keyEquivalent: "t", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Add Tab", action: #selector(addTab(_:)), keyEquivalent: ""))
-
-        // Source tree display item
-        if let path = sourceTreePath {
-            let sourceTreeItem = NSMenuItem(title: "Source Tree: \(path)", action: nil, keyEquivalent: "")
-            sourceTreeItem.isEnabled = false
-            devMenu.addItem(sourceTreeItem)
-            sourceTreeMenuItem = sourceTreeItem
-        }
-        devMenu.addItem(NSMenuItem(title: "Choose Source Tree...", action: #selector(chooseSourceTree(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Add Tab To Active Card", action: #selector(addTabToActiveCard(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem.separator())
+        devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
         developerMenu.isHidden = !devModeEnabled
 
         // Window Menu - position 4
@@ -324,23 +307,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func reloadFrontend(_ sender: Any) {
-        sendControl("reload_frontend")
+    @objc private func reload(_ sender: Any) {
+        sendControl("reload")
     }
 
-    @objc private func restartServer(_ sender: Any) {
-        sendControl("restart")
-    }
-
-    @objc private func relaunchApp(_ sender: Any) {
-        sendControl("relaunch")
-    }
-
-    @objc private func resetEverything(_ sender: Any) {
-        sendControl("reset")
-    }
-
-    @objc private func openWebInspector(_ sender: Any) {
+    @objc private func showJavaScriptConsole(_ sender: Any) {
         window.openWebInspector()
     }
 
@@ -352,11 +323,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("show-card", params: ["component": "hello"])
     }
 
-    @objc private func addTab(_ sender: Any) {
-        sendControl("add-tab")
+    @objc private func addTabToActiveCard(_ sender: Any) {
+        sendControl("add-tab-to-active-card")
     }
 
-    @objc private func chooseSourceTree(_ sender: Any) {
+    @objc private func sourceTree(_ sender: Any) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -376,9 +347,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             sourceTreePath = url.path
             savePreferences()
-
-            // Update Developer menu source tree display
-            sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
         }
     }
 
@@ -419,8 +387,6 @@ extension AppDelegate: BridgeDelegate {
             }
             self.sourceTreePath = url.path
             self.savePreferences()
-            // Update Developer menu source tree display
-            self.sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
             // Re-send dev_mode if already enabled (per D12)
             if self.devModeEnabled {
                 self.processManager.sendDevMode(enabled: true, sourceTree: url.path, vitePort: self.vitePort)
@@ -438,7 +404,7 @@ extension AppDelegate: BridgeDelegate {
         if enabled, sourceTreePath == nil {
             let alert = NSAlert()
             alert.messageText = "Source Tree Required"
-            alert.informativeText = "Dev mode requires a source tree.\nGo to Developer > Choose Source Tree... to set one."
+            alert.informativeText = "Dev mode requires a source tree.\nGo to Developer > Source Tree... to set one."
             alert.alertStyle = .warning
             alert.runModal()
             completion(enabled)
@@ -518,29 +484,9 @@ extension AppDelegate: BridgeDelegate {
     }
 
     func bridgeDevBadge(backend: Bool, app: Bool) {
-        let diamond = "◆ "
-        if let item = restartMenuItem {
-            if backend {
-                if !item.title.hasPrefix(diamond) {
-                    item.title = diamond + item.title
-                }
-            } else {
-                if item.title.hasPrefix(diamond) {
-                    item.title = String(item.title.dropFirst(diamond.count))
-                }
-            }
-        }
-        if let item = relaunchMenuItem {
-            if app {
-                if !item.title.hasPrefix(diamond) {
-                    item.title = diamond + item.title
-                }
-            } else {
-                if item.title.hasPrefix(diamond) {
-                    item.title = String(item.title.dropFirst(diamond.count))
-                }
-            }
-        }
+        // Restart Server and Relaunch App items removed; badge logic is a no-op.
+        _ = backend
+        _ = app
     }
 }
 

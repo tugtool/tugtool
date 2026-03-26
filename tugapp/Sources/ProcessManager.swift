@@ -3,7 +3,6 @@ import Foundation
 /// Restart decision for the supervisor loop
 enum RestartDecision {
     case pending
-    case restart
     case restartWithBackoff
     case doNotRestart
 }
@@ -346,30 +345,6 @@ class ProcessManager {
             }
             let reason = msg.data["reason"] as? String ?? "unknown"
             switch reason {
-            case "restart":
-                NSLog("ProcessManager: shutdown reason=restart, will restart")
-                copyBinaryFromSourceTree()
-                restartDecision = .restart
-            case "reset":
-                NSLog("ProcessManager: shutdown reason=reset, tugrelaunch handles restart (fresh WebView)")
-                // Stop vite dev server before app exit — same as relaunch path
-                if let proc = viteProcess, proc.isRunning {
-                    NSLog("ProcessManager: terminating vite dev server before reset relaunch")
-                    proc.terminate()
-                    proc.waitUntilExit()
-                }
-                viteProcess = nil
-                restartDecision = .doNotRestart
-            case "relaunch":
-                NSLog("ProcessManager: shutdown reason=relaunch, tugrelaunch handles restart")
-                // Stop vite dev server before app exit
-                if let proc = viteProcess, proc.isRunning {
-                    NSLog("ProcessManager: terminating vite dev server before relaunch")
-                    proc.terminate()
-                    proc.waitUntilExit()
-                }
-                viteProcess = nil
-                restartDecision = .doNotRestart
             case "error":
                 let message = msg.data["message"] as? String ?? ""
                 NSLog("ProcessManager: shutdown reason=error, message=%@, will not restart", message)
@@ -470,51 +445,6 @@ class ProcessManager {
         startProcess()
     }
 
-    /// Copy the new tugcast binary from the source tree into the app bundle.
-    /// Called during restart to copy the latest built binary into the app bundle.
-    /// On failure, logs error and continues (restart proceeds with existing binary).
-    private func copyBinaryFromSourceTree() {
-        // Read source tree path from UserDefaults
-        guard let sourceTreePath = UserDefaults.standard.string(forKey: TugConfig.keySourceTreePath) else {
-            NSLog("ProcessManager: copyBinaryFromSourceTree failed: no source tree path in UserDefaults")
-            return
-        }
-
-        // Source: <sourceTree>/tugcode/target/debug/tugcast
-        let sourcePath = (sourceTreePath as NSString)
-            .appendingPathComponent("tugcode/target/debug/tugcast")
-
-        // Destination: app bundle's Contents/MacOS/tugcast
-        guard let executableURL = Bundle.main.executableURL else {
-            NSLog("ProcessManager: copyBinaryFromSourceTree failed: cannot determine bundle executable path")
-            return
-        }
-        let destPath = executableURL.deletingLastPathComponent()
-            .appendingPathComponent("tugcast")
-            .path
-
-        let fileManager = FileManager.default
-
-        // Verify source exists
-        guard fileManager.fileExists(atPath: sourcePath) else {
-            NSLog("ProcessManager: copyBinaryFromSourceTree failed: source binary not found at %@", sourcePath)
-            return
-        }
-
-        do {
-            // Remove existing destination if present
-            if fileManager.fileExists(atPath: destPath) {
-                try fileManager.removeItem(atPath: destPath)
-            }
-
-            // Copy new binary
-            try fileManager.copyItem(atPath: sourcePath, toPath: destPath)
-            NSLog("ProcessManager: copied new tugcast binary from %@ to %@", sourcePath, destPath)
-        } catch {
-            NSLog("ProcessManager: copyBinaryFromSourceTree failed: %@", error.localizedDescription)
-        }
-    }
-
     /// Internal: Start the process and supervise
     private func startProcess() {
         guard let tugcastURL = resolveTugcastPath() else {
@@ -566,9 +496,6 @@ class ProcessManager {
                     }
 
                     switch self.restartDecision {
-                    case .restart:
-                        NSLog("ProcessManager: restarting (immediate)")
-                        self.startProcess()
                     case .restartWithBackoff:
                         self.backoffSeconds = self.backoffSeconds == 0 ? 1 : min(self.backoffSeconds * 2, 30)
                         NSLog("ProcessManager: restarting with %.0fs backoff", self.backoffSeconds)

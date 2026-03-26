@@ -24,7 +24,7 @@ export type ActionHandler = (payload: Record<string, unknown>) => void;
 /** Map of action names to handler functions */
 const handlers = new Map<string, ActionHandler>();
 
-/** Module-level flag to prevent duplicate reload_frontend calls */
+/** Module-level flag to prevent duplicate reload calls */
 let reloadPending = false;
 
 /** Module-level reference to the theme setter, populated by TugThemeProvider on mount. */
@@ -34,7 +34,7 @@ let themeSetterRef: ((theme: string) => void) | null = null;
  * Module-level reference to the ResponderChainManager, populated by
  * ResponderChainProvider on mount via `registerResponderChainManager`.
  *
- * Used by the `add-tab` and `show-component-gallery` Control-frame actions
+ * Used by the `add-tab-to-active-card` and `show-component-gallery` Control-frame actions
  * to dispatch through the responder chain, which routes them to DeckCanvas's
  * registered handlers.
  *
@@ -134,18 +134,13 @@ export function initActionDispatch(
 
   // Register built-in handlers
 
-  // reload_frontend: Reload page with dedup guard
-  registerAction("reload_frontend", () => {
+  // reload: Reload page with dedup guard
+  registerAction("reload", () => {
     if (reloadPending) {
       return;
     }
     reloadPending = true;
     location.reload();
-  });
-
-  // reset: Clear all localStorage
-  registerAction("reset", () => {
-    localStorage.clear();
   });
 
   // set-dev-mode: Call WKScriptMessageHandler bridge if available
@@ -196,16 +191,16 @@ export function initActionDispatch(
     }
   });
 
-  // choose-source-tree: Call WKScriptMessageHandler bridge if available
-  registerAction("choose-source-tree", () => {
-    console.info("choose-source-tree: triggering source tree picker");
+  // source-tree: Call WKScriptMessageHandler bridge if available
+  registerAction("source-tree", () => {
+    console.info("source-tree: triggering source tree picker");
 
     const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
     const messageHandlers = webkit?.messageHandlers as Record<string, unknown> | undefined;
-    if (messageHandlers?.chooseSourceTree) {
-      (messageHandlers.chooseSourceTree as { postMessage: (v: unknown) => void }).postMessage({});
+    if (messageHandlers?.sourceTree) {
+      (messageHandlers.sourceTree as { postMessage: (v: unknown) => void }).postMessage({});
     } else {
-      console.info("choose-source-tree: WKScriptMessageHandler bridge not available");
+      console.info("source-tree: WKScriptMessageHandler bridge not available");
     }
   });
 
@@ -222,15 +217,15 @@ export function initActionDispatch(
     deckManager.addCard(component);
   });
 
-  // add-tab: Add a new tab to the focused card via the responder chain.
-  // Dispatches "addTab" through the ResponderChainManager, which routes it to
-  // DeckCanvas's registered addTab handler. DeckCanvas reads the focused card
+  // add-tab-to-active-card: Add a new tab to the focused card via the responder chain.
+  // Dispatches "addTabToActiveCard" through the ResponderChainManager, which routes it to
+  // DeckCanvas's registered addTabToActiveCard handler. DeckCanvas reads the focused card
   // from its cardsRef and calls store.addTab(). ([D06], [D09])
-  registerAction("add-tab", () => {
+  registerAction("add-tab-to-active-card", () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch({ action: "addTab", phase: "discrete" });
+      responderChainManagerRef.dispatch({ action: "addTabToActiveCard", phase: "discrete" });
     } else {
-      console.warn("add-tab: responder chain manager not registered yet");
+      console.warn("add-tab-to-active-card: responder chain manager not registered yet");
     }
   });
 }

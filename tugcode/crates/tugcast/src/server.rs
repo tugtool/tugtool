@@ -220,14 +220,11 @@ mod tests {
 
     #[test]
     fn test_action_classification() {
-        // Server-only
-        assert_eq!("restart", "restart");
-
-        // Hybrid
-        assert!(matches!("reset", "reset"));
-
-        // Client-only (everything else)
-        assert!(!matches!("show-card", "restart" | "reset"));
-        assert!(!matches!("reload_frontend", "restart" | "reset"));
+        // All actions are now client-only (broadcast to Control feed).
+        // restart, reset, and relaunch have been removed.
+        assert_ne!("reload", "restart");
+        assert_ne!("reload", "reset");
+        assert_ne!("show-card", "restart");
+        assert_ne!("show-card", "reset");
     }
 }

@@ -899,14 +899,14 @@ describe("DeckCanvas – onClose wired from store.handleCardClosed via Tugcard",
 });
 
 // ============================================================================
-// Step 7: addTab responder action wired in DeckCanvas
+// Step 7: addTabToActiveCard responder action wired in DeckCanvas
 // ============================================================================
 
-describe("DeckCanvas – Step 7: addTab responder action", () => {
+describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("registers 'addTab' as a dispatchable action on the responder chain", () => {
+  it("registers 'addTabToActiveCard' as a dispatchable action on the responder chain", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -934,10 +934,10 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
       );
     });
 
-    expect(manager!.canHandle("addTab")).toBe(true);
+    expect(manager!.canHandle("addTabToActiveCard")).toBe(true);
   });
 
-  it("dispatching addTab with a focused card calls store.addTab with the card id and 'hello'", () => {
+  it("dispatching addTabToActiveCard with a focused card calls store.addTab with the card id and 'hello'", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -973,7 +973,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
     });
 
     act(() => {
-      manager!.dispatch({ action: "addTab", phase: "discrete" });
+      manager!.dispatch({ action: "addTabToActiveCard", phase: "discrete" });
     });
 
     expect(addTabCalls.length).toBe(1);
@@ -981,7 +981,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
     expect(addTabCalls[0].componentId).toBe("hello");
   });
 
-  it("dispatching addTab with no cards is a silent no-op", () => {
+  it("dispatching addTabToActiveCard with no cards is a silent no-op", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -1009,7 +1009,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
     });
 
     act(() => {
-      manager!.dispatch({ action: "addTab", phase: "discrete" });
+      manager!.dispatch({ action: "addTabToActiveCard", phase: "discrete" });
     });
 
     expect(addTabCalls.length).toBe(0);

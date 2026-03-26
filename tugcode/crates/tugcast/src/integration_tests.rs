@@ -484,59 +484,7 @@ async fn test_tell_missing_action() {
 }
 
 #[tokio::test]
-async fn test_tell_restart_triggers_shutdown() {
-    use axum::extract::connect_info::MockConnectInfo;
-    use std::net::{IpAddr, Ipv4Addr};
-
-    // Build test app with a shutdown channel we can verify
-    let auth = auth::new_shared_auth_state(7890);
-    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-    let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (code_tx, _) = broadcast::channel(1024);
-    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<u8>(1);
-    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-
-    let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
-        "test-dummy".to_string(),
-        auth,
-        vec![],
-        shutdown_tx,
-        client_action_tx,
-        dev_state.clone(),
-    );
-
-    let app = build_app(feed_router, dev_state, None, None);
-
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
-    let app_with_connect_info = app.layer(MockConnectInfo(addr));
-
-    let response = app_with_connect_info
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/tell")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"action":"restart"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Verify shutdown signal was sent
-    let code = shutdown_rx.try_recv().unwrap();
-    assert_eq!(code, 42);
-}
-
-#[tokio::test]
-async fn test_tell_reload_frontend() {
+async fn test_tell_reload() {
     use axum::extract::connect_info::MockConnectInfo;
     use std::net::{IpAddr, Ipv4Addr};
 
@@ -574,7 +522,7 @@ async fn test_tell_reload_frontend() {
                 .method("POST")
                 .uri("/api/tell")
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"action":"reload_frontend"}"#))
+                .body(Body::from(r#"{"action":"reload"}"#))
                 .unwrap(),
         )
         .await
@@ -586,68 +534,6 @@ async fn test_tell_reload_frontend() {
     let frame = client_action_rx.try_recv().unwrap();
     use tugcast_core::FeedId;
     assert_eq!(frame.feed_id, FeedId::Control);
-}
-
-#[tokio::test]
-async fn test_tell_hybrid_reset_timing() {
-    use axum::extract::connect_info::MockConnectInfo;
-    use std::net::{IpAddr, Ipv4Addr};
-
-    // Build test app with channels we can verify
-    let auth = auth::new_shared_auth_state(7890);
-    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-    let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (code_tx, _) = broadcast::channel(1024);
-    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<u8>(1);
-    let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
-
-    let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
-        "test-dummy".to_string(),
-        auth,
-        vec![],
-        shutdown_tx,
-        client_action_tx,
-        dev_state.clone(),
-    );
-
-    let app = build_app(feed_router, dev_state, None, None);
-
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
-    let app_with_connect_info = app.layer(MockConnectInfo(addr));
-
-    // Spawn the request in the background since it will sleep 100ms
-    let handle = tokio::spawn(async move {
-        app_with_connect_info
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/tell")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"action":"reset"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap()
-    });
-
-    // Broadcast should arrive before shutdown
-    let frame = client_action_rx.recv().await.unwrap();
-    use tugcast_core::FeedId;
-    assert_eq!(frame.feed_id, FeedId::Control);
-
-    // Wait for the request to complete
-    let response = handle.await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Shutdown signal should arrive after broadcast
-    let code = shutdown_rx.try_recv().unwrap();
-    assert_eq!(code, 43);
 }
 
 #[tokio::test]
