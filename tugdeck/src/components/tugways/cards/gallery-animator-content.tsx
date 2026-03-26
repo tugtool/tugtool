@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { TugPushButton } from "@/components/tugways/tug-button";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
   animate,
   SpringSolver,

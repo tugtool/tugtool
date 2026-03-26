@@ -45,7 +45,7 @@ import { ResponderChainProvider, useResponderChain } from "@/components/tugways/
 import { useResponder } from "@/components/tugways/use-responder";
 import { ResponderChainManager } from "@/components/tugways/responder-chain";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugButton } from "@/components/tugways/internal/tug-button";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { DeckManagerContext } from "@/deck-manager-context";
 import { _resetForTest } from "@/card-registry";

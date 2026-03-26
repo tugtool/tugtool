@@ -10,7 +10,7 @@ import "./setup-rtl";
 
 import { describe, it, expect, mock } from "bun:test";
 import { render, fireEvent } from "@testing-library/react";
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugButton } from "@/components/tugways/internal/tug-button";
 
 describe("tug-button scaffold", () => {
   it("renders a TugButton component", () => {

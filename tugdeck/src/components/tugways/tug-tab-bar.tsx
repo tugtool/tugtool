@@ -22,7 +22,7 @@ import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { icons } from "lucide-react";
 import type { TabItem } from "@/layout-tree";
 import { getAllRegistrations } from "@/card-registry";
-import { TugButton } from "./tug-button";
+import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./tug-popup-menu";
 import type { TugPopupMenuItem } from "./tug-popup-menu";
 import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";

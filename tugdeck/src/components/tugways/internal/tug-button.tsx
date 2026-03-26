@@ -1,36 +1,18 @@
 /**
- * TugButton -- tugways public API for buttons.
+ * TugButton — internal button infrastructure for tugways.
  *
- * Wraps a plain <button> element with Radix Slot for asChild polymorphism.
- * App code imports TugButton; never imports from components/ui/button.
+ * Building block composed by TugPushButton, TugPopupButton, and TugTabBar.
+ * App code should use TugPushButton for standalone action buttons.
  *
- * Phase 2: Direct-action mode (onClick) and three subtypes (text, icon, icon-text).
- * Phase 3: Chain-action mode added via `action` prop.
- *   - When `action` is set, TugButton subscribes to the responder chain via
- *     useSyncExternalStore. canHandle/validateAction determine visibility and
- *     enabled state. Click dispatches through the chain instead of calling onClick.
- *   - When `action` is undefined or no ResponderChainProvider is in the tree,
- *     TugButton falls through to direct-action mode (existing onClick behavior).
- *
- * TugButton is typographically neutral (no uppercase/letter-spacing).
- * Use TugPushButton for standalone action buttons that need uppercase styling.
- *
- * Emphasis x Role API [D02, D03, D04, Spec S01, Spec S02]:
- *   `emphasis` controls visual weight (filled/outlined/ghost), default: "outlined"
- *   `role` controls color domain (accent/action/data/danger), default: "action"
- *   Compound CSS class: tug-button-{emphasis}-{role}
- *
- * [D01] TugButton wraps Radix Slot for asChild polymorphism (no shadcn)
- * [D05] Two-level action validation drives chain-action enabled state
- * [D06] Chain-action TugButton uses useSyncExternalStore for validation
- * [D04] TugButton CSS uses semantic tokens exclusively
- * Spec S01, S02, S03, S04, Table T01, T02, T03
+ * Laws: [L06] appearance via CSS, [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide
+ * Decisions: [D02] emphasis x role system
  */
 
 import React, { useSyncExternalStore } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
-import { useResponderChain } from "./responder-chain-provider";
+import { useResponderChain } from "../responder-chain-provider";
 import "./tug-button.css";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
@@ -42,17 +24,17 @@ const NOOP_SNAPSHOT = (): number => 0;
 
 // ---- Types ----
 
-/** TugButton emphasis values — controls visual weight (Spec S01) [D02] */
+/** TugButton emphasis values — controls visual weight [D02] */
 export type TugButtonEmphasis = "filled" | "outlined" | "ghost";
 
-/** TugButton role values — controls color domain (Spec S01) [D02] */
+/** TugButton role values — controls color domain [D02] */
 export type TugButtonRole = "accent" | "action" | "data" | "danger" | "option";
 
-/** TugButton size names (Spec S01) */
+/** TugButton size names */
 export type TugButtonSize = "sm" | "md" | "lg";
 
 /**
- * TugButton subtype names (Spec S01, Table T01).
+ * TugButton subtype names.
  * Three subtypes: text (default), icon (square), icon-text (leading icon + label).
  */
 export type TugButtonSubtype = "text" | "icon" | "icon-text";
@@ -61,7 +43,7 @@ export type TugButtonSubtype = "text" | "icon" | "icon-text";
 export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 
 /**
- * TugButton props interface -- Phase 3 (Spec S01, S04).
+ * TugButton props interface.
  *
  * Extends ButtonHTMLAttributes so that Radix composition (asChild pattern)
  * can merge arbitrary props (data-state, aria-expanded, onPointerDown, ref,
@@ -73,9 +55,9 @@ export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'role' | 'onClick' | 'children'> {
   /** Button rendering subtype. Default: "text" */
   subtype?: TugButtonSubtype;
-  /** Visual weight. Default: "outlined". Controls filled/outlined/ghost styling. [D02, Spec S01] */
+  /** Visual weight. Default: "outlined". Controls filled/outlined/ghost styling. [D02] */
   emphasis?: TugButtonEmphasis;
-  /** Color domain. Default: "action". Controls accent/action/data/danger hue. [D02, Spec S01] */
+  /** Color domain. Default: "action". Controls accent/action/data/danger hue. [D02] */
   role?: TugButtonRole;
   /** Size variant. Default: "md" */
   size?: TugButtonSize;
@@ -91,7 +73,6 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    * If validateAction returns false, the button is visually disabled (aria-disabled).
    *
    * [D06] TugButton never hides -- disable instead of hide
-   * Spec S08 (#s08-never-hide)
    */
   action?: string;
 
@@ -177,7 +158,7 @@ function Spinner() {
 // ---- TugButton ----
 
 /**
- * TugButton -- tugways button component.
+ * TugButton -- internal tugways button component.
  *
  * Supports three subtypes (text, icon, icon-text), three sizes (sm, md, lg),
  * loading state, direct-action mode (onClick), and chain-action mode (action).
@@ -185,11 +166,11 @@ function Spinner() {
  * TugButton is typographically neutral. For uppercase standalone action buttons,
  * use TugPushButton instead.
  *
- * Styling is controlled by the emphasis x role system [D02, D03, D04]:
+ * Styling is controlled by the emphasis x role system [D02]:
  *   emphasis: "filled" | "outlined" | "ghost" (default: "outlined")
  *   role:     "accent" | "action" | "data" | "danger" (default: "action")
  *
- * All colors use var(--tug-*) semantic tokens for zero-re-render theme switching.
+ * All colors use var(--tug-*) semantic tokens for zero-re-render theme switching. [L06]
  *
  * Implemented as React.forwardRef so that refs from Radix composition (asChild)
  * reach the underlying DOM button element.
@@ -252,7 +233,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // useResponderChain() returns the manager or null (safe outside provider).
   const manager = useResponderChain();
 
-  // useSyncExternalStore() called unconditionally on every render.
+  // useSyncExternalStore() called unconditionally on every render. [L02]
   // When the chain is inactive (no manager, or no action prop), use the
   // module-level NOOP constants so React sees stable function references
   // and never triggers unnecessary re-subscriptions.
@@ -283,8 +264,6 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
   // isChainDisabled: chain is active and either canHandle is false OR validateAction is false.
   // When true, the button renders as aria-disabled (never hidden -- [D06] never-hide).
-  // This merges the old "no responder can handle" case (was: return null) with the
-  // "handled but disabled" case into a single disabled state. Spec S08 (#s08-never-hide).
   const isChainDisabled = chainActive && (!chainCanHandle || !chainValidated);
 
   // ---- Layout helpers ----
@@ -326,7 +305,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // Use aria-disabled (not HTML disabled) so the button stays in the tab order.
   const ariaDisabled = isChainDisabled ? "true" : undefined;
 
-  // CSS class composition — compound emphasis-role class [D03, Spec S02]
+  // CSS class composition — compound emphasis-role class [D02]
   const emphasisRoleClass = `tug-button-${emphasis}-${role}`;
   const sizeClass = `tug-button-size-${size}`;
   const buttonClassName = cn(
@@ -334,9 +313,9 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     "tug-button",
     // Size class
     sizeClass,
-    // Emphasis x role compound class for hover/active/transition styles [D03]
+    // Emphasis x role compound class for hover/active/transition styles
     emphasisRoleClass,
-    // Icon subtype size classes (square aspect ratio per Table T03)
+    // Icon subtype size classes (square aspect ratio)
     subtype === "icon" && size === "sm" && "tug-button-icon-sm",
     subtype === "icon" && size === "md" && "tug-button-icon-md",
     subtype === "icon" && size === "lg" && "tug-button-icon-lg",
@@ -412,43 +391,3 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     </Comp>
   );
 });
-
-// ---- TugPushButton ----
-
-/**
- * TugPushButtonProps -- same as TugButtonProps, but without `subtype`.
- *
- * TugPushButton always uses the "text" (formerly "push") subtype default and
- * adds uppercase / letter-spacing styling via the .tug-push-button CSS class.
- * Callers do not set subtype -- it is an implementation detail of this wrapper.
- *
- * [D02] TugPushButton wrapper for standalone action buttons
- * Spec S02, S03
- */
-export interface TugPushButtonProps extends TugButtonProps {}
-
-/**
- * TugPushButton -- uppercase standalone action button.
- *
- * A thin wrapper around TugButton that adds the `.tug-push-button` CSS class,
- * which applies `text-transform: uppercase` and `letter-spacing: 0.06em`.
- * All other TugButton props pass through unchanged.
- *
- * Use TugPushButton for standalone action buttons (e.g., "Save", "Cancel").
- * Use TugButton directly for controls where mixed-case text is appropriate
- * (e.g., dropdown triggers, tab bar controls).
- *
- * [D02] Separates uppercase design choice from button infrastructure
- * Spec S02, S03
- */
-export const TugPushButton = React.forwardRef<HTMLButtonElement, TugPushButtonProps>(
-  function TugPushButton({ className, ...props }: TugPushButtonProps, ref) {
-    return (
-      <TugButton
-        ref={ref}
-        className={cn("tug-push-button", className)}
-        {...props}
-      />
-    );
-  }
-);

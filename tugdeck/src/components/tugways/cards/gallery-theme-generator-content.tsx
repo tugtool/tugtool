@@ -16,8 +16,8 @@ import {
   type CVDWarning,
 } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/theme-pairings";
-import { TugButton } from "@/components/tugways/tug-button";
-import type { TugButtonEmphasis, TugButtonRole } from "@/components/tugways/tug-button";
+import { TugButton } from "@/components/tugways/internal/tug-button";
+import type { TugButtonEmphasis, TugButtonRole } from "@/components/tugways/internal/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import type { TugBadgeEmphasis, TugBadgeRole } from "@/components/tugways/tug-badge";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";

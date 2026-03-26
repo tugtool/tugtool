@@ -34,7 +34,7 @@ import {
   NAMED_GRAYS,
   ACHROMATIC_L_VALUES,
 } from "@/components/tugways/palette-engine";
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
 import "./gallery-palette-content.css";
 

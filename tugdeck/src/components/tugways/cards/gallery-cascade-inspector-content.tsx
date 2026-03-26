@@ -25,7 +25,7 @@
 
 import React, { useState } from "react";
 import { Star } from "lucide-react";
-import { TugPushButton } from "@/components/tugways/tug-button";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 

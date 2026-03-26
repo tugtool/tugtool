@@ -12,7 +12,7 @@
 
 import React, { useState } from "react";
 import { Star, Circle, AlertTriangle, Check, Zap, Database, Shield } from "lucide-react";
-import { TugPushButton } from "@/components/tugways/tug-button";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
   tugColor,
   DEFAULT_CANONICAL_L,

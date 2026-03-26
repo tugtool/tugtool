@@ -28,7 +28,7 @@ import { render, fireEvent, act, cleanup } from "@testing-library/react";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugButton } from "@/components/tugways/internal/tug-button";
 
 // Clean up mounted React trees after each test to prevent DOM accumulation.
 afterEach(() => {

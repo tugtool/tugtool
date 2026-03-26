@@ -15,8 +15,8 @@
 
 import React from "react";
 import { ChevronDown } from "lucide-react";
-import { TugButton } from "./tug-button";
-import type { TugButtonSize } from "./tug-button";
+import { TugButton } from "./internal/tug-button";
+import type { TugButtonSize } from "./internal/tug-button";
 import { TugPopupMenu } from "./tug-popup-menu";
 import type { TugPopupMenuItem } from "./tug-popup-menu";
 
