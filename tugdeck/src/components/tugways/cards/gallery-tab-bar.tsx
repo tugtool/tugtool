@@ -1,9 +1,8 @@
 /**
- * GalleryTabBar -- TugTabBar demo wrapped for gallery card tab.
+ * GalleryTabBar — TugTabBar interactive demo for the Component Gallery.
  *
- * **Authoritative reference:** [D01] gallery-tabbar componentId.
- *
- * @module components/tugways/cards/gallery-tab-bar
+ * Renders an interactive TugTabBar with tab select/close/add, overflow
+ * status display, and bulk-add/reset controls.
  */
 
 import React, { useState, useRef } from "react";
@@ -97,6 +96,14 @@ export function TugTabBarDemo() {
     setActiveTabId(newTabs[newTabs.length - 1].id);
   };
 
+  /** Reset to initial seed tabs. */
+  const handleReset = () => {
+    setTabs(DEMO_INITIAL_TABS.map((t) => ({ ...t })));
+    setActiveTabId(DEMO_INITIAL_TABS[0].id);
+    setLastSelected(null);
+    nextTabIndexRef.current = DEMO_INITIAL_TABS.length + 1;
+  };
+
   const handleOverflowChange = (
     stage: "none" | "collapsed" | "overflow",
     count: number,
@@ -117,11 +124,11 @@ export function TugTabBarDemo() {
         onOverflowChange={handleOverflowChange}
       />
       <div className="cg-demo-controls">
-        <TugPushButton
-          size="sm"
-          onClick={handleAddFive}
-        >
+        <TugPushButton size="sm" onClick={handleAddFive}>
           Add 5 tabs
+        </TugPushButton>
+        <TugPushButton size="sm" emphasis="outlined" onClick={handleReset}>
+          Reset
         </TugPushButton>
       </div>
       <div className="cg-demo-status" data-testid="demo-overflow-status">
@@ -143,16 +150,12 @@ export function TugTabBarDemo() {
 // GalleryTabBar
 // ---------------------------------------------------------------------------
 
-/**
- * GalleryTabBar -- TugTabBar demo wrapped for gallery card tab.
- *
- * **Authoritative reference:** [D01] gallery-tabbar componentId.
- */
+/** GalleryTabBar — top-level gallery card entry point for TugTabBar. */
 export function GalleryTabBar() {
   return (
     <div className="cg-content" data-testid="gallery-tabbar">
       <div className="cg-section">
-        <div className="cg-section-title">TugTabBar</div>
+        <div className="cg-section-title">TugTabBar — Interactive Demo</div>
         <TugTabBarDemo />
       </div>
     </div>
