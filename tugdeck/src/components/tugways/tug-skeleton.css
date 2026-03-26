@@ -14,6 +14,11 @@
 
 /* @tug-pairings: none — decorative shimmer placeholder, no foreground-on-background contrast */
 
+body {
+  --tugx-skeleton-base: var(--tug7-surface-skeleton-primary-normal-default-rest);
+  --tugx-skeleton-highlight: var(--tug7-surface-skeleton-primary-normal-default-active);
+}
+
 /* ============================================================================
    Pulse keyframe
    ============================================================================ */

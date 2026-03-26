@@ -747,6 +747,10 @@ body {
   --tug7-surface-badge-primary-tinted-data-rest: --tug-color(teal, i: 80, t: 40, a: 40);
   --tug7-surface-badge-primary-tinted-success-rest: --tug-color(green, i: 80, t: 40, a: 40);
 
+  /* Skeleton */
+  --tug7-surface-skeleton-primary-normal-default-rest: --tug-color(indigo, i: 3, t: 82);
+  --tug7-surface-skeleton-primary-normal-default-active: --tug-color(indigo, i: 2, t: 88);
+
   /* Other */
   --tug7-element-card-title-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
 }

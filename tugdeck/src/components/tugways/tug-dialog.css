@@ -3,7 +3,7 @@
  *
  * Token prefix: --tug-dialog-*, --tug-sheet-*, --tug-toast-*, --tug-alert-*,
  *               --tug-badge-*, --tug-status-*, --tug-progress-*, --tugx-spinner,
- *               --tug-skeleton-*, --tug-emptyState-*, --tug-banner-*, --tug-kbd-*
+ *               --tug-emptyState-*, --tug-banner-*, --tug-kbd-*
  * Drops the "base" segment per CSS reorganization.
  * No CSS rules yet — tokens only.
  */
@@ -32,7 +32,7 @@ body {
   --tugx-alert-bg: var(--tug7-surface-global-primary-normal-default-rest);
   --tugx-alert-fg: var(--tug7-element-global-text-normal-default-rest);
 
-  /* --- Status / Badge / Progress / Skeleton / Banner --- */
+  /* --- Status / Badge / Progress / Banner --- */
   --tugx-badge-neutral-bg: var(--tug7-element-global-divider-normal-default-rest);
   --tugx-badge-neutral-fg: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-badge-accent-bg: --tug-color(orange, i: 50, t: 50, a: 20);
@@ -40,8 +40,6 @@ body {
   --tugx-progress-track: var(--tug7-element-global-divider-normal-separator-rest);
   --tugx-progress-fill: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-spinner: var(--tug7-element-global-fill-normal-accent-rest);
-  --tugx-skeleton-base: --tug-color(violet, i: 5, t: 20);
-  --tugx-skeleton-highlight: --tug-color(indigo, i: 7, t: 28);
   --tugx-emptyState-fg: var(--tug7-element-global-text-normal-subtle-rest);
   --tugx-emptyState-icon: var(--tug7-element-global-border-normal-default-rest);
   --tugx-kbd-bg: var(--tug7-surface-global-primary-normal-default-rest);
