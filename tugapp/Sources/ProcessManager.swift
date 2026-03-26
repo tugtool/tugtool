@@ -345,6 +345,16 @@ class ProcessManager {
             }
             let reason = msg.data["reason"] as? String ?? "unknown"
             switch reason {
+            case "relaunch":
+                NSLog("ProcessManager: shutdown reason=relaunch, tugrelaunch handles restart")
+                // Stop vite dev server before app exit
+                if let proc = viteProcess, proc.isRunning {
+                    NSLog("ProcessManager: terminating vite dev server before relaunch")
+                    proc.terminate()
+                    proc.waitUntilExit()
+                }
+                viteProcess = nil
+                restartDecision = .doNotRestart
             case "error":
                 let message = msg.data["message"] as? String ?? ""
                 NSLog("ProcessManager: shutdown reason=error, message=%@, will not restart", message)

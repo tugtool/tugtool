@@ -9,11 +9,20 @@ use tugcast_core::{FeedId, Frame};
 pub async fn dispatch_action(
     action: &str,
     raw_payload: &[u8],
-    _shutdown_tx: &mpsc::Sender<u8>,
+    shutdown_tx: &mpsc::Sender<u8>,
     client_action_tx: &broadcast::Sender<Frame>,
-    _shared_dev_state: &crate::dev::SharedDevState,
+    shared_dev_state: &crate::dev::SharedDevState,
 ) {
     match action {
+        "relaunch" => {
+            info!("dispatch_action: relaunch requested");
+            let shared = shared_dev_state.clone();
+            let cat = client_action_tx.clone();
+            let stx = shutdown_tx.clone();
+            tokio::spawn(async move {
+                crate::control::handle_relaunch(shared, cat, stx).await;
+            });
+        }
         other => {
             info!("dispatch_action: broadcasting client action: {}", other);
             let frame = Frame::new(FeedId::Control, raw_payload.to_vec());
