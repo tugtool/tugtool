@@ -121,6 +121,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       className,
       "aria-label": ariaLabel,
       role,
+      ...rest
     },
     ref,
   ) {
@@ -132,7 +133,6 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       "--tugx-toggle-on-hover-color": `var(--tug7-surface-toggle-track-normal-${tokenSuffix}-hover)`,
       "--tugx-toggle-disabled-color": `var(--tug7-surface-toggle-track-normal-${tokenSuffix}-disabled)`,
     } as React.CSSProperties;
-    const dataRole = role;
 
     const switchNode = (
       <SwitchPrimitive.Root
@@ -146,9 +146,10 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
         value={value}
         required={required}
         aria-label={!label ? ariaLabel : undefined}
-        className={cn("tug-switch", `tug-switch-size-${size}`)}
+        className={cn("tug-switch", `tug-switch-size-${size}`, !label && className)}
         style={roleStyle}
-        data-role={dataRole}
+        data-role={role}
+        {...rest}
       >
         <SwitchPrimitive.Thumb className="tug-switch-thumb" />
       </SwitchPrimitive.Root>

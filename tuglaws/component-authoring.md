@@ -210,6 +210,20 @@ Rules:
 - No React state for appearance [L06]. All visual changes via CSS custom properties, classes, or data attributes.
 - Functional components (no refs needed) skip `forwardRef` but still get `data-slot`
 
+### Code Quality — Common Bugs to Avoid
+
+Components must be high-quality, carefully reviewed code. The following bugs have been found in past audits and must not recur:
+
+**Every caller prop must reach the DOM.** If a prop is destructured, it must be used. A `className` prop that is silently dropped in one code path (e.g., when an optional wrapper is absent) is a bug. Test both branches: with and without optional wrappers like `label`.
+
+**`...rest` must be spread onto the root DOM element.** Without it, callers cannot pass `data-*` attributes, `aria-*` attributes, event handlers, or any other standard HTML attributes. This is not optional — it is required for composability.
+
+**Props interfaces must extend native element attributes.** Use `React.ComponentPropsWithoutRef<'element'>` (or Radix's equivalent) and `Omit` props whose semantics change. Do not manually redeclare props that the base interface already provides (`className`, `id`, `style`, etc.). A closed props interface that lists every prop by hand will always be incomplete.
+
+**Conditional rendering must not create asymmetric behavior.** When a component has two rendering paths (e.g., with-label vs without-label), both paths must handle `className`, `...rest`, and `ref` consistently. If `className` goes on a wrapper in one path, it must go on the root element in the other — never silently dropped.
+
+**No dead code, no history comments.** Unused variables, pointless aliases (`const x = y;` where `y` could be used directly), and comments about what was removed ("sub-component removed", "Phase N") are noise. Delete them.
+
 ### Sub-Components
 
 When a component has distinct structural parts (e.g., a group wrapper), define them in the same file, separated by banner comments:

@@ -35,7 +35,7 @@ export type TugBadgeSize = "sm" | "md" | "lg";
 /**
  * TugBadge props interface.
  */
-export interface TugBadgeProps {
+export interface TugBadgeProps extends Omit<React.ComponentPropsWithoutRef<"span">, "role"> {
   /**
    * Visual weight.
    * @selector .tug-badge-{emphasis}-{role}
@@ -58,8 +58,6 @@ export interface TugBadgeProps {
   children: React.ReactNode;
   /** Lucide icon node rendered before the label. */
   icon?: React.ReactNode;
-  /** Additional CSS class names. */
-  className?: string;
 }
 
 // ---- TugBadge ----
@@ -72,6 +70,7 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
     children,
     icon,
     className,
+    ...rest
   }: TugBadgeProps, ref) {
     const emphasisRoleClass = `tug-badge-${emphasis}-${role}`;
     const sizeClass = `tug-badge-size-${size}`;
@@ -81,6 +80,7 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
         ref={ref}
         data-slot="tug-badge"
         className={cn("tug-badge", sizeClass, emphasisRoleClass, className)}
+        {...rest}
       >
         {icon && <span className="tug-badge-icon">{icon}</span>}
         {children}

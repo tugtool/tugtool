@@ -126,6 +126,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       className,
       "aria-label": ariaLabel,
       role,
+      ...rest
     },
     ref,
   ) {
@@ -137,7 +138,6 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       "--tugx-toggle-on-hover-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-hover)`,
       "--tugx-toggle-disabled-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-disabled)`,
     } as React.CSSProperties;
-    const dataRole = role;
 
     const checkboxNode = (
       <CheckboxPrimitive.Root
@@ -151,9 +151,10 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
         value={value}
         required={required}
         aria-label={!label ? ariaLabel : undefined}
-        className={cn("tug-checkbox", `tug-checkbox-size-${size}`)}
+        className={cn("tug-checkbox", `tug-checkbox-size-${size}`, !label && className)}
         style={roleStyle}
-        data-role={dataRole}
+        data-role={role}
+        {...rest}
       >
         <CheckboxPrimitive.Indicator className="tug-checkbox-indicator">
           <span className="tug-checkbox-icon-check" aria-hidden="true">
@@ -186,11 +187,3 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     );
   },
 );
-
-/* ---------------------------------------------------------------------------
- * CheckIcon — internal sub-component removed.
- *
- * Icon visibility is now CSS-driven via [data-state] on the parent indicator.
- * The .tug-checkbox-icon-check span is visible by default; .tug-checkbox-icon-mixed
- * is hidden. When data-state="indeterminate", CSS swaps visibility. [L06]
- * ---------------------------------------------------------------------------*/
