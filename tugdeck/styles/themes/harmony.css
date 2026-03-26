@@ -574,13 +574,14 @@ body {
   --tug7-surface-control-primary-normal-selected-rest: --tug-color(blue, i: 50, t: 50, a: 18);
 
   /* Field */
-  --tug7-element-field-border-normal-danger-rest: --tug-color(red, t: 34);
+  --tug7-element-field-border-normal-danger-rest: --tug-color(red, i: 80, t: 42);
   --tug7-element-field-border-normal-plain-active: --tug-color(blue, t: 27);
   --tug7-element-field-border-normal-plain-disabled: --tug-color(indigo, i: 7, t: 78);
   --tug7-element-field-border-normal-plain-hover: --tug-color(indigo-cobalt, i: 10, t: 29);
   --tug7-element-field-border-normal-plain-readonly: --tug-color(indigo, i: 7, t: 78);
   --tug7-element-field-border-normal-plain-rest: --tug-color(indigo, i: 7, t: 29);
-  --tug7-element-field-border-normal-success-rest: --tug-color(green, t: 25);
+  --tug7-element-field-border-normal-success-rest: --tug-color(green, i: 70, t: 38);
+  --tug7-element-field-border-normal-caution-rest: --tug-color(yellow, i: 80, t: 45);
   --tug7-element-field-fill-normal-caution-rest: --tug-color(yellow, t: 22);
   --tug7-element-field-fill-normal-danger-rest: --tug-color(red);
   --tug7-element-field-fill-normal-success-rest: --tug-color(green);

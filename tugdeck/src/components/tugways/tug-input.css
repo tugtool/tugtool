@@ -1,25 +1,40 @@
+/* @tug-pairings {
+  --tug7-element-field-text-normal-plain-rest        | --tug7-surface-field-primary-normal-plain-rest     | content
+  --tug7-element-field-border-normal-plain-rest      | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-text-normal-placeholder-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-border-normal-plain-hover     | --tug7-surface-field-primary-normal-plain-hover    | informational
+  --tug7-element-field-border-normal-plain-active    | --tug7-surface-field-primary-normal-plain-focus    | informational
+  --tug7-element-field-text-normal-plain-disabled    | --tug7-surface-field-primary-normal-plain-disabled | informational
+  --tug7-element-field-border-normal-plain-disabled  | --tug7-surface-field-primary-normal-plain-disabled | informational
+  --tug7-element-field-text-normal-plain-readonly    | --tug7-surface-field-primary-normal-plain-readonly | informational
+  --tug7-element-field-border-normal-plain-readonly  | --tug7-surface-field-primary-normal-plain-readonly | informational
+  --tug7-element-field-border-normal-danger-rest     | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-border-normal-success-rest    | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-border-normal-caution-rest    | --tug7-surface-field-primary-normal-plain-rest     | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                        | Surface                                           | Role          | Context                                                              |
+ * |------------------------------------------------|---------------------------------------------------|---------------|----------------------------------------------------------------------|
+ * | --tug7-element-field-text-normal-plain-rest     | --tug7-surface-field-primary-normal-plain-rest     | content       | .tug-input (color)                                                   |
+ * | --tug7-element-field-border-normal-plain-rest   | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-input (border)                                                  |
+ * | --tug7-element-field-text-normal-placeholder-rest | --tug7-surface-field-primary-normal-plain-rest   | informational | .tug-input::placeholder (color)                                      |
+ * | --tug7-element-field-border-normal-plain-hover  | --tug7-surface-field-primary-normal-plain-hover    | informational | .tug-input:hover (border-color)                                      |
+ * | --tug7-element-field-border-normal-plain-active | --tug7-surface-field-primary-normal-plain-focus    | informational | .tug-input:focus (border-color)                                      |
+ * | --tug7-element-field-text-normal-plain-disabled | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-input:disabled (color)                                          |
+ * | --tug7-element-field-border-normal-plain-disabled | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-input:disabled (border-color)                                 |
+ * | --tug7-element-field-text-normal-plain-readonly | --tug7-surface-field-primary-normal-plain-readonly | informational | .tug-input:read-only (color)                                         |
+ * | --tug7-element-field-border-normal-plain-readonly | --tug7-surface-field-primary-normal-plain-readonly | informational | .tug-input:read-only (border-color)                                |
+ * | --tug7-element-field-border-normal-danger-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-input-invalid:not(:focus) (border-color)                        |
+ * | --tug7-element-field-border-normal-success-rest | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-input-valid:not(:focus) (border-color)                          |
+ * | --tug7-element-field-border-normal-caution-rest | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-input-warning:not(:focus) (border-color)                        |
+ */
+
 
 /* ============================================================================
    Base Input
    ========================================================================= */
-
-/**
- * @tug-pairings
- * | Element                                          | Surface                                          | Role         | Context                              |
- * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug7-element-field-text-normal-plain-rest (element-field-text-normal-plain-rest) | --tug7-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | content      | .tug-input (color)                   |
- * | --tug7-element-field-border-normal-plain-rest (element-field-border-normal-plain-rest) | --tug7-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input (border)                  |
- * | --tug7-element-field-text-normal-placeholder-rest (element-field-text-normal-placeholder-rest) | --tug7-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input::placeholder (color)      |
- * | --tug7-element-field-border-normal-plain-hover (element-field-border-normal-plain-hover) | --tug7-surface-field-primary-normal-plain-hover (surface-field-primary-normal-plain-hover) | informational | .tug-input:hover:not(:disabled):not(:read-only):not(:focus) (border-color) |
- * | --tug7-element-field-border-normal-plain-active (element-field-border-normal-plain-active) | --tug7-surface-field-primary-normal-plain-focus (surface-field-primary-normal-plain-focus) | informational | .tug-input:focus (border-color)      |
- * | --tug7-element-field-text-normal-plain-disabled (element-field-text-normal-plain-disabled) | --tug7-surface-field-primary-normal-plain-disabled (surface-field-primary-normal-plain-disabled) | informational | .tug-input:disabled (color)          |
- * | --tug7-element-field-border-normal-plain-disabled (element-field-border-normal-plain-disabled) | --tug7-surface-field-primary-normal-plain-disabled (surface-field-primary-normal-plain-disabled) | informational | .tug-input:disabled (border-color)   |
- * | --tug7-element-field-text-normal-plain-readonly (element-field-text-normal-plain-readonly) | --tug7-surface-field-primary-normal-plain-readonly (surface-field-primary-normal-plain-readonly) | informational | .tug-input:read-only:not(:disabled) (color) |
- * | --tug7-element-field-border-normal-plain-readonly (element-field-border-normal-plain-readonly) | --tug7-surface-field-primary-normal-plain-readonly (surface-field-primary-normal-plain-readonly) | informational | .tug-input:read-only:not(:disabled) (border-color) |
- * | --tug7-element-field-border-normal-danger-rest (element-field-border-normal-danger-rest) | --tug7-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-invalid:not(:focus) (border-color) |
- * | --tug7-element-field-border-normal-success-rest (element-field-border-normal-success-rest) | --tug7-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-valid:not(:focus) (border-color) |
- * | --tug7-element-field-fill-normal-caution-rest (element-field-fill-normal-caution-rest) | --tug7-surface-field-primary-normal-plain-rest (surface-field-primary-normal-plain-rest) | informational | .tug-input-warning:not(:focus) (border-color) |
- */
 
 
 .tug-input {
@@ -120,5 +135,20 @@
 
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
 .tug-input-warning:not(:focus) {
-  border-color: var(--tug7-element-field-fill-normal-caution-rest);
+  border-color: var(--tug7-element-field-border-normal-caution-rest);
+}
+
+/* ============================================================================
+   Search Clear Button (native WebKit)
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  background: var(--tug7-element-field-text-normal-plain-rest);
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E");
+  mask-size: contain;
+  cursor: pointer;
 }

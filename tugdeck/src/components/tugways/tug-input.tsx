@@ -1,21 +1,19 @@
 /**
- * TugInput -- tugways public API for text inputs.
+ * TugInput — tugways public API for text inputs.
  *
  * Wraps a plain <input> element (not a Radix primitive). All visual states
- * are driven by --tug-field-* tokens — theme switches update CSS
+ * are driven by --tug7-field-* tokens — theme switches update CSS
  * variables at the DOM level with no React re-renders.
  *
- * States: rest, hover, focus, disabled, readOnly.
- * Validation: default, invalid, valid, warning.
- * Sizes: sm (28px), md (32px), lg (36px) — matching TugButton heights.
- *
- * [D04] Token-driven control state model
- * [D05] Component token naming: --tug-field-*
+ * Laws: [L06] appearance via CSS, [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide
+ * Decisions: [D04] token-driven control state model, [D05] component token naming
  */
+
+import "./tug-input.css";
 
 import React from "react";
 import { cn } from "@/lib/utils";
-import "./tug-input.css";
 
 // ---- Types ----
 
@@ -25,14 +23,20 @@ export type TugInputSize = "sm" | "md" | "lg";
 /** TugInput validation state */
 export type TugInputValidation = "default" | "invalid" | "valid" | "warning";
 
-/**
- * TugInput props -- extends native input attributes.
- */
+/** TugInput props — extends native input attributes. */
 export interface TugInputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size"> {
-  /** Size variant. Default: "md" */
+  /**
+   * Visual size variant.
+   * @selector .tug-input-size-sm | .tug-input-size-md | .tug-input-size-lg
+   * @default "md"
+   */
   size?: TugInputSize;
-  /** Validation state. Default: "default" */
+  /**
+   * Validation state. Controls border color.
+   * @selector .tug-input-invalid | .tug-input-valid | .tug-input-warning
+   * @default "default"
+   */
   validation?: TugInputValidation;
 }
 
@@ -55,6 +59,7 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
     return (
       <input
         ref={ref}
+        data-slot="tug-input"
         className={inputClassName}
         aria-invalid={validation === "invalid" ? "true" : undefined}
         {...rest}

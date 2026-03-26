@@ -581,6 +581,7 @@ body {
   --tug7-element-field-border-normal-plain-readonly: --tug-color(indigo-violet, i: 6, t: 17);
   --tug7-element-field-border-normal-plain-rest: --tug-color(indigo, i: 6, t: 56);
   --tug7-element-field-border-normal-success-rest: --tug-color(green);
+  --tug7-element-field-border-normal-caution-rest: --tug-color(yellow);
   --tug7-element-field-fill-normal-caution-rest: --tug-color(yellow);
   --tug7-element-field-fill-normal-danger-rest: --tug-color(red);
   --tug7-element-field-fill-normal-success-rest: --tug-color(green);
