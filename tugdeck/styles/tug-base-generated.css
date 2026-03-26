@@ -587,7 +587,7 @@ body {
   --tug7-element-field-fill-normal-success-rest: --tug-color(green);
   --tug7-element-field-text-normal-label-rest: --tug-color(indigo, i: 3, t: 94);
   --tug7-element-field-text-normal-placeholder-rest: --tug-color(indigo, i: 6, t: 51);
-  --tug7-element-field-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 7, t: 23);
+  --tug7-element-field-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 5, t: 42);
   --tug7-element-field-text-normal-plain-readonly: --tug-color(indigo, i: 5, t: 66);
   --tug7-element-field-text-normal-plain-rest: --tug-color(indigo, i: 3, t: 94);
   --tug7-element-field-text-normal-required-rest: --tug-color(red, t: 69);

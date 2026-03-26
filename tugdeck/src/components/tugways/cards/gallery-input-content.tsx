@@ -66,8 +66,8 @@ export function GalleryInputContent() {
       <div className="cg-section">
         <div className="cg-section-title">Disabled</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
-          <TugInput disabled placeholder="Disabled (empty)" />
           <TugInput disabled defaultValue="Disabled with value" />
+          <TugInput disabled placeholder="Disabled with placeholder" />
         </div>
       </div>
 
@@ -78,7 +78,7 @@ export function GalleryInputContent() {
         <div className="cg-section-title">Read-only</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugInput readOnly defaultValue="Read-only with value" />
-          <TugInput readOnly placeholder="Read-only (empty)" />
+          <TugInput readOnly placeholder="Read-only with placeholder" />
         </div>
       </div>
 

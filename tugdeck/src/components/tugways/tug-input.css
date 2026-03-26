@@ -80,7 +80,10 @@
   color: var(--tug7-element-field-text-normal-plain-disabled);
   border-color: var(--tug7-element-field-border-normal-plain-disabled);
   cursor: not-allowed;
-  opacity: var(--tugx-control-disabled-opacity);
+}
+
+.tug-input:disabled::placeholder {
+  color: var(--tug7-element-field-text-normal-plain-disabled);
 }
 
 /* ---- Read-only ---- */
