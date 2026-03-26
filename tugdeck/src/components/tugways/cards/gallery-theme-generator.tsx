@@ -24,7 +24,7 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
-import "./gallery-theme-generator-content.css";
+import "./gallery-theme-generator.css";
 
 const CVD_TYPES: CVDType[] = ["protanopia", "deuteranopia", "tritanopia", "achromatopsia"];
 
@@ -178,7 +178,7 @@ export function GalleryThemeGeneratorContent() {
   const checkedCount = contrastResults.filter((r) => r.role !== "decorative").length;
 
   return (
-    <div className="cg-content gtg-content" data-testid="gallery-theme-generator-content">
+    <div className="cg-content gtg-content" data-testid="gallery-theme-generator">
       <div className="gtg-header-row" data-testid="gtg-doc-header">
         <div className="gtg-doc-info" data-testid="gtg-doc-info">
           <span className="gtg-doc-name" data-testid="gtg-doc-name">{themeName}</span>

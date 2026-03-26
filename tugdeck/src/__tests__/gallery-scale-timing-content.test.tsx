@@ -22,7 +22,7 @@ import React from "react";
 import { describe, it, expect, afterEach } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
-import { GalleryScaleTimingContent } from "@/components/tugways/cards/gallery-scale-timing-content";
+import { GalleryScaleTimingContent } from "@/components/tugways/cards/gallery-scale-timing";
 
 // ---------------------------------------------------------------------------
 // Helper: invoke a React input element's onChange handler directly.
@@ -88,7 +88,7 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
         ({ container } = render(<GalleryScaleTimingContent />));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-scale-timing-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-scale-timing']")).not.toBeNull();
   });
 
   it("renders the JS helper readout section", () => {

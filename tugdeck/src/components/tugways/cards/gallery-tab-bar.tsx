@@ -3,7 +3,7 @@
  *
  * **Authoritative reference:** [D01] gallery-tabbar componentId.
  *
- * @module components/tugways/cards/gallery-tab-bar-content
+ * @module components/tugways/cards/gallery-tab-bar
  */
 
 import React, { useState, useRef } from "react";
@@ -150,7 +150,7 @@ export function TugTabBarDemo() {
  */
 export function GalleryTabBarContent() {
   return (
-    <div className="cg-content" data-testid="gallery-tabbar-content">
+    <div className="cg-content" data-testid="gallery-tabbar">
       <div className="cg-section">
         <div className="cg-section-title">TugTabBar</div>
         <TugTabBarDemo />

@@ -7,7 +7,7 @@
  *
  * **Authoritative reference:** [D01] gallery-buttons componentId.
  *
- * @module components/tugways/cards/gallery-push-button-content
+ * @module components/tugways/cards/gallery-push-button
  */
 
 import React, { useState } from "react";
@@ -142,7 +142,7 @@ export function GalleryButtonsContent() {
   };
 
   return (
-    <div className="cg-content" data-testid="gallery-buttons-content">
+    <div className="cg-content" data-testid="gallery-buttons">
       {/* ---- Preview Controls ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Preview Controls</div>

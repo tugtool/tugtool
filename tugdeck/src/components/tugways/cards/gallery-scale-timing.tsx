@@ -1,5 +1,5 @@
 /**
- * gallery-scale-timing-content.tsx -- Scale & Timing interactive demo tab.
+ * gallery-scale-timing.tsx -- Scale & Timing interactive demo tab.
  *
  * Interactive controls for the three global CSS multipliers:
  *   --tug-zoom   dimension multiplier (range 0.85–2.0), applied via CSS zoom on body
@@ -12,7 +12,7 @@
  *   - useEffect cleanup restores all CSS custom properties on unmount [D40]
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-scale-timing-content
+ * @module components/tugways/cards/gallery-scale-timing
  */
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -166,7 +166,7 @@ export function GalleryScaleTimingContent() {
   }, []);
 
   return (
-    <div className="cg-content" data-testid="gallery-scale-timing-content">
+    <div className="cg-content" data-testid="gallery-scale-timing">
 
       {/* ---- Global Multipliers ---- */}
       <div className="cg-section">

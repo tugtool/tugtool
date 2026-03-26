@@ -1,5 +1,5 @@
 /**
- * gallery-skeleton-content.tsx -- TugSkeleton shimmer demo tab.
+ * gallery-skeleton.tsx -- TugSkeleton shimmer demo tab.
  *
  * Demonstrates TugSkeleton and TugSkeletonGroup with various configurations.
  * The shimmer animation is in the CSS lane (Rule 13 — continuous, infinite,
@@ -16,7 +16,7 @@
  *   - No React state drives appearance changes [D08, D09]
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-skeleton-content
+ * @module components/tugways/cards/gallery-skeleton
  */
 
 import React from "react";
@@ -39,7 +39,7 @@ import { TugSkeleton, TugSkeletonGroup } from "@/components/tugways/tug-skeleton
  */
 export function GallerySkeletonContent() {
   return (
-    <div className="cg-content" data-testid="gallery-skeleton-content">
+    <div className="cg-content" data-testid="gallery-skeleton">
 
       {/* ---- Single skeleton elements ---- */}
       <div className="cg-section">

@@ -13,7 +13,7 @@
  *
  * **Authoritative reference:** [D01] gallery-default-button componentId.
  *
- * @module components/tugways/cards/gallery-default-button-content
+ * @module components/tugways/cards/gallery-default-button
  */
 
 import React, { useState, useRef, useLayoutEffect } from "react";
@@ -57,7 +57,7 @@ export function GalleryDefaultButtonContent() {
   }, [manager]);
 
   return (
-    <div className="cg-content" data-testid="gallery-default-button-content">
+    <div className="cg-content" data-testid="gallery-default-button">
       <div className="cg-section">
         <div className="cg-section-title">Default Button</div>
         <p className="cg-description">

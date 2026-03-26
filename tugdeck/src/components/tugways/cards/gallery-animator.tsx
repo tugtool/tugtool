@@ -1,5 +1,5 @@
 /**
- * gallery-animator-content.tsx -- TugAnimator interactive demo tab.
+ * gallery-animator.tsx -- TugAnimator interactive demo tab.
  *
  * Showcases the TugAnimator API: physics solvers, animate() with duration
  * tokens, cancellation modes, and named slot coordination.
@@ -10,7 +10,7 @@
  *   - useEffect cleanup cancels running animations on unmount [D40]
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-animator-content
+ * @module components/tugways/cards/gallery-animator
  */
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
@@ -510,7 +510,7 @@ function NamedSlotsDemo() {
  */
 export function GalleryAnimatorContent() {
   return (
-    <div className="cg-content" data-testid="gallery-animator-content">
+    <div className="cg-content" data-testid="gallery-animator">
       <PhysicsCurvesDemo />
       <div className="cg-divider" />
       <DurationTokensDemo />

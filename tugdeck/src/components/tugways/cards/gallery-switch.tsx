@@ -1,12 +1,12 @@
 /**
- * gallery-switch-content.tsx -- TugSwitch demo tab for the Component Gallery.
+ * gallery-switch.tsx -- TugSwitch demo tab for the Component Gallery.
  *
  * Shows TugSwitch in all sizes, states, with labels, and disabled.
  *
  * Rules of Tugways compliance:
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-switch-content
+ * @module components/tugways/cards/gallery-switch
  */
 
 import React, { useState } from "react";
@@ -39,7 +39,7 @@ export function GallerySwitchContent() {
   const [enabled2, setEnabled2] = useState(true);
 
   return (
-    <div className="cg-content" data-testid="gallery-switch-content">
+    <div className="cg-content" data-testid="gallery-switch">
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">

@@ -7,7 +7,7 @@
  * [D07] Window-shade collapse
  * Step 3: Card Frame & Title Bar
  *
- * @module components/tugways/cards/gallery-title-bar-content
+ * @module components/tugways/cards/gallery-title-bar
  */
 
 import React, { useState } from "react";
@@ -44,7 +44,7 @@ export function GalleryTitleBarContent() {
   };
 
   return (
-    <div className="cg-content" data-testid="gallery-title-bar-content">
+    <div className="cg-content" data-testid="gallery-title-bar">
       <div className="cg-section">
         <div className="cg-section-title">Title Bar Demo (Step 3)</div>
         <p className="cg-description">

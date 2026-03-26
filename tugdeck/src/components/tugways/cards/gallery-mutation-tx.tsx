@@ -1,5 +1,5 @@
 /**
- * gallery-mutation-tx-content.tsx -- GalleryMutationTxContent demo component.
+ * gallery-mutation-tx.tsx -- GalleryMutationTxContent demo component.
  *
  * Demonstrates the MutationTransaction / MutationTransactionManager / StyleCascadeReader
  * pipeline with three interaction models:
@@ -22,7 +22,7 @@
  *
  * See: tugplan-tugways-phase-5d3-mutation-transactions.md
  *
- * @module components/tugways/cards/gallery-mutation-tx-content
+ * @module components/tugways/cards/gallery-mutation-tx
  */
 
 import React, { useRef, useLayoutEffect } from "react";
@@ -266,7 +266,7 @@ export function GalleryMutationTxContent() {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="cg-content" data-testid="gallery-mutation-tx-content">
+    <div className="cg-content" data-testid="gallery-mutation-tx">
       {/* ------------------------------------------------------------------ */}
       {/* Mock card -- absolute-positioned target element                     */}
       {/* ------------------------------------------------------------------ */}

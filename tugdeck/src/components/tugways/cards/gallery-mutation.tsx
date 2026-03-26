@@ -5,7 +5,7 @@
  *
  * **Authoritative reference:** [D01] gallery-mutation componentId.
  *
- * @module components/tugways/cards/gallery-mutation-content
+ * @module components/tugways/cards/gallery-mutation
  */
 
 import React, { useState, useRef } from "react";
@@ -86,7 +86,7 @@ export function MutationModelDemo() {
  */
 export function GalleryMutationContent() {
   return (
-    <div className="cg-content" data-testid="gallery-mutation-content">
+    <div className="cg-content" data-testid="gallery-mutation">
       <div className="cg-section">
         <div className="cg-section-title">Mutation Model</div>
         <MutationModelDemo />

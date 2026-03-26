@@ -7,7 +7,7 @@
  *
  * **Authoritative reference:** [D01] gallery-chain-actions componentId.
  *
- * @module components/tugways/cards/gallery-chain-actions-content
+ * @module components/tugways/cards/gallery-chain-actions
  */
 
 import React, { useState } from "react";
@@ -106,7 +106,7 @@ function ActionEventDemo() {
  */
 export function GalleryChainActionsContent() {
   return (
-    <div className="cg-content" data-testid="gallery-chain-actions-content">
+    <div className="cg-content" data-testid="gallery-chain-actions">
       <div className="cg-section">
         <div className="cg-section-title">Chain-Action Buttons</div>
         <div className="cg-variant-row">

@@ -23,13 +23,13 @@ import {
   GalleryMutationTxContent,
   GalleryBadgeContent,
 } from "@/components/tugways/cards/gallery-registrations";
-import { GalleryButtonsContent } from "@/components/tugways/cards/gallery-push-button-content";
-import { GalleryChainActionsContent } from "@/components/tugways/cards/gallery-chain-actions-content";
-import { GalleryMutationContent } from "@/components/tugways/cards/gallery-mutation-content";
-import { GalleryTabBarContent, TugTabBarDemo } from "@/components/tugways/cards/gallery-tab-bar-content";
-import { GalleryDefaultButtonContent } from "@/components/tugways/cards/gallery-default-button-content";
-import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props-content";
-import { GalleryPaletteContent } from "@/components/tugways/cards/gallery-palette-content";
+import { GalleryButtonsContent } from "@/components/tugways/cards/gallery-push-button";
+import { GalleryChainActionsContent } from "@/components/tugways/cards/gallery-chain-actions";
+import { GalleryMutationContent } from "@/components/tugways/cards/gallery-mutation";
+import { GalleryTabBarContent, TugTabBarDemo } from "@/components/tugways/cards/gallery-tab-bar";
+import { GalleryDefaultButtonContent } from "@/components/tugways/cards/gallery-default-button";
+import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props";
+import { GalleryPaletteContent } from "@/components/tugways/cards/gallery-palette";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { Tugcard } from "@/components/tugways/tug-card";
 import { getRegistration, _resetForTest } from "@/card-registry";
@@ -327,7 +327,7 @@ describe("GalleryButtonsContent – renders without errors", () => {
         ));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-buttons-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-buttons']")).not.toBeNull();
   });
 });
 
@@ -346,7 +346,7 @@ describe("GalleryChainActionsContent – renders without errors", () => {
         ));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-chain-actions-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-chain-actions']")).not.toBeNull();
   });
 });
 
@@ -361,7 +361,7 @@ describe("GalleryMutationContent – renders without errors", () => {
         ({ container } = render(<GalleryMutationContent />));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-mutation-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-mutation']")).not.toBeNull();
   });
 });
 
@@ -381,7 +381,7 @@ describe("GalleryTabBarContent – renders without errors", () => {
         ({ container } = render(<GalleryTabBarContent />));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-tabbar-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-tabbar']")).not.toBeNull();
   });
 });
 
@@ -396,7 +396,7 @@ describe("GalleryDropdownContent – renders without errors", () => {
         ({ container } = render(<GalleryDropdownContent />));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-popup-button-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-popup-button']")).not.toBeNull();
   });
 });
 
@@ -415,7 +415,7 @@ describe("GalleryDefaultButtonContent – renders without errors", () => {
         ));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-default-button-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-default-button']")).not.toBeNull();
   });
 
   it("renders Confirm and Cancel buttons", () => {
@@ -450,7 +450,7 @@ describe("GalleryMutationTxContent – renders without errors", () => {
         ));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-mutation-tx-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-mutation-tx']")).not.toBeNull();
   });
 
   it("renders the mock card element with initial styles", () => {
@@ -544,7 +544,7 @@ describe("GalleryPaletteContent – renders without errors", () => {
         ({ container } = render(<GalleryPaletteContent />));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-palette-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-palette']")).not.toBeNull();
   });
 });
 
@@ -557,7 +557,7 @@ describe("GalleryCascadeInspectorContent – renders without errors", () => {
   afterEach(() => { _resetForTest(); cleanup(); });
 
   it("renders without throwing", () => {
-    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector-content");
+    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector");
     let container!: HTMLElement;
     expect(() => {
       act(() => {
@@ -568,11 +568,11 @@ describe("GalleryCascadeInspectorContent – renders without errors", () => {
         ));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-cascade-inspector-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-cascade-inspector']")).not.toBeNull();
   });
 
   it("renders the activation instructions", () => {
-    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector-content");
+    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector");
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
@@ -585,7 +585,7 @@ describe("GalleryCascadeInspectorContent – renders without errors", () => {
   });
 
   it("renders all five inspectable sample elements", () => {
-    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector-content");
+    const { GalleryCascadeInspectorContent } = require("@/components/tugways/cards/gallery-cascade-inspector");
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
@@ -859,7 +859,7 @@ describe("GalleryObservablePropsContent – renders without errors", () => {
         ));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-observable-props-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-observable-props']")).not.toBeNull();
   });
 
   it("renders the target element and inspector panel", () => {
@@ -1134,7 +1134,7 @@ describe("GalleryBadgeContent – renders without errors", () => {
         ({ container } = render(<GalleryBadgeContent />));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-badge-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-badge']")).not.toBeNull();
   });
 
   it("renders TugBadge elements in the full matrix", () => {

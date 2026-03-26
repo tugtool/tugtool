@@ -23,7 +23,7 @@ import {
   GalleryPaletteContent,
   buildExportPayload,
   parseImportPayload,
-} from "@/components/tugways/cards/gallery-palette-content";
+} from "@/components/tugways/cards/gallery-palette";
 import { tugColor, MAX_CHROMA_FOR_HUE } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ describe("GalleryPaletteContent – renders without errors", () => {
         ({ container } = render(<GalleryPaletteContent />));
       });
     }).not.toThrow();
-    expect(container.querySelector("[data-testid='gallery-palette-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-palette']")).not.toBeNull();
   });
 
   it("renders the canonical strip", () => {

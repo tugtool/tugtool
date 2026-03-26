@@ -20,7 +20,7 @@ import React from "react";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
-import { GalleryMutationTxContent } from "@/components/tugways/cards/gallery-mutation-tx-content";
+import { GalleryMutationTxContent } from "@/components/tugways/cards/gallery-mutation-tx";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { mutationTransactionManager } from "@/components/tugways/mutation-transaction";
 import { _resetForTest } from "@/card-registry";

@@ -1,5 +1,5 @@
 /**
- * gallery-input-content.tsx -- TugInput demo tab for the Component Gallery.
+ * gallery-input.tsx -- TugInput demo tab for the Component Gallery.
  *
  * Shows TugInput in all sizes, validation states, disabled, and read-only.
  *
@@ -7,7 +7,7 @@
  *   - No React state drives appearance changes [D08, D09]
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-input-content
+ * @module components/tugways/cards/gallery-input
  */
 
 import React from "react";
@@ -27,7 +27,7 @@ const ALL_VALIDATIONS: TugInputValidation[] = ["default", "invalid", "valid", "w
 
 export function GalleryInputContent() {
   return (
-    <div className="cg-content" data-testid="gallery-input-content">
+    <div className="cg-content" data-testid="gallery-input">
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">

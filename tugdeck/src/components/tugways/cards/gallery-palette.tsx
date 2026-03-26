@@ -1,5 +1,5 @@
 /**
- * gallery-palette-content.tsx -- TugColor palette tuning editor.
+ * gallery-palette.tsx -- TugColor palette tuning editor.
  *
  * Interactive tool for defining 24 canonical colors in the TugColor color
  * system (Color · Intensity · Tone · Alpha). Each canonical color is defined
@@ -19,7 +19,7 @@
  *   - Local useState for UI state only [D40]
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-palette-content
+ * @module components/tugways/cards/gallery-palette
  */
 
 import React, { useState, useRef, useCallback } from "react";
@@ -36,7 +36,7 @@ import {
 } from "@/components/tugways/palette-engine";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
-import "./gallery-palette-content.css";
+import "./gallery-palette.css";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -648,7 +648,7 @@ export function GalleryPaletteContent() {
   };
 
   return (
-    <div className="cg-content gp-content" data-testid="gallery-palette-content">
+    <div className="cg-content gp-content" data-testid="gallery-palette">
       {/* Hidden file input for import */}
       <input
         ref={fileInputRef}

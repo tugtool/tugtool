@@ -1,5 +1,5 @@
 /**
- * gallery-label-content.tsx -- TugLabel demo tab for the Component Gallery.
+ * gallery-label.tsx -- TugLabel demo tab for the Component Gallery.
  *
  * Shows TugLabel in all sizes, ellipsis modes, with icons, and paired
  * with TugInput.
@@ -8,7 +8,7 @@
  *   - No React state drives appearance changes [D08, D09]
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-label-content
+ * @module components/tugways/cards/gallery-label
  */
 
 import React from "react";
@@ -27,7 +27,7 @@ const LONG_TEXT =
   "This is a long label that demonstrates multiline text wrapping behavior when the content exceeds the available width of the container element";
 
 const PATH_TEXT =
-  "/Users/kocienda/Documents/Projects/tugways/src/components/tugways/cards/gallery-label-content.tsx";
+  "/Users/kocienda/Documents/Projects/tugways/src/components/tugways/cards/gallery-label.tsx";
 
 // ---------------------------------------------------------------------------
 // GalleryLabelContent
@@ -35,7 +35,7 @@ const PATH_TEXT =
 
 export function GalleryLabelContent() {
   return (
-    <div className="cg-content" data-testid="gallery-label-content">
+    <div className="cg-content" data-testid="gallery-label">
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">

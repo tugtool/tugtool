@@ -22,11 +22,11 @@ import { render, act, cleanup } from "@testing-library/react";
 
 import { _resetForTest, getRegistration } from "@/card-registry";
 import { registerGalleryCards, GalleryDropdownContent } from "@/components/tugways/cards/gallery-registrations";
-import { GalleryButtonsContent } from "@/components/tugways/cards/gallery-push-button-content";
-import { GalleryChainActionsContent } from "@/components/tugways/cards/gallery-chain-actions-content";
-import { GalleryMutationContent } from "@/components/tugways/cards/gallery-mutation-content";
-import { GalleryTabBarContent } from "@/components/tugways/cards/gallery-tab-bar-content";
-import { GalleryDefaultButtonContent } from "@/components/tugways/cards/gallery-default-button-content";
+import { GalleryButtonsContent } from "@/components/tugways/cards/gallery-push-button";
+import { GalleryChainActionsContent } from "@/components/tugways/cards/gallery-chain-actions";
+import { GalleryMutationContent } from "@/components/tugways/cards/gallery-mutation";
+import { GalleryTabBarContent } from "@/components/tugways/cards/gallery-tab-bar";
+import { GalleryDefaultButtonContent } from "@/components/tugways/cards/gallery-default-button";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
@@ -132,7 +132,7 @@ describe("GalleryButtonsContent – renders without errors", () => {
         </ResponderChainProvider>
       ));
     });
-    expect(container.querySelector("[data-testid='gallery-buttons-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-buttons']")).not.toBeNull();
   });
 });
 
@@ -148,7 +148,7 @@ describe("GalleryChainActionsContent – renders without errors", () => {
         </ResponderChainProvider>
       ));
     });
-    expect(container.querySelector("[data-testid='gallery-chain-actions-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-chain-actions']")).not.toBeNull();
   });
 });
 
@@ -158,7 +158,7 @@ describe("GalleryMutationContent – renders without errors", () => {
     act(() => {
       ({ container } = render(<GalleryMutationContent />));
     });
-    expect(container.querySelector("[data-testid='gallery-mutation-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-mutation']")).not.toBeNull();
   });
 });
 
@@ -168,7 +168,7 @@ describe("GalleryTabBarContent – renders without errors", () => {
     act(() => {
       ({ container } = render(<GalleryTabBarContent />));
     });
-    expect(container.querySelector("[data-testid='gallery-tabbar-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-tabbar']")).not.toBeNull();
   });
 });
 
@@ -178,7 +178,7 @@ describe("GalleryDropdownContent – renders without errors", () => {
     act(() => {
       ({ container } = render(<GalleryDropdownContent />));
     });
-    expect(container.querySelector("[data-testid='gallery-popup-button-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-popup-button']")).not.toBeNull();
   });
 });
 
@@ -192,7 +192,7 @@ describe("GalleryDefaultButtonContent – renders without errors", () => {
         </ResponderChainProvider>
       ));
     });
-    expect(container.querySelector("[data-testid='gallery-default-button-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-default-button']")).not.toBeNull();
   });
 });
 

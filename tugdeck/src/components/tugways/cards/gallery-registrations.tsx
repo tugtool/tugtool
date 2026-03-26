@@ -24,26 +24,26 @@ import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import type { TabItem } from "@/layout-tree";
-import { GalleryButtonsContent } from "./gallery-push-button-content";
-import { GalleryChainActionsContent } from "./gallery-chain-actions-content";
-import { GalleryMutationContent } from "./gallery-mutation-content";
-import { GalleryTabBarContent } from "./gallery-tab-bar-content";
-import { GalleryDefaultButtonContent } from "./gallery-default-button-content";
-import { GalleryTitleBarContent } from "./gallery-title-bar-content";
-import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
-import { GalleryObservablePropsContent } from "./gallery-observable-props-content";
-import { GalleryPaletteContent } from "./gallery-palette-content";
-import { GalleryScaleTimingContent } from "./gallery-scale-timing-content";
-import { GalleryCascadeInspectorContent } from "./gallery-cascade-inspector-content";
-import { GalleryAnimatorContent } from "./gallery-animator-content";
-import { GallerySkeletonContent } from "./gallery-skeleton-content";
-import { GalleryInputContent } from "./gallery-input-content";
-import { GalleryLabelContent } from "./gallery-label-content";
-import { GalleryMarqueeContent } from "./gallery-marquee-content";
-import { GalleryCheckboxContent } from "./gallery-checkbox-content";
-import { GallerySwitchContent } from "./gallery-switch-content";
-import { GalleryThemeGeneratorContent } from "./gallery-theme-generator-content";
-import { GalleryPopupButtonContent } from "./gallery-popup-button-content";
+import { GalleryButtonsContent } from "./gallery-push-button";
+import { GalleryChainActionsContent } from "./gallery-chain-actions";
+import { GalleryMutationContent } from "./gallery-mutation";
+import { GalleryTabBarContent } from "./gallery-tab-bar";
+import { GalleryDefaultButtonContent } from "./gallery-default-button";
+import { GalleryTitleBarContent } from "./gallery-title-bar";
+import { GalleryMutationTxContent } from "./gallery-mutation-tx";
+import { GalleryObservablePropsContent } from "./gallery-observable-props";
+import { GalleryPaletteContent } from "./gallery-palette";
+import { GalleryScaleTimingContent } from "./gallery-scale-timing";
+import { GalleryCascadeInspectorContent } from "./gallery-cascade-inspector";
+import { GalleryAnimatorContent } from "./gallery-animator";
+import { GallerySkeletonContent } from "./gallery-skeleton";
+import { GalleryInputContent } from "./gallery-input";
+import { GalleryLabelContent } from "./gallery-label";
+import { GalleryMarqueeContent } from "./gallery-marquee";
+import { GalleryCheckboxContent } from "./gallery-checkbox";
+import { GallerySwitchContent } from "./gallery-switch";
+import { GalleryThemeGeneratorContent } from "./gallery-theme-generator";
+import { GalleryPopupButtonContent } from "./gallery-popup-button";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
  */
 export function GalleryBadgeContent() {
   return (
-    <div className="cg-content" data-testid="gallery-badge-content">
+    <div className="cg-content" data-testid="gallery-badge">
 
       {ALL_BADGE_EMPHASES.map((emphasis) => (
         <React.Fragment key={emphasis}>

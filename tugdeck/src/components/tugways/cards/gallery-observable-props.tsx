@@ -1,5 +1,5 @@
 /**
- * gallery-observable-props-content.tsx -- GalleryObservablePropsContent demo component.
+ * gallery-observable-props.tsx -- GalleryObservablePropsContent demo component.
  *
  * Demonstrates the full PropertyStore round-trip:
  *   1. Card content registers a PropertyStore via usePropertyStore().
@@ -33,7 +33,7 @@
  *
  * See also: tugplan-tugways-phase-5d4-observable-properties.md
  *
- * @module components/tugways/cards/gallery-observable-props-content
+ * @module components/tugways/cards/gallery-observable-props
  */
 
 import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
@@ -265,7 +265,7 @@ export function GalleryObservablePropsContent({ cardId }: { cardId: string }) {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="cg-content" data-testid="gallery-observable-props-content">
+    <div className="cg-content" data-testid="gallery-observable-props">
 
       {/* ------------------------------------------------------------------ */}
       {/* Target element: appearance driven by PropertyStore via              */}

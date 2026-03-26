@@ -1,5 +1,5 @@
 /**
- * gallery-marquee-content.tsx -- TugMarquee demo tab for the Component Gallery.
+ * gallery-marquee.tsx -- TugMarquee demo tab for the Component Gallery.
  *
  * Shows TugMarquee with various text lengths, speeds, pause times, and icons.
  *
@@ -8,7 +8,7 @@
  *   - No React state drives appearance changes [D08, D09]
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-marquee-content
+ * @module components/tugways/cards/gallery-marquee
  */
 
 import React from "react";
@@ -27,7 +27,7 @@ const MEDIUM_TEXT = "This is a medium-length label that will overflow in narrow 
 const LONG_TEXT =
   "This is a very long label that demonstrates the marquee scrolling behavior — it keeps scrolling to reveal the full text, then pauses, then scrolls again";
 const PATH_TEXT =
-  "/Users/kocienda/Documents/Projects/tugways/src/components/tugways/cards/gallery-marquee-content.tsx";
+  "/Users/kocienda/Documents/Projects/tugways/src/components/tugways/cards/gallery-marquee.tsx";
 const SONG_TEXT = "Aphex Twin — Selected Ambient Works 85-92 — Xtal (7:26)";
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ const SONG_TEXT = "Aphex Twin — Selected Ambient Works 85-92 — Xtal (7:26)";
 
 export function GalleryMarqueeContent() {
   return (
-    <div className="cg-content" data-testid="gallery-marquee-content">
+    <div className="cg-content" data-testid="gallery-marquee">
 
       {/* ---- Short text (no animation) ---- */}
       <div className="cg-section">

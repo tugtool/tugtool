@@ -1,5 +1,5 @@
 /**
- * gallery-cascade-inspector-content.tsx -- Cascade Inspector gallery tab content.
+ * gallery-cascade-inspector.tsx -- Cascade Inspector gallery tab content.
  *
  * Interactive demo tab for the StyleInspectorOverlay cascade inspector.
  * Provides a set of sample elements that exercise all token chain depths:
@@ -20,7 +20,7 @@
  *   Spec S03 (#s03-inspected-properties)
  *   (#scope, #new-files, #symbols)
  *
- * @module components/tugways/cards/gallery-cascade-inspector-content
+ * @module components/tugways/cards/gallery-cascade-inspector
  */
 
 import React, { useState } from "react";
@@ -59,7 +59,7 @@ export function GalleryCascadeInspectorContent() {
   const [dropdownSelected, setDropdownSelected] = useState<string | null>(null);
 
   return (
-    <div className="cg-content" data-testid="gallery-cascade-inspector-content">
+    <div className="cg-content" data-testid="gallery-cascade-inspector">
 
       {/* ---- Activation instructions ---- */}
       <div className="cg-section">

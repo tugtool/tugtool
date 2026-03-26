@@ -1,12 +1,12 @@
 /**
- * gallery-checkbox-content.tsx -- TugCheckbox demo tab for the Component Gallery.
+ * gallery-checkbox.tsx -- TugCheckbox demo tab for the Component Gallery.
  *
  * Shows TugCheckbox in all sizes, states, with labels, and disabled.
  *
  * Rules of Tugways compliance:
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-checkbox-content
+ * @module components/tugways/cards/gallery-checkbox
  */
 
 import React, { useState } from "react";
@@ -40,7 +40,7 @@ export function GalleryCheckboxContent() {
   const [checked3, setChecked3] = useState<TugCheckedState>("indeterminate");
 
   return (
-    <div className="cg-content" data-testid="gallery-checkbox-content">
+    <div className="cg-content" data-testid="gallery-checkbox">
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
