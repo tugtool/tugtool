@@ -1,33 +1,25 @@
 /**
- * TugBadge -- tugways display badge component.
+ * TugBadge — compact status/category label.
  *
- * A compact, pill-shaped label for surfacing status, role, or category at a
- * glance. Shares the same emphasis x role axis system as TugButton.
+ * Pill-shaped, display-only badge for surfacing status, role, or category.
+ * Shares the emphasis x role axis system with TugButton.
+ * Supports four emphases (filled, outlined, ghost, tinted) and seven roles.
  *
- * Emphasis x Role API [D06, Spec S06]:
- *   `emphasis` controls visual weight (filled/outlined/ghost), default: "filled"
- *   `role`     controls color domain (accent/action/agent/data/danger/success/caution), default: "action"
- *   Compound CSS class: tug-badge-{emphasis}-{role}
- *
- * Token strategy (Spec S08, S09):
- *   Tier 1 (8 Table T01 combos): reference --tug-control-{emphasis}-{role}-*-rest directly
- *   Tier 2 (success, caution): derive from tone families and fg-on{Role} tokens
- *   Non-T01 combos (7 remaining): derive from tone families per Spec S09
- *
- * [D06] TugBadge API: emphasis + role + size + children
- * Spec S06, S07, S08, S09
+ * Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authoring guide
+ * Decisions: [D02] emphasis x role system
  */
+
+import "./tug-badge.css";
 
 import React from "react";
 import { cn } from "@/lib/utils";
-import "./tug-badge.css";
 
 // ---- Types ----
 
-/** TugBadge emphasis values — controls visual weight (Spec S06) */
+/** TugBadge emphasis values — controls visual weight */
 export type TugBadgeEmphasis = "filled" | "outlined" | "ghost" | "tinted";
 
-/** TugBadge role values — controls color domain (Spec S06); includes all 7 roles */
+/** TugBadge role values — controls color domain; includes all 7 roles */
 export type TugBadgeRole =
   | "accent"
   | "action"
@@ -37,22 +29,34 @@ export type TugBadgeRole =
   | "success"
   | "caution";
 
-/** TugBadge size names (Spec S07) */
+/** TugBadge size names */
 export type TugBadgeSize = "sm" | "md" | "lg";
 
 /**
- * TugBadge props interface (Spec S06).
+ * TugBadge props interface.
  */
 export interface TugBadgeProps {
-  /** Visual weight. Default: "tinted". Controls filled/outlined/ghost/tinted styling. */
+  /**
+   * Visual weight.
+   * @selector .tug-badge-{emphasis}-{role}
+   * @default "tinted"
+   */
   emphasis?: TugBadgeEmphasis;
-  /** Color domain. Default: "action". Controls the hue family. */
+  /**
+   * Color domain.
+   * @selector .tug-badge-{emphasis}-{role}
+   * @default "action"
+   */
   role?: TugBadgeRole;
-  /** Badge size. Default: "sm". */
+  /**
+   * Badge size.
+   * @selector .tug-badge-size-sm | .tug-badge-size-md | .tug-badge-size-lg
+   * @default "sm"
+   */
   size?: TugBadgeSize;
   /** Badge label content (required). */
   children: React.ReactNode;
-  /** Lucide icon node rendered before the label */
+  /** Lucide icon node rendered before the label. */
   icon?: React.ReactNode;
   /** Additional CSS class names. */
   className?: string;
@@ -60,31 +64,27 @@ export interface TugBadgeProps {
 
 // ---- TugBadge ----
 
-/**
- * TugBadge -- tugways badge component.
- *
- * Compact label for status, role, or category. Display-only:
- * no hover or active states. Styling is entirely CSS custom property driven.
- *
- * emphasis: "filled" | "outlined" | "ghost" | "tinted" (default: "tinted")
- * role:     "accent" | "action" | "agent" | "data" | "danger" | "success" | "caution" (default: "action")
- * size:     "sm" | "md" | "lg" (default: "sm")
- */
-export function TugBadge({
-  emphasis = "tinted",
-  role = "action",
-  size = "sm",
-  children,
-  icon,
-  className,
-}: TugBadgeProps) {
-  const emphasisRoleClass = `tug-badge-${emphasis}-${role}`;
-  const sizeClass = `tug-badge-size-${size}`;
+export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
+  function TugBadge({
+    emphasis = "tinted",
+    role = "action",
+    size = "sm",
+    children,
+    icon,
+    className,
+  }: TugBadgeProps, ref) {
+    const emphasisRoleClass = `tug-badge-${emphasis}-${role}`;
+    const sizeClass = `tug-badge-size-${size}`;
 
-  return (
-    <span className={cn("tug-badge", sizeClass, emphasisRoleClass, className)}>
-      {icon && <span className="tug-badge-icon">{icon}</span>}
-      {children}
-    </span>
-  );
-}
+    return (
+      <span
+        ref={ref}
+        data-slot="tug-badge"
+        className={cn("tug-badge", sizeClass, emphasisRoleClass, className)}
+      >
+        {icon && <span className="tug-badge-icon">{icon}</span>}
+        {children}
+      </span>
+    );
+  }
+);
