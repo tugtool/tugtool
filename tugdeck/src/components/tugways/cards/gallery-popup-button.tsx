@@ -8,7 +8,7 @@
 import React, { useState } from "react";
 import { Star, Settings, Palette, ChevronDown } from "lucide-react";
 import { TugButton } from "@/components/tugways/internal/tug-button";
-import { TugPopupMenu } from "@/components/tugways/tug-popup-menu";
+import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import type { TugButtonSize } from "@/components/tugways/internal/tug-button";

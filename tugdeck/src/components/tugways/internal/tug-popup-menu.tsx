@@ -1,5 +1,8 @@
 /**
- * TugPopupMenu -- headless popup menu component.
+ * TugPopupMenu — Internal building block for popup menus.
+ *
+ * Internal building block — app code should use TugPopupButton instead.
+ * Composed by TugPopupButton (convenience wrapper) and TugTabBar (overflow/add menus).
  *
  * Wraps @radix-ui/react-dropdown-menu directly (no shadcn intermediary).
  * Unlike TugDropdown, TugPopupMenu does NOT own its trigger button.
@@ -20,7 +23,7 @@
  * **Law citations:** [L06] [L11] [L19]
  */
 
-import "./tug-menu.css";
+import "../tug-menu.css";
 
 import React, { useRef } from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";

@@ -19,8 +19,8 @@ import React from "react";
 import { ChevronDown } from "lucide-react";
 import { TugButton } from "./internal/tug-button";
 import type { TugButtonSize } from "./internal/tug-button";
-import { TugPopupMenu } from "./tug-popup-menu";
-import type { TugPopupMenuItem } from "./tug-popup-menu";
+import { TugPopupMenu } from "./internal/tug-popup-menu";
+import type { TugPopupMenuItem } from "./internal/tug-popup-menu";
 
 // Re-export TugPopupMenuItem so callers only need to import from tug-popup-button
 // when they also use TugPopupButton.
