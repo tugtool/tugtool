@@ -641,6 +641,30 @@ body {
   --tug7-surface-toggle-track-normal-on-hover: --tug-color(orange, i: 55, t: 26);
   --tug7-surface-toggle-track-normal-on-rest: --tug-color(orange, t: 26);
   --tug7-surface-toggle-track-normal-plain-disabled: --tug-color(violet, i: 2, t: 35);
+  --tug7-surface-toggle-track-normal-accent-disabled: --tug-color(orange, i: 25, t: 65);
+  --tug7-surface-toggle-track-normal-accent-hover: --tug-color(orange, i: 55, t: 26);
+  --tug7-surface-toggle-track-normal-accent-rest: --tug-color(orange, t: 26);
+  --tug7-surface-toggle-track-normal-active-disabled: --tug-color(blue, i: 25, t: 65);
+  --tug7-surface-toggle-track-normal-active-hover: --tug-color(blue, i: 75, t: 40);
+  --tug7-surface-toggle-track-normal-active-rest: --tug-color(blue, i: 70, t: 45);
+  --tug7-surface-toggle-track-normal-agent-disabled: --tug-color(violet, i: 25, t: 65);
+  --tug7-surface-toggle-track-normal-agent-hover: --tug-color(violet, i: 75, t: 40);
+  --tug7-surface-toggle-track-normal-agent-rest: --tug-color(violet, i: 70, t: 45);
+  --tug7-surface-toggle-track-normal-caution-disabled: --tug-color(yellow, i: 25, t: 65);
+  --tug7-surface-toggle-track-normal-caution-hover: --tug-color(yellow, i: 85, t: 34);
+  --tug7-surface-toggle-track-normal-caution-rest: --tug-color(yellow, i: 80, t: 38);
+  --tug7-surface-toggle-track-normal-danger-disabled: --tug-color(red, i: 25, t: 65);
+  --tug7-surface-toggle-track-normal-danger-hover: --tug-color(red, i: 85, t: 38);
+  --tug7-surface-toggle-track-normal-danger-rest: --tug-color(red, i: 80, t: 42);
+  --tug7-surface-toggle-track-normal-data-disabled: --tug-color(teal, i: 25, t: 65);
+  --tug7-surface-toggle-track-normal-data-hover: --tug-color(teal, i: 75, t: 36);
+  --tug7-surface-toggle-track-normal-data-rest: --tug-color(teal, i: 70, t: 40);
+  --tug7-surface-toggle-track-normal-option-disabled: --tug-color(indigo, i: 4, t: 65);
+  --tug7-surface-toggle-track-normal-option-hover: --tug-color(indigo, i: 12, t: 38);
+  --tug7-surface-toggle-track-normal-option-rest: --tug-color(indigo, i: 8, t: 30);
+  --tug7-surface-toggle-track-normal-success-disabled: --tug-color(green, i: 25, t: 65);
+  --tug7-surface-toggle-track-normal-success-hover: --tug-color(green, i: 75, t: 36);
+  --tug7-surface-toggle-track-normal-success-rest: --tug-color(green, i: 70, t: 40);
 
   /* Badge */
   --tug7-element-badge-border-ghost-accent-rest: transparent;

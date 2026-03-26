@@ -1,17 +1,27 @@
 /* @tug-pairings {
-  --tug7-element-toggle-thumb-normal-plain-rest     |  --tug7-surface-toggle-track-normal-off-rest      | control
-  --tug7-element-toggle-thumb-normal-plain-rest     |  --tug7-surface-toggle-track-normal-off-hover     | control
-  --tug7-element-toggle-thumb-normal-plain-rest     |  --tug7-surface-toggle-track-normal-on-rest       | control
-  --tug7-element-toggle-thumb-normal-plain-rest     |  --tug7-surface-toggle-track-normal-on-hover      | control
-  --tug7-element-toggle-thumb-normal-plain-disabled |  --tug7-surface-toggle-track-normal-plain-disabled | control
-  --tug7-element-field-text-normal-label-rest       |  --tug7-surface-global-primary-normal-default-rest | content
+  --tug7-surface-toggle-track-normal-off-rest  | --tug7-surface-global-primary-normal-default-rest  | informational
+  --tug7-surface-toggle-track-normal-off-hover | --tug7-surface-global-primary-normal-default-rest  | informational
+  --tug7-element-toggle-thumb-normal-plain-rest     | --tug7-surface-toggle-track-normal-off-rest   | control
+  --tug7-element-toggle-thumb-normal-plain-rest     | --tugx-toggle-on-color (injected, role-dependent) | control
+  --tug7-element-toggle-thumb-normal-plain-disabled | --tugx-toggle-disabled-color (injected, role-dependent) | control
+  --tug7-element-global-outline-normal-accentCool-rest | --tug7-surface-global-primary-normal-default-rest | informational
+  --tug7-element-field-text-normal-label-rest  | --tug7-surface-global-primary-normal-default-rest  | content
 } */
 
 /**
  * @tug-pairings
- * | Element                                          | Surface                                          | Role         | Context                              |
- * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug7-element-field-text-normal-label-rest (element-field-text-normal-label-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .tug-switch-label (color)            |
+ * | Element                                              | Surface                                            | Role          | Context                                                    |
+ * |------------------------------------------------------|----------------------------------------------------|---------------|------------------------------------------------------------|
+ * | --tug7-surface-toggle-track-normal-off-rest           | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-switch (background-color)                             |
+ * | --tug7-surface-toggle-track-normal-off-hover          | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-switch:hover (background-color)                       |
+ * | --tugx-toggle-on-color (injected per role)            | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-switch[data-state="checked"] (background-color)       |
+ * | --tugx-toggle-on-hover-color (injected per role)      | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-switch[data-state="checked"]:hover (background-color) |
+ * | --tugx-toggle-disabled-color (injected per role)      | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-switch:disabled (background-color)                    |
+ * | --tug7-element-toggle-thumb-normal-plain-rest         | --tug7-surface-toggle-track-normal-off-rest         | control       | .tug-switch-thumb (background-color)                       |
+ * | --tug7-element-toggle-thumb-normal-plain-rest         | --tugx-toggle-on-color (injected, role-dependent)   | control       | .tug-switch-thumb on checked track                         |
+ * | --tug7-element-toggle-thumb-normal-plain-disabled     | --tugx-toggle-disabled-color (injected, role-dependent) | control   | .tug-switch:disabled .tug-switch-thumb                     |
+ * | --tug7-element-global-outline-normal-accentCool-rest  | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-switch:focus-visible (outline)                        |
+ * | --tug7-element-field-text-normal-label-rest           | --tug7-surface-global-primary-normal-default-rest   | content       | .tug-switch-label (color)                                  |
  */
 
 
@@ -57,23 +67,17 @@
 /* ---- Checked (on) ---- */
 
 .tug-switch[data-state="checked"] {
-  background-color: var(--tugx-toggle-on-color, var(--tug7-surface-toggle-track-normal-on-rest));
+  background-color: var(--tugx-toggle-on-color);
 }
 
-/* Default hover (no role) — uses pre-computed hover token */
-.tug-switch[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
-  background-color: var(--tug7-surface-toggle-track-normal-on-hover);
-}
-
-/* Role hover — uses injected color-mix value */
-.tug-switch[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) {
+.tug-switch[data-state="checked"]:hover:not(:disabled):not([data-disabled]) {
   background-color: var(--tugx-toggle-on-hover-color);
 }
 
 /* ---- Focus ---- */
 
 .tug-switch:focus-visible {
-  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
   outline-offset: 2px;
 }
 
@@ -81,7 +85,7 @@
 
 .tug-switch:disabled,
 .tug-switch[data-disabled] {
-  background-color: var(--tug7-surface-toggle-track-normal-plain-disabled);
+  background-color: var(--tugx-toggle-disabled-color);
   cursor: not-allowed;
   opacity: var(--tugx-control-disabled-opacity);
 }
@@ -132,7 +136,7 @@
 
 /* Disabled thumb */
 
-/* @tug-renders-on: --tug7-surface-toggle-track-normal-plain-disabled */
+/* @tug-renders-on: --tugx-toggle-disabled-color (injected, role-dependent) */
 .tug-switch:disabled .tug-switch-thumb,
 .tug-switch[data-disabled] .tug-switch-thumb {
   background-color: var(--tug7-element-toggle-thumb-normal-plain-disabled);
