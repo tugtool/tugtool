@@ -23,6 +23,7 @@
  * | --tug7-element-field-border-normal-plain-hover  | --tug7-surface-field-primary-normal-plain-hover    | informational | .tug-input:hover (border-color)                                      |
  * | --tug7-element-field-border-normal-plain-active | --tug7-surface-field-primary-normal-plain-focus    | informational | .tug-input:focus (border-color)                                      |
  * | --tug7-element-field-text-normal-plain-disabled | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-input:disabled (color)                                          |
+ * | --tug7-element-field-text-normal-plain-disabled | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-input:disabled::placeholder (color)                             |
  * | --tug7-element-field-border-normal-plain-disabled | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-input:disabled (border-color)                                 |
  * | --tug7-element-field-text-normal-plain-readonly | --tug7-surface-field-primary-normal-plain-readonly | informational | .tug-input:read-only (color)                                         |
  * | --tug7-element-field-border-normal-plain-readonly | --tug7-surface-field-primary-normal-plain-readonly | informational | .tug-input:read-only (border-color)                                |
