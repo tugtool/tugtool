@@ -103,7 +103,7 @@
   display: block;
   border-radius: 9999px;
   background-color: var(--tug7-element-toggle-thumb-normal-plain-rest);
-  transition: transform 100ms ease;
+  transition: transform 100ms ease, background-color 150ms ease 100ms;
   align-self: center;
 }
 
