@@ -1898,20 +1898,20 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "informational",
   },
 
-  // --- Checkmark / toggle track pairings (tug-checkbox.css) ---
-  // checkmark-fg on toggle-track-on: checkmark icon on checked checkbox background
+  // --- Checkmark / toggle primary pairings (tug-checkbox.css) ---
+  // checkmark-fg on toggle-primary-on: checkmark icon on checked checkbox background
   {
     element: "--tug7-element-checkmark-icon-normal-plain-rest",
-    surface: "--tug7-surface-toggle-track-normal-on-rest",
+    surface: "--tug7-surface-toggle-primary-normal-on-rest",
     role: "control",
   },
-  // checkmark-fg-mixed on toggle-track-mixed: indeterminate dash on mixed checkbox background
-  // The mixed-state toggle track is intentionally subdued; the dash indicator on it is
+  // checkmark-fg-mixed on toggle-primary-mixed: indeterminate dash on mixed checkbox background
+  // The mixed-state toggle primary is intentionally subdued; the dash indicator on it is
   // classified as "decorative" (threshold 15) — the indicator's purpose is structural state
   // signaling via position and shape, not text contrast. Contrast floor must not bump this.
   {
     element: "--tug7-element-checkmark-icon-normal-plain-mixed",
-    surface: "--tug7-surface-toggle-track-normal-mixed-rest",
+    surface: "--tug7-surface-toggle-primary-normal-mixed-rest",
     role: "decorative",
   },
 

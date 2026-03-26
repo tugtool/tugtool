@@ -102,7 +102,7 @@ export interface TugCheckboxProps {
    * Injects --tugx-toggle-on-color and --tugx-toggle-on-hover-color as inline
    * CSS custom properties; CSS falls back to global tokens when not set.
    *
-   * "option" uses --tug7-element-global-text-normal-muted-rest (neutral/achromatic).
+   * "option" uses --tug7-surface-toggle-primary-normal-off-hover (neutral control surface).
    * "accent" suppresses injection and falls back to the CSS default (accent token).
    * All other roles inject the corresponding --tug-element-tone-fill-* token. [L06]
    *
@@ -134,9 +134,8 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
   ) {
     // Three-branch role injection logic. [L06]
     //
-    // Branch 1 — "option": inject fg-muted directly (neutral/achromatic).
-    //   The option role does not map to any --tug-tone-* token; it uses
-    //   --tug7-element-global-text-normal-muted-rest for a calm, achromatic on-state.
+    // Branch 1 — "option": inject toggle-primary-off-hover (neutral control surface).
+    //   The option role uses the off-state hover surface for a calm, neutral on-state.
     //
     // Branch 2 — other non-accent roles (action/agent/data/success/caution/danger):
     //   inject the corresponding --tug-tone-* token via ROLE_TONE_MAP.
@@ -147,8 +146,8 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
 
     if (role === "option") {
       roleStyle = {
-        "--tugx-toggle-on-color": "var(--tug7-element-global-text-normal-muted-rest)",
-        "--tugx-toggle-on-hover-color": "var(--tug7-element-global-text-normal-subtle-rest)",
+        "--tugx-toggle-on-color": "var(--tug7-surface-toggle-primary-normal-off-hover)",
+        "--tugx-toggle-on-hover-color": "color-mix(in oklch, var(--tug7-surface-toggle-primary-normal-off-hover), white 15%)",
       } as React.CSSProperties;
       dataRole = "option";
     } else if (role !== "accent" && ROLE_TONE_MAP[role] !== undefined) {

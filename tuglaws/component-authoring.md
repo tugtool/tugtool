@@ -285,6 +285,14 @@ All colors come from `--tug-*` tokens. Never hardcode colors. [L15, T##]
 .tug-input { background-color: oklch(0.15 0.01 260); }
 ```
 
+**Tokens must match what they're applied to.** The seven-slot naming system encodes what a token is *for* — the plane (`element` vs `surface`), the constituent (`text` vs `fill` vs `border`), and the component (`control` vs `field` vs `toggle`). A token applied to a CSS property must make semantic sense:
+
+- A control fill or background → use a `surface` token, not a `text` token
+- A border → use a `border` token, not a `fill` token
+- A checkbox on-state → use a `toggle-track` surface token, not a `text-muted` token
+
+If a token's seven-slot name doesn't describe what it's actually styling, the pairing is wrong — even if the color happens to look right. The naming system makes mismatches visible: a `text` token controlling a checkbox fill is immediately suspect to any agent reading the code. Use this as a smell test during review.
+
 ### Component-Tier Alias Rules
 
 Some components define short `--tugx-{component}-*` aliases that resolve to base-tier `--tug7-*` tokens. The decision rule:
@@ -465,6 +473,7 @@ Before a component is done:
 - [ ] `.tsx` follows the TSX structure (docstring, props, forwardRef, data-slot)
 - [ ] `.css` follows the CSS structure (@tug-pairings, @tug-renders-on, base → states → variants)
 - [ ] All colors via `--tug-*` tokens, zero hardcoded colors
+- [ ] Every token matches what it styles: surface tokens for fills/backgrounds, border tokens for borders, text tokens for text — no semantic mismatches
 - [ ] No ad-hoc theme logic in component TSX/JS
 - [ ] `data-slot="tug-{name}"` on root element
 - [ ] Module docstring cites minimum law set ([L06], [L15] if interactive, [L16] if CSS, [L19]) plus any component-specific laws; no `Spec S##` references
