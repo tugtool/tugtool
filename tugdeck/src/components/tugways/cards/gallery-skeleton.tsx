@@ -1,22 +1,8 @@
 /**
- * gallery-skeleton.tsx -- TugSkeleton shimmer demo tab.
+ * gallery-skeleton.tsx -- TugSkeleton gallery card.
  *
- * Demonstrates TugSkeleton and TugSkeletonGroup with various configurations.
- * The shimmer animation is in the CSS lane (Rule 13 — continuous, infinite,
- * background-attachment: fixed for cross-element synchronization). [D04]
- *
- * Because background-attachment: fixed uses viewport-relative coordinates,
- * all .tug-skeleton elements on screen share the same shimmer phase —
- * the highlight sweeps across all of them simultaneously regardless of DOM
- * nesting or scroll position.
- *
- * Rules of Tugways compliance:
- *   - Shimmer uses CSS @keyframes (CSS lane, Rule 13 — continuous, infinite)
- *   - No TugAnimator usage here — TugSkeleton needs no completion handler
- *   - No React state drives appearance changes [D08, D09]
- *   - No root.render() after initial mount [D40, D42]
- *
- * @module components/tugways/cards/gallery-skeleton
+ * Demonstrates TugSkeleton and TugSkeletonGroup with various
+ * widths, heights, radii, groups, and side-by-side synchronization.
  */
 
 import React from "react";
@@ -26,28 +12,13 @@ import { TugSkeleton, TugSkeletonGroup } from "@/components/tugways/tug-skeleton
 // GallerySkeletonContent
 // ---------------------------------------------------------------------------
 
-/**
- * GallerySkeletonContent -- TugSkeleton shimmer demo wrapped for gallery card tab.
- *
- * Sections:
- *   1. Single skeleton at various widths and heights
- *   2. TugSkeletonGroup mimicking a text-block loading state
- *   3. Multiple groups side-by-side to demonstrate background-attachment: fixed
- *      synchronization — the highlight sweeps in phase across all groups
- *
- * **Authoritative reference:** [D04] TugSkeleton standalone, Spec S01.
- */
 export function GallerySkeletonContent() {
   return (
     <div className="cg-content" data-testid="gallery-skeleton">
 
       {/* ---- Single skeleton elements ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Single Skeleton — Width Variants</div>
-        <p className="cg-description">
-          Each element uses <code>background-attachment: fixed</code>, so all shimmer
-          highlights are synchronized to the same viewport position.
-        </p>
+        <div className="cg-section-title">TugSkeleton — Width Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxWidth: "400px" }}>
           <TugSkeleton width="100%" height={14} />
           <TugSkeleton width="80%"  height={14} />
@@ -60,7 +31,7 @@ export function GallerySkeletonContent() {
 
       {/* ---- Height variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Single Skeleton — Height Variants</div>
+        <div className="cg-section-title">TugSkeleton — Height Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxWidth: "400px" }}>
           <TugSkeleton width="100%" height={10} />
           <TugSkeleton width="100%" height={16} />
@@ -73,7 +44,7 @@ export function GallerySkeletonContent() {
 
       {/* ---- Radius override ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Single Skeleton — Radius Override</div>
+        <div className="cg-section-title">TugSkeleton — Radius Override</div>
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
           <TugSkeleton width="60px"  height={60} />
           <TugSkeleton width="60px"  height={60} radius="50%" />
@@ -106,11 +77,10 @@ export function GallerySkeletonContent() {
 
       {/* ---- Multiple groups: synchronized shimmer ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Synchronized Shimmer — Multiple Groups</div>
+        <div className="cg-section-title">TugSkeleton — Multiple Groups Side by Side</div>
         <p className="cg-description">
-          All shimmer elements share the same highlight phase because{" "}
-          <code>background-attachment: fixed</code> uses viewport-relative coordinates.
-          Notice that the highlight sweeps across both columns simultaneously.
+          All skeleton elements share the same CSS pulse animation, so
+          elements across separate groups breathe in sync.
         </p>
         <div style={{ display: "flex", gap: "24px" }}>
           {/* Column 1: card-like skeleton */}
