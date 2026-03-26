@@ -647,7 +647,7 @@ body {
   --tug7-element-badge-icon-outlined-danger-rest: --tug-color(red, t: 35);
   --tug7-element-badge-icon-outlined-data-rest: --tug-color(teal, t: 35);
   --tug7-element-badge-icon-outlined-success-rest: --tug-color(green, t: 35);
-  --tug7-element-badge-text-ghost-accent-rest: --tug-color(orange, i: 80, t: 35);
+  --tug7-element-badge-text-ghost-accent-rest: --tug-color(orange, i: 70, t: 45);
   --tug7-element-badge-text-ghost-action-rest: --tug-color(blue, i: 80, t: 35);
   --tug7-element-badge-text-ghost-agent-rest: --tug-color(violet, i: 80, t: 35);
   --tug7-element-badge-text-ghost-caution-rest: --tug-color(yellow, i: 100, t: 35);
@@ -661,7 +661,7 @@ body {
   --tug7-element-badge-text-outlined-danger-rest: --tug-color(red, t: 35);
   --tug7-element-badge-text-outlined-data-rest: --tug-color(teal, t: 35);
   --tug7-element-badge-text-outlined-success-rest: --tug-color(green, t: 35);
-  --tug7-element-badge-text-tinted-accent-rest: --tug-color(orange, i: 72, t: 15);
+  --tug7-element-badge-text-tinted-accent-rest: --tug-color(orange, i: 72, t: 35);
   --tug7-element-badge-text-tinted-action-rest: --tug-color(blue, i: 72, t: 15);
   --tug7-element-badge-text-tinted-agent-rest: --tug-color(violet, i: 72, t: 15);
   --tug7-element-badge-text-tinted-caution-rest: --tug-color(yellow, i: 72, t: 15);
@@ -682,13 +682,13 @@ body {
   --tug7-surface-badge-primary-outlined-danger-rest: transparent;
   --tug7-surface-badge-primary-outlined-data-rest: transparent;
   --tug7-surface-badge-primary-outlined-success-rest: transparent;
-  --tug7-surface-badge-primary-tinted-accent-rest: --tug-color(orange, i: 40, t: 65, a: 80);
-  --tug7-surface-badge-primary-tinted-action-rest: --tug-color(blue, i: 40, t: 65, a: 80);
-  --tug7-surface-badge-primary-tinted-agent-rest: --tug-color(violet, i: 40, t: 65, a: 80);
-  --tug7-surface-badge-primary-tinted-caution-rest: --tug-color(yellow, i: 40, t: 65, a: 80);
-  --tug7-surface-badge-primary-tinted-danger-rest: --tug-color(red, i: 40, t: 65, a: 80);
-  --tug7-surface-badge-primary-tinted-data-rest: --tug-color(teal, i: 40, t: 65, a: 80);
-  --tug7-surface-badge-primary-tinted-success-rest: --tug-color(green, i: 40, t: 65, a: 80);
+  --tug7-surface-badge-primary-tinted-accent-rest: --tug-color(orange, i: 80, t: 45, a: 20);
+  --tug7-surface-badge-primary-tinted-action-rest: --tug-color(blue, i: 80, t: 45, a: 20);
+  --tug7-surface-badge-primary-tinted-agent-rest: --tug-color(violet, i: 80, t: 45, a: 20);
+  --tug7-surface-badge-primary-tinted-caution-rest: --tug-color(yellow, i: 80, t: 45, a: 20);
+  --tug7-surface-badge-primary-tinted-danger-rest: --tug-color(red, i: 80, t: 45, a: 20);
+  --tug7-surface-badge-primary-tinted-data-rest: --tug-color(teal, i: 80, t: 45, a: 20);
+  --tug7-surface-badge-primary-tinted-success-rest: --tug-color(green, i: 80, t: 45, a: 20);
 
   /* Other */
   --tug7-element-card-title-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
