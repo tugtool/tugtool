@@ -171,7 +171,7 @@ const SIZE_ROUNDED_DEFAULT: Record<TugButtonSize, TugButtonRounded> = {
 function Spinner() {
   return (
     <span className="tug-button-spinner-overlay" aria-hidden="true">
-      <span className="tug-petals" style={{ "--tug-petals-size": "18px" } as React.CSSProperties}>
+      <span className="tug-petals" style={{ "--tug-petals-size": "14px" } as React.CSSProperties}>
         <span className="petal" /><span className="petal" /><span className="petal" /><span className="petal" />
         <span className="petal" /><span className="petal" /><span className="petal" /><span className="petal" />
       </span>

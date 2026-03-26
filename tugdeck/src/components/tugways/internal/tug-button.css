@@ -802,6 +802,7 @@
   align-items: center;
   justify-content: center;
   border-radius: inherit;
+  --tugx-spinner: currentColor;
 }
 
 .tug-button-loading-content {

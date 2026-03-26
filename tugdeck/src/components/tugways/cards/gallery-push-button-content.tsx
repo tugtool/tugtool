@@ -11,7 +11,7 @@
  */
 
 import React, { useState } from "react";
-import { Star, ChevronDown } from "lucide-react";
+import { Star, ArrowRight } from "lucide-react";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
@@ -251,7 +251,7 @@ export function GalleryButtonsContent() {
             emphasis="outlined"
             role="action"
             size="md"
-            trailingIcon={<ChevronDown size={14} />}
+            trailingIcon={<ArrowRight size={14} />}
           >
             Options
           </TugPushButton>
@@ -259,7 +259,7 @@ export function GalleryButtonsContent() {
             emphasis="filled"
             role="accent"
             size="md"
-            trailingIcon={<ChevronDown size={14} />}
+            trailingIcon={<ArrowRight size={14} />}
           >
             Select
           </TugPushButton>
@@ -269,7 +269,7 @@ export function GalleryButtonsContent() {
             role="action"
             size="md"
             icon={<Star size={14} />}
-            trailingIcon={<ChevronDown size={14} />}
+            trailingIcon={<ArrowRight size={14} />}
           >
             More
           </TugPushButton>
@@ -277,7 +277,7 @@ export function GalleryButtonsContent() {
             emphasis="ghost"
             role="action"
             size="sm"
-            trailingIcon={<ChevronDown size={12} />}
+            trailingIcon={<ArrowRight size={12} />}
           >
             Dropdown
           </TugPushButton>
