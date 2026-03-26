@@ -9,11 +9,12 @@
  * Decisions: [D02] emphasis x role system
  */
 
+import "./tug-button.css";
+
 import React, { useSyncExternalStore } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 import { useResponderChain } from "../responder-chain-provider";
-import "./tug-button.css";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
 // Module-level stable references prevent React from seeing new function
@@ -53,13 +54,29 @@ export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
  *   - 'children': TugButton redefines it as React.ReactNode (same type but explicit)
  */
 export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'role' | 'onClick' | 'children'> {
-  /** Button rendering subtype. Default: "text" */
+  /**
+   * Button rendering subtype.
+   * @selector .tug-button-icon-sm | .tug-button-icon-md | .tug-button-icon-lg
+   * @default "text"
+   */
   subtype?: TugButtonSubtype;
-  /** Visual weight. Default: "outlined". Controls filled/outlined/ghost styling. [D02] */
+  /**
+   * Visual weight. Controls filled/outlined/ghost styling. [D02]
+   * @selector .tug-button-{emphasis}-{role}
+   * @default "outlined"
+   */
   emphasis?: TugButtonEmphasis;
-  /** Color domain. Default: "action". Controls accent/action/data/danger hue. [D02] */
+  /**
+   * Color domain. Controls accent/action/data/danger hue. [D02]
+   * @selector .tug-button-{emphasis}-{role}
+   * @default "action"
+   */
   role?: TugButtonRole;
-  /** Size variant. Default: "md" */
+  /**
+   * Size variant.
+   * @selector .tug-button-size-sm | .tug-button-size-md | .tug-button-size-lg
+   * @default "md"
+   */
   size?: TugButtonSize;
 
   /** Direct-action mode click handler. Mutually exclusive with `action`. */
@@ -93,9 +110,16 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    */
   target?: string;
 
-  /** Disable the button */
+  /**
+   * Disable the button.
+   * @selector :disabled
+   * @default false
+   */
   disabled?: boolean;
-  /** Show spinner overlay and disable interaction */
+  /**
+   * Show spinner overlay and disable interaction.
+   * @selector .tug-button-loading
+   */
   loading?: boolean;
   /** Button label content (required for text and icon-text subtypes) */
   children?: React.ReactNode;
@@ -378,6 +402,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   return (
     <Comp
       ref={ref}
+      data-slot="tug-button"
       disabled={disabled}
       aria-label={ariaLabel}
       aria-busy={loading ? "true" : undefined}

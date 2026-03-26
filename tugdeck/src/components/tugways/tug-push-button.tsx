@@ -23,6 +23,7 @@ export const TugPushButton = React.forwardRef<HTMLButtonElement, TugPushButtonPr
     return (
       <TugButton
         ref={ref}
+        data-slot="tug-push-button"
         className={cn("tug-push-button", className)}
         {...props}
       />
