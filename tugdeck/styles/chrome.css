@@ -3,7 +3,7 @@
  * Retains rules that are clearer as CSS than Tailwind utilities:
  * resize handle hit areas, snap guide borders, virtual sash hover, flash overlays.
  * All other chrome styles are Tailwind utilities on React components.
- * Replaces cards-chrome.css (404 lines, now deleted). Uses --tug-* tokens from tug.css.
+ * Uses --tug-* tokens from tug.css.
  */
 
 /* ---- Resize handles: 8px hit area on each edge/corner ---- */
@@ -70,7 +70,7 @@
 
 /* ---- Virtual sash ---- */
 .virtual-sash          { position: absolute; z-index: 9950; background: transparent; }
-.virtual-sash:hover    { background: --tug-color(cobalt, i: 3, t: 94, a: 8); }
+.virtual-sash:hover    { background: var(--tug7-surface-highlight-primary-normal-snap-hover); }
 .virtual-sash-vertical   { width: 8px; cursor: col-resize; }
 .virtual-sash-horizontal { height: 8px; cursor: row-resize; }
 
@@ -90,8 +90,8 @@
 
 /*
  * .card-flash-overlay: full-perimeter flash on a single card frame (break-out flash).
- * Renamed from .set-flash-overlay; used exclusively by flashCardPerimeter(). [D55]
- * Opacity is driven by TugAnimator.animate().finished (programmatic lane, Rule 13).
+ * Used exclusively by flashCardPerimeter(). [D55]
+ * Opacity is driven by TugAnimator.animate().finished (programmatic lane).
  */
 .card-flash-overlay {
   position: absolute;
@@ -100,8 +100,8 @@
   border: 3px solid var(--tug7-element-global-fill-normal-accent-rest);
   border-radius: inherit;
   box-shadow:
-    0 0 5px --tug-color(orange, i: 50, t: 50, a: 60),
-    inset 0 0 16px --tug-color(orange, i: 50, t: 50, a: 20);
+    0 0 5px var(--tug7-element-global-shadow-normal-flash-rest),
+    inset 0 0 16px var(--tug7-element-global-shadow-normal-flashInset-rest);
   z-index: 2;
   box-sizing: border-box;
 }
@@ -109,8 +109,8 @@
 /*
  * SVG hull flash: one SVG element per set, positioned on the ResponderScope.
  * Uses overflow: visible so the glow filter extends beyond SVG bounds.
- * Opacity is driven by TugAnimator.animate().finished (programmatic lane, Rule 13).
- * [D01, D02, Spec S03]
+ * Opacity is driven by TugAnimator.animate().finished (programmatic lane).
+ * [D01, D02]
  */
 .set-flash-svg {
   position: absolute;

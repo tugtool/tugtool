@@ -114,6 +114,8 @@ body {
   --tug7-element-global-shadow-normal-overlay-rest: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 60);
   --tug7-element-global-shadow-normal-xl-rest: --tug-color(black, i: 0, t: 0, a: 80);
   --tug7-element-global-shadow-normal-xs-rest: --tug-color(black, i: 0, t: 0, a: 20);
+  --tug7-element-global-shadow-normal-flash-rest: --tug-color(orange, i: 50, t: 50, a: 60);
+  --tug7-element-global-shadow-normal-flashInset-rest: --tug-color(orange, i: 50, t: 50, a: 20);
 
   /* Surface — Overlay */
   --tug7-surface-overlay-primary-normal-dim-rest: --tug-color(black, i: 0, t: 0, a: 48);
@@ -175,6 +177,7 @@ body {
   --tug7-surface-highlight-primary-normal-inspector-rest: --tug-color(blue, i: 50, t: 50, a: 22);
   --tug7-surface-highlight-primary-normal-preview-rest: --tug-color(blue, i: 50, t: 50, a: 12);
   --tug7-surface-highlight-primary-normal-snap-rest: --tug-color(blue, i: 50, t: 50, a: 50);
+  --tug7-surface-highlight-primary-normal-snap-hover: --tug-color(cobalt, i: 3, t: 15, a: 8);
 
   /* Tab */
   --tug7-element-tab-text-normal-plain-active: --tug-color(indigo, i: 3, t: 90);

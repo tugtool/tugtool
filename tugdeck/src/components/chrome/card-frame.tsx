@@ -1,27 +1,15 @@
 /**
- * CardFrame -- absolutely-positioned frame with drag, resize, z-index, and
+ * CardFrame — absolutely-positioned frame with drag, resize, z-index, and
  * min-size clamping.
  *
- * **Authoritative references:**
- * - design-system-concepts.md [D03] CardFrame/Tugcard separation,
- *   [D06] Appearance-zone drag
- * - Spec S04: CardFrameProps, CardFrameInjectedProps
- * - Risk R02: two-zone drag boundary (appearance-zone during, structure-zone on end)
+ * Responsibilities:
+ * - Render an absolutely-positioned div at position/size from cardState
+ * - Inject onDragStart and onMinSizeChange into Tugcard via renderContent
+ * - Drag: RAF appearance-zone mutation during, onCardMoved structure-zone commit on end
+ * - Resize: 8 edge/corner handles, clamped to min-size, onCardMoved on end
+ * - Bring to front via onCardFocused on any pointer-down in the frame
  *
- * ## Responsibilities
- *
- * - Render an absolutely-positioned div at position/size from `cardState`
- * - Inject `onDragStart` and `onMinSizeChange` into Tugcard via `renderContent`
- * - Drag: RAF appearance-zone mutation during, `onCardMoved` structure-zone commit on end
- * - Resize: 8 edge/corner handles, clamped to min-size, `onCardMoved` on end
- * - Bring to front via `onCardFocused` on any pointer-down in the frame
- *
- * ## onCardClosed wiring
- *
- * `onCardClosed` is NOT injected via `CardFrameInjectedProps`. Instead, DeckCanvas
- * passes a `renderContent` function whose factory closure already binds `onClose`
- * to `onCardClosed(id)`. CardFrame calls `renderContent(injected)` exactly once
- * and never needs to know about the close callback.
+ * [D03] CardFrame/Tugcard separation, [D06] appearance-zone drag
  *
  * @module components/chrome/card-frame
  */
@@ -34,13 +22,13 @@ import { animate } from "@/components/tugways/tug-animator";
 import { CARD_TITLE_BAR_HEIGHT } from "../tugways/tug-card";
 
 // ---------------------------------------------------------------------------
-// Module-level counter for unique SVG flash filter IDs [Spec S03]
+// Module-level counter for unique SVG flash filter IDs
 // ---------------------------------------------------------------------------
 
 let nextFlashId = 0;
 
 // ---------------------------------------------------------------------------
-// Shadow extension constant [Spec S02]
+// Shadow extension constant
 //
 // px beyond border-box for exterior edges in clip-path: inset().
 // Derived from --tugx-card-shadow-active: 0 2px 8px rgba(0,0,0,0.4).
@@ -72,14 +60,11 @@ function isSnapModifier(e: PointerEvent): boolean {
 const CANVAS_PADDING = 2;
 
 // ---------------------------------------------------------------------------
-// Types (Spec S04)
+// Types
 // ---------------------------------------------------------------------------
 
 /**
  * Props injected by CardFrame into the content returned by `renderContent`.
- *
- * **Authoritative reference:** Spec S04 CardFrameInjectedProps.
- *
  */
 export interface CardFrameInjectedProps {
   /** Tugcard header calls this on pointer-down to initiate drag. */
@@ -94,8 +79,6 @@ export interface CardFrameInjectedProps {
 
 /**
  * Props for the CardFrame component.
- *
- * **Authoritative reference:** Spec S04 CardFrameProps.
  */
 export interface CardFrameProps {
   /** Card position, size, and id from DeckState. */
@@ -688,7 +671,7 @@ export function CardFrame({
 
         dragTabBarCache.current = [];
 
-        // Compute final position for the dragged card. [S03]
+        // Compute final position for the dragged card.
         // During set-move, clamp using the full set bounding box (same logic as applyDragFrame). [D02]
         const bboUp = dragSetBBoxOffset.current;
         const setMoveActiveUp = dragSetMembers.current.length > 0;
@@ -720,7 +703,7 @@ export function CardFrame({
           );
         }
 
-        // Apply snapped position if snap was active at drop. [S03 priority 2]
+        // Apply snapped position if snap was active at drop.
         const snapResult = lastSnapResult.current;
         const finalPos = {
           x: snapResult && snapResult.x !== null ? snapResult.x : clampedPos.x,
@@ -848,7 +831,7 @@ export function CardFrame({
       const resizePreSetMemberIds: string[] = resizePreSet ? resizePreSet.cardIds.slice() : [];
 
       // Detect sash neighbor: if this card is in a set AND the edge being resized is a shared
-      // edge with a neighbor, store the sash neighbor info for co-resize. [Fix 3]
+      // edge with a neighbor, store the sash neighbor info for co-resize.
       // Only single-edge resizes (n, s, e, w) can be sash; corners skip sash detection.
       let sashNeighborId: string | null = null;
       let sashNeighborEdge: "n" | "s" | "e" | "w" | null = null;
@@ -922,7 +905,7 @@ export function CardFrame({
         );
 
         // Sash co-resize: when a shared edge is grabbed and modifier is NOT held,
-        // apply the opposite resize to the neighbor so the shared edge moves as a sash. [Fix 3]
+        // apply the opposite resize to the neighbor so the shared edge moves as a sash.
         if (sashNeighborEl && sashNeighborEdge && !snapModifier) {
           const minW = minSizeRef.current.width;
           const minH = minSizeRef.current.height;
@@ -1048,7 +1031,7 @@ export function CardFrame({
         // During sash co-resize both cards change size/position each frame, so the shared
         // edge moves and each card's interior vs exterior edges may change proportionally.
         // Call updateSetAppearance once per frame to keep clip-path values correct for both
-        // the resizing card and the sash neighbor throughout the gesture. [D06, Spec S01]
+        // the resizing card and the sash neighbor throughout the gesture. [D06]
         if (sashNeighborEl && !latestResizeModifier) {
           updateSetAppearance(resizeCanvasBounds, frame.parentElement);
         }
@@ -1089,7 +1072,7 @@ export function CardFrame({
         frame.style.height = `${r.height}px`;
         onCardMoved(id, { x: r.left, y: r.top }, { width: r.width, height: r.height });
 
-        // Commit sash neighbor's final position if sash mode was active. [Fix 3]
+        // Commit sash neighbor's final position if sash mode was active.
         if (sashNeighborId && sashNeighborEl && !isSnapModifier(e)) {
           const neighborPos = {
             x: parseFloat(sashNeighborEl.style.left) || 0,
@@ -1187,7 +1170,7 @@ export function CardFrame({
 
 /**
  * Compute the `clip-path: inset(...)` CSS value for a single card based on its
- * shared edges within the set. [Spec S01, D04]
+ * shared edges within the set. [D04]
  *
  * For each of the four sides (top, right, bottom, left):
  * - Interior (shared with a neighbor): inset = `0px` (clips shadow at border-box edge).
@@ -1250,7 +1233,7 @@ function computeClipPathForCard(cardId: string, sharedEdges: SharedEdge[]): stri
  *
  * For cards in a set:
  *   - Sets `data-in-set="true"` on `.card-frame` (CSS squares corners). [D08]
- *   - Computes `clip-path: inset(...)` per Spec S01 and applies it to the `.tugcard`
+ *   - Computes `clip-path: inset(...)` and applies it to the `.tugcard`
  *     child element, clipping shadow on interior (shared) edges while showing shadow
  *     on exterior edges. [D01, D02, D04]
  *
@@ -1605,20 +1588,19 @@ function resizeDelta(
 }
 
 // ---------------------------------------------------------------------------
-// Flash overlay helpers (appearance-zone, [D54], Spec S03)
+// Flash overlay helpers (appearance-zone, [D54])
 // ---------------------------------------------------------------------------
 
 /** Glow expansion in px for the SVG flash glow filter. */
 const SVG_FLASH_GLOW_BLUR = 4;
 
 /**
- * Create a single SVG hull flash element for a newly formed set. [D02, Spec S03]
+ * Create a single SVG hull flash element for a newly formed set. [D02]
  *
  * Replaces the per-card overlay approach. Computes the outer hull polygon of
  * all set cards, draws a single SVG <path> with accent stroke and glow filter,
  * and appends it to the ResponderScope (containerEl). Self-removes on
- * animate().finished (programmatic lane, Rule 13 — needs completion-based DOM
- * cleanup). [D01]
+ * animate().finished (programmatic lane). [D01]
  *
  * @param setCardIds - IDs of all cards in the set.
  * @param cardRects - Canvas-relative rects for all cards.
@@ -1708,7 +1690,7 @@ export function flashSetPerimeter(
 
   // Drive opacity fade via TugAnimator; self-remove on animate().finished.
   // glacial = 500ms, preserving the original 0.5s flash duration.
-  // WAAPI animate() works on SVG elements for the opacity property. [Spec S03]
+  // WAAPI animate() works on SVG elements for the opacity property.
   animate(svg, [{ opacity: 1 }, { opacity: 0 }], {
     duration: "--tug-motion-duration-glacial",
     easing: "ease-out",
@@ -1724,8 +1706,7 @@ export function flashSetPerimeter(
  * Used on break-out to flash the detached card's entire perimeter. All four
  * borders are intact (no suppression). Cards are always fully rounded. [D55]
  *
- * Opacity fade is driven by TugAnimator.animate().finished (programmatic lane,
- * Rule 13 — needs completion-based DOM cleanup). [D01]
+ * Opacity fade is driven by TugAnimator.animate().finished (programmatic lane). [D01]
  *
  * @param cardFrameEl - The .card-frame element of the detached card.
  */
