@@ -248,7 +248,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "h", modifierMask: [.command, .option]))
+        devMenu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Add Tab To Active Card", action: #selector(addTabToActiveCard(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
