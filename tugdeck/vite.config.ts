@@ -38,18 +38,15 @@ function paletteHotReload(): VitePlugin {
   };
 }
 
-/** Absolute path to the override CSS file in the Vite module graph. */
-const THEME_OVERRIDE_CSS = path.resolve(__dirname, "styles/tug-theme-override.css");
-/** Absolute path to the base theme CSS file. */
+/** Absolute path to the active theme CSS file in the Vite module graph. */
+const THEME_ACTIVE_CSS = path.resolve(__dirname, "styles/tug-active-theme.css");
+/** Absolute path to the base theme CSS file (brio source). */
 const BASE_THEME_CSS = path.resolve(__dirname, "styles/tug-base-generated.css");
 /** Absolute path to shipped override CSS files. */
 export const SHIPPED_THEMES_CSS_DIR = path.resolve(__dirname, "styles/themes");
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { BASE_THEME_NAME } = require("./src/theme-constants") as { BASE_THEME_NAME: string };
-
-/** Empty override — base theme default. */
-const EMPTY_OVERRIDE = `/* empty - ${BASE_THEME_NAME} default */\n`;
 
 /** Read active theme from tugbank, with base fallback on any error. */
 function readActiveThemeFromTugbank(): string {
@@ -79,83 +76,79 @@ export function parseHostCanvasColor(cssText: string): string | null {
 }
 
 /**
- * Vite plugin: ensure `tug-theme-override.css` reflects the active theme at
- * startup, before Vite processes any CSS.
+ * Copy the active theme's complete CSS into tug-active-theme.css.
  *
- * - In build mode: always writes an empty override (base theme default).
- * - Reads the active theme name from tugbank via `tugbank read dev.tugtool.app theme`.
- * - If the theme is missing or set to the base theme: empty override.
- * - If the named theme CSS cannot be found: logs a warning and falls back to
- *   the base theme (empty override).
- * - Falls back to the base theme if tugbank is unavailable (e.g. not yet installed).
+ * - For brio (or missing/default): copies tug-base-generated.css.
+ * - For any other theme: copies styles/themes/<name>.css.
+ * - The file is always a complete theme; it is never empty.
  */
-function themeOverridePlugin(): VitePlugin {
+function copyActiveThemeToFile(themeName: string, activeCssPath: string): void {
+  if (!themeName || themeName === BASE_THEME_NAME) {
+    const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
+    fs.writeFileSync(activeCssPath, css, "utf-8");
+    return;
+  }
+
+  const sourceCssPath = findThemeCssPath(themeName, SHIPPED_THEMES_CSS_DIR);
+  if (!sourceCssPath) {
+    console.warn(`[themeLoaderPlugin] theme "${themeName}" not found, falling back to brio`);
+    const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
+    fs.writeFileSync(activeCssPath, css, "utf-8");
+    return;
+  }
+
+  try {
+    const css = fs.readFileSync(sourceCssPath, "utf-8");
+    fs.writeFileSync(activeCssPath, css, "utf-8");
+  } catch (err) {
+    console.error(`[themeLoaderPlugin] failed to copy CSS for theme "${themeName}":`, err);
+    const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
+    fs.writeFileSync(activeCssPath, css, "utf-8");
+  }
+}
+
+/**
+ * Vite plugin: ensure `tug-active-theme.css` contains the active theme's
+ * complete CSS at startup, before Vite processes any CSS.
+ *
+ * - Reads the active theme name from tugbank via `tugbank read dev.tugtool.app theme`.
+ * - For brio (or missing/default): copies tug-base-generated.css into tug-active-theme.css.
+ * - For any other theme: copies styles/themes/<name>.css into tug-active-theme.css.
+ * - The file is always a complete theme; it is never empty.
+ * - Same logic for both dev and build modes — no special cases.
+ */
+function themeLoaderPlugin(): VitePlugin {
   return {
-    name: "theme-override",
-    async configResolved(config) {
-      // In build mode always use the base theme (empty override).
-      if (config.command === "build") {
-        fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
-        return;
-      }
-
+    name: "theme-loader",
+    configResolved() {
       const activeTheme = readActiveThemeFromTugbank();
-
-      if (!activeTheme || activeTheme === BASE_THEME_NAME) {
-        fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
-        return;
-      }
-
-      const sourceCssPath = findThemeCssPath(activeTheme, SHIPPED_THEMES_CSS_DIR);
-      if (!sourceCssPath) {
-        console.warn(`[themeOverridePlugin] theme "${activeTheme}" not found, falling back to base theme`);
-        fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
-        return;
-      }
-
-      try {
-        const css = fs.readFileSync(sourceCssPath, "utf-8");
-        fs.writeFileSync(THEME_OVERRIDE_CSS, css, "utf-8");
-      } catch (err) {
-        console.error(`[themeOverridePlugin] failed to copy CSS for theme "${activeTheme}":`, err);
-        fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
-      }
+      copyActiveThemeToFile(activeTheme, THEME_ACTIVE_CSS);
     },
   };
 }
 
 /**
- * Vite plugin: when an active override theme file changes, re-copy it into the
- * dev override CSS so the app receives standard CSS HMR updates.
+ * Vite plugin: when a theme source file changes, re-copy the active theme
+ * into tug-active-theme.css so the app receives standard CSS HMR updates.
+ *
+ * Watches both styles/themes/*.css (non-brio themes) and tug-base-generated.css
+ * (brio's source file).
  */
 function controlTokenHotReload(): VitePlugin {
-  function reactivateActiveTheme() {
+  function reloadActiveTheme() {
     const activeTheme = readActiveThemeFromTugbank();
-
-    if (!activeTheme || activeTheme === BASE_THEME_NAME) {
-      fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
-      return;
-    }
-
-    const sourceCssPath = findThemeCssPath(activeTheme, SHIPPED_THEMES_CSS_DIR);
-    if (!sourceCssPath) {
-      console.warn(`[control-token-hot-reload] theme "${activeTheme}" not found, falling back to base theme`);
-      fs.writeFileSync(THEME_OVERRIDE_CSS, EMPTY_OVERRIDE, "utf-8");
-      return;
-    }
-    try {
-      const css = fs.readFileSync(sourceCssPath, "utf-8");
-      fs.writeFileSync(THEME_OVERRIDE_CSS, css, "utf-8");
-    } catch (err) {
-      console.error(`[control-token-hot-reload] failed to re-copy override for theme "${activeTheme}":`, err);
-    }
+    copyActiveThemeToFile(activeTheme, THEME_ACTIVE_CSS);
   }
 
   return {
     name: "control-token-hot-reload",
     handleHotUpdate({ file }) {
       if (file.startsWith(SHIPPED_THEMES_CSS_DIR) && file.endsWith(".css")) {
-        reactivateActiveTheme();
+        reloadActiveTheme();
+        return [];
+      }
+      if (file === BASE_THEME_CSS) {
+        reloadActiveTheme();
         return [];
       }
     },
@@ -171,46 +164,44 @@ function controlTokenHotReload(): VitePlugin {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Filesystem abstraction for testability
-// ---------------------------------------------------------------------------
-
-// activateThemeOverride — shared logic for startup plugin and activate endpoint
+// activateTheme — shared logic for startup plugin and activate endpoint
 //
-// Copies shipped CSS into the override file (empty for base theme), parses the
+// Copies the active theme's complete CSS into activeCssPath, parses the
 // source CSS metadata token --tugx-host-canvas-color, and returns
 // { theme, hostCanvasColor }.
 // ---------------------------------------------------------------------------
 
-/** Return value of activateThemeOverride on success. */
+/** Return value of activateTheme on success. */
 export interface ActivateResult {
   theme: string;
   hostCanvasColor: string;
 }
 
 /**
- * Activate a theme by rewriting the override CSS file.
+ * Activate a theme by writing the complete theme CSS into activeCssPath.
  * Returns { theme, hostCanvasColor } on success.
  *
- * - For the base theme: writes EMPTY_OVERRIDE to overrideCssPath.
- * - For non-base themes: copies CSS from styles/themes/<name>.css to overrideCssPath.
+ * - For the base theme (brio): copies tug-base-generated.css to activeCssPath.
+ * - For non-base themes: copies CSS from styles/themes/<name>.css to activeCssPath.
  * - Parses --tugx-host-canvas-color from the source CSS file.
  * - Throws if source CSS is missing or host color metadata is missing/invalid.
+ * - The active theme file is always a complete theme; it is never empty.
  *
  * The active theme name is persisted to tugbank by the client-side settings-api.ts
- * (putTheme), not by this function. This function only manages the CSS override file.
+ * (putTheme), not by this function. This function only manages the active CSS file.
  */
-export function activateThemeOverride(
+export function activateTheme(
   themeName: string,
   themesCssDir: string,
-  overrideCssPath: string,
+  activeCssPath: string,
 ): ActivateResult {
   if (themeName === BASE_THEME_NAME) {
-    fs.writeFileSync(overrideCssPath, EMPTY_OVERRIDE, "utf-8");
     const baseCss = fs.readFileSync(BASE_THEME_CSS, "utf-8");
     const hostCanvasColor = parseHostCanvasColor(baseCss);
     if (!hostCanvasColor) {
       throw new Error(`Missing or invalid --tugx-host-canvas-color in ${BASE_THEME_CSS}`);
     }
+    fs.writeFileSync(activeCssPath, baseCss, "utf-8");
     return { theme: BASE_THEME_NAME, hostCanvasColor };
   }
 
@@ -224,7 +215,7 @@ export function activateThemeOverride(
   if (!hostCanvasColor) {
     throw new Error(`Missing or invalid --tugx-host-canvas-color in ${cssPath}`);
   }
-  fs.writeFileSync(overrideCssPath, css, "utf-8");
+  fs.writeFileSync(activeCssPath, css, "utf-8");
   return { theme: themeName, hostCanvasColor };
 }
 
@@ -248,20 +239,19 @@ function withMutex(fn: () => Promise<void>): Promise<void> {
 // handleThemesActivate — POST /__themes/activate
 //
 // Parses the request body, validates the theme field, calls
-// activateThemeOverride inside the write mutex, and returns the response.
+// activateTheme inside the write mutex, and returns the response.
 // Exported for unit testing with mocked fs.
 //
 // Parameters:
 //   body           — parsed JSON request body (unknown)
-//   fsImpl         — fs implementation (real or mock)
 //   themesCssDir   — absolute path to shipped theme CSS files
-//   overrideCssPath — absolute path to tug-theme-override.css
+//   activeCssPath  — absolute path to tug-active-theme.css
 // ---------------------------------------------------------------------------
 
 export async function handleThemesActivate(
   body: unknown,
   themesCssDir: string,
-  overrideCssPath: string,
+  activeCssPath: string,
 ): Promise<{ status: number; body: string }> {
   if (!body || typeof body !== "object") {
     return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
@@ -276,7 +266,7 @@ export async function handleThemesActivate(
   return new Promise<{ status: number; body: string }>((resolve) => {
     withMutex(async () => {
       try {
-        const result = activateThemeOverride(name, themesCssDir, overrideCssPath);
+        const result = activateTheme(name, themesCssDir, activeCssPath);
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -315,7 +305,7 @@ function themeSaveLoadPlugin(): VitePlugin {
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              handleThemesActivate(body, SHIPPED_THEMES_CSS_DIR, THEME_OVERRIDE_CSS).then((result) => {
+              handleThemesActivate(body, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
                 res.writeHead(result.status, { "Content-Type": "application/json" });
                 res.end(result.body);
               }).catch((err) => {
@@ -369,7 +359,7 @@ export default defineConfig(() => {
   const themeInputs = discoverThemeCssInputs();
 
   return {
-    plugins: [react(), themeOverridePlugin(), paletteHotReload(), controlTokenHotReload(), themeSaveLoadPlugin()],
+    plugins: [react(), themeLoaderPlugin(), paletteHotReload(), controlTokenHotReload(), themeSaveLoadPlugin()],
     css: {
       postcss: {
         plugins: [postcssTugColor()],

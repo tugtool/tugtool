@@ -1,20 +1,21 @@
 /**
  * TugThemeProvider — React context provider for the Tugways theme system.
  *
- * Architecture: file-based override (not DOM injection).
+ * Architecture: direct file load (not base+override cascade).
  *
- * Dev mode: Theme switching posts to POST /__themes/activate, which rewrites
- * tug-theme-override.css through Vite's CSS pipeline so PostCSS expands all
- * --tug-color() tokens correctly. Brio uses an empty override file; all other
- * themes write their full CSS into the override file.
+ * Dev mode: Theme switching posts to POST /__themes/activate, which copies the
+ * selected theme's complete CSS into tug-active-theme.css through Vite's CSS
+ * pipeline so PostCSS expands all --tug-color() tokens correctly. Brio copies
+ * tug-base-generated.css; all other themes copy their own CSS file. The active
+ * theme file is always complete; it is never empty.
  *
  * Production mode: Theme switching swaps a <link id="tug-theme-override">
  * element pointing to the pre-built per-theme CSS asset. Host canvas color
  * is read from CSS metadata token --tugx-host-canvas-color after the override
  * stylesheet is applied. [D08]
  *
- * Spec S01 (#settheme-flow), [D01] Single override file, [D03] Activate endpoint,
- * [D04] Dual persistence, Spec S03 (#s03-theme-provider), [D08] Production link swap
+ * Spec S01 (#settheme-flow), [D03] Direct load, [D04] Dual persistence,
+ * Spec S03 (#s03-theme-provider), [D08] Production link swap
  */
 
 import React, {
@@ -186,8 +187,8 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
  * update the theme from the Mac menu.
  *
  * The `setTheme` implementation posts to POST /__themes/activate with the new
- * theme name. The server rewrites tug-theme-override.css and returns
- * { theme, hostCanvasColor }. On success: calls sendCanvasColor(hostCanvasColor),
+ * theme name. The server copies the theme's complete CSS into tug-active-theme.css
+ * and returns { theme, hostCanvasColor }. On success: calls sendCanvasColor(hostCanvasColor),
  * updates React state, persists to localStorage, and calls putTheme(). [D03]
  */
 export function TugThemeProvider({
@@ -218,7 +219,7 @@ export function TugThemeProvider({
       return;
     }
 
-    // Dev: POST to activate endpoint — rewrites tug-theme-override.css via HMR. [D03]
+    // Dev: POST to activate endpoint — copies active theme into tug-active-theme.css via HMR. [D03]
     void fetch("/__themes/activate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

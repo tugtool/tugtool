@@ -5,8 +5,8 @@
 # Golden snapshots for token output identity checks
 styles/*.golden
 
-# Runtime theme override file (written by Vite plugin and activate endpoint)
-styles/tug-theme-override.css
+# Runtime active theme file (written by Vite plugin and activate endpoint — always a complete theme)
+styles/tug-active-theme.css
 
 # Generated token rename maps (build artifacts — regenerate with bun run generate:rename-maps)
 rename-tug7.json

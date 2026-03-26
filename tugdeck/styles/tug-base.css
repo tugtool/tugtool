@@ -16,12 +16,13 @@
  * typography, spacing) remain as literal values.
  * Spacing, radius, typography, icon-size: plain values (CSS zoom handles scaling).
  *
- * The --tug-* token declarations live in tug-base-generated.css. That file is
- * imported here at the top level and defines its own body {} block.
+ * The active theme's complete token declarations are loaded via tug-active-theme.css.
+ * That file is written by the Vite plugin (themeLoaderPlugin) at startup and on
+ * theme switch — brio copies tug-base-generated.css, harmony copies themes/harmony.css.
+ * The file is always a complete theme; it is never empty.
  */
 
-@import './tug-base-generated.css';
-@import './tug-theme-override.css';
+@import './tug-active-theme.css';
 
 /* ============================================================================
    Font Declarations

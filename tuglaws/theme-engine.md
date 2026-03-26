@@ -12,11 +12,11 @@ Theme data lives in checked-in CSS files:
 
 | File | Role |
 |---|---|
-| `tugdeck/styles/tug-base-generated.css` | Base `brio` tokens |
-| `tugdeck/styles/themes/harmony.css` | Override tokens for `harmony` |
-| `tugdeck/styles/tug-theme-override.css` | Dev-only active override copy (empty for `brio`) |
+| `tugdeck/styles/tug-base-generated.css` | Brio theme source (complete token declarations) |
+| `tugdeck/styles/themes/harmony.css` | Harmony theme source (complete token declarations) |
+| `tugdeck/styles/tug-active-theme.css` | Active theme copy (complete theme, never empty) |
 
-Shipped themes: `brio` and `harmony`.
+Shipped themes: `brio` and `harmony`. Every theme is a peer — neither depends on the other.
 
 ---
 
@@ -25,9 +25,10 @@ Shipped themes: `brio` and `harmony`.
 ### Development
 
 - `POST /__themes/activate` is the activation API.
-- `brio` writes an empty `tug-theme-override.css`.
-- `harmony` copies `styles/themes/harmony.css` into `tug-theme-override.css`.
+- `brio` copies `tug-base-generated.css` into `tug-active-theme.css`.
+- `harmony` copies `styles/themes/harmony.css` into `tug-active-theme.css`.
 - The endpoint returns `{ theme, hostCanvasColor }`.
+- `tug-active-theme.css` is always a complete theme; it is never empty.
 
 ### Production
 

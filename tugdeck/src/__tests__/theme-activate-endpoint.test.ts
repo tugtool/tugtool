@@ -10,7 +10,7 @@ describe("theme activate endpoint (thin)", () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tugdeck-theme-activate-"));
     try {
       const themesCssDir = path.join(tmpDir, "themes");
-      const overrideCssPath = path.join(tmpDir, "tug-theme-override.css");
+      const activeCssPath = path.join(tmpDir, "tug-active-theme.css");
       fs.mkdirSync(themesCssDir, { recursive: true });
       fs.writeFileSync(
         path.join(themesCssDir, "harmony.css"),
@@ -21,13 +21,13 @@ describe("theme activate endpoint (thin)", () => {
       const result = await handleThemesActivate(
         { theme: "harmony" },
         themesCssDir,
-        overrideCssPath,
+        activeCssPath,
       );
 
       expect(result.status).toBe(200);
       expect(result.body).toContain("\"theme\":\"harmony\"");
       expect(result.body).toContain("\"hostCanvasColor\":\"#e7eaf0\"");
-      expect(fs.readFileSync(overrideCssPath, "utf-8")).toContain("--tugx-host-canvas-color: #e7eaf0;");
+      expect(fs.readFileSync(activeCssPath, "utf-8")).toContain("--tugx-host-canvas-color: #e7eaf0;");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
