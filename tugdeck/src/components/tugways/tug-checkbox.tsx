@@ -29,9 +29,8 @@ export type TugCheckedState = boolean | "indeterminate";
 /**
  * Semantic role for the checkbox on-state color.
  *
- * "option" uses a neutral/achromatic token for calm configuration-control
- * styling appropriate for checkboxes. "accent" falls back to the CSS default
- * (accent token). All other roles inject a tone token. [D03]
+ * Every role injects a --tug7-surface-toggle-primary-normal-{role}-* token.
+ * "option" is a calm neutral; "accent" is the brand color; others are signal colors.
  *
  * @selector [data-role="<role>"]
  */
@@ -46,11 +45,13 @@ export type TugCheckboxRole =
   | "danger";
 
 /**
- * Maps non-option, non-accent role prop values to tone token suffixes.
- * Necessary because the prop API uses "action" but tone tokens use "active"
- * (e.g., --tug7-element-tone-fill-normal-active-rest, not --tug-tone-action).
+ * Maps role prop values to toggle-primary token suffixes.
+ * The prop API uses "action" but the token system uses "active"
+ * (e.g., --tug7-surface-toggle-primary-normal-active-rest).
  */
-const ROLE_TONE_MAP: Record<string, string> = {
+const ROLE_TOKEN_MAP: Record<string, string> = {
+  option:  "option",
+  accent:  "accent",
   action:  "active",
   agent:   "agent",
   data:    "data",
@@ -100,11 +101,9 @@ export interface TugCheckboxProps {
   /**
    * Semantic role for the checked/indeterminate on-state color.
    * Injects --tugx-toggle-on-color and --tugx-toggle-on-hover-color as inline
-   * CSS custom properties; CSS falls back to global tokens when not set.
+   * CSS custom properties using --tug7-surface-toggle-primary-normal-{role}-* tokens.
    *
-   * "option" uses --tug7-surface-toggle-primary-normal-off-hover (neutral control surface).
-   * "accent" suppresses injection and falls back to the CSS default (accent token).
-   * All other roles inject the corresponding --tug-element-tone-fill-* token. [L06]
+   * Every role (including "option" and "accent") follows the same path — no special cases. [L06]
    *
    * @selector [data-role="<role>"]
    * @default "option"
@@ -132,33 +131,15 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     },
     ref,
   ) {
-    // Three-branch role injection logic. [L06]
-    //
-    // Branch 1 — "option": inject toggle-primary-off-hover (neutral control surface).
-    //   The option role uses the off-state hover surface for a calm, neutral on-state.
-    //
-    // Branch 2 — other non-accent roles (action/agent/data/success/caution/danger):
-    //   inject the corresponding --tug-tone-* token via ROLE_TONE_MAP.
-    //
-    // Branch 3 — "accent": no injection; accent is the CSS-default fallback.
-    let roleStyle: React.CSSProperties | undefined;
-    let dataRole: string | undefined;
-
-    if (role === "option") {
-      roleStyle = {
-        "--tugx-toggle-on-color": "var(--tug7-surface-toggle-primary-normal-off-hover)",
-        "--tugx-toggle-on-hover-color": "color-mix(in oklch, var(--tug7-surface-toggle-primary-normal-off-hover), white 15%)",
-      } as React.CSSProperties;
-      dataRole = "option";
-    } else if (role !== "accent" && ROLE_TONE_MAP[role] !== undefined) {
-      const toneSuffix = ROLE_TONE_MAP[role];
-      roleStyle = {
-        "--tugx-toggle-on-color": `var(--tug7-element-tone-fill-normal-${toneSuffix}-rest)`,
-        "--tugx-toggle-on-hover-color": `color-mix(in oklch, var(--tug7-element-tone-fill-normal-${toneSuffix}-rest), white 15%)`,
-      } as React.CSSProperties;
-      dataRole = role;
-    }
-    // else: role === "accent" — no injection, CSS default applies.
+    // Role injection — every role uses a surface-toggle-primary token. [L06]
+    // No special cases. A checkbox fill is a surface, not a foreground mark.
+    const tokenSuffix = ROLE_TOKEN_MAP[role] ?? role;
+    const roleStyle = {
+      "--tugx-toggle-on-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-rest)`,
+      "--tugx-toggle-on-hover-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-hover)`,
+      "--tugx-toggle-disabled-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-disabled)`,
+    } as React.CSSProperties;
+    const dataRole = role === "accent" ? undefined : role;
 
     const checkboxNode = (
       <CheckboxPrimitive.Root

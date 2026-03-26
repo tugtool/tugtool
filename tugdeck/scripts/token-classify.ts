@@ -193,6 +193,7 @@ const TUGX_SHORT_NAMES = new Set<string>([
   // toggle
   "toggle-on-color",
   "toggle-on-hover-color",
+  "toggle-disabled-color",
   // control
   "control-disabled-opacity",
   // host canvas (Swift bridge contract)

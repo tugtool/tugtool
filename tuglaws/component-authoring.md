@@ -287,11 +287,16 @@ All colors come from `--tug-*` tokens. Never hardcode colors. [L15, T##]
 
 **Tokens must match what they're applied to.** The seven-slot naming system encodes what a token is *for* — the plane (`element` vs `surface`), the constituent (`text` vs `fill` vs `border`), and the component (`control` vs `field` vs `toggle`). A token applied to a CSS property must make semantic sense:
 
-- A control fill or background → use a `surface` token, not a `text` token
+- A control fill or background → use a `surface` token, not an `element` token
 - A border → use a `border` token, not a `fill` token
-- A checkbox on-state → use a `toggle-track` surface token, not a `text-muted` token
+- A checkbox on-state → use a `toggle-primary` surface token, not a `text-muted` element token
+- Role-variant fills → use `surface-toggle-primary-normal-{role}-rest`, not `element-tone-fill-*`
 
-If a token's seven-slot name doesn't describe what it's actually styling, the pairing is wrong — even if the color happens to look right. The naming system makes mismatches visible: a `text` token controlling a checkbox fill is immediately suspect to any agent reading the code. Use this as a smell test during review.
+**The plane must match the usage.** `element` tokens are foreground marks (text, icons, borders). `surface` tokens are backgrounds. A checkbox fill is a background — it must be a `surface` token. Using an `element-tone-fill` token to color a checkbox background is a plane-level category error, even if the color value happens to look right.
+
+**The component must match the context.** A generic `tone-fill` token is not a toggle control. If the token is being used as a checkbox fill, it should be scoped to `toggle` (the component) with `primary` (the constituent for filled control surfaces). Tokens scoped to the right component can be tuned per-theme without affecting unrelated elements.
+
+If a token's seven-slot name doesn't describe what it's actually styling, the pairing is wrong — even if the color happens to look right. The naming system makes mismatches visible: read the name aloud. "Element tone fill for a checkbox background" sounds wrong because it *is* wrong.
 
 ### Component-Tier Alias Rules
 
