@@ -1,29 +1,18 @@
 /**
- * TugMarquee -- single-line scrolling label with seamless loop.
+ * TugMarquee — single-line scrolling label with seamless loop.
  *
- * Displays one line of text. If the text fits, it renders statically.
- * If it overflows and `animate` is true, it loops seamlessly:
+ * Displays one line of text. If the text fits, renders statically.
+ * If it overflows, loops seamlessly with pause-scroll-snap cycle.
+ * Animation via CSS transition on transform, orchestrated by direct
+ * DOM manipulation — no React state drives appearance.
  *
- *   1. Show text at start (end-ellipsis via track clipping), pause for `pauseTime`
- *   2. Scroll the strip left by (textWidth + gap) — two copies of the text
- *      sit end-to-end so copy 2 slides into view as copy 1 scrolls out
- *   3. At scroll end, copy 2 is exactly where copy 1 started → snap strip
- *      back to 0 (invisible — identical frame) → pause → repeat
- *
- * The gap between copies is 6 em-spaces. Copy 2 has no special treatment;
- * the track's overflow:hidden provides the natural end-ellipsis clipping.
- *
- * Animation uses CSS transition on transform (CSS lane, Rule 13 — continuous,
- * infinite). JS measures overflow and orchestrates the pause/scroll cycle
- * via direct DOM class/style manipulation — no React state drives appearance.
- *
- * [D04] Token-driven: --tug-field-* tokens
- * [D08, D09] Appearance through CSS/DOM, not React state
+ * Laws: [L06] appearance via CSS/DOM, [L19] component authoring guide
  */
+
+import "./tug-marquee.css";
 
 import React, { useRef, useLayoutEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import "./tug-marquee.css";
 
 // ---- Constants ----
 
@@ -38,25 +27,39 @@ export type TugMarqueeSize = "sm" | "md" | "lg";
 /**
  * TugMarquee props.
  */
-export interface TugMarqueeProps {
+export interface TugMarqueeProps extends Omit<React.ComponentPropsWithoutRef<"div">, "children"> {
   /** Text content (single line) */
   children: string;
-  /** Enable marquee animation when text overflows. Default: true */
+  /**
+   * Enable marquee animation when text overflows.
+   * @default true
+   */
   animate?: boolean;
-  /** Scroll speed in pixels per second. Default: 30 */
+  /**
+   * Scroll speed in pixels per second.
+   * @default 30
+   */
   speed?: number;
-  /** Pause time in milliseconds at the start position. Default: 2000 */
+  /**
+   * Pause time in milliseconds at the start position.
+   * @default 2000
+   */
   pauseTime?: number;
-  /** Gap between text copies in em units. Default: 3.6 */
+  /**
+   * Gap between text copies in em units.
+   * @default 3.6
+   */
   gap?: number;
-  /** Size variant. Default: "md" */
+  /**
+   * Size variant.
+   * @selector .tug-marquee-size-sm | .tug-marquee-size-md | .tug-marquee-size-lg
+   * @default "md"
+   */
   size?: TugMarqueeSize;
   /** Leading icon (React node, typically a Lucide icon) */
   icon?: React.ReactNode;
   /** Icon color (CSS value or token). Defaults to label text color. */
   iconColor?: string;
-  /** Additional CSS class names */
-  className?: string;
 }
 
 // ---- TugMarquee ----
@@ -73,6 +76,8 @@ export const TugMarquee = React.forwardRef<HTMLDivElement, TugMarqueeProps>(
       icon,
       iconColor,
       className,
+      style,
+      ...rest
     },
     ref,
   ) {
@@ -221,7 +226,7 @@ export const TugMarquee = React.forwardRef<HTMLDivElement, TugMarqueeProps>(
     );
 
     return (
-      <div ref={ref} className={marqueeClassName}>
+      <div ref={ref} data-slot="tug-marquee" className={marqueeClassName} style={style} {...rest}>
         {icon && (
           <span
             className="tug-marquee-icon"
