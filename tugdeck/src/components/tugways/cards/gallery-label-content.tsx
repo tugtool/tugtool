@@ -39,7 +39,7 @@ export function GalleryLabelContent() {
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Size Variants</div>
+        <div className="cg-section-title">TugLabel — Size Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           {ALL_SIZES.map((size) => (
             <TugLabel key={size} size={size}>
@@ -53,7 +53,7 @@ export function GalleryLabelContent() {
 
       {/* ---- Required Indicator ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Required Indicator</div>
+        <div className="cg-section-title">TugLabel — Required Indicator</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugLabel>Optional field</TugLabel>
           <TugLabel required>Required field</TugLabel>
@@ -64,7 +64,7 @@ export function GalleryLabelContent() {
 
       {/* ---- With Icons ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">With Icons</div>
+        <div className="cg-section-title">TugLabel — With Icons</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
           <TugLabel icon={<Tag />}>Default icon color</TugLabel>
           <TugLabel icon={<Info />} iconColor="var(--tug7-element-global-fill-normal-accentCool-rest)">
@@ -84,9 +84,23 @@ export function GalleryLabelContent() {
 
       <div className="cg-divider" />
 
+      {/* ---- Icons at All Sizes ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugLabel — Icons at All Sizes</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
+          {ALL_SIZES.map((size) => (
+            <TugLabel key={size} size={size} icon={<Tag />} required>
+              {`Size ${size} with icon`}
+            </TugLabel>
+          ))}
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
       {/* ---- Multiline Wrapping ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Multiline Wrapping</div>
+        <div className="cg-section-title">TugLabel — Multiline Wrapping</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">No maxLines — wraps freely:</p>
@@ -103,7 +117,7 @@ export function GalleryLabelContent() {
 
       {/* ---- Ellipsis: End ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Ellipsis: End (CSS line-clamp)</div>
+        <div className="cg-section-title">TugLabel — Ellipsis: End (CSS line-clamp)</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">maxLines=1:</p>
@@ -124,7 +138,7 @@ export function GalleryLabelContent() {
 
       {/* ---- Ellipsis: Start ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Ellipsis: Start</div>
+        <div className="cg-section-title">TugLabel — Ellipsis: Start</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">File path, maxLines=1:</p>
@@ -141,7 +155,7 @@ export function GalleryLabelContent() {
 
       {/* ---- Ellipsis: Middle ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Ellipsis: Middle</div>
+        <div className="cg-section-title">TugLabel — Ellipsis: Middle</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "280px" }}>
           <div>
             <p className="cg-description">File path, maxLines=1:</p>
@@ -158,7 +172,7 @@ export function GalleryLabelContent() {
 
       {/* ---- Paired with TugInput ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Paired with TugInput</div>
+        <div className="cg-section-title">TugLabel — Paired with TugInput</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "360px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <TugLabel htmlFor="demo-name" required>Name</TugLabel>
@@ -177,10 +191,16 @@ export function GalleryLabelContent() {
 
       {/* ---- Disabled ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Disabled</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxWidth: "360px" }}>
-          <TugLabel htmlFor="demo-disabled" disabled>Disabled label</TugLabel>
-          <TugInput id="demo-disabled" disabled placeholder="Disabled input" />
+        <div className="cg-section-title">TugLabel — Disabled</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "360px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <TugLabel htmlFor="demo-disabled" disabled>Disabled label</TugLabel>
+            <TugInput id="demo-disabled" disabled placeholder="Disabled input" />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <TugLabel htmlFor="demo-disabled-icon" disabled icon={<Info />} required>Disabled with icon + required</TugLabel>
+            <TugInput id="demo-disabled-icon" disabled defaultValue="Can't edit this" />
+          </div>
         </div>
       </div>
 
