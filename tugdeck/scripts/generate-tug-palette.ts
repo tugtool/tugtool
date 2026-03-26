@@ -3,7 +3,7 @@
  * generate-tug-palette.ts
  *
  * Generates styles/tug-palette.css from the constants defined in palette-engine.ts.
- * The single source of truth for canonical L values is roadmap/tug-color-canonical.json,
+ * The single source of truth for canonical L values is tugdeck/tug-color-canonical.json,
  * which palette-engine.ts imports. Running this script keeps tug-palette.css in sync.
  *
  * Usage:

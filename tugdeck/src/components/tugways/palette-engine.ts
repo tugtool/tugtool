@@ -39,7 +39,7 @@
  */
 
 // Single source of truth for canonical L values and global lightness anchors.
-import tugColorCanonical from "../../../../roadmap/tug-color-canonical.json";
+import tugColorCanonical from "../../../tug-color-canonical.json";
 
 // ---------------------------------------------------------------------------
 // HUE_FAMILIES — 48 named hue families mapped to OKLCH hue angles

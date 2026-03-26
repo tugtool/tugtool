@@ -207,7 +207,7 @@ fn generate_color_palette_data() {
     // palette-engine.ts is at tugdeck/src/components/tugways/palette-engine.ts
     // relative to the workspace root (tugcode/../tugdeck/...).
     let palette_path = Path::new("../../../tugdeck/src/components/tugways/palette-engine.ts");
-    let canonical_json_path = Path::new("../../../roadmap/tug-color-canonical.json");
+    let canonical_json_path = Path::new("../../../tugdeck/tug-color-canonical.json");
 
     println!("cargo::rerun-if-changed={}", palette_path.to_string_lossy());
     println!(
