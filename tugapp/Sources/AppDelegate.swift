@@ -248,7 +248,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Show Test Card", action: #selector(showTestCard(_:)), keyEquivalent: "t", modifierMask: [.command, .option]))
+        devMenu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "h", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Add Tab To Active Card", action: #selector(addTabToActiveCard(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
@@ -319,8 +319,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("show-component-gallery")
     }
 
-    @objc private func showTestCard(_ sender: Any) {
+    @objc private func showHelloWorldCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "hello"])
+    }
+
+    @objc private func nextTheme(_ sender: Any) {
+        sendControl("next-theme")
     }
 
     @objc private func addTabToActiveCard(_ sender: Any) {
@@ -555,6 +559,11 @@ extension AppDelegate: NSMenuDelegate {
             placeholder.isEnabled = false
             menu.addItem(placeholder)
         }
+
+        // Separator + Next Theme
+        menu.addItem(NSMenuItem.separator())
+        let nextItem = NSMenuItem(title: "Next Theme", action: #selector(nextTheme(_:)), keyEquivalent: "t", modifierMask: [.command, .option])
+        menu.addItem(nextItem)
     }
 }
 

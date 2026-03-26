@@ -4,7 +4,9 @@ import {
   dispatchAction,
   registerAction,
   registerThemeSetter,
+  registerThemeGetter,
   registerResponderChainManager,
+  SHIPPED_THEME_NAMES,
   _resetForTest,
 } from "../action-dispatch";
 import { FeedId } from "../protocol";
@@ -432,6 +434,98 @@ describe("initActionDispatch: show-card – T24: missing component logs warning"
 
     expect(() => dispatchAction({ action: "show-card", component: null })).not.toThrow();
     expect(deck._addCardCalls.length).toBe(0);
+  });
+});
+
+// ---- next-theme handler ----
+
+describe("initActionDispatch: next-theme", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("advances to the next shipped theme from the current theme", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const received: string[] = [];
+    registerThemeSetter((theme) => received.push(theme));
+
+    const firstTheme = SHIPPED_THEME_NAMES[0];
+    const secondTheme = SHIPPED_THEME_NAMES[1];
+    registerThemeGetter(() => firstTheme);
+
+    dispatchAction({ action: "next-theme" });
+
+    expect(received.length).toBe(1);
+    expect(received[0]).toBe(secondTheme);
+  });
+
+  it("wraps around to the first theme after the last", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const received: string[] = [];
+    registerThemeSetter((theme) => received.push(theme));
+
+    const lastTheme = SHIPPED_THEME_NAMES[SHIPPED_THEME_NAMES.length - 1];
+    registerThemeGetter(() => lastTheme);
+
+    dispatchAction({ action: "next-theme" });
+
+    expect(received.length).toBe(1);
+    expect(received[0]).toBe(SHIPPED_THEME_NAMES[0]);
+  });
+
+  it("falls back to index 0 when the current theme is not in the shipped list", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const received: string[] = [];
+    registerThemeSetter((theme) => received.push(theme));
+    registerThemeGetter(() => "unknown-theme");
+
+    dispatchAction({ action: "next-theme" });
+
+    expect(received.length).toBe(1);
+    expect(received[0]).toBe(SHIPPED_THEME_NAMES[0]);
+  });
+
+  it("warns and does not throw when setter is not registered", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    registerThemeGetter(() => SHIPPED_THEME_NAMES[0]);
+
+    expect(() => dispatchAction({ action: "next-theme" })).not.toThrow();
+  });
+
+  it("uses the first shipped theme when getter is not registered", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const received: string[] = [];
+    registerThemeSetter((theme) => received.push(theme));
+    // No registerThemeGetter call -- themeGetterRef is null after _resetForTest.
+
+    dispatchAction({ action: "next-theme" });
+
+    // Falls back to SHIPPED_THEME_NAMES[0], so next is index 1
+    expect(received.length).toBe(1);
+    expect(received[0]).toBe(SHIPPED_THEME_NAMES[1]);
+  });
+
+  it("SHIPPED_THEME_NAMES starts with the base theme", () => {
+    expect(SHIPPED_THEME_NAMES[0]).toBe("brio");
+  });
+
+  it("SHIPPED_THEME_NAMES includes harmony", () => {
+    expect(SHIPPED_THEME_NAMES).toContain("harmony");
   });
 });
 

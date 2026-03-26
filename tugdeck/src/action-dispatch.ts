@@ -17,6 +17,14 @@ import type { TugConnection } from "./connection";
 import type { DeckManager } from "./deck-manager";
 import type { ResponderChainManager } from "./components/tugways/responder-chain";
 import { FeedId } from "./protocol";
+import { BASE_THEME_NAME } from "./theme-constants";
+
+/**
+ * Ordered list of all shipped themes.
+ * Must stay in sync with tugdeck/styles/themes/*.css plus the base theme.
+ * Base theme always comes first; others follow in alphabetical order.
+ */
+export const SHIPPED_THEME_NAMES: readonly string[] = [BASE_THEME_NAME, "harmony"];
 
 /** Handler function for an action */
 export type ActionHandler = (payload: Record<string, unknown>) => void;
@@ -29,6 +37,9 @@ let reloadPending = false;
 
 /** Module-level reference to the theme setter, populated by TugThemeProvider on mount. */
 let themeSetterRef: ((theme: string) => void) | null = null;
+
+/** Module-level reference to the theme getter, populated by TugThemeProvider on mount. */
+let themeGetterRef: (() => string) | null = null;
 
 /**
  * Module-level reference to the ResponderChainManager, populated by
@@ -58,6 +69,23 @@ export function registerThemeSetter(setter: (theme: string) => void): void {
  */
 export function getThemeSetter(): ((theme: string) => void) | null {
   return themeSetterRef;
+}
+
+/**
+ * Register the theme getter function from TugThemeProvider.
+ * Called by TugThemeProvider on mount so the next-theme action handler
+ * can read the current theme name.
+ */
+export function registerThemeGetter(getter: () => string): void {
+  themeGetterRef = getter;
+}
+
+/**
+ * Get the registered theme getter (used by the next-theme action handler).
+ * Returns null if TugThemeProvider has not yet mounted.
+ */
+export function getThemeGetter(): (() => string) | null {
+  return themeGetterRef;
 }
 
 /**
@@ -91,6 +119,7 @@ export function _resetForTest(): void {
   handlers.clear();
   reloadPending = false;
   themeSetterRef = null;
+  themeGetterRef = null;
   responderChainManagerRef = null;
 }
 
@@ -180,6 +209,22 @@ export function initActionDispatch(
       themeSetterRef(theme);
     } else {
       console.warn("set-theme: theme setter not registered yet");
+    }
+  });
+
+  // next-theme: Advance to the next shipped theme (wrapping around).
+  // Uses SHIPPED_THEME_NAMES to determine order and the registered themeGetterRef to
+  // read the current theme. Falls back to the base theme if the getter is not yet
+  // registered or the current theme is not in the shipped list.
+  registerAction("next-theme", () => {
+    const currentTheme = themeGetterRef ? themeGetterRef() : SHIPPED_THEME_NAMES[0];
+    const idx = SHIPPED_THEME_NAMES.indexOf(currentTheme);
+    const nextIdx = idx === -1 ? 0 : (idx + 1) % SHIPPED_THEME_NAMES.length;
+    const nextTheme = SHIPPED_THEME_NAMES[nextIdx];
+    if (themeSetterRef) {
+      themeSetterRef(nextTheme);
+    } else {
+      console.warn("next-theme: theme setter not registered yet");
     }
   });
 

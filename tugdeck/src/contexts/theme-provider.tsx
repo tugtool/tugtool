@@ -26,7 +26,7 @@ import React, {
   useRef,
 } from "react";
 import { putTheme } from "../settings-api";
-import { registerThemeSetter } from "../action-dispatch";
+import { registerThemeSetter, registerThemeGetter } from "../action-dispatch";
 import { BASE_THEME_NAME } from "../theme-constants";
 
 // ---------------------------------------------------------------------------
@@ -210,12 +210,21 @@ export function TugThemeProvider({
     setThemeRef.current = setTheme;
   });
 
-  // Register a stable wrapper with the action-dispatch system once on mount.
-  // The wrapper reads from setThemeRef so it always calls the latest setter.
+  // Stable ref always pointing at the current theme name.
+  const themeRef = useRef<string>(initialTheme);
+
+  // Keep themeRef current so the getter always returns the latest value.
+  useEffect(() => {
+    themeRef.current = theme;
+  });
+
+  // Register stable wrappers with the action-dispatch system once on mount.
+  // The wrappers read from refs so they always access the latest values.
   useEffect(() => {
     registerThemeSetter((themeName: string) => {
       setThemeRef.current(themeName);
     });
+    registerThemeGetter(() => themeRef.current);
   }, []);
 
   return React.createElement(
