@@ -2,6 +2,7 @@
   "name": "tugdeck",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Browser frontend for tugcast terminal bridge",
   "scripts": {
     "build": "vite build",
