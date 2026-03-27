@@ -3,6 +3,7 @@
  */
 
 import React, { useState } from "react";
+import { Volume1, Volume2 } from "lucide-react";
 import { TugSlider } from "@/components/tugways/tug-slider";
 import { createNumberFormatter } from "@/lib/tug-format";
 import "./gallery-slider.css";
@@ -34,6 +35,10 @@ export function GallerySlider() {
 
   // Section 5: No value input
   const [noValueValue, setNoValueValue] = useState(65);
+
+  // Section 6: Ticks + icons
+  const [ticksValue, setTicksValue] = useState(4);
+  const [volumeValue, setVolumeValue] = useState(6);
 
   return (
     <div className="cg-content" data-testid="gallery-slider">
@@ -177,6 +182,45 @@ export function GallerySlider() {
           label="Track Only"
           showValue={false}
         />
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Section 6: Ticks + Icons ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugSlider — Ticks & Icons</div>
+        <div className="gs-layout-col">
+          <div className="gs-layout-item">
+            <span className="gs-demo-label">ticks</span>
+            <TugSlider
+              size="md"
+              value={ticksValue}
+              onValueChange={setTicksValue}
+              min={0}
+              max={10}
+              step={1}
+              showTicks
+              trackFilled
+              showValue={false}
+            />
+          </div>
+          <div className="gs-layout-item">
+            <span className="gs-demo-label">ticks + icons (volume)</span>
+            <TugSlider
+              size="md"
+              value={volumeValue}
+              onValueChange={setVolumeValue}
+              min={0}
+              max={10}
+              step={1}
+              showTicks
+              trackFilled
+              showValue={false}
+              leadingIcon={<Volume1 size={20} />}
+              trailingIcon={<Volume2 size={20} />}
+            />
+          </div>
+        </div>
       </div>
 
     </div>

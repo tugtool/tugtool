@@ -25,6 +25,8 @@ body {
   --tugx-slider-thumb-bg: var(--tug7-element-toggle-thumb-normal-on-rest);
   --tugx-slider-thumb-border: var(--tug7-element-global-border-normal-default-rest);
   --tugx-slider-label-fg: var(--tug7-element-field-text-normal-label-rest);
+  --tugx-slider-tick-fg: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-slider-icon-fg: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 
@@ -64,6 +66,7 @@ body {
 
 .tug-slider-root {
   position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   flex: 1;
@@ -90,6 +93,11 @@ body {
   background-color: var(--tugx-slider-track-bg);
 }
 
+
+/* Filled track variant: entire track uses accent color */
+.tug-slider-track-filled {
+  background-color: var(--tugx-slider-range-bg);
+}
 
 /* ============================================================================
    Range (.tug-slider-range)
@@ -120,6 +128,12 @@ body {
   cursor: pointer;
 }
 
+/* Diamond thumb for tick-mark sliders — square rotated 45° */
+.tug-slider-thumb-diamond {
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-slider-thumb:focus-visible {
   outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
@@ -145,6 +159,56 @@ body {
 
 
 /* ============================================================================
+   Track Wrapper (.tug-slider-track-wrapper)
+   ========================================================================= */
+
+/* Contains the Radix slider root and the tick overlay. Positioned so ticks
+   can be absolutely placed relative to the track. */
+.tug-slider-track-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+
+/* ============================================================================
+   Tick Marks (.tug-slider-ticks)
+   ========================================================================= */
+
+/* Tick container must be inset by half the thumb width so tick positions
+   match Radix thumb positions (Radix keeps thumb center within track bounds). */
+.tug-slider-ticks {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-slider-tick {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  transform: translateX(-0.5px) translateY(-50%);
+  background-color: var(--tugx-slider-range-bg);
+}
+
+
+/* ============================================================================
+   Leading / Trailing Icons (.tug-slider-icon)
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-slider-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 var(--tug-space-xs);
+  color: var(--tugx-slider-icon-fg);
+}
+
+
+/* ============================================================================
    Size variants
    ========================================================================= */
 
@@ -167,6 +231,15 @@ body {
   font-size: var(--tug-font-size-xs);
 }
 
+.tug-slider-sm .tug-slider-ticks {
+  left: 6px;   /* half of 12px thumb */
+  right: 6px;
+}
+
+.tug-slider-sm .tug-slider-tick {
+  height: 8px;
+}
+
 /* ---- md ---- */
 
 .tug-slider-md .tug-slider-track {
@@ -186,6 +259,15 @@ body {
   font-size: var(--tug-font-size-sm);
 }
 
+.tug-slider-md .tug-slider-ticks {
+  left: 8px;   /* half of 16px thumb */
+  right: 8px;
+}
+
+.tug-slider-md .tug-slider-tick {
+  height: 10px;
+}
+
 /* ---- lg ---- */
 
 .tug-slider-lg .tug-slider-track {
@@ -203,6 +285,15 @@ body {
 
 .tug-slider-lg .tug-slider-label {
   font-size: var(--tug-font-size-md);
+}
+
+.tug-slider-lg .tug-slider-ticks {
+  left: 10px;  /* half of 20px thumb */
+  right: 10px;
+}
+
+.tug-slider-lg .tug-slider-tick {
+  height: 14px;
 }
 
 

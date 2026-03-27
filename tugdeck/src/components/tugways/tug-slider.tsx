@@ -75,6 +75,22 @@ export interface TugSliderProps
    */
   size?: TugSliderSize;
   /**
+   * Show tick marks at each step interval along the track.
+   * @default false
+   */
+  showTicks?: boolean;
+  /** Icon rendered before the track (e.g., quiet speaker). */
+  leadingIcon?: React.ReactNode;
+  /** Icon rendered after the track (e.g., loud speaker). */
+  trailingIcon?: React.ReactNode;
+  /**
+   * Fill the entire track with the accent color (not just the range).
+   * Useful with ticks where the two-tone range is distracting.
+   * @selector .tug-slider-track-filled
+   * @default false
+   */
+  trackFilled?: boolean;
+  /**
    * Disables the slider and value input.
    * @selector [aria-disabled="true"]
    * @default false
@@ -95,6 +111,10 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       label,
       layout = "inline",
       showValue = true,
+      showTicks = false,
+      leadingIcon,
+      trailingIcon,
+      trackFilled = false,
       formatter,
       size = "md",
       disabled = false,
@@ -119,24 +139,58 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
         : "tug-slider-stacked"
       : undefined;
 
+    // ---- Tick marks ----
+
+    const tickCount = showTicks ? Math.round((max - min) / step) + 1 : 0;
+    const ticks = showTicks ? (
+      <div className="tug-slider-ticks" aria-hidden="true">
+        {Array.from({ length: tickCount }, (_, i) => (
+          <span
+            key={i}
+            className="tug-slider-tick"
+            style={{ left: `${(i / (tickCount - 1)) * 100}%` }}
+          />
+        ))}
+      </div>
+    ) : null;
+
     // ---- Track + value input block ----
 
     const trackAndInput = (
       <>
-        <SliderPrimitive.Root
-          value={[value]}
-          onValueChange={handleSliderChange}
-          min={min}
-          max={max}
-          step={step}
-          disabled={disabled}
-          className="tug-slider-root"
-        >
-          <SliderPrimitive.Track className="tug-slider-track">
-            <SliderPrimitive.Range className="tug-slider-range" />
-          </SliderPrimitive.Track>
-          <SliderPrimitive.Thumb className="tug-slider-thumb" />
-        </SliderPrimitive.Root>
+        {leadingIcon && (
+          <span className="tug-slider-icon" aria-hidden="true">{leadingIcon}</span>
+        )}
+
+        <div className="tug-slider-track-wrapper">
+          <SliderPrimitive.Root
+            value={[value]}
+            onValueChange={handleSliderChange}
+            min={min}
+            max={max}
+            step={step}
+            disabled={disabled}
+            className="tug-slider-root"
+          >
+            <SliderPrimitive.Track className={cn("tug-slider-track", trackFilled && "tug-slider-track-filled")}>
+              <SliderPrimitive.Range className="tug-slider-range" />
+            </SliderPrimitive.Track>
+            <SliderPrimitive.Thumb
+              className={cn("tug-slider-thumb", showTicks && "tug-slider-thumb-diamond")}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" || e.key === "Enter") {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
+              }}
+            />
+          </SliderPrimitive.Root>
+          {ticks}
+        </div>
+
+        {trailingIcon && (
+          <span className="tug-slider-icon" aria-hidden="true">{trailingIcon}</span>
+        )}
 
         {showValue && (
           <TugValueInput
