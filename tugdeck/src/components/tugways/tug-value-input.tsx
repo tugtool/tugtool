@@ -45,10 +45,24 @@ export interface TugValueInputProps
    */
   size?: "sm" | "md" | "lg";
   /**
+   * What the input shows when focused for editing.
+   * - "display" (default): stripped display-space number ("50%" → "50", "2.5 s" → "2.5")
+   * - "raw": internal value ("50%" → "0.5")
+   * @default "display"
+   */
+  editMode?: "display" | "raw";
+  /**
    * @selector [aria-disabled="true"]
    * @default false
    */
   disabled?: boolean;
+}
+
+// ---- Helpers ----
+
+/** Strip non-numeric decoration from a formatted string, keeping digits, decimal, and minus. */
+function extractNumericPart(formatted: string): string {
+  return formatted.replace(/[^0-9.\-]/g, "");
 }
 
 // ---- TugValueInput ----
@@ -63,6 +77,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       max,
       step = 1,
       size = "md",
+      editMode = "display",
       disabled = false,
       className,
       style,
@@ -122,12 +137,17 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       editingRef.current = true;
       escapeRef.current = false;
       justFocusedRef.current = true;
-      // Keep formatted display on focus — the user edits in display units.
-      // "50%" stays "50%", not "0.5". On commit, the formatter's parse() handles it.
-      const display = formatter ? formatter.format(value) : String(value);
-      input.value = display;
+
+      if (editMode === "raw") {
+        // Show internal value: "50%" → "0.5"
+        input.value = String(value);
+      } else {
+        // Show display-space number without decoration: "50%" → "50", "2.5 s" → "2.5"
+        const formatted = formatter ? formatter.format(value) : String(value);
+        input.value = extractNumericPart(formatted);
+      }
       input.select();
-    }, [value, formatter]);
+    }, [value, formatter, editMode]);
 
     // ---- MouseUp handler ----
     //
@@ -166,7 +186,8 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           onValueCommit(next);
           const input = inputRef.current;
           if (input) {
-            input.value = formatter ? formatter.format(next) : String(next);
+            const formatted = formatter ? formatter.format(next) : String(next);
+            input.value = editMode === "display" ? extractNumericPart(formatted) : String(next);
             input.select();
           }
         } else if (e.key === "ArrowDown") {
@@ -176,12 +197,13 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           onValueCommit(next);
           const input = inputRef.current;
           if (input) {
-            input.value = formatter ? formatter.format(next) : String(next);
+            const formatted = formatter ? formatter.format(next) : String(next);
+            input.value = editMode === "display" ? extractNumericPart(formatted) : String(next);
             input.select();
           }
         }
       },
-      [value, formatter, min, max, step, onValueCommit],
+      [value, formatter, editMode, min, max, step, onValueCommit],
     );
 
     // ---- Blur handler ----
@@ -195,39 +217,49 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
         return;
       }
 
-      // Parse the typed text. If a formatter is present, use its parse() first
-      // (handles "75%" → 0.75, "$42" → 42, etc.). Fall back to plain numeric parse.
+      // Parse the typed text back to an internal value.
       const raw = input?.value ?? "";
       const effectiveMin = min ?? -Infinity;
       const effectiveMax = max ?? Infinity;
       let parsed: number | null = null;
+
       if (formatter) {
+        // Try formatter parse first — handles decorated input ("75%", "$42").
         parsed = formatter.parse(raw);
-        // If formatter parse succeeded, still clamp and snap.
-        if (parsed !== null) {
-          parsed = clamp(parsed, effectiveMin, effectiveMax);
-          if (step !== undefined) {
-            const base = effectiveMin === -Infinity ? 0 : effectiveMin;
-            parsed = Math.round((parsed - base) / step) * step + base;
-          }
+        // If that fails and we're in display mode, the user may have typed a
+        // bare number in display space (e.g., "75" meaning 75%). Re-decorate
+        // and parse again.
+        if (parsed === null && editMode === "display") {
+          // Attempt to reconstruct: format a known value, replace its numeric
+          // portion with the user's input, then parse the result.
+          const template = formatter.format(value);
+          const reconstructed = template.replace(extractNumericPart(template), raw);
+          parsed = formatter.parse(reconstructed);
         }
       }
-      // Fall back to plain numeric validation if no formatter or formatter parse failed.
+
+      // Clamp and snap if formatter parse succeeded.
+      if (parsed !== null) {
+        parsed = clamp(parsed, effectiveMin, effectiveMax);
+        const base = effectiveMin === -Infinity ? 0 : effectiveMin;
+        parsed = Math.round((parsed - base) / step) * step + base;
+      }
+
+      // Fall back to plain numeric validation if no formatter or formatter failed.
       if (parsed === null) {
         parsed = validateNumericInput(raw, { min: effectiveMin, max: effectiveMax, step });
       }
+
       if (parsed !== null) {
         onValueCommit(parsed);
       }
 
-      // Restore display format (whether validated or reverted).
+      // Restore display format (whether committed or reverted).
       if (input) {
-        const display = formatter
-          ? formatter.format(validated ?? value)
-          : String(validated ?? value);
-        input.value = display;
+        const committed = parsed ?? value;
+        input.value = formatter ? formatter.format(committed) : String(committed);
       }
-    }, [min, max, step, value, formatter, onValueCommit]);
+    }, [min, max, step, value, formatter, editMode, onValueCommit]);
 
     return (
       <input
