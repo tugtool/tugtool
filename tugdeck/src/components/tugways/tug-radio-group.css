@@ -49,6 +49,7 @@
 
 .tug-radio-group-items {
   display: flex;
+  align-items: flex-start;
   gap: var(--tug-space-2xs);
 }
 

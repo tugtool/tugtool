@@ -50,7 +50,7 @@ export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
  * can merge arbitrary props (data-state, aria-expanded, onPointerDown, ref,
  * etc.) onto the underlying DOM button element. We omit:
  *   - 'role': TugButton redefines it as TugButtonRole (not the HTML aria role)
- *   - 'onClick': TugButton redefines it as () => void (not the React MouseEvent handler)
+ *   - 'onClick': TugButton redefines it to accept an optional MouseEvent (for asChild compatibility)
  *   - 'children': TugButton redefines it as React.ReactNode (same type but explicit)
  */
 export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'role' | 'onClick' | 'children'> {
@@ -80,7 +80,7 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
   size?: TugButtonSize;
 
   /** Direct-action mode click handler. Mutually exclusive with `action`. */
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
 
   /**
    * Chain-action mode: action name to dispatch via the responder chain.
@@ -297,7 +297,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
   // ---- Click handler ----
 
-  const handleClick = () => {
+  const handleClick = (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (disabled || loading) return;
 
     // Chain-action disabled guard: aria-disabled buttons still receive click
@@ -322,7 +322,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       return;
     }
 
-    onClick?.();
+    onClick?.(e);
   };
 
   // aria-disabled for chain-action disabled state.
