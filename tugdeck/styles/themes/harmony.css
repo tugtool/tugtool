@@ -190,6 +190,9 @@ body {
   --tug7-surface-tab-primary-normal-plain-inactive: --tug-color(indigo, i: 5, t: 80);
   --tug7-surface-tab-close-normal-plain-hover: --tug-color(white, a: 12);
 
+  /* Slider — Track */
+  --tug7-surface-slider-primary-normal-track-rest: --tug-color(indigo, i: 8, t: 75);
+
   /* Card — Title Bar */
   --tug7-surface-card-primary-normal-titlebar-active: --tug-color(blue, i: 2, t: 99);
   --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(blue, i: 2, t: 65);

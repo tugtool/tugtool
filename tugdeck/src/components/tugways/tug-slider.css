@@ -1,6 +1,6 @@
 /* @tug-pairings {
-  --tug7-surface-field-primary-normal-plain-rest   | --tug7-surface-global-primary-normal-default-rest | informational
-  --tug7-element-global-fill-normal-accent-rest    | --tug7-surface-field-primary-normal-plain-rest    | control
+  --tug7-surface-slider-primary-normal-track-rest   | --tug7-surface-global-primary-normal-default-rest | informational
+  --tug7-element-global-fill-normal-accent-rest    | --tug7-surface-slider-primary-normal-track-rest    | control
   --tug7-element-toggle-thumb-normal-on-rest       | --tug7-surface-global-primary-normal-default-rest | control
   --tug7-element-global-border-normal-default-rest | --tug7-element-toggle-thumb-normal-on-rest        | informational
   --tug7-element-field-text-normal-label-rest      | --tug7-surface-global-primary-normal-default-rest | content
@@ -12,8 +12,8 @@
  * @tug-pairings
  * | Element                                          | Surface                                              | Role          | Context                                             |
  * |--------------------------------------------------|------------------------------------------------------|---------------|-----------------------------------------------------|
- * | --tug7-surface-field-primary-normal-plain-rest    | --tug7-surface-global-primary-normal-default-rest    | informational | .tug-slider-track (background-color)                |
- * | --tug7-element-global-fill-normal-accent-rest     | --tug7-surface-field-primary-normal-plain-rest       | control       | .tug-slider-range (background-color)                |
+ * | --tug7-surface-slider-primary-normal-track-rest    | --tug7-surface-global-primary-normal-default-rest    | informational | .tug-slider-track (background-color)                |
+ * | --tug7-element-global-fill-normal-accent-rest     | --tug7-surface-slider-primary-normal-track-rest       | control       | .tug-slider-range (background-color)                |
  * | --tug7-element-toggle-thumb-normal-on-rest        | --tug7-surface-global-primary-normal-default-rest    | control       | .tug-slider-thumb (background-color)                |
  * | --tug7-element-global-border-normal-default-rest  | --tug7-element-toggle-thumb-normal-on-rest           | informational | .tug-slider-thumb (border-color)                    |
  * | --tug7-element-field-text-normal-label-rest       | --tug7-surface-global-primary-normal-default-rest    | content       | .tug-slider-label (color)                           |
@@ -25,7 +25,7 @@
 
 body {
   /* Slider component aliases — resolve to base tier in one hop [L17] */
-  --tugx-slider-track-bg: var(--tug7-surface-field-primary-normal-plain-rest);
+  --tugx-slider-track-bg: var(--tug7-surface-slider-primary-normal-track-rest);
   --tugx-slider-range-bg: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-slider-thumb-bg: var(--tug7-element-toggle-thumb-normal-on-rest);
   --tugx-slider-thumb-border: var(--tug7-element-global-border-normal-default-rest);
@@ -107,7 +107,7 @@ body {
    Range (.tug-slider-range)
    ========================================================================= */
 
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+/* @tug-renders-on: --tug7-surface-slider-primary-normal-track-rest */
 .tug-slider-range {
   position: absolute;
   height: 100%;
@@ -188,12 +188,11 @@ body {
   pointer-events: none;
 }
 
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+/* @tug-renders-on: --tug7-surface-slider-primary-normal-track-rest */
 .tug-slider-tick {
   position: absolute;
   top: 50%;
-  width: 1px;
-  transform: translateX(-0.5px) translateY(-50%);
+  transform: translateY(-50%);
   background-color: var(--tugx-slider-range-bg);
 }
 
@@ -241,6 +240,7 @@ body {
 }
 
 .tug-slider-sm .tug-slider-tick {
+  width: 3px;   /* matches track height */
   height: 8px;
 }
 
@@ -269,6 +269,7 @@ body {
 }
 
 .tug-slider-md .tug-slider-tick {
+  width: 4px;   /* matches track height */
   height: 10px;
 }
 
@@ -297,6 +298,7 @@ body {
 }
 
 .tug-slider-lg .tug-slider-tick {
+  width: 6px;   /* matches track height */
   height: 14px;
 }
 
