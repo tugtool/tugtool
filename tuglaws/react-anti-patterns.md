@@ -25,6 +25,7 @@ This document argues against standard React patterns by reference to specific La
 | <a id="law-L05"></a>**L05** | Never use `requestAnimationFrame` for operations that depend on React state commits. |
 | <a id="law-L06"></a>**L06** | Appearance changes go through CSS and DOM, never React state. |
 | <a id="law-L07"></a>**L07** | Every action handler must access current state through refs or stable singletons, never stale closures. |
+| <a id="law-L08"></a>**L08** | Live preview is appearance-zone only; commit crosses zone boundaries. |
 | <a id="law-L11"></a>**L11** | Controls emit actions; responders handle actions. |
 
 ---
@@ -280,6 +281,8 @@ This separation — controls emit actions, responders handle actions ([L11](#law
 *Trade-off:* The responder chain is infrastructure. It requires a shared vocabulary of action types, a registration mechanism, and discipline about which components are responder nodes. For a simple app with a few click handlers, this is overbuilt. For Tug — where cards, decks, toolbars, and modals all need to participate in keyboard routing — it removed more complexity than it introduced.
 
 Web developers rarely encounter this pattern because the DOM's native event model provides *mechanism* (events bubble up the tree) without *architecture* (a defined chain of responsibility with typed actions and explicit fallthrough). The responder chain adds the architecture. Once you have it, the class of bugs that comes from wiring event handlers through props and closures simply disappears.
+
+**Live preview stays in the appearance zone until commit.** Drag-to-resize a card, adjust a color, nudge an element — during the gesture, every visual change is a CSS mutation. No React state changes. No re-renders. The `MutationTransaction` system snapshots the affected CSS properties at gesture start, applies appearance-zone mutations frame by frame during the gesture, and only crosses into React state at commit (or reverts the snapshot on cancel). This is L08 in code: the entire preview lifecycle is invisible to React, so the UI stays fluid at pointer-event rates regardless of how complex the component tree is. The standard React model would put the preview value in state, re-render every frame, and then try to optimize the damage with memoization.
 
 **You can read a component top to bottom.** In a standard complex component, understanding behavior means tracing a graph: this effect syncs that state, which triggers that callback, which depends on these values, which re-registers when those change. Under the Laws of Tug, a component reads linearly: subscribe to external state, define stable handlers, render markup. There's no graph to trace because there are no inter-hook dependencies. The component is a function from state to DOM, not a state machine entangled with its own side effects.
 
