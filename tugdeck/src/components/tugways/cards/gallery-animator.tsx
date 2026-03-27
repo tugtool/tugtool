@@ -4,6 +4,13 @@
  * Showcases the TugAnimator API: physics solvers, animate() with duration
  * tokens, cancellation modes, and named slot coordination.
  *
+ * Architecture: every demo stage follows the track/dot pattern:
+ *   <TugBox> → <div ref={trackRef} style={{ position:"relative", height:N }}>
+ *                <div ref={dotRef} className="cg-anim-dot ..." />  (position:absolute)
+ *              </div>
+ * Measurement: range = trackRef.current.clientWidth - DOT_SIZE (or clientHeight)
+ * ResizeObserver observes the track div directly.
+ *
  * Rules of Tugways compliance:
  *   - Slider/toggle state uses useState for local UI state only [D40]
  *   - Animations use the real WAAPI via tug-animator.ts animate() [D08, D09]
@@ -45,19 +52,19 @@ const TOKEN_BOX_SIZE = 24;
 const LARGE_BOX_SIZE = 32;
 
 // ---------------------------------------------------------------------------
-// useResizeReset -- reset animations when a stage is resized
+// useResizeReset -- reset animations when a track div is resized
 // ---------------------------------------------------------------------------
 
 /**
- * Observe a stage element for resize (CSS `resize: horizontal`) and call
- * reset when the size changes. Skips the initial ResizeObserver fire on mount.
+ * Observe a track element for resize and call reset when the size changes.
+ * Skips the initial ResizeObserver fire on mount.
  */
 function useResizeReset(
-  stageRef: React.RefObject<HTMLElement | null>,
+  trackRef: React.RefObject<HTMLElement | null>,
   reset: () => void,
 ) {
   useEffect(() => {
-    const el = stageRef.current;
+    const el = trackRef.current;
     if (!el) return;
     let first = true;
     const obs = new ResizeObserver(() => {
@@ -66,7 +73,7 @@ function useResizeReset(
     });
     obs.observe(el);
     return () => obs.disconnect();
-  }, [stageRef, reset]);
+  }, [trackRef, reset]);
 }
 
 // ---------------------------------------------------------------------------
@@ -102,10 +109,15 @@ function PercentSlider({
 // ---------------------------------------------------------------------------
 
 function PhysicsCurvesDemo() {
-  const springBoxRef = useRef<HTMLFieldSetElement>(null);
-  const springRef = useRef<HTMLDivElement>(null);
-  const gravityRef = useRef<HTMLDivElement>(null);
-  const frictionRef = useRef<HTMLDivElement>(null);
+  // Track refs — the measurement surfaces (position: relative, explicit height)
+  const springTrackRef = useRef<HTMLDivElement>(null);
+  const gravityTrackRef = useRef<HTMLDivElement>(null);
+  const frictionTrackRef = useRef<HTMLDivElement>(null);
+  // Dot refs — the animated elements (position: absolute via CSS)
+  const springDotRef = useRef<HTMLDivElement>(null);
+  const gravityDotRef = useRef<HTMLDivElement>(null);
+  const frictionDotRef = useRef<HTMLDivElement>(null);
+
   const animsRef = useRef<TugAnimation[]>([]);
   const [pct, setPct] = useState(100);
 
@@ -117,13 +129,12 @@ function PhysicsCurvesDemo() {
   }, []);
 
   const resetAll = useCallback(() => {
-    // Cancel WAAPI animations entirely (removes fill) then clear inline styles.
     for (const a of animsRef.current) {
       a.finished.catch(() => {});
       a.raw.cancel();
     }
     animsRef.current = [];
-    for (const ref of [springRef, gravityRef, frictionRef]) {
+    for (const ref of [springDotRef, gravityDotRef, frictionDotRef]) {
       if (ref.current) {
         ref.current.style.transform = "";
       }
@@ -136,38 +147,39 @@ function PhysicsCurvesDemo() {
     const duration = 1500;
     const scale = pct / 100;
 
-    if (springRef.current?.parentElement) {
-      const range = (springRef.current.parentElement.clientWidth - DOT_SIZE) * scale;
+    if (springDotRef.current && springTrackRef.current) {
+      const range = (springTrackRef.current.clientWidth - DOT_SIZE) * scale;
       const solver = new SpringSolver({ stiffness: 120, damping: 12 });
       const kf = solver.keyframes(duration);
       const frames = kf.map((v) => ({ transform: `translateX(${v * range}px)` }));
       animsRef.current.push(
-        animate(springRef.current, frames, { duration, easing: "linear" })
+        animate(springDotRef.current, frames, { duration, easing: "linear" })
       );
     }
 
-    if (gravityRef.current?.parentElement) {
-      const range = (gravityRef.current.parentElement.clientHeight - DOT_SIZE) * scale;
+    if (gravityDotRef.current && gravityTrackRef.current) {
+      const range = (gravityTrackRef.current.clientHeight - DOT_SIZE) * scale;
       const solver = new GravitySolver({ coefficientOfRestitution: 0.5 });
       const kf = solver.keyframes(duration);
       const frames = kf.map((v) => ({ transform: `translateY(${(1 - v) * range}px)` }));
       animsRef.current.push(
-        animate(gravityRef.current, frames, { duration, easing: "linear" })
+        animate(gravityDotRef.current, frames, { duration, easing: "linear" })
       );
     }
 
-    if (frictionRef.current?.parentElement) {
-      const range = (frictionRef.current.parentElement.clientWidth - DOT_SIZE) * scale;
+    if (frictionDotRef.current && frictionTrackRef.current) {
+      const range = (frictionTrackRef.current.clientWidth - DOT_SIZE) * scale;
       const solver = new FrictionSolver({ initialVelocity: 8, friction: 3 });
       const kf = solver.keyframes(duration);
       const frames = kf.map((v) => ({ transform: `translateX(${v * range}px)` }));
       animsRef.current.push(
-        animate(frictionRef.current, frames, { duration, easing: "linear" })
+        animate(frictionDotRef.current, frames, { duration, easing: "linear" })
       );
     }
   }, [cancelAll, pct]);
 
-  useResizeReset(springBoxRef, resetAll);
+  // Observe the spring track for resize — reset all three when it changes
+  useResizeReset(springTrackRef, resetAll);
 
   useEffect(() => {
     return () => { cancelAll(); };
@@ -181,14 +193,49 @@ function PhysicsCurvesDemo() {
         drive WAAPI animations with physically-accurate motion.
       </p>
       <div className="cg-anim-stages" data-testid="anim-physics-stage">
-        <TugBox ref={springBoxRef} variant="filled" resize="horizontal" rounded="sm" label="Spring" labelPosition="above" size="sm" style={{ width: "50%", minWidth: 120 }}>
-          <div ref={springRef} className="cg-anim-dot cg-anim-dot-spring" />
+        {/* Spring — horizontal */}
+        <TugBox
+          variant="filled"
+          resize="horizontal"
+          rounded="sm"
+          size="sm"
+          label="Spring"
+          labelPosition="above"
+          style={{ width: "50%", minWidth: 120 }}
+        >
+          <div ref={springTrackRef} style={{ position: "relative", height: 24 }}>
+            <div ref={springDotRef} className="cg-anim-dot cg-anim-dot-spring" />
+          </div>
         </TugBox>
-        <TugBox variant="filled" resize="horizontal" rounded="sm" label="Gravity" labelPosition="above" size="sm" style={{ width: "50%", minWidth: 120, height: 120 }}>
-          <div ref={gravityRef} className="cg-anim-dot cg-anim-dot-gravity" />
+
+        {/* Gravity — vertical, needs taller track */}
+        <TugBox
+          variant="filled"
+          resize="horizontal"
+          rounded="sm"
+          size="sm"
+          label="Gravity"
+          labelPosition="above"
+          style={{ width: "50%", minWidth: 120 }}
+        >
+          <div ref={gravityTrackRef} style={{ position: "relative", height: 120 }}>
+            <div ref={gravityDotRef} className="cg-anim-dot cg-anim-dot-gravity" />
+          </div>
         </TugBox>
-        <TugBox variant="filled" resize="horizontal" rounded="sm" label="Friction" labelPosition="above" size="sm" style={{ width: "50%", minWidth: 120 }}>
-          <div ref={frictionRef} className="cg-anim-dot cg-anim-dot-friction" />
+
+        {/* Friction — horizontal */}
+        <TugBox
+          variant="filled"
+          resize="horizontal"
+          rounded="sm"
+          size="sm"
+          label="Friction"
+          labelPosition="above"
+          style={{ width: "50%", minWidth: 120 }}
+        >
+          <div ref={frictionTrackRef} style={{ position: "relative", height: 24 }}>
+            <div ref={frictionDotRef} className="cg-anim-dot cg-anim-dot-friction" />
+          </div>
         </TugBox>
       </div>
       <div className="cg-variant-row">
@@ -209,8 +256,8 @@ function PhysicsCurvesDemo() {
 // ---------------------------------------------------------------------------
 
 function DurationTokensDemo() {
+  const trackRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLFieldSetElement>(null);
   const animRef = useRef<TugAnimation | null>(null);
   const [activeToken, setActiveToken] = useState<string | null>(null);
   const [pct, setPct] = useState(100);
@@ -228,12 +275,12 @@ function DurationTokensDemo() {
   }, []);
 
   const playToken = useCallback((token: string) => {
-    if (!boxRef.current?.parentElement) return;
+    if (!boxRef.current || !trackRef.current) return;
     if (animRef.current) {
       animRef.current.cancel("snap-to-end");
     }
     setActiveToken(token);
-    const range = (boxRef.current.parentElement.clientWidth - TOKEN_BOX_SIZE) * (pct / 100);
+    const range = (trackRef.current.clientWidth - TOKEN_BOX_SIZE) * (pct / 100);
     boxRef.current.style.transform = "translateX(0)";
     animRef.current = animate(
       boxRef.current,
@@ -243,7 +290,7 @@ function DurationTokensDemo() {
     animRef.current.finished.then(() => setActiveToken(null)).catch(() => {});
   }, [pct]);
 
-  useResizeReset(stageRef, reset);
+  useResizeReset(trackRef, reset);
 
   useEffect(() => {
     return () => { animRef.current?.cancel("snap-to-end"); };
@@ -257,7 +304,6 @@ function DurationTokensDemo() {
         <code>getTugTiming()</code>. Click each to see the speed difference.
       </p>
       <TugBox
-        ref={stageRef}
         variant="filled"
         resize="horizontal"
         rounded="md"
@@ -265,7 +311,9 @@ function DurationTokensDemo() {
         data-testid="anim-token-stage"
         style={{ width: "50%", minWidth: 120 }}
       >
-        <div ref={boxRef} className="cg-anim-token-box" />
+        <div ref={trackRef} style={{ position: "relative", height: 32 }}>
+          <div ref={boxRef} className="cg-anim-token-box" />
+        </div>
       </TugBox>
       <div className="cg-variant-row">
         {TOKEN_LABELS.map(({ token, label }) => (
@@ -303,8 +351,8 @@ function DurationTokensDemo() {
 // ---------------------------------------------------------------------------
 
 function CancelModesDemo() {
+  const trackRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLFieldSetElement>(null);
   const animRef = useRef<TugAnimation | null>(null);
   const [status, setStatus] = useState("idle");
   const [pct, setPct] = useState(100);
@@ -323,10 +371,10 @@ function CancelModesDemo() {
   }, []);
 
   const startAnimation = useCallback(() => {
-    if (!boxRef.current?.parentElement) return;
+    if (!boxRef.current || !trackRef.current) return;
     boxRef.current.style.transform = "";
     boxRef.current.style.opacity = "";
-    const range = (boxRef.current.parentElement.clientWidth - LARGE_BOX_SIZE) * (pct / 100);
+    const range = (trackRef.current.clientWidth - LARGE_BOX_SIZE) * (pct / 100);
     animRef.current = animate(
       boxRef.current,
       [
@@ -352,7 +400,7 @@ function CancelModesDemo() {
     }
   }, []);
 
-  useResizeReset(stageRef, reset);
+  useResizeReset(trackRef, reset);
 
   useEffect(() => {
     return () => { animRef.current?.cancel("snap-to-end"); };
@@ -368,7 +416,6 @@ function CancelModesDemo() {
         <strong>reverse-from-current</strong> animates back to start.
       </p>
       <TugBox
-        ref={stageRef}
         variant="filled"
         resize="horizontal"
         rounded="md"
@@ -376,7 +423,9 @@ function CancelModesDemo() {
         data-testid="anim-cancel-stage"
         style={{ width: "50%", minWidth: 120 }}
       >
-        <div ref={boxRef} className="cg-anim-cancel-box" />
+        <div ref={trackRef} style={{ position: "relative", height: 40 }}>
+          <div ref={boxRef} className="cg-anim-cancel-box" />
+        </div>
       </TugBox>
       <div className="cg-variant-row">
         <TugPushButton emphasis="filled" role="accent" size="sm" onClick={startAnimation}>
@@ -410,8 +459,8 @@ function CancelModesDemo() {
 // ---------------------------------------------------------------------------
 
 function NamedSlotsDemo() {
+  const trackRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLFieldSetElement>(null);
   const animsRef = useRef<TugAnimation[]>([]);
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [pct, setPct] = useState(100);
@@ -430,8 +479,8 @@ function NamedSlotsDemo() {
   }, []);
 
   const animateToRight = useCallback(() => {
-    if (!boxRef.current?.parentElement) return;
-    const range = (boxRef.current.parentElement.clientWidth - LARGE_BOX_SIZE) * (pct / 100);
+    if (!boxRef.current || !trackRef.current) return;
+    const range = (trackRef.current.clientWidth - LARGE_BOX_SIZE) * (pct / 100);
     const a = animate(
       boxRef.current,
       [{ transform: `translateX(${range}px)` }],
@@ -452,8 +501,6 @@ function NamedSlotsDemo() {
     setLastAction("animate \u2192 left (key: slot-demo, cancels previous)");
   }, []);
 
-  useResizeReset(stageRef, reset);
-
   const animateDifferentKey = useCallback(() => {
     if (!boxRef.current) return;
     const a = animate(
@@ -465,6 +512,17 @@ function NamedSlotsDemo() {
     setLastAction("animate opacity (key: opacity-slot, coexists)");
   }, []);
 
+  useResizeReset(trackRef, reset);
+
+  useEffect(() => {
+    return () => {
+      for (const a of animsRef.current) {
+        a.finished.catch(() => {});
+        a.raw.cancel();
+      }
+    };
+  }, []);
+
   return (
     <div className="cg-section">
       <div className="cg-section-title">Named Slots</div>
@@ -473,7 +531,6 @@ function NamedSlotsDemo() {
         the previous one. Different keys coexist independently.
       </p>
       <TugBox
-        ref={stageRef}
         variant="filled"
         resize="horizontal"
         rounded="md"
@@ -481,7 +538,9 @@ function NamedSlotsDemo() {
         data-testid="anim-slot-stage"
         style={{ width: "50%", minWidth: 120 }}
       >
-        <div ref={boxRef} className="cg-anim-slot-box" />
+        <div ref={trackRef} style={{ position: "relative", height: 40 }}>
+          <div ref={boxRef} className="cg-anim-slot-box" />
+        </div>
       </TugBox>
       <div className="cg-variant-row">
         <TugPushButton size="sm" onClick={animateToRight}>

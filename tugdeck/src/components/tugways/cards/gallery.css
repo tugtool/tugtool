@@ -606,7 +606,12 @@
   gap: 8px;
 }
 
+/* Dots: position:absolute so they sit inside the track div without causing overflow.
+   top/left defaults are for horizontal spring/friction dots (centered vertically). */
 .cg-anim-dot {
+  position: absolute;
+  top: 4px;
+  left: 0;
   width: 16px;
   height: 16px;
   border-radius: 50%;
@@ -616,7 +621,10 @@
   background-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 
+/* Gravity dot: override to sit at top-left corner so translateY moves it down */
 .cg-anim-dot-gravity {
+  top: 0;
+  left: 4px;
   background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
 }
 
@@ -627,6 +635,9 @@
 /* --- Duration Tokens --- */
 
 .cg-anim-token-box {
+  position: absolute;
+  top: 4px;
+  left: 0;
   width: 24px;
   height: 24px;
   border-radius: var(--tug-radius-xs);
@@ -663,6 +674,9 @@
 /* --- Cancellation Modes --- */
 
 .cg-anim-cancel-box {
+  position: absolute;
+  top: 4px;
+  left: 0;
   width: 32px;
   height: 32px;
   border-radius: var(--tug-radius-sm);
@@ -672,6 +686,9 @@
 /* --- Named Slots --- */
 
 .cg-anim-slot-box {
+  position: absolute;
+  top: 4px;
+  left: 0;
   width: 32px;
   height: 32px;
   border-radius: 50%;
