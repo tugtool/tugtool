@@ -390,8 +390,60 @@ tugdeck/src/components/tugways/internal/tug-button.tsx
 
 ---
 
-## Follow-up: Adoption Opportunities
+## Addendum: `resize` Prop
 
-Once TugBox lands, refactor existing ad-hoc stage/canvas containers to use it:
+### Problem
 
-- **gallery-animator.tsx** — the four animation stages (`.cg-anim-physics-stage`, `.cg-anim-token-stage`, `.cg-anim-cancel-stage`, `.cg-anim-slot-stage`) are custom divs serving as animation canvases. Replace with `<TugBox variant="filled">` for a consistent, theme-aware background surface. The balls and boxes animate inside a clearly delineated area instead of a hand-styled container.
+The animator gallery uses TugBox as a visual canvas for animated elements. Each stage needs to be user-resizable so the animation travel distance can be adjusted interactively. Currently, `resize: horizontal` lives on inner stage divs, which creates a structural problem:
+
+1. The resize handle is on the inner div, not the TugBox border. The TugBox fieldset doesn't resize with the inner content — its border stays fixed while the inner div changes size, creating visible gaps.
+2. The inner div needs `overflow: hidden` for resize to work (CSS requirement). But the TugBox also wraps content in `.tug-box-content`. This creates layered containment where heights and padding don't align.
+3. Ad-hoc CSS hacks (`padding: 0 !important`, `margin-left: 0`, `width: 100%`) are needed to fight TugBox's own styling — a sign that the component should handle this natively.
+
+### Proposal
+
+Add a `resize` prop to TugBox:
+
+```typescript
+/**
+ * User-resizable direction. Requires bordered or filled variant.
+ * Sets CSS `resize` and `overflow: hidden` on the fieldset.
+ * When omitted, the box is not resizable.
+ * @selector .tug-box-resize-horizontal | .tug-box-resize-vertical | .tug-box-resize-both
+ */
+resize?: "horizontal" | "vertical" | "both";
+```
+
+**Implementation:**
+- When `resize` is not `"none"`, add a CSS class `.tug-box-resize-{direction}` to the fieldset.
+- The CSS class sets `resize: {direction}` and `overflow: hidden` on the fieldset itself.
+- The resize handle appears on the TugBox's own border. When the user drags it, the fieldset resizes — border, background fill, and content all move together.
+- The `.tug-box-content` wrapper inside naturally fills the fieldset, so children resize with the box.
+
+**CSS:**
+```css
+.tug-box-resize-horizontal { resize: horizontal; overflow: hidden; }
+.tug-box-resize-vertical   { resize: vertical;   overflow: hidden; }
+.tug-box-resize-both       { resize: both;       overflow: hidden; }
+```
+
+**Why this solves the animator problem:**
+- Each animation stage becomes `<TugBox variant="filled" resize="horizontal">`. The box IS the track.
+- No inner wrapper divs needed for resize. The stage content (animated dots/boxes) sits directly inside the box.
+- The resize handle is on the TugBox border — dragging it resizes the entire box including its border and fill.
+- No `padding: 0 !important` hacks. The box's own inset padding works naturally.
+- `ResizeObserver` on the TugBox ref measures the right element (the fieldset itself).
+
+**What changes in the animator gallery:**
+- Remove the `.cg-anim-stage-box` hack class and all its CSS overrides.
+- Physics: each lane is a `<TugBox variant="filled" resize="horizontal" rounded="sm">` containing just the track div with the animated dot. The track fills the box.
+- Token/cancel/slot: each is a `<TugBox variant="filled" resize="horizontal" rounded="md">` containing the animated element directly. The stage height is set via inline `style={{ height: "40px" }}` or a CSS class on the TugBox.
+- The `stageRef` for measurement goes on the TugBox via `ref` — `fieldsetRef.current.clientWidth` gives the available width.
+
+### Checklist Addendum
+
+- [ ] `resize` prop: "horizontal" | "vertical" | "both" (optional, omit for no resize)
+- [ ] CSS classes: `.tug-box-resize-horizontal`, `.tug-box-resize-vertical`, `.tug-box-resize-both`
+- [ ] Each sets `resize` + `overflow: hidden` on the fieldset
+- [ ] Animator gallery refactored to use `resize="horizontal"` — no hack classes
+- [ ] Gallery card: add a "Resizable" section demonstrating the feature
