@@ -216,6 +216,22 @@ The counter: this is true, and it's the most honest objection. If your app is a 
 
 ---
 
+## What React excels at
+
+After all this criticism, it's worth being explicit: React is excellent software, and the Laws of Tug depend on it. The argument isn't that React is the wrong tool. The argument is that the standard React model misapplies it.
+
+**Tree reconciliation.** React's core algorithm — diffing a virtual tree against the previous tree and patching the DOM with minimal mutations — is genuinely hard to do well and genuinely valuable. When your interface has conditional structure (a modal that appears, a card that gets added to a deck, a panel that switches between views), React handles the DOM insertions, removals, and reordering correctly, efficiently, and without you thinking about it. No other mainstream approach does this as reliably. The Laws of Tug lean on this heavily: every structural change in the interface flows through React precisely because React is the best tool for the job.
+
+**Component composition.** JSX is a good model for describing UI structure. Components as functions that take props and return markup is a clean abstraction. The ability to compose components — a `TugSlider` that contains a `SliderPrimitive.Root` that contains a `Track` and a `Thumb` — produces readable, maintainable hierarchies. The Laws of Tug don't replace this; they embrace it. Every Tug component is a React component. The zone architecture adds discipline about what *state* those components manage, not about how they compose.
+
+**The ecosystem.** Radix UI, which provides the accessible, unstyled primitives that Tug components wrap (slider, popover, dialog, dropdown), is a React library. The developer tooling — React DevTools, hot module replacement, error boundaries — is mature and battle-tested. Choosing React means choosing an ecosystem, and that ecosystem is the deepest available for component-driven web UI.
+
+**Concurrent features.** React 18+ introduced `useTransition`, `useDeferredValue`, and concurrent rendering — the ability to interrupt low-priority renders to keep the UI responsive. (At the time of writing, the Tug codebase runs React 19, which refines and stabilizes these features.) These features only work when React controls the render cycle, which is exactly the structural zone in the Laws of Tug. By keeping *only* structural changes in React state, the Laws of Tug make concurrent features more effective: there's less work competing for React's attention, so transitions and deferred values have room to breathe.
+
+The Laws of Tug are not a workaround for React's weaknesses. They're an architecture that uses React for its strengths — tree reconciliation, composition, ecosystem, concurrency — and deliberately routes everything else through mechanisms that are better suited to the job. The result is that React does *less* work in a Laws of Tug codebase than in a standard one, but the work it does is exactly what it was designed for.
+
+---
+
 ## What the Laws of Tug actually represent
 
 The Laws of Tug are a **zone architecture** for React. They draw explicit boundaries:
