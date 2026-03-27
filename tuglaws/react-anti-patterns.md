@@ -231,4 +231,32 @@ Standard React advice puts *everything* in the fourth row. The Laws of Tug say: 
 
 The reason this feels like a "secret" is that it requires understanding *what React is actually good at* (tree reconciliation) and deliberately *not using it* for things it's bad at (high-frequency mutations, cross-component coordination, synchronous event handling). That's a subtraction, not an addition — and programming culture overwhelmingly teaches by addition. "Here's a new hook to learn." "Here's a state management library." "Here's a pattern to add." The Laws of Tug say: **stop adding. Remove the state. Remove the effect. Remove the re-render. What's left is the actual UI.**
 
+---
+
+## What changes in practice
+
+The zone architecture is not just a theoretical improvement. It changes the daily experience of building components.
+
+**Components gain features without gaining complexity.** In the standard model, adding tick marks to a slider means new state for tick positions, a new effect to compute them, and new memoization to prevent re-rendering them on every thumb move. Under the Laws of Tug, tick marks are a `<div>` with CSS-positioned children. Adding them is pure markup — zero new hooks, zero new dependency arrays, zero impact on the slider's render behavior. Icons, formatters, labels, layout variants: each one adds JSX and CSS. None of them add state.
+
+**You never hit "rules of hooks" violations.** This sounds minor until you've spent an afternoon debugging one. The rules of hooks exist because React needs hooks to be called in the same order every render, which means you can't call hooks conditionally, which means every piece of conditional logic that touches state needs careful structuring. When most of your state isn't in hooks — it's in external stores read via `useSyncExternalStore`, in refs accessed by stable handlers, in CSS classes toggled by DOM calls — there's almost nothing left for the rules of hooks to constrain. The rules are still there; they just stop being a factor in your daily work.
+
+**The responder chain replaces the event handler tangle.** This is perhaps the least obvious benefit and the most transformative one. Standard React components wire event handlers inline: `onClick` here, `onKeyDown` there, `onChange` somewhere else. Each handler is a closure that captures state at render time. When components need to coordinate — a keyboard shortcut that should be handled by the focused card, or by the deck if no card claims it — the standard model has no answer except lifting state up, passing callbacks down, and hoping the dependency arrays are right.
+
+The Laws of Tug borrow a concept from NeXT's AppKit (1988), carried through Apple's Cocoa and UIKit: the **responder chain**.<sup>[1](#fn1)</sup> Actions are typed events — "delete", "duplicate", "nudge" — not raw DOM events. Controls dispatch actions into a chain of responder nodes. Each node either handles the action or lets it pass to the next. The chain is spatial, not hierarchical: it follows the visual nesting of the interface, not the React component tree.
+
+This separation — controls emit actions, responders handle actions (L11) — means that a button doesn't need to know *who* will handle its action. A card doesn't need a prop for every possible keyboard shortcut. A deck-level responder can catch anything that cards don't claim. Components participate in the chain by registering once at mount via `useLayoutEffect` (L03), reading current state through refs (L07). No effects. No dependency arrays. No re-registration when state changes. The entire event routing system is invisible to React's render cycle.
+
+Web developers rarely encounter this pattern because the DOM's native event model provides *mechanism* (events bubble up the tree) without *architecture* (a defined chain of responsibility with typed actions and explicit fallthrough). The responder chain adds the architecture. Once you have it, the class of bugs that comes from wiring event handlers through props and closures simply disappears.
+
+**You can read a component top to bottom.** In a standard complex component, understanding behavior means tracing a graph: this effect syncs that state, which triggers that callback, which depends on these values, which re-registers when those change. Under the Laws of Tug, a component reads linearly: subscribe to external state, define stable handlers, render markup. There's no graph to trace because there are no inter-hook dependencies. The component is a function from state to DOM, not a state machine entangled with its own side effects.
+
+---
+
 That's hard to teach in a tutorial. It's easy to experience after a few weeks of building with it.
+
+---
+
+### Notes
+
+<a id="fn1"></a>**[1] Origins of the responder chain.** The responder chain as a named, formalized mechanism is NeXT's invention, shipping in NeXTSTEP's AppKit in 1988. The *concept* of event routing through a hierarchy of handlers has prior art — Smalltalk-80's MVC framework (1980) had a similar notion of events bubbling through views, and the X Window System (1984) had event propagation. But NeXT made it a first-class architectural pattern with explicit rules: events enter at the first responder, walk the chain, and either get handled or fall off the end. Apple carried it through Cocoa, UIKit, and into SwiftUI's focus system. The web's DOM event bubbling is a cousin, but it's a *mechanism* (events propagate up the DOM tree) without the *architecture* (a defined chain of responsibility with typed actions, explicit handlers, and fallthrough semantics). The responder chain's power is that it separates "what action was requested" from "who handles it" — which is what the Laws of Tug bring to React.
