@@ -606,9 +606,6 @@
   gap: 12px;
   padding: 16px;
   min-width: 120px;
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
 }
@@ -671,9 +668,6 @@
   height: 40px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
 }
@@ -720,9 +714,6 @@
   height: 48px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
 }
@@ -742,9 +733,6 @@
   height: 48px;
   min-width: 120px;
   padding: 8px 0;
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
   overflow: hidden;
   resize: horizontal;
 }

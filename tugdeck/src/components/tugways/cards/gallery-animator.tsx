@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
+import { TugBox } from "@/components/tugways/tug-box";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
   animate,
@@ -184,26 +185,28 @@ function PhysicsCurvesDemo() {
         Pre-computed keyframe arrays from SpringSolver, GravitySolver, and FrictionSolver
         drive WAAPI animations with physically-accurate motion.
       </p>
-      <div ref={stageRef} className="cg-anim-physics-stage" data-testid="anim-physics-stage">
-        <div className="cg-anim-physics-lane">
-          <span className="cg-anim-physics-label">Spring</span>
-          <div ref={springTrackRef} className="cg-anim-physics-track">
-            <div ref={springRef} className="cg-anim-dot cg-anim-dot-spring" />
+      <TugBox variant="filled" rounded="md" inset={false}>
+        <div ref={stageRef} className="cg-anim-physics-stage" data-testid="anim-physics-stage">
+          <div className="cg-anim-physics-lane">
+            <span className="cg-anim-physics-label">Spring</span>
+            <div ref={springTrackRef} className="cg-anim-physics-track">
+              <div ref={springRef} className="cg-anim-dot cg-anim-dot-spring" />
+            </div>
+          </div>
+          <div className="cg-anim-physics-lane">
+            <span className="cg-anim-physics-label">Gravity</span>
+            <div ref={gravityTrackRef} className="cg-anim-physics-track cg-anim-physics-track-tall">
+              <div ref={gravityRef} className="cg-anim-dot cg-anim-dot-gravity" />
+            </div>
+          </div>
+          <div className="cg-anim-physics-lane">
+            <span className="cg-anim-physics-label">Friction</span>
+            <div ref={frictionTrackRef} className="cg-anim-physics-track">
+              <div ref={frictionRef} className="cg-anim-dot cg-anim-dot-friction" />
+            </div>
           </div>
         </div>
-        <div className="cg-anim-physics-lane">
-          <span className="cg-anim-physics-label">Gravity</span>
-          <div ref={gravityTrackRef} className="cg-anim-physics-track cg-anim-physics-track-tall">
-            <div ref={gravityRef} className="cg-anim-dot cg-anim-dot-gravity" />
-          </div>
-        </div>
-        <div className="cg-anim-physics-lane">
-          <span className="cg-anim-physics-label">Friction</span>
-          <div ref={frictionTrackRef} className="cg-anim-physics-track">
-            <div ref={frictionRef} className="cg-anim-dot cg-anim-dot-friction" />
-          </div>
-        </div>
-      </div>
+      </TugBox>
       <div className="cg-variant-row">
         <TugPushButton size="sm" onClick={playAll}>
           Play All
@@ -269,9 +272,11 @@ function DurationTokensDemo() {
         Duration tokens resolve to base ms values scaled by{" "}
         <code>getTugTiming()</code>. Click each to see the speed difference.
       </p>
-      <div ref={stageRef} className="cg-anim-token-stage" data-testid="anim-token-stage">
-        <div ref={boxRef} className="cg-anim-token-box" />
-      </div>
+      <TugBox variant="filled" rounded="md" inset={false}>
+        <div ref={stageRef} className="cg-anim-token-stage" data-testid="anim-token-stage">
+          <div ref={boxRef} className="cg-anim-token-box" />
+        </div>
+      </TugBox>
       <div className="cg-variant-row">
         {TOKEN_LABELS.map(({ token, label }) => (
           <TugPushButton
@@ -372,9 +377,11 @@ function CancelModesDemo() {
         <strong>hold-at-current</strong> freezes in place,{" "}
         <strong>reverse-from-current</strong> animates back to start.
       </p>
-      <div ref={stageRef} className="cg-anim-cancel-stage" data-testid="anim-cancel-stage">
-        <div ref={boxRef} className="cg-anim-cancel-box" />
-      </div>
+      <TugBox variant="filled" rounded="md" inset={false}>
+        <div ref={stageRef} className="cg-anim-cancel-stage" data-testid="anim-cancel-stage">
+          <div ref={boxRef} className="cg-anim-cancel-box" />
+        </div>
+      </TugBox>
       <div className="cg-variant-row">
         <TugPushButton emphasis="filled" role="accent" size="sm" onClick={startAnimation}>
           Start
@@ -469,9 +476,11 @@ function NamedSlotsDemo() {
         Animations with the same <code>key</code> on the same element automatically cancel
         the previous one. Different keys coexist independently.
       </p>
-      <div ref={stageRef} className="cg-anim-slot-stage" data-testid="anim-slot-stage">
-        <div ref={boxRef} className="cg-anim-slot-box" />
-      </div>
+      <TugBox variant="filled" rounded="md" inset={false}>
+        <div ref={stageRef} className="cg-anim-slot-stage" data-testid="anim-slot-stage">
+          <div ref={boxRef} className="cg-anim-slot-box" />
+        </div>
+      </TugBox>
       <div className="cg-variant-row">
         <TugPushButton size="sm" onClick={animateToRight}>
           &rarr; Right (slot-demo)
