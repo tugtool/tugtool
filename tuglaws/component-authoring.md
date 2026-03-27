@@ -109,6 +109,7 @@ Rules:
 | [L15] | Token-driven states; color transitions only | Interactive controls |
 | [L16] | Every foreground rule declares its rendering surface | Components with CSS |
 | [L19] | Component authoring guide | All components |
+| [L20] | Token sovereignty — composed children keep own tokens | Compound composition |
 
 Add component-specific laws on top of this minimum (e.g., [L11] for controls that emit actions, [L09] for card composition).
 
@@ -449,7 +450,7 @@ For selection controls where a single structural design takes on different role 
 
 ### Compositional Components
 
-For components that produce no visual output of their own, but compose two or more tugways components into a unified API.
+For components that produce no visual output of their own, but compose two or more tugways components into a unified API. This is the simpler of the two composition patterns — see "Compound Composition" below for the richer case.
 
 **When to use:** When a common composition pattern (e.g., TugPopupMenu + TugButton) warrants a dedicated component to reduce caller boilerplate, but the visual identity is fully owned by the child components.
 
@@ -470,6 +471,45 @@ For components that produce no visual output of their own, but compose two or mo
  * Laws: [L11] controls emit actions, [L19] authoring guide
  */
 ```
+
+**Reference implementation:** `tug-popup-button.tsx`
+
+### Compound Composition
+
+For components that have their own visual identity AND compose other tugways components. This is the most common pattern for complex controls — a slider that owns its track and thumb but composes TugValueInput for editing, a radio group that owns its circle indicator but composes TugButton for click targets, a search bar that owns its layout but composes TugInput and TugButton.
+
+**When to use:** The component has visual elements it must style directly (track, indicator, icon slots, layout chrome) and also renders one or more existing tugways components as children.
+
+**Token sovereignty [L20].** Each component owns tokens scoped to its own `component` slot in the seven-slot system. The parent's CSS uses parent-scoped tokens; composed children use their own. Neither reaches into the other's namespace. TugSlider uses `slider` tokens for its track and thumb. TugRadioGroup uses `radio` tokens for its indicator. TugValueInput and TugButton keep their own tokens, tunable independently per theme. This is not optional — the seven-slot `component` slot is the ownership boundary.
+
+**Pairings cover only what you own.** The parent's `@tug-pairings` block declares contrast pairings for the visual elements the parent renders directly. Composed children declare their own pairings in their own CSS files. A slider's pairings cover its label-on-track and thumb-on-range relationships, not TugValueInput's text-on-background. No duplication, no contradiction.
+
+**No descendant restyling.** The parent never uses CSS descendant selectors to override a child component's styles (e.g., `.tug-slider .tug-value-input { ... }` is wrong). If the parent needs to position or size a child within its layout, it styles a wrapper element or uses its own layout properties (gap, grid areas, flex sizing). The child's visual internals are the child's business.
+
+**Prop forwarding.** The parent passes relevant props to composed children — most commonly `size`, `disabled`, and `role`. The module docstring documents which props are forwarded and to which children. When children are provided via the `children` prop rather than rendered directly (e.g., radio items), use React context to propagate group-level props so each child doesn't need to repeat them.
+
+**`asChild` for Radix merging.** When a Radix primitive renders an interactive element (button, input) and the tugways component it composes also renders one, use Radix's `asChild` prop to merge them into a single DOM element. This avoids nested buttons or nested inputs (invalid HTML). The Radix primitive contributes its ARIA attributes, keyboard handlers, and data-state; the tugways component contributes its visual rendering. One element in the DOM gets both.
+
+**Implementation:**
+- Produces both `.tsx` and `.css` files — the parent has its own visual identity.
+- The parent's CSS defines tokens, aliases, and pairings only for elements it renders directly.
+- Module docstring lists which children are composed and what each is responsible for.
+- The parent's law citations include [L20] in addition to the standard minimum set.
+
+```typescript
+/**
+ * TugSlider — Horizontal range slider with optional editable value input.
+ *
+ * Wraps @radix-ui/react-slider. Composes TugValueInput for the editable
+ * numeric display — value input appearance is owned by TugValueInput [L20].
+ *
+ * Laws: [L06] appearance via CSS, [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide, [L20] token sovereignty
+ * Decisions: [D05] component token naming
+ */
+```
+
+**Reference implementations:** `tug-slider.tsx` (composes TugValueInput), `tug-radio-group.tsx` (composes TugButton via `asChild`).
 
 ### Field Controls
 
@@ -563,6 +603,7 @@ Before a component is done:
 - [ ] Component-tier aliases (if used) defined in `body {}` and resolve to base tokens in one hop [L17]
 - [ ] `@tug-effects` block present if the component uses `--tug7-effect-*` tokens
 - [ ] Compositional components (no CSS): delegation documented in module docstring; no `@tug-pairings` needed
+- [ ] Compound composition: own tokens scoped to own component slot; no descendant restyling of children; pairings cover only own elements; composed children documented in docstring [L20]
 - [ ] Internal components: lives in `internal/`, docstring says "Internal building block — use [public component] instead", public wrapper re-exports needed types
 - [ ] Keyboard accessible (Tab, Enter/Space, Escape)
 - [ ] `bun run build` exits 0
@@ -602,3 +643,4 @@ Tokens follow the seven-slot convention from [token-naming.md](token-naming.md):
 | [L16] | Every foreground rule declares its rendering surface | All CSS files |
 | [L17] | Component aliases (`--tugx-*`) resolve to `--tug7-*` in one hop | Component-tier tokens |
 | [L18] | Element/surface vocabulary | All token usage |
+| [L20] | Token sovereignty — composed children keep their own tokens | Compound composition |

@@ -61,3 +61,9 @@
 **L17. Component alias tokens (`--tugx-*`) resolve to `--tug7-*` in one hop.** No alias-to-alias chains. Every component alias must point directly to its `--tug7-*` target. `audit-tokens lint` flags multi-hop chains. [D71]
 
 **L18. Use element/surface as the canonical vocabulary.** Tokens producing visible marks (text, icons, borders) are *elements* (`--tug7-element-*`). Tokens defining the field behind them are *surfaces* (`--tug7-surface-*`). Contrast pairing means an element token rendered on a surface token. [D71, D82]
+
+---
+
+## Composition
+
+**L20. Each component owns tokens scoped to its own component slot; composed children keep theirs.** When component A composes component B, A's CSS references only A-scoped tokens (e.g., `radio` for TugRadioGroup) and B's CSS references only B-scoped tokens (e.g., `control` for TugButton). A never overrides, aliases, or references B's tokens. B's appearance remains independently tunable per theme. The seven-slot `component` slot is the ownership boundary. [L15, L18, L19]
