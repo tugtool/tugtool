@@ -1,8 +1,11 @@
 /* @tug-pairings {
-  --tug7-surface-field-primary-normal-plain-rest | --tug7-surface-global-primary-normal-default-rest | informational
-  --tug7-element-global-fill-normal-accent-rest  | --tug7-surface-field-primary-normal-plain-rest    | control
-  --tug7-element-toggle-thumb-normal-on-rest     | --tug7-surface-global-primary-normal-default-rest | control
-  --tug7-element-field-text-normal-label-rest    | --tug7-surface-global-primary-normal-default-rest | content
+  --tug7-surface-field-primary-normal-plain-rest   | --tug7-surface-global-primary-normal-default-rest | informational
+  --tug7-element-global-fill-normal-accent-rest    | --tug7-surface-field-primary-normal-plain-rest    | control
+  --tug7-element-toggle-thumb-normal-on-rest       | --tug7-surface-global-primary-normal-default-rest | control
+  --tug7-element-global-border-normal-default-rest | --tug7-element-toggle-thumb-normal-on-rest        | informational
+  --tug7-element-field-text-normal-label-rest      | --tug7-surface-global-primary-normal-default-rest | content
+  --tug7-element-global-fill-normal-accent-rest    | --tug7-surface-global-primary-normal-default-rest | informational
+  --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-default-rest | informational
 } */
 
 /**
@@ -14,6 +17,8 @@
  * | --tug7-element-toggle-thumb-normal-on-rest        | --tug7-surface-global-primary-normal-default-rest    | control       | .tug-slider-thumb (background-color)                |
  * | --tug7-element-global-border-normal-default-rest  | --tug7-element-toggle-thumb-normal-on-rest           | informational | .tug-slider-thumb (border-color)                    |
  * | --tug7-element-field-text-normal-label-rest       | --tug7-surface-global-primary-normal-default-rest    | content       | .tug-slider-label (color)                           |
+ * | --tug7-element-global-fill-normal-accent-rest     | --tug7-surface-global-primary-normal-default-rest    | informational | .tug-slider-tick (background-color)                  |
+ * | --tug7-element-global-text-normal-muted-rest      | --tug7-surface-global-primary-normal-default-rest    | informational | .tug-slider-icon (color)                             |
  *
  * Note: Value input pairings are declared in tug-value-input.css — TugValueInput owns its own styling.
  */
@@ -25,7 +30,6 @@ body {
   --tugx-slider-thumb-bg: var(--tug7-element-toggle-thumb-normal-on-rest);
   --tugx-slider-thumb-border: var(--tug7-element-global-border-normal-default-rest);
   --tugx-slider-label-fg: var(--tug7-element-field-text-normal-label-rest);
-  --tugx-slider-tick-fg: var(--tug7-element-global-border-normal-default-rest);
   --tugx-slider-icon-fg: var(--tug7-element-global-text-normal-muted-rest);
 }
 

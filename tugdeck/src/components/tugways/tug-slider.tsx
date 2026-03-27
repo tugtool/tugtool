@@ -131,6 +131,18 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       [onValueChange],
     );
 
+    // ---- Thumb keydown: Escape/Enter release focus ----
+
+    const handleThumbKeyDown = React.useCallback(
+      (e: React.KeyboardEvent<HTMLSpanElement>) => {
+        if (e.key === "Escape" || e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      },
+      [],
+    );
+
     // ---- Layout class ----
 
     const layoutClass = label
@@ -177,12 +189,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
             </SliderPrimitive.Track>
             <SliderPrimitive.Thumb
               className={cn("tug-slider-thumb", showTicks && "tug-slider-thumb-diamond")}
-              onKeyDown={(e) => {
-                if (e.key === "Escape" || e.key === "Enter") {
-                  e.preventDefault();
-                  e.currentTarget.blur();
-                }
-              }}
+              onKeyDown={handleThumbKeyDown}
             />
           </SliderPrimitive.Root>
           {ticks}

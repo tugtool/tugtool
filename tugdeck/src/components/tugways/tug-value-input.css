@@ -1,7 +1,8 @@
 /* @tug-pairings {
-  --tug7-element-field-text-normal-plain-rest   | --tug7-surface-field-primary-normal-plain-rest   | content
-  --tug7-element-field-border-normal-plain-rest | --tug7-surface-field-primary-normal-plain-rest   | informational
-  --tug7-element-field-border-normal-plain-active | --tug7-surface-field-primary-normal-plain-focus | informational
+  --tug7-element-field-text-normal-plain-rest     | --tug7-surface-field-primary-normal-plain-rest   | content
+  --tug7-element-field-border-normal-plain-rest   | --tug7-surface-field-primary-normal-plain-rest   | informational
+  --tug7-element-field-border-normal-plain-active | --tug7-surface-field-primary-normal-plain-focus  | informational
+  --tug7-element-global-text-normal-inverse-rest  | --tug7-element-global-fill-normal-accentCool-rest | content
 } */
 
 /**
@@ -11,6 +12,7 @@
  * | --tug7-element-field-text-normal-plain-rest     | --tug7-surface-field-primary-normal-plain-rest   | content       | .tug-value-input (color)                     |
  * | --tug7-element-field-border-normal-plain-rest   | --tug7-surface-field-primary-normal-plain-rest   | informational | .tug-value-input (border-color)              |
  * | --tug7-element-field-border-normal-plain-active | --tug7-surface-field-primary-normal-plain-focus  | informational | .tug-value-input:focus (border-color)        |
+ * | --tug7-element-global-text-normal-inverse-rest  | --tug7-element-global-fill-normal-accentCool-rest | content      | .tug-value-input::selection (color on bg)    |
  */
 
 body {
