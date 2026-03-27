@@ -67,13 +67,11 @@ const ROLE_TOKEN_MAP: Record<string, string> = {
 interface TugRadioGroupContextValue {
   size: TugRadioGroupSize;
   disabled: boolean;
-  role: TugRadioRole | undefined;
 }
 
 const TugRadioGroupContext = React.createContext<TugRadioGroupContextValue>({
   size: "md",
   disabled: false,
-  role: undefined,
 });
 
 // ---- TugRadioGroupProps ----
@@ -142,7 +140,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     },
     ref,
   ) {
-    // Role injection — every path injects surface-toggle-primary tokens. [L06]
+    // Role injection — on-state color uses toggle-primary tokens (shared with checkbox/switch). [L06]
     // No role prop = accent. Single path, zero branches.
     const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
     const roleStyle = {
@@ -151,7 +149,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       "--tugx-radio-disabled-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-disabled)`,
     } as React.CSSProperties;
 
-    const ctx: TugRadioGroupContextValue = { size, disabled, role };
+    const ctx: TugRadioGroupContextValue = { size, disabled };
 
     return (
       <TugRadioGroupContext.Provider value={ctx}>

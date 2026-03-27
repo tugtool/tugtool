@@ -1,22 +1,23 @@
 /* @tug-pairings {
-  --tug7-element-radio-dot-normal-plain-rest       | --tugx-radio-on-color (injected, role-dependent)        | control
-  --tug7-element-radio-border-normal-off-rest      | --tug7-surface-radio-primary-normal-off-rest            | control
-  --tug7-element-radio-border-normal-off-hover     | --tug7-surface-radio-primary-normal-off-hover           | control
-  --tug7-element-radio-border-normal-off-disabled  | --tug7-surface-radio-primary-normal-off-rest            | informational
-  --tug7-element-field-text-normal-label-rest      | --tug7-surface-global-primary-normal-default-rest       | content
+  --tug7-element-radio-dot-normal-plain-rest       | --tugx-radio-on-color (injected, role-dependent)             | control
+  --tug7-element-radio-border-normal-off-rest      | --tug7-surface-control-primary-ghost-action-rest             | control
+  --tug7-element-radio-border-normal-off-hover     | --tug7-surface-control-primary-ghost-action-rest             | control
+  --tug7-element-radio-border-normal-off-disabled  | --tug7-surface-control-primary-ghost-action-rest             | informational
+  --tug7-element-field-text-normal-label-rest      | --tug7-surface-global-primary-normal-default-rest            | content
 } */
 
 /**
  * @tug-pairings
- * | Element                                           | Surface                                               | Role          | Context                                                               |
- * |---------------------------------------------------|-------------------------------------------------------|---------------|-----------------------------------------------------------------------|
- * | --tug7-element-radio-dot-normal-plain-rest         | --tugx-radio-on-color (injected, role-dependent)      | control       | .tug-radio-dot (background-color) when checked                       |
- * | --tug7-element-radio-border-normal-off-rest        | --tug7-surface-radio-primary-normal-off-rest          | control       | .tug-radio-indicator (border-color) at rest                          |
- * | --tug7-element-radio-border-normal-off-hover       | --tug7-surface-radio-primary-normal-off-hover         | control       | .tug-radio-indicator (border-color) on hover                         |
- * | --tug7-element-radio-border-normal-off-disabled    | --tug7-surface-radio-primary-normal-off-rest          | informational | .tug-radio-indicator (border-color) when disabled                    |
- * | --tug7-element-field-text-normal-label-rest        | --tug7-surface-global-primary-normal-default-rest     | content       | .tug-radio-group-label (color)                                       |
+ * | Element                                           | Surface                                                     | Role          | Context                                                               |
+ * |---------------------------------------------------|-------------------------------------------------------------|---------------|-----------------------------------------------------------------------|
+ * | --tug7-element-radio-dot-normal-plain-rest         | --tugx-radio-on-color (injected, role-dependent)            | control       | .tug-radio-dot (background-color) when checked                       |
+ * | --tug7-element-radio-border-normal-off-rest        | --tug7-surface-control-primary-ghost-action-rest            | control       | .tug-radio-indicator (border-color) at rest                          |
+ * | --tug7-element-radio-border-normal-off-hover       | --tug7-surface-control-primary-ghost-action-rest            | control       | .tug-radio-indicator (border-color) on hover                         |
+ * | --tug7-element-radio-border-normal-off-disabled    | --tug7-surface-control-primary-ghost-action-rest            | informational | .tug-radio-indicator (border-color) when disabled                    |
+ * | --tug7-element-field-text-normal-label-rest        | --tug7-surface-global-primary-normal-default-rest           | content       | .tug-radio-group-label (color)                                       |
  *
  * Note: Item label text pairings are declared in tug-button.css — TugButton owns its own styling.
+ * The radio indicator renders on a ghost-action button surface (transparent bg, shared with TugButton).
  */
 
 /* Radio base-tier tokens are defined per theme in styles/themes/*.css */
@@ -100,7 +101,7 @@
 
 /* ---- States: rest → hover → disabled ---- */
 
-/* @tug-renders-on: --tug7-surface-radio-primary-normal-off-hover */
+/* @tug-renders-on: --tug7-surface-control-primary-ghost-action-rest */
 [data-slot="tug-radio-item"]:hover:not(:disabled):not([data-disabled]) .tug-radio-indicator {
   border-color: var(--tug7-element-radio-border-normal-off-hover);
 }
@@ -119,7 +120,7 @@
 
 /* ---- Disabled state ---- */
 
-/* @tug-renders-on: --tug7-surface-radio-primary-normal-off-rest */
+/* @tug-renders-on: --tug7-surface-control-primary-ghost-action-rest */
 [data-slot="tug-radio-item"]:disabled .tug-radio-indicator,
 [data-slot="tug-radio-item"][data-disabled] .tug-radio-indicator {
   border-color: var(--tug7-element-radio-border-normal-off-disabled);
