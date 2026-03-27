@@ -29,7 +29,7 @@ export function HelloWorldCardContent() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        height: "100%",
+        minHeight: "200px",
         gap: "8px",
         padding: "16px",
         color: "var(--tug7-element-global-text-normal-default-rest)",
