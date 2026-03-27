@@ -1,0 +1,201 @@
+/* @tug-pairings {
+  --tug7-element-radio-dot-normal-plain-rest       | --tugx-radio-on-color (injected, role-dependent)        | control
+  --tug7-element-radio-border-normal-off-rest      | --tug7-surface-radio-primary-normal-off-rest            | control
+  --tug7-element-radio-border-normal-off-hover     | --tug7-surface-radio-primary-normal-off-hover           | control
+  --tug7-element-radio-border-normal-off-disabled  | --tug7-surface-radio-primary-normal-off-rest            | informational
+  --tug7-element-field-text-normal-label-rest      | --tug7-surface-global-primary-normal-default-rest       | content
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                           | Surface                                               | Role          | Context                                                               |
+ * |---------------------------------------------------|-------------------------------------------------------|---------------|-----------------------------------------------------------------------|
+ * | --tug7-element-radio-dot-normal-plain-rest         | --tugx-radio-on-color (injected, role-dependent)      | control       | .tug-radio-dot (background-color) when checked                       |
+ * | --tug7-element-radio-border-normal-off-rest        | --tug7-surface-radio-primary-normal-off-rest          | control       | .tug-radio-indicator (border-color) at rest                          |
+ * | --tug7-element-radio-border-normal-off-hover       | --tug7-surface-radio-primary-normal-off-hover         | control       | .tug-radio-indicator (border-color) on hover                         |
+ * | --tug7-element-radio-border-normal-off-disabled    | --tug7-surface-radio-primary-normal-off-rest          | informational | .tug-radio-indicator (border-color) when disabled                    |
+ * | --tug7-element-field-text-normal-label-rest        | --tug7-surface-global-primary-normal-default-rest     | content       | .tug-radio-group-label (color)                                       |
+ *
+ * Note: Item label text pairings are declared in tug-button.css — TugButton owns its own styling.
+ */
+
+body {
+  /* Radio component aliases — resolve to base tier in one hop [L17] */
+  --tug7-surface-radio-primary-normal-off-rest:       var(--tug7-surface-toggle-primary-normal-off-rest);
+  --tug7-surface-radio-primary-normal-off-hover:      var(--tug7-surface-toggle-primary-normal-off-hover);
+  --tug7-element-radio-border-normal-off-rest:        var(--tug7-surface-toggle-primary-normal-off-rest);
+  --tug7-element-radio-border-normal-off-hover:       var(--tug7-surface-toggle-primary-normal-off-hover);
+  --tug7-element-radio-border-normal-off-disabled:    var(--tug7-surface-toggle-primary-normal-off-rest);
+}
+
+
+/* ============================================================================
+   Group Root (.tug-radio-group)
+   ========================================================================= */
+
+.tug-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+}
+
+/* ---- Orientation variants ---- */
+
+.tug-radio-group-horizontal .tug-radio-group-items {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.tug-radio-group-vertical .tug-radio-group-items {
+  flex-direction: column;
+}
+
+/* ============================================================================
+   Items container (.tug-radio-group-items)
+   ========================================================================= */
+
+.tug-radio-group-items {
+  display: flex;
+  gap: var(--tug-space-2xs);
+}
+
+
+/* ============================================================================
+   Group Label (.tug-radio-group-label)
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-radio-group-label {
+  font-family: inherit;
+  font-weight: 500;
+  font-size: var(--tug-font-size-sm);
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--tug7-element-field-text-normal-label-rest);
+  user-select: none;
+  margin-bottom: var(--tug-space-2xs);
+}
+
+.tug-radio-group-sm .tug-radio-group-label {
+  font-size: var(--tug-font-size-xs);
+}
+
+.tug-radio-group-md .tug-radio-group-label {
+  font-size: var(--tug-font-size-sm);
+}
+
+.tug-radio-group-lg .tug-radio-group-label {
+  font-size: var(--tug-font-size-md);
+}
+
+
+/* ============================================================================
+   Radio Indicator (.tug-radio-indicator)
+   ========================================================================= */
+
+.tug-radio-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--tug7-element-radio-border-normal-off-rest);
+  background-color: transparent;
+  transition: background-color 80ms ease, border-color 80ms ease;
+}
+
+/* ---- States: rest → hover → disabled ---- */
+
+/* @tug-renders-on: --tug7-surface-radio-primary-normal-off-hover */
+[data-slot="tug-radio-item"]:hover:not(:disabled):not([data-disabled]) .tug-radio-indicator {
+  border-color: var(--tug7-element-radio-border-normal-off-hover);
+}
+
+/* ---- Checked state ---- */
+
+[data-state="checked"] .tug-radio-indicator {
+  background-color: var(--tugx-radio-on-color);
+  border-color: var(--tugx-radio-on-color);
+}
+
+[data-state="checked"]:hover:not(:disabled):not([data-disabled]) .tug-radio-indicator {
+  background-color: var(--tugx-radio-on-hover-color);
+  border-color: var(--tugx-radio-on-hover-color);
+}
+
+/* ---- Disabled state ---- */
+
+/* @tug-renders-on: --tug7-surface-radio-primary-normal-off-rest */
+[data-slot="tug-radio-item"]:disabled .tug-radio-indicator,
+[data-slot="tug-radio-item"][data-disabled] .tug-radio-indicator {
+  border-color: var(--tug7-element-radio-border-normal-off-disabled);
+}
+
+[data-state="checked"]:disabled .tug-radio-indicator,
+[data-state="checked"][data-disabled] .tug-radio-indicator {
+  background-color: var(--tugx-radio-disabled-color);
+  border-color: var(--tugx-radio-disabled-color);
+}
+
+
+/* ============================================================================
+   Radio Dot (.tug-radio-dot)
+   ========================================================================= */
+
+.tug-radio-dot {
+  border-radius: 50%;
+  background-color: transparent;
+  transition: background-color 80ms ease;
+}
+
+/* @tug-renders-on: --tugx-radio-on-color (injected, role-dependent) */
+[data-state="checked"] .tug-radio-dot {
+  background-color: var(--tug7-element-radio-dot-normal-plain-rest);
+}
+
+[data-state="checked"]:disabled .tug-radio-dot,
+[data-state="checked"][data-disabled] .tug-radio-dot {
+  background-color: var(--tug7-element-radio-dot-normal-plain-rest);
+  opacity: var(--tugx-control-disabled-opacity);
+}
+
+
+/* ============================================================================
+   Size variants
+   ========================================================================= */
+
+/* ---- sm ---- */
+
+.tug-radio-group-sm .tug-radio-indicator {
+  width: 0.875rem;   /* 14px */
+  height: 0.875rem;
+}
+
+.tug-radio-group-sm .tug-radio-dot {
+  width: 0.375rem;   /* 6px */
+  height: 0.375rem;
+}
+
+/* ---- md ---- */
+
+.tug-radio-group-md .tug-radio-indicator {
+  width: 1rem;       /* 16px */
+  height: 1rem;
+}
+
+.tug-radio-group-md .tug-radio-dot {
+  width: 0.4375rem;  /* 7px */
+  height: 0.4375rem;
+}
+
+/* ---- lg ---- */
+
+.tug-radio-group-lg .tug-radio-indicator {
+  width: 1.25rem;    /* 20px */
+  height: 1.25rem;
+}
+
+.tug-radio-group-lg .tug-radio-dot {
+  width: 0.5625rem;  /* 9px */
+  height: 0.5625rem;
+}
