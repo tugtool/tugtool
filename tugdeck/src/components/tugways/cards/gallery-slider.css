@@ -1,0 +1,70 @@
+
+/* ============================================================================
+   Gallery: TugSlider
+   ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug7-element-global-text-normal-subtle-rest    | --tug7-surface-global-primary-normal-default-rest | informational | .gs-demo-label (color)              |
+ */
+
+/* ============================================================================
+   Section 1: Sizes
+   ========================================================================= */
+
+.gs-size-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.gs-size-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* ============================================================================
+   Section 2: Layouts
+   ========================================================================= */
+
+.gs-layout-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.gs-layout-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* ============================================================================
+   Section 3: Formatters
+   ========================================================================= */
+
+.gs-formatter-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.gs-formatter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* ============================================================================
+   Shared labels
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gs-demo-label {
+  font-size: 0.625rem;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  text-transform: lowercase;
+}

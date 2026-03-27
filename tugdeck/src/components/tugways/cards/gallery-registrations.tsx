@@ -1,7 +1,7 @@
 /**
  * Gallery card registrations.
  *
- * Registers all twenty-one gallery card types in the global card registry.
+ * Registers all twenty-two gallery card types in the global card registry.
  * Also exports GALLERY_DEFAULT_TABS and small adapter components.
  *
  * **Authoritative references:**
@@ -44,6 +44,7 @@ import { GalleryCheckbox } from "./gallery-checkbox";
 import { GallerySwitch } from "./gallery-switch";
 import { GalleryThemeGenerator } from "./gallery-theme-generator";
 import { GalleryPopupButton } from "./gallery-popup-button";
+import { GallerySlider } from "./gallery-slider";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -81,6 +82,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-switch",             title: "TugSwitch",            closable: true },
   { id: "template", componentId: "gallery-theme-generator",   title: "Theme Accessibility",   closable: true },
   { id: "template", componentId: "gallery-badge",             title: "TugBadge",             closable: true },
+  { id: "template", componentId: "gallery-slider",            title: "TugSlider",            closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -198,7 +200,7 @@ export function GalleryBadge() {
 // ---------------------------------------------------------------------------
 
 /**
- * Register all twenty-one gallery card types in the global card registry.
+ * Register all twenty-two gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -419,6 +421,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-badge",
     contentFactory: (_cardId) => <GalleryBadge />,
     defaultMeta: { title: "TugBadge", icon: "Tag", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-slider ----
+  // TugSlider showcase: sizes, layouts, formatters, disabled, and no-value-input modes.
+  registerCard({
+    componentId: "gallery-slider",
+    contentFactory: (_cardId) => <GallerySlider />,
+    defaultMeta: { title: "TugSlider", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
