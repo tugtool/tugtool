@@ -193,6 +193,7 @@ body {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
+  border-radius: 9999px;
   background-color: var(--tugx-slider-range-bg);
 }
 
@@ -240,8 +241,8 @@ body {
 }
 
 .tug-slider-sm .tug-slider-tick {
-  width: 3px;   /* matches track height */
-  height: 8px;
+  width: 2.4px;  /* 80% of 3px track */
+  height: 10px;
 }
 
 /* ---- md ---- */
@@ -269,8 +270,8 @@ body {
 }
 
 .tug-slider-md .tug-slider-tick {
-  width: 4px;   /* matches track height */
-  height: 10px;
+  width: 3px;    /* 80% of 4px track */
+  height: 12px;
 }
 
 /* ---- lg ---- */
@@ -298,8 +299,8 @@ body {
 }
 
 .tug-slider-lg .tug-slider-tick {
-  width: 6px;   /* matches track height */
-  height: 14px;
+  width: 5px;    /* 80% of 6px track */
+  height: 16px;
 }
 
 
