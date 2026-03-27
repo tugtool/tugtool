@@ -2,6 +2,14 @@
 
 *Complete inventory of existing components, planned builds, and implementation order.*
 
+## Archived Documents
+
+The following documents are superseded by this roadmap:
+
+- `.tugtool/tugplan-tugways-phase-8-radix-redesign.md` — Original Phase 8 plan. Component inventory and design decisions are incorporated here. Infrastructure decisions (D01-D07) remain valid as historical reference.
+- `roadmap/step-4-interactive-build-guide.md` — Original Step 4 build guide. Build-order and token patterns are incorporated here.
+- `roadmap/archive/tugways-implementation-strategy.md` — Original implementation strategy. Already archived.
+
 ---
 
 ## Completed Components
@@ -46,12 +54,11 @@ Controls that handle user input. Each wraps a Radix primitive or native element.
 
 | # | Component | Kind | Wraps | Key Features | Priority |
 |---|-----------|------|-------|--------------|----------|
-| 1 | tug-select | Wrapper | `@radix-ui/react-select` | Trigger + popover, token-styled | High |
-| 2 | tug-slider | Wrapper | `@radix-ui/react-slider` | Track/thumb, value display, range labels | High |
-| 3 | tug-radio-group | Wrapper | `@radix-ui/react-radio-group` | Group label, horizontal/vertical layout | High |
-| 4 | tug-textarea | Wrapper (native) | `<textarea>` | Auto-resize, char count, field tokens | High |
-| 5 | tug-toggle | Wrapper | `@radix-ui/react-toggle` | Pressed/unpressed control states | Medium |
-| 6 | tug-toggle-group | Wrapper | `@radix-ui/react-toggle-group` | Exclusive/multi toggle row | Medium |
+| 1 | tug-slider | Wrapper | `@radix-ui/react-slider` | Track/thumb, value display, range labels | High |
+| 2 | tug-radio-group | Wrapper | `@radix-ui/react-radio-group` | Group label, horizontal/vertical layout | High |
+| 3 | tug-textarea | Wrapper (native) | `<textarea>` | Auto-resize, char count, field tokens | High |
+
+**Removed:** tug-select (covered by tug-popup-button), tug-toggle (covered by tug-checkbox/tug-switch), tug-toggle-group (row of toggles — unnecessary given existing controls).
 
 ## Planned Components — Display & Feedback
 
@@ -73,9 +80,10 @@ Components that manage layered UI, menus, and scrolling.
 | # | Component | Kind | Wraps | Key Features | Priority |
 |---|-----------|------|-------|--------------|----------|
 | 13 | tug-tooltip | Wrapper | `@radix-ui/react-tooltip` | Hover labels, keyboard shortcut display | High |
-| 14 | tug-scroll-area | Wrapper | `@radix-ui/react-scroll-area` | Themed scrollbar, autohide | High |
-| 15 | tug-context-menu | Wrapper | `@radix-ui/react-context-menu` | Right-click menus for cards | Medium |
-| 16 | tug-popover | Wrapper | `@radix-ui/react-popover` | General anchored overlay | Medium |
+| 14 | tug-context-menu | Wrapper | `@radix-ui/react-context-menu` | Right-click menus for cards | Medium |
+| 15 | tug-popover | Wrapper | `@radix-ui/react-popover` | General anchored overlay | Medium |
+
+**Removed:** tug-scroll-area (native browser scrollbars are sufficient; Windows polish is not a priority).
 
 ## Planned Components — Alerts & Modals
 
@@ -86,7 +94,7 @@ Four-category modal system modeled on AppKit (NSAlert, beginSheet, NSPopover, No
 | 17 | tug-alert | Wrapper (Radix AlertDialog) | App-modal | Promise-based API, button roles, alert styles | High |
 | 18 | tug-sheet | Wrapper (Radix Dialog) | Card-modal | Scoped to single card, responder suspension | High |
 | 19 | tug-confirm-popover | Wrapper (Radix Popover) | Button-local | Destructive action confirmation | High |
-| 20 | tug-toast | Integration (Sonner) | Non-blocking | Fire-and-forget, tone variants, auto-dismiss | Medium |
+| 20 | tug-bulletin | Original (may wrap Sonner) | Non-blocking | Fire-and-forget, tone variants, auto-dismiss | Medium |
 
 ## Planned Components — Data Display
 
@@ -116,17 +124,22 @@ Higher-level components assembled from multiple primitives.
 | # | Component | Kind | Composes | Key Features | Priority |
 |---|-----------|------|----------|--------------|----------|
 | 28 | tug-button-group | Composition | TugButton x N | Connected row, shared border radius | Medium |
-| 29 | tug-chat-input | Composition | TugTextarea + TugButton x 2 | Submit + attachment, Enter to submit | High |
 | 30 | tug-search-bar | Composition | TugInput + TugButton | Search field with action button | Medium |
 | 31 | tug-toolbar | Wrapper (Radix) | Grouped controls with arrow key nav | Low |
 
 ## New Component Ideas
 
-*Components not in the original Phase 8 plan. To be discussed and prioritized.*
+*Components not in the original Phase 8 plan.*
 
-| Component | Kind | Description | Notes |
-|-----------|------|-------------|-------|
-| | | | |
+| # | Component | Kind | Description | Priority |
+|---|-----------|------|-------------|----------|
+| 32 | tug-segmented-choice | Original | Mutually exclusive segment picker modeled on Apple's UISegmentedControl. Horizontal row of connected segments with sliding selection indicator. Unified visual frame with active segment highlight that slides between options. | High |
+| 33 | tug-box | Original | Container providing visual grouping (optional border, optional label) and functional grouping (enable/disable all contained controls with one prop). Nestable — disabled outer box cascades to all inner boxes and controls. Modeled on HTML `<fieldset>` semantics with recursive disable propagation via React context. | High |
+| 34 | tug-rich-text | Wrapper (Monaco) | Monaco editor in a tugways component. Token-driven theming, standard props interface, integration with card content system. | High |
+| 35 | tug-bulletin | Original (may wrap Sonner) | Non-blocking notification system. Fire-and-forget alerts with tone variants, auto-dismiss, configurable duration. Our name for what others call "toast." | Medium |
+| 36 | tug-markdown | Original | High-performance markdown/MDX renderer for LLM and agent responses. Three layers: (1) standard CommonMark/GFM rendering with token-driven typography, (2) full MDX support for embedded React components, (3) "MDX+" custom parsing extensions for tugways-specific formatting (agent output, code diffs, plan steps, tool results, etc.). Must handle streaming content (incremental rendering as tokens arrive), large documents without jank, and syntax-highlighted code blocks via tug-rich-text integration. The primary display surface for all AI-generated content in the app. | High |
+| 37 | tug-prompt-input | Original | Rich input field for composing prompts and conversational text. History navigation, typeahead/suggestions, completions, multi-line expansion. Distinct from tug-input (basic field) and tug-textarea (plain multi-line) — prompt-input is the full interactive authoring field. | High |
+| 38 | tug-prompt-entry | Composition | Integrated prompt composition surface. Composes tug-prompt-input + submit button + progress indicator + utility buttons. The complete "enter a prompt" experience. Pairs with tug-markdown on the output side: prompt-entry is where text goes in, markdown is where responses come out. | High |
 
 ---
 
@@ -135,41 +148,64 @@ Higher-level components assembled from multiple primitives.
 *Ordered by dependency and downstream need. Each group is built one component at a time, interactively tuned in the Component Gallery.*
 
 ### Group A: Remaining Form Controls
-**Why first:** Settings card and card content need these. Select, slider, radio, textarea are the most-requested missing controls.
 
-Components: tug-select, tug-slider, tug-radio-group, tug-textarea, tug-toggle, tug-toggle-group
+Settings card and card content need these. Slider, radio, textarea are the most-requested missing controls. Segmented choice and box provide selection and grouping patterns needed across all card UIs.
+
+- tug-slider
+- tug-radio-group
+- tug-textarea
+- tug-segmented-choice
+- tug-box
 
 ### Group B: Display Essentials
-**Why second:** Used everywhere — separators in layouts, spinners for loading states, tooltips for discoverability.
 
-Components: tug-separator, tug-spinner, tug-tooltip, tug-scroll-area
+Used everywhere — separators in layouts, spinners for loading states, tooltips for discoverability.
+
+- tug-separator
+- tug-spinner
+- tug-tooltip
+- tug-accordion
 
 ### Group C: Alert System
-**Why third:** Card close confirmation, destructive action guards, and notifications depend on this.
 
-Components: tug-alert, tug-sheet, tug-confirm-popover, tug-toast
+Card close confirmation, destructive action guards, and notifications depend on this.
 
-### Group D: Compositions & Navigation
-**Why fourth:** Chat input needs textarea (Group A). Search bar needs input (done). Context menus need menu infrastructure (done).
+- tug-alert
+- tug-sheet
+- tug-confirm-popover
+- tug-bulletin
 
-Components: tug-chat-input, tug-search-bar, tug-button-group, tug-context-menu, tug-popover
+### Group D: Rich Content & Compositions
+
+Markdown renderer and rich text editor are core to card content — tug-markdown is the primary display surface for all AI-generated content. Chat input needs textarea (Group A). Context menus need menu infrastructure (done).
+
+- tug-markdown
+- tug-rich-text
+- tug-prompt-input
+- tug-prompt-entry
+- tug-search-bar
+- tug-button-group
+- tug-context-menu
+- tug-popover
 
 ### Group E: Data Display & Feedback
-**Why fifth:** Table, progress, avatars needed for card content.
 
-Components: tug-table, tug-progress, tug-dialog, tug-accordion, tug-keyboard, tug-avatar, tug-status-indicator, tug-stat-card
+Table, progress, avatars needed for card content.
+
+- tug-table
+- tug-progress
+- tug-dialog
+- tug-keyboard
+- tug-avatar
+- tug-status-indicator
+- tug-stat-card
 
 ### Group F: Data Visualization
-**Why last:** Specialized components for analytics cards. No downstream dependencies.
 
-Components: tug-sparkline, tug-linear-gauge, tug-arc-gauge, tug-toolbar
+Specialized components for analytics cards. No downstream dependencies.
 
----
+- tug-sparkline
+- tug-linear-gauge
+- tug-arc-gauge
+- tug-toolbar
 
-## Archived Documents
-
-The following documents are superseded by this roadmap:
-
-- `.tugtool/tugplan-tugways-phase-8-radix-redesign.md` — Original Phase 8 plan. Component inventory and design decisions are incorporated here. Infrastructure decisions (D01-D07) remain valid as historical reference.
-- `roadmap/step-4-interactive-build-guide.md` — Original Step 4 build guide. Build-order and token patterns are incorporated here.
-- `roadmap/archive/tugways-implementation-strategy.md` — Original implementation strategy. Already archived.
