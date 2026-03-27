@@ -2,6 +2,17 @@
 
 *Why the Laws of Tug diverge from standard React advice, and why the "best practices" taught in tutorials become anti-patterns at scale.*
 
+## Non-goals
+
+This document is not general React advice.
+
+- It does not argue that all React state is bad. `useState` is the right tool for local form state, toggle flags, and UI that doesn't need to coordinate across components.
+- It does not reject `useEffect` universally. Effects are appropriate for side effects that genuinely belong in the render lifecycle (focus management, analytics, network requests in simple cases).
+- It does not claim DOM mutation is always preferable. Structure changes — adding, removing, reordering components — should always flow through React.
+- It applies primarily to applications with *continuous interactive state*: creative tools, spatial interfaces, anything with drag, resize, real-time preview, or gesture-driven interaction.
+
+The Laws of Tug exist because I repeatedly hit specific failure modes building this class of UI. This document records those failure modes and the constraints I adopted to avoid them.
+
 ## Laws referenced in this document
 
 This document argues against standard React patterns by reference to specific Laws of Tug. For the full list and their design-decision rationale, see [laws-of-tug.md](laws-of-tug.md). The laws cited here:
@@ -30,7 +41,7 @@ The canonical React tutorial teaches a specific worldview:
 
 This model has a seductive elegance. It's a pure function: `UI = f(state)`. You put state in, you get DOM out, React diffs and patches. It's easy to teach, easy to reason about in isolation, and it works beautifully for a blog, a settings form, a todo list.
 
-The problem is that this model is *designed for documents, not applications*.
+For Tug's class of UI, this model behaves as if it were designed for documents, not applications.
 
 ---
 
@@ -44,19 +55,25 @@ When all state lives in React, every state change re-renders. A slider thumb mov
 
 [L06](#law-L06) cuts this off at the root: **appearance changes go through CSS and DOM, never React state.** Moving a slider thumb is a CSS `left` change. Toggling a hover highlight is a class toggle. These are free — zero reconciliation, zero diffing, zero risk of cascading re-renders. React never even knows they happened.
 
+*Trade-off:* DOM mutations are invisible to React DevTools. When debugging appearance behavior, you're in the browser inspector, not the React component tree. In our experience, this is a net win — the browser inspector is the right tool for visual state — but it means the React DevTools view is incomplete.
+
 ### 2. The stale closure trap
 
 This is where "rules of hooks" violations come from. The standard React model creates closures over state at render time. If you register an event handler that reads `value`, it captures `value` as of that render. When `value` changes, you need a new handler, which means re-registering, which means dependency arrays, which means `useEffect` cleanup chains, which means — if you get any dependency wrong — stale data or infinite loops.
 
 [L07](#law-L07) eliminates this entirely: **access current state through refs or stable singletons.** Your `useResponder` registers once at mount. The handler reads `valueRef.current` when it fires, not a closed-over snapshot. There are no dependency arrays to get wrong because there are no dependencies. The handler is stable. The ref is always current.
 
-This is why you haven't hit a rules-of-hooks violation. The Laws of Tug don't fight the closure model — they *sidestep* it by not putting mutable state inside closures in the first place.
+In our codebase, this is why I stopped hitting rules-of-hooks violations. The Laws of Tug don't fight the closure model — they *sidestep* it by not putting mutable state inside closures in the first place.
+
+*Trade-off:* Refs can hide time-varying behavior from the render model. A handler that reads `valueRef.current` has an implicit dependency on whatever writes to that ref — and that dependency is invisible to React, to linters, and to anyone reading just the handler code. The discipline required is: refs hold values that are *always current*, written by a single well-known source (usually the store or a `useLayoutEffect` sync). When that discipline holds, refs are strictly simpler than dependency arrays. When it doesn't, they're strictly worse.
 
 ### 3. The synchronization problem
 
 The standard advice says: when you have external state (a store, a WebSocket, a media query), copy it into React state via `useEffect`. This creates two sources of truth — the real state and React's copy — and a `useEffect` that runs *after* render to synchronize them. During that gap, your UI shows stale data. Worse, the sync effect triggers another render, and if multiple effects sync different pieces of external state, you get render cascades.
 
-[L02](#law-L02) replaces all of this with `useSyncExternalStore`, which lets React subscribe to external state *synchronously*. No copy. No effect. No gap. One source of truth, and React reads it at render time. The reason this law exists is that `useSyncExternalStore` is the *only* mechanism that gives React a synchronous read of external state with proper concurrent-mode support — but almost no tutorial teaches it because it doesn't fit the "useState for everything" narrative.
+[L02](#law-L02) replaces all of this with `useSyncExternalStore`, which gives React a synchronous, tear-free read of external state. No copy. No effect. No gap. One source of truth, and React reads it at render time. The reason this law exists is that `useSyncExternalStore` is the *only* mechanism that gives React a synchronous read of external state with proper concurrent-mode support — but almost no tutorial teaches it because it doesn't fit the "useState for everything" narrative.
+
+*Trade-off:* External stores require more upfront infrastructure. You need a store with a `subscribe` method, a `getSnapshot` method, and immutable-snapshot semantics. For state that is genuinely local to one component and never shared, this is overhead. That's why the non-goals section exists: `useState` is still the right tool for purely local state.
 
 The synchronization problem has two further consequences that the standard React model ignores entirely:
 
@@ -68,9 +85,9 @@ The synchronization problem has two further consequences that the standard React
 
 ## The same component, two ways
 
-Consider a slider with a coordinated value input — the user drags the thumb and the number updates, or types a number and the thumb moves. This is a common control. Here's how the standard approach builds it, and how the Laws of Tug build it.
+Consider a slider with a coordinated value input — the user drags the thumb and the number updates, or types a number and the thumb moves. This is a common control. Here's how a typical tutorial-style implementation builds it, and how the Laws of Tug build it.
 
-### The standard way
+### A typical tutorial-style implementation
 
 ```tsx
 function Slider({ store }) {
@@ -121,7 +138,7 @@ function Slider({ store }) {
 }
 ```
 
-Count the problems: two `useState`, two `useEffect`, two `useCallback` dependency arrays, two sources of truth (React state and the store), and a one-frame stale-data gap on every external update. Every drag frame re-renders the entire component. Add a label, ticks, icons, and a formatter, and the dependency graph becomes a web.
+This is not the only way to write this in React, but it is a common pattern in tutorials and in production code that grows organically. Count the problems: two `useState`, two `useEffect`, two `useCallback` dependency arrays, two sources of truth (React state and the store), and a stale-data gap on every external update. Every drag frame re-renders the entire component. Add a label, ticks, icons, and a formatter, and the dependency graph becomes a web.
 
 ### The Laws of Tug way
 
@@ -156,7 +173,7 @@ function Slider({ store }) {
 
 Zero `useEffect`. One source of truth. One `useCallback` with a stable dependency. The value input manages its own editing text internally and only calls back on commit — no cross-component state sync, no render cascade during typing. Radix handles thumb positioning in the DOM. React re-renders only when the committed value actually changes.
 
-The difference isn't cosmetic. The standard version has six hooks and a latent stale-data bug. The Laws of Tug version has two hooks and no bugs to write.
+The difference isn't cosmetic. The tutorial-style version has six hooks and a latent stale-data bug. The Laws of Tug version has two hooks and no bugs to write.
 
 ---
 
@@ -164,7 +181,7 @@ The difference isn't cosmetic. The standard version has six hooks and a latent s
 
 Several reinforcing reasons:
 
-**Historical accident.** `useSyncExternalStore` shipped in React 18 (2022), years after the hooks mental model was established. The tutorials, courses, blog posts, and Stack Overflow answers were already written. The community's muscle memory was already formed around `useState` + `useEffect`. Rewriting all that pedagogy for a "new" hook that solves problems most tutorials never encounter? Nobody has the incentive.
+**Historical accident.** `useSyncExternalStore` shipped in React 18 (2022), years after the hooks mental model was established. The tutorials, courses, blog posts, and Stack Overflow answers were already written. The community's muscle memory was already formed around `useState` + `useEffect`. Rewriting all that pedagogy for a hook that solves problems most tutorials never encounter? Nobody has the incentive.
 
 **Selection bias in tutorials.** Tutorials teach small, self-contained examples. A counter. A form. A fetch-and-display. At that scale, `useState` + `useEffect` works fine. The pathologies only emerge when you have 15 pieces of coordinated state across 8 components responding to pointer events at 60fps. Nobody writes a tutorial for that.
 
@@ -172,13 +189,13 @@ Several reinforcing reasons:
 
 **The framework incentive.** React's value proposition is "we manage the DOM for you." Telling developers "actually, for appearance changes, bypass React and mutate the DOM directly" ([L06](#law-L06)) undermines that pitch. It's correct engineering, but it's bad marketing. So it doesn't get promoted.
 
-**Complexity privilege.** Most React applications are forms and dashboards. They never hit the scaling wall. The developers who *do* hit it — game UIs, creative tools, collaborative editors, anything with continuous gesture input — often solve it ad hoc and move on. The solutions don't get generalized into laws because each team thinks their problem is special.
+**Most apps never need it.** Most React applications are forms and dashboards. They never hit the scaling wall. The developers who *do* hit it — game UIs, creative tools, collaborative editors, anything with continuous gesture input — often solve it ad hoc and move on. The solutions don't get generalized into laws because each team thinks their problem is special.
 
 ---
 
 ## What a React expert might claim
 
-The arguments above have obvious counterpoints. A developer steeped in the standard React model might push back. Here are some suppositions about the strongest possible objections and why they don't hold.
+The arguments above have obvious counterpoints. A developer steeped in the standard React model might push back. Here are some of the strongest objections and why, for Tug's class of UI, they don't overturn the architecture.
 
 ### "You're just reimplementing jQuery"
 
@@ -216,7 +233,7 @@ The counter: this is true, and it's the most honest objection. If your app is a 
 
 ## What React excels at
 
-After all this criticism, it's worth being explicit: React is excellent software, and the Laws of Tug depend on it. The argument isn't that React is the wrong tool. The argument is that the standard React model misapplies it.
+After all this criticism, it's worth being explicit: React is excellent software, and the Laws of Tug depend on it. The argument isn't that React is the wrong tool. The argument is that the standard React model misapplies it for Tug's class of UI.
 
 **Tree reconciliation.** React's core algorithm — diffing a virtual tree against the previous tree and patching the DOM with minimal mutations — is genuinely hard to do well and genuinely valuable. When your interface has conditional structure (a modal that appears, a card that gets added to a deck, a panel that switches between views), React handles the DOM insertions, removals, and reordering correctly, efficiently, and without you thinking about it. No other mainstream approach does this as reliably. The Laws of Tug lean on this heavily: every structural change in the interface flows through React precisely because React is the best tool for the job.
 
@@ -234,14 +251,13 @@ The Laws of Tug are not a workaround for React's weaknesses. They're an architec
 
 The Laws of Tug are a **zone architecture** for React. They draw explicit boundaries:
 
-| Zone | Mechanism | React involvement |
-|------|-----------|-------------------|
-| Appearance (hover, drag preview, thumb position) | CSS / DOM mutation | None |
-| Subscription (external stores, layout state) | `useSyncExternalStore` | Read-only at render |
-| Registration (responders, selection boundaries) | `useLayoutEffect` at mount | One-time setup |
-| Structure (what components exist, their props) | `useState` / props | Full React |
+| Zone | What belongs here | Mechanisms |
+|------|-------------------|------------|
+| **Appearance** | Hover, drag preview, thumb position, class toggles | CSS / DOM mutation — React is not involved |
+| **Local data** | Component-scoped UI state (form input, toggle flags) | Targeted `useState` / refs |
+| **Structure** | What components exist, external store subscriptions, event routing registration | `useSyncExternalStore`, `useLayoutEffect` at mount, props / composition |
 
-Standard React advice puts *everything* in the fourth row. The Laws of Tug say: only structural changes — adding/removing components, changing which card is open, switching modes — belong in React state. Everything else has a better home.
+These three zones come from [D12](design-decisions.md). Standard React advice collapses most work into local data via `useState` and `useEffect`. The Laws of Tug say: appearance changes belong in the appearance zone (CSS/DOM, zero re-renders), cross-component state enters through `useSyncExternalStore` in the structure zone, and event routing registers via `useLayoutEffect` in the structure zone. Only genuinely component-local state belongs in `useState`.
 
 The reason this feels like a "secret" is that it requires understanding *what React is actually good at* (tree reconciliation) and deliberately *not using it* for things it's bad at (high-frequency mutations, cross-component coordination, synchronous event handling). That's a subtraction, not an addition — and programming culture overwhelmingly teaches by addition. "Here's a new hook to learn." "Here's a state management library." "Here's a pattern to add." The Laws of Tug say: **stop adding. Remove the state. Remove the effect. Remove the re-render. What's left is the actual UI.**
 
@@ -260,6 +276,8 @@ The zone architecture is not just a theoretical improvement. It changes the dail
 The Laws of Tug borrow a concept from NeXT's AppKit (1988), carried through Apple's Cocoa and UIKit: the **responder chain**.<sup>[1](#fn1)</sup> Actions are typed events — "delete", "duplicate", "nudge" — not raw DOM events. Controls dispatch actions into a chain of responder nodes. Each node either handles the action or lets it pass to the next. The chain is spatial, not hierarchical: it follows the visual nesting of the interface, not the React component tree.
 
 This separation — controls emit actions, responders handle actions ([L11](#law-L11)) — means that a button doesn't need to know *who* will handle its action. A card doesn't need a prop for every possible keyboard shortcut. A deck-level responder can catch anything that cards don't claim. Components participate in the chain by registering once at mount via `useLayoutEffect` ([L03](#law-L03)), reading current state through refs ([L07](#law-L07)). No effects. No dependency arrays. No re-registration when state changes. The entire event routing system is invisible to React's render cycle.
+
+*Trade-off:* The responder chain is infrastructure. It requires a shared vocabulary of action types, a registration mechanism, and discipline about which components are responder nodes. For a simple app with a few click handlers, this is overbuilt. For Tug — where cards, decks, toolbars, and modals all need to participate in keyboard routing — it removed more complexity than it introduced.
 
 Web developers rarely encounter this pattern because the DOM's native event model provides *mechanism* (events bubble up the tree) without *architecture* (a defined chain of responsibility with typed actions and explicit fallthrough). The responder chain adds the architecture. Once you have it, the class of bugs that comes from wiring event handlers through props and closures simply disappears.
 
