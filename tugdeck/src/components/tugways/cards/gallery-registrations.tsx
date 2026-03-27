@@ -48,6 +48,7 @@ import { GallerySlider } from "./gallery-slider";
 import { GalleryValueInput } from "./gallery-value-input";
 import { GalleryRadioGroup } from "./gallery-radio-group";
 import { GallerySegmentedChoice } from "./gallery-segmented-choice";
+import { GalleryBox } from "./gallery-box";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
   { id: "template", componentId: "gallery-radio-group",       title: "TugRadioGroup",        closable: true },
   { id: "template", componentId: "gallery-segmented-choice", title: "TugSegmentedChoice",   closable: true },
+  { id: "template", componentId: "gallery-box",             title: "TugBox",               closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -467,6 +469,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-segmented-choice",
     contentFactory: (_cardId) => <GallerySegmentedChoice />,
     defaultMeta: { title: "TugSegmentedChoice", icon: "ToggleLeft", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-box ----
+  // TugBox showcase: variants, label positions, nested boxes, disabled cascade, inset.
+  registerCard({
+    componentId: "gallery-box",
+    contentFactory: (_cardId) => <GalleryBox />,
+    defaultMeta: { title: "TugBox", icon: "Box", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
