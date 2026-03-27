@@ -192,6 +192,7 @@ body {
 
   /* Slider — Track */
   --tug7-surface-slider-primary-normal-track-rest: --tug-color(indigo, i: 8, t: 75);
+  --tug7-element-slider-fill-normal-range-rest: --tug-color(orange, i: 80, t: 45);
 
   /* Card — Title Bar */
   --tug7-surface-card-primary-normal-titlebar-active: --tug-color(blue, i: 2, t: 99);
