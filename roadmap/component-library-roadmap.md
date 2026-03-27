@@ -154,9 +154,9 @@ Settings card and card content need these. Slider, radio, textarea are the most-
 
 - tug-slider
 - tug-radio-group
-- tug-textarea
 - tug-segmented-choice
 - tug-box
+- tug-textarea
 
 ### Group B: Display Essentials
 
