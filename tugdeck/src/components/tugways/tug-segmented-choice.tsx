@@ -19,6 +19,7 @@ import "./tug-segmented-choice.css";
 
 import React from "react";
 import { cn } from "@/lib/utils";
+import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Types ----
 
@@ -118,6 +119,9 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
     },
     ref,
   ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
     // Role injection — indicator pill uses toggle-primary tokens. [L06]
     // No role prop = accent. Single path, zero branches.
     const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
@@ -148,7 +152,7 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
 
     const handleKeyDown = React.useCallback(
       (e: React.KeyboardEvent<HTMLDivElement>) => {
-        if (disabled) return;
+        if (effectiveDisabled) return;
 
         const enabledItems = items.filter((item) => !item.disabled);
         const currentEnabledIndex = enabledItems.findIndex((item) => item.value === value);
@@ -197,7 +201,7 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
           segmentRefs.current[nextIndex]?.focus();
         }
       },
-      [disabled, items, value, onValueChange],
+      [effectiveDisabled, items, value, onValueChange],
     );
 
     return (
@@ -206,9 +210,9 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
         data-slot="tug-segmented-choice"
         role="radiogroup"
         aria-label={ariaLabel}
-        aria-disabled={disabled || undefined}
+        aria-disabled={effectiveDisabled || undefined}
         data-role={role}
-        data-disabled={disabled || undefined}
+        data-disabled={effectiveDisabled || undefined}
         className={cn(
           "tug-segmented-choice",
           `tug-segmented-choice-${size}`,
@@ -227,7 +231,7 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
 
         {items.map((item, index) => {
           const isActive = item.value === value;
-          const isDisabled = disabled || item.disabled;
+          const isDisabled = effectiveDisabled || item.disabled;
 
           return (
             <button

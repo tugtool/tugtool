@@ -15,6 +15,7 @@ import React, { useSyncExternalStore } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 import { useResponderChain } from "../responder-chain-provider";
+import { useTugBoxDisabled } from "./tug-box-context";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
 // Module-level stable references prevent React from seeing new function
@@ -218,6 +219,9 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   asChild = false,
   ...rest
 }: TugButtonProps, ref) {
+  const boxDisabled = useTugBoxDisabled();
+  const effectiveDisabled = disabled || boxDisabled;
+
   // Dev-mode warning for icon subtype without aria-label
   React.useEffect(() => {
     if (
@@ -298,7 +302,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // ---- Click handler ----
 
   const handleClick = (e?: React.MouseEvent<HTMLButtonElement>) => {
-    if (disabled || loading) return;
+    if (effectiveDisabled || loading) return;
 
     // Chain-action disabled guard: aria-disabled buttons still receive click
     // events (unlike HTML disabled). Return early without dispatching.
@@ -403,7 +407,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     <Comp
       ref={ref}
       data-slot="tug-button"
-      disabled={disabled}
+      disabled={effectiveDisabled}
       aria-label={ariaLabel}
       aria-busy={loading ? "true" : undefined}
       aria-disabled={ariaDisabled}

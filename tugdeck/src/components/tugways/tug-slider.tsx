@@ -17,6 +17,7 @@ import * as SliderPrimitive from "@radix-ui/react-slider";
 import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
 import { TugValueInput } from "./tug-value-input";
+import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Types ----
 
@@ -124,6 +125,9 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     },
     ref,
   ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
     // ---- Radix value adapter ----
 
     const handleSliderChange = React.useCallback(
@@ -181,7 +185,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
             min={min}
             max={max}
             step={step}
-            disabled={disabled}
+            disabled={effectiveDisabled}
             className="tug-slider-root"
           >
             <SliderPrimitive.Track className={cn("tug-slider-track", trackFilled && "tug-slider-track-filled")}>
@@ -208,7 +212,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
             max={max}
             step={step}
             size={size}
-            disabled={disabled}
+            disabled={effectiveDisabled}
           />
         )}
       </>
@@ -224,7 +228,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
           layoutClass,
           className,
         )}
-        aria-disabled={disabled || undefined}
+        aria-disabled={effectiveDisabled || undefined}
         style={style}
         {...rest}
       >

@@ -17,6 +17,7 @@ import React from "react";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import { Check, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Types ----
 
@@ -130,6 +131,9 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     },
     ref,
   ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
     // Role injection — every path injects surface-toggle-primary tokens. [L06]
     // No role prop = accent. Single path, zero branches.
     const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
@@ -146,7 +150,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
         checked={checked}
         defaultChecked={defaultChecked}
         onCheckedChange={onCheckedChange}
-        disabled={disabled}
+        disabled={effectiveDisabled}
         name={name}
         value={value}
         required={required}
@@ -175,7 +179,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       <label
         className={cn(
           "tug-checkbox-wrapper",
-          disabled && "tug-checkbox-wrapper-disabled",
+          effectiveDisabled && "tug-checkbox-wrapper-disabled",
           className,
         )}
       >

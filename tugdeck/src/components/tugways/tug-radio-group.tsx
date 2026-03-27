@@ -23,6 +23,7 @@ import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
 import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";
 import type { TugButtonSize } from "./internal/tug-button";
+import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Types ----
 
@@ -140,6 +141,9 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     },
     ref,
   ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
     // Role injection — on-state color uses toggle-primary tokens (shared with checkbox/switch). [L06]
     // No role prop = accent. Single path, zero branches.
     const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
@@ -149,7 +153,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       "--tugx-radio-disabled-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-disabled)`,
     } as React.CSSProperties;
 
-    const ctx: TugRadioGroupContextValue = { size, disabled };
+    const ctx: TugRadioGroupContextValue = { size, disabled: effectiveDisabled };
 
     return (
       <TugRadioGroupContext.Provider value={ctx}>
@@ -160,7 +164,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
           defaultValue={defaultValue}
           onValueChange={onValueChange}
           name={name}
-          disabled={disabled}
+          disabled={effectiveDisabled}
           aria-label={!label ? ariaLabel : undefined}
           aria-labelledby={label ? `tug-radio-label-${name ?? "group"}` : undefined}
           data-role={role}

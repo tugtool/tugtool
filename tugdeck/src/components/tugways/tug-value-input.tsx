@@ -18,6 +18,7 @@ import React, { useRef, useCallback, useLayoutEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
 import { clamp, validateNumericInput } from "@/lib/tug-validate";
+import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Props ----
 
@@ -85,6 +86,9 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
     },
     ref,
   ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
     // ---- Imperative value management [L06] ----
     //
     // All input value changes go through DOM. No React state for the display/edit
@@ -269,7 +273,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
         className={cn("tug-value-input", `tug-value-input-${size}`, className)}
         defaultValue={displayValue}
         style={{ width: inputWidth, ...style }}
-        aria-disabled={disabled || undefined}
+        aria-disabled={effectiveDisabled || undefined}
         aria-label="Value"
         onFocus={handleFocus}
         onMouseUp={handleMouseUp}

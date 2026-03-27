@@ -1,0 +1,88 @@
+/* @tug-pairings {
+  --tug7-element-field-text-normal-label-rest      | --tug7-surface-global-primary-normal-default-rest | content
+  --tug7-element-global-border-normal-default-rest | --tug7-surface-global-primary-normal-default-rest | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                              | Role        | Context                              |
+ * |--------------------------------------------------|------------------------------------------------------|-------------|--------------------------------------|
+ * | --tug7-element-field-text-normal-label-rest       | --tug7-surface-global-primary-normal-default-rest    | content     | .tug-box-legend (color)              |
+ * | --tug7-element-field-text-normal-label-rest       | --tug7-surface-global-primary-normal-default-rest    | content     | .tug-box-label-above (color)         |
+ * | --tug7-element-global-border-normal-default-rest  | --tug7-surface-global-primary-normal-default-rest    | informational | .tug-box-bordered (border-color)  |
+ * | --tug7-element-global-border-normal-default-rest  | --tug7-surface-global-primary-normal-default-rest    | informational | .tug-box-filled (border-color)    |
+ * | --tug7-element-global-divider-normal-separator-rest | --tug7-surface-global-primary-normal-default-rest  | informational | .tug-box-separator (border-color) |
+ */
+
+/* ---- Reset fieldset defaults ---- */
+
+.tug-box {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-inline-size: auto;
+}
+
+/* ---- Variants ---- */
+
+.tug-box-bordered {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+.tug-box-filled {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+}
+
+.tug-box-separator {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  border: none;
+  border-top: 1px solid var(--tug7-element-global-divider-normal-separator-rest);
+  width: 100%;
+  height: 0;
+}
+
+/* ---- Border radius (bordered + filled) ---- */
+
+.tug-box-bordered,
+.tug-box-filled {
+  border-radius: var(--tug-radius-lg);
+}
+
+/* ---- Inset padding ---- */
+
+.tug-box-inset.tug-box-sm { padding: var(--tug-space-sm); }
+.tug-box-inset.tug-box-md { padding: var(--tug-space-md); }
+.tug-box-inset.tug-box-lg { padding: var(--tug-space-lg); }
+
+/* ---- Legend ---- */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-box-legend {
+  font-weight: 500;
+  color: var(--tug7-element-field-text-normal-label-rest);
+  padding: 0 var(--tug-space-xs);
+}
+
+/* ---- Label above ---- */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-box-label-above {
+  display: block;
+  font-weight: 500;
+  color: var(--tug7-element-field-text-normal-label-rest);
+  margin-bottom: var(--tug-space-xs);
+}
+
+/* ---- Size variants for labels ---- */
+
+.tug-box-sm .tug-box-legend,
+.tug-box-sm .tug-box-label-above { font-size: var(--tug-font-size-xs); }
+
+.tug-box-md .tug-box-legend,
+.tug-box-md .tug-box-label-above { font-size: var(--tug-font-size-sm); }
+
+.tug-box-lg .tug-box-legend,
+.tug-box-lg .tug-box-label-above { font-size: var(--tug-font-size-md); }

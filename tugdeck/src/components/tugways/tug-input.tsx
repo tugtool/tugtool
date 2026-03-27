@@ -14,6 +14,7 @@ import "./tug-input.css";
 
 import React from "react";
 import { cn } from "@/lib/utils";
+import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Types ----
 
@@ -44,9 +45,12 @@ export interface TugInputProps
 
 export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
   function TugInput(
-    { size = "md", validation = "default", className, ...rest },
+    { size = "md", validation = "default", className, disabled, ...rest },
     ref,
   ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
     const inputClassName = cn(
       "tug-input",
       `tug-input-size-${size}`,
@@ -61,6 +65,7 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
         ref={ref}
         data-slot="tug-input"
         className={inputClassName}
+        disabled={effectiveDisabled}
         aria-invalid={validation === "invalid" ? "true" : undefined}
         {...rest}
       />

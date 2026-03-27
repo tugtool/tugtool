@@ -15,6 +15,7 @@ import "./tug-switch.css";
 import React from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn } from "@/lib/utils";
+import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Types ----
 
@@ -125,6 +126,9 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     },
     ref,
   ) {
+    const boxDisabled = useTugBoxDisabled();
+    const effectiveDisabled = disabled || boxDisabled;
+
     // Role injection — every path injects surface-toggle-track tokens. [L06]
     // No role prop = accent. Single path, zero branches.
     const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
@@ -141,7 +145,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
         checked={checked}
         defaultChecked={defaultChecked}
         onCheckedChange={onCheckedChange}
-        disabled={disabled}
+        disabled={effectiveDisabled}
         name={name}
         value={value}
         required={required}
@@ -163,7 +167,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       <label
         className={cn(
           "tug-switch-wrapper",
-          disabled && "tug-switch-wrapper-disabled",
+          effectiveDisabled && "tug-switch-wrapper-disabled",
           className,
         )}
       >
