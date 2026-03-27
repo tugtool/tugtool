@@ -1056,7 +1056,7 @@ function cmdRename(opts: RenameOptions): void {
     console.log(`\nThis was a DRY RUN. Use --apply to write changes.`);
   } else {
     console.log(`\n✓ All changes written.`);
-    console.log(`Next: run 'bun run generate:tokens' to regenerate CSS.`);
+    console.log(`Next: verify the renamed tokens in the theme CSS files (styles/themes/).`);
   }
 }
 

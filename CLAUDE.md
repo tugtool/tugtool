@@ -39,15 +39,9 @@ Run tugcode tests with:
 cd tugcode && cargo nextest run
 ```
 
-## Tugdeck — Token Generation
+## Tugdeck — Theme Token Files
 
-All `--tug-*` tokens are generated from JSON theme files in `tugdeck/themes/` via:
-
-```bash
-bun run generate:tokens
-```
-
-The script is `tugdeck/scripts/generate-tug-tokens.ts`. Brio output goes to `tugdeck/styles/themes/brio.css`. Other themes write to `tugdeck/styles/themes/<name>.css`. The generated block is bounded by `@generated:tokens:begin` / `@generated:tokens:end` markers.
+Theme tokens live in `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes/harmony.css`. These are hand-authored CSS files — there is no generation script. Edit them directly when adding or tuning tokens.
 
 ## Tugdeck — Laws of Tug
 
