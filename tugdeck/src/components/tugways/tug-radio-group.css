@@ -19,14 +19,7 @@
  * Note: Item label text pairings are declared in tug-button.css — TugButton owns its own styling.
  */
 
-body {
-  /* Radio component aliases — resolve to base tier in one hop [L17] */
-  --tug7-surface-radio-primary-normal-off-rest:       var(--tug7-surface-toggle-primary-normal-off-rest);
-  --tug7-surface-radio-primary-normal-off-hover:      var(--tug7-surface-toggle-primary-normal-off-hover);
-  --tug7-element-radio-border-normal-off-rest:        var(--tug7-surface-toggle-primary-normal-off-rest);
-  --tug7-element-radio-border-normal-off-hover:       var(--tug7-surface-toggle-primary-normal-off-hover);
-  --tug7-element-radio-border-normal-off-disabled:    var(--tug7-surface-toggle-primary-normal-off-rest);
-}
+/* Radio base-tier tokens are defined per theme in styles/themes/*.css */
 
 
 /* ============================================================================
@@ -155,7 +148,7 @@ body {
 
 [data-state="checked"]:disabled .tug-radio-dot,
 [data-state="checked"][data-disabled] .tug-radio-dot {
-  background-color: var(--tug7-element-radio-dot-normal-plain-rest);
+  background-color: var(--tug7-element-radio-dot-normal-plain-disabled);
   opacity: var(--tugx-control-disabled-opacity);
 }
 

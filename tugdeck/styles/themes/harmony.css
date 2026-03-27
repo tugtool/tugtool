@@ -607,7 +607,16 @@ body {
   /* Toggle */
   --tug7-element-checkmark-icon-normal-plain-mixed: --tug-color(indigo, i: 4, t: 90);
   --tug7-element-checkmark-icon-normal-plain-rest: --tug-color(sapphire-cobalt, i: 4, t: 100);
+  --tug7-element-radio-border-normal-off-disabled: --tug-color(indigo, i: 7, t: 29);
+  --tug7-element-radio-border-normal-off-hover: --tug-color(indigo, i: 11, t: 29);
+  --tug7-element-radio-border-normal-off-rest: --tug-color(indigo, i: 7, t: 29);
+  --tug7-element-radio-dot-normal-plain-disabled: --tug-color(indigo-cobalt, i: 8, t: 55);
   --tug7-element-radio-dot-normal-plain-rest: --tug-color(sapphire-cobalt, i: 4, t: 100);
+  --tug7-surface-radio-primary-normal-accent-disabled: --tug-color(orange, i: 25, t: 65);
+  --tug7-surface-radio-primary-normal-accent-hover: --tug-color(orange, i: 85, t: 40);
+  --tug7-surface-radio-primary-normal-accent-rest: --tug-color(orange, i: 80, t: 45);
+  --tug7-surface-radio-primary-normal-off-hover: --tug-color(indigo, i: 11, t: 29);
+  --tug7-surface-radio-primary-normal-off-rest: --tug-color(indigo, i: 7, t: 29);
   --tug7-element-toggle-icon-normal-plain-disabled: --tug-color(indigo-cobalt, i: 8, t: 55);
   --tug7-element-toggle-icon-normal-plain-mixed: --tug-color(indigo, i: 6, t: 100);
   --tug7-element-toggle-thumb-normal-on-rest: --tug-color(sapphire-cobalt, i: 4, t: 100);

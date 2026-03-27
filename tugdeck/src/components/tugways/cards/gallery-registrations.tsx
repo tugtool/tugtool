@@ -46,6 +46,7 @@ import { GalleryThemeGenerator } from "./gallery-theme-generator";
 import { GalleryPopupButton } from "./gallery-popup-button";
 import { GallerySlider } from "./gallery-slider";
 import { GalleryValueInput } from "./gallery-value-input";
+import { GalleryRadioGroup } from "./gallery-radio-group";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-badge",             title: "TugBadge",             closable: true },
   { id: "template", componentId: "gallery-slider",            title: "TugSlider",            closable: true },
   { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
+  { id: "template", componentId: "gallery-radio-group",       title: "TugRadioGroup",        closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -443,6 +445,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-value-input",
     contentFactory: (_cardId) => <GalleryValueInput />,
     defaultMeta: { title: "TugValueInput", icon: "Hash", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-radio-group ----
+  // TugRadioGroup showcase: sizes, orientations, roles, labeled group, disabled.
+  registerCard({
+    componentId: "gallery-radio-group",
+    contentFactory: (_cardId) => <GalleryRadioGroup />,
+    defaultMeta: { title: "TugRadioGroup", icon: "CircleDot", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
