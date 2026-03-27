@@ -600,33 +600,23 @@
 
 /* --- Physics Solvers --- */
 
-/* Parent wrapper for the three physics track boxes */
-.cg-anim-physics-stages {
+/* Lane container for the three physics TugBoxes */
+.cg-anim-physics-lanes {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 50%;
-  min-width: 120px;
-  resize: horizontal;
-  overflow: hidden;
 }
 
-/* Animation TugBoxes: tight wrapping around stage content.
-   Zero padding on the fieldset, zero content margin — the inner
-   stage divs handle their own position, padding, and height. */
-.cg-anim-stage-box {
-  width: 50%;
-  padding: 0 !important;
+/* Physics lane label */
+.cg-anim-physics-label {
+  display: block;
+  font-size: var(--tug-font-size-xs);
+  font-weight: 500;
+  color: var(--tug7-element-field-text-normal-label-rest);
+  margin-bottom: 4px;
+  margin-left: var(--tug-space-xs);
+  user-select: none;
 }
-.cg-anim-stage-box .tug-box-content {
-  margin-left: 0;
-}
-
-/* Physics: each track box fills the parent wrapper width */
-.cg-anim-physics-stages .cg-anim-stage-box {
-  width: 100%;
-}
-
 
 .cg-anim-physics-track {
   position: relative;
@@ -666,16 +656,6 @@
 
 /* --- Duration Tokens --- */
 
-.cg-anim-token-stage {
-  position: relative;
-  height: 40px;
-  min-width: 120px;
-  padding: 8px;
-  box-sizing: border-box;
-  overflow: hidden;
-  resize: horizontal;
-}
-
 .cg-anim-token-box {
   width: 24px;
   height: 24px;
@@ -713,14 +693,6 @@
 
 /* --- Cancellation Modes --- */
 
-.cg-anim-cancel-stage {
-  position: relative;
-  min-width: 120px;
-  padding: 8px;
-  overflow: hidden;
-  resize: horizontal;
-}
-
 .cg-anim-cancel-box {
   width: 32px;
   height: 32px;
@@ -730,14 +702,6 @@
 }
 
 /* --- Named Slots --- */
-
-.cg-anim-slot-stage {
-  position: relative;
-  min-width: 120px;
-  padding: 8px;
-  overflow: hidden;
-  resize: horizontal;
-}
 
 .cg-anim-slot-box {
   width: 32px;

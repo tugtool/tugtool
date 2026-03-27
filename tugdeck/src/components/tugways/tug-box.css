@@ -64,6 +64,16 @@
   margin-left: var(--tug-space-xs);
 }
 
+/* ---- Resize ---- */
+
+.tug-box-resize-horizontal,
+.tug-box-resize-vertical,
+.tug-box-resize-both { position: relative; }
+
+.tug-box-resize-horizontal { resize: horizontal; overflow: hidden; }
+.tug-box-resize-vertical   { resize: vertical;   overflow: hidden; }
+.tug-box-resize-both       { resize: both;       overflow: hidden; }
+
 /* ---- Legend ---- */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */

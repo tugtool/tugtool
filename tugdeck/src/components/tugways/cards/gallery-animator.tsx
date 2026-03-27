@@ -104,7 +104,7 @@ function PercentSlider({
 // ---------------------------------------------------------------------------
 
 function PhysicsCurvesDemo() {
-  const stageRef = useRef<HTMLDivElement>(null);
+  const springBoxRef = useRef<HTMLFieldSetElement>(null);
   const springRef = useRef<HTMLDivElement>(null);
   const gravityRef = useRef<HTMLDivElement>(null);
   const frictionRef = useRef<HTMLDivElement>(null);
@@ -172,7 +172,7 @@ function PhysicsCurvesDemo() {
     }
   }, [cancelAll, pct]);
 
-  useResizeReset(stageRef, resetAll);
+  useResizeReset(springBoxRef, resetAll);
 
   useEffect(() => {
     return () => { cancelAll(); };
@@ -185,18 +185,21 @@ function PhysicsCurvesDemo() {
         Pre-computed keyframe arrays from SpringSolver, GravitySolver, and FrictionSolver
         drive WAAPI animations with physically-accurate motion.
       </p>
-      <div ref={stageRef} className="cg-anim-physics-stages" data-testid="anim-physics-stage">
-        <TugBox variant="filled" rounded="sm" inset={false} label="Spring" labelPosition="above" size="sm" className="cg-anim-stage-box">
+      <div className="cg-anim-physics-lanes" data-testid="anim-physics-stage">
+        <TugBox ref={springBoxRef} variant="filled" resize="horizontal" rounded="sm" inset={false} style={{ width: "50%", minWidth: 120 }}>
+          <span className="cg-anim-physics-label">Spring</span>
           <div ref={springTrackRef} className="cg-anim-physics-track">
             <div ref={springRef} className="cg-anim-dot cg-anim-dot-spring" />
           </div>
         </TugBox>
-        <TugBox variant="filled" rounded="sm" inset={false} label="Gravity" labelPosition="above" size="sm" className="cg-anim-stage-box">
+        <TugBox variant="filled" resize="horizontal" rounded="sm" inset={false} style={{ width: "50%", minWidth: 120 }}>
+          <span className="cg-anim-physics-label">Gravity</span>
           <div ref={gravityTrackRef} className="cg-anim-physics-track cg-anim-physics-track-tall">
             <div ref={gravityRef} className="cg-anim-dot cg-anim-dot-gravity" />
           </div>
         </TugBox>
-        <TugBox variant="filled" rounded="sm" inset={false} label="Friction" labelPosition="above" size="sm" className="cg-anim-stage-box">
+        <TugBox variant="filled" resize="horizontal" rounded="sm" inset={false} style={{ width: "50%", minWidth: 120 }}>
+          <span className="cg-anim-physics-label">Friction</span>
           <div ref={frictionTrackRef} className="cg-anim-physics-track">
             <div ref={frictionRef} className="cg-anim-dot cg-anim-dot-friction" />
           </div>
@@ -221,7 +224,7 @@ function PhysicsCurvesDemo() {
 
 function DurationTokensDemo() {
   const boxRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLFieldSetElement>(null);
   const animRef = useRef<TugAnimation | null>(null);
   const [activeToken, setActiveToken] = useState<string | null>(null);
   const [pct, setPct] = useState(100);
@@ -267,10 +270,16 @@ function DurationTokensDemo() {
         Duration tokens resolve to base ms values scaled by{" "}
         <code>getTugTiming()</code>. Click each to see the speed difference.
       </p>
-      <TugBox variant="filled" rounded="md" inset={false} className="cg-anim-stage-box">
-        <div ref={stageRef} className="cg-anim-token-stage" data-testid="anim-token-stage">
-          <div ref={boxRef} className="cg-anim-token-box" />
-        </div>
+      <TugBox
+        ref={stageRef}
+        variant="filled"
+        resize="horizontal"
+        rounded="md"
+        inset={false}
+        data-testid="anim-token-stage"
+        style={{ width: "50%", minWidth: 120, height: 40 }}
+      >
+        <div ref={boxRef} className="cg-anim-token-box" />
       </TugBox>
       <div className="cg-variant-row">
         {TOKEN_LABELS.map(({ token, label }) => (
@@ -309,7 +318,7 @@ function DurationTokensDemo() {
 
 function CancelModesDemo() {
   const boxRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLFieldSetElement>(null);
   const animRef = useRef<TugAnimation | null>(null);
   const [status, setStatus] = useState("idle");
   const [pct, setPct] = useState(100);
@@ -372,10 +381,16 @@ function CancelModesDemo() {
         <strong>hold-at-current</strong> freezes in place,{" "}
         <strong>reverse-from-current</strong> animates back to start.
       </p>
-      <TugBox variant="filled" rounded="md" inset={false} className="cg-anim-stage-box">
-        <div ref={stageRef} className="cg-anim-cancel-stage" data-testid="anim-cancel-stage">
-          <div ref={boxRef} className="cg-anim-cancel-box" />
-        </div>
+      <TugBox
+        ref={stageRef}
+        variant="filled"
+        resize="horizontal"
+        rounded="md"
+        inset={false}
+        data-testid="anim-cancel-stage"
+        style={{ width: "50%", minWidth: 120, height: 48 }}
+      >
+        <div ref={boxRef} className="cg-anim-cancel-box" />
       </TugBox>
       <div className="cg-variant-row">
         <TugPushButton emphasis="filled" role="accent" size="sm" onClick={startAnimation}>
@@ -410,7 +425,7 @@ function CancelModesDemo() {
 
 function NamedSlotsDemo() {
   const boxRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLFieldSetElement>(null);
   const animsRef = useRef<TugAnimation[]>([]);
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [pct, setPct] = useState(100);
@@ -471,10 +486,16 @@ function NamedSlotsDemo() {
         Animations with the same <code>key</code> on the same element automatically cancel
         the previous one. Different keys coexist independently.
       </p>
-      <TugBox variant="filled" rounded="md" inset={false} className="cg-anim-stage-box">
-        <div ref={stageRef} className="cg-anim-slot-stage" data-testid="anim-slot-stage">
-          <div ref={boxRef} className="cg-anim-slot-box" />
-        </div>
+      <TugBox
+        ref={stageRef}
+        variant="filled"
+        resize="horizontal"
+        rounded="md"
+        inset={false}
+        data-testid="anim-slot-stage"
+        style={{ width: "50%", minWidth: 120, height: 48 }}
+      >
+        <div ref={boxRef} className="cg-anim-slot-box" />
       </TugBox>
       <div className="cg-variant-row">
         <TugPushButton size="sm" onClick={animateToRight}>

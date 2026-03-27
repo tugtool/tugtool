@@ -49,6 +49,9 @@ export type TugBoxVariant = "plain" | "bordered" | "filled" | "separator";
  */
 export type TugBoxLabelPosition = "legend" | "above";
 
+/** TugBox user-resizable direction. */
+export type TugBoxResize = "horizontal" | "vertical" | "both";
+
 /** TugBox props. */
 export interface TugBoxProps
   extends Omit<React.FieldsetHTMLAttributes<HTMLFieldSetElement>, "disabled"> {
@@ -96,6 +99,13 @@ export interface TugBoxProps
    * @default "md"
    */
   size?: TugBoxSize;
+  /**
+   * User-resizable direction. Requires bordered or filled variant.
+   * Sets CSS resize and overflow: hidden on the fieldset.
+   * When omitted, the box is not resizable.
+   * @selector .tug-box-resize-horizontal | .tug-box-resize-vertical | .tug-box-resize-both
+   */
+  resize?: TugBoxResize;
   /** Box content. Not used when variant is "separator". */
   children?: React.ReactNode;
 }
@@ -112,6 +122,7 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
       rounded = "lg",
       disabled = false,
       size = "md",
+      resize,
       className,
       style,
       children,
@@ -159,6 +170,7 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
             `tug-box-${variant}`,
             `tug-box-${size}`,
             resolvedInset && "tug-box-inset",
+            resize && `tug-box-resize-${resize}`,
             className,
           )}
           style={{ borderRadius: resolvedRadius, ...style }}
