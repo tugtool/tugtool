@@ -47,6 +47,7 @@ import { GalleryPopupButton } from "./gallery-popup-button";
 import { GallerySlider } from "./gallery-slider";
 import { GalleryValueInput } from "./gallery-value-input";
 import { GalleryRadioGroup } from "./gallery-radio-group";
+import { GallerySegmentedChoice } from "./gallery-segmented-choice";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -87,6 +88,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-slider",            title: "TugSlider",            closable: true },
   { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
   { id: "template", componentId: "gallery-radio-group",       title: "TugRadioGroup",        closable: true },
+  { id: "template", componentId: "gallery-segmented-choice", title: "TugSegmentedChoice",   closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -455,6 +457,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-radio-group",
     contentFactory: (_cardId) => <GalleryRadioGroup />,
     defaultMeta: { title: "TugRadioGroup", icon: "CircleDot", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-segmented-choice ----
+  // TugSegmentedChoice showcase: sizes, roles, disabled states, sliding indicator.
+  registerCard({
+    componentId: "gallery-segmented-choice",
+    contentFactory: (_cardId) => <GallerySegmentedChoice />,
+    defaultMeta: { title: "TugSegmentedChoice", icon: "ToggleLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
