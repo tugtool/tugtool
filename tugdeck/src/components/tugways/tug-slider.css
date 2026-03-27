@@ -1,7 +1,7 @@
 /* @tug-pairings {
   --tug7-surface-field-primary-normal-plain-rest | --tug7-surface-global-primary-normal-default-rest | informational
   --tug7-element-global-fill-normal-accent-rest  | --tug7-surface-field-primary-normal-plain-rest    | control
-  --tug7-element-global-border-normal-default-rest | --tug7-surface-global-primary-normal-raised-rest | informational
+  --tug7-element-toggle-thumb-normal-on-rest         | --tug7-surface-global-primary-normal-default-rest | control
   --tug7-element-field-text-normal-label-rest    | --tug7-surface-global-primary-normal-default-rest | content
   --tug7-element-field-text-normal-plain-rest    | --tug7-surface-field-primary-normal-plain-rest    | content
   --tug7-element-field-border-normal-plain-rest  | --tug7-surface-field-primary-normal-plain-rest    | informational
@@ -14,8 +14,8 @@
  * |--------------------------------------------------|------------------------------------------------------|---------------|-----------------------------------------------------|
  * | --tug7-surface-field-primary-normal-plain-rest    | --tug7-surface-global-primary-normal-default-rest    | informational | .tug-slider-track (background-color)                |
  * | --tug7-element-global-fill-normal-accent-rest     | --tug7-surface-field-primary-normal-plain-rest       | control       | .tug-slider-range (background-color)                |
- * | --tug7-surface-global-primary-normal-raised-rest  | --tug7-surface-global-primary-normal-default-rest    | control       | .tug-slider-thumb (background-color)                |
- * | --tug7-element-global-border-normal-default-rest  | --tug7-surface-global-primary-normal-raised-rest     | informational | .tug-slider-thumb (border-color)                    |
+ * | --tug7-element-toggle-thumb-normal-on-rest          | --tug7-surface-global-primary-normal-default-rest    | control       | .tug-slider-thumb (background-color)                |
+ * | --tug7-element-global-border-normal-default-rest    | --tug7-element-toggle-thumb-normal-on-rest           | informational | .tug-slider-thumb (border-color)                    |
  * | --tug7-element-field-text-normal-label-rest       | --tug7-surface-global-primary-normal-default-rest    | content       | .tug-slider-label (color)                           |
  * | --tug7-element-field-text-normal-plain-rest       | --tug7-surface-field-primary-normal-plain-rest       | content       | .tug-slider-value-input (color)                     |
  * | --tug7-element-field-border-normal-plain-rest     | --tug7-surface-field-primary-normal-plain-rest       | informational | .tug-slider-value-input (border-color)              |
@@ -26,11 +26,14 @@ body {
   /* Slider component aliases — resolve to base tier in one hop [L17] */
   --tugx-slider-track-bg: var(--tug7-surface-field-primary-normal-plain-rest);
   --tugx-slider-range-bg: var(--tug7-element-global-fill-normal-accent-rest);
-  --tugx-slider-thumb-bg: var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-slider-thumb-bg: var(--tug7-element-toggle-thumb-normal-on-rest);
   --tugx-slider-thumb-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-slider-thumb-bg-hover: var(--tug7-surface-global-primary-normal-control-rest);
-  --tugx-slider-thumb-bg-active: var(--tug7-surface-control-primary-filled-accent-active);
   --tugx-slider-label-fg: var(--tug7-element-field-text-normal-label-rest);
+  --tugx-slider-input-bg: var(--tug7-surface-field-primary-normal-plain-rest);
+  --tugx-slider-input-fg: var(--tug7-element-field-text-normal-plain-rest);
+  --tugx-slider-input-border: var(--tug7-element-field-border-normal-plain-rest);
+  --tugx-slider-input-bg-focus: var(--tug7-surface-field-primary-normal-plain-focus);
+  --tugx-slider-input-border-focus: var(--tug7-element-field-border-normal-plain-active);
 }
 
 
@@ -42,6 +45,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--tug-space-sm);
+  max-width: 400px;
 }
 
 /* ---- Layout variants ---- */
@@ -126,16 +130,6 @@ body {
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-slider-thumb:hover {
-  background-color: var(--tugx-slider-thumb-bg-hover);
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-slider-thumb:active {
-  background-color: var(--tugx-slider-thumb-bg-active);
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-slider-thumb:focus-visible {
   outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
   outline-offset: 2px;
@@ -172,9 +166,9 @@ body {
   font-weight: 400;
   line-height: 1.4;
   text-align: center;
-  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
-  color: var(--tug7-element-field-text-normal-plain-rest);
-  border: 1px solid var(--tug7-element-field-border-normal-plain-rest);
+  background-color: var(--tugx-slider-input-bg);
+  color: var(--tugx-slider-input-fg);
+  border: 1px solid var(--tugx-slider-input-border);
   border-radius: var(--tug-radius-sm);
   transition: background-color var(--tug-motion-duration-fast),
               border-color var(--tug-motion-duration-fast);
@@ -184,8 +178,8 @@ body {
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
 .tug-slider-value-input:focus {
   outline: none;
-  background-color: var(--tug7-surface-field-primary-normal-plain-focus);
-  border-color: var(--tug7-element-field-border-normal-plain-active);
+  background-color: var(--tugx-slider-input-bg-focus);
+  border-color: var(--tugx-slider-input-border-focus);
 }
 
 .tug-slider-value-input:disabled {
@@ -203,11 +197,13 @@ body {
   height: 3px;
 }
 
+.tug-slider-sm .tug-slider-root {
+  height: 12px;
+}
+
 .tug-slider-sm .tug-slider-thumb {
   width: 12px;
   height: 12px;
-  /* Center the thumb on the 3px track */
-  margin-top: -4.5px;
 }
 
 .tug-slider-sm .tug-slider-label,
@@ -225,11 +221,13 @@ body {
   height: 4px;
 }
 
+.tug-slider-md .tug-slider-root {
+  height: 16px;
+}
+
 .tug-slider-md .tug-slider-thumb {
   width: 16px;
   height: 16px;
-  /* Center the thumb on the 4px track */
-  margin-top: -6px;
 }
 
 .tug-slider-md .tug-slider-label,
@@ -247,11 +245,13 @@ body {
   height: 6px;
 }
 
+.tug-slider-lg .tug-slider-root {
+  height: 20px;
+}
+
 .tug-slider-lg .tug-slider-thumb {
   width: 20px;
   height: 20px;
-  /* Center the thumb on the 6px track */
-  margin-top: -7px;
 }
 
 .tug-slider-lg .tug-slider-label,

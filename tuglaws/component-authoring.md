@@ -207,7 +207,7 @@ Rules:
 - `data-slot="tug-{name}"` on the root element — always. This is the stable semantic anchor for CSS and tooling.
 - `className` via `cn()` (from `lib/utils.ts`) — composes base class, size variant, and caller's className
 - Spread `...rest` last to allow prop overrides
-- No React state for appearance [L06]. All visual changes via CSS custom properties, classes, or data attributes.
+- No React state for appearance [L06]. All visual changes via CSS custom properties, classes, or data attributes. **This includes text content in input fields** — see "Input Value Management" below.
 - Functional components (no refs needed) skip `forwardRef` but still get `data-slot`
 
 ### Code Quality — Common Bugs to Avoid
@@ -225,6 +225,18 @@ Components must be high-quality, carefully reviewed code. The following bugs hav
 **Inline `style` must be merged, not replaced.** If a component sets inline styles (width, height, gap), destructure `style` from rest and spread the caller's style into the component's: `style={{ width, height, ...style }}`. Without this, a caller passing `style={{ margin: '10px' }}` silently replaces the component's critical layout styles.
 
 **No dead code, no history comments.** Unused variables, pointless aliases (`const x = y;` where `y` could be used directly), and comments about what was removed ("sub-component removed", "Phase N") are noise. Delete them.
+
+### Input Value Management [L06]
+
+**The text displayed in an input field is appearance.** Switching between a formatted display value ("75%") and a raw edit value ("0.75"), selecting text, and restoring display format after editing — all of this is appearance-zone work. It must go through DOM, not React state.
+
+**Never use React state to manage an input's display/edit cycle.** The standard React controlled-input pattern (`useState` + `value` prop + `onChange`) forces a re-render on every keystroke and on every mode transition. These re-renders kill text selection, can drop keystrokes, and create unnecessary render cycles for what is purely a DOM operation.
+
+**The correct approach:** Use `defaultValue` (not `value`) so React sets the input once at mount, then manage all subsequent value changes imperatively through a ref. Track editing state in a ref, not React state. Sync the display value via `useLayoutEffect` when the external value changes and the input is not being edited. Read the DOM value directly on blur/Enter for validation and commit.
+
+This applies to any component with an editable display that toggles between formatted and raw representations: sliders with value inputs, editable stat cards, inline-editable labels, etc.
+
+**Reference implementation:** `tug-slider.tsx` — the value input demonstrates this pattern.
 
 ### Sub-Components
 

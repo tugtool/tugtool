@@ -12,7 +12,7 @@
 
 import "./tug-slider.css";
 
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useCallback, useLayoutEffect } from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
@@ -104,42 +104,59 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     },
     ref,
   ) {
-    // ---- Editable value input state ----
+    // ---- Imperative value input management [L06] ----
+    //
+    // The value input is managed entirely through DOM, not React state.
+    // No re-renders during the focus → edit → blur cycle. This ensures
+    // select-all works on focus and keystrokes are never dropped.
 
-    // editing tracks whether the input is in edit mode.
-    // localValue holds the raw text during editing.
-    const [editing, setEditing] = useState<boolean>(false);
-    const [localValue, setLocalValue] = useState<string>("");
-
-    // escapeRef prevents the blur handler from committing after Escape.
+    const inputRef = useRef<HTMLInputElement>(null);
+    const editingRef = useRef<boolean>(false);
     const escapeRef = useRef<boolean>(false);
+    // Guards against mouseup deselecting text after click-to-focus.
+    const justFocusedRef = useRef<boolean>(false);
 
     // ---- Value input width based on max ----
 
     const displayMax = formatter ? formatter.format(max) : String(max);
     const inputWidth = `${displayMax.length + 2}ch`;
 
-    // ---- Display value (non-editing mode) ----
+    // ---- Sync input display value when not editing [L06] ----
+    //
+    // When the slider value changes externally (drag, prop change) and
+    // the input is not being edited, update the DOM directly.
 
     const displayValue = formatter ? formatter.format(value) : String(value);
 
-    // ---- Input handlers ----
+    useLayoutEffect(() => {
+      const input = inputRef.current;
+      if (input && !editingRef.current) {
+        input.value = displayValue;
+      }
+    }, [displayValue]);
 
-    const handleInputFocus = useCallback(
-      (e: React.FocusEvent<HTMLInputElement>) => {
-        escapeRef.current = false;
-        setEditing(true);
-        setLocalValue(String(value));
-        // Select all text after the state update has flushed.
-        const input = e.currentTarget;
-        requestAnimationFrame(() => input.select());
-      },
-      [value],
-    );
+    // ---- Input handlers (all imperative, zero React state) ----
 
-    const handleInputChange = useCallback(
-      (e: React.ChangeEvent<HTMLInputElement>) => {
-        setLocalValue(e.target.value);
+    const handleInputFocus = useCallback(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      editingRef.current = true;
+      escapeRef.current = false;
+      justFocusedRef.current = true;
+      // Show raw number for editing, then select all for type-to-replace.
+      input.value = String(value);
+      input.select();
+    }, [value]);
+
+    // Prevent the mouseup after click-to-focus from placing the cursor
+    // and deselecting the text. Only suppressed on the first mouseup
+    // after focus — subsequent clicks within the field work normally.
+    const handleInputMouseUp = useCallback(
+      (e: React.MouseEvent<HTMLInputElement>) => {
+        if (justFocusedRef.current) {
+          e.preventDefault();
+          justFocusedRef.current = false;
+        }
       },
       [],
     );
@@ -150,26 +167,47 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
           e.currentTarget.blur();
         } else if (e.key === "Escape") {
           escapeRef.current = true;
-          setEditing(false);
+          // Revert to display value before blurring.
+          const display = formatter ? formatter.format(value) : String(value);
+          e.currentTarget.value = display;
+          editingRef.current = false;
           e.currentTarget.blur();
         }
       },
-      [],
+      [value, formatter],
     );
 
     const handleInputBlur = useCallback(() => {
+      const input = inputRef.current;
+      editingRef.current = false;
+
       if (escapeRef.current) {
         escapeRef.current = false;
         return;
       }
-      setEditing(false);
-      const validated = validateNumericInput(localValue, { min, max, step });
+
+      // Validate the typed text: parse → clamp → snap.
+      const raw = input?.value ?? "";
+      const validated = validateNumericInput(raw, { min, max, step });
       if (validated !== null) {
         onValueChange(validated);
       }
-      // If invalid, we revert — no onValueChange call, display reverts to
-      // current value on next render.
-    }, [localValue, min, max, step, onValueChange]);
+
+      // Restore display format (whether validated or reverted).
+      if (input) {
+        const display = formatter
+          ? formatter.format(validated ?? value)
+          : String(validated ?? value);
+        input.value = display;
+      }
+    }, [min, max, step, value, formatter, onValueChange]);
+
+    // ---- Radix value adapter ----
+
+    const handleSliderChange = useCallback(
+      (vals: number[]) => onValueChange(vals[0]),
+      [onValueChange],
+    );
 
     // ---- Layout class ----
 
@@ -185,7 +223,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       <>
         <SliderPrimitive.Root
           value={[value]}
-          onValueChange={(vals) => onValueChange(vals[0])}
+          onValueChange={handleSliderChange}
           min={min}
           max={max}
           step={step}
@@ -200,14 +238,15 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
 
         {showValue && (
           <input
+            ref={inputRef}
             type="text"
             className="tug-slider-value-input"
-            value={editing ? localValue : displayValue}
+            defaultValue={displayValue}
             style={{ width: inputWidth }}
             disabled={disabled}
             aria-label="Value"
             onFocus={handleInputFocus}
-            onChange={handleInputChange}
+            onMouseUp={handleInputMouseUp}
             onKeyDown={handleInputKeyDown}
             onBlur={handleInputBlur}
           />

@@ -31,6 +31,7 @@ Components that exist today, audited to compliance with `tuglaws/component-autho
 | tug-marquee | Original | Scrolling overflow text | ✅ |
 | tug-card | Structural | Multi-tab card with title bar, accessory slot, effects | ✅ |
 | tug-tab-bar | Structural | Tab strip with overflow, drag, type picker | ✅ |
+| tug-value-input | Original | Compact editable value display with imperative DOM management [L06]. Formatted display, select-all on focus, type-to-replace, arrow key increment, validate on commit. | ✅ |
 
 ### Internal Components
 
