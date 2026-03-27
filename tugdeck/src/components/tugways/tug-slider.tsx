@@ -12,11 +12,11 @@
 
 import "./tug-slider.css";
 
-import React, { useRef, useCallback, useLayoutEffect } from "react";
+import React from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
-import { validateNumericInput } from "@/lib/tug-validate";
+import { TugValueInput } from "./tug-value-input";
 
 // ---- Types ----
 
@@ -104,107 +104,9 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     },
     ref,
   ) {
-    // ---- Imperative value input management [L06] ----
-    //
-    // The value input is managed entirely through DOM, not React state.
-    // No re-renders during the focus → edit → blur cycle. This ensures
-    // select-all works on focus and keystrokes are never dropped.
-
-    const inputRef = useRef<HTMLInputElement>(null);
-    const editingRef = useRef<boolean>(false);
-    const escapeRef = useRef<boolean>(false);
-    // Guards against mouseup deselecting text after click-to-focus.
-    const justFocusedRef = useRef<boolean>(false);
-
-    // ---- Value input width based on max ----
-
-    const displayMax = formatter ? formatter.format(max) : String(max);
-    const inputWidth = `${displayMax.length + 2}ch`;
-
-    // ---- Sync input display value when not editing [L06] ----
-    //
-    // When the slider value changes externally (drag, prop change) and
-    // the input is not being edited, update the DOM directly.
-
-    const displayValue = formatter ? formatter.format(value) : String(value);
-
-    useLayoutEffect(() => {
-      const input = inputRef.current;
-      if (input && !editingRef.current) {
-        input.value = displayValue;
-      }
-    }, [displayValue]);
-
-    // ---- Input handlers (all imperative, zero React state) ----
-
-    const handleInputFocus = useCallback(() => {
-      const input = inputRef.current;
-      if (!input) return;
-      editingRef.current = true;
-      escapeRef.current = false;
-      justFocusedRef.current = true;
-      // Show raw number for editing, then select all for type-to-replace.
-      input.value = String(value);
-      input.select();
-    }, [value]);
-
-    // Prevent the mouseup after click-to-focus from placing the cursor
-    // and deselecting the text. Only suppressed on the first mouseup
-    // after focus — subsequent clicks within the field work normally.
-    const handleInputMouseUp = useCallback(
-      (e: React.MouseEvent<HTMLInputElement>) => {
-        if (justFocusedRef.current) {
-          e.preventDefault();
-          justFocusedRef.current = false;
-        }
-      },
-      [],
-    );
-
-    const handleInputKeyDown = useCallback(
-      (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter") {
-          e.currentTarget.blur();
-        } else if (e.key === "Escape") {
-          escapeRef.current = true;
-          // Revert to display value before blurring.
-          const display = formatter ? formatter.format(value) : String(value);
-          e.currentTarget.value = display;
-          editingRef.current = false;
-          e.currentTarget.blur();
-        }
-      },
-      [value, formatter],
-    );
-
-    const handleInputBlur = useCallback(() => {
-      const input = inputRef.current;
-      editingRef.current = false;
-
-      if (escapeRef.current) {
-        escapeRef.current = false;
-        return;
-      }
-
-      // Validate the typed text: parse → clamp → snap.
-      const raw = input?.value ?? "";
-      const validated = validateNumericInput(raw, { min, max, step });
-      if (validated !== null) {
-        onValueChange(validated);
-      }
-
-      // Restore display format (whether validated or reverted).
-      if (input) {
-        const display = formatter
-          ? formatter.format(validated ?? value)
-          : String(validated ?? value);
-        input.value = display;
-      }
-    }, [min, max, step, value, formatter, onValueChange]);
-
     // ---- Radix value adapter ----
 
-    const handleSliderChange = useCallback(
+    const handleSliderChange = React.useCallback(
       (vals: number[]) => onValueChange(vals[0]),
       [onValueChange],
     );
@@ -237,18 +139,15 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
         </SliderPrimitive.Root>
 
         {showValue && (
-          <input
-            ref={inputRef}
-            type="text"
-            className="tug-slider-value-input"
-            defaultValue={displayValue}
-            style={{ width: inputWidth }}
+          <TugValueInput
+            value={value}
+            onValueCommit={onValueChange}
+            formatter={formatter}
+            min={min}
+            max={max}
+            step={step}
+            size={size}
             disabled={disabled}
-            aria-label="Value"
-            onFocus={handleInputFocus}
-            onMouseUp={handleInputMouseUp}
-            onKeyDown={handleInputKeyDown}
-            onBlur={handleInputBlur}
           />
         )}
       </>

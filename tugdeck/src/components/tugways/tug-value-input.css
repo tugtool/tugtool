@@ -1,0 +1,83 @@
+/* @tug-pairings {
+  --tug7-element-field-text-normal-plain-rest   | --tug7-surface-field-primary-normal-plain-rest   | content
+  --tug7-element-field-border-normal-plain-rest | --tug7-surface-field-primary-normal-plain-rest   | informational
+  --tug7-element-field-border-normal-plain-active | --tug7-surface-field-primary-normal-plain-focus | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                        | Surface                                         | Role          | Context                                      |
+ * |------------------------------------------------|-------------------------------------------------|---------------|----------------------------------------------|
+ * | --tug7-element-field-text-normal-plain-rest     | --tug7-surface-field-primary-normal-plain-rest   | content       | .tug-value-input (color)                     |
+ * | --tug7-element-field-border-normal-plain-rest   | --tug7-surface-field-primary-normal-plain-rest   | informational | .tug-value-input (border-color)              |
+ * | --tug7-element-field-border-normal-plain-active | --tug7-surface-field-primary-normal-plain-focus  | informational | .tug-value-input:focus (border-color)        |
+ */
+
+body {
+  /* Value input aliases — resolve to base tier in one hop [L17] */
+  --tugx-value-input-bg: var(--tug7-surface-field-primary-normal-plain-rest);
+  --tugx-value-input-fg: var(--tug7-element-field-text-normal-plain-rest);
+  --tugx-value-input-border: var(--tug7-element-field-border-normal-plain-rest);
+  --tugx-value-input-bg-focus: var(--tug7-surface-field-primary-normal-plain-focus);
+  --tugx-value-input-border-focus: var(--tug7-element-field-border-normal-plain-active);
+}
+
+
+/* ============================================================================
+   Base (.tug-value-input)
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-value-input {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  font-family: inherit;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: center;
+  background-color: var(--tugx-value-input-bg);
+  color: var(--tugx-value-input-fg);
+  border: 1px solid var(--tugx-value-input-border);
+  border-radius: var(--tug-radius-sm);
+  transition: background-color var(--tug-motion-duration-fast),
+              border-color var(--tug-motion-duration-fast);
+  padding: 0 var(--tug-space-xs);
+}
+
+/* ---- Focus ---- */
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
+.tug-value-input:focus {
+  outline: none;
+  background-color: var(--tugx-value-input-bg-focus);
+  border-color: var(--tugx-value-input-border-focus);
+}
+
+/* ---- Disabled ---- */
+
+.tug-value-input[aria-disabled="true"] {
+  opacity: var(--tugx-control-disabled-opacity);
+  pointer-events: none;
+}
+
+
+/* ============================================================================
+   Size variants
+   ========================================================================= */
+
+.tug-value-input-sm {
+  height: 1.5rem;
+  font-size: var(--tug-font-size-xs);
+}
+
+.tug-value-input-md {
+  height: 1.75rem;
+  font-size: var(--tug-font-size-sm);
+}
+
+.tug-value-input-lg {
+  height: 2rem;
+  font-size: var(--tug-font-size-md);
+}

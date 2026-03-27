@@ -1,11 +1,8 @@
 /* @tug-pairings {
   --tug7-surface-field-primary-normal-plain-rest | --tug7-surface-global-primary-normal-default-rest | informational
   --tug7-element-global-fill-normal-accent-rest  | --tug7-surface-field-primary-normal-plain-rest    | control
-  --tug7-element-toggle-thumb-normal-on-rest         | --tug7-surface-global-primary-normal-default-rest | control
+  --tug7-element-toggle-thumb-normal-on-rest     | --tug7-surface-global-primary-normal-default-rest | control
   --tug7-element-field-text-normal-label-rest    | --tug7-surface-global-primary-normal-default-rest | content
-  --tug7-element-field-text-normal-plain-rest    | --tug7-surface-field-primary-normal-plain-rest    | content
-  --tug7-element-field-border-normal-plain-rest  | --tug7-surface-field-primary-normal-plain-rest    | informational
-  --tug7-element-field-border-normal-plain-active | --tug7-surface-field-primary-normal-plain-focus  | informational
 } */
 
 /**
@@ -14,12 +11,11 @@
  * |--------------------------------------------------|------------------------------------------------------|---------------|-----------------------------------------------------|
  * | --tug7-surface-field-primary-normal-plain-rest    | --tug7-surface-global-primary-normal-default-rest    | informational | .tug-slider-track (background-color)                |
  * | --tug7-element-global-fill-normal-accent-rest     | --tug7-surface-field-primary-normal-plain-rest       | control       | .tug-slider-range (background-color)                |
- * | --tug7-element-toggle-thumb-normal-on-rest          | --tug7-surface-global-primary-normal-default-rest    | control       | .tug-slider-thumb (background-color)                |
- * | --tug7-element-global-border-normal-default-rest    | --tug7-element-toggle-thumb-normal-on-rest           | informational | .tug-slider-thumb (border-color)                    |
+ * | --tug7-element-toggle-thumb-normal-on-rest        | --tug7-surface-global-primary-normal-default-rest    | control       | .tug-slider-thumb (background-color)                |
+ * | --tug7-element-global-border-normal-default-rest  | --tug7-element-toggle-thumb-normal-on-rest           | informational | .tug-slider-thumb (border-color)                    |
  * | --tug7-element-field-text-normal-label-rest       | --tug7-surface-global-primary-normal-default-rest    | content       | .tug-slider-label (color)                           |
- * | --tug7-element-field-text-normal-plain-rest       | --tug7-surface-field-primary-normal-plain-rest       | content       | .tug-slider-value-input (color)                     |
- * | --tug7-element-field-border-normal-plain-rest     | --tug7-surface-field-primary-normal-plain-rest       | informational | .tug-slider-value-input (border-color)              |
- * | --tug7-element-field-border-normal-plain-active   | --tug7-surface-field-primary-normal-plain-focus      | informational | .tug-slider-value-input:focus (border-color)        |
+ *
+ * Note: Value input pairings are declared in tug-value-input.css — TugValueInput owns its own styling.
  */
 
 body {
@@ -29,11 +25,6 @@ body {
   --tugx-slider-thumb-bg: var(--tug7-element-toggle-thumb-normal-on-rest);
   --tugx-slider-thumb-border: var(--tug7-element-global-border-normal-default-rest);
   --tugx-slider-label-fg: var(--tug7-element-field-text-normal-label-rest);
-  --tugx-slider-input-bg: var(--tug7-surface-field-primary-normal-plain-rest);
-  --tugx-slider-input-fg: var(--tug7-element-field-text-normal-plain-rest);
-  --tugx-slider-input-border: var(--tug7-element-field-border-normal-plain-rest);
-  --tugx-slider-input-bg-focus: var(--tug7-surface-field-primary-normal-plain-focus);
-  --tugx-slider-input-border-focus: var(--tug7-element-field-border-normal-plain-active);
 }
 
 
@@ -152,40 +143,6 @@ body {
 }
 
 
-/* ============================================================================
-   Value Input (.tug-slider-value-input)
-   ========================================================================= */
-
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
-.tug-slider-value-input {
-  -webkit-appearance: none;
-  appearance: none;
-  box-sizing: border-box;
-  flex-shrink: 0;
-  font-family: inherit;
-  font-weight: 400;
-  line-height: 1.4;
-  text-align: center;
-  background-color: var(--tugx-slider-input-bg);
-  color: var(--tugx-slider-input-fg);
-  border: 1px solid var(--tugx-slider-input-border);
-  border-radius: var(--tug-radius-sm);
-  transition: background-color var(--tug-motion-duration-fast),
-              border-color var(--tug-motion-duration-fast);
-  padding: 0 var(--tug-space-xs);
-}
-
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
-.tug-slider-value-input:focus {
-  outline: none;
-  background-color: var(--tugx-slider-input-bg-focus);
-  border-color: var(--tugx-slider-input-border-focus);
-}
-
-.tug-slider-value-input:disabled {
-  pointer-events: none;
-}
-
 
 /* ============================================================================
    Size variants
@@ -206,13 +163,8 @@ body {
   height: 12px;
 }
 
-.tug-slider-sm .tug-slider-label,
-.tug-slider-sm .tug-slider-value-input {
+.tug-slider-sm .tug-slider-label {
   font-size: var(--tug-font-size-xs);
-}
-
-.tug-slider-sm .tug-slider-value-input {
-  height: 1.5rem;
 }
 
 /* ---- md ---- */
@@ -230,13 +182,8 @@ body {
   height: 16px;
 }
 
-.tug-slider-md .tug-slider-label,
-.tug-slider-md .tug-slider-value-input {
+.tug-slider-md .tug-slider-label {
   font-size: var(--tug-font-size-sm);
-}
-
-.tug-slider-md .tug-slider-value-input {
-  height: 1.75rem;
 }
 
 /* ---- lg ---- */
@@ -254,13 +201,8 @@ body {
   height: 20px;
 }
 
-.tug-slider-lg .tug-slider-label,
-.tug-slider-lg .tug-slider-value-input {
+.tug-slider-lg .tug-slider-label {
   font-size: var(--tug-font-size-md);
-}
-
-.tug-slider-lg .tug-slider-value-input {
-  height: 2rem;
 }
 
 
@@ -270,9 +212,5 @@ body {
 
 .tug-slider[aria-disabled="true"] {
   opacity: var(--tugx-control-disabled-opacity);
-  pointer-events: none;
-}
-
-.tug-slider[aria-disabled="true"] .tug-slider-value-input {
   pointer-events: none;
 }

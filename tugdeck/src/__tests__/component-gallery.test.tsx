@@ -88,11 +88,11 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(reg?.family).toBe("developer");
   });
 
-  it("gallery-buttons has defaultTabs with twenty-two tabs", () => {
+  it("gallery-buttons has defaultTabs with twenty-three tabs", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg?.defaultTabs).toBeDefined();
-    expect(reg?.defaultTabs?.length).toBe(22);
+    expect(reg?.defaultTabs?.length).toBe(23);
   });
 
   it("gallery-buttons has defaultTitle 'Component Gallery'", () => {

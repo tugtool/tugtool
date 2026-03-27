@@ -1,7 +1,7 @@
 /**
  * Gallery card registrations.
  *
- * Registers all twenty-two gallery card types in the global card registry.
+ * Registers all twenty-three gallery card types in the global card registry.
  * Also exports GALLERY_DEFAULT_TABS and small adapter components.
  *
  * **Authoritative references:**
@@ -45,6 +45,7 @@ import { GallerySwitch } from "./gallery-switch";
 import { GalleryThemeGenerator } from "./gallery-theme-generator";
 import { GalleryPopupButton } from "./gallery-popup-button";
 import { GallerySlider } from "./gallery-slider";
+import { GalleryValueInput } from "./gallery-value-input";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-theme-generator",   title: "Theme Accessibility",   closable: true },
   { id: "template", componentId: "gallery-badge",             title: "TugBadge",             closable: true },
   { id: "template", componentId: "gallery-slider",            title: "TugSlider",            closable: true },
+  { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -200,7 +202,7 @@ export function GalleryBadge() {
 // ---------------------------------------------------------------------------
 
 /**
- * Register all twenty-two gallery card types in the global card registry.
+ * Register all twenty-three gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -211,7 +213,7 @@ export function GalleryBadge() {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates twenty-one-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates twenty-two-tab gallery card
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
@@ -431,6 +433,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-slider",
     contentFactory: (_cardId) => <GallerySlider />,
     defaultMeta: { title: "TugSlider", icon: "SlidersHorizontal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-value-input ----
+  // TugValueInput showcase: sizes, formatters, disabled.
+  registerCard({
+    componentId: "gallery-value-input",
+    contentFactory: (_cardId) => <GalleryValueInput />,
+    defaultMeta: { title: "TugValueInput", icon: "Hash", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
