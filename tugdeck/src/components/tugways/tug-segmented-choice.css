@@ -28,6 +28,7 @@
   position: relative;
   display: inline-flex;
   align-items: stretch;
+  width: fit-content;
   background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
   border: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
   padding: 2px;
@@ -98,7 +99,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -122,19 +122,19 @@
 /* Segment size padding + font */
 
 .tug-segmented-choice-sm .tug-segmented-choice-segment {
-  padding: 0 var(--tug-space-sm);  /* 0 6px */
+  padding: 0 var(--tug-space-lg);  /* 0 12px */
   font-size: var(--tug-font-size-xs);  /* 12px */
   border-radius: calc(var(--tug-radius-md) - 3px);
 }
 
 .tug-segmented-choice-md .tug-segmented-choice-segment {
-  padding: 0 var(--tug-space-md);  /* 0 8px */
+  padding: 0 var(--tug-space-xl);  /* 0 16px */
   font-size: var(--tug-font-size-sm);  /* 13px */
   border-radius: calc(var(--tug-radius-lg) - 3px);
 }
 
 .tug-segmented-choice-lg .tug-segmented-choice-segment {
-  padding: 0 var(--tug-space-lg);  /* 0 12px */
+  padding: 0 var(--tug-space-2xl);  /* 0 20px */
   font-size: var(--tug-font-size-md);  /* 14px */
   border-radius: calc(var(--tug-radius-xl) - 3px);
 }
