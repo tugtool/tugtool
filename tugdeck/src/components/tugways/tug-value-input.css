@@ -46,6 +46,13 @@ body {
   padding: 0 var(--tug-space-xs);
 }
 
+/* ---- Selection highlight ---- */
+
+.tug-value-input::selection {
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  color: var(--tug7-element-global-text-normal-inverse-rest);
+}
+
 /* ---- Focus ---- */
 
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */

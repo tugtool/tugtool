@@ -122,10 +122,12 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       editingRef.current = true;
       escapeRef.current = false;
       justFocusedRef.current = true;
-      // Show raw number for editing, then select all for type-to-replace.
-      input.value = String(value);
+      // Keep formatted display on focus — the user edits in display units.
+      // "50%" stays "50%", not "0.5". On commit, the formatter's parse() handles it.
+      const display = formatter ? formatter.format(value) : String(value);
+      input.value = display;
       input.select();
-    }, [value]);
+    }, [value, formatter]);
 
     // ---- MouseUp handler ----
     //
@@ -148,6 +150,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
+          e.preventDefault();
           e.currentTarget.blur();
         } else if (e.key === "Escape") {
           escapeRef.current = true;
@@ -157,22 +160,24 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           editingRef.current = false;
           e.currentTarget.blur();
         } else if (e.key === "ArrowUp") {
-          e.preventDefault(); // prevent cursor movement
+          e.preventDefault();
           const effectiveMax = max ?? Infinity;
           const next = clamp(value + step, -Infinity, effectiveMax);
           onValueCommit(next);
-          const display = formatter ? formatter.format(next) : String(next);
-          if (inputRef.current) {
-            inputRef.current.value = display;
+          const input = inputRef.current;
+          if (input) {
+            input.value = formatter ? formatter.format(next) : String(next);
+            input.select();
           }
         } else if (e.key === "ArrowDown") {
-          e.preventDefault(); // prevent cursor movement
+          e.preventDefault();
           const effectiveMin = min ?? -Infinity;
           const next = clamp(value - step, effectiveMin, Infinity);
           onValueCommit(next);
-          const display = formatter ? formatter.format(next) : String(next);
-          if (inputRef.current) {
-            inputRef.current.value = display;
+          const input = inputRef.current;
+          if (input) {
+            input.value = formatter ? formatter.format(next) : String(next);
+            input.select();
           }
         }
       },
@@ -190,13 +195,29 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
         return;
       }
 
-      // Validate the typed text: parse → clamp → snap.
+      // Parse the typed text. If a formatter is present, use its parse() first
+      // (handles "75%" → 0.75, "$42" → 42, etc.). Fall back to plain numeric parse.
       const raw = input?.value ?? "";
       const effectiveMin = min ?? -Infinity;
       const effectiveMax = max ?? Infinity;
-      const validated = validateNumericInput(raw, { min: effectiveMin, max: effectiveMax, step });
-      if (validated !== null) {
-        onValueCommit(validated);
+      let parsed: number | null = null;
+      if (formatter) {
+        parsed = formatter.parse(raw);
+        // If formatter parse succeeded, still clamp and snap.
+        if (parsed !== null) {
+          parsed = clamp(parsed, effectiveMin, effectiveMax);
+          if (step !== undefined) {
+            const base = effectiveMin === -Infinity ? 0 : effectiveMin;
+            parsed = Math.round((parsed - base) / step) * step + base;
+          }
+        }
+      }
+      // Fall back to plain numeric validation if no formatter or formatter parse failed.
+      if (parsed === null) {
+        parsed = validateNumericInput(raw, { min: effectiveMin, max: effectiveMax, step });
+      }
+      if (parsed !== null) {
+        onValueCommit(parsed);
       }
 
       // Restore display format (whether validated or reverted).
