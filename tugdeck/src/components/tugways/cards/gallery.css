@@ -598,47 +598,18 @@
    TugAnimator Demo (Phase 7a)
    ========================================================================= */
 
-/* --- Physics Solvers --- */
+/* --- Animation stage container --- */
 
-/* Lane container for the three physics TugBoxes */
-.cg-anim-physics-lanes {
+.cg-anim-stages {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-/* Physics lane label */
-.cg-anim-physics-label {
-  display: block;
-  font-size: var(--tug-font-size-xs);
-  font-weight: 500;
-  color: var(--tug7-element-field-text-normal-label-rest);
-  margin-bottom: 4px;
-  margin-left: var(--tug-space-xs);
-  user-select: none;
-}
-
-.cg-anim-physics-track {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: 24px;
-  border-radius: var(--tug-radius-xs);
-  background-color: var(--tug7-surface-global-primary-normal-control-rest);
-  overflow: hidden;
-}
-
-.cg-anim-physics-track-tall {
-  height: 96px;
-}
-
 .cg-anim-dot {
-  position: absolute;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  top: 4px;
-  left: 0;
 }
 
 .cg-anim-dot-spring {
@@ -647,7 +618,6 @@
 
 .cg-anim-dot-gravity {
   background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  top: 0;
 }
 
 .cg-anim-dot-friction {
@@ -661,7 +631,6 @@
   height: 24px;
   border-radius: var(--tug-radius-xs);
   background-color: var(--tug7-element-global-fill-normal-accent-rest);
-  margin-left: 8px;
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
@@ -698,7 +667,6 @@
   height: 32px;
   border-radius: var(--tug-radius-sm);
   background-color: var(--tug7-element-global-fill-normal-accent-rest);
-  margin-left: 8px;
 }
 
 /* --- Named Slots --- */
@@ -708,7 +676,6 @@
   height: 32px;
   border-radius: 50%;
   background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  margin-left: 8px;
 }
 
 /* --- Shared: percentage slider control row --- */

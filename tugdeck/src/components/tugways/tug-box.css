@@ -58,9 +58,14 @@
   padding: var(--tug-space-xs);
 }
 
-/* Content wrapper — adds left margin equal to the legend's padding-left
-   so content left-aligns with legend text, not the legend element edge. */
+/* Content wrapper fills parent height when fieldset has explicit height */
 .tug-box-content {
+  height: 100%;
+}
+
+/* Adds left margin only when a legend is present,
+   so content left-aligns with legend text, not the legend element edge. */
+.tug-box-legend + .tug-box-content {
   margin-left: var(--tug-space-xs);
 }
 
