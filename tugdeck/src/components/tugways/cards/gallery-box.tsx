@@ -2,7 +2,7 @@
  * gallery-box.tsx -- TugBox demo tab for the Component Gallery.
  *
  * Shows TugBox in all variants, both label positions, nested boxes, the
- * disabled cascade, and inset vs. no-inset padding.
+ * disabled cascade with an interactive toggle, and border radius options.
  *
  * Rules of Tugways compliance:
  *   - No root.render() after initial mount [D40, D42]
@@ -41,17 +41,15 @@ export function GalleryBox() {
   const [nestedSw, setNestedSw] = useState(false);
   const [nestedRadio, setNestedRadio] = useState("https");
 
-  // Disabled cascade section
-  const [disabledRadio] = useState("http");
-  const [disabledSeg] = useState("grid");
-  const [disabledInnerCb] = useState(true);
-  const [disabledInnerSw] = useState(false);
+  // Interactive toggle section
+  const [boxEnabled, setBoxEnabled] = useState(true);
+  const [toggleCb, setToggleCb] = useState(true);
+  const [toggleSw, setToggleSw] = useState(false);
+  const [toggleRadio, setToggleRadio] = useState("https");
+  const [toggleSeg, setToggleSeg] = useState("grid");
 
-  // Inset section
-  const [insetCb, setInsetCb] = useState(false);
-  const [insetSw, setInsetSw] = useState(true);
-  const [noInsetCb, setNoInsetCb] = useState(false);
-  const [noInsetSw, setNoInsetSw] = useState(true);
+  // Rounded section
+  const [roundedCb, setRoundedCb] = useState(true);
 
   return (
     <div className="cg-content" data-testid="gallery-box">
@@ -165,72 +163,64 @@ export function GalleryBox() {
 
       <div className="cg-divider" />
 
-      {/* ---- Disabled Cascade ---- */}
+      {/* ---- Interactive Disable Toggle ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Disabled Cascade</div>
-        <TugBox variant="bordered" label="All Disabled" disabled={true}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <TugCheckbox label="Notifications" checked={false} onCheckedChange={() => {}} />
-            <TugSwitch label="Dark mode" checked={false} onCheckedChange={() => {}} />
-            <TugRadioGroup
-              aria-label="Protocol"
-              value={disabledRadio}
-              onValueChange={() => {}}
-              orientation="horizontal"
-            >
-              <TugRadioItem value="http">HTTP</TugRadioItem>
-              <TugRadioItem value="https">HTTPS</TugRadioItem>
-              <TugRadioItem value="ws">WebSocket</TugRadioItem>
-            </TugRadioGroup>
-            <TugSegmentedChoice
-              value={disabledSeg}
-              onValueChange={() => {}}
-              aria-label="View mode"
-              items={[
-                { value: "grid",  label: "Grid"  },
-                { value: "list",  label: "List"  },
-                { value: "table", label: "Table" },
-              ]}
-            />
-            <TugBox variant="filled" label="Nested (also disabled)">
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <TugCheckbox label="Auto-save" checked={disabledInnerCb} onCheckedChange={() => {}} />
-                <TugSwitch label="Sync changes" checked={disabledInnerSw} onCheckedChange={() => {}} />
-              </div>
-            </TugBox>
-          </div>
-        </TugBox>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <TugSwitch
+            label="Enable settings"
+            checked={boxEnabled}
+            onCheckedChange={setBoxEnabled}
+          />
+          <TugBox variant="bordered" label="Settings" disabled={!boxEnabled}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <TugCheckbox label="Notifications" checked={toggleCb} onCheckedChange={(v) => setToggleCb(v === true)} />
+              <TugSwitch label="Dark mode" checked={toggleSw} onCheckedChange={setToggleSw} />
+              <TugRadioGroup
+                aria-label="Protocol"
+                value={toggleRadio}
+                onValueChange={setToggleRadio}
+                orientation="horizontal"
+              >
+                <TugRadioItem value="http">HTTP</TugRadioItem>
+                <TugRadioItem value="https">HTTPS</TugRadioItem>
+                <TugRadioItem value="ws">WebSocket</TugRadioItem>
+              </TugRadioGroup>
+              <TugSegmentedChoice
+                value={toggleSeg}
+                onValueChange={setToggleSeg}
+                aria-label="View mode"
+                items={[
+                  { value: "grid",  label: "Grid"  },
+                  { value: "list",  label: "List"  },
+                  { value: "table", label: "Table" },
+                ]}
+              />
+              <TugBox variant="filled" label="Nested (also cascades)">
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <TugCheckbox label="Auto-save" checked={true} onCheckedChange={() => {}} />
+                  <TugSwitch label="Sync changes" checked={false} onCheckedChange={() => {}} />
+                </div>
+              </TugBox>
+            </div>
+          </TugBox>
+        </div>
       </div>
 
       <div className="cg-divider" />
 
-      {/* ---- Inset ---- */}
+      {/* ---- Rounded ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Inset</div>
-        <div style={{ display: "flex", flexDirection: "row", gap: "24px", alignItems: "flex-start" }}>
-
-          {/* inset=true */}
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>inset=true (default)</div>
-            <TugBox variant="bordered" label="Settings" inset={true}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <TugCheckbox label="Enable feature" checked={insetCb} onCheckedChange={(v) => setInsetCb(v === true)} />
-                <TugSwitch label="Advanced mode" checked={insetSw} onCheckedChange={setInsetSw} />
-              </div>
-            </TugBox>
-          </div>
-
-          {/* inset=false */}
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>inset=false</div>
-            <TugBox variant="bordered" label="Settings" inset={false}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <TugCheckbox label="Enable feature" checked={noInsetCb} onCheckedChange={(v) => setNoInsetCb(v === true)} />
-                <TugSwitch label="Advanced mode" checked={noInsetSw} onCheckedChange={setNoInsetSw} />
-              </div>
-            </TugBox>
-          </div>
-
+        <div className="cg-section-title">Border Radius</div>
+        <div style={{ display: "flex", flexDirection: "row", gap: "16px", flexWrap: "wrap", alignItems: "flex-start" }}>
+          {(["none", "sm", "md", "lg", "full"] as const).map((r) => (
+            <div key={r} style={{ width: "180px" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>rounded="{r}"</div>
+              <TugBox variant="bordered" label={r} rounded={r}>
+                <TugCheckbox label="Option" checked={roundedCb} onCheckedChange={(v) => setRoundedCb(v === true)} />
+              </TugBox>
+            </div>
+          ))}
         </div>
       </div>
 

@@ -26,6 +26,17 @@ import { TugBoxContext, useTugBoxDisabled } from "./internal/tug-box-context";
 /** TugBox size names — controls label font size and inset padding scale. */
 export type TugBoxSize = "sm" | "md" | "lg";
 
+/** TugBox border-radius options. */
+export type TugBoxRounded = "none" | "sm" | "md" | "lg" | "full";
+
+const ROUNDED_MAP: Record<TugBoxRounded, string> = {
+  none: "0",
+  sm: "0.25rem",   // 4px
+  md: "0.375rem",  // 6px
+  lg: "0.5rem",    // 8px
+  full: "9999px",  // pill
+};
+
 /**
  * TugBox visual variant.
  * @selector .tug-box-plain | .tug-box-bordered | .tug-box-filled | .tug-box-separator
@@ -69,6 +80,11 @@ export interface TugBoxProps
    */
   inset?: boolean;
   /**
+   * Border radius for bordered/filled variants.
+   * @default "lg"
+   */
+  rounded?: TugBoxRounded;
+  /**
    * Disables all controls inside this box. Cascades recursively to nested TugBoxes.
    * @selector [disabled] | [data-disabled]
    * @default false
@@ -93,9 +109,11 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
       labelPosition = "legend",
       variant = "plain",
       inset,
+      rounded = "lg",
       disabled = false,
       size = "md",
       className,
+      style,
       children,
       ...rest
     },
@@ -125,6 +143,10 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
     // Inset default: true for bordered/filled, false for plain.
     const resolvedInset = inset ?? (variant === "bordered" || variant === "filled");
 
+    // Border radius — only meaningful for bordered/filled.
+    const hasBorder = variant === "bordered" || variant === "filled";
+    const resolvedRadius = hasBorder ? ROUNDED_MAP[rounded] : undefined;
+
     return (
       <TugBoxContext.Provider value={ctxValue}>
         <fieldset
@@ -139,6 +161,7 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
             resolvedInset && "tug-box-inset",
             className,
           )}
+          style={{ borderRadius: resolvedRadius, ...style }}
           {...rest}
         >
           {label && labelPosition === "legend" && (
@@ -147,7 +170,7 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
           {label && labelPosition === "above" && (
             <span className="tug-box-label-above">{label}</span>
           )}
-          {children}
+          <div className="tug-box-content">{children}</div>
         </fieldset>
       </TugBoxContext.Provider>
     );
