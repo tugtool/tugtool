@@ -1,0 +1,185 @@
+/* @tug-pairings {
+  --tug7-element-segment-text-normal-plain-rest         | --tug7-surface-segment-primary-normal-plain-rest            | control
+  --tug7-element-segment-text-normal-plain-hover        | --tug7-surface-segment-primary-normal-plain-rest            | control
+  --tug7-element-segment-text-normal-active-rest        | --tugx-segment-on-color (injected, role-dependent)          | control
+  --tug7-element-segment-text-normal-plain-disabled     | --tug7-surface-segment-primary-normal-plain-rest            | informational
+  --tug7-element-segment-border-normal-plain-rest       | --tug7-surface-segment-primary-normal-plain-rest            | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                             | Surface                                                     | Role          | Context                                                                |
+ * |-----------------------------------------------------|-------------------------------------------------------------|---------------|------------------------------------------------------------------------|
+ * | --tug7-element-segment-text-normal-plain-rest       | --tug7-surface-segment-primary-normal-plain-rest            | control       | .tug-segmented-choice-label (color) — unselected segment               |
+ * | --tug7-element-segment-text-normal-plain-hover      | --tug7-surface-segment-primary-normal-plain-rest            | control       | .tug-segmented-choice-segment:hover .tug-segmented-choice-label        |
+ * | --tug7-element-segment-text-normal-active-rest      | --tugx-segment-on-color (injected, role-dependent)          | control       | [data-state="active"] .tug-segmented-choice-label (color)              |
+ * | --tug7-element-segment-text-normal-plain-disabled   | --tug7-surface-segment-primary-normal-plain-rest            | informational | :disabled .tug-segmented-choice-label (color)                          |
+ * | --tug7-element-segment-border-normal-plain-rest     | --tug7-surface-segment-primary-normal-plain-rest            | informational | .tug-segmented-choice (border-color)                                   |
+ */
+
+/* Segment base-tier tokens are defined per theme in styles/themes/*.css */
+
+
+/* ============================================================================
+   Root Container (.tug-segmented-choice)
+   ========================================================================= */
+
+.tug-segmented-choice {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
+  border: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
+  padding: 2px;
+  user-select: none;
+  isolation: isolate;
+}
+
+/* Size variants — border-radius, height, font-size */
+
+.tug-segmented-choice-sm {
+  border-radius: var(--tug-radius-md);  /* 6px — matching sm pill shape */
+  min-height: 26px;
+}
+
+.tug-segmented-choice-md {
+  border-radius: var(--tug-radius-lg);  /* 8px */
+  min-height: 30px;
+}
+
+.tug-segmented-choice-lg {
+  border-radius: var(--tug-radius-xl);  /* 12px */
+  min-height: 36px;
+}
+
+
+/* ============================================================================
+   Sliding Indicator (.tug-segmented-choice-indicator)
+   ========================================================================= */
+
+.tug-segmented-choice-indicator {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  height: calc(100% - 4px);
+  background-color: var(--tugx-segment-on-color);
+  pointer-events: none;
+  /* GPU-accelerated — transform and width are set imperatively via ref [L06] */
+  transition: transform 160ms var(--tug-motion-easing-standard, ease),
+              width 160ms var(--tug-motion-easing-standard, ease);
+  z-index: 0;
+}
+
+.tug-segmented-choice-sm .tug-segmented-choice-indicator {
+  border-radius: calc(var(--tug-radius-md) - 3px);  /* 3px */
+}
+
+.tug-segmented-choice-md .tug-segmented-choice-indicator {
+  border-radius: calc(var(--tug-radius-lg) - 3px);  /* 5px */
+}
+
+.tug-segmented-choice-lg .tug-segmented-choice-indicator {
+  border-radius: calc(var(--tug-radius-xl) - 3px);  /* 9px */
+}
+
+/* Disabled: indicator uses disabled color */
+.tug-segmented-choice[data-disabled] .tug-segmented-choice-indicator {
+  background-color: var(--tugx-segment-disabled-color);
+}
+
+
+/* ============================================================================
+   Segment Button (.tug-segmented-choice-segment)
+   ========================================================================= */
+
+.tug-segmented-choice-segment {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background-color 80ms ease;
+  /* No padding here — size variants handle it */
+}
+
+.tug-segmented-choice-segment:focus {
+  outline: none;
+}
+
+.tug-segmented-choice-segment:focus-visible {
+  outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
+  outline-offset: -2px;
+  border-radius: inherit;
+  z-index: 2;
+}
+
+/* Segment size padding + font */
+
+.tug-segmented-choice-sm .tug-segmented-choice-segment {
+  padding: 0 var(--tug-space-sm);  /* 0 6px */
+  font-size: var(--tug-font-size-xs);  /* 12px */
+  border-radius: calc(var(--tug-radius-md) - 3px);
+}
+
+.tug-segmented-choice-md .tug-segmented-choice-segment {
+  padding: 0 var(--tug-space-md);  /* 0 8px */
+  font-size: var(--tug-font-size-sm);  /* 13px */
+  border-radius: calc(var(--tug-radius-lg) - 3px);
+}
+
+.tug-segmented-choice-lg .tug-segmented-choice-segment {
+  padding: 0 var(--tug-space-lg);  /* 0 12px */
+  font-size: var(--tug-font-size-md);  /* 14px */
+  border-radius: calc(var(--tug-radius-xl) - 3px);
+}
+
+/* ---- Hover on unselected segment ---- */
+
+/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
+.tug-segmented-choice-segment:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
+  background-color: var(--tug7-surface-segment-primary-normal-plain-hover, rgba(128, 128, 128, 0.1));
+}
+
+/* ---- Disabled ---- */
+
+.tug-segmented-choice-segment:disabled,
+.tug-segmented-choice-segment[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+}
+
+
+/* ============================================================================
+   Segment Label (.tug-segmented-choice-label)
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
+.tug-segmented-choice-label {
+  font-weight: 500;
+  line-height: 1;
+  color: var(--tug7-element-segment-text-normal-plain-rest);
+  transition: color 80ms ease;
+  pointer-events: none;
+}
+
+/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
+.tug-segmented-choice-segment:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) .tug-segmented-choice-label {
+  color: var(--tug7-element-segment-text-normal-plain-hover);
+}
+
+/* @tug-renders-on: --tugx-segment-on-color (injected, role-dependent) */
+.tug-segmented-choice-segment[data-state="active"] .tug-segmented-choice-label {
+  color: var(--tug7-element-segment-text-normal-active-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
+.tug-segmented-choice-segment:disabled .tug-segmented-choice-label,
+.tug-segmented-choice-segment[aria-disabled="true"] .tug-segmented-choice-label {
+  color: var(--tug7-element-segment-text-normal-plain-disabled);
+}

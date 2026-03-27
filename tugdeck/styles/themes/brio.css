@@ -679,6 +679,14 @@ body {
   --tug7-surface-toggle-track-normal-success-hover: --tug-color(green, i: 55, t: 42);
   --tug7-surface-toggle-track-normal-success-rest: --tug-color(green, t: 47);
 
+  /* Segment */
+  --tug7-surface-segment-primary-normal-plain-rest: --tug-color(indigo-violet, i: 5, t: 18);
+  --tug7-element-segment-border-normal-plain-rest: --tug-color(indigo-violet, i: 8, t: 28);
+  --tug7-element-segment-text-normal-plain-rest: --tug-color(indigo-violet, i: 5, t: 70);
+  --tug7-element-segment-text-normal-plain-hover: --tug-color(indigo-violet, i: 5, t: 88);
+  --tug7-element-segment-text-normal-active-rest: --tug-color(sapphire-cobalt, i: 3, t: 100);
+  --tug7-element-segment-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 7, t: 35);
+
   /* Badge */
   --tug7-element-badge-border-ghost-accent-rest: transparent;
   --tug7-element-badge-border-ghost-action-rest: transparent;
