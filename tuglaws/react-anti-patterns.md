@@ -2,21 +2,19 @@
 
 *Why the Laws of Tug diverge from standard React advice, and why the "best practices" taught in tutorials become anti-patterns at scale.*
 
-*Cross-references: `[L##]` -> [laws-of-tug.md](laws-of-tug.md). `[D##]` -> [design-decisions.md](design-decisions.md).*
-
----
-
 ## Laws referenced in this document
 
 This document argues against standard React patterns by reference to specific Laws of Tug. For the full list and their design-decision rationale, see [laws-of-tug.md](laws-of-tug.md). The laws cited here:
 
 | Law | Rule |
 |-----|------|
-| **L02** | External state enters React through `useSyncExternalStore` only. |
-| **L04** | Never measure child DOM inline after triggering child `setState` from a parent effect. |
-| **L05** | Never use `requestAnimationFrame` for operations that depend on React state commits. |
-| **L06** | Appearance changes go through CSS and DOM, never React state. |
-| **L07** | Every action handler must access current state through refs or stable singletons, never stale closures. |
+| <a id="law-L02"></a>**L02** | External state enters React through `useSyncExternalStore` only. |
+| <a id="law-L03"></a>**L03** | Use `useLayoutEffect` for registrations that events depend on. |
+| <a id="law-L04"></a>**L04** | Never measure child DOM inline after triggering child `setState` from a parent effect. |
+| <a id="law-L05"></a>**L05** | Never use `requestAnimationFrame` for operations that depend on React state commits. |
+| <a id="law-L06"></a>**L06** | Appearance changes go through CSS and DOM, never React state. |
+| <a id="law-L07"></a>**L07** | Every action handler must access current state through refs or stable singletons, never stale closures. |
+| <a id="law-L11"></a>**L11** | Controls emit actions; responders handle actions. |
 
 ---
 
@@ -38,19 +36,19 @@ The problem is that this model is *designed for documents, not applications*.
 
 ## Where it breaks down
 
-As you add complexity — a slider that coordinates with a value input, a card frame that manages drag/resize geometry while its children manage their own content, a responder chain that routes keyboard events — the "standard" approach develops three compounding pathologies:
+As you add complexity — a slider that coordinates with a value input, a card frame that manages drag/resize geometry while its children manage their own content, a responder chain that routes keyboard events — the standard React model develops three compounding pathologies:
 
 ### 1. The cascade of re-renders
 
 When all state lives in React, every state change re-renders. A slider thumb moving at 60fps means 60 `setState` calls per second, each triggering reconciliation of the entire subtree. The standard fix is `React.memo`, `useMemo`, `useCallback` — a defensive tax you pay on every component to compensate for the fact that you put state in the wrong place.
 
-L06 cuts this off at the root: **appearance changes go through CSS and DOM, never React state.** Moving a slider thumb is a CSS `left` change. Toggling a hover highlight is a class toggle. These are free — zero reconciliation, zero diffing, zero risk of cascading re-renders. React never even knows they happened.
+[L06](#law-L06) cuts this off at the root: **appearance changes go through CSS and DOM, never React state.** Moving a slider thumb is a CSS `left` change. Toggling a hover highlight is a class toggle. These are free — zero reconciliation, zero diffing, zero risk of cascading re-renders. React never even knows they happened.
 
 ### 2. The stale closure trap
 
 This is where "rules of hooks" violations come from. The standard React model creates closures over state at render time. If you register an event handler that reads `value`, it captures `value` as of that render. When `value` changes, you need a new handler, which means re-registering, which means dependency arrays, which means `useEffect` cleanup chains, which means — if you get any dependency wrong — stale data or infinite loops.
 
-L07 eliminates this entirely: **access current state through refs or stable singletons.** Your `useResponder` registers once at mount. The handler reads `valueRef.current` when it fires, not a closed-over snapshot. There are no dependency arrays to get wrong because there are no dependencies. The handler is stable. The ref is always current.
+[L07](#law-L07) eliminates this entirely: **access current state through refs or stable singletons.** Your `useResponder` registers once at mount. The handler reads `valueRef.current` when it fires, not a closed-over snapshot. There are no dependency arrays to get wrong because there are no dependencies. The handler is stable. The ref is always current.
 
 This is why you haven't hit a rules-of-hooks violation. The Laws of Tug don't fight the closure model — they *sidestep* it by not putting mutable state inside closures in the first place.
 
@@ -58,13 +56,13 @@ This is why you haven't hit a rules-of-hooks violation. The Laws of Tug don't fi
 
 The standard advice says: when you have external state (a store, a WebSocket, a media query), copy it into React state via `useEffect`. This creates two sources of truth — the real state and React's copy — and a `useEffect` that runs *after* render to synchronize them. During that gap, your UI shows stale data. Worse, the sync effect triggers another render, and if multiple effects sync different pieces of external state, you get render cascades.
 
-L02 replaces all of this with `useSyncExternalStore`, which lets React subscribe to external state *synchronously*. No copy. No effect. No gap. One source of truth, and React reads it at render time. The reason this law exists is that `useSyncExternalStore` is the *only* mechanism that gives React a synchronous read of external state with proper concurrent-mode support — but almost no tutorial teaches it because it doesn't fit the "useState for everything" narrative.
+[L02](#law-L02) replaces all of this with `useSyncExternalStore`, which lets React subscribe to external state *synchronously*. No copy. No effect. No gap. One source of truth, and React reads it at render time. The reason this law exists is that `useSyncExternalStore` is the *only* mechanism that gives React a synchronous read of external state with proper concurrent-mode support — but almost no tutorial teaches it because it doesn't fit the "useState for everything" narrative.
 
 The synchronization problem has two further consequences that the standard React model ignores entirely:
 
-**L04: Never measure child DOM inline after triggering child `setState` from a parent effect.** The standard pattern is: parent effect sets child state, then immediately reads child DOM dimensions. But the child hasn't committed yet — its DOM is stale. The parent reads ghost geometry. The standard "fix" is to add another effect, another render cycle, another gap. L04 says: use a child-driven ready callback via `useLayoutEffect`. The child reports its own dimensions when *it* knows they're real.
+**[L04](#law-L04): Never measure child DOM inline after triggering child `setState` from a parent effect.** The standard pattern is: parent effect sets child state, then immediately reads child DOM dimensions. But the child hasn't committed yet — its DOM is stale. The parent reads ghost geometry. The standard "fix" is to add another effect, another render cycle, another gap. [L04](#law-L04) says: use a child-driven ready callback via `useLayoutEffect`. The child reports its own dimensions when *it* knows they're real.
 
-**L05: Never use `requestAnimationFrame` for operations that depend on React state commits.** This is the other common workaround — "just wait a frame." But RAF timing relative to React's commit cycle is a browser implementation detail. It works on Chrome 120, breaks on Safari 17, works again on Firefox, breaks under concurrent mode. It's not a contract, it's a coincidence. L05 exists because every `requestAnimationFrame` used to paper over a React timing gap is a latent bug waiting for a browser update or a React version bump to expose it.
+**[L05](#law-L05): Never use `requestAnimationFrame` for operations that depend on React state commits.** This is the other common workaround — "just wait a frame." But RAF timing relative to React's commit cycle is a browser implementation detail. It works on Chrome 120, breaks on Safari 17, works again on Firefox, breaks under concurrent mode. It's not a contract, it's a coincidence. [L05](#law-L05) exists because every `requestAnimationFrame` used to paper over a React timing gap is a latent bug waiting for a browser update or a React version bump to expose it.
 
 ---
 
@@ -123,7 +121,7 @@ function Slider({ store }) {
 }
 ```
 
-Count the problems: two `useState`, two `useEffect`, three `useCallback` dependency arrays, two sources of truth (React state and the store), and a one-frame stale-data gap on every external update. Every drag frame re-renders the entire component. Add a label, ticks, icons, and a formatter, and the dependency graph becomes a web.
+Count the problems: two `useState`, two `useEffect`, two `useCallback` dependency arrays, two sources of truth (React state and the store), and a one-frame stale-data gap on every external update. Every drag frame re-renders the entire component. Add a label, ticks, icons, and a formatter, and the dependency graph becomes a web.
 
 ### The Laws of Tug way
 
@@ -172,7 +170,7 @@ Several reinforcing reasons:
 
 **React's own messaging.** The React team's docs emphasize the `useState`/`useEffect` model as primary. `useSyncExternalStore` is documented but framed as an escape hatch for library authors, not as a core pattern. The "you might not need an effect" page exists but reads as remedial advice, not as the starting point. The meta-message is: effects are the default; avoiding them is the optimization.
 
-**The framework incentive.** React's value proposition is "we manage the DOM for you." Telling developers "actually, for appearance changes, bypass React and mutate the DOM directly" (L06) undermines that pitch. It's correct engineering, but it's bad marketing. So it doesn't get promoted.
+**The framework incentive.** React's value proposition is "we manage the DOM for you." Telling developers "actually, for appearance changes, bypass React and mutate the DOM directly" ([L06](#law-L06)) undermines that pitch. It's correct engineering, but it's bad marketing. So it doesn't get promoted.
 
 **Complexity privilege.** Most React applications are forms and dashboards. They never hit the scaling wall. The developers who *do* hit it — game UIs, creative tools, collaborative editors, anything with continuous gesture input — often solve it ad hoc and move on. The solutions don't get generalized into laws because each team thinks their problem is special.
 
@@ -184,7 +182,7 @@ The arguments above have obvious counterpoints. A developer steeped in the stand
 
 ### "You're just reimplementing jQuery"
 
-The claim: bypassing React to mutate the DOM directly (L06) throws away React's value proposition. You're back to manual DOM wrangling, imperative spaghetti, and the jQuery-era bugs React was invented to solve.
+The claim: bypassing React to mutate the DOM directly ([L06](#law-L06)) throws away React's value proposition. You're back to manual DOM wrangling, imperative spaghetti, and the jQuery-era bugs React was invented to solve.
 
 The counter: React was invented to solve the problem of *keeping the DOM in sync with data when the document structure changes* — adding rows to a table, swapping views, conditionally rendering components. That's tree reconciliation, and React is genuinely good at it. But a hover highlight doesn't change the tree. A slider thumb moving doesn't change the tree. A drag preview doesn't change the tree. These are *appearance* mutations — the same DOM node, different visual state. Routing them through React's reconciler is like using a database transaction to change a CSS color. The tool is real; the application is wrong.
 
@@ -206,7 +204,7 @@ The counter: the standard React model is easy to *start* with and hard to *scale
 
 The claim: the React team knows about these problems. React Server Components move data fetching out of effects. The React compiler (React Forget) will auto-memoize everything. The future of React solves these issues without abandoning the standard React model.
 
-The counter: Server Components address data *fetching*, not interactive state. A slider dragging at 60fps is not a server concern. The React compiler eliminates unnecessary re-renders from missing `useMemo`/`useCallback` — which is a real improvement, but it optimizes the *symptom* (wasted renders) rather than the *cause* (putting high-frequency appearance state in React). A compiler that perfectly memoizes a component that re-renders 60 times per second to move a slider thumb is still re-rendering 60 times per second. L06 makes it re-render zero times. No compiler closes that gap because the gap is architectural, not computational.
+The counter: Server Components address data *fetching*, not interactive state. A slider dragging at 60fps is not a server concern. The React compiler eliminates unnecessary re-renders from missing `useMemo`/`useCallback` — which is a real improvement, but it optimizes the *symptom* (wasted renders) rather than the *cause* (putting high-frequency appearance state in React). A compiler that perfectly memoizes a component that re-renders 60 times per second to move a slider thumb is still re-rendering 60 times per second. [L06](#law-L06) makes it re-render zero times. No compiler closes that gap because the gap is architectural, not computational.
 
 ### "You're over-engineering for a problem most apps don't have"
 
@@ -261,13 +259,11 @@ The zone architecture is not just a theoretical improvement. It changes the dail
 
 The Laws of Tug borrow a concept from NeXT's AppKit (1988), carried through Apple's Cocoa and UIKit: the **responder chain**.<sup>[1](#fn1)</sup> Actions are typed events — "delete", "duplicate", "nudge" — not raw DOM events. Controls dispatch actions into a chain of responder nodes. Each node either handles the action or lets it pass to the next. The chain is spatial, not hierarchical: it follows the visual nesting of the interface, not the React component tree.
 
-This separation — controls emit actions, responders handle actions (L11) — means that a button doesn't need to know *who* will handle its action. A card doesn't need a prop for every possible keyboard shortcut. A deck-level responder can catch anything that cards don't claim. Components participate in the chain by registering once at mount via `useLayoutEffect` (L03), reading current state through refs (L07). No effects. No dependency arrays. No re-registration when state changes. The entire event routing system is invisible to React's render cycle.
+This separation — controls emit actions, responders handle actions ([L11](#law-L11)) — means that a button doesn't need to know *who* will handle its action. A card doesn't need a prop for every possible keyboard shortcut. A deck-level responder can catch anything that cards don't claim. Components participate in the chain by registering once at mount via `useLayoutEffect` ([L03](#law-L03)), reading current state through refs ([L07](#law-L07)). No effects. No dependency arrays. No re-registration when state changes. The entire event routing system is invisible to React's render cycle.
 
 Web developers rarely encounter this pattern because the DOM's native event model provides *mechanism* (events bubble up the tree) without *architecture* (a defined chain of responsibility with typed actions and explicit fallthrough). The responder chain adds the architecture. Once you have it, the class of bugs that comes from wiring event handlers through props and closures simply disappears.
 
 **You can read a component top to bottom.** In a standard complex component, understanding behavior means tracing a graph: this effect syncs that state, which triggers that callback, which depends on these values, which re-registers when those change. Under the Laws of Tug, a component reads linearly: subscribe to external state, define stable handlers, render markup. There's no graph to trace because there are no inter-hook dependencies. The component is a function from state to DOM, not a state machine entangled with its own side effects.
-
----
 
 That's hard to teach in a tutorial. It's easy to experience after a few weeks of building with it.
 
