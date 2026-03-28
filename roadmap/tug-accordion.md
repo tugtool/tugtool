@@ -124,25 +124,41 @@ Items separated by a 1px border (element-global-border token), similar to how li
 
 ### TugAccordion
 
+Uses a discriminated union to preserve Radix's type safety — `value` and `onValueChange` are narrowed by `type`. Matches the pattern used by tug-radio-group.
+
 ```typescript
-export interface TugAccordionProps {
-  /** Selection mode. "single" = one open at a time. "multiple" = any combination. */
-  type: "single" | "multiple";
-  /** Allow all items to be closed. Only applies to type="single". @default false */
+type TugAccordionSingleProps = {
+  /** One item open at a time. */
+  type: "single";
+  /** Allow all items to be closed. @default false */
   collapsible?: boolean;
-  /** Currently open item(s). String for single, string[] for multiple. */
-  value?: string | string[];
-  /** Initial open item(s). */
-  defaultValue?: string | string[];
+  /** Currently open item. */
+  value?: string;
+  /** Initial open item. */
+  defaultValue?: string;
+  /** Called when open item changes. */
+  onValueChange?: (value: string) => void;
+};
+
+type TugAccordionMultipleProps = {
+  /** Any combination of items open. */
+  type: "multiple";
+  /** Currently open items. */
+  value?: string[];
+  /** Initial open items. */
+  defaultValue?: string[];
   /** Called when open items change. */
-  onValueChange?: (value: string | string[]) => void;
+  onValueChange?: (value: string[]) => void;
+};
+
+export type TugAccordionProps = (TugAccordionSingleProps | TugAccordionMultipleProps) & {
   /** Show borders between items. @default true */
   bordered?: boolean;
   /** @selector [data-disabled] @default false */
   disabled?: boolean;
   className?: string;
   children: React.ReactNode;
-}
+};
 ```
 
 ### TugAccordionItem
