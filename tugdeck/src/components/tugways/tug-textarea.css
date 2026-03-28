@@ -157,30 +157,28 @@
    Resize Variants
    ========================================================================= */
 
+.tug-textarea-resize-horizontal,
+.tug-textarea-resize-vertical,
+.tug-textarea-resize-both {
+  min-width: 6rem;
+  min-height: 2rem;
+}
+
 .tug-textarea-resize-horizontal {
   resize: horizontal;
   overflow: hidden;
+  cursor: ew-resize;
 }
 
 .tug-textarea-resize-vertical {
   resize: vertical;
   overflow: auto;
+  cursor: ns-resize;
 }
 
 .tug-textarea-resize-both {
   resize: both;
   overflow: auto;
-}
-
-.tug-textarea-resize-vertical {
-  cursor: ns-resize;
-}
-
-.tug-textarea-resize-horizontal {
-  cursor: ew-resize;
-}
-
-.tug-textarea-resize-both {
   cursor: nwse-resize;
 }
 

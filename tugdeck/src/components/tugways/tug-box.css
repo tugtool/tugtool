@@ -62,7 +62,7 @@
 
 .tug-box-resize-horizontal,
 .tug-box-resize-vertical,
-.tug-box-resize-both { position: relative; }
+.tug-box-resize-both { position: relative; min-width: 4rem; min-height: 2rem; }
 
 .tug-box-resize-horizontal { resize: horizontal; overflow: hidden; }
 .tug-box-resize-vertical   { resize: vertical;   overflow: hidden; }
