@@ -148,23 +148,25 @@ Higher-level components assembled from multiple primitives.
 
 *Ordered by dependency and downstream need. Each group is built one component at a time, interactively tuned in the Component Gallery.*
 
-### Group A: Remaining Form Controls
+### Group A: Form Controls & Actions
 
-Settings card and card content need these. Slider, radio, textarea are the most-requested missing controls. Segmented choice and box provide selection and grouping patterns needed across all card UIs.
+Settings card and card content need these. Slider, radio, textarea are the most-requested missing controls. Segmented choice and box provide selection and grouping patterns needed across all card UIs. Button group rounds out the action control set.
 
-- tug-slider
-- tug-radio-group
-- tug-segmented-choice
-- tug-box
-- tug-textarea
+- ~~tug-slider~~ ✅
+- ~~tug-radio-group~~ ✅
+- ~~tug-segmented-choice~~ ✅
+- ~~tug-box~~ ✅
+- ~~tug-textarea~~ ✅
+- tug-button-group
 
 ### Group B: Display Essentials
 
-Used everywhere — separators in layouts, spinners for loading states, tooltips for discoverability.
+Used everywhere — separators in layouts, spinners for loading states, tooltips for discoverability, context menus for right-click interactions.
 
 - tug-separator
 - tug-spinner
 - tug-tooltip
+- tug-context-menu
 - tug-accordion
 
 ### Group C: Alert System
@@ -185,8 +187,6 @@ Markdown renderer and rich text editor are core to card content — tug-markdown
 - tug-prompt-input
 - tug-prompt-entry
 - tug-search-bar
-- tug-button-group
-- tug-context-menu
 - tug-popover
 
 ### Group E: Data Display & Feedback
