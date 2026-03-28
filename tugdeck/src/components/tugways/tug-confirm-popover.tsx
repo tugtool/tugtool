@@ -68,7 +68,7 @@ export interface TugConfirmPopoverProps {
   onCancel?: () => void;
   /**
    * Which side of the trigger to place the popover.
-   * @default "top"
+   * @default "bottom"
    */
   side?: "top" | "bottom" | "left" | "right";
   /**
@@ -101,7 +101,7 @@ export const TugConfirmPopover = React.forwardRef<
     cancelLabel = "Cancel",
     onConfirm,
     onCancel,
-    side = "top",
+    side = "bottom",
     sideOffset = 6,
     children,
   },
@@ -155,8 +155,7 @@ export const TugConfirmPopover = React.forwardRef<
     <TugPopover open={open} onOpenChange={handleOpenChange}>
       <TugPopoverTrigger asChild>{children}</TugPopoverTrigger>
       <TugPopoverContent side={side} sideOffset={sideOffset}>
-        <div data-slot="tug-confirm-popover">
-          <div className="tug-confirm-popover-body">{message}</div>
+        <div data-slot="tug-confirm-popover" className="tug-confirm-popover" data-side={side}>
           <div className="tug-confirm-popover-actions">
             <TugPushButton emphasis="ghost" size="sm" onClick={handleCancel}>
               {cancelLabel}
@@ -170,6 +169,7 @@ export const TugConfirmPopover = React.forwardRef<
               {confirmLabel}
             </TugPushButton>
           </div>
+          <div className="tug-confirm-popover-body">{message}</div>
         </div>
       </TugPopoverContent>
     </TugPopover>

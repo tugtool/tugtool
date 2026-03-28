@@ -1,15 +1,38 @@
 /* @tug-pairings: none — compositional component, popover chrome owned by tug-popover.css [L20] */
 
+/* Layout: buttons closest to trigger, message on the far side.
+ * DOM order is always actions → message. When side="top" (popover above trigger),
+ * we reverse so message is visually on top and buttons on bottom (near trigger).
+ * When side="bottom" (default), DOM order is correct: buttons on top (near trigger). */
+
+.tug-confirm-popover {
+  display: flex;
+  flex-direction: column;
+  /* At least as wide as the trigger, grows to fit button row */
+  min-width: var(--radix-popover-trigger-width);
+}
+
+/* side="top" → popover above trigger → buttons should be at bottom (near trigger) */
+.tug-confirm-popover[data-side="top"] {
+  flex-direction: column-reverse;
+}
+
 .tug-confirm-popover-body {
-  padding: 0.75rem;
+  padding: 0.25rem 0.75rem 0.75rem 0.75rem;
   font-size: 0.875rem;
   line-height: 1.5;
-  max-width: 280px;
+  text-align: center;
+}
+
+/* side="top" → body is visually on top, needs top padding instead */
+.tug-confirm-popover[data-side="top"] .tug-confirm-popover-body {
+  padding: 0.75rem 0.75rem 0.25rem 0.75rem;
 }
 
 .tug-confirm-popover-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
-  padding: 0 0.75rem 0.75rem 0.75rem;
+  padding: 0.75rem;
+  white-space: nowrap;
 }
