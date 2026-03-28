@@ -51,6 +51,7 @@ import { GalleryChoiceGroup } from "./gallery-choice-group";
 import { GalleryOptionGroup } from "./gallery-option-group";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
+import { GallerySeparator } from "./gallery-separator";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -95,6 +96,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-box",             title: "TugBox",               closable: true },
   { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
   { id: "template", componentId: "gallery-option-group",   title: "TugOptionGroup",       closable: true },
+  { id: "template", componentId: "gallery-separator",      title: "TugSeparator",          closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -505,6 +507,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-option-group",
     contentFactory: (_cardId) => <GalleryOptionGroup />,
     defaultMeta: { title: "TugOptionGroup", icon: "ToggleLeft", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-separator ----
+  // TugSeparator showcase: plain, labeled, ornamental (glyphs + dinkus),
+  // capped (plain + console-style), vertical, and SVG ornament.
+  registerCard({
+    componentId: "gallery-separator",
+    contentFactory: (_cardId) => <GallerySeparator />,
+    defaultMeta: { title: "TugSeparator", icon: "Minus", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

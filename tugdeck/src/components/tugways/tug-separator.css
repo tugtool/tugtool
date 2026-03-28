@@ -1,0 +1,169 @@
+/* @tug-pairings {
+  --tug7-element-global-divider-normal-separator-rest | --tug7-surface-global-primary-normal-default-rest | informational
+  --tug7-element-field-text-normal-label-rest         | --tug7-surface-global-primary-normal-default-rest | content
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                             | Surface                                           | Role          | Context                                       |
+ * |-----------------------------------------------------|---------------------------------------------------|---------------|-----------------------------------------------|
+ * | --tug7-element-global-divider-normal-separator-rest | --tug7-surface-global-primary-normal-default-rest | informational | .tug-separator-horizontal (border-top)        |
+ * | --tug7-element-global-divider-normal-separator-rest | --tug7-surface-global-primary-normal-default-rest | informational | .tug-separator-vertical (border-left)         |
+ * | --tug7-element-global-divider-normal-separator-rest | --tug7-surface-global-primary-normal-default-rest | informational | .tug-separator-labeled ::before/::after lines |
+ * | --tug7-element-global-divider-normal-separator-rest | --tug7-surface-global-primary-normal-default-rest | informational | .tug-separator-ornamented ::before/::after    |
+ * | --tug7-element-global-divider-normal-separator-rest | --tug7-surface-global-primary-normal-default-rest | informational | .tug-separator-ornament (color)               |
+ * | --tug7-element-field-text-normal-label-rest         | --tug7-surface-global-primary-normal-default-rest | content       | .tug-separator-label (color)                  |
+ */
+
+/* ---- Base ---- */
+
+.tug-separator {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---- Horizontal ---- */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-separator-horizontal {
+  border-top: 1px solid var(--tug7-element-global-divider-normal-separator-rest);
+  width: 100%;
+  height: 0;
+  margin: var(--tug-space-md) 0;
+}
+
+/* ---- Vertical ---- */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-separator-vertical {
+  border-left: 1px solid var(--tug7-element-global-divider-normal-separator-rest);
+  width: 0;
+  align-self: stretch;
+  margin: 0 var(--tug-space-md);
+}
+
+/* ---- Labeled ---- */
+
+.tug-separator-labeled {
+  display: flex;
+  align-items: center;
+  border-top: none; /* lines are pseudo-elements now */
+  height: auto;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-separator-labeled::before,
+.tug-separator-labeled::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background-color: var(--tug7-element-global-divider-normal-separator-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-separator-label {
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tug7-element-field-text-normal-label-rest);
+  padding: 0 var(--tug-space-md);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* ---- Ornamented ---- */
+
+.tug-separator-ornamented {
+  display: flex;
+  align-items: center;
+  border-top: none;
+  height: auto;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-separator-ornamented::before,
+.tug-separator-ornamented::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background-color: var(--tug7-element-global-divider-normal-separator-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-separator-ornament {
+  font-size: 1.25em;
+  line-height: 1;
+  color: var(--tug7-element-global-divider-normal-separator-rest);
+  padding: 0 var(--tug-space-md);
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* SVG ornaments should inherit color and size */
+.tug-separator-ornament svg {
+  width: 1.5em;
+  height: 1.5em;
+  color: inherit;
+}
+
+/* ---- Capped ---- */
+/* Perpendicular end strokes on the line terminations.
+   When combined with labeled/ornamented, caps go on the outer ends of the lines.
+   When plain (no label/ornament), caps go on the single border-top line's ends. */
+
+/* Capped + labeled/ornamented: caps on the pseudo-element outer ends */
+.tug-separator-capped.tug-separator-labeled::before,
+.tug-separator-capped.tug-separator-ornamented::before {
+  border-left: 1px solid var(--tug7-element-global-divider-normal-separator-rest);
+  padding-top: 3px;
+  padding-bottom: 3px;
+  height: auto;
+  min-height: 6px;
+  background-clip: content-box;
+  background-origin: content-box;
+}
+
+.tug-separator-capped.tug-separator-labeled::after,
+.tug-separator-capped.tug-separator-ornamented::after {
+  border-right: 1px solid var(--tug7-element-global-divider-normal-separator-rest);
+  padding-top: 3px;
+  padding-bottom: 3px;
+  height: auto;
+  min-height: 6px;
+  background-clip: content-box;
+  background-origin: content-box;
+}
+
+/* Capped plain (no label/ornament): needs flex layout with pseudo-elements */
+.tug-separator-capped:not(.tug-separator-labeled):not(.tug-separator-ornamented) {
+  display: flex;
+  align-items: center;
+  border-top: none;
+  height: auto;
+}
+
+.tug-separator-capped:not(.tug-separator-labeled):not(.tug-separator-ornamented)::before {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background-color: var(--tug7-element-global-divider-normal-separator-rest);
+  border-left: 1px solid var(--tug7-element-global-divider-normal-separator-rest);
+  padding-top: 3px;
+  padding-bottom: 3px;
+  min-height: 6px;
+  background-clip: content-box;
+  background-origin: content-box;
+}
+
+.tug-separator-capped:not(.tug-separator-labeled):not(.tug-separator-ornamented)::after {
+  content: "";
+  width: 0;
+  border-right: 1px solid var(--tug7-element-global-divider-normal-separator-rest);
+  min-height: 6px;
+}
