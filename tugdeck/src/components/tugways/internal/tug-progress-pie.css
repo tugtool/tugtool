@@ -34,11 +34,9 @@
 .tug-progress-pie {
   display: inline-block;
   border-radius: 50%;
-  /* conic-gradient from 12 o'clock (from -90deg):
-     fill color from 0deg to --tug-progress-pie-angle,
-     track color from --tug-progress-pie-angle to 360deg */
+  /* conic-gradient starts at 12 o'clock by default (top of element) */
   background: conic-gradient(
-    from -90deg,
+    from 0deg,
     var(--tugx-progress-fill, currentColor) 0deg var(--tug-progress-pie-angle, 0deg),
     var(--tug7-surface-progress-primary-normal-default-rest, rgba(255, 255, 255, 0.1)) var(--tug-progress-pie-angle, 0deg) 360deg
   );

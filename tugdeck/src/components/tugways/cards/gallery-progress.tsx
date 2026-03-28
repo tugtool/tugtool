@@ -23,6 +23,8 @@ export function GalleryProgress() {
   const [barTransRunning, setBarTransRunning] = useState(false);
   const [ringTransValue, setRingTransValue] = useState<number | undefined>(undefined);
   const [ringTransRunning, setRingTransRunning] = useState(false);
+  const [pieTransValue, setPieTransValue] = useState<number | undefined>(undefined);
+  const [pieTransRunning, setPieTransRunning] = useState(false);
 
   function startTransition(
     setVal: (v: number | undefined) => void,
@@ -184,6 +186,20 @@ export function GalleryProgress() {
               size="lg"
               value={ringTransValue}
               label={ringTransValue !== undefined ? `${Math.round(ringTransValue * 100)}%` : "Preparing..."}
+            />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-start" }}>
+            <TugPushButton
+              size="sm"
+              disabled={pieTransRunning}
+              onClick={() => startTransition(setPieTransValue, setPieTransRunning)}
+            >{pieTransRunning ? "Running..." : "Start Pie Upload"}</TugPushButton>
+            <TugProgress
+              variant="pie"
+              size="lg"
+              value={pieTransValue}
+              label={pieTransValue !== undefined ? `${Math.round(pieTransValue * 100)}%` : "Preparing..."}
             />
           </div>
         </div>
