@@ -282,3 +282,29 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.tug-menu-item-shortcut {
+  margin-left: auto;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tugx-menu-item-shortcut);
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Separator + Section Label
+   ============================================================================ */
+
+.tug-menu-separator {
+  height: 1px;
+  background-color: var(--tugx-menu-border);
+  margin: var(--tug-space-xs) calc(-1 * var(--tug-space-xs));
+}
+
+/* @tug-renders-on: --tugx-menu-bg */
+.tug-menu-label {
+  color: var(--tugx-menu-item-meta);
+  font-size: var(--tug-font-size-xs);
+  font-weight: var(--tug-font-weight-medium, 500);
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+  user-select: none;
+}
