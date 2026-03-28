@@ -1,0 +1,110 @@
+/* @tug-pairings {
+  --tugx-progress-fill                                    | --tug7-surface-progress-primary-normal-default-rest | control
+  --tugx-progress-fill                                    | --tug7-surface-progress-primary-normal-default-rest | control
+} */
+
+/**
+ * @tug-pairings
+ * | Element                | Surface                                                  | Role    | Context                                                |
+ * |------------------------|----------------------------------------------------------|---------|--------------------------------------------------------|
+ * | --tugx-progress-fill   | --tug7-surface-progress-primary-normal-default-rest      | control | .tug-progress-bar-fill (background-color) — determinate |
+ * | --tugx-progress-fill   | --tug7-surface-progress-primary-normal-default-rest      | control | .tug-progress-bar-indeterminate (stripe color)          |
+ */
+
+/* --- TugProgressBar: horizontal track + fill progress bar ---
+ *
+ * Promoted from gallery.css (.tug-pole / .tug-pole-inner).
+ * Track height is controlled by size variant classes (sm/md/lg).
+ * Width fills 100% of its container.
+ *
+ * Determinate: fill div width set via inline style [L06].
+ * Indeterminate: fill spans 100% with animated diagonal barber-pole stripes.
+ *
+ * Color source: var(--tugx-progress-fill) — injected by parent TugProgress.
+ * Track background: var(--tug7-surface-progress-primary-normal-default-rest).
+ * Falls back to rgba(255, 255, 255, 0.1) until theme token is added.
+ *
+ * Motion compliance [L13]: all durations scale via calc(Xms * var(--tug-timing, 1)).
+ * When data-tug-motion="off" is set on <body>, animation-duration: 0s !important
+ * suppresses all animations.
+ */
+
+/* ============================================================================
+   Track
+   ========================================================================= */
+
+.tug-progress-bar-track {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--tug7-surface-progress-primary-normal-default-rest, rgba(255, 255, 255, 0.1));
+}
+
+/* ============================================================================
+   Size Variants
+   ========================================================================= */
+
+.tug-progress-bar-sm {
+  height: 4px;
+  border-radius: 2px;
+}
+
+.tug-progress-bar-md {
+  height: 8px;
+  border-radius: 4px;
+}
+
+.tug-progress-bar-lg {
+  height: 12px;
+  border-radius: 6px;
+}
+
+/* ============================================================================
+   Fill (determinate)
+   ========================================================================= */
+
+.tug-progress-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-color: var(--tugx-progress-fill, currentColor);
+  border-radius: inherit;
+  transition: width calc(300ms * var(--tug-timing, 1)) ease;
+}
+
+/* ============================================================================
+   Indeterminate (barber-pole)
+   ========================================================================= */
+
+/* When indeterminate, the fill spans 100% width and shows animated diagonal stripes */
+.tug-progress-bar-indeterminate {
+  width: 100% !important; /* override any inline width */
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--tugx-progress-fill, currentColor) 0,
+    var(--tugx-progress-fill, currentColor) 5px,
+    transparent 5px,
+    transparent 10px
+  );
+  background-size: 28.28px 100%; /* sqrt(2) * 20px for proper 45deg alignment */
+  animation: tug-progress-bar-scroll calc(600ms * var(--tug-timing, 1)) linear infinite;
+}
+
+@keyframes tug-progress-bar-scroll {
+  from { background-position-x: 0; }
+  to   { background-position-x: 28.28px; }
+}
+
+/* ============================================================================
+   Disabled State
+   ========================================================================= */
+
+.tug-progress-bar-disabled {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+}
+
+.tug-progress-bar-disabled .tug-progress-bar-indeterminate {
+  animation-play-state: paused;
+}
