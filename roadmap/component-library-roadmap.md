@@ -250,8 +250,8 @@ Separators, progress indicators, tooltips, context menus, and collapsible sectio
 
 - ~~tug-separator~~ ✅
 - ~~tug-progress~~ ✅ *(unified component replacing tug-spinner + tug-progress; spinner/bar/ring/pie variants)*
-- tug-accordion
-- tug-tooltip
+- ~~tug-accordion~~ ✅
+- ~~tug-tooltip~~ ✅
 - tug-context-menu
 
 ### Group C: Alert System
