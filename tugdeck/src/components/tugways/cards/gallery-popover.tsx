@@ -46,6 +46,7 @@ export function GalleryPopover() {
       <div className="cg-section">
         <div className="cg-section-title">Basic</div>
         <div style={labelStyle}>Default side (bottom) — click button to open popover</div>
+        <div style={{ display: "flex", alignItems: "flex-start" }}>
         <TugPopover>
           <TugPopoverTrigger>
             <TugPushButton>Open Popover</TugPushButton>
@@ -59,6 +60,7 @@ export function GalleryPopover() {
             </div>
           </TugPopoverContent>
         </TugPopover>
+        </div>
       </div>
 
       <div className="cg-divider" />
@@ -120,11 +122,12 @@ export function GalleryPopover() {
       <div className="cg-section">
         <div className="cg-section-title">With Arrow</div>
         <div style={labelStyle}>arrow={"{true}"} — visual connection between popover and trigger</div>
+        <div style={{ display: "flex", alignItems: "flex-start" }}>
         <TugPopover>
           <TugPopoverTrigger>
             <TugPushButton>Open With Arrow</TugPushButton>
           </TugPopoverTrigger>
-          <TugPopoverContent arrow={true}>
+          <TugPopoverContent arrow>
             <div style={{ padding: "0.75rem" }}>
               <p style={paraStyle}>
                 This popover displays an arrow pointing back to its trigger element.
@@ -132,6 +135,7 @@ export function GalleryPopover() {
             </div>
           </TugPopoverContent>
         </TugPopover>
+        </div>
       </div>
 
       <div className="cg-divider" />
@@ -140,6 +144,7 @@ export function GalleryPopover() {
       <div className="cg-section">
         <div className="cg-section-title">Form Content</div>
         <div style={labelStyle}>Popover containing interactive form fields</div>
+        <div style={{ display: "flex", alignItems: "flex-start" }}>
         <TugPopover>
           <TugPopoverTrigger>
             <TugPushButton>Edit Settings</TugPushButton>
@@ -175,6 +180,7 @@ export function GalleryPopover() {
             </div>
           </TugPopoverContent>
         </TugPopover>
+        </div>
       </div>
 
       <div className="cg-divider" />
@@ -183,6 +189,7 @@ export function GalleryPopover() {
       <div className="cg-section">
         <div className="cg-section-title">With Close Button</div>
         <div style={labelStyle}>TugPopoverClose wraps a TugPushButton to dismiss the popover</div>
+        <div style={{ display: "flex", alignItems: "flex-start" }}>
         <TugPopover>
           <TugPopoverTrigger>
             <TugPushButton>Open Info</TugPushButton>
@@ -207,6 +214,7 @@ export function GalleryPopover() {
             </div>
           </TugPopoverContent>
         </TugPopover>
+        </div>
       </div>
 
       <div className="cg-divider" />

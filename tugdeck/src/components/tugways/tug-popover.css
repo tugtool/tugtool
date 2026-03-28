@@ -42,7 +42,6 @@ body {
   border: 1px solid var(--tugx-popover-border);
   /* Shape */
   border-radius: 0.5rem;
-  overflow: hidden;
   /* Depth */
   box-shadow: var(--tugx-popover-shadow);
   /* Layering */
@@ -66,4 +65,6 @@ body {
 .tug-popover-arrow {
   /* @tug-renders-on: --tugx-popover-bg */
   fill: var(--tugx-popover-bg);
+  stroke: var(--tugx-popover-border);
+  stroke-width: 1px;
 }
