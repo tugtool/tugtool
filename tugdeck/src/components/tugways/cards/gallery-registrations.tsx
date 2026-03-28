@@ -50,6 +50,7 @@ import { GalleryRadioGroup } from "./gallery-radio-group";
 import { GalleryChoiceGroup } from "./gallery-choice-group";
 import { GalleryContextMenu } from "./gallery-context-menu";
 import { GalleryOptionGroup } from "./gallery-option-group";
+import { GalleryPopover } from "./gallery-popover";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
 import { GallerySeparator } from "./gallery-separator";
@@ -103,6 +104,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
   { id: "template", componentId: "gallery-tooltip",         title: "TugTooltip",           closable: true },
   { id: "template", componentId: "gallery-option-group",   title: "TugOptionGroup",       closable: true },
+  { id: "template", componentId: "gallery-popover",        title: "TugPopover",            closable: true },
   { id: "template", componentId: "gallery-separator",      title: "TugSeparator",          closable: true },
   { id: "template", componentId: "gallery-progress",      title: "TugProgress",           closable: true },
 ];
@@ -549,6 +551,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-option-group",
     contentFactory: (_cardId) => <GalleryOptionGroup />,
     defaultMeta: { title: "TugOptionGroup", icon: "ToggleLeft", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-popover ----
+  // TugPopover showcase: basic, positioning (4 sides), arrow, form content,
+  // close button, and controlled open state.
+  registerCard({
+    componentId: "gallery-popover",
+    contentFactory: (_cardId) => <GalleryPopover />,
+    defaultMeta: { title: "TugPopover", icon: "MessageSquareMore", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
