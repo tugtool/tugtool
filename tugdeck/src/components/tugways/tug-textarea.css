@@ -1,0 +1,218 @@
+/* @tug-pairings {
+  --tug7-element-field-text-normal-plain-rest        | --tug7-surface-field-primary-normal-plain-rest     | content
+  --tug7-element-field-border-normal-plain-rest      | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-text-normal-placeholder-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-border-normal-plain-hover     | --tug7-surface-field-primary-normal-plain-hover    | informational
+  --tug7-element-field-border-normal-plain-active    | --tug7-surface-field-primary-normal-plain-focus    | informational
+  --tug7-element-field-text-normal-plain-disabled    | --tug7-surface-field-primary-normal-plain-disabled | informational
+  --tug7-element-field-border-normal-plain-disabled  | --tug7-surface-field-primary-normal-plain-disabled | informational
+  --tug7-element-field-text-normal-plain-readonly    | --tug7-surface-field-primary-normal-plain-readonly | informational
+  --tug7-element-field-border-normal-plain-readonly  | --tug7-surface-field-primary-normal-plain-readonly | informational
+  --tug7-element-field-border-normal-danger-rest     | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-border-normal-success-rest    | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-border-normal-caution-rest    | --tug7-surface-field-primary-normal-plain-rest     | informational
+  --tug7-element-field-text-normal-label-rest        | --tug7-surface-field-primary-normal-plain-rest     | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                            | Role          | Context                                                              |
+ * |--------------------------------------------------|----------------------------------------------------|---------------|----------------------------------------------------------------------|
+ * | --tug7-element-field-text-normal-plain-rest      | --tug7-surface-field-primary-normal-plain-rest     | content       | .tug-textarea (color)                                                |
+ * | --tug7-element-field-border-normal-plain-rest    | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-textarea (border)                                               |
+ * | --tug7-element-field-text-normal-placeholder-rest | --tug7-surface-field-primary-normal-plain-rest    | informational | .tug-textarea::placeholder (color)                                   |
+ * | --tug7-element-field-border-normal-plain-hover   | --tug7-surface-field-primary-normal-plain-hover    | informational | .tug-textarea:hover (border-color)                                   |
+ * | --tug7-element-field-border-normal-plain-active  | --tug7-surface-field-primary-normal-plain-focus    | informational | .tug-textarea:focus (border-color)                                   |
+ * | --tug7-element-field-text-normal-plain-disabled  | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-textarea:disabled (color)                                       |
+ * | --tug7-element-field-text-normal-plain-disabled  | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-textarea:disabled::placeholder (color)                          |
+ * | --tug7-element-field-border-normal-plain-disabled | --tug7-surface-field-primary-normal-plain-disabled | informational | .tug-textarea:disabled (border-color)                               |
+ * | --tug7-element-field-text-normal-plain-readonly  | --tug7-surface-field-primary-normal-plain-readonly | informational | .tug-textarea:read-only (color)                                      |
+ * | --tug7-element-field-border-normal-plain-readonly | --tug7-surface-field-primary-normal-plain-readonly | informational | .tug-textarea:read-only (border-color)                              |
+ * | --tug7-element-field-border-normal-danger-rest   | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-textarea-invalid:not(:focus) (border-color)                     |
+ * | --tug7-element-field-border-normal-success-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-textarea-valid:not(:focus) (border-color)                       |
+ * | --tug7-element-field-border-normal-caution-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-textarea-warning:not(:focus) (border-color)                     |
+ * | --tug7-element-field-text-normal-label-rest      | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-textarea-counter (color)                                        |
+ * | --tug7-element-field-border-normal-caution-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-textarea-counter-warning (color)                                |
+ * | --tug7-element-field-border-normal-danger-rest   | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-textarea-counter-danger (color)                                 |
+ */
+
+
+/* ============================================================================
+   Base Textarea
+   ========================================================================= */
+
+
+.tug-textarea {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+
+  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
+  color: var(--tug7-element-field-text-normal-plain-rest);
+  border: 1px solid var(--tug7-element-field-border-normal-plain-rest);
+  border-radius: 0.375rem; /* 6px — matches tug-input and tug-button md */
+  transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
+  resize: none;
+}
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-textarea::placeholder {
+  color: var(--tug7-element-field-text-normal-placeholder-rest);
+}
+
+/* ---- Hover ---- */
+
+.tug-textarea:hover:not(:disabled):not(:read-only):not(:focus) {
+  background-color: var(--tug7-surface-field-primary-normal-plain-hover);
+  border-color: var(--tug7-element-field-border-normal-plain-hover);
+}
+
+/* ---- Focus ---- */
+
+.tug-textarea:focus {
+  background-color: var(--tug7-surface-field-primary-normal-plain-focus);
+  border-color: var(--tug7-element-field-border-normal-plain-active);
+  outline: none;
+}
+
+/* ---- Disabled ---- */
+
+.tug-textarea:disabled {
+  background-color: var(--tug7-surface-field-primary-normal-plain-disabled);
+  color: var(--tug7-element-field-text-normal-plain-disabled);
+  border-color: var(--tug7-element-field-border-normal-plain-disabled);
+  cursor: not-allowed;
+}
+
+.tug-textarea:disabled::placeholder {
+  color: var(--tug7-element-field-text-normal-plain-disabled);
+}
+
+/* ---- Read-only ---- */
+
+.tug-textarea:read-only:not(:disabled) {
+  background-color: var(--tug7-surface-field-primary-normal-plain-readonly);
+  color: var(--tug7-element-field-text-normal-plain-readonly);
+  border-color: var(--tug7-element-field-border-normal-plain-readonly);
+  cursor: default;
+}
+
+/* ============================================================================
+   Size Variants
+   ========================================================================= */
+
+/*
+ * No fixed height — height comes from the rows attribute.
+ * Vertical padding is slightly more generous than horizontal to give
+ * multi-line text breathing room.
+ */
+
+.tug-textarea-size-sm {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.tug-textarea-size-md {
+  padding: 0.5rem 0.625rem;
+  font-size: 0.8125rem;
+}
+
+.tug-textarea-size-lg {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+/* ============================================================================
+   Validation States
+   ========================================================================= */
+
+/*
+ * Validation border colors override rest/hover but NOT focus.
+ * When focused, the focus border takes precedence (user is actively editing).
+ */
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-textarea-invalid:not(:focus) {
+  border-color: var(--tug7-element-field-border-normal-danger-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-textarea-valid:not(:focus) {
+  border-color: var(--tug7-element-field-border-normal-success-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-textarea-warning:not(:focus) {
+  border-color: var(--tug7-element-field-border-normal-caution-rest);
+}
+
+/* ============================================================================
+   Resize Variants
+   ========================================================================= */
+
+.tug-textarea-resize-horizontal {
+  resize: horizontal;
+  overflow: hidden;
+}
+
+.tug-textarea-resize-vertical {
+  resize: vertical;
+  overflow: auto;
+}
+
+.tug-textarea-resize-both {
+  resize: both;
+  overflow: auto;
+}
+
+/* ============================================================================
+   Auto-Resize
+   ========================================================================= */
+
+/*
+ * overflow: hidden is required for scrollHeight measurement to reflect
+ * content height without scroll offset. Height is adjusted imperatively
+ * via DOM [L06] — this class only provides the overflow baseline.
+ * The component switches to overflow: auto when maxRows is hit.
+ */
+
+.tug-textarea-auto-resize {
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Character Counter
+   ========================================================================= */
+
+.tug-textarea-counter {
+  font-size: 0.75rem;
+  color: var(--tug7-element-field-text-normal-label-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-textarea-counter-warning {
+  color: var(--tug7-element-field-border-normal-caution-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-textarea-counter-danger {
+  color: var(--tug7-element-field-border-normal-danger-rest);
+}
+
+/* ============================================================================
+   Wrapper (present when maxLength is set)
+   ========================================================================= */
+
+.tug-textarea-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
