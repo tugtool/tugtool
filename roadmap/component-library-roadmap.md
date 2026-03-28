@@ -75,8 +75,7 @@ Components that exist today, audited to compliance with `tuglaws/component-autho
 | tug-alert | `react-alert-dialog` | C | Package not yet installed |
 | tug-sheet | `react-dialog` | C | Package installed |
 | tug-confirm-popover | `react-popover` | C | Package installed |
-| tug-bulletin | `react-toast` (or Sonner) | C | Package not yet installed |
-| tug-dialog | `react-dialog` | E | Package installed |
+| tug-bulletin | Sonner (not Radix Toast) | C | Package not yet installed |
 | tug-avatar | `react-avatar` | E | Package not yet installed |
 | tug-toolbar | `react-toolbar` | F | Package not yet installed |
 
@@ -104,6 +103,8 @@ Components that exist today, audited to compliance with `tuglaws/component-autho
 | tug-marquee | Scrolling animation, no Radix equivalent |
 | tug-skeleton | Shimmer animation, no Radix equivalent |
 | tug-box | Recursive disable propagation via React context |
+| tug-banner | State-driven app-modal barrier with scrim + inert. No Radix equivalent. |
+| tug-dialog | Dialog-as-card via DeckManager. Uses card infrastructure, not Radix Dialog overlay. |
 
 ### Radix Primitives — Skipped
 
@@ -129,9 +130,7 @@ Installed but unused — remove from `package.json`:
 - `@radix-ui/react-tabs`
 
 Installed and unused but needed soon (keep):
-- `@radix-ui/react-dialog` (tug-sheet, tug-dialog)
-- `@radix-ui/react-popover` (tug-confirm-popover)
-- `@radix-ui/react-tooltip` (tug-tooltip)
+- `@radix-ui/react-dialog` (tug-sheet)
 
 ---
 
@@ -173,14 +172,16 @@ Components that manage layered UI, menus, and scrolling.
 
 ## Planned Components — Alerts & Modals
 
-Four-category modal system modeled on AppKit (NSAlert, beginSheet, NSPopover, Notification Center).
+Five-tier modal system modeled on AppKit. See [tug-alert-system.md](tug-alert-system.md) for consolidated proposal.
 
 | # | Component | Kind | Scope | Key Features | Priority |
 |---|-----------|------|-------|--------------|----------|
-| 17 | tug-alert | Wrapper (Radix) | App-modal | Wraps `@radix-ui/react-alert-dialog`. Promise-based API, button roles, alert styles | High |
-| 18 | tug-sheet | Wrapper (Radix) | Card-modal | Wraps `@radix-ui/react-dialog`. Scoped to single card, responder suspension | High |
+| 16 | tug-banner | Original | App-modal (state) | State-driven barrier with scrim + inert. Status/error variants. Replaces disconnect-banner + error-boundary. | High |
+| 17 | tug-alert | Wrapper (Radix) | App-modal (action) | Wraps `@radix-ui/react-alert-dialog`. Promise-based API, button roles, scrim | High |
+| 18 | tug-sheet | Wrapper (Radix) | Card-modal | Wraps `@radix-ui/react-dialog` (non-modal). Window-shade from title bar, card-scoped inert | High |
 | 19 | tug-confirm-popover | Wrapper (Radix) | Button-local | Wraps `@radix-ui/react-popover`. Destructive action confirmation | High |
-| 20 | tug-bulletin | Wrapper (Radix or Sonner) | Non-blocking | Wraps `@radix-ui/react-toast` or Sonner. Fire-and-forget, tone variants, auto-dismiss | Medium |
+| 20 | tug-bulletin | Wrapper (Sonner) | Non-blocking | Wraps Sonner. Fire-and-forget, tone variants, auto-dismiss, top-right default | High |
+| 23 | tug-dialog | Card-spawned | Deck | Dialog-as-card via DeckManager. Centered positioning, Promise API, dialog family | High |
 
 ## Planned Components — Data Display
 
@@ -190,7 +191,6 @@ Components for structured data presentation.
 |---|-----------|------|--------------|----------|
 | 21 | tug-table | Original | Header/row/cell, sortable, stripe option | Medium |
 | 22 | tug-stat-card | Original | Key-value metric (label + number + trend) | Low |
-| 23 | tug-dialog | Wrapper (Radix) | Wraps `@radix-ui/react-dialog`. General-purpose dialog (not alert/sheet) | Medium |
 | 24 | tug-accordion | Wrapper (Radix) | Wraps `@radix-ui/react-accordion`. Expand/collapse ARIA, keyboard nav, single/multiple mode | Low |
 
 ## Planned Components — Data Visualization
@@ -222,7 +222,7 @@ Higher-level components assembled from multiple primitives.
 | 39 | tug-option-group | Original | Multi-toggle group where each item toggles independently (like B/I/U in a text editor). Connected row with per-item on-state backgrounds, pipe dividers between off-state neighbors. Part of the group family. | High |
 | 33 | tug-box | Original | Container providing visual grouping (optional border, optional label) and functional grouping (enable/disable all contained controls with one prop). Nestable — disabled outer box cascades to all inner boxes and controls. Modeled on HTML `<fieldset>` semantics with recursive disable propagation via React context. | High |
 | 34 | tug-rich-text | Wrapper (Monaco) | Monaco editor in a tugways component. Token-driven theming, standard props interface, integration with card content system. | High |
-| 35 | tug-bulletin | Original (may wrap Sonner) | Non-blocking notification system. Fire-and-forget alerts with tone variants, auto-dismiss, configurable duration. Our name for what others call "toast." | Medium |
+| 35 | tug-banner | Original | State-driven app-modal barrier. Scrim + inert for modality. Status variant (connection lost) and error variant (render errors with stack traces). Replaces hand-built disconnect-banner.tsx and error-boundary.tsx rendering. | High |
 | 36 | tug-markdown | Original | High-performance markdown/MDX renderer for LLM and agent responses. Three layers: (1) standard CommonMark/GFM rendering with token-driven typography, (2) full MDX support for embedded React components, (3) "MDX+" custom parsing extensions for tugways-specific formatting (agent output, code diffs, plan steps, tool results, etc.). Must handle streaming content (incremental rendering as tokens arrive), large documents without jank, and syntax-highlighted code blocks via tug-rich-text integration. The primary display surface for all AI-generated content in the app. | High |
 | 37 | tug-prompt-input | Original | Rich input field for composing prompts and conversational text. History navigation, typeahead/suggestions, completions, multi-line expansion. Distinct from tug-input (basic field) and tug-textarea (plain multi-line) — prompt-input is the full interactive authoring field. | High |
 | 38 | tug-prompt-entry | Composition | Integrated prompt composition surface. Composes tug-prompt-input + submit button + progress indicator + utility buttons. The complete "enter a prompt" experience. Pairs with tug-markdown on the output side: prompt-entry is where text goes in, markdown is where responses come out. | High |
@@ -258,11 +258,13 @@ Separators, progress indicators, collapsible sections, tooltips, context menus, 
 
 ### Group C: Alert System
 
-App-modal alerts, card-modal sheets, and notifications.
+Five modality tiers: state barriers, app-modal alerts, card-modal sheets, dialog-as-card, and notifications. See [tug-alert-system.md](tug-alert-system.md) for the consolidated proposal.
 
-- tug-alert
-- tug-sheet
-- tug-bulletin
+- tug-banner *(state-driven app-modal barrier, replaces disconnect-banner + error-boundary)*
+- tug-alert *(app-modal, Radix AlertDialog, Promise API)*
+- tug-sheet *(card-modal, window-shade from title bar, scoped inertness)*
+- tug-dialog *(dialog-as-card, DeckManager centered positioning)*
+- tug-bulletin *(modeless notifications, Sonner, top-right default)*
 
 ### Group D: Rich Content & Compositions
 
@@ -279,7 +281,6 @@ Markdown renderer and rich text editor are core to card content — tug-markdown
 Table, avatars, and indicators needed for card content.
 
 - tug-table
-- tug-dialog
 - tug-keyboard
 - tug-avatar
 - tug-status-indicator
