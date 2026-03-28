@@ -149,7 +149,7 @@ function PhysicsCurvesDemo() {
 
     if (springDotRef.current && springTrackRef.current) {
       const range = (springTrackRef.current.clientWidth - DOT_SIZE) * scale;
-      const solver = new SpringSolver({ stiffness: 120, damping: 12 });
+      const solver = new SpringSolver();
       const kf = solver.keyframes(duration);
       const frames = kf.map((v) => ({ transform: `translateX(${v * range}px)` }));
       animsRef.current.push(

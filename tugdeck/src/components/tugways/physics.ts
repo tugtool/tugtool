@@ -55,7 +55,9 @@ export class SpringSolver {
   } = {}) {
     this.mass = params.mass ?? 1;
     this.stiffness = params.stiffness ?? 100;
-    this.damping = params.damping ?? 10;
+    // Default: critically damped (ζ = 1). damping = 2 * sqrt(stiffness * mass).
+    // No overshoot — smooth convergence to target. Pass a lower value for bounce.
+    this.damping = params.damping ?? 2 * Math.sqrt((params.stiffness ?? 100) * (params.mass ?? 1));
     this.initialVelocity = params.initialVelocity ?? 0;
   }
 
