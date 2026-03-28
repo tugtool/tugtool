@@ -22,6 +22,7 @@ import {
   TugGroupRole,
   buildRoleStyle,
   renderGroupItemContent,
+  useGroupKeyboardNav,
 } from "./internal/tug-group-utils";
 
 // ---- Types ----
@@ -140,69 +141,20 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
     );
 
     // ---- Keyboard navigation ----
-    // Roving tabIndex: arrows move focus; Space/Enter toggles.
-    // Does NOT call useGroupKeyboardNav because option-group tracks focused
-    // value separately from active values (string[] vs single string nav).
+    // Roving tabIndex: arrows move focus; Space/Enter toggles via onActivate.
 
-    const handleKeyDown = React.useCallback(
-      (e: React.KeyboardEvent) => {
-        if (effectiveDisabled) return;
-
-        const enabledItems = items.filter((item) => !item.disabled);
-        const currentIndex = enabledItems.findIndex((item) => item.value === focusedValue);
-
-        let nextValue: string | undefined;
-
-        switch (e.key) {
-          case "ArrowLeft":
-          case "ArrowUp": {
-            e.preventDefault();
-            const prevIndex =
-              currentIndex <= 0 ? enabledItems.length - 1 : currentIndex - 1;
-            nextValue = enabledItems[prevIndex]?.value;
-            break;
-          }
-          case "ArrowRight":
-          case "ArrowDown": {
-            e.preventDefault();
-            const nextIndex =
-              currentIndex >= enabledItems.length - 1 ? 0 : currentIndex + 1;
-            nextValue = enabledItems[nextIndex]?.value;
-            break;
-          }
-          case "Home": {
-            e.preventDefault();
-            nextValue = enabledItems[0]?.value;
-            break;
-          }
-          case "End": {
-            e.preventDefault();
-            nextValue = enabledItems[enabledItems.length - 1]?.value;
-            break;
-          }
-          case " ":
-          case "Enter": {
-            e.preventDefault();
-            if (focusedValue) {
-              const focusedItem = items.find((item) => item.value === focusedValue);
-              if (focusedItem && !focusedItem.disabled) {
-                toggleItem(focusedValue);
-              }
-            }
-            return;
-          }
-          default:
-            return;
-        }
-
-        if (nextValue !== undefined) {
-          setFocusedValue(nextValue);
-          const fullIndex = items.findIndex((item) => item.value === nextValue);
-          itemRefs.current[fullIndex]?.focus();
-        }
+    const handleKeyDown = useGroupKeyboardNav({
+      items,
+      focusedValue,
+      onFocusChange: (newValue) => {
+        setFocusedValue(newValue);
       },
-      [effectiveDisabled, items, focusedValue, toggleItem],
-    );
+      onActivate: (itemValue) => {
+        toggleItem(itemValue);
+      },
+      disabled: effectiveDisabled,
+      itemRefs,
+    });
 
     return (
       <div

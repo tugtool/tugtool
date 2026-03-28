@@ -144,8 +144,8 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
 
     const handleKeyDown = useGroupKeyboardNav({
       items,
-      value,
-      onNavigate: (nextValue) => {
+      focusedValue: value,
+      onFocusChange: (nextValue) => {
         onValueChange(nextValue);
       },
       disabled: effectiveDisabled,

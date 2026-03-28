@@ -81,27 +81,38 @@ export function buildRoleStyle(
  * Generic arrow-key navigation hook for group components.
  *
  * Handles ArrowLeft/Up (previous), ArrowRight/Down (next), Home (first), End (last)
- * with wrapping. Skips disabled items. Calls onNavigate with the new value and its
+ * with wrapping. Skips disabled items. Calls onFocusChange with the new value and its
  * index in the full items array, then focuses the corresponding element via itemRefs.
+ *
+ * Supports two usage modes:
+ *
+ * 1. **choice-group** (single-select, focus = selection): Pass `focusedValue` as the
+ *    currently selected value and `onFocusChange` to update selection. Do not pass
+ *    `onActivate` — selection happens on navigation, not on Space/Enter.
+ *
+ * 2. **option-group** (multi-toggle, focus is separate from selection): Pass `focusedValue`
+ *    as the currently focused item's value and `onFocusChange` to update focus state.
+ *    Pass `onActivate` to handle Space/Enter toggling the focused item.
  *
  * tug-radio-group does NOT use this — Radix handles keyboard navigation there.
  * tug-choice-group and tug-option-group use this directly.
  */
 export function useGroupKeyboardNav(opts: {
   items: { value: string; disabled?: boolean }[];
-  value: string;
-  onNavigate: (value: string, index: number) => void;
+  focusedValue: string;
+  onFocusChange: (value: string, index: number) => void;
+  onActivate?: (value: string) => void;
   disabled: boolean;
   itemRefs: React.MutableRefObject<(HTMLElement | null)[]>;
 }): (e: React.KeyboardEvent) => void {
-  const { items, value, onNavigate, disabled, itemRefs } = opts;
+  const { items, focusedValue, onFocusChange, onActivate, disabled, itemRefs } = opts;
 
   return React.useCallback(
     (e: React.KeyboardEvent) => {
       if (disabled) return;
 
       const enabledItems = items.filter((item) => !item.disabled);
-      const currentEnabledIndex = enabledItems.findIndex((item) => item.value === value);
+      const currentEnabledIndex = enabledItems.findIndex((item) => item.value === focusedValue);
 
       let nextValue: string | undefined;
 
@@ -136,17 +147,28 @@ export function useGroupKeyboardNav(opts: {
           nextValue = enabledItems[enabledItems.length - 1]?.value;
           break;
         }
+        case " ":
+        case "Enter": {
+          if (onActivate) {
+            e.preventDefault();
+            const focusedItem = items.find((item) => item.value === focusedValue);
+            if (focusedItem && !focusedItem.disabled) {
+              onActivate(focusedValue);
+            }
+          }
+          return;
+        }
         default:
           return;
       }
 
-      if (nextValue !== undefined && nextValue !== value) {
+      if (nextValue !== undefined && nextValue !== focusedValue) {
         const fullIndex = items.findIndex((item) => item.value === nextValue);
-        onNavigate(nextValue, fullIndex);
+        onFocusChange(nextValue, fullIndex);
         itemRefs.current[fullIndex]?.focus();
       }
     },
-    [items, value, onNavigate, disabled, itemRefs],
+    [items, focusedValue, onFocusChange, onActivate, disabled, itemRefs],
   );
 }
 
