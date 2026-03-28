@@ -49,6 +49,7 @@ import { GalleryValueInput } from "./gallery-value-input";
 import { GalleryRadioGroup } from "./gallery-radio-group";
 import { GallerySegmentedChoice } from "./gallery-segmented-choice";
 import { GalleryBox } from "./gallery-box";
+import { GalleryTextarea } from "./gallery-textarea";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -91,6 +92,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-radio-group",       title: "TugRadioGroup",        closable: true },
   { id: "template", componentId: "gallery-segmented-choice", title: "TugSegmentedChoice",   closable: true },
   { id: "template", componentId: "gallery-box",             title: "TugBox",               closable: true },
+  { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -479,6 +481,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-box",
     contentFactory: (_cardId) => <GalleryBox />,
     defaultMeta: { title: "TugBox", icon: "Box", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-textarea ----
+  // TugTextarea showcase: sizes, validation states, resize variants, auto-resize,
+  // character counter, disabled/read-only states, and TugBox disabled cascade.
+  registerCard({
+    componentId: "gallery-textarea",
+    contentFactory: (_cardId) => <GalleryTextarea />,
+    defaultMeta: { title: "TugTextarea", icon: "AlignLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
