@@ -1,0 +1,69 @@
+/* @tug-pairings {
+  --tugx-popover-fg     | --tugx-popover-bg     | content
+  --tugx-popover-border | --tugx-popover-bg     | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                  | Surface                  | Role          | Context                              |
+ * |--------------------------|--------------------------|---------------|--------------------------------------|
+ * | --tugx-popover-fg        | --tugx-popover-bg        | content       | .tug-popover-content (color)         |
+ * | --tugx-popover-border    | --tugx-popover-bg        | informational | .tug-popover-content (border-color)  |
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-popover-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-popover-fg:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-popover-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-popover-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
+}
+
+/* ---- Keyframe animations [L14] — duration scales via --tug-timing [L13] ---- */
+
+@keyframes tug-popover-enter {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes tug-popover-exit {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.96); }
+}
+
+/* ---- Popover content bubble ---- */
+
+.tug-popover-content {
+  /* Colors */
+  /* @tug-renders-on: --tugx-popover-bg */
+  background-color: var(--tugx-popover-bg);
+  color: var(--tugx-popover-fg);
+  border: 1px solid var(--tugx-popover-border);
+  /* Shape */
+  border-radius: 0.5rem;
+  overflow: hidden;
+  /* Depth */
+  box-shadow: var(--tugx-popover-shadow);
+  /* Layering */
+  z-index: 50;
+  /* Smooth origin for directional animations */
+  transform-origin: var(--radix-popover-content-transform-origin);
+}
+
+/* Enter animation */
+.tug-popover-content[data-state="open"] {
+  animation: tug-popover-enter calc(150ms * var(--tug-timing, 1)) ease;
+}
+
+/* Exit animation */
+.tug-popover-content[data-state="closed"] {
+  animation: tug-popover-exit calc(100ms * var(--tug-timing, 1)) ease;
+}
+
+/* ---- Arrow ---- */
+
+.tug-popover-arrow {
+  /* @tug-renders-on: --tugx-popover-bg */
+  fill: var(--tugx-popover-bg);
+}
