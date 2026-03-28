@@ -1,0 +1,80 @@
+/* @tug-pairings {
+  --tugx-progress-fill | --tug7-surface-progress-primary-normal-default-rest | control
+} */
+
+/**
+ * @tug-pairings
+ * | Element                | Surface                                                  | Role    | Context                                            |
+ * |------------------------|----------------------------------------------------------|---------|----------------------------------------------------|
+ * | --tugx-progress-fill   | --tug7-surface-progress-primary-normal-default-rest      | control | .tug-progress-pie (fill wedge via conic-gradient)  |
+ */
+
+/* --- TugProgressPie: filled pie wedge progress indicator ---
+ *
+ * A circular div with a CSS conic-gradient background. The fill wedge starts at
+ * 12 o'clock (from -90deg) and grows clockwise.
+ *
+ * Determinate: wedge angle is controlled by --tug-progress-pie-angle (set inline) [L06].
+ * Indeterminate: a fixed ~25% wedge (90deg) rotates continuously via CSS animation.
+ *
+ * Size is controlled by explicit width/height on the root span.
+ *
+ * Color source: var(--tugx-progress-fill) — injected by parent TugProgress.
+ * Track color: var(--tug7-surface-progress-primary-normal-default-rest).
+ *
+ * Motion compliance [L13]: all durations scale via calc(Xms * var(--tug-timing, 1)).
+ * When data-tug-motion="off" is set on <body>, animation-duration: 0s !important
+ * suppresses all animations.
+ */
+
+/* ============================================================================
+   Base
+   ========================================================================= */
+
+.tug-progress-pie {
+  display: inline-block;
+  border-radius: 50%;
+  /* conic-gradient from 12 o'clock (from -90deg):
+     fill color from 0deg to --tug-progress-pie-angle,
+     track color from --tug-progress-pie-angle to 360deg */
+  background: conic-gradient(
+    from -90deg,
+    var(--tugx-progress-fill, currentColor) 0deg var(--tug-progress-pie-angle, 0deg),
+    var(--tug7-surface-progress-primary-normal-default-rest, rgba(255, 255, 255, 0.1)) var(--tug-progress-pie-angle, 0deg) 360deg
+  );
+}
+
+/* ============================================================================
+   Size Variants
+   ========================================================================= */
+
+.tug-progress-pie-sm { width: 16px; height: 16px; }
+.tug-progress-pie-md { width: 24px; height: 24px; }
+.tug-progress-pie-lg { width: 32px; height: 32px; }
+
+/* ============================================================================
+   Indeterminate Animation
+   ========================================================================= */
+
+/* Fix the wedge at ~25% (90deg) and rotate the whole element */
+.tug-progress-pie-indeterminate {
+  --tug-progress-pie-angle: 90deg;
+  animation: tug-progress-pie-spin calc(1200ms * var(--tug-timing, 1)) linear infinite;
+}
+
+@keyframes tug-progress-pie-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ============================================================================
+   Disabled State
+   ========================================================================= */
+
+.tug-progress-pie-disabled {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+}
+
+.tug-progress-pie-disabled.tug-progress-pie-indeterminate {
+  animation-play-state: paused;
+}

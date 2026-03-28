@@ -125,7 +125,33 @@ export function GalleryProgress() {
 
       <div className="cg-divider" />
 
-      {/* ---- 7. Transition Demo ---- */}
+      {/* ---- 7. Pie — Indeterminate ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Pie — Indeterminate</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+          <TugProgress variant="pie" size="sm" aria-label="Loading" />
+          <TugProgress variant="pie" size="md" aria-label="Loading" />
+          <TugProgress variant="pie" size="lg" aria-label="Loading" />
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 8. Pie — Determinate ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Pie — Determinate</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          <TugProgress variant="pie" value={0} size="lg" aria-label="0%" />
+          <TugProgress variant="pie" value={0.25} size="lg" aria-label="25%" />
+          <TugProgress variant="pie" value={0.5} size="lg" aria-label="50%" />
+          <TugProgress variant="pie" value={0.75} size="lg" aria-label="75%" />
+          <TugProgress variant="pie" value={1} size="lg" aria-label="100%" />
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 9. Transition Demo (was 7) ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Transition Demo</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "32px", maxWidth: "480px" }}>

@@ -19,12 +19,13 @@ import { cn } from "@/lib/utils";
 import { TugProgressSpinner } from "./internal/tug-progress-spinner";
 import { TugProgressBar } from "./internal/tug-progress-bar";
 import { TugProgressRing } from "./internal/tug-progress-ring";
+import { TugProgressPie } from "./internal/tug-progress-pie";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 
 // ---- Types ----
 
 /** Visual treatment for TugProgress. */
-export type TugProgressVariant = "spinner" | "bar" | "ring";
+export type TugProgressVariant = "spinner" | "bar" | "ring" | "pie";
 
 /** Size variant for TugProgress. */
 export type TugProgressSize = "sm" | "md" | "lg";
@@ -67,7 +68,7 @@ export interface TugProgressProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "role" | "children"> {
   /**
    * Visual treatment.
-   * @selector .tug-progress-variant-spinner | .tug-progress-variant-bar | .tug-progress-variant-ring
+   * @selector .tug-progress-variant-spinner | .tug-progress-variant-bar | .tug-progress-variant-ring | .tug-progress-variant-pie
    * @default "spinner"
    */
   variant?: TugProgressVariant;
@@ -156,6 +157,8 @@ export const TugProgress = React.forwardRef<HTMLDivElement, TugProgressProps>(
           return <TugProgressBar value={value} max={max} size={size} disabled={effectiveDisabled} />;
         case "ring":
           return <TugProgressRing value={value} max={max} size={size} disabled={effectiveDisabled} />;
+        case "pie":
+          return <TugProgressPie value={value} max={max} size={size} disabled={effectiveDisabled} />;
         case "spinner":
         default:
           return <TugProgressSpinner size={size} disabled={effectiveDisabled} />;
