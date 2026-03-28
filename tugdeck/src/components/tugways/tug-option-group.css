@@ -1,0 +1,205 @@
+/* @tug-pairings {
+  --tug7-element-segment-text-normal-plain-rest         | --tug7-surface-segment-primary-normal-plain-rest            | control
+  --tug7-element-segment-text-normal-plain-hover        | --tug7-surface-segment-primary-normal-plain-rest            | control
+  --tug7-element-segment-text-normal-active-rest        | --tugx-option-on-color (injected, role-dependent)           | control
+  --tug7-element-segment-text-normal-plain-disabled     | --tug7-surface-segment-primary-normal-plain-rest            | informational
+  --tug7-element-segment-border-normal-plain-rest       | --tug7-surface-segment-primary-normal-plain-rest            | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                             | Surface                                                     | Role          | Context                                                                |
+ * |-----------------------------------------------------|-------------------------------------------------------------|---------------|------------------------------------------------------------------------|
+ * | --tug7-element-segment-text-normal-plain-rest       | --tug7-surface-segment-primary-normal-plain-rest            | control       | .tug-option-group-item (color) — off state                             |
+ * | --tug7-element-segment-text-normal-plain-hover      | --tug7-surface-segment-primary-normal-plain-rest            | control       | .tug-option-group-item:hover (color) — off state hover                 |
+ * | --tug7-element-segment-text-normal-active-rest      | --tugx-option-on-color (injected, role-dependent)           | control       | .tug-option-group-item[data-state="on"] (color) — on state             |
+ * | --tug7-element-segment-text-normal-plain-disabled   | --tug7-surface-segment-primary-normal-plain-rest            | informational | .tug-option-group-item:disabled (color)                                |
+ * | --tug7-element-segment-border-normal-plain-rest     | --tug7-surface-segment-primary-normal-plain-rest            | informational | .tug-option-group (border-color)                                       |
+ */
+
+/* Segment base-tier tokens are defined per theme in styles/themes/*.css */
+
+
+/* ============================================================================
+   Root Container (.tug-option-group)
+   ========================================================================= */
+
+.tug-option-group {
+  display: inline-flex;
+  align-items: stretch;
+  width: fit-content;
+  background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
+  border: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
+  padding: 2px;
+  user-select: none;
+  isolation: isolate;
+}
+
+/* Size variants — border-radius, min-height */
+
+.tug-option-group-sm {
+  border-radius: var(--tug-radius-md);  /* 6px */
+  min-height: 26px;
+}
+
+.tug-option-group-md {
+  border-radius: var(--tug-radius-lg);  /* 8px */
+  min-height: 30px;
+}
+
+.tug-option-group-lg {
+  border-radius: var(--tug-radius-xl);  /* 12px */
+  min-height: 36px;
+}
+
+
+/* ============================================================================
+   Item Button (.tug-option-group-item)
+   Color is set directly on the button — children inherit via color: inherit.
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
+.tug-option-group-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--tug7-element-segment-text-normal-plain-rest);
+  gap: 0.375rem;
+  transition: background-color 80ms ease, color 80ms ease;
+}
+
+.tug-option-group-item:focus {
+  outline: none;
+}
+
+.tug-option-group-item:focus-visible {
+  outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
+  outline-offset: -2px;
+  border-radius: inherit;
+  z-index: 1;
+}
+
+/* Item size padding + font */
+
+.tug-option-group-sm .tug-option-group-item {
+  padding: 0 var(--tug-space-lg);  /* 0 12px */
+  font-size: var(--tug-font-size-xs);  /* 12px */
+  border-radius: calc(var(--tug-radius-md) - 3px);
+}
+
+.tug-option-group-md .tug-option-group-item {
+  padding: 0 var(--tug-space-xl);  /* 0 16px */
+  font-size: var(--tug-font-size-sm);  /* 13px */
+  border-radius: calc(var(--tug-radius-lg) - 3px);
+}
+
+.tug-option-group-lg .tug-option-group-item {
+  padding: 0 var(--tug-space-2xl);  /* 0 20px */
+  font-size: var(--tug-font-size-md);  /* 14px */
+  border-radius: calc(var(--tug-radius-xl) - 3px);
+}
+
+/* ---- Hover on off-state item ---- */
+
+/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
+.tug-option-group-item:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="on"]) {
+  background-color: var(--tug7-surface-segment-primary-normal-plain-hover, rgba(128, 128, 128, 0.1));
+  color: var(--tug7-element-segment-text-normal-plain-hover);
+}
+
+/* ---- On state ---- */
+
+/* @tug-renders-on: --tugx-option-on-color (injected, role-dependent) */
+.tug-option-group-item[data-state="on"] {
+  background-color: var(--tugx-option-on-color);
+  color: var(--tug7-element-segment-text-normal-active-rest);
+}
+
+/* On + hover */
+.tug-option-group-item[data-state="on"]:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tugx-option-on-hover-color);
+}
+
+/* ---- Disabled ---- */
+
+.tug-option-group-item:disabled,
+.tug-option-group-item[aria-disabled="true"] {
+  cursor: not-allowed;
+  color: var(--tug7-element-segment-text-normal-plain-disabled);
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+}
+
+
+/* ============================================================================
+   Item Content — labels and icons inherit color from the item button.
+   ========================================================================= */
+
+.tug-option-group-item .tug-group-item-label {
+  line-height: 1;
+  pointer-events: none;
+}
+
+.tug-option-group-item .tug-group-item-icon {
+  pointer-events: none;
+}
+
+
+/* ============================================================================
+   Icon Sizing — per size variant (base layout is in tug-group-utils.css)
+   ========================================================================= */
+
+.tug-option-group-sm .tug-group-item-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tug-option-group-md .tug-group-item-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tug-option-group-lg .tug-group-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+
+/* ============================================================================
+   Icon-only Items (.tug-option-group-item-icon-only)
+   ========================================================================= */
+
+/* Icon-only items get symmetric horizontal padding matching their vertical
+   space, keeping the item compact rather than bloated-square. */
+.tug-option-group-sm .tug-option-group-item-icon-only {
+  padding: 0 var(--tug-space-sm);  /* 4px */
+}
+
+.tug-option-group-md .tug-option-group-item-icon-only {
+  padding: 0 var(--tug-space-md);  /* 6px */
+}
+
+.tug-option-group-lg .tug-option-group-item-icon-only {
+  padding: 0 var(--tug-space-lg);  /* 8px */
+}
+
+
+/* ============================================================================
+   Dividers between adjacent items
+   ========================================================================= */
+
+/* Thin vertical divider between items */
+.tug-option-group-item + .tug-option-group-item {
+  border-left: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
+}
+
+/* Suppress divider between adjacent on-state items — they merge visually */
+.tug-option-group-item[data-state="on"] + .tug-option-group-item[data-state="on"] {
+  border-left-color: transparent;
+}
