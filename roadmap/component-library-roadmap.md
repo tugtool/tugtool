@@ -49,6 +49,92 @@ Components that exist today, audited to compliance with `tuglaws/component-autho
 
 ---
 
+## Radix Primitives Coverage
+
+*Cross-reference of all 30 [Radix UI Primitives](https://www.radix-ui.com/primitives/docs/overview/introduction) against tugways components. Policy: wrap Radix for ARIA, keyboard, and state management; layer tug styling and behaviors on top. Roll our own only when tug requirements compel it.*
+
+### Wrapping Radix — Completed
+
+| Tug Component | Radix Primitive | Notes |
+|---|---|---|
+| tug-checkbox | `react-checkbox` | Three states, role-based color injection |
+| tug-label | `react-label` | Click-to-focus, ellipsis truncation |
+| tug-radio-group | `react-radio-group` | Composes with TugButton via `asChild` |
+| tug-switch | `react-switch` | Track/thumb, inline label |
+| tug-slider | `react-slider` | Track/range/thumb, editable value input |
+| tug-button (internal) | `react-slot` | `asChild` polymorphism for Radix composition |
+| tug-popup-menu (internal) | `react-dropdown-menu` | Architectural inversion, blink animation |
+
+### Wrapping Radix — Planned
+
+| Tug Component | Radix Primitive | Group | Notes |
+|---|---|---|---|
+| tug-tooltip | `react-tooltip` | B | Package installed |
+| tug-context-menu | `react-context-menu` | B | Package not yet installed |
+| tug-accordion | `react-accordion` | B | Expand/collapse ARIA, keyboard nav, single/multiple mode |
+| tug-alert | `react-alert-dialog` | C | Package not yet installed |
+| tug-sheet | `react-dialog` | C | Package installed |
+| tug-confirm-popover | `react-popover` | C | Package installed |
+| tug-bulletin | `react-toast` (or Sonner) | C | Package not yet installed |
+| tug-dialog | `react-dialog` | E | Package installed |
+| tug-avatar | `react-avatar` | E | Package not yet installed |
+| tug-toolbar | `react-toolbar` | F | Package not yet installed |
+
+### Custom — Justified Deviations
+
+| Tug Component | Radix Alternative | Why Custom |
+|---|---|---|
+| tug-tab-bar | `react-tabs` | Overflow via ResizeObserver, drag initiation, type-picker menus — beyond Radix Tabs scope |
+| tug-choice-group | `react-toggle-group` | Sliding indicator pill animation + connected segments require imperative DOM |
+| tug-option-group | `react-toggle-group` | Multi-toggle with pipe dividers and per-item backgrounds — beyond Radix ToggleGroup |
+| tug-separator | `react-separator` | Labels, ornaments, capped ends — Radix Separator is just `<div role="separator">` |
+| tug-progress | `react-progress` | Unified spinner/bar/ring/pie with compound composition — far beyond Radix's simple bar |
+
+### Custom — No Radix Equivalent
+
+| Tug Component | Why Custom |
+|---|---|
+| tug-input | No Radix input primitive; native `<input>` is correct |
+| tug-textarea | No Radix primitive; auto-resize requires imperative DOM |
+| tug-badge | Display-only, no interaction |
+| tug-card | Domain-specific composition |
+| tug-push-button | Thin styling wrapper on tug-button |
+| tug-popup-button | Composition of tug-button + tug-popup-menu (Radix underneath) |
+| tug-value-input | Imperative DOM management for formatted display, type-to-replace |
+| tug-marquee | Scrolling animation, no Radix equivalent |
+| tug-skeleton | Shimmer animation, no Radix equivalent |
+| tug-box | Recursive disable propagation via React context |
+
+### Radix Primitives — Skipped
+
+| Radix Primitive | Why Skip |
+|---|---|
+| `react-select` | Covered by tug-popup-button. Remove installed package. |
+| `react-scroll-area` | Native scrollbars sufficient. Remove installed package. |
+| `react-tabs` | tug-tab-bar correctly exceeds its scope. Remove installed package. |
+| `react-hover-card` | Tooltip + popover cover this space |
+| `react-menubar` | Desktop menubar — not relevant to card-based UI |
+| `react-navigation-menu` | Site navigation — not relevant |
+| `react-aspect-ratio` | Trivial CSS (`aspect-ratio` property) |
+| `react-collapsible` | Accordion covers this; standalone collapsible not needed |
+| `react-otp-field` | Auth-specific, not relevant |
+| `react-password-toggle` | Auth-specific, not relevant |
+| `react-form` | Not needed now; reconsider if client-side form validation becomes a requirement |
+
+### Package Cleanup
+
+Installed but unused — remove from `package.json`:
+- `@radix-ui/react-select`
+- `@radix-ui/react-scroll-area`
+- `@radix-ui/react-tabs`
+
+Installed and unused but needed soon (keep):
+- `@radix-ui/react-dialog` (tug-sheet, tug-dialog)
+- `@radix-ui/react-popover` (tug-confirm-popover)
+- `@radix-ui/react-tooltip` (tug-tooltip)
+
+---
+
 ## Planned Components — Form Controls
 
 Controls that handle user input. Each wraps a Radix primitive or native element.
@@ -67,10 +153,10 @@ Components that present information or feedback. No user input.
 
 | # | Component | Kind | Key Features | Priority |
 |---|-----------|------|--------------|----------|
-| 7 | tug-separator | Original | Horizontal/vertical, label, ornament, capped ends | High |
-| 9 | tug-progress | Original | Unified progress: spinner, bar, ring, pie variants. Indeterminate + determinate modes. | High |
+| 7 | tug-separator | Original | Horizontal/vertical, label, ornament, capped ends. Custom — Radix Separator too minimal. | High |
+| 9 | tug-progress | Original | Unified progress: spinner, bar, ring, pie variants. Indeterminate + determinate modes. Custom — far beyond Radix Progress. | High |
 | 10 | tug-keyboard | Original | Keycap chip for shortcut display | Medium |
-| 11 | tug-avatar | Wrapper (Radix) | Image + fallback initials, size variants | Medium |
+| 11 | tug-avatar | Wrapper (Radix) | Wraps `@radix-ui/react-avatar`. Image + fallback initials, size variants | Medium |
 | 12 | tug-status-indicator | Original | Tone-colored dot + text label | Medium |
 
 ## Planned Components — Navigation & Overlay
@@ -79,9 +165,9 @@ Components that manage layered UI, menus, and scrolling.
 
 | # | Component | Kind | Wraps | Key Features | Priority |
 |---|-----------|------|-------|--------------|----------|
-| 13 | tug-tooltip | Wrapper | `@radix-ui/react-tooltip` | Hover labels, keyboard shortcut display | High |
-| 14 | tug-context-menu | Wrapper | `@radix-ui/react-context-menu` | Right-click menus for cards | Medium |
-| 15 | tug-popover | Wrapper | `@radix-ui/react-popover` | General anchored overlay | Medium |
+| 13 | tug-tooltip | Wrapper (Radix) | `@radix-ui/react-tooltip` | Hover labels, keyboard shortcut display | High |
+| 14 | tug-context-menu | Wrapper (Radix) | `@radix-ui/react-context-menu` | Right-click menus for cards | Medium |
+| 15 | tug-popover | Wrapper (Radix) | `@radix-ui/react-popover` | General anchored overlay | Medium |
 
 **Removed:** tug-scroll-area (native browser scrollbars are sufficient; Windows polish is not a priority).
 
@@ -91,10 +177,10 @@ Four-category modal system modeled on AppKit (NSAlert, beginSheet, NSPopover, No
 
 | # | Component | Kind | Scope | Key Features | Priority |
 |---|-----------|------|-------|--------------|----------|
-| 17 | tug-alert | Wrapper (Radix AlertDialog) | App-modal | Promise-based API, button roles, alert styles | High |
-| 18 | tug-sheet | Wrapper (Radix Dialog) | Card-modal | Scoped to single card, responder suspension | High |
-| 19 | tug-confirm-popover | Wrapper (Radix Popover) | Button-local | Destructive action confirmation | High |
-| 20 | tug-bulletin | Original (may wrap Sonner) | Non-blocking | Fire-and-forget, tone variants, auto-dismiss | Medium |
+| 17 | tug-alert | Wrapper (Radix) | App-modal | Wraps `@radix-ui/react-alert-dialog`. Promise-based API, button roles, alert styles | High |
+| 18 | tug-sheet | Wrapper (Radix) | Card-modal | Wraps `@radix-ui/react-dialog`. Scoped to single card, responder suspension | High |
+| 19 | tug-confirm-popover | Wrapper (Radix) | Button-local | Wraps `@radix-ui/react-popover`. Destructive action confirmation | High |
+| 20 | tug-bulletin | Wrapper (Radix or Sonner) | Non-blocking | Wraps `@radix-ui/react-toast` or Sonner. Fire-and-forget, tone variants, auto-dismiss | Medium |
 
 ## Planned Components — Data Display
 
@@ -104,8 +190,8 @@ Components for structured data presentation.
 |---|-----------|------|--------------|----------|
 | 21 | tug-table | Original | Header/row/cell, sortable, stripe option | Medium |
 | 22 | tug-stat-card | Original | Key-value metric (label + number + trend) | Low |
-| 23 | tug-dialog | Wrapper (Radix) | General-purpose dialog (not alert/sheet) | Medium |
-| 24 | tug-accordion | Wrapper (Radix) | Collapsible content sections | Low |
+| 23 | tug-dialog | Wrapper (Radix) | Wraps `@radix-ui/react-dialog`. General-purpose dialog (not alert/sheet) | Medium |
+| 24 | tug-accordion | Wrapper (Radix) | Wraps `@radix-ui/react-accordion`. Expand/collapse ARIA, keyboard nav, single/multiple mode | Low |
 
 ## Planned Components — Data Visualization
 
@@ -124,7 +210,7 @@ Higher-level components assembled from multiple primitives.
 | # | Component | Kind | Composes | Key Features | Priority |
 |---|-----------|------|----------|--------------|----------|
 | 30 | tug-search-bar | Composition | TugInput + TugButton | Search field with action button | Medium |
-| 31 | tug-toolbar | Wrapper (Radix) | Grouped controls with arrow key nav | Low |
+| 31 | tug-toolbar | Wrapper (Radix) | Wraps `@radix-ui/react-toolbar`. Grouped controls with arrow key nav | Low |
 
 ## New Component Ideas
 
