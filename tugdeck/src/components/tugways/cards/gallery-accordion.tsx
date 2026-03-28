@@ -1,0 +1,311 @@
+/**
+ * gallery-accordion.tsx -- TugAccordion demo tab for the Component Gallery.
+ *
+ * Shows TugAccordion in all modes: single, multiple, default open, bordered vs
+ * unbordered, disabled (root and item-level), TugBox disabled cascade, rich
+ * triggers with icons, and nested tugways components inside content panels.
+ *
+ * @module components/tugways/cards/gallery-accordion
+ */
+
+import React from "react";
+import { Settings, User, Bell } from "lucide-react";
+import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
+import { TugBox } from "@/components/tugways/tug-box";
+import { TugBadge } from "@/components/tugways/tug-badge";
+import { TugProgress } from "@/components/tugways/tug-progress";
+import { TugInput } from "@/components/tugways/tug-input";
+import { TugSwitch } from "@/components/tugways/tug-switch";
+
+// Shared text style for paragraph content inside accordion items
+const paraStyle: React.CSSProperties = {
+  fontSize: "0.875rem",
+  color: "var(--tug7-element-field-text-normal-label-rest)",
+  margin: 0,
+  lineHeight: "1.5",
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: "0.75rem",
+  color: "var(--tug7-element-field-text-normal-label-rest)",
+  marginBottom: "4px",
+};
+
+// ---------------------------------------------------------------------------
+// GalleryAccordion
+// ---------------------------------------------------------------------------
+
+export function GalleryAccordion() {
+  return (
+    <div className="cg-content" data-testid="gallery-accordion">
+
+      {/* ---- 1. Single Mode ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Single Mode</div>
+        <div style={{ maxWidth: "480px" }}>
+          <TugAccordion type="single" collapsible>
+            <TugAccordionItem value="getting-started" trigger="Getting Started">
+              <p style={paraStyle}>
+                Welcome to the platform. This section walks you through the key concepts
+                and helps you get up and running quickly.
+              </p>
+            </TugAccordionItem>
+            <TugAccordionItem value="installation" trigger="Installation">
+              <p style={paraStyle}>
+                Install the package using your preferred package manager. Run
+                <code> bun install my-package</code> or <code>npm install my-package</code> to
+                add it to your project.
+              </p>
+            </TugAccordionItem>
+            <TugAccordionItem value="configuration" trigger="Configuration">
+              <p style={paraStyle}>
+                Create a <code>config.json</code> file in your project root. Set the
+                required fields and override any defaults that don't fit your environment.
+              </p>
+            </TugAccordionItem>
+          </TugAccordion>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 2. Multiple Mode ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Multiple Mode</div>
+        <div style={{ maxWidth: "480px" }}>
+          <TugAccordion type="multiple">
+            <TugAccordionItem value="features" trigger="Features">
+              <p style={paraStyle}>
+                Explore the full feature set: real-time collaboration, version history,
+                plugin extensions, and custom theming support.
+              </p>
+            </TugAccordionItem>
+            <TugAccordionItem value="api-reference" trigger="API Reference">
+              <p style={paraStyle}>
+                The REST API exposes endpoints for all core resources. Authentication
+                uses Bearer tokens. Full OpenAPI spec available at <code>/docs/api</code>.
+              </p>
+            </TugAccordionItem>
+            <TugAccordionItem value="examples" trigger="Examples">
+              <p style={paraStyle}>
+                Sample projects and runnable code snippets are available in the
+                <code> /examples</code> directory. Each example is self-contained and
+                documented inline.
+              </p>
+            </TugAccordionItem>
+          </TugAccordion>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 3. Default Open ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Default Open</div>
+        <div style={{ maxWidth: "480px" }}>
+          <div style={labelStyle}>defaultValue="second-item" — second panel opens on mount</div>
+          <TugAccordion type="single" collapsible defaultValue="second-item">
+            <TugAccordionItem value="first-item" trigger="First Item">
+              <p style={paraStyle}>Content of the first item. Click to collapse.</p>
+            </TugAccordionItem>
+            <TugAccordionItem value="second-item" trigger="Second Item">
+              <p style={paraStyle}>
+                This item is open by default via <code>defaultValue="second-item"</code>.
+                The accordion is uncontrolled — state is managed internally by Radix.
+              </p>
+            </TugAccordionItem>
+            <TugAccordionItem value="third-item" trigger="Third Item">
+              <p style={paraStyle}>Content of the third item. Click to expand.</p>
+            </TugAccordionItem>
+          </TugAccordion>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 4. Bordered vs Unbordered ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Bordered vs Unbordered</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "480px" }}>
+          <div>
+            <div style={labelStyle}>bordered={"{true}"} (default)</div>
+            <TugAccordion type="single" collapsible bordered>
+              <TugAccordionItem value="item-a" trigger="Alpha">
+                <p style={paraStyle}>Content for Alpha.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="item-b" trigger="Beta">
+                <p style={paraStyle}>Content for Beta.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="item-c" trigger="Gamma">
+                <p style={paraStyle}>Content for Gamma.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+          </div>
+          <div>
+            <div style={labelStyle}>bordered={"{false}"} — no dividers between items</div>
+            <TugAccordion type="single" collapsible bordered={false}>
+              <TugAccordionItem value="item-a" trigger="Alpha">
+                <p style={paraStyle}>Content for Alpha.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="item-b" trigger="Beta">
+                <p style={paraStyle}>Content for Beta.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="item-c" trigger="Gamma">
+                <p style={paraStyle}>Content for Gamma.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+          </div>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 5. Disabled ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Disabled</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "480px" }}>
+          <div>
+            <div style={labelStyle}>disabled on root — all items non-interactive</div>
+            <TugAccordion type="single" collapsible disabled>
+              <TugAccordionItem value="dis-a" trigger="Section A">
+                <p style={paraStyle}>Content A.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="dis-b" trigger="Section B">
+                <p style={paraStyle}>Content B.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+          </div>
+          <div>
+            <div style={labelStyle}>disabled on a single item — only "Middle" is non-interactive</div>
+            <TugAccordion type="single" collapsible>
+              <TugAccordionItem value="mix-a" trigger="First (enabled)">
+                <p style={paraStyle}>This item is interactive.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="mix-b" trigger="Middle (disabled)" disabled>
+                <p style={paraStyle}>This item is disabled individually.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="mix-c" trigger="Last (enabled)">
+                <p style={paraStyle}>This item is interactive.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+          </div>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 6. TugBox Cascade ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugBox Cascade</div>
+        <div style={{ maxWidth: "480px" }}>
+          <TugBox variant="bordered" label="Disabled via TugBox" disabled={true}>
+            <TugAccordion type="single" collapsible>
+              <TugAccordionItem value="box-a" trigger="Notifications">
+                <p style={paraStyle}>Notification preferences and alert settings.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="box-b" trigger="Privacy">
+                <p style={paraStyle}>Data sharing and visibility controls.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="box-c" trigger="Security">
+                <p style={paraStyle}>Password, two-factor authentication, and active sessions.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+          </TugBox>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 7. Rich Triggers ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Rich Triggers</div>
+        <div style={{ maxWidth: "480px" }}>
+          <div style={labelStyle}>trigger accepts any ReactNode — icon + text layout via flex</div>
+          <TugAccordion type="single" collapsible>
+            <TugAccordionItem
+              value="rich-settings"
+              trigger={
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Settings size={16} aria-hidden="true" />
+                  <span>Settings</span>
+                </div>
+              }
+            >
+              <p style={paraStyle}>
+                Manage application preferences, keyboard shortcuts, and display options.
+              </p>
+            </TugAccordionItem>
+            <TugAccordionItem
+              value="rich-profile"
+              trigger={
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <User size={16} aria-hidden="true" />
+                  <span>Profile</span>
+                </div>
+              }
+            >
+              <p style={paraStyle}>
+                Update your display name, avatar, and account-level preferences.
+              </p>
+            </TugAccordionItem>
+            <TugAccordionItem
+              value="rich-notifications"
+              trigger={
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Bell size={16} aria-hidden="true" />
+                  <span>Notifications</span>
+                </div>
+              }
+            >
+              <p style={paraStyle}>
+                Choose which events trigger alerts and configure delivery channels.
+              </p>
+            </TugAccordionItem>
+          </TugAccordion>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 8. Nested Content ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Nested Content</div>
+        <div style={{ maxWidth: "480px" }}>
+          <div style={labelStyle}>accordion as a container for real UI — TugBadge, TugProgress, TugInput, TugSwitch</div>
+          <TugAccordion type="multiple">
+            <TugAccordionItem value="nested-status" trigger="Status Badges">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                <TugBadge role="success" emphasis="tinted">Deployed</TugBadge>
+                <TugBadge role="caution" emphasis="tinted">Pending Review</TugBadge>
+                <TugBadge role="danger" emphasis="tinted">Build Failed</TugBadge>
+                <TugBadge role="accent" emphasis="ghost">Draft</TugBadge>
+              </div>
+            </TugAccordionItem>
+            <TugAccordionItem value="nested-progress" trigger="Upload Progress">
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <TugProgress variant="bar" value={0.6} label="assets.zip — 60%" />
+                <TugProgress variant="bar" value={1} label="config.json — complete" role="success" />
+              </div>
+            </TugAccordionItem>
+            <TugAccordionItem value="nested-input" trigger="Quick Search">
+              <TugInput placeholder="Search documentation..." style={{ width: "100%" }} />
+            </TugAccordionItem>
+            <TugAccordionItem value="nested-toggles" trigger="Feature Flags">
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={paraStyle}>Dark mode</span>
+                  <TugSwitch defaultChecked aria-label="Dark mode" />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={paraStyle}>Beta features</span>
+                  <TugSwitch aria-label="Beta features" />
+                </div>
+              </div>
+            </TugAccordionItem>
+          </TugAccordion>
+        </div>
+      </div>
+
+    </div>
+  );
+}

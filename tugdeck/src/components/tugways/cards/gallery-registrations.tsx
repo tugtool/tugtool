@@ -53,6 +53,7 @@ import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
 import { GallerySeparator } from "./gallery-separator";
 import { GalleryProgress } from "./gallery-progress";
+import { GalleryAccordion } from "./gallery-accordion";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-checkbox",           title: "TugCheckbox",          closable: true },
   { id: "template", componentId: "gallery-switch",             title: "TugSwitch",            closable: true },
   { id: "template", componentId: "gallery-theme-generator",   title: "Theme Accessibility",   closable: true },
+  { id: "template", componentId: "gallery-accordion",         title: "TugAccordion",         closable: true },
   { id: "template", componentId: "gallery-badge",             title: "TugBadge",             closable: true },
   { id: "template", componentId: "gallery-slider",            title: "TugSlider",            closable: true },
   { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
@@ -426,6 +428,18 @@ export function registerGalleryCards(): void {
     componentId: "gallery-theme-generator",
     contentFactory: (_cardId) => <GalleryThemeGenerator />,
     defaultMeta: { title: "Theme Accessibility", icon: "Paintbrush", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-accordion ----
+  // TugAccordion showcase: single/multiple modes, default open, bordered vs
+  // unbordered, disabled (root and item-level), TugBox cascade, rich triggers,
+  // and nested tugways components inside content panels.
+  registerCard({
+    componentId: "gallery-accordion",
+    contentFactory: (_cardId) => <GalleryAccordion />,
+    defaultMeta: { title: "TugAccordion", icon: "ChevronDown", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
