@@ -54,6 +54,7 @@ import { GalleryTextarea } from "./gallery-textarea";
 import { GallerySeparator } from "./gallery-separator";
 import { GalleryProgress } from "./gallery-progress";
 import { GalleryAccordion } from "./gallery-accordion";
+import { GalleryTooltip } from "./gallery-tooltip";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -98,6 +99,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-choice-group",    title: "TugChoiceGroup",       closable: true },
   { id: "template", componentId: "gallery-box",             title: "TugBox",               closable: true },
   { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
+  { id: "template", componentId: "gallery-tooltip",         title: "TugTooltip",           closable: true },
   { id: "template", componentId: "gallery-option-group",   title: "TugOptionGroup",       closable: true },
   { id: "template", componentId: "gallery-separator",      title: "TugSeparator",          closable: true },
   { id: "template", componentId: "gallery-progress",      title: "TugProgress",           closable: true },
@@ -512,6 +514,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-textarea",
     contentFactory: (_cardId) => <GalleryTextarea />,
     defaultMeta: { title: "TugTextarea", icon: "AlignLeft", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-tooltip ----
+  // TugTooltip showcase: basic, positioning (four sides), shortcuts, arrow toggle,
+  // icon button use case, alignment, truncation-aware, disabled trigger, rich content.
+  registerCard({
+    componentId: "gallery-tooltip",
+    contentFactory: (_cardId) => <GalleryTooltip />,
+    defaultMeta: { title: "TugTooltip", icon: "MessageSquare", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
