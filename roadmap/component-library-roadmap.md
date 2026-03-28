@@ -67,9 +67,8 @@ Components that present information or feedback. No user input.
 
 | # | Component | Kind | Key Features | Priority |
 |---|-----------|------|--------------|----------|
-| 7 | tug-separator | Wrapper (Radix) | Horizontal/vertical, optional label slot | High |
-| 8 | tug-spinner | Original | Size variants, replaces ad-hoc loading visuals | High |
-| 9 | tug-progress | Wrapper (Radix) | Bar, percentage, indeterminate mode | Medium |
+| 7 | tug-separator | Original | Horizontal/vertical, label, ornament, capped ends | High |
+| 9 | tug-progress | Original | Unified progress: spinner, bar, ring, pie variants. Indeterminate + determinate modes. | High |
 | 10 | tug-keyboard | Original | Keycap chip for shortcut display | Medium |
 | 11 | tug-avatar | Wrapper (Radix) | Image + fallback initials, size variants | Medium |
 | 12 | tug-status-indicator | Original | Tone-colored dot + text label | Medium |
@@ -161,13 +160,13 @@ Settings card and card content need these. Slider, radio, textarea, choice-group
 
 ### Group B: Display Essentials
 
-Used everywhere — separators in layouts, spinners for loading states, tooltips for discoverability, context menus for right-click interactions.
+Separators, progress indicators, tooltips, context menus, and collapsible sections.
 
-- tug-separator
-- tug-spinner
+- ~~tug-separator~~ ✅
+- ~~tug-progress~~ ✅ *(unified component replacing tug-spinner + tug-progress; spinner/bar/ring/pie variants)*
+- tug-accordion
 - tug-tooltip
 - tug-context-menu
-- tug-accordion
 
 ### Group C: Alert System
 
@@ -191,10 +190,9 @@ Markdown renderer and rich text editor are core to card content — tug-markdown
 
 ### Group E: Data Display & Feedback
 
-Table, progress, avatars needed for card content.
+Table, avatars, and indicators needed for card content.
 
 - tug-table
-- tug-progress
 - tug-dialog
 - tug-keyboard
 - tug-avatar
