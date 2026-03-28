@@ -182,7 +182,7 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
           {label && labelPosition === "above" && (
             <span className="tug-box-label-above">{label}</span>
           )}
-          <div className="tug-box-content">{children}</div>
+          {children}
         </fieldset>
       </TugBoxContext.Provider>
     );

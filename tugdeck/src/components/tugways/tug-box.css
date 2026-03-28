@@ -49,24 +49,13 @@
 
 /* ---- Inset padding ---- */
 
-.tug-box-inset.tug-box-sm { padding: var(--tug-space-sm); }
-.tug-box-inset.tug-box-md { padding: var(--tug-space-md); }
-.tug-box-inset.tug-box-lg { padding: var(--tug-space-lg); }
+.tug-box-inset.tug-box-sm { padding: var(--tug-space-md); }
+.tug-box-inset.tug-box-md { padding: var(--tug-space-lg); }
+.tug-box-inset.tug-box-lg { padding: var(--tug-space-xl); }
 
 .tug-box-bordered:not(.tug-box-inset),
 .tug-box-filled:not(.tug-box-inset) {
   padding: var(--tug-space-xs);
-}
-
-/* Content wrapper fills parent height when fieldset has explicit height */
-.tug-box-content {
-  height: 100%;
-}
-
-/* Adds left margin only when a legend is present,
-   so content left-aligns with legend text, not the legend element edge. */
-.tug-box-legend + .tug-box-content {
-  margin-left: var(--tug-space-xs);
 }
 
 /* ---- Resize ---- */
@@ -95,7 +84,7 @@
   display: block;
   font-weight: 500;
   color: var(--tug7-element-field-text-normal-label-rest);
-  margin-bottom: var(--tug-space-xs);
+  margin-bottom: var(--tug-space-md);
 }
 
 /* ---- Size variants for labels ---- */

@@ -62,7 +62,7 @@ export function GalleryBox() {
           {/* plain */}
           <div>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>plain</div>
-            <TugBox variant="plain" label="Preferences">
+            <TugBox variant="plain" label="Preferences" labelPosition="above">
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <TugCheckbox label="Enable notifications" checked={plainCb1} onCheckedChange={(v) => setPlainCb1(v === true)} />
                 <TugCheckbox label="Auto-save changes" checked={plainCb2} onCheckedChange={(v) => setPlainCb2(v === true)} />
