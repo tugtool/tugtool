@@ -27,6 +27,7 @@
 .tug-option-group {
   display: inline-flex;
   align-items: stretch;
+  gap: 2px;
   width: fit-content;
   background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
   border: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
@@ -191,15 +192,25 @@
 
 
 /* ============================================================================
-   Dividers between adjacent items
+   Pipe dividers between adjacent off-state items
+   Modeled on macOS TextEdit: pipes appear only between two off-state neighbors.
+   When either neighbor is on, the gap + on-state background provide separation.
    ========================================================================= */
 
-/* Thin vertical divider between items */
-.tug-option-group-item + .tug-option-group-item {
-  border-left: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
+/* Pipe pseudo-element on every item after the first */
+.tug-option-group-item + .tug-option-group-item::before {
+  content: "";
+  position: absolute;
+  left: -2px; /* centered in the 2px gap */
+  top: 20%;
+  bottom: 20%;
+  width: 1px;
+  background-color: var(--tug7-element-segment-border-normal-plain-rest);
+  pointer-events: none;
 }
 
-/* Suppress divider between adjacent on-state items — they merge visually */
-.tug-option-group-item[data-state="on"] + .tug-option-group-item[data-state="on"] {
-  border-left-color: transparent;
+/* Hide pipe when the item itself is on */
+.tug-option-group-item[data-state="on"] + .tug-option-group-item::before,
+.tug-option-group-item + .tug-option-group-item[data-state="on"]::before {
+  background-color: transparent;
 }

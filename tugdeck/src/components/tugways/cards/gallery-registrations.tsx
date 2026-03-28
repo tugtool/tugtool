@@ -504,7 +504,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-option-group",
     contentFactory: (_cardId) => <GalleryOptionGroup />,
-    defaultMeta: { title: "Option Group", icon: "ToggleLeft", closable: true },
+    defaultMeta: { title: "TugOptionGroup", icon: "ToggleLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
