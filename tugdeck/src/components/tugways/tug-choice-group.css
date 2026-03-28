@@ -10,10 +10,10 @@
  * @tug-pairings
  * | Element                                             | Surface                                                     | Role          | Context                                                                |
  * |-----------------------------------------------------|-------------------------------------------------------------|---------------|------------------------------------------------------------------------|
- * | --tug7-element-segment-text-normal-plain-rest       | --tug7-surface-segment-primary-normal-plain-rest            | control       | .tug-choice-group-label (color) — unselected segment                   |
- * | --tug7-element-segment-text-normal-plain-hover      | --tug7-surface-segment-primary-normal-plain-rest            | control       | .tug-choice-group-segment:hover .tug-choice-group-label                |
- * | --tug7-element-segment-text-normal-active-rest      | --tugx-segment-on-color (injected, role-dependent)          | control       | [data-state="active"] .tug-choice-group-label (color)                  |
- * | --tug7-element-segment-text-normal-plain-disabled   | --tug7-surface-segment-primary-normal-plain-rest            | informational | :disabled .tug-choice-group-label (color)                              |
+ * | --tug7-element-segment-text-normal-plain-rest       | --tug7-surface-segment-primary-normal-plain-rest            | control       | .tug-choice-group-segment (color) — unselected                         |
+ * | --tug7-element-segment-text-normal-plain-hover      | --tug7-surface-segment-primary-normal-plain-rest            | control       | .tug-choice-group-segment:hover (color) — unselected hover             |
+ * | --tug7-element-segment-text-normal-active-rest      | --tugx-segment-on-color (injected, role-dependent)          | control       | .tug-choice-group-segment[data-state="active"] (color) — selected      |
+ * | --tug7-element-segment-text-normal-plain-disabled   | --tug7-surface-segment-primary-normal-plain-rest            | informational | .tug-choice-group-segment:disabled (color)                             |
  * | --tug7-element-segment-border-normal-plain-rest     | --tug7-surface-segment-primary-normal-plain-rest            | informational | .tug-choice-group (border-color)                                       |
  */
 
@@ -99,6 +99,7 @@
    Segment Button (.tug-choice-group-segment)
    ========================================================================= */
 
+/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
 .tug-choice-group-segment {
   position: relative;
   z-index: 1;
@@ -109,9 +110,11 @@
   border: none;
   cursor: pointer;
   font-family: inherit;
+  font-weight: 500;
   white-space: nowrap;
-  transition: background-color 80ms ease;
-  /* No padding here — size variants handle it */
+  color: var(--tug7-element-segment-text-normal-plain-rest);
+  gap: 0.375rem;
+  transition: background-color 80ms ease, color 80ms ease;
 }
 
 .tug-choice-group-segment:focus {
@@ -150,6 +153,14 @@
 /* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
 .tug-choice-group-segment:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
   background-color: var(--tug7-surface-segment-primary-normal-plain-hover, rgba(128, 128, 128, 0.1));
+  color: var(--tug7-element-segment-text-normal-plain-hover);
+}
+
+/* ---- Active (selected) ---- */
+
+/* @tug-renders-on: --tugx-segment-on-color (injected, role-dependent) */
+.tug-choice-group-segment[data-state="active"] {
+  color: var(--tug7-element-segment-text-normal-active-rest);
 }
 
 /* ---- Disabled ---- */
@@ -157,58 +168,31 @@
 .tug-choice-group-segment:disabled,
 .tug-choice-group-segment[aria-disabled="true"] {
   cursor: not-allowed;
+  color: var(--tug7-element-segment-text-normal-plain-disabled);
   opacity: var(--tugx-control-disabled-opacity, 0.45);
 }
 
 
 /* ============================================================================
-   Segment Label (.tug-choice-group-label)
+   Segment Content — labels and icons inherit color from the segment button.
+   No component-specific child selectors needed.
    ========================================================================= */
 
-/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
-.tug-choice-group-label {
-  font-weight: 500;
+.tug-choice-group-segment .tug-group-item-label {
   line-height: 1;
-  color: var(--tug7-element-segment-text-normal-plain-rest);
-  transition: color 80ms ease;
   pointer-events: none;
 }
 
-/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
-.tug-choice-group-segment:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) .tug-choice-group-label {
-  color: var(--tug7-element-segment-text-normal-plain-hover);
-}
-
-/* @tug-renders-on: --tugx-segment-on-color (injected, role-dependent) */
-.tug-choice-group-segment[data-state="active"] .tug-choice-group-label {
-  color: var(--tug7-element-segment-text-normal-active-rest);
-}
-
-/* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
-.tug-choice-group-segment:disabled .tug-choice-group-label,
-.tug-choice-group-segment[aria-disabled="true"] .tug-choice-group-label {
-  color: var(--tug7-element-segment-text-normal-plain-disabled);
+.tug-choice-group-segment .tug-group-item-icon {
+  pointer-events: none;
 }
 
 
 /* ============================================================================
-   Icon + Label Layout (.tug-group-item-icon, .tug-group-item-label)
+   Icon Sizing — per size variant (base layout is in tug-group-utils.css)
    ========================================================================= */
 
-/* Segment inner content: flex row with gap for icon + label */
-.tug-choice-group-segment {
-  gap: 0.375rem;
-}
 
-/* Icon wrapper */
-.tug-group-item-icon {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: inherit;
-}
-
-/* Icon sizing per size variant */
 .tug-choice-group-sm .tug-group-item-icon svg {
   width: 14px;
   height: 14px;
@@ -229,8 +213,16 @@
    Icon-only Segments (.tug-choice-group-segment-icon-only)
    ========================================================================= */
 
-.tug-choice-group-segment-icon-only {
-  aspect-ratio: 1;
-  padding: 0;
-  justify-content: center;
+/* Icon-only segments get symmetric horizontal padding matching their vertical
+   space, keeping the segment compact rather than bloated-square. */
+.tug-choice-group-sm .tug-choice-group-segment-icon-only {
+  padding: 0 var(--tug-space-sm);  /* 4px */
+}
+
+.tug-choice-group-md .tug-choice-group-segment-icon-only {
+  padding: 0 var(--tug-space-md);  /* 6px */
+}
+
+.tug-choice-group-lg .tug-choice-group-segment-icon-only {
+  padding: 0 var(--tug-space-lg);  /* 8px */
 }

@@ -1,0 +1,19 @@
+/* ============================================================================
+   Shared group item content layout — used by tug-choice-group and
+   tug-option-group via renderGroupItemContent().
+
+   These are base layout rules for the shared .tug-group-item-* classes.
+   Component-specific styling (color, sizing) is owned by each component's
+   own CSS file via scoped selectors.
+   ========================================================================= */
+
+.tug-group-item-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.tug-group-item-label {
+  color: inherit;
+}

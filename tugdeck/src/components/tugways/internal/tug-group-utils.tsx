@@ -7,6 +7,8 @@
  * layout rendering so each component can focus on its own visual identity.
  */
 
+import "./tug-group-utils.css";
+
 import React from "react";
 
 // ---- Role types and token mapping ----
