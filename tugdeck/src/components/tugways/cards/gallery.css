@@ -606,8 +606,8 @@
   gap: 8px;
 }
 
-/* Dots: position:absolute so they sit inside the track div without causing overflow.
-   top/left defaults are for horizontal spring/friction dots (centered vertically). */
+/* Animated dot — blue circle, absolute-positioned inside track div.
+   Default top: 4px centers vertically in a 24px track. */
 .cg-anim-dot {
   position: absolute;
   top: 4px;
@@ -615,21 +615,7 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-}
-
-.cg-anim-dot-spring {
-  background-color: var(--tug7-element-global-fill-normal-accent-rest);
-}
-
-/* Gravity dot: override to sit at top-left corner so translateY moves it down */
-.cg-anim-dot-gravity {
-  top: 0;
-  left: 4px;
   background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-}
-
-.cg-anim-dot-friction {
-  background-color: var(--tug-accent-warm-default, var(--tug7-element-global-fill-normal-accent-rest));
 }
 
 /* --- Duration Tokens --- */
@@ -640,8 +626,8 @@
   left: 0;
   width: 24px;
   height: 24px;
-  border-radius: var(--tug-radius-xs);
-  background-color: var(--tug7-element-global-fill-normal-accent-rest);
+  border-radius: 50%;
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
@@ -679,8 +665,8 @@
   left: 0;
   width: 32px;
   height: 32px;
-  border-radius: var(--tug-radius-sm);
-  background-color: var(--tug7-element-global-fill-normal-accent-rest);
+  border-radius: 50%;
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
 }
 
 /* --- Named Slots --- */

@@ -171,7 +171,9 @@ function PhysicsCurvesDemo() {
       const range = (frictionTrackRef.current.clientWidth - DOT_SIZE) * scale;
       const solver = new FrictionSolver({ initialVelocity: 8, friction: 3 });
       const kf = solver.keyframes(duration);
-      const frames = kf.map((v) => ({ transform: `translateX(${v * range}px)` }));
+      // Normalize so friction ends at the same position as spring (1.0)
+      const maxVal = kf[kf.length - 1] || 1;
+      const frames = kf.map((v) => ({ transform: `translateX(${(v / maxVal) * range}px)` }));
       animsRef.current.push(
         animate(frictionDotRef.current, frames, { duration, easing: "linear" })
       );
@@ -204,22 +206,7 @@ function PhysicsCurvesDemo() {
           style={{ width: "50%", minWidth: 120 }}
         >
           <div ref={springTrackRef} style={{ position: "relative", height: 24 }}>
-            <div ref={springDotRef} className="cg-anim-dot cg-anim-dot-spring" />
-          </div>
-        </TugBox>
-
-        {/* Gravity — vertical, needs taller track */}
-        <TugBox
-          variant="filled"
-          resize="horizontal"
-          rounded="sm"
-          size="sm"
-          label="Gravity"
-          labelPosition="above"
-          style={{ width: "50%", minWidth: 120 }}
-        >
-          <div ref={gravityTrackRef} style={{ position: "relative", height: 120 }}>
-            <div ref={gravityDotRef} className="cg-anim-dot cg-anim-dot-gravity" />
+            <div ref={springDotRef} className="cg-anim-dot" />
           </div>
         </TugBox>
 
@@ -234,7 +221,22 @@ function PhysicsCurvesDemo() {
           style={{ width: "50%", minWidth: 120 }}
         >
           <div ref={frictionTrackRef} style={{ position: "relative", height: 24 }}>
-            <div ref={frictionDotRef} className="cg-anim-dot cg-anim-dot-friction" />
+            <div ref={frictionDotRef} className="cg-anim-dot" />
+          </div>
+        </TugBox>
+
+        {/* Gravity — vertical, needs taller track */}
+        <TugBox
+          variant="filled"
+          resize="horizontal"
+          rounded="sm"
+          size="sm"
+          label="Gravity"
+          labelPosition="above"
+          style={{ width: "50%", minWidth: 120 }}
+        >
+          <div ref={gravityTrackRef} style={{ position: "relative", height: 120 }}>
+            <div ref={gravityDotRef} className="cg-anim-dot" style={{ top: 0 }} />
           </div>
         </TugBox>
       </div>
@@ -428,7 +430,7 @@ function CancelModesDemo() {
         </div>
       </TugBox>
       <div className="cg-variant-row">
-        <TugPushButton emphasis="filled" role="accent" size="sm" onClick={startAnimation}>
+        <TugPushButton size="sm" onClick={startAnimation}>
           Start
         </TugPushButton>
         <TugPushButton size="sm" onClick={() => cancelWith("snap-to-end")}>
