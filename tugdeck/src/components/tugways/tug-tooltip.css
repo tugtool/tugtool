@@ -1,0 +1,105 @@
+/* @tug-pairings {
+  --tugx-tooltip-fg | --tugx-tooltip-bg | content
+  --tugx-tooltip-border | --tugx-tooltip-bg | informational
+  --tugx-tooltip-kbd-fg | --tugx-tooltip-kbd-bg | informational
+  --tugx-tooltip-kbd-border | --tugx-tooltip-kbd-bg | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                        | Surface                        | Role          | Context                                       |
+ * |--------------------------------|--------------------------------|---------------|-----------------------------------------------|
+ * | --tugx-tooltip-fg              | --tugx-tooltip-bg              | content       | .tug-tooltip-content (color)                  |
+ * | --tugx-tooltip-border          | --tugx-tooltip-bg              | informational | .tug-tooltip-content (border-color)           |
+ * | --tugx-tooltip-kbd-fg          | --tugx-tooltip-kbd-bg          | informational | .tug-tooltip-shortcut (color)                 |
+ * | --tugx-tooltip-kbd-border      | --tugx-tooltip-kbd-bg          | informational | .tug-tooltip-shortcut (border-color)          |
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-tooltip-bg:         var(--tug7-surface-global-primary-normal-screen-rest);
+  --tugx-tooltip-fg:         var(--tug7-element-global-text-normal-default-rest);
+  --tugx-tooltip-border:     var(--tug7-element-global-border-normal-default-rest);
+  --tugx-tooltip-shadow:     var(--tug7-element-global-shadow-normal-overlay-rest);
+  --tugx-tooltip-kbd-fg:     var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-tooltip-kbd-bg:     var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-tooltip-kbd-border: var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* ---- Keyframe animations [L14] — duration scales via --tug-timing [L13] ---- */
+
+@keyframes tug-tooltip-enter {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes tug-tooltip-exit {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.96); }
+}
+
+/* ---- Tooltip bubble ---- */
+
+.tug-tooltip-content {
+  /* Layout */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 300px;
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--tugx-tooltip-border);
+  /* Colors */
+  /* @tug-renders-on: --tugx-tooltip-bg */
+  background-color: var(--tugx-tooltip-bg);
+  color: var(--tugx-tooltip-fg);
+  /* Typography */
+  font-size: 0.75rem;
+  line-height: 1.4;
+  /* Layering */
+  z-index: 50;
+  /* Depth */
+  box-shadow: var(--tugx-tooltip-shadow);
+  /* Smooth origin for directional animations */
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+}
+
+/* Enter animation — delayed-open and instant-open states */
+.tug-tooltip-content[data-state="delayed-open"],
+.tug-tooltip-content[data-state="instant-open"] {
+  animation: tug-tooltip-enter calc(100ms * var(--tug-timing, 1)) ease;
+}
+
+/* Exit animation — closed state */
+.tug-tooltip-content[data-state="closed"] {
+  animation: tug-tooltip-exit calc(80ms * var(--tug-timing, 1)) ease;
+}
+
+/* ---- Arrow ---- */
+
+.tug-tooltip-arrow {
+  /* Arrow fill inherits the tooltip background */
+  fill: var(--tugx-tooltip-bg);
+}
+
+/* ---- Keyboard shortcut badge ---- */
+
+.tug-tooltip-shortcut {
+  /* Layout */
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.1875rem;
+  border: 1px solid var(--tugx-tooltip-kbd-border);
+  /* Colors */
+  /* @tug-renders-on: --tugx-tooltip-kbd-bg */
+  background-color: var(--tugx-tooltip-kbd-bg);
+  color: var(--tugx-tooltip-kbd-fg);
+  /* Typography */
+  font-family: inherit;
+  font-size: 0.625rem;
+  line-height: 1.4;
+  /* Prevent shrinking in flex row */
+  flex-shrink: 0;
+}

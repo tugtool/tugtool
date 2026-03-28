@@ -45,6 +45,7 @@ import type { Root } from "react-dom/client";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
+import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
 import { putLayout, putTabState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
@@ -274,17 +275,21 @@ export class DeckManager implements IDeckManagerStore {
         TugThemeProvider,
         { initialTheme: this.initialTheme },
         React.createElement(
-          ErrorBoundary,
+          TugTooltipProvider,
           null,
           React.createElement(
-            ResponderChainProvider,
+            ErrorBoundary,
             null,
             React.createElement(
-              DeckManagerContext.Provider,
-              { value: this },
-              React.createElement(DeckCanvas, {
-                connection: this.connection,
-              }),
+              ResponderChainProvider,
+              null,
+              React.createElement(
+                DeckManagerContext.Provider,
+                { value: this },
+                React.createElement(DeckCanvas, {
+                  connection: this.connection,
+                }),
+              ),
             ),
           ),
         ),
