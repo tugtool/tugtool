@@ -12,7 +12,7 @@
  * | --tug7-element-field-text-normal-label-rest        | --tug7-surface-global-primary-normal-default-rest   | content       | .tug-accordion-trigger (color) at rest                |
  * | --tug7-element-field-text-normal-label-hover       | --tug7-surface-field-primary-normal-plain-hover     | content       | .tug-accordion-trigger:hover (color)                  |
  * | --tug7-element-field-text-normal-placeholder-rest  | --tug7-surface-global-primary-normal-default-rest   | content       | .tug-accordion-chevron (color)                        |
- * | --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-accordion-bordered .tug-accordion-item (border)  |
+ * | --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-accordion-separator/outline/inset (border)       |
  */
 
 /* ============================================================================
@@ -52,17 +52,68 @@
 }
 
 /* ============================================================================
-   Bordered variant (.tug-accordion-bordered)
+   Variant: separator — divider lines between items
    ========================================================================= */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-accordion-bordered .tug-accordion-item {
+.tug-accordion-separator .tug-accordion-item {
   border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
 }
 
-.tug-accordion-bordered .tug-accordion-item:last-child {
+.tug-accordion-separator .tug-accordion-item:last-child {
   border-bottom: none;
 }
+
+/* ============================================================================
+   Variant: outline — single border around the entire group
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-accordion-outline {
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-accordion-outline .tug-accordion-item + .tug-accordion-item {
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* First item trigger rounds top corners; last item trigger rounds bottom corners */
+.tug-accordion-outline .tug-accordion-item:first-child .tug-accordion-trigger {
+  border-radius: calc(0.5rem - 1px) calc(0.5rem - 1px) 0 0;
+}
+
+.tug-accordion-outline .tug-accordion-item:last-child .tug-accordion-trigger {
+  border-radius: 0 0 calc(0.5rem - 1px) calc(0.5rem - 1px);
+}
+
+/* When only one item, all four corners */
+.tug-accordion-outline .tug-accordion-item:only-child .tug-accordion-trigger {
+  border-radius: calc(0.5rem - 1px);
+}
+
+/* ============================================================================
+   Variant: inset — each item has its own border, gap between items
+   ========================================================================= */
+
+.tug-accordion-inset {
+  gap: 0.5rem;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-accordion-inset .tug-accordion-item {
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Variant: plain — no borders
+   ========================================================================= */
+
+/* (no additional styles needed) */
 
 /* ============================================================================
    Item (.tug-accordion-item)
@@ -99,7 +150,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0.75rem 0;
+  padding: 0.75rem 0.75rem;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -186,7 +237,7 @@
    ========================================================================= */
 
 .tug-accordion-content-inner {
-  padding: 0 0 0.75rem 0;
+  padding: 0.25rem 0.75rem 0.75rem 0.75rem;
   font-size: 0.875rem;
   line-height: 1.5;
 }

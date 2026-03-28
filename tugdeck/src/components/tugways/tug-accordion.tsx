@@ -54,14 +54,21 @@ export interface TugAccordionMultipleProps {
   onValueChange?: (value: string[]) => void;
 }
 
+/** Border variant for the accordion. */
+export type TugAccordionVariant = "separator" | "outline" | "inset" | "plain";
+
 /** Shared props merged with the discriminated union. */
 export interface TugAccordionSharedProps {
   /**
-   * Show borders between items.
-   * @selector .tug-accordion-bordered
-   * @default true
+   * Border style for items.
+   * - "separator" — divider lines between items (default)
+   * - "outline" — single border around the entire group
+   * - "inset" — each item has its own border with rounded corners, gap between
+   * - "plain" — no borders
+   * @selector .tug-accordion-separator | .tug-accordion-outline | .tug-accordion-inset | .tug-accordion-plain
+   * @default "separator"
    */
-  bordered?: boolean;
+  variant?: TugAccordionVariant;
   /**
    * Disables all items. Merges with TugBox disabled cascade.
    * @selector [data-disabled]
@@ -82,7 +89,7 @@ export type TugAccordionProps = (TugAccordionSingleProps | TugAccordionMultipleP
 
 export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
   function TugAccordion(props, ref) {
-    const { bordered = true, disabled = false, className, children, ...rest } = props;
+    const { variant = "separator", disabled = false, className, children, ...rest } = props;
 
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
@@ -101,7 +108,7 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
         data-slot="tug-accordion"
         className={cn(
           "tug-accordion",
-          bordered && "tug-accordion-bordered",
+          `tug-accordion-${variant}`,
           className,
         )}
         {...rootProps}

@@ -123,13 +123,13 @@ export function GalleryAccordion() {
 
       <div className="cg-divider" />
 
-      {/* ---- 4. Bordered vs Unbordered ---- */}
+      {/* ---- 4. Variants ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Bordered vs Unbordered</div>
+        <div className="cg-section-title">Variants</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "480px" }}>
           <div>
-            <div style={labelStyle}>bordered={"{true}"} (default)</div>
-            <TugAccordion type="single" collapsible bordered>
+            <div style={labelStyle}>variant="separator" (default) — divider lines between items</div>
+            <TugAccordion type="single" collapsible>
               <TugAccordionItem value="item-a" trigger="Alpha">
                 <p style={paraStyle}>Content for Alpha.</p>
               </TugAccordionItem>
@@ -142,8 +142,36 @@ export function GalleryAccordion() {
             </TugAccordion>
           </div>
           <div>
-            <div style={labelStyle}>bordered={"{false}"} — no dividers between items</div>
-            <TugAccordion type="single" collapsible bordered={false}>
+            <div style={labelStyle}>variant="outline" — single border around the group</div>
+            <TugAccordion type="single" collapsible variant="outline">
+              <TugAccordionItem value="item-a" trigger="Alpha">
+                <p style={paraStyle}>Content for Alpha.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="item-b" trigger="Beta">
+                <p style={paraStyle}>Content for Beta.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="item-c" trigger="Gamma">
+                <p style={paraStyle}>Content for Gamma.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+          </div>
+          <div>
+            <div style={labelStyle}>variant="inset" — each item bordered with gap between</div>
+            <TugAccordion type="single" collapsible variant="inset">
+              <TugAccordionItem value="item-a" trigger="Alpha">
+                <p style={paraStyle}>Content for Alpha.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="item-b" trigger="Beta">
+                <p style={paraStyle}>Content for Beta.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="item-c" trigger="Gamma">
+                <p style={paraStyle}>Content for Gamma.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+          </div>
+          <div>
+            <div style={labelStyle}>variant="plain" — no borders</div>
+            <TugAccordion type="single" collapsible variant="plain">
               <TugAccordionItem value="item-a" trigger="Alpha">
                 <p style={paraStyle}>Content for Alpha.</p>
               </TugAccordionItem>
