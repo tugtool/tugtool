@@ -107,9 +107,14 @@ Accordion is structural/informational, not a toggle control. There's no "on stat
 
 One size. The trigger has comfortable padding and the content area has consistent internal spacing. If size variants prove necessary after gallery testing, they can be added — but accordion content is typically variable-height, making size variants less meaningful than for compact controls.
 
-### D7: Borders Between Items
+### D7: Border Variants
 
-Items separated by a 1px border (element-global-border token), similar to how list/table rows are divided. The first item has a top border, the last has a bottom border, creating a contained look. This can be toggled with a `bordered` prop (default true).
+Four variant styles via the `variant` prop (default `"separator"`):
+
+- **`"separator"`** — divider lines between items. Default.
+- **`"outline"`** — single border around the entire group with rounded corners. Internal dividers between items. `overflow: hidden` clips trigger hover to corner radius.
+- **`"inset"`** — each item has its own border with rounded corners, gap between items. `overflow: hidden` on each item.
+- **`"plain"`** — no borders at all.
 
 ### D8: Disabled State
 
@@ -151,9 +156,11 @@ type TugAccordionMultipleProps = {
   onValueChange?: (value: string[]) => void;
 };
 
+export type TugAccordionVariant = "separator" | "outline" | "inset" | "plain";
+
 export type TugAccordionProps = (TugAccordionSingleProps | TugAccordionMultipleProps) & {
-  /** Show borders between items. @default true */
-  bordered?: boolean;
+  /** Border style. @selector .tug-accordion-{variant} @default "separator" */
+  variant?: TugAccordionVariant;
   /** @selector [data-disabled] @default false */
   disabled?: boolean;
   className?: string;
@@ -235,7 +242,7 @@ Single file pair. Both components in one file (TugAccordionItem is a sub-compone
 1. **Single Mode** — One item open at a time, collapsible
 2. **Multiple Mode** — Multiple items open simultaneously
 3. **Default Open** — Item pre-expanded via defaultValue
-4. **Bordered vs Unbordered** — With and without item dividers
+4. **Variants** — separator, outline, inset, plain
 5. **Disabled** — Group disabled + individual item disabled
 6. **TugBox Cascade** — Disabled via parent TugBox
 7. **Rich Triggers** — Trigger with icon + description layout

@@ -1,9 +1,9 @@
 /**
  * gallery-accordion.tsx -- TugAccordion demo tab for the Component Gallery.
  *
- * Shows TugAccordion in all modes: single, multiple, default open, bordered vs
- * unbordered, disabled (root and item-level), TugBox disabled cascade, rich
- * triggers with icons, and nested tugways components inside content panels.
+ * Shows TugAccordion in all modes: single, multiple, default open, variants
+ * (separator, outline, inset, plain), disabled (root and item-level), TugBox
+ * disabled cascade, rich triggers with icons, and nested tugways components.
  *
  * @module components/tugways/cards/gallery-accordion
  */

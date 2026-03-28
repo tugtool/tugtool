@@ -2,8 +2,9 @@
  * TugAccordion — Collapsible content sections.
  *
  * Wraps @radix-ui/react-accordion. Supports single and multiple open modes,
- * chevron rotation indicator, bordered item dividers, and TugBox disabled
- * cascade. Animation uses CSS keyframes with Radix's content-height variable.
+ * chevron rotation indicator, variant-driven border styles (separator, outline,
+ * inset, plain), and TugBox disabled cascade. Animation uses CSS keyframes
+ * with Radix's content-height variable.
  *
  * Laws: [L06] appearance via CSS, [L14] Radix Presence owns DOM lifecycle — use CSS keyframes,
  *       [L16] pairings declared, [L19] component authoring guide
