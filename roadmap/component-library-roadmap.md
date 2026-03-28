@@ -244,23 +244,24 @@ Settings card and card content need these. Slider, radio, textarea, choice-group
 - ~~tug-textarea~~ ✅
 - ~~tug-option-group~~ ✅
 
-### Group B: Display Essentials
+### Group B: Display & Popup Essentials
 
-Separators, progress indicators, tooltips, context menus, and collapsible sections.
+Separators, progress indicators, collapsible sections, tooltips, context menus, popovers, and confirmation guards. **Group B is complete.**
 
 - ~~tug-separator~~ ✅
 - ~~tug-progress~~ ✅ *(unified component replacing tug-spinner + tug-progress; spinner/bar/ring/pie variants)*
 - ~~tug-accordion~~ ✅
-- ~~tug-tooltip~~ ✅
-- ~~tug-context-menu~~ ✅
+- ~~tug-tooltip~~ ✅ *(truncation-aware mode, keyboard shortcut badges)*
+- ~~tug-context-menu~~ ✅ *(reuses tug-menu.css tokens [L20], blink animation)*
+- ~~tug-popover~~ ✅ *(compound API: Root/Trigger/Content/Close)*
+- ~~tug-confirm-popover~~ ✅ *(composes tug-popover [L20], imperative Promise API + declarative callbacks)*
 
 ### Group C: Alert System
 
-Card close confirmation, destructive action guards, and notifications depend on this.
+App-modal alerts, card-modal sheets, and notifications.
 
 - tug-alert
 - tug-sheet
-- ~~tug-confirm-popover~~ ✅
 - tug-bulletin
 
 ### Group D: Rich Content & Compositions
@@ -272,7 +273,6 @@ Markdown renderer and rich text editor are core to card content — tug-markdown
 - tug-prompt-input
 - tug-prompt-entry
 - tug-search-bar
-- ~~tug-popover~~ ✅
 
 ### Group E: Data Display & Feedback
 
