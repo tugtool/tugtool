@@ -354,3 +354,4 @@ New component using shared infrastructure + TugButton composition:
 | 4 | Gallery | Update gallery-choice-group with icon examples |
 | 5 | Build | tug-option-group component + CSS (composes TugButton, uses shared utils) |
 | 6 | Gallery | gallery-option-group card |
+| 7 | Refactor | Generalize `useGroupKeyboardNav` to support both single-focus and multi-toggle; refactor option-group to use it |
