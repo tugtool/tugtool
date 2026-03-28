@@ -1,0 +1,192 @@
+/* @tug-pairings {
+  --tug7-element-field-text-normal-label-rest       | --tug7-surface-global-primary-normal-default-rest  | content
+  --tug7-element-field-text-normal-label-hover      | --tug7-surface-field-primary-normal-plain-hover    | content
+  --tug7-element-field-text-normal-placeholder-rest | --tug7-surface-global-primary-normal-default-rest  | content
+  --tug7-element-global-border-normal-default-rest  | --tug7-surface-global-primary-normal-default-rest  | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                           | Surface                                            | Role          | Context                                               |
+ * |---------------------------------------------------|----------------------------------------------------|---------------|-------------------------------------------------------|
+ * | --tug7-element-field-text-normal-label-rest        | --tug7-surface-global-primary-normal-default-rest   | content       | .tug-accordion-trigger (color) at rest                |
+ * | --tug7-element-field-text-normal-label-hover       | --tug7-surface-field-primary-normal-plain-hover     | content       | .tug-accordion-trigger:hover (color)                  |
+ * | --tug7-element-field-text-normal-placeholder-rest  | --tug7-surface-global-primary-normal-default-rest   | content       | .tug-accordion-chevron (color)                        |
+ * | --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-accordion-bordered .tug-accordion-item (border)  |
+ */
+
+/* ============================================================================
+   Keyframe Animations
+   ========================================================================= */
+
+@keyframes tug-accordion-expand {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes tug-accordion-collapse {
+  from {
+    height: var(--radix-accordion-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+/* ============================================================================
+   Base (.tug-accordion)
+   ========================================================================= */
+
+.tug-accordion {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* ============================================================================
+   Bordered variant (.tug-accordion-bordered)
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-accordion-bordered .tug-accordion-item {
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+.tug-accordion-bordered .tug-accordion-item:last-child {
+  border-bottom: none;
+}
+
+/* ============================================================================
+   Item (.tug-accordion-item)
+   ========================================================================= */
+
+.tug-accordion-item {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Disabled item ---- */
+
+.tug-accordion-item[data-disabled] {
+  opacity: var(--tugx-control-disabled-opacity);
+  pointer-events: none;
+}
+
+/* ============================================================================
+   Header (.tug-accordion-header)
+   ========================================================================= */
+
+.tug-accordion-header {
+  display: flex;
+  margin: 0;
+}
+
+/* ============================================================================
+   Trigger (.tug-accordion-trigger)
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-accordion-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.75rem 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  color: var(--tug7-element-field-text-normal-label-rest);
+  transition: background-color 80ms ease, color 80ms ease;
+  border-radius: 0.25rem;
+}
+
+/* ---- Hover ---- */
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-hover */
+.tug-accordion-trigger:hover:not(:disabled):not([data-disabled]) {
+  background-color: var(--tug7-surface-field-primary-normal-plain-hover);
+  color: var(--tug7-element-field-text-normal-label-hover);
+}
+
+/* ---- Focus ---- */
+
+.tug-accordion-trigger:focus-visible {
+  outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
+  outline-offset: 2px;
+}
+
+/* ---- Disabled ---- */
+
+.tug-accordion-trigger:disabled,
+.tug-accordion-trigger[data-disabled] {
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   Trigger content (.tug-accordion-trigger-content)
+   ========================================================================= */
+
+.tug-accordion-trigger-content {
+  flex: 1;
+  text-align: left;
+}
+
+/* ============================================================================
+   Chevron (.tug-accordion-chevron)
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-accordion-chevron {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  color: var(--tug7-element-field-text-normal-placeholder-rest);
+  transition: transform 200ms ease;
+  transform: rotate(0deg);
+}
+
+/* Rotate chevron 180° when the trigger is open — pure CSS, no React state [L06] */
+.tug-accordion-trigger[data-state="open"] .tug-accordion-chevron {
+  transform: rotate(180deg);
+}
+
+/* ============================================================================
+   Content (.tug-accordion-content)
+   ========================================================================= */
+
+.tug-accordion-content {
+  overflow: hidden;
+}
+
+/* Expand animation [L14] */
+.tug-accordion-content[data-state="open"] {
+  animation: tug-accordion-expand calc(200ms * var(--tug-timing, 1)) ease;
+}
+
+/* Collapse animation [L14] */
+.tug-accordion-content[data-state="closed"] {
+  animation: tug-accordion-collapse calc(200ms * var(--tug-timing, 1)) ease;
+}
+
+/* ============================================================================
+   Content inner (.tug-accordion-content-inner)
+   ========================================================================= */
+
+.tug-accordion-content-inner {
+  padding: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
