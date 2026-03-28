@@ -124,7 +124,6 @@ Higher-level components assembled from multiple primitives.
 
 | # | Component | Kind | Composes | Key Features | Priority |
 |---|-----------|------|----------|--------------|----------|
-| 28 | tug-button-group | Composition | TugButton x N | Connected row, shared border radius | Medium |
 | 30 | tug-search-bar | Composition | TugInput + TugButton | Search field with action button | Medium |
 | 31 | tug-toolbar | Wrapper (Radix) | Grouped controls with arrow key nav | Low |
 
@@ -134,7 +133,8 @@ Higher-level components assembled from multiple primitives.
 
 | # | Component | Kind | Description | Priority |
 |---|-----------|------|-------------|----------|
-| 32 | tug-segmented-choice | Original | Mutually exclusive segment picker modeled on Apple's UISegmentedControl. Horizontal row of connected segments with sliding selection indicator. Unified visual frame with active segment highlight that slides between options. | High |
+| 32 | tug-choice-group | Original | Mutually exclusive segment picker (renamed from tug-segmented-choice). Horizontal row of connected segments with sliding indicator pill. Icon + label support, optional animation. Part of the group family with tug-radio-group and tug-option-group. | High |
+| 39 | tug-option-group | Original | Multi-toggle group where each item toggles independently (like B/I/U in a text editor). Connected row with per-item on-state backgrounds, pipe dividers between off-state neighbors. Part of the group family. | High |
 | 33 | tug-box | Original | Container providing visual grouping (optional border, optional label) and functional grouping (enable/disable all contained controls with one prop). Nestable — disabled outer box cascades to all inner boxes and controls. Modeled on HTML `<fieldset>` semantics with recursive disable propagation via React context. | High |
 | 34 | tug-rich-text | Wrapper (Monaco) | Monaco editor in a tugways component. Token-driven theming, standard props interface, integration with card content system. | High |
 | 35 | tug-bulletin | Original (may wrap Sonner) | Non-blocking notification system. Fire-and-forget alerts with tone variants, auto-dismiss, configurable duration. Our name for what others call "toast." | Medium |
@@ -150,14 +150,14 @@ Higher-level components assembled from multiple primitives.
 
 ### Group A: Form Controls & Actions
 
-Settings card and card content need these. Slider, radio, textarea are the most-requested missing controls. Segmented choice and box provide selection and grouping patterns needed across all card UIs. Button group rounds out the action control set.
+Settings card and card content need these. Slider, radio, textarea, choice-group, box, and option-group cover all form control and grouping patterns needed across card UIs. **Group A is complete.**
 
 - ~~tug-slider~~ ✅
 - ~~tug-radio-group~~ ✅
-- ~~tug-segmented-choice~~ ✅
+- ~~tug-choice-group~~ ✅ *(renamed from tug-segmented-choice)*
 - ~~tug-box~~ ✅
 - ~~tug-textarea~~ ✅
-- tug-button-group
+- ~~tug-option-group~~ ✅
 
 ### Group B: Display Essentials
 
