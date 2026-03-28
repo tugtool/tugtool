@@ -48,6 +48,7 @@ import { GallerySlider } from "./gallery-slider";
 import { GalleryValueInput } from "./gallery-value-input";
 import { GalleryRadioGroup } from "./gallery-radio-group";
 import { GalleryChoiceGroup } from "./gallery-choice-group";
+import { GalleryOptionGroup } from "./gallery-option-group";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
 import "./gallery.css";
@@ -93,6 +94,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-choice-group",    title: "TugChoiceGroup",       closable: true },
   { id: "template", componentId: "gallery-box",             title: "TugBox",               closable: true },
   { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
+  { id: "template", componentId: "gallery-option-group",   title: "TugOptionGroup",       closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -492,6 +494,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-textarea",
     contentFactory: (_cardId) => <GalleryTextarea />,
     defaultMeta: { title: "TugTextarea", icon: "AlignLeft", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-option-group ----
+  // TugOptionGroup showcase: icon-only toolbar, icon+label, sizes, roles,
+  // disabled states, and TugBox disabled cascade.
+  registerCard({
+    componentId: "gallery-option-group",
+    contentFactory: (_cardId) => <GalleryOptionGroup />,
+    defaultMeta: { title: "Option Group", icon: "ToggleLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
