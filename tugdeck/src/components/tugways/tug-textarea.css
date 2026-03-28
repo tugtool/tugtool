@@ -172,6 +172,18 @@
   overflow: auto;
 }
 
+.tug-textarea-resize-vertical {
+  cursor: ns-resize;
+}
+
+.tug-textarea-resize-horizontal {
+  cursor: ew-resize;
+}
+
+.tug-textarea-resize-both {
+  cursor: nwse-resize;
+}
+
 /* ============================================================================
    Auto-Resize
    ========================================================================= */

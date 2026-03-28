@@ -75,9 +75,9 @@ export function GalleryTextarea() {
       {/* ---- Resize Variants ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Resize Variants</div>
-        <div style={{ display: "flex", flexDirection: "row", gap: "24px", alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "480px" }}>
 
-          <div style={{ flex: "1 1 160px" }}>
+          <div>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
               resize="vertical"
             </div>
@@ -88,7 +88,7 @@ export function GalleryTextarea() {
             />
           </div>
 
-          <div style={{ flex: "1 1 160px" }}>
+          <div>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
               resize="horizontal"
             </div>
@@ -99,7 +99,7 @@ export function GalleryTextarea() {
             />
           </div>
 
-          <div style={{ flex: "1 1 160px" }}>
+          <div>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
               resize="both"
             </div>
