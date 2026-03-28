@@ -48,6 +48,7 @@ import { GallerySlider } from "./gallery-slider";
 import { GalleryValueInput } from "./gallery-value-input";
 import { GalleryRadioGroup } from "./gallery-radio-group";
 import { GalleryChoiceGroup } from "./gallery-choice-group";
+import { GalleryConfirmPopover } from "./gallery-confirm-popover";
 import { GalleryContextMenu } from "./gallery-context-menu";
 import { GalleryOptionGroup } from "./gallery-option-group";
 import { GalleryPopover } from "./gallery-popover";
@@ -98,8 +99,9 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-slider",            title: "TugSlider",            closable: true },
   { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
   { id: "template", componentId: "gallery-radio-group",       title: "TugRadioGroup",        closable: true },
-  { id: "template", componentId: "gallery-choice-group",    title: "TugChoiceGroup",       closable: true },
-  { id: "template", componentId: "gallery-context-menu",   title: "TugContextMenu",       closable: true },
+  { id: "template", componentId: "gallery-choice-group",      title: "TugChoiceGroup",       closable: true },
+  { id: "template", componentId: "gallery-confirm-popover", title: "TugConfirmPopover",    closable: true },
+  { id: "template", componentId: "gallery-context-menu",    title: "TugContextMenu",       closable: true },
   { id: "template", componentId: "gallery-box",             title: "TugBox",               closable: true },
   { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
   { id: "template", componentId: "gallery-tooltip",         title: "TugTooltip",           closable: true },
@@ -497,6 +499,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-choice-group",
     contentFactory: (_cardId) => <GalleryChoiceGroup />,
     defaultMeta: { title: "TugChoiceGroup", icon: "ToggleLeft", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-confirm-popover ----
+  // TugConfirmPopover showcase: danger confirmation, action confirmation, custom labels,
+  // positioning (top vs bottom), and the imperative Promise API.
+  registerCard({
+    componentId: "gallery-confirm-popover",
+    contentFactory: (_cardId) => <GalleryConfirmPopover />,
+    defaultMeta: { title: "TugConfirmPopover", icon: "ShieldAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
