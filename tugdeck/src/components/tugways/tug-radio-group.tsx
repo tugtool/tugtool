@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";
 import type { TugButtonSize } from "./internal/tug-button";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+import { TugGroupRole, buildRoleStyle } from "./internal/tug-group-utils";
 
 // ---- Types ----
 
@@ -38,30 +39,7 @@ export type TugRadioGroupSize = "sm" | "md" | "lg";
  *
  * @selector [data-role="<role>"]
  */
-export type TugRadioRole =
-  | "option"
-  | "action"
-  | "agent"
-  | "data"
-  | "success"
-  | "caution"
-  | "danger";
-
-/**
- * Maps role prop values to toggle-primary token suffixes.
- * The prop API uses "action" but the token system uses "active"
- * (e.g., --tug7-surface-toggle-primary-normal-active-rest).
- * "accent" is not in this map — it's the implicit default when no role is provided.
- */
-const ROLE_TOKEN_MAP: Record<string, string> = {
-  option:  "option",
-  action:  "active",
-  agent:   "agent",
-  data:    "data",
-  success: "success",
-  caution: "caution",
-  danger:  "danger",
-};
+export type TugRadioRole = TugGroupRole;
 
 // ---- Context ----
 
@@ -146,12 +124,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
 
     // Role injection — on-state color uses toggle-primary tokens (shared with checkbox/switch). [L06]
     // No role prop = accent. Single path, zero branches.
-    const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
-    const roleStyle = {
-      "--tugx-radio-on-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-rest)`,
-      "--tugx-radio-on-hover-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-hover)`,
-      "--tugx-radio-disabled-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-disabled)`,
-    } as React.CSSProperties;
+    const roleStyle = buildRoleStyle("radio", role);
 
     const ctx: TugRadioGroupContextValue = { size, disabled: effectiveDisabled };
 
