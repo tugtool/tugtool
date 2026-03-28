@@ -134,6 +134,32 @@ One size. Tooltip text is always small (0.75rem / 12px). Kbd badges are slightly
 
 When the trigger element is disabled, the tooltip should still work — disabled buttons still need labels for accessibility. Radix handles this: the trigger uses `asChild` and keyboard/pointer events still reach the Tooltip.Trigger wrapper even when the child is `aria-disabled`.
 
+### D11: Truncation-Aware Mode
+
+The most common tooltip in a real app: text got clipped by ellipsis, hover to see the full thing. Tab titles, file names, label overflow — you only want the tooltip when the content is *actually truncated*. If it fits, the tooltip is noise.
+
+Radix doesn't know about this. We add a `truncated` prop (boolean, default false) that measures the trigger element on pointer enter and suppresses the tooltip if the content isn't clipped.
+
+**How it works:**
+1. On `pointerenter` (before Radix's delay fires), measure the trigger element: `scrollWidth > clientWidth || scrollHeight > clientHeight`.
+2. If content fits: set internal `suppressOpen` ref to true, keep the tooltip closed.
+3. If content is clipped: let Radix proceed normally.
+4. Measurement is one synchronous DOM read — no layout thrash, no rAF, no resize observer.
+5. Re-measured on every hover, so if the container resizes and text becomes truncated (or un-truncated), the behavior adapts immediately.
+
+**Implementation:** Use Radix's controlled `open`/`onOpenChange` props. When `truncated` is true, intercept `onOpenChange` and block the open if the trigger isn't clipped. The trigger ref is obtained via a callback ref merged with the `asChild` trigger.
+
+```tsx
+{/* Only shows tooltip when the label is actually truncated */}
+<TugTooltip content={longFileName} truncated>
+  <TugLabel maxLines={1}>{longFileName}</TugLabel>
+</TugTooltip>
+```
+
+This is pure appearance-zone work [L06] — the measurement reads DOM, the suppression controls Radix's open state, no React state for visual changes.
+
+**Critical: never block dismiss.** The `onOpenChange` interceptor only guards `nextOpen === true` (suppress open if not truncated). Close events (`nextOpen === false`) always pass through — Space/Enter dismiss, Escape, pointerleave. This preserves Radix's keyboard contract [L11] where Space/Enter on a focused trigger closes the tooltip before activating the button's action.
+
 ---
 
 ## Props
@@ -179,6 +205,11 @@ export interface TugTooltipProps {
   arrow?: boolean;
   /** Override delay for this specific tooltip. */
   delayDuration?: number;
+  /**
+   * Only show tooltip when trigger content is truncated (ellipsis overflow).
+   * Measures scrollWidth vs clientWidth on hover. @default false
+   */
+  truncated?: boolean;
   /** Controlled open state. */
   open?: boolean;
   /** Controlled state callback. */
@@ -230,8 +261,9 @@ Single file pair. Provider and Tooltip in one file (Provider is trivial — thin
 4. **Without Arrow** — arrow={false} for a cleaner look
 5. **On Icon Buttons** — Tooltip labeling icon-only TugPushButtons (the primary use case)
 6. **Alignment** — align=start/center/end on a wide trigger
-7. **Disabled Trigger** — Tooltip on a disabled button (still shows)
-8. **Rich Content** — content as ReactNode with multiple lines
+7. **Truncation-Aware** — TugLabel in a narrow container; tooltip only appears when text is clipped, not when it fits
+8. **Disabled Trigger** — Tooltip on a disabled button (still shows)
+9. **Rich Content** — content as ReactNode with multiple lines
 
 ---
 
