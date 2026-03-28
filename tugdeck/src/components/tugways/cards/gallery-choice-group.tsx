@@ -14,6 +14,17 @@
  */
 
 import React, { useState } from "react";
+import {
+  Bold,
+  Italic,
+  Underline,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Sun,
+  Moon,
+  Monitor,
+} from "lucide-react";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceGroupRole } from "@/components/tugways/tug-choice-group";
 
@@ -56,6 +67,11 @@ export function GalleryChoiceGroup() {
 
   // Animated section
   const [animatedValue, setAnimatedValue] = useState("grid");
+
+  // Icons section
+  const [iconLeftValue, setIconLeftValue] = useState("bold");
+  const [iconRightValue, setIconRightValue] = useState("left");
+  const [iconOnlyValue, setIconOnlyValue] = useState("light");
 
   return (
     <div className="cg-content" data-testid="gallery-choice-group">
@@ -231,6 +247,67 @@ export function GalleryChoiceGroup() {
           <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
             Current view: <strong>{animatedValue}</strong>
           </div>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Icons ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Icons</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+          {/* Icon + label (left — default) */}
+          <div>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
+              icon + label (left, default)
+            </div>
+            <TugChoiceGroup
+              value={iconLeftValue}
+              onValueChange={setIconLeftValue}
+              aria-label="Text formatting"
+              items={[
+                { value: "bold",      label: "Bold",      icon: <Bold /> },
+                { value: "italic",    label: "Italic",    icon: <Italic /> },
+                { value: "underline", label: "Underline", icon: <Underline /> },
+              ]}
+            />
+          </div>
+
+          {/* Icon + label (right) */}
+          <div>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
+              icon + label (right)
+            </div>
+            <TugChoiceGroup
+              value={iconRightValue}
+              onValueChange={setIconRightValue}
+              aria-label="Text alignment"
+              items={[
+                { value: "left",   label: "Left",   icon: <AlignLeft />,   iconPosition: "right" },
+                { value: "center", label: "Center", icon: <AlignCenter />, iconPosition: "right" },
+                { value: "right",  label: "Right",  icon: <AlignRight />,  iconPosition: "right" },
+              ]}
+            />
+          </div>
+
+          {/* Icon only */}
+          <div>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
+              icon only
+            </div>
+            <TugChoiceGroup
+              value={iconOnlyValue}
+              onValueChange={setIconOnlyValue}
+              aria-label="Color theme"
+              items={[
+                { value: "light",  icon: <Sun />,     "aria-label": "Light" },
+                { value: "dark",   icon: <Moon />,    "aria-label": "Dark" },
+                { value: "system", icon: <Monitor />, "aria-label": "System" },
+              ]}
+            />
+          </div>
+
         </div>
       </div>
 

@@ -24,6 +24,7 @@ import {
   TugGroupRole,
   buildRoleStyle,
   useGroupKeyboardNav,
+  renderGroupItemContent,
 } from "./internal/tug-group-utils";
 
 // ---- Types ----
@@ -47,8 +48,15 @@ export type TugChoiceGroupRole = TugGroupRole;
 export interface TugChoiceItem {
   /** Unique value for this segment. */
   value: string;
-  /** Display label. */
-  label: string;
+  /** Display label. Optional — omit for icon-only items. */
+  label?: string;
+  /** Icon node (typically a Lucide icon). */
+  icon?: React.ReactNode;
+  /** Where to place the icon relative to the label.
+   *  @default "left" */
+  iconPosition?: "left" | "right" | "both";
+  /** Accessible label — required when label is omitted (icon-only). */
+  "aria-label"?: string;
   /** Disables this segment individually. */
   disabled?: boolean;
 }
@@ -173,6 +181,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
         {items.map((item, index) => {
           const isActive = item.value === value;
           const isDisabled = effectiveDisabled || item.disabled;
+          const isIconOnly = item.icon && !item.label;
 
           return (
             <button
@@ -182,9 +191,13 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
               role="radio"
               aria-checked={isActive}
               aria-disabled={isDisabled || undefined}
+              aria-label={isIconOnly ? item["aria-label"] : undefined}
               disabled={isDisabled}
               data-state={isActive ? "active" : "inactive"}
-              className="tug-choice-group-segment"
+              className={cn(
+                "tug-choice-group-segment",
+                isIconOnly && "tug-choice-group-segment-icon-only",
+              )}
               tabIndex={isActive ? 0 : -1}
               onClick={() => {
                 if (!isDisabled && !isActive) {
@@ -192,7 +205,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
                 }
               }}
             >
-              <span className="tug-choice-group-label">{item.label}</span>
+              {renderGroupItemContent({ label: item.label, icon: item.icon, iconPosition: item.iconPosition })}
             </button>
           );
         })}

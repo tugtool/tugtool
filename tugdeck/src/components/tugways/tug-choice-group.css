@@ -189,3 +189,48 @@
 .tug-choice-group-segment[aria-disabled="true"] .tug-choice-group-label {
   color: var(--tug7-element-segment-text-normal-plain-disabled);
 }
+
+
+/* ============================================================================
+   Icon + Label Layout (.tug-group-item-icon, .tug-group-item-label)
+   ========================================================================= */
+
+/* Segment inner content: flex row with gap for icon + label */
+.tug-choice-group-segment {
+  gap: 0.375rem;
+}
+
+/* Icon wrapper */
+.tug-group-item-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+/* Icon sizing per size variant */
+.tug-choice-group-sm .tug-group-item-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tug-choice-group-md .tug-group-item-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tug-choice-group-lg .tug-group-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+
+/* ============================================================================
+   Icon-only Segments (.tug-choice-group-segment-icon-only)
+   ========================================================================= */
+
+.tug-choice-group-segment-icon-only {
+  aspect-ratio: 1;
+  padding: 0;
+  justify-content: center;
+}
