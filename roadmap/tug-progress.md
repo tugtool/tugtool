@@ -275,6 +275,14 @@ export interface TugProgressProps
    */
   role?: TugProgressRole;
 
+  /**
+   * Disables the progress indicator. Animations freeze,
+   * colors dim. Also driven by TugBox disabled cascade.
+   * @selector [data-disabled]
+   * @default false
+   */
+  disabled?: boolean;
+
   /** Accessible label when no visible label. */
   "aria-label"?: string;
 }
