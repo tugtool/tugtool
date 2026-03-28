@@ -15,7 +15,7 @@ import { TugBox } from "@/components/tugways/tug-box";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
-import { TugSegmentedChoice } from "@/components/tugways/tug-segmented-choice";
+import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 
 // ---------------------------------------------------------------------------
 // GalleryBox
@@ -186,7 +186,7 @@ export function GalleryBox() {
                 <TugRadioItem value="https">HTTPS</TugRadioItem>
                 <TugRadioItem value="ws">WebSocket</TugRadioItem>
               </TugRadioGroup>
-              <TugSegmentedChoice
+              <TugChoiceGroup
                 value={toggleSeg}
                 onValueChange={setToggleSeg}
                 aria-label="View mode"

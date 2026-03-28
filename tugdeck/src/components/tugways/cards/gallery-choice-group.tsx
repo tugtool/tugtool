@@ -1,27 +1,27 @@
 /**
- * gallery-segmented-choice.tsx -- TugSegmentedChoice demo tab for the Component Gallery.
+ * gallery-choice-group.tsx -- TugChoiceGroup demo tab for the Component Gallery.
  *
- * Shows TugSegmentedChoice in all sizes, roles, disabled states, and with an
- * interactive sliding indicator demonstration.
+ * Shows TugChoiceGroup in all sizes, roles, disabled states, with an
+ * interactive sliding indicator demonstration, and animated vs. instant modes.
  *
- * NOT a tab bar — TugSegmentedChoice is a value picker, not a view switcher.
- * See roadmap/tug-segmented-choice.md for the full distinction.
+ * NOT a tab bar — TugChoiceGroup is a value picker, not a view switcher.
+ * See roadmap/group-family.md for the full distinction.
  *
  * Rules of Tugways compliance:
  *   - No root.render() after initial mount [D40, D42]
  *
- * @module components/tugways/cards/gallery-segmented-choice
+ * @module components/tugways/cards/gallery-choice-group
  */
 
 import React, { useState } from "react";
-import { TugSegmentedChoice } from "@/components/tugways/tug-segmented-choice";
-import type { TugSegmentedChoiceRole } from "@/components/tugways/tug-segmented-choice";
+import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
+import type { TugChoiceGroupRole } from "@/components/tugways/tug-choice-group";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const ALL_ROLES: TugSegmentedChoiceRole[] = [
+const ALL_ROLES: TugChoiceGroupRole[] = [
   "option",
   "action",
   "agent",
@@ -32,10 +32,10 @@ const ALL_ROLES: TugSegmentedChoiceRole[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// GallerySegmentedChoice
+// GalleryChoiceGroup
 // ---------------------------------------------------------------------------
 
-export function GallerySegmentedChoice() {
+export function GalleryChoiceGroup() {
   // Sizes section
   const [smValue, setSmValue] = useState("beta");
   const [mdValue, setMdValue] = useState("beta");
@@ -51,11 +51,14 @@ export function GallerySegmentedChoice() {
   const [disabledGroupValue] = useState("beta");
   const [partialValue, setPartialValue] = useState("alpha");
 
-  // Sliding indicator demo
+  // Sliding indicator demo (instant)
   const [viewMode, setViewMode] = useState("grid");
 
+  // Animated section
+  const [animatedValue, setAnimatedValue] = useState("grid");
+
   return (
-    <div className="cg-content" data-testid="gallery-segmented-choice">
+    <div className="cg-content" data-testid="gallery-choice-group">
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
@@ -63,11 +66,11 @@ export function GallerySegmentedChoice() {
         <div style={{ display: "flex", flexDirection: "row", gap: "32px", alignItems: "flex-start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>sm</div>
-            <TugSegmentedChoice
+            <TugChoiceGroup
               size="sm"
               value={smValue}
               onValueChange={setSmValue}
-              aria-label="Small segmented choice"
+              aria-label="Small choice group"
               items={[
                 { value: "alpha", label: "Alpha" },
                 { value: "beta",  label: "Beta" },
@@ -77,11 +80,11 @@ export function GallerySegmentedChoice() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>md</div>
-            <TugSegmentedChoice
+            <TugChoiceGroup
               size="md"
               value={mdValue}
               onValueChange={setMdValue}
-              aria-label="Medium segmented choice"
+              aria-label="Medium choice group"
               items={[
                 { value: "alpha", label: "Alpha" },
                 { value: "beta",  label: "Beta" },
@@ -91,11 +94,11 @@ export function GallerySegmentedChoice() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>lg</div>
-            <TugSegmentedChoice
+            <TugChoiceGroup
               size="lg"
               value={lgValue}
               onValueChange={setLgValue}
-              aria-label="Large segmented choice"
+              aria-label="Large choice group"
               items={[
                 { value: "alpha", label: "Alpha" },
                 { value: "beta",  label: "Beta" },
@@ -113,7 +116,7 @@ export function GallerySegmentedChoice() {
         <div className="cg-section-title">Roles</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {/* accent (default — no role prop) */}
-          <TugSegmentedChoice
+          <TugChoiceGroup
             value={accentValue}
             onValueChange={setAccentValue}
             aria-label="accent (default)"
@@ -124,7 +127,7 @@ export function GallerySegmentedChoice() {
           />
           {/* explicit roles */}
           {ALL_ROLES.map((role) => (
-            <TugSegmentedChoice
+            <TugChoiceGroup
               key={role}
               role={role}
               value={roleValues[role]}
@@ -149,7 +152,7 @@ export function GallerySegmentedChoice() {
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
               group disabled (selection visible)
             </div>
-            <TugSegmentedChoice
+            <TugChoiceGroup
               disabled
               value={disabledGroupValue}
               onValueChange={() => {}}
@@ -165,7 +168,7 @@ export function GallerySegmentedChoice() {
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>
               individual segments disabled
             </div>
-            <TugSegmentedChoice
+            <TugChoiceGroup
               value={partialValue}
               onValueChange={setPartialValue}
               aria-label="Partial disabled group"
@@ -182,17 +185,17 @@ export function GallerySegmentedChoice() {
 
       <div className="cg-divider" />
 
-      {/* ---- Sliding Indicator ---- */}
+      {/* ---- Instant Indicator ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Sliding Indicator</div>
+        <div className="cg-section-title">Instant Indicator</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ fontSize: "0.8125rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
-            Click a segment to watch the indicator pill animate to its new position.
+            Default behavior — indicator snaps instantly to the selected segment (no animation).
           </div>
-          <TugSegmentedChoice
+          <TugChoiceGroup
             value={viewMode}
             onValueChange={setViewMode}
-            aria-label="View mode"
+            aria-label="View mode (instant)"
             items={[
               { value: "grid",  label: "Grid"  },
               { value: "list",  label: "List"  },
@@ -201,6 +204,32 @@ export function GallerySegmentedChoice() {
           />
           <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
             Current view: <strong>{viewMode}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Animated ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Animated</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ fontSize: "0.8125rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
+            With <code>animated</code> — the indicator pill slides smoothly between segments.
+          </div>
+          <TugChoiceGroup
+            animated
+            value={animatedValue}
+            onValueChange={setAnimatedValue}
+            aria-label="View mode (animated)"
+            items={[
+              { value: "grid",  label: "Grid"  },
+              { value: "list",  label: "List"  },
+              { value: "table", label: "Table" },
+            ]}
+          />
+          <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
+            Current view: <strong>{animatedValue}</strong>
           </div>
         </div>
       </div>

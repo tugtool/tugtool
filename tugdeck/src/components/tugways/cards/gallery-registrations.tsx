@@ -47,7 +47,7 @@ import { GalleryPopupButton } from "./gallery-popup-button";
 import { GallerySlider } from "./gallery-slider";
 import { GalleryValueInput } from "./gallery-value-input";
 import { GalleryRadioGroup } from "./gallery-radio-group";
-import { GallerySegmentedChoice } from "./gallery-segmented-choice";
+import { GalleryChoiceGroup } from "./gallery-choice-group";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
 import "./gallery.css";
@@ -90,7 +90,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-slider",            title: "TugSlider",            closable: true },
   { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
   { id: "template", componentId: "gallery-radio-group",       title: "TugRadioGroup",        closable: true },
-  { id: "template", componentId: "gallery-segmented-choice", title: "TugSegmentedChoice",   closable: true },
+  { id: "template", componentId: "gallery-choice-group",    title: "TugChoiceGroup",       closable: true },
   { id: "template", componentId: "gallery-box",             title: "TugBox",               closable: true },
   { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
 ];
@@ -465,12 +465,12 @@ export function registerGalleryCards(): void {
     acceptsFamilies: ["developer"],
   });
 
-  // ---- gallery-segmented-choice ----
-  // TugSegmentedChoice showcase: sizes, roles, disabled states, sliding indicator.
+  // ---- gallery-choice-group ----
+  // TugChoiceGroup showcase: sizes, roles, disabled states, instant and animated indicator.
   registerCard({
-    componentId: "gallery-segmented-choice",
-    contentFactory: (_cardId) => <GallerySegmentedChoice />,
-    defaultMeta: { title: "TugSegmentedChoice", icon: "ToggleLeft", closable: true },
+    componentId: "gallery-choice-group",
+    contentFactory: (_cardId) => <GalleryChoiceGroup />,
+    defaultMeta: { title: "TugChoiceGroup", icon: "ToggleLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

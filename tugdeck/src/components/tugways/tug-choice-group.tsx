@@ -1,5 +1,5 @@
 /**
- * TugSegmentedChoice — Mutually exclusive segment picker with sliding indicator.
+ * TugChoiceGroup — Mutually exclusive segment picker with sliding indicator.
  *
  * Original component — no Radix wrapper. ARIA, keyboard navigation, and focus
  * management are hand-implemented. Role="radiogroup" on root; each segment is
@@ -15,16 +15,21 @@
  * Decisions: [D03] appearance via stylesheet injection, [D05] component token naming
  */
 
-import "./tug-segmented-choice.css";
+import "./tug-choice-group.css";
 
 import React from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+import {
+  TugGroupRole,
+  buildRoleStyle,
+  useGroupKeyboardNav,
+} from "./internal/tug-group-utils";
 
 // ---- Types ----
 
-/** Segmented choice size names. */
-export type TugSegmentedChoiceSize = "sm" | "md" | "lg";
+/** Choice group size names. */
+export type TugChoiceGroupSize = "sm" | "md" | "lg";
 
 /**
  * Semantic role for the selected indicator color.
@@ -32,19 +37,14 @@ export type TugSegmentedChoiceSize = "sm" | "md" | "lg";
  * Omit the role prop (or leave undefined) for the theme's accent color.
  * Explicit roles override with a semantic signal color.
  *
+ * Re-exported from TugGroupRole for API consistency.
+ *
  * @selector [data-role="<role>"]
  */
-export type TugSegmentedChoiceRole =
-  | "option"
-  | "action"
-  | "agent"
-  | "data"
-  | "success"
-  | "caution"
-  | "danger";
+export type TugChoiceGroupRole = TugGroupRole;
 
 /** A single segment item definition. */
-export interface TugSegmentedChoiceItem {
+export interface TugChoiceItem {
   /** Unique value for this segment. */
   value: string;
   /** Display label. */
@@ -53,27 +53,11 @@ export interface TugSegmentedChoiceItem {
   disabled?: boolean;
 }
 
-/**
- * Maps role prop values to toggle-primary token suffixes.
- * The prop API uses "action" but the token system uses "active"
- * (e.g., --tug7-surface-toggle-primary-normal-active-rest).
- * "accent" is not in this map — it's the implicit default when no role is provided.
- */
-const ROLE_TOKEN_MAP: Record<string, string> = {
-  option:  "option",
-  action:  "active",
-  agent:   "agent",
-  data:    "data",
-  success: "success",
-  caution: "caution",
-  danger:  "danger",
-};
-
-/** TugSegmentedChoice props. */
-export interface TugSegmentedChoiceProps
+/** TugChoiceGroup props. */
+export interface TugChoiceGroupProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "role" | "defaultValue" | "onChange"> {
   /** The items to display as segments. */
-  items: TugSegmentedChoiceItem[];
+  items: TugChoiceItem[];
   /**
    * Current selected value.
    * @selector [data-state="active"] on segments
@@ -83,28 +67,33 @@ export interface TugSegmentedChoiceProps
   onValueChange: (value: string) => void;
   /**
    * Visual size.
-   * @selector .tug-segmented-choice-sm | .tug-segmented-choice-md | .tug-segmented-choice-lg
+   * @selector .tug-choice-group-sm | .tug-choice-group-md | .tug-choice-group-lg
    * @default "md"
    */
-  size?: TugSegmentedChoiceSize;
+  size?: TugChoiceGroupSize;
   /**
    * Semantic role color for the selected indicator.
    * @selector [data-role="<role>"]
    */
-  role?: TugSegmentedChoiceRole;
+  role?: TugChoiceGroupRole;
   /**
    * Disables all segments.
    * @selector [data-disabled]
    */
   disabled?: boolean;
+  /**
+   * Animate the sliding indicator between selections.
+   * @default false
+   */
+  animated?: boolean;
   /** Accessible label for the group. */
   "aria-label"?: string;
 }
 
-// ---- TugSegmentedChoice ----
+// ---- TugChoiceGroup ----
 
-export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedChoiceProps>(
-  function TugSegmentedChoice(
+export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupProps>(
+  function TugChoiceGroup(
     {
       items,
       value,
@@ -112,6 +101,7 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
       size = "md",
       role,
       disabled = false,
+      animated = false,
       className,
       style,
       "aria-label": ariaLabel,
@@ -123,13 +113,7 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
     const effectiveDisabled = disabled || boxDisabled;
 
     // Role injection — indicator pill uses toggle-primary tokens. [L06]
-    // No role prop = accent. Single path, zero branches.
-    const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
-    const roleStyle = {
-      "--tugx-segment-on-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-rest)`,
-      "--tugx-segment-on-hover-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-hover)`,
-      "--tugx-segment-disabled-color": `var(--tug7-surface-toggle-primary-normal-${tokenSuffix}-disabled)`,
-    } as React.CSSProperties;
+    const roleStyle = buildRoleStyle("segment", role);
 
     // Refs for each segment button — indexed to match items array.
     const segmentRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
@@ -150,72 +134,29 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
 
     // ---- Keyboard navigation ----
 
-    const handleKeyDown = React.useCallback(
-      (e: React.KeyboardEvent<HTMLDivElement>) => {
-        if (effectiveDisabled) return;
-
-        const enabledItems = items.filter((item) => !item.disabled);
-        const currentEnabledIndex = enabledItems.findIndex((item) => item.value === value);
-
-        let nextItem: TugSegmentedChoiceItem | undefined;
-
-        switch (e.key) {
-          case "ArrowLeft":
-          case "ArrowUp": {
-            e.preventDefault();
-            const prevIndex =
-              currentEnabledIndex <= 0
-                ? enabledItems.length - 1
-                : currentEnabledIndex - 1;
-            nextItem = enabledItems[prevIndex];
-            break;
-          }
-          case "ArrowRight":
-          case "ArrowDown": {
-            e.preventDefault();
-            const nextIndex =
-              currentEnabledIndex >= enabledItems.length - 1
-                ? 0
-                : currentEnabledIndex + 1;
-            nextItem = enabledItems[nextIndex];
-            break;
-          }
-          case "Home": {
-            e.preventDefault();
-            nextItem = enabledItems[0];
-            break;
-          }
-          case "End": {
-            e.preventDefault();
-            nextItem = enabledItems[enabledItems.length - 1];
-            break;
-          }
-          default:
-            return;
-        }
-
-        if (nextItem && nextItem.value !== value) {
-          onValueChange(nextItem.value);
-          // Move DOM focus to the newly selected segment button.
-          const nextIndex = items.findIndex((item) => item.value === nextItem!.value);
-          segmentRefs.current[nextIndex]?.focus();
-        }
+    const handleKeyDown = useGroupKeyboardNav({
+      items,
+      value,
+      onNavigate: (nextValue) => {
+        onValueChange(nextValue);
       },
-      [effectiveDisabled, items, value, onValueChange],
-    );
+      disabled: effectiveDisabled,
+      itemRefs: segmentRefs,
+    });
 
     return (
       <div
         ref={ref}
-        data-slot="tug-segmented-choice"
+        data-slot="tug-choice-group"
         role="radiogroup"
         aria-label={ariaLabel}
         aria-disabled={effectiveDisabled || undefined}
         data-role={role}
         data-disabled={effectiveDisabled || undefined}
         className={cn(
-          "tug-segmented-choice",
-          `tug-segmented-choice-${size}`,
+          "tug-choice-group",
+          `tug-choice-group-${size}`,
+          animated && "tug-choice-group-animated",
           className,
         )}
         style={{ ...roleStyle, ...style }}
@@ -225,7 +166,7 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
         {/* Sliding indicator pill — positioned imperatively via ref [L06] */}
         <div
           ref={indicatorRef}
-          className="tug-segmented-choice-indicator"
+          className="tug-choice-group-indicator"
           aria-hidden="true"
         />
 
@@ -243,7 +184,7 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
               aria-disabled={isDisabled || undefined}
               disabled={isDisabled}
               data-state={isActive ? "active" : "inactive"}
-              className="tug-segmented-choice-segment"
+              className="tug-choice-group-segment"
               tabIndex={isActive ? 0 : -1}
               onClick={() => {
                 if (!isDisabled && !isActive) {
@@ -251,7 +192,7 @@ export const TugSegmentedChoice = React.forwardRef<HTMLDivElement, TugSegmentedC
                 }
               }}
             >
-              <span className="tug-segmented-choice-label">{item.label}</span>
+              <span className="tug-choice-group-label">{item.label}</span>
             </button>
           );
         })}
