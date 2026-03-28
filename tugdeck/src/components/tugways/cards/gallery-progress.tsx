@@ -19,25 +19,29 @@ import { TugBox } from "@/components/tugways/tug-box";
 // ---------------------------------------------------------------------------
 
 export function GalleryProgress() {
-  const [transValue, setTransValue] = useState<number | undefined>(undefined);
-  const [transRunning, setTransRunning] = useState(false);
+  const [barTransValue, setBarTransValue] = useState<number | undefined>(undefined);
+  const [barTransRunning, setBarTransRunning] = useState(false);
+  const [ringTransValue, setRingTransValue] = useState<number | undefined>(undefined);
+  const [ringTransRunning, setRingTransRunning] = useState(false);
 
-  function handleStartUpload() {
-    setTransRunning(true);
-    setTransValue(undefined);
-
+  function startTransition(
+    setVal: (v: number | undefined) => void,
+    setRunning: (r: boolean) => void,
+  ) {
+    setRunning(true);
+    setVal(undefined);
     setTimeout(() => {
       let current = 0;
-      setTransValue(0);
+      setVal(0);
       const interval = setInterval(() => {
         current += 0.05;
         if (current >= 1) {
           current = 1;
-          setTransValue(1);
+          setVal(1);
           clearInterval(interval);
-          setTransRunning(false);
+          setRunning(false);
         } else {
-          setTransValue(current);
+          setVal(current);
         }
       }, 200);
     }, 2000);
@@ -124,20 +128,38 @@ export function GalleryProgress() {
       {/* ---- 7. Transition Demo ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Transition Demo</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "480px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "32px", maxWidth: "480px" }}>
           <p style={{ fontSize: "0.875rem", color: "var(--tug7-element-field-text-normal-label-rest)", margin: 0 }}>
-            Simulates an upload: starts indeterminate for 2 seconds, then transitions to determinate progress.
+            Starts indeterminate for 2 seconds, then transitions to determinate progress.
           </p>
-          <TugPushButton
-            label={transRunning ? "Running..." : "Start Upload"}
-            disabled={transRunning}
-            onClick={handleStartUpload}
-          />
-          <TugProgress
-            variant="bar"
-            value={transValue}
-            label={transValue !== undefined ? `${Math.round(transValue * 100)}%` : "Preparing..."}
-          />
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-start" }}>
+            <TugPushButton
+              size="sm"
+              disabled={barTransRunning}
+              onClick={() => startTransition(setBarTransValue, setBarTransRunning)}
+            >{barTransRunning ? "Running..." : "Start Bar Upload"}</TugPushButton>
+            <TugProgress
+              variant="bar"
+              value={barTransValue}
+              label={barTransValue !== undefined ? `${Math.round(barTransValue * 100)}%` : "Preparing..."}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-start" }}>
+            <TugPushButton
+              size="sm"
+              disabled={ringTransRunning}
+              onClick={() => startTransition(setRingTransValue, setRingTransRunning)}
+            >{ringTransRunning ? "Running..." : "Start Ring Upload"}</TugPushButton>
+            <TugProgress
+              variant="ring"
+              size="lg"
+              value={ringTransValue}
+              label={ringTransValue !== undefined ? `${Math.round(ringTransValue * 100)}%` : "Preparing..."}
+            />
+          </div>
         </div>
       </div>
 

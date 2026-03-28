@@ -15,7 +15,7 @@
  *       [L16] pairings declared, [L19] component authoring guide
  */
 
-import React from "react";
+import React, { useRef, useLayoutEffect } from "react";
 import { cn } from "@/lib/utils";
 import "./tug-progress-bar.css";
 
@@ -43,6 +43,27 @@ export const TugProgressBar = React.forwardRef<HTMLDivElement, TugProgressBarPro
       ? Math.min(Math.max((value / max) * 100, 0), 100)
       : 0;
 
+    // Track mode changes to suppress transition on indeterminate → determinate switch [L06]
+    const prevDeterminateRef = useRef(isDeterminate);
+    const fillRef = useRef<HTMLDivElement>(null);
+
+    useLayoutEffect(() => {
+      const wasDeterminate = prevDeterminateRef.current;
+      prevDeterminateRef.current = isDeterminate;
+
+      // Switching from indeterminate to determinate: suppress width transition
+      // so the fill snaps to position instead of animating from 100% → value
+      if (!wasDeterminate && isDeterminate && fillRef.current) {
+        fillRef.current.style.transition = "none";
+        // Re-enable after one frame so subsequent value updates animate
+        requestAnimationFrame(() => {
+          if (fillRef.current) {
+            fillRef.current.style.transition = "";
+          }
+        });
+      }
+    }, [isDeterminate]);
+
     return (
       <div
         ref={ref}
@@ -56,6 +77,7 @@ export const TugProgressBar = React.forwardRef<HTMLDivElement, TugProgressBarPro
         )}
       >
         <div
+          ref={fillRef}
           className={cn(
             "tug-progress-bar-fill",
             !isDeterminate && "tug-progress-bar-indeterminate",

@@ -15,7 +15,7 @@
  *       [L16] pairings declared, [L19] component authoring guide
  */
 
-import React from "react";
+import React, { useRef, useLayoutEffect } from "react";
 import { cn } from "@/lib/utils";
 import "./tug-progress-ring.css";
 
@@ -50,6 +50,24 @@ export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRing
       ? CIRCUMFERENCE * (1 - fraction)
       : undefined;
 
+    // Track mode changes to suppress transition on indeterminate → determinate switch [L06]
+    const prevDeterminateRef = useRef(isDeterminate);
+    const arcRef = useRef<SVGCircleElement>(null);
+
+    useLayoutEffect(() => {
+      const wasDeterminate = prevDeterminateRef.current;
+      prevDeterminateRef.current = isDeterminate;
+
+      if (!wasDeterminate && isDeterminate && arcRef.current) {
+        arcRef.current.style.transition = "none";
+        requestAnimationFrame(() => {
+          if (arcRef.current) {
+            arcRef.current.style.transition = "";
+          }
+        });
+      }
+    }, [isDeterminate]);
+
     return (
       <span
         ref={ref}
@@ -78,6 +96,7 @@ export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRing
           />
           {/* Foreground arc */}
           <circle
+            ref={arcRef}
             className="tug-progress-ring-arc"
             cx="16"
             cy="16"

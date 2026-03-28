@@ -28,16 +28,16 @@
    Size Variants
    ========================================================================= */
 
-.tug-progress-spinner-sm { --tug-progress-spinner-size: 16px; }
-.tug-progress-spinner-md { --tug-progress-spinner-size: 24px; }
-.tug-progress-spinner-lg { --tug-progress-spinner-size: 32px; }
+.tug-progress-spinner-sm { --tug-progress-spinner-size: 12px; }
+.tug-progress-spinner-md { --tug-progress-spinner-size: 16px; }
+.tug-progress-spinner-lg { --tug-progress-spinner-size: 22px; }
 
 /* ============================================================================
    Root Container
    ========================================================================= */
 
 .tug-progress-spinner {
-  --tug-progress-spinner-size: 24px; /* md default; overridden by size class */
+  --tug-progress-spinner-size: 16px; /* md default; overridden by size class */
   position: relative;
   display: inline-flex;
   align-items: center;
