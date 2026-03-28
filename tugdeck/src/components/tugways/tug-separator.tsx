@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 // ---- Types ----
 
 export type TugSeparatorOrientation = "horizontal" | "vertical";
+export type TugSeparatorAlign = "start" | "center" | "end";
 
 export interface TugSeparatorProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "role" | "children"> {
@@ -60,6 +61,37 @@ export interface TugSeparatorProps
   capped?: boolean;
 
   /**
+   * Constrains the separator length. Any CSS length value: "50%", "200px", etc.
+   * For horizontal: controls width. For vertical: controls height.
+   * @default "100%" for horizontal, "auto" for vertical
+   */
+  length?: string;
+
+  /**
+   * Alignment when length is less than 100%.
+   * @selector .tug-separator-align-start | .tug-separator-align-center | .tug-separator-align-end
+   * @default "center"
+   */
+  align?: TugSeparatorAlign;
+
+  /**
+   * Size of the ornament. Any CSS length value.
+   * For SVG ornaments: sets width and height.
+   * For text/glyph ornaments: sets font-size.
+   * @default "1.5em" for SVG, "1.25em" for text (via CSS)
+   */
+  ornamentSize?: string;
+
+  /**
+   * Vertical offset for the ornament. Any CSS length value.
+   * Positive moves down, negative moves up. Use to fine-tune
+   * vertical alignment per glyph — different characters sit
+   * differently in their bounding box.
+   * @default "-0.05em" (via CSS)
+   */
+  ornamentOffset?: string;
+
+  /**
    * Decorative separators (the common case) are hidden from the
    * accessibility tree. Set to false when the separator conveys
    * meaningful structure (e.g., between form sections).
@@ -77,8 +109,13 @@ export const TugSeparator = React.forwardRef<HTMLDivElement, TugSeparatorProps>(
       label,
       ornament,
       capped = false,
+      length,
+      align = "center",
+      ornamentSize,
+      ornamentOffset,
       decorative = true,
       className,
+      style,
       ...rest
     },
     ref,
@@ -93,9 +130,26 @@ export const TugSeparator = React.forwardRef<HTMLDivElement, TugSeparatorProps>(
       effectiveLabel ? (
         <span className="tug-separator-label" aria-hidden="true">{effectiveLabel}</span>
       ) : effectiveOrnament ? (
-        <span className="tug-separator-ornament" aria-hidden="true">{effectiveOrnament}</span>
+        <span
+        className="tug-separator-ornament"
+        aria-hidden="true"
+        style={(ornamentSize || ornamentOffset) ? {
+          ...(ornamentSize ? { fontSize: ornamentSize } : {}),
+          ...(ornamentOffset ? { transform: `translateY(${ornamentOffset})` } : {}),
+        } as React.CSSProperties : undefined}
+      >{effectiveOrnament}</span>
       ) : null
     ) : null;
+
+    // Length and alignment as inline style
+    const lengthStyle: React.CSSProperties = {};
+    if (length) {
+      if (isHorizontal) {
+        lengthStyle.width = length;
+      } else {
+        lengthStyle.height = length;
+      }
+    }
 
     return (
       <div
@@ -109,8 +163,10 @@ export const TugSeparator = React.forwardRef<HTMLDivElement, TugSeparatorProps>(
           effectiveLabel && "tug-separator-labeled",
           effectiveOrnament && !effectiveLabel && "tug-separator-ornamented",
           capped && isHorizontal && "tug-separator-capped",
+          length && `tug-separator-align-${align}`,
           className,
         )}
+        style={{ ...lengthStyle, ...style }}
         {...rest}
       >
         {centerContent}

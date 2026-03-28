@@ -23,6 +23,23 @@
   padding: 0;
 }
 
+/* ---- Alignment (when length is less than 100%) ---- */
+
+.tug-separator-align-start {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.tug-separator-align-center {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tug-separator-align-end {
+  margin-left: auto;
+  margin-right: 0;
+}
+
 /* ---- Horizontal ---- */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
@@ -96,19 +113,23 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-separator-ornament {
   font-size: 1.25em;
-  line-height: 1;
+  line-height: 0;
   color: var(--tug7-element-global-divider-normal-separator-rest);
   padding: 0 var(--tug-space-md);
   user-select: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Nudge up to compensate for glyph descender space —
+     Unicode ornamental characters sit visually low in their bounding box */
+  transform: translateY(-0.05em);
 }
 
-/* SVG ornaments should inherit color and size */
+/* SVG ornaments size relative to font-size so ornamentSize controls both
+   text glyphs and SVGs through a single font-size override */
 .tug-separator-ornament svg {
-  width: 1.5em;
-  height: 1.5em;
+  width: 1em;
+  height: 1em;
   color: inherit;
 }
 
