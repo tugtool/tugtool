@@ -52,6 +52,7 @@ import { GalleryOptionGroup } from "./gallery-option-group";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
 import { GallerySeparator } from "./gallery-separator";
+import { GalleryProgress } from "./gallery-progress";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -97,6 +98,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
   { id: "template", componentId: "gallery-option-group",   title: "TugOptionGroup",       closable: true },
   { id: "template", componentId: "gallery-separator",      title: "TugSeparator",          closable: true },
+  { id: "template", componentId: "gallery-progress",      title: "TugProgress",           closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -518,6 +520,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-separator",
     contentFactory: (_cardId) => <GallerySeparator />,
     defaultMeta: { title: "TugSeparator", icon: "Minus", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-progress ----
+  // TugProgress showcase: spinner/bar/ring (indeterminate + determinate),
+  // transition demo, roles, disabled, and TugBox disabled cascade.
+  registerCard({
+    componentId: "gallery-progress",
+    contentFactory: (_cardId) => <GalleryProgress />,
+    defaultMeta: { title: "TugProgress", icon: "Activity", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
