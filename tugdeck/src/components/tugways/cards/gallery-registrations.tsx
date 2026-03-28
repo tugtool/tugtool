@@ -48,6 +48,7 @@ import { GallerySlider } from "./gallery-slider";
 import { GalleryValueInput } from "./gallery-value-input";
 import { GalleryRadioGroup } from "./gallery-radio-group";
 import { GalleryChoiceGroup } from "./gallery-choice-group";
+import { GalleryContextMenu } from "./gallery-context-menu";
 import { GalleryOptionGroup } from "./gallery-option-group";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
@@ -97,6 +98,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-value-input",       title: "TugValueInput",        closable: true },
   { id: "template", componentId: "gallery-radio-group",       title: "TugRadioGroup",        closable: true },
   { id: "template", componentId: "gallery-choice-group",    title: "TugChoiceGroup",       closable: true },
+  { id: "template", componentId: "gallery-context-menu",   title: "TugContextMenu",       closable: true },
   { id: "template", componentId: "gallery-box",             title: "TugBox",               closable: true },
   { id: "template", componentId: "gallery-textarea",        title: "TugTextarea",          closable: true },
   { id: "template", componentId: "gallery-tooltip",         title: "TugTooltip",           closable: true },
@@ -493,6 +495,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-choice-group",
     contentFactory: (_cardId) => <GalleryChoiceGroup />,
     defaultMeta: { title: "TugChoiceGroup", icon: "ToggleLeft", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-context-menu ----
+  // TugContextMenu showcase: basic right-click region, icons, shortcuts, separators
+  // and labels, disabled items, and wrapping a card-like UI element.
+  registerCard({
+    componentId: "gallery-context-menu",
+    contentFactory: (_cardId) => <GalleryContextMenu />,
+    defaultMeta: { title: "TugContextMenu", icon: "MousePointer2", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
