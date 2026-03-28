@@ -392,10 +392,9 @@ export default defineConfig(() => {
     build: {
       outDir: "dist",
       emptyOutDir: true,
-      // Shiki language grammars are large by nature; suppress the warning for
-      // chunks that exceed 500 kB since we can't split them further without
-      // restructuring the syntax-highlighting feature.
-      chunkSizeWarningLimit: 1000,
+      // Tauri app loads from local filesystem — chunk size is not a
+      // performance concern. Disable the warning entirely.
+      chunkSizeWarningLimit: Infinity,
       rollupOptions: {
         input: {
           index: path.resolve(__dirname, "index.html"),
