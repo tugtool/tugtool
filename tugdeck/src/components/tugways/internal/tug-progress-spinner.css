@@ -1,0 +1,116 @@
+/* @tug-pairings {
+  --tugx-progress-fill | (inherited from parent TugProgress) | control
+} */
+
+/**
+ * @tug-pairings
+ * | Element                | Surface                              | Role    | Context                                     |
+ * |------------------------|--------------------------------------|---------|---------------------------------------------|
+ * | --tugx-progress-fill   | (inherited from parent TugProgress)  | control | .tug-progress-spinner-petal (background)     |
+ */
+
+/* --- TugProgressSpinner: spinning petal indicator ---
+ *
+ * Promoted from gallery.css (.tug-petals / .petal).
+ * Size is controlled by --tug-progress-spinner-size, set by size variant classes.
+ * All internal dimensions use em so the whole indicator scales proportionally
+ * when font-size equals --tug-progress-spinner-size on the root element.
+ *
+ * Color source: var(--tugx-progress-fill) — injected by parent TugProgress.
+ * Falls back to currentColor for standalone use.
+ *
+ * Motion compliance [L13]: all durations scale via calc(Xms * var(--tug-timing, 1)).
+ * When data-tug-motion="off" is set on <body>, animation-duration: 0s !important
+ * suppresses all animations.
+ */
+
+/* ============================================================================
+   Size Variants
+   ========================================================================= */
+
+.tug-progress-spinner-sm { --tug-progress-spinner-size: 16px; }
+.tug-progress-spinner-md { --tug-progress-spinner-size: 24px; }
+.tug-progress-spinner-lg { --tug-progress-spinner-size: 32px; }
+
+/* ============================================================================
+   Root Container
+   ========================================================================= */
+
+.tug-progress-spinner {
+  --tug-progress-spinner-size: 24px; /* md default; overridden by size class */
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tug-progress-spinner-size);
+  height: var(--tug-progress-spinner-size);
+  font-size: var(--tug-progress-spinner-size);
+  animation: tug-progress-spinner-rotate calc(20000ms * var(--tug-timing, 1)) linear infinite;
+}
+
+/* ============================================================================
+   Petals
+   ========================================================================= */
+
+.tug-progress-spinner-petal {
+  position: absolute;
+  /* Petal dimensions: ~18% wide, ~32% tall relative to the bounding box */
+  width: 0.2em;
+  height: 0.5em;
+  border-radius: 50%;
+  background-color: var(--tugx-progress-fill, currentColor);
+  animation: tug-progress-spinner-fade  calc(800ms * var(--tug-timing, 1)) var(--tug-motion-easing-standard) infinite,
+             tug-progress-spinner-scale calc(800ms * var(--tug-timing, 1)) var(--tug-motion-easing-standard) infinite;
+}
+
+/* Ring placement: each petal rotated 45deg apart, offset outward by 0.4em */
+.tug-progress-spinner-petal:nth-child(1) { transform: rotate(15deg)  translateY(-0.4em) translateX(-50%); }
+.tug-progress-spinner-petal:nth-child(2) { transform: rotate(60deg)  translateY(-0.4em) translateX(-50%); }
+.tug-progress-spinner-petal:nth-child(3) { transform: rotate(105deg) translateY(-0.4em) translateX(-50%); }
+.tug-progress-spinner-petal:nth-child(4) { transform: rotate(150deg) translateY(-0.4em) translateX(-50%); }
+.tug-progress-spinner-petal:nth-child(5) { transform: rotate(195deg) translateY(-0.4em) translateX(-50%); }
+.tug-progress-spinner-petal:nth-child(6) { transform: rotate(240deg) translateY(-0.4em) translateX(-50%); }
+.tug-progress-spinner-petal:nth-child(7) { transform: rotate(285deg) translateY(-0.4em) translateX(-50%); }
+.tug-progress-spinner-petal:nth-child(8) { transform: rotate(330deg) translateY(-0.4em) translateX(-50%); }
+
+/* Staggered delays: clockwise chase */
+.tug-progress-spinner-petal:nth-child(1) { animation-delay: calc(-875ms * var(--tug-timing, 1)); }
+.tug-progress-spinner-petal:nth-child(2) { animation-delay: calc(-750ms * var(--tug-timing, 1)); }
+.tug-progress-spinner-petal:nth-child(3) { animation-delay: calc(-625ms * var(--tug-timing, 1)); }
+.tug-progress-spinner-petal:nth-child(4) { animation-delay: calc(-500ms * var(--tug-timing, 1)); }
+.tug-progress-spinner-petal:nth-child(5) { animation-delay: calc(-375ms * var(--tug-timing, 1)); }
+.tug-progress-spinner-petal:nth-child(6) { animation-delay: calc(-250ms * var(--tug-timing, 1)); }
+.tug-progress-spinner-petal:nth-child(7) { animation-delay: calc(-125ms * var(--tug-timing, 1)); }
+.tug-progress-spinner-petal:nth-child(8) { animation-delay: calc(0ms    * var(--tug-timing, 1)); }
+
+/* ============================================================================
+   Disabled State
+   ========================================================================= */
+
+.tug-progress-spinner-disabled {
+  animation-play-state: paused;
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+}
+
+.tug-progress-spinner-disabled .tug-progress-spinner-petal {
+  animation-play-state: paused;
+}
+
+/* ============================================================================
+   Keyframes
+   ========================================================================= */
+
+@keyframes tug-progress-spinner-fade {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+@keyframes tug-progress-spinner-scale {
+  0%, 100% { scale: 0.9; }
+  50%      { scale: 1.0; }
+}
+
+@keyframes tug-progress-spinner-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
