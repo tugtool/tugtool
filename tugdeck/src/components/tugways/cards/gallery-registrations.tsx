@@ -59,6 +59,7 @@ import { GalleryProgress } from "./gallery-progress";
 import { GalleryAccordion } from "./gallery-accordion";
 import { GalleryTooltip } from "./gallery-tooltip";
 import { GalleryBanner } from "./gallery-banner";
+import { GalleryAlert } from "./gallery-alert";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -111,6 +112,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-separator",      title: "TugSeparator",          closable: true },
   { id: "template", componentId: "gallery-progress",      title: "TugProgress",           closable: true },
   { id: "template", componentId: "gallery-banner",        title: "TugBanner",             closable: true },
+  { id: "template", componentId: "gallery-alert",         title: "TugAlert",              closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -610,6 +612,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-banner",
     contentFactory: (_cardId) => <GalleryBanner />,
     defaultMeta: { title: "TugBanner", icon: "AlertTriangle", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-alert ----
+  // TugAlert showcase: basic alert (useTugAlert hook), danger confirmation,
+  // caution warning, OK-only single-button variant, and ref-based imperative API.
+  registerCard({
+    componentId: "gallery-alert",
+    contentFactory: (_cardId) => <GalleryAlert />,
+    defaultMeta: { title: "TugAlert", icon: "AlertCircle", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
