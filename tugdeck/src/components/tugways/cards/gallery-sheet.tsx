@@ -102,8 +102,8 @@ export function GallerySheet() {
                 </div>
               </div>
               <div className="tug-sheet-actions">
-                <TugPushButton emphasis="outlined" size="sm" onClick={() => setBasicOpen(false)}>Cancel</TugPushButton>
-                <TugPushButton emphasis="filled" size="sm" onClick={() => setBasicOpen(false)}>Save</TugPushButton>
+                <TugPushButton emphasis="outlined" onClick={() => setBasicOpen(false)}>Cancel</TugPushButton>
+                <TugPushButton emphasis="filled" onClick={() => setBasicOpen(false)}>Save</TugPushButton>
               </div>
             </TugSheetContent>
           </TugSheet>
@@ -139,8 +139,8 @@ export function GallerySheet() {
                 </div>
               </div>
               <div className="tug-sheet-actions">
-                <TugPushButton emphasis="outlined" size="sm" onClick={() => setDescOpen(false)}>Cancel</TugPushButton>
-                <TugPushButton emphasis="filled" size="sm" onClick={() => setDescOpen(false)}>Invite</TugPushButton>
+                <TugPushButton emphasis="outlined" onClick={() => setDescOpen(false)}>Cancel</TugPushButton>
+                <TugPushButton emphasis="filled" onClick={() => setDescOpen(false)}>Invite</TugPushButton>
               </div>
             </TugSheetContent>
           </TugSheet>
@@ -177,7 +177,7 @@ export function GallerySheet() {
               <TugPushButton emphasis="outlined" size="sm" onClick={() => sheetRef.current?.close()}>
                 Cancel
               </TugPushButton>
-              <TugPushButton emphasis="filled" size="sm" onClick={() => sheetRef.current?.close()}>
+              <TugPushButton emphasis="filled" onClick={() => sheetRef.current?.close()}>
                 Apply
               </TugPushButton>
             </div>
@@ -286,8 +286,8 @@ function RichChecklistContent({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="tug-sheet-actions">
-        <TugPushButton emphasis="outlined" size="sm" onClick={onClose}>Cancel</TugPushButton>
-        <TugPushButton emphasis="filled" size="sm" onClick={onClose}>Save</TugPushButton>
+        <TugPushButton emphasis="outlined" onClick={onClose}>Cancel</TugPushButton>
+        <TugPushButton emphasis="filled" onClick={onClose}>Save</TugPushButton>
       </div>
     </div>
   );

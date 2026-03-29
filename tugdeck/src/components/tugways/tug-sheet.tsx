@@ -332,11 +332,15 @@ export function TugSheetContent({
 
   return createPortal(
     <>
-      {/* Overlay (scrim) — positioned absolute within the card, below title bar */}
+      {/* Overlay (scrim) — positioned absolute within the card, below title bar.
+           No click-to-dismiss: sheets are card-modal and require explicit dismissal
+           via Cancel button, Escape, or Cmd+.
+           onPointerDown preventDefault stops the browser from clearing selection
+           or moving focus — the scrim is a dead zone that swallows all pointer events. */}
       <div
         ref={overlayRef}
         className="tug-sheet-overlay"
-        onClick={() => onOpenChange(false)}
+        onPointerDown={(e) => e.preventDefault()}
       />
 
       {/* Clip container: overflow hidden at title bar edge so sheet
