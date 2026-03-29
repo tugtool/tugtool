@@ -3,7 +3,11 @@
 *Live document. Updated as we probe the tugcast/tugtalk transport.*
 
 **Date:** 2026-03-29
-**Method:** Direct tugtalk probing via `tugtalk/probe.ts` — bypasses tugcast, connects to tugtalk's stdin/stdout JSON-lines protocol.
+**Method:** Direct tugtalk probing via `tugtalk/probe.ts` — bypasses tugcast, connects to tugtalk's stdin/stdout JSON-lines protocol. 33 tests completed.
+
+---
+
+**Action items live in [tug-conversation.md](tug-conversation.md)** — items T1-T6 (transport fixes), U1-U18 (UI work), C1-C15 (terminal-only commands), E1-E6 (exploration areas). This document is the exploration journal.
 
 ---
 
@@ -1081,10 +1085,76 @@ Claude Code's slash command mechanism works like this:
 3. The skill errored silently and produced no output.
 4. There's a skill invocation pathway we haven't found.
 
-**Next steps to resolve:**
-- Run `/tugplug:dash` through the probe, then immediately send a resume command or restart the probe to see if replay events contain the skill output.
-- Read Claude Code's source (if available) to understand how the `--input-format stream-json` handler processes `/`-prefixed text.
-- Check if there's an alternative to sending the slash command as text — maybe a structured inbound message type.
+---
+
+## RESOLVED: Slash Command Mystery
+
+**Root cause: `--plugin-dir` was pointing to the wrong directory.**
+
+Tugtalk's `getTugtoolRoot()` resolves to the project root (`/u/src/tugtool`), which finds the root-level `.claude-plugin/plugin.json` (name: `tugtool`). But the tugplug skills live under `tugplug/skills/`, and the `tugplug` plugin definition is at `tugplug/.claude-plugin/plugin.json`. The root-level plugin doesn't expose the skills.
+
+**Fix:** Point `--plugin-dir` to `tugplug/` instead of the project root.
+
+**Test 29: `/tugplug:ping` with correct `--plugin-dir`**
+
+With `--plugin-dir /u/src/tugtool/tugplug`:
+
+```
+system:init → skills includes: tugplug:ping, tugplug:plan, tugplug:merge, tugplug:dash, tugplug:implement
+stream:text_delta → "**pong** — 2026-03-29T00:00:00Z"
+USER [isReplay=true] → <command-name>/tugplug:ping</command-name>
+RESULT → success
+```
+
+**All tugplug skills are visible and invocable.**
+
+**Test 30: `/tugplug:dash status` with correct `--plugin-dir`**
+
+Full orchestrator skill output visible:
+
+```
+THINKING → "The user is running /tugplug:dash status..."
+USER [isReplay=true] → <command-name>/tugplug:dash</command-name><command-args>status</command-args>
+ASSISTANT_TOOL: Bash → tugcode dash list
+tool_result → JSON with dash list
+TEXT → "No active dashes."
+RESULT → success (44 events, 5.2s)
+```
+
+**The entire orchestrator execution is visible in the stream.** Thinking, tool calls (Bash), tool results, and the final text response — all flowing through the same event stream we've been testing.
+
+**What this means:**
+1. **Slash commands DO work through stream-json** — they produce full event streams including tool calls, streaming text, and result events.
+2. **The problem was never the protocol** — it was a misconfigured `--plugin-dir` that prevented the plugin from loading.
+3. **tugtalk needs a fix:** `getTugtoolRoot()` must resolve to `tugplug/` (or the root plugin must properly reference the tugplug skills). This is a one-line fix in tugtalk.
+4. **The graphical UI sends `/tugplug:dash args` as a normal `user_message`** and it just works. No special invocation mechanism needed.
+
+**Phase 2 work items:**
+- **Item #5 updated:** "fix `--plugin-dir` in tugtalk to point to `tugplug/`" — one-line fix.
+- **New item:** Tugtalk's `case "assistant"` handler drops text from synthetic messages (`model: "<synthetic>"`). Built-in skill commands like `/cost` and `/compact` produce their text output as an `assistant` message with `model: "<synthetic>"`, but tugtalk skips all `assistant` text assuming it was already delivered via `stream_event`. Fix: detect `model === "<synthetic>"` and emit the text as `assistant_text`.
+
+---
+
+## Test 31-33: Built-In Command Classification (Fresh Probe)
+
+With the correct `--plugin-dir`, testing built-in commands directly against Claude CLI:
+
+| Command | Raw CLI Output | Category |
+|---------|---------------|----------|
+| `/cost` | `assistant` text: "Total cost: $0.00..." + `result` | **Skill** (text available but tugtalk drops it) |
+| `/compact` | `assistant` text: "Error: No messages to compact" + `result` | **Skill** (text available but tugtalk drops it) |
+| `/status` | `result`: "Unknown skill: status" | **Terminal-only** (not a skill) |
+| `/model` | `result`: "Unknown skill: model" | **Terminal-only** (not a skill) |
+
+**Three categories of `/` commands:**
+
+| Category | In `system_metadata.slash_commands`? | Stream-JSON? | Text? |
+|----------|--------------------------------------|-------------|-------|
+| **Skills** (`/cost`, `/compact`, `/commit`, `/review`, `/tugplug:dash`, etc.) | Yes | Full events | Yes (needs tugtalk fix for synthetic messages) |
+| **Terminal-only** (`/status`, `/model`, `/clear`, `/vim`, `/btw`, `/resume`, etc.) | No | "Unknown skill" | No — must be reimplemented in UI |
+| **Name collision** (`/plan` = built-in terminal command AND `tugplug:plan` skill) | `tugplug:plan` is in skills list | Use fully-qualified `tugplug:plan` | Yes |
+
+**No more mystery.** The entire slash command landscape is mapped.
 
 ---
 
@@ -1170,15 +1240,15 @@ Hooks fire during tool execution and can modify behavior. We haven't explored:
 
 Organized by domain. Each area contains open questions that need investigation before the graphical UI can be fully designed.
 
-### Area 1: Slash Command / Skill Invocation
+### Area 1: Slash Command / Skill Invocation — RESOLVED
 
-**The biggest gap.** All slash commands are terminal-only. The graphical UI currently has no way to invoke any of them.
+**Root cause found and fixes identified.**
 
-- [ ] **How does the Claude Code terminal dispatch slash commands internally?** Is there an API, IPC mechanism, or CLI flag we can use? Study the Claude Code source or stream-json documentation for a programmatic invocation path.
-- [ ] **Can tugtalk intercept `/`-prefixed `user_message` text?** Before forwarding to Claude, tugtalk could parse `/command args`, route to Claude Code's command handler, and forward the output to the stream. This would make slash commands work transparently through the existing transport.
-- [ ] **Which slash commands could be reimplemented UI-side?** Some commands just send inbound messages we already understand: `/model` → `model_change`, `/compact` → send `/compact` text (which does work, it just produces no output). For these, the UI can build native controls.
-- [ ] **Which slash commands MUST go through Claude Code's handler?** Orchestrator skills (`/plan`, `/implement`, `/dash`, `/merge`) definitely. What about `/review`, `/commit`, `/context`?
-- [ ] **Test: Does `Skill` tool work for prompt-based skills?** We tested with `plan` (orchestrator) and got "not a prompt-based skill." Test with `commit` (prompt-based) to see if the Skill tool actually works for that class.
+- [x] **`--plugin-dir` was wrong.** Pointed to project root instead of `tugplug/`. Fixed: all tugplug skills visible and invocable. (T1)
+- [x] **Slash commands DO work via `user_message`.** Skills produce full streaming events. Terminal-only commands return "Unknown skill" — they must be reimplemented as native UI controls.
+- [x] **Three categories identified:** Skills (work via transport), Terminal-only (UI must reimplement), Name collisions (use fully-qualified `tugplug:` prefix).
+- [x] **Synthetic `assistant` text dropped.** Built-in skill commands (`/cost`, `/compact`) produce text in `model: "<synthetic>"` messages that tugtalk skips. Fix identified. (T2)
+- [x] **Complete command classification done.** See "Terminal-Only Commands" table in Action Items.
 
 ### Area 2: Plugin System
 
