@@ -50,6 +50,10 @@ Everything discovered in Phase 1 exploration, organized for action. This is the 
 | U16 | **API retry indicator** | `api_retry` events (after T3 fix): attempt count, delay, error type. | Medium |
 | U17 | **Compaction indicator** | `compact_boundary` events. Show when context is being compacted. | Medium |
 | U18 | **Session-scoped permission reset** | After resume, previously approved tools prompt again. Handle re-approval. | Medium |
+| U19 | **Message queueing during turn** | Sending `user_message` mid-stream does NOT interrupt — it queues. UI should disable send (or show queue indicator) during streaming. Use `interrupt` to cancel. | High |
+| U20 | **Plan mode choices** | `EnterPlanMode` tool produces approve/reject/keep-planning options. UI must present these when plan mode is active. | Medium |
+| U21 | **Stop background task** | Send `{ type: "stop_task", task_id }`. UI needs a button/mechanism to stop running background tasks. | Medium |
+| U22 | **Context window budget** | ~20% of context window used at startup (system prompt, memory, CLAUDE.md, etc.) before any user interaction. Token counter (U11) should account for this. | Low |
 
 ### Terminal-Only Commands (UI must reimplement)
 
@@ -78,7 +82,7 @@ These built-in commands have no stream-json equivalent — they return "Unknown 
 | # | Area | Status | Notes |
 |---|------|--------|-------|
 | E1 | Slash command invocation | **Resolved** | Two small tugtalk fixes (T1, T2). |
-| E2 | Plugin system | Partially resolved | Skills visible with correct `--plugin-dir`. Hot-reload, dynamic enumeration untested. |
+| E2 | Plugin system | Partially resolved | Skills visible with correct `--plugin-dir`. Untested: tugplug agents in `system_metadata.agents`, hot-reload, dynamic enumeration, session name field. |
 | E3 | Hooks visibility | Open | Hooks run silently. No events for hook decisions, context injection, timing. |
 | E4 | Tugcast WebSocket layer | Blocked on T6 | Need `--no-auth` to test full production path. |
 | E5 | Session management | Partially tested | New, continue, fork tested. Picker data, concurrent sessions open. |
@@ -98,7 +102,7 @@ Phase 2: Transport Hardening      — T1-T6 fixes
 ─── TIER 2: BUILD THE UI ─────────────────────────────────────
 Phase 3: Core Markdown            — tug-markdown with streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input             — tug-prompt-input with history and slash commands (U12, U13)
-Phase 5: Prompt Entry             — tug-prompt-entry, wired end-to-end (U2, U3, U4, U8, U9, U10, U11)
+Phase 5: Prompt Entry             — tug-prompt-entry, wired end-to-end (U2-U4, U8-U11, U14-U15, U19-U22)
 
 ─── TIER 3: ADD THE FEED LAYER ───────────────────────────────
 Phase 6: Hook Capture             — agent lifecycle events to feed.jsonl

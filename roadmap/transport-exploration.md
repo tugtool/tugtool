@@ -1216,16 +1216,18 @@ Hooks fire during tool execution and can modify behavior. We haven't explored:
 
 ---
 
-## Still To Test (Blocked or Deferred)
+## Still To Test
 
-- [ ] End-to-end through tugcast WebSocket (blocked: needs `--no-auth` flag — Phase 2)
-- [ ] `stop_task` message with a long-running background task
-- [ ] Multiple concurrent background tasks
-- [ ] Orchestrator skill invocation mechanism (fundamental gap — Phase 2 design work)
-- [ ] Live `AskUserQuestion` round-trip (blocked: needs working skill invocation)
-- [ ] Hook visibility in CodeOutput — do hook decisions surface as events?
-- [ ] Plugin enumeration — how to get complete skill list including orchestrator skills
-- [ ] `Notification` hook events — do they appear in CodeOutput?
+- [ ] End-to-end through tugcast WebSocket (blocked: needs T6 `--no-auth`)
+- [ ] `stop_task` message with a long-running background task (U21)
+- [ ] Multiple concurrent background tasks (E6)
+- [ ] ~~Orchestrator skill invocation~~ **RESOLVED** — fix `--plugin-dir` (T1)
+- [ ] Live `AskUserQuestion` round-trip — now possible with correct `--plugin-dir`, run `/tugplug:plan` (U3)
+- [ ] Hook visibility in CodeOutput (E3)
+- [ ] Plugin enumeration with correct `--plugin-dir` — do tugplug agents appear in `system_metadata.agents`? (E2)
+- [ ] `Notification` hook events (E3)
+- [ ] Session name — does it appear in `system_metadata`? (C11)
+- [ ] Plan mode events — what does `EnterPlanMode` output look like in the event stream? (U20)
 
 ## Resolved from Code Inspection (No Probe Needed)
 
