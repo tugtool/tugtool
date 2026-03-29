@@ -658,7 +658,7 @@ export class SessionManager {
     }
 
     const args = buildClaudeArgs({
-      pluginDir: this.getTugtoolRoot(),
+      pluginDir: this.getPluginDir(),
       model: "claude-opus-4-6",
       permissionMode: this.permissionManager.getMode(),
       sessionId,
@@ -1074,7 +1074,7 @@ export class SessionManager {
     if (!claudePath) throw new Error("claude CLI not found on PATH");
 
     const args = buildClaudeArgs({
-      pluginDir: this.getTugtoolRoot(),
+      pluginDir: this.getPluginDir(),
       model: "claude-opus-4-6",
       permissionMode: this.permissionManager.getMode(),
       sessionId: null,
@@ -1106,7 +1106,7 @@ export class SessionManager {
     if (!claudePath) throw new Error("claude CLI not found on PATH");
 
     const args = buildClaudeArgs({
-      pluginDir: this.getTugtoolRoot(),
+      pluginDir: this.getPluginDir(),
       model: "claude-opus-4-6",
       permissionMode: this.permissionManager.getMode(),
       sessionId: null,
@@ -1189,22 +1189,24 @@ export class SessionManager {
   }
 
   /**
-   * Resolve the tugtool repo root from the binary location.
+   * Resolve the tugplug plugin directory for --plugin-dir.
+   * The plugin lives at `tugplug/` under the tugtool repo root.
    */
-  private getTugtoolRoot(): string {
+  private getPluginDir(): string {
+    let root: string;
     const execPath = process.execPath;
     if (execPath.includes("/target/")) {
-      const root = resolve(dirname(execPath), "../..");
-      console.log(`Tugtool root (from binary): ${root}`);
-      return root;
+      root = resolve(dirname(execPath), "../..");
+    } else {
+      const scriptPath = process.argv[1];
+      if (scriptPath) {
+        root = resolve(dirname(scriptPath), "../..");
+      } else {
+        root = this.projectDir;
+      }
     }
-    const scriptPath = process.argv[1];
-    if (scriptPath) {
-      const root = resolve(dirname(scriptPath), "../..");
-      console.log(`Tugtool root (from script): ${root}`);
-      return root;
-    }
-    console.log(`Tugtool root (fallback to projectDir): ${this.projectDir}`);
-    return this.projectDir;
+    const pluginDir = join(root, "tugplug");
+    console.log(`Plugin dir: ${pluginDir}`);
+    return pluginDir;
   }
 }
