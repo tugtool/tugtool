@@ -19,6 +19,7 @@ import {
 import type { TugSheetHandle } from "@/components/tugways/tug-sheet";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -316,28 +317,13 @@ function RichChecklistContent({ onClose }: { onClose: () => void }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
         {CHECKLIST_ITEMS.map((item) => (
-          <label
+          <TugCheckbox
             key={item.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              fontSize: "0.875rem",
-              color: checked[item.id]
-                ? "var(--tug7-element-field-text-normal-label-rest)"
-                : "var(--tug7-element-field-text-normal-value-rest)",
-              cursor: "pointer",
-              textDecoration: checked[item.id] ? "line-through" : "none",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={checked[item.id]}
-              onChange={() => toggle(item.id)}
-              style={{ flexShrink: 0 }}
-            />
-            {item.label}
-          </label>
+            checked={checked[item.id]}
+            onCheckedChange={() => toggle(item.id)}
+            label={item.label}
+            size="sm"
+          />
         ))}
       </div>
       <div className="tug-sheet-actions">
