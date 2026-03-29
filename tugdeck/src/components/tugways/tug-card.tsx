@@ -280,6 +280,26 @@ export function CardTitleBar({
 // Tugcard
 // ===========================================================================
 
+// ===========================================================================
+// TugcardPortalContext
+// ===========================================================================
+
+/**
+ * Provides the Tugcard root DOM element to descendants that need to portal
+ * into the card element (e.g., TugSheetContent).
+ *
+ * The context value is set via a ref callback on the root div — it becomes
+ * non-null after mount. Children inside the card div read this context to
+ * obtain the portal target (a sibling of .tugcard-body, not a child of it).
+ *
+ * null before mount or when rendered outside a Tugcard.
+ */
+export const TugcardPortalContext = createContext<HTMLDivElement | null>(null);
+
+// ===========================================================================
+// TugcardDirtyContext — contentchange mechanism
+// ===========================================================================
+
 // ---------------------------------------------------------------------------
 // TugcardDirtyContext — contentchange mechanism
 // ---------------------------------------------------------------------------
@@ -436,6 +456,14 @@ export function Tugcard({
 }: TugcardProps) {
   // Access the DeckManager store for tab state read/write.
   const store = useDeckManager();
+
+  // ---------------------------------------------------------------------------
+  // Card root element — provided via TugcardPortalContext for portal targets
+  // (e.g., TugSheetContent). The ref callback fires after mount and causes
+  // one extra render, which is fine — the sheet isn't open on first mount.
+  // ---------------------------------------------------------------------------
+
+  const [cardEl, setCardEl] = useState<HTMLDivElement | null>(null);
 
   // ---------------------------------------------------------------------------
   // Content area ref (selection boundary + selectAll action)
@@ -912,7 +940,9 @@ export function Tugcard({
   const closable = effectiveMeta.closable !== false; // default true
 
   return (
+    <TugcardPortalContext value={cardEl}>
     <div
+      ref={setCardEl}
       className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
       data-slot="tug-card"
       data-card-id={cardId}
@@ -983,5 +1013,6 @@ export function Tugcard({
         </div>
       </div>
     </div>
+    </TugcardPortalContext>
   );
 }
