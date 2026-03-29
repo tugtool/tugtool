@@ -76,12 +76,11 @@ for await (const chunk of proc.stdout) {
           phase = 1;
           console.log("\n--- Sending session_command: new ---");
           send({ type: "session_command", command: "new" });
-        }
-
-        // After the second session_init (new session), send a message
-        if (type === "session_init" && phase === 1) {
+        } else if (type === "session_init" && phase === 1) {
+          // After the second session_init (new session), send a message
           phase = 2;
-          console.log("\n--- New session established. Sending message. ---");
+          const sid = msg.session_id || "?";
+          console.log(`\n--- New session ready (${sid}). Sending message. ---`);
           send({ type: "user_message", text: "What session is this? Reply in one sentence.", attachments: [] });
         }
 

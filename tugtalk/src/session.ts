@@ -772,6 +772,53 @@ export class SessionManager {
   }
 
   /**
+   * Wait for the claude process to emit system:init on stdout.
+   * Reads lines until the init event arrives, emits session_init with
+   * the real session ID, and persists it. Times out after 30 seconds.
+   * Any non-init lines read during the wait are buffered back so
+   * handleUserMessage can process them (e.g., replay events).
+   */
+  private async waitForSessionReady(): Promise<void> {
+    const timeout = 30_000;
+    const start = Date.now();
+    const bufferedLines: string[] = [];
+
+    while (Date.now() - start < timeout) {
+      const line = await this.readNextLine();
+      if (line === null) {
+        // Process died during startup
+        writeLine({ type: "error", message: "Claude process died during session startup", recoverable: true, ipc_version: 2 });
+        return;
+      }
+
+      try {
+        const event = JSON.parse(line);
+        if (event.type === "system" && event.subtype === "init") {
+          const sessionId = event.session_id || "unknown";
+          writeLine({ type: "session_init", session_id: sessionId, ipc_version: 2 });
+          await this.persistSessionId(sessionId);
+          this.sessionIdPersisted = true;
+
+          // Push any buffered lines back into stdoutBuffer so
+          // handleUserMessage will process them.
+          if (bufferedLines.length > 0) {
+            const prefix = bufferedLines.map(l => l + "\n").join("");
+            this.stdoutBuffer = prefix + this.stdoutBuffer;
+          }
+          return;
+        }
+      } catch {
+        // Non-JSON line — skip
+      }
+
+      // Buffer non-init lines for later processing
+      bufferedLines.push(line);
+    }
+
+    writeLine({ type: "error", message: "Timed out waiting for claude session init", recoverable: true, ipc_version: 2 });
+  }
+
+  /**
    * Initialize session: try to resume from persisted ID, fall back to create new.
    */
   async initialize(): Promise<void> {
@@ -1123,7 +1170,7 @@ export class SessionManager {
     this.stdoutBuffer = "";
     this.sessionIdPersisted = false;
 
-    writeLine({ type: "session_init", session_id: "pending-fork", ipc_version: 2 });
+    await this.waitForSessionReady();
   }
 
   /**
@@ -1154,7 +1201,7 @@ export class SessionManager {
     this.stdoutBuffer = "";
     this.sessionIdPersisted = false;
 
-    writeLine({ type: "session_init", session_id: "pending-continue", ipc_version: 2 });
+    await this.waitForSessionReady();
   }
 
   /**
@@ -1169,7 +1216,10 @@ export class SessionManager {
     this.stdoutBuffer = "";
     this.sessionIdPersisted = false;
 
-    writeLine({ type: "session_init", session_id: "pending", ipc_version: 2 });
+    // Fresh sessions (no --resume) don't emit system:init until the first
+    // user message is sent. The process is ready immediately after spawn —
+    // the real session ID will arrive with the first handleUserMessage response.
+    writeLine({ type: "session_init", session_id: "new", ipc_version: 2 });
   }
 
   /**
