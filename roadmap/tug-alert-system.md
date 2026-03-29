@@ -14,7 +14,7 @@ Tug needs five tiers of user interruption, each with distinct modality and scope
 |------|-----------|----------|-------|-------|---------|
 | 0 | **tug-banner** | App-modal (state) | Entire app | Original | System state barrier |
 | 1 | **tug-alert** | App-modal (action) | Entire app | Radix AlertDialog | NSAlert |
-| 2 | **tug-sheet** | Card-modal | Single card | Radix Dialog (non-modal) | beginSheet |
+| 2 | **tug-sheet** | Card-modal | Single card | Original + Radix FocusScope | beginSheet |
 | 3 | **tug-dialog** | Card-spawned | Deck | Card registry | NSPanel / utility window |
 | 4 | **tug-bulletin** | Modeless | Global viewport | Sonner | Notification Center |
 
@@ -56,7 +56,7 @@ Two existing cases in Tug.app today:
 
 Both share the same pattern: a system condition makes the app non-functional, a prominent visual indicator appears, and interaction is blocked until the condition resolves. Neither requires a user response — they come and go on their own.
 
-TugBanner replaces both with a proper tugways component: token-driven colors, `@tug-pairings`, `data-slot`, scrim + `inert` for modality, and CSS keyframe animations for enter/exit.
+TugBanner replaces the *rendering* of both with a proper tugways component: token-driven colors, `@tug-pairings`, `data-slot`, scrim + `inert` for modality, and CSS keyframe animations for enter/exit. Note: the ErrorBoundary class component must remain (React requires class components for `getDerivedStateFromError`) — it would render `<TugBanner variant="error">` instead of its current inline JSX.
 
 ### How It Differs from tug-alert
 
@@ -108,30 +108,69 @@ No imperative API. Banner visibility is driven by reactive state (connection sta
 | Prop | Type | Description |
 |------|------|-------------|
 | `visible` | `boolean` | Whether the banner is shown. @selector `[data-visible]` |
-| `variant` | `"status" \| "error"` | Banner layout variant. Default: `"status"` |
+| `variant` | `"status" \| "error"` | Banner layout variant. Default: `"status"`. @selector `[data-variant="status"]` \| `[data-variant="error"]` |
 | `tone` | `"danger" \| "caution" \| "default"` | Visual severity. Default: `"danger"`. @selector `[data-tone]` |
 | `message` | `string` | Banner heading/message text |
 | `icon` | `string` | Optional Lucide icon name (status variant) |
 | `children` | `ReactNode` | Rich content (error variant) |
 
-### Presence Pattern
+### Presence Pattern — Status vs Error
 
-The banner stays mounted in the DOM at all times so exit animations can play. Visibility is controlled by a `data-visible` attribute, not conditional rendering:
+The two variants have different lifecycles:
+
+**Status variant (disconnect banner):** Always mounted in the DOM. Visibility controlled by `data-visible` attribute, not conditional rendering:
 
 - `data-visible="true"` → CSS keyframe enter animation, scrim fades in
 - `data-visible="false"` → CSS keyframe exit animation, scrim fades out
 - After exit animation completes, `inert` is removed from the deck canvas
+- This avoids the unmount-before-animation problem. CSS controls visibility. Appearance-zone only [L06].
 
-This avoids the unmount-before-animation problem. The banner is always in the DOM; CSS controls whether it's visible. Appearance-zone only [L06].
+**Error variant (error boundary):** Conditionally rendered by ErrorBoundary as its fallback UI. No exit animation needed — recovery means the ErrorBoundary re-renders its children, replacing the banner entirely. The error variant mounts when an error is caught and unmounts when the error clears (typically a reload). Enter animation plays on mount; no exit animation required.
+
+### Mounting Point in the React Tree
+
+The current React tree (`deck-manager.ts` line 273):
+```
+TugThemeProvider
+  TugTooltipProvider
+    ErrorBoundary
+      ResponderChainProvider
+        DeckManagerContext.Provider
+          DeckCanvas  ← cards render here
+```
+
+TugBanner (status variant) must render **outside** DeckCanvas but **inside** the Provider wrapper, as a sibling of DeckCanvas. This requires modifying `deck-manager.ts` to add TugBanner into the `root.render()` tree:
+
+```
+TugThemeProvider
+  TugTooltipProvider
+    ErrorBoundary          ← catches errors, renders TugBanner error variant as fallback
+      ResponderChainProvider
+        DeckManagerContext.Provider
+          TugBanner          ← status variant, always mounted, sibling of DeckCanvas
+          DeckCanvas         ← cards render here; target for inert
+```
+
+The status variant TugBanner reads connection state from TugConnection (available via DeckManagerContext). It sets `inert` on the DeckCanvas container element (found via a ref or DOM query on its sibling).
+
+The error variant TugBanner is rendered by ErrorBoundary's `render()` method when `this.state.error` is non-null. It replaces the entire subtree below ErrorBoundary.
 
 ### Visual Design
 
 - **Status variant:** Full-width horizontal strip at top of viewport. High contrast, tone-colored. Icon + message centered.
 - **Error variant:** Full-viewport panel. Error title at top, scrollable content area for stack traces, action buttons at bottom.
-- Full-viewport scrim beneath both variants dims the entire deck.
+- **Status variant** has a full-viewport scrim beneath it that dims the entire deck.
+- **Error variant** has no scrim — when ErrorBoundary fires, it replaces the entire subtree below it (DeckCanvas, cards, everything). There's no deck to dim. The error panel IS the entire UI.
 - Slide down from top on appear, slide up on dismiss (status). Fade in/out (error).
 - `inert` on the deck canvas while visible — nothing behind the scrim is interactive.
 - No close button, no dismiss gesture — the banner leaves when the condition resolves.
+
+### Accessibility
+
+- **Status variant:** `role="status"` + `aria-live="polite"` — connection status is important but not an emergency interruption.
+- **Error variant:** `role="alert"` + `aria-live="assertive"` — render errors are urgent.
+- No keyboard interaction — the banner is informational. No Tab target, no Escape dismiss.
+- Screen readers announce the banner when it appears via the `aria-live` region.
 
 ### Modality Mechanism
 
@@ -162,8 +201,10 @@ Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authori
 ### Files
 
 ```
-tug-banner.tsx   — component (declarative, always-mounted presence pattern)
-tug-banner.css   — banner strip, error panel, scrim overlay, tone variants, enter/exit animations
+tug-banner.tsx       — component (status: always-mounted presence pattern; error: conditional render)
+tug-banner.css       — banner strip, error panel, scrim overlay, tone variants, enter/exit animations
+deck-manager.ts      — modified: add TugBanner (status) to root.render() tree as sibling of DeckCanvas
+error-boundary.tsx   — modified: render TugBanner (error variant) instead of inline JSX
 ```
 
 ---
@@ -214,7 +255,7 @@ const result = await alertRef.current.alert({
 | `title` | `string` | Alert title (required) |
 | `message` | `string \| ReactNode` | Body content |
 | `confirmLabel` | `string` | Confirm button text (default: "OK") |
-| `cancelLabel` | `string` | Cancel button text (default: "Cancel"). Pass `null` to hide. |
+| `cancelLabel` | `string \| null` | Cancel button text (default: "Cancel"). Pass `null` to hide cancel button entirely. |
 | `confirmRole` | `TugButtonRole` | Semantic role for confirm button (default: "action") |
 | `open` | `boolean` | Controlled open state. @selector `[data-state]` |
 | `onOpenChange` | `(open: boolean) => void` | Open state callback |
@@ -243,7 +284,8 @@ Options passed to `alert()` override props for that invocation. The Promise reso
 - Centered dialog panel with constrained max-width
 - Title + message + button row
 - Confirm button rightmost (nearest to default pointer position)
-- Enter activates confirm; Escape activates cancel
+- **Focus goes to Cancel on open** — safety-first default. Enter/Space activates the focused button, so the non-destructive choice is the easiest to make. Radix AlertDialog enforces this by redirecting auto-focus to the Cancel element.
+- Escape closes (maps to Cancel)
 - CSS keyframe enter/exit animations on `[data-state]` [L14]
 
 ### Token Sovereignty [L20]
@@ -261,11 +303,27 @@ Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authori
       [L20] token sovereignty (composes TugButton)
 ```
 
+### Mounting
+
+TugAlert is app-modal — it must be mounted near the app root, not inside a card. A `<TugAlertProvider>` is added to the root tree (alongside TugTooltipProvider in `deck-manager.ts`). It provides a `useTugAlert()` hook so any component anywhere in the tree can show an alert:
+
+```tsx
+const showAlert = useTugAlert();
+const confirmed = await showAlert({
+  title: "Delete Card",
+  confirmLabel: "Delete",
+  confirmRole: "danger",
+});
+```
+
+The ref-based API (`useRef<TugAlertHandle>`) remains available for cases where the caller needs to configure default props on a specific instance, but the provider + hook is the primary pattern for app-modal.
+
 ### Files
 
 ```
-tug-alert.tsx   — component + imperative handle
+tug-alert.tsx   — component + TugAlertProvider + useTugAlert hook + imperative handle
 tug-alert.css   — overlay, panel, layout, animations
+deck-manager.ts — modified: add TugAlertProvider to root.render() tree
 ```
 
 ---
@@ -274,35 +332,77 @@ tug-alert.css   — overlay, panel, layout, animations
 
 *Card-modal dialog scoped to a single card. Other cards remain fully interactive. Drops from the card title bar like a window shade.*
 
-### Why Not Radix Dialog `modal={true}`?
+### Why Not Radix Dialog?
 
-Radix Dialog with `modal={true}` makes the **entire page** inert — every card, every toolbar, everything. That's app-modal, not card-modal. We need card-scoped modality.
+Radix Dialog is designed for document-level dialogs. Card-scoped modality is outside its design center:
+
+- `modal={true}` makes the **entire page** inert — wrong for card-modal
+- `modal={false}` gives up focus trapping — we'd add it back manually
+- Portal `container` prop needs a DOM element at render time, but discovering the parent card requires a DOM query that can't run during render — leading to fragile two-pass rendering
+- We'd end up bypassing Radix's modality, bypassing its portal, and adding our own focus trapping — using Radix for almost nothing
+
+**tug-sheet is an original component.** We use Radix `FocusScope` (standalone, already installed as a transitive dependency of `react-dialog`) for focus trapping. Everything else — open/close state, ARIA, Escape handling, animation — we build directly. This gives us full control over card-scoped behavior without fighting a primitive designed for a different purpose.
 
 ### Architecture
-
-Use Radix Dialog with `modal={false}` for its compound API, focus management utilities, and `data-state` animation support. Layer card-scoped inertness on top:
 
 1. Sheet opens → set `inert` attribute on the card's `.tugcard-body` element
 2. Scrim overlay fades in over the card content area
 3. Sheet panel drops down from just below the card title bar
-4. Focus moves into sheet content
-5. Escape closes sheet → sheet slides up, scrim fades → remove `inert` → restore focus to trigger
+4. `FocusScope` traps Tab/Shift-Tab within the sheet; auto-focuses first tabbable element
+5. Escape closes sheet → sheet slides up, scrim fades → remove `inert` → FocusScope restores focus to trigger
 6. Other cards remain fully interactive throughout
 
-### Portal Scoping
+### Card Portal Infrastructure
 
-Radix Dialog's Portal defaults to `document.body`. For card-modal, use the `container` prop to portal into the card element instead. This keeps the sheet visually and structurally scoped to its parent card.
+The sheet trigger lives inside `.tugcard-content` (inside `.tugcard-body`). But when the sheet opens, `.tugcard-body` becomes inert. The sheet overlay and panel must render **outside** `.tugcard-body` but **inside** `.tugcard` — as siblings of the body, not children of it.
+
+This requires a portal from inside card content up to the card root. **Tugcard provides its DOM element via React context:**
 
 ```tsx
-<Dialog.Portal container={cardRef.current}>
-  <Dialog.Overlay className="tug-sheet-overlay" />
-  <Dialog.Content className="tug-sheet-content">
-    {children}
-  </Dialog.Content>
-</Dialog.Portal>
+// New context in tug-card.tsx
+const TugcardPortalContext = createContext<HTMLDivElement | null>(null);
+
+// Tugcard uses a ref callback to provide the card element:
+const [cardEl, setCardEl] = useState<HTMLDivElement | null>(null);
+
+<TugcardPortalContext value={cardEl}>
+  <div ref={setCardEl} className="tugcard" data-slot="tug-card">
+    <CardTitleBar />
+    <div className="tugcard-body">
+      <div className="tugcard-content">
+        {children}  ← TugSheet lives here, reads context
+      </div>
+    </div>
+  </div>
+</TugcardPortalContext>
 ```
 
-The sheet renders as a child of the card's root `[data-slot="tug-card"]` element, positioned absolutely to sit below the title bar and above the card body content.
+TugSheetContent reads the context and uses `React.createPortal` to render into the card element:
+
+```tsx
+const cardEl = useContext(TugcardPortalContext);
+
+// Portal overlay + panel into the card root (sibling of .tugcard-body)
+{open && cardEl && createPortal(
+  <>
+    <div className="tug-sheet-overlay" />
+    <FocusScope trapped loop onMountAutoFocus={...} onUnmountAutoFocus={...}>
+      <div className="tug-sheet-content" role="dialog" aria-labelledby={titleId}>
+        {/* sheet header + children */}
+      </div>
+    </FocusScope>
+  </>,
+  cardEl
+)}
+```
+
+**Why this works cleanly:**
+- On first render, `cardEl` is null (ref hasn't fired). The portal doesn't render. This is fine — the sheet isn't open on mount.
+- After mount, `setCardEl` fires, context updates. When the sheet later opens, `cardEl` is available.
+- No DOM queries at render time. The portal target comes from React context, not `closest()` or other DOM traversals during render.
+- TugcardPortalContext fits the existing pattern — Tugcard already provides TugcardPropertyContext, TugcardPersistenceContext, and TugcardDirtyContext.
+
+**Finding `.tugcard-body` for `inert`:** TugSheetContent finds the body element via `cardEl.querySelector('.tugcard-body')` in `useLayoutEffect` when the sheet opens. This is a targeted query on a known parent element in a layout effect — not a render-time DOM traversal.
 
 ### API Design
 
@@ -327,29 +427,49 @@ sheetRef.current.close();
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `open` | `boolean` | Controlled open state |
+| `open` | `boolean` | Controlled open state. @selector `[data-state="open"]` \| `[data-state="closed"]` |
 | `onOpenChange` | `(open: boolean) => void` | Open state callback |
 | `children` | `ReactNode` | Trigger + Content |
+
+### Props — TugSheetTrigger
+
+Wraps a single child element via `asChild` pattern (like TugPopoverTrigger). Merges ARIA attributes onto the child:
+
+| Attribute | Value | Description |
+|-----------|-------|-------------|
+| `aria-haspopup` | `"dialog"` | Indicates the trigger opens a dialog |
+| `aria-expanded` | `boolean` | Reflects current open state |
+| `aria-controls` | `string` | ID of the sheet content element (when open) |
 
 ### Props — TugSheetContent
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `title` | `string` | Sheet title (renders in a header row) |
+| `title` | `string` | Sheet title (required — renders in header row, wired to `aria-labelledby`) |
+| `description` | `string` | Optional description text (wired to `aria-describedby`) |
+| `onOpenAutoFocus` | `(event: Event) => void` | Override initial focus target. Call `event.preventDefault()` to manage focus manually. |
 | `children` | `ReactNode` | Arbitrary content |
 
 ### Card-Modal Mechanics
 
 **Inertness via `inert` attribute:**
-- When sheet opens: `cardBodyEl.setAttribute("inert", "")`
-- When sheet closes: `cardBodyEl.removeAttribute("inert")`
-- The `inert` attribute disables all pointer events, focus, and assistive tech within the element — a native browser feature, no React context needed
+- When sheet opens: find `.tugcard-body` via `cardEl.querySelector('.tugcard-body')`, set `inert` attribute
+- When sheet closes: remove `inert` attribute
+- The `inert` attribute disables all pointer events, focus, and assistive tech within the element — a native browser feature
 - The card body is dimmed by the scrim but every control underneath looks normal — they're blocked, not disabled
+- `inert` is set/removed in `useLayoutEffect` synchronized with open state [L03]
 
-**Finding the card body:**
-- TugSheetContent uses `closest('[data-slot="tug-card"]')` to find its parent card
-- Selects the `.tugcard-body` child element
-- Sets/removes `inert` in `useLayoutEffect` synchronized with open state [L03]
+**Focus trapping via Radix FocusScope:**
+- `FocusScope` with `trapped={true}` and `loop={true}` wraps the sheet content
+- Tab/Shift-Tab cycle within the sheet — focus cannot escape to inert card body
+- On mount: auto-focuses first tabbable element inside the sheet
+- On unmount: restores focus to the element that was focused before the sheet opened (the trigger)
+- Clicking another card is allowed — card-modal blocks the parent card's content, not the entire app
+
+**Escape handling:**
+- Keydown listener on the sheet content element
+- Escape calls `onOpenChange(false)` to close the sheet
+- No Radix dependency — direct DOM event handling
 
 **Responder chain:**
 - When the sheet is open and the card body is inert, pointer/keyboard events within the card body are suppressed by the browser
@@ -385,11 +505,43 @@ Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authori
       [L20] token sovereignty (composes child controls)
 ```
 
+### Accessibility — Radix-Quality ARIA
+
+Since tug-sheet is an original component, it must match Radix Dialog's ARIA implementation. Every attribute and behavior below is required, not optional.
+
+**Sheet content element:**
+- `role="dialog"`
+- `aria-labelledby={titleId}` — auto-wired to the sheet header title element via generated ID
+- `aria-describedby={descriptionId}` — auto-wired when optional `description` prop is provided
+- **No `aria-modal="true"`** — the sheet is modal within the card, not within the document. Other cards remain accessible. Setting `aria-modal` would tell the screen reader to hide everything outside the dialog, which is wrong for card-modal. The `inert` attribute on `.tugcard-body` handles card-scoped blocking at the DOM level — the browser removes the inert subtree from the accessibility tree, which is the correct scoped behavior.
+
+**Trigger element** (TugSheetTrigger applies these via `asChild` merge):
+- `aria-haspopup="dialog"`
+- `aria-expanded={open}` — reflects current open state
+- `aria-controls={contentId}` — points to the sheet content element when open
+
+**Focus management:**
+- FocusScope `trapped={true}` + `loop={true}` — Tab/Shift-Tab cycle within the sheet, never escape
+- On open: auto-focus first tabbable element inside the sheet (configurable via `onOpenAutoFocus` prop)
+- On close: restore focus to the trigger element (FocusScope `onUnmountAutoFocus`)
+
+**Keyboard:**
+- Escape closes the sheet
+- Tab/Shift-Tab cycle within sheet content
+
+**Background:**
+- `inert` on `.tugcard-body` — removes it from the accessibility tree and blocks all interaction
+- Clicking the scrim overlay closes the sheet (pointer-down on overlay calls `onOpenChange(false)`)
+
+**Dev-time safeguards:**
+- Console warning if `TugSheetContent` renders without a `title` prop — `aria-labelledby` would have no target
+
 ### Files
 
 ```
 tug-sheet.tsx   — compound components (Root/Trigger/Content) + imperative handle
 tug-sheet.css   — overlay, panel, window-shade animation, header
+tug-card.tsx    — modified: add TugcardPortalContext providing card root element
 ```
 
 ---
@@ -470,12 +622,17 @@ Everything needed already exists. The only new code is the imperative spawning A
 
 ### Files
 
-No new component files. This is infrastructure:
+No new component CSS — dialog cards use existing Tugcard chrome. Infrastructure changes:
+
 ```
-use-tug-dialog.ts   — hook for spawning dialog cards + TugDialogResolveContext
+use-tug-dialog.ts     — new: hook for spawning dialog cards + TugDialogResolveContext
+deck-manager.ts       — modified: addCard() gains centered positioning for dialog family;
+                         removeCard() gains close-callback for Promise resolution
+layout-tree.ts        — modified: CardState may need family field (or resolved from card registry)
+deck-canvas.tsx        — modified: skip dialog-family cards as tab-drop targets
 ```
 
-Dialog content is authored as regular card content components — they just happen to be registered with `family: "dialog"`.
+Dialog content is authored as regular card content components — they just happen to be registered with `family: "dialog"`. Changes to DeckManager are fully in scope for this work — the alert system explicitly alters core assumptions about cards, event flow, and app-wide state.
 
 ---
 
@@ -583,7 +740,7 @@ tug-bulletin.css   — viewport layout, bulletin card styling, tone variants, an
 
 ### Animation
 
-CSS keyframe enter/exit animations [L14]. No WAAPI for enter/exit — Radix Presence owns the DOM lifecycle where Radix primitives are used. Non-Radix components (banner, bulletin) use their own CSS keyframes driven by data attributes or Sonner's animation system.
+CSS keyframe enter/exit animations [L14]. No WAAPI for enter/exit — Radix Presence owns the DOM lifecycle for tug-alert (AlertDialog). Other components (banner, sheet, bulletin) use their own CSS keyframes driven by data attributes or Sonner's animation system.
 
 | Component | Enter | Exit |
 |-----------|-------|------|
@@ -612,7 +769,7 @@ The scrim is an appearance-zone element [L06] — a semi-transparent overlay wit
 
 - **tug-banner:** No focus target — the banner is informational. `inert` on deck canvas prevents focus from reaching cards.
 - **tug-alert:** Radix AlertDialog traps focus automatically.
-- **tug-sheet:** Radix Dialog Content manages focus within sheet. `inert` on card body prevents focus escape to card content.
+- **tug-sheet:** Radix `FocusScope` (trapped + loop) cycles Tab within sheet content. `inert` on card body prevents focus on card content. FocusScope restores focus to trigger on unmount. Clicking another card is allowed (card-modal, not app-modal).
 - **tug-dialog:** Card focus system handles it (existing infrastructure).
 - **tug-bulletin:** No focus trap. User reaches bulletins via hotkey (configurable).
 
@@ -634,14 +791,17 @@ The scrim is an appearance-zone element [L06] — a semi-transparent overlay wit
 | Focus trapping (alert) | Radix AlertDialog Content | — |
 | Full-page inertness (alert) | Radix AlertDialog aria-hidden | — |
 | Full-page inertness (banner) | — | `inert` attribute on deck canvas |
+| Card portal (sheet) | — | TugcardPortalContext + React.createPortal |
 | Card-scoped inertness (sheet) | — | `inert` attribute on `.tugcard-body` |
-| Window-shade animation (sheet) | Radix `data-state` lifecycle | CSS keyframes for drop animation |
+| Focus trapping (sheet) | Radix `FocusScope` (standalone) | Wired into original sheet component |
+| Escape handling (sheet) | — | Keydown listener on sheet content |
+| Window-shade animation (sheet) | — | CSS keyframes on `data-state` attribute |
 | Card spawning (dialog) | — | `useTugDialog` hook + DeckManager centered positioning |
 | Toast stacking (bulletin) | Sonner | Tug styling + token integration |
 | Enter/exit animations | Radix `data-state` / Sonner | CSS keyframes |
-| Accessible roles | Radix `alertdialog` / `dialog` | Banner: `role="alert"` + `aria-live` |
-| ARIA labeling | Radix Title → aria-labelledby | — |
-| Escape handling | Radix built-in | Banner: N/A (no dismiss) |
+| Accessible roles | Radix `alertdialog` (alert only) | Banner: `role="alert"`/`"status"` + `aria-live`. Sheet: `role="dialog"` (no `aria-modal` — card-scoped, not document-scoped) |
+| ARIA labeling | Radix Title → aria-labelledby (alert) | Sheet: manual `aria-labelledby` |
+| Escape handling | Radix built-in (alert) | Sheet: keydown listener. Banner: N/A (no dismiss) |
 
 ---
 
@@ -650,8 +810,10 @@ The scrim is an appearance-zone element [L06] — a semi-transparent overlay wit
 | Package | Status | Needed For |
 |---------|--------|------------|
 | `@radix-ui/react-alert-dialog` | Not installed | tug-alert |
-| `@radix-ui/react-dialog` | Installed | tug-sheet |
+| `@radix-ui/react-focus-scope` | Install as direct dep | tug-sheet (standalone focus trapping) |
 | `sonner` | Not installed | tug-bulletin |
+
+Note: `@radix-ui/react-focus-scope` is currently installed as a transitive dependency of `react-dialog`. Since tug-sheet no longer uses `react-dialog`, add `react-focus-scope` as a direct dependency and move `react-dialog` to the package cleanup list in the roadmap.
 
 ---
 

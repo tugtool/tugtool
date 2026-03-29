@@ -73,7 +73,6 @@ Components that exist today, audited to compliance with `tuglaws/component-autho
 | tug-context-menu | `react-context-menu` | B | Package not yet installed |
 | tug-accordion | `react-accordion` | B | Expand/collapse ARIA, keyboard nav, single/multiple mode |
 | tug-alert | `react-alert-dialog` | C | Package not yet installed |
-| tug-sheet | `react-dialog` | C | Package installed |
 | tug-confirm-popover | `react-popover` | C | Package installed |
 | tug-bulletin | Sonner (not Radix Toast) | C | Package not yet installed |
 | tug-avatar | `react-avatar` | E | Package not yet installed |
@@ -104,6 +103,7 @@ Components that exist today, audited to compliance with `tuglaws/component-autho
 | tug-skeleton | Shimmer animation, no Radix equivalent |
 | tug-box | Recursive disable propagation via React context |
 | tug-banner | State-driven app-modal barrier with scrim + inert. No Radix equivalent. |
+| tug-sheet | Card-scoped modality requires portal into card, card-scoped inert — Radix Dialog is document-level. Uses Radix FocusScope (standalone). |
 | tug-dialog | Dialog-as-card via DeckManager. Uses card infrastructure, not Radix Dialog overlay. |
 
 ### Radix Primitives — Skipped
@@ -129,8 +129,8 @@ Installed but unused — remove from `package.json`:
 - `@radix-ui/react-scroll-area`
 - `@radix-ui/react-tabs`
 
-Installed and unused but needed soon (keep):
-- `@radix-ui/react-dialog` (tug-sheet)
+Installed but unused — can also be removed (tug-sheet is now original, not a Radix Dialog wrapper):
+- `@radix-ui/react-dialog`
 
 ---
 
@@ -178,7 +178,7 @@ Five-tier modal system modeled on AppKit. See [tug-alert-system.md](tug-alert-sy
 |---|-----------|------|-------|--------------|----------|
 | 16 | tug-banner | Original | App-modal (state) | State-driven barrier with scrim + inert. Status/error variants. Replaces disconnect-banner + error-boundary. | High |
 | 17 | tug-alert | Wrapper (Radix) | App-modal (action) | Wraps `@radix-ui/react-alert-dialog`. Promise-based API, button roles, scrim | High |
-| 18 | tug-sheet | Wrapper (Radix) | Card-modal | Wraps `@radix-ui/react-dialog` (non-modal). Window-shade from title bar, card-scoped inert | High |
+| 18 | tug-sheet | Original + FocusScope | Card-modal | Window-shade from title bar, card-scoped inert, TugcardPortalContext | High |
 | 19 | tug-confirm-popover | Wrapper (Radix) | Button-local | Wraps `@radix-ui/react-popover`. Destructive action confirmation | High |
 | 20 | tug-bulletin | Wrapper (Sonner) | Non-blocking | Wraps Sonner. Fire-and-forget, tone variants, auto-dismiss, top-right default | High |
 | 23 | tug-dialog | Card-spawned | Deck | Dialog-as-card via DeckManager. Centered positioning, Promise API, dialog family | High |
@@ -262,7 +262,7 @@ Five modality tiers: state barriers, app-modal alerts, card-modal sheets, dialog
 
 - tug-banner *(state-driven app-modal barrier, replaces disconnect-banner + error-boundary)*
 - tug-alert *(app-modal, Radix AlertDialog, Promise API)*
-- tug-sheet *(card-modal, window-shade from title bar, scoped inertness)*
+- tug-sheet *(card-modal, original + FocusScope, window-shade from title bar, TugcardPortalContext)*
 - tug-dialog *(dialog-as-card, DeckManager centered positioning)*
 - tug-bulletin *(modeless notifications, Sonner, top-right default)*
 
