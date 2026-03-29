@@ -292,15 +292,35 @@ export function routeTopLevelEvent(
 
     case "assistant": {
       // The assistant top-level event is a complete snapshot of the message.
-      // Text content was already delivered via stream_event/content_block_delta
-      // as partial assistant_text messages. We skip re-emitting text here to
-      // avoid duplicate messages that confuse the frontend ordering buffer.
-      // Tool use blocks are still emitted since they may not arrive via streaming.
+      // For normal API responses, text was already delivered via stream_event
+      // as partial assistant_text messages — we skip re-emitting to avoid
+      // duplicates. Tool use blocks are still emitted since they may not
+      // arrive via streaming.
+      //
+      // EXCEPTION: Synthetic messages (model: "<synthetic>") are produced by
+      // built-in slash commands like /cost, /compact. These have no streaming
+      // events — the assistant message is the only source of text. Emit it.
       const message = event.message as Record<string, unknown> | undefined;
+      const model = (message?.model as string) || "";
+      const isSynthetic = model === "<synthetic>";
       const content = (message?.content as Array<Record<string, unknown>>) || [];
 
       for (const block of content) {
-        if (block.type === "tool_use") {
+        if (block.type === "text" && isSynthetic) {
+          const text = (block.text as string) || "";
+          if (text.length > 0) {
+            messages.push({
+              type: "assistant_text",
+              msg_id: ctx.msgId,
+              seq: ctx.seq,
+              rev: ctx.rev,
+              text,
+              is_partial: false,
+              status: "complete",
+              ipc_version: 2,
+            });
+          }
+        } else if (block.type === "tool_use") {
           messages.push({
             type: "tool_use",
             msg_id: ctx.msgId,
