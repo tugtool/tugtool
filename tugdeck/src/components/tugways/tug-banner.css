@@ -195,6 +195,11 @@ body {
   animation: tug-banner-scrim-fade-in calc(200ms * var(--tug-timing, 1)) ease-out;
 }
 
+/* Contained mode: scrim dims visually but doesn't block interaction (gallery demos) */
+.tug-banner-scrim[data-contained="true"] {
+  pointer-events: none;
+}
+
 .tug-banner-scrim[data-visible="false"] {
   pointer-events: none;
   opacity: 0;

@@ -159,6 +159,7 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
         <div
           className="tug-banner-scrim"
           data-visible={String(visible)}
+          data-contained={contained ? "true" : undefined}
           aria-hidden="true"
         />
         <div
