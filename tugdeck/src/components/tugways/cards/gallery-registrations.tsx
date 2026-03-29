@@ -61,6 +61,7 @@ import { GalleryTooltip } from "./gallery-tooltip";
 import { GalleryBanner } from "./gallery-banner";
 import { GalleryAlert } from "./gallery-alert";
 import { GallerySheet } from "./gallery-sheet";
+import { GalleryBulletin } from "./gallery-bulletin";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-banner",        title: "TugBanner",             closable: true },
   { id: "template", componentId: "gallery-alert",         title: "TugAlert",              closable: true },
   { id: "template", componentId: "gallery-sheet",         title: "TugSheet",              closable: true },
+  { id: "template", componentId: "gallery-bulletin",      title: "TugBulletin",           closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -638,6 +640,18 @@ export function registerGalleryCards(): void {
     componentId: "gallery-sheet",
     contentFactory: (_cardId) => <GallerySheet />,
     defaultMeta: { title: "TugSheet", icon: "PanelTopOpen", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-bulletin ----
+  // TugBulletin showcase: default bulletin, bulletin with description, tone variants
+  // (success/danger/caution left-border accents), bulletin with action button,
+  // and custom duration. Demonstrates the fire-and-forget imperative API.
+  registerCard({
+    componentId: "gallery-bulletin",
+    contentFactory: (_cardId) => <GalleryBulletin />,
+    defaultMeta: { title: "TugBulletin", icon: "Bell", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

@@ -48,6 +48,7 @@ import { TugBannerBridge } from "./components/chrome/tug-banner-bridge";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
 import { TugAlertProvider } from "./components/tugways/tug-alert";
+import { TugBulletinViewport } from "./components/tugways/tug-bulletin";
 import { putLayout, putTabState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
@@ -295,6 +296,7 @@ export class DeckManager implements IDeckManagerStore {
                     connection: this.connection,
                   }),
                   React.createElement(DeckCanvas, {}),
+                  React.createElement(TugBulletinViewport, {}),
                 ),
               ),
             ),

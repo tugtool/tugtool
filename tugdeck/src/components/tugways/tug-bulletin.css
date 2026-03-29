@@ -1,0 +1,150 @@
+/* @tug-pairings {
+  --tugx-bulletin-fg     | --tugx-bulletin-bg     | content
+  --tugx-bulletin-border | --tugx-bulletin-bg     | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                   | Surface                  | Role          | Context                                   |
+ * |---------------------------|--------------------------|---------------|-------------------------------------------|
+ * | --tugx-bulletin-fg        | --tugx-bulletin-bg       | content       | .tug-bulletin (color)                     |
+ * | --tugx-bulletin-border    | --tugx-bulletin-bg       | informational | .tug-bulletin (border-color)              |
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-bulletin-bg:              var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-bulletin-fg:              var(--tug7-element-global-text-normal-default-rest);
+  --tugx-bulletin-border:          var(--tug7-element-global-border-normal-default-rest);
+  --tugx-bulletin-shadow:          var(--tug7-element-global-shadow-normal-overlay-rest);
+  /* Spacing grid: A=tight, B=generous (matches alert/sheet conventions) */
+  --tugx-bulletin-space-a: 0.75rem;
+  --tugx-bulletin-space-b: 1.5rem;
+  /* Tone accent borders */
+  --tugx-bulletin-accent-success: var(--tug7-element-tone-border-normal-success-rest);
+  --tugx-bulletin-accent-danger:  var(--tug7-element-tone-border-normal-danger-rest);
+  --tugx-bulletin-accent-caution: var(--tug7-element-tone-border-normal-caution-rest);
+}
+
+/* ---- Toast card — Sonner adds .tug-bulletin via toastOptions.className ---- */
+
+.tug-bulletin {
+  /* @tug-renders-on: --tugx-bulletin-bg */
+  background-color: var(--tugx-bulletin-bg);
+  color: var(--tugx-bulletin-fg);
+  border: 1px solid var(--tugx-bulletin-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--tugx-bulletin-shadow);
+  /* Sizing */
+  min-width: 300px;
+  max-width: 400px;
+  width: 100%;
+  box-sizing: border-box;
+  /* Padding using B spacing (generous outer padding, matching alert/sheet) */
+  padding: var(--tugx-bulletin-space-b);
+  /* Layout */
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-bulletin-space-a);
+  /* Left border slot — transparent by default, colored by tone variants */
+  border-left: 4px solid transparent;
+  /* Cursor */
+  cursor: default;
+  /* Prevent text selection on rapid clicks */
+  user-select: none;
+}
+
+/* ---- Tone variants — Sonner adds data-type to the toast element ---- */
+
+.tug-bulletin[data-type="success"] {
+  border-left-color: var(--tugx-bulletin-accent-success);
+}
+
+.tug-bulletin[data-type="error"] {
+  border-left-color: var(--tugx-bulletin-accent-danger);
+}
+
+.tug-bulletin[data-type="warning"] {
+  border-left-color: var(--tugx-bulletin-accent-caution);
+}
+
+/* ---- Title (toast message) ---- */
+
+.tug-bulletin [data-title] {
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* ---- Description ---- */
+
+.tug-bulletin [data-description] {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  /* Slightly muted — matching .tug-alert-message pattern */
+  opacity: 0.8;
+}
+
+/* ---- Action button ---- */
+
+.tug-bulletin [data-button] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  border: 1px solid var(--tugx-bulletin-border);
+  background-color: transparent;
+  color: var(--tugx-bulletin-fg);
+  /* Align to the left */
+  align-self: flex-start;
+  /* Spacing from description if present */
+  margin-top: calc(var(--tugx-bulletin-space-a) * 0.25);
+}
+
+.tug-bulletin [data-button]:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+}
+
+.tug-bulletin [data-button]:active {
+  background-color: var(--tug7-surface-control-primary-ghost-action-active);
+}
+
+/* ---- Close button (Sonner renders it when closable) ---- */
+
+.tug-bulletin [data-close-button] {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background-color: transparent;
+  color: var(--tugx-bulletin-fg);
+  cursor: pointer;
+  opacity: 0.5;
+  font-size: 0.75rem;
+  padding: 0;
+}
+
+.tug-bulletin [data-close-button]:hover {
+  opacity: 1;
+}
+
+/* ---- Sonner viewport container — ensure correct z-layering ---- */
+
+[data-sonner-toaster] {
+  /* Above cards and most chrome, below alerts and banners */
+  z-index: 99980 !important;
+}
