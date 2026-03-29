@@ -207,7 +207,7 @@ Higher-level components assembled from multiple primitives.
 
 | # | Component | Kind | Composes | Key Features | Priority |
 |---|-----------|------|----------|--------------|----------|
-| 30 | tug-search-bar | Composition | TugInput + TugButton | Search field with action button | Medium |
+| 30 | tug-search-bar | Composition | TugInput + TugButton | Search field with action button. Deferred from Group D. | Low |
 | 31 | tug-toolbar | Wrapper (Radix) | Wraps `@radix-ui/react-toolbar`. Grouped controls with arrow key nav | Low |
 
 ## New Component Ideas
@@ -219,7 +219,7 @@ Higher-level components assembled from multiple primitives.
 | 32 | tug-choice-group | Original | Mutually exclusive segment picker (renamed from tug-segmented-choice). Horizontal row of connected segments with sliding indicator pill. Icon + label support, optional animation. Part of the group family with tug-radio-group and tug-option-group. | High |
 | 39 | tug-option-group | Original | Multi-toggle group where each item toggles independently (like B/I/U in a text editor). Connected row with per-item on-state backgrounds, pipe dividers between off-state neighbors. Part of the group family. | High |
 | 33 | tug-box | Original | Container providing visual grouping (optional border, optional label) and functional grouping (enable/disable all contained controls with one prop). Nestable — disabled outer box cascades to all inner boxes and controls. Modeled on HTML `<fieldset>` semantics with recursive disable propagation via React context. | High |
-| 34 | tug-rich-text | Wrapper (Monaco) | Monaco editor in a tugways component. Token-driven theming, standard props interface, integration with card content system. | High |
+| 34 | tug-rich-text | Wrapper (Monaco) | Monaco editor in a tugways component. Token-driven theming, standard props interface, integration with card content system. Deferred from Group D — not needed for conversation experience. | Medium |
 | 35 | tug-banner | Original | State-driven app-modal barrier. Scrim + inert for modality. Status variant (connection lost) and error variant (render errors with stack traces). Replaces hand-built disconnect-banner.tsx and error-boundary.tsx rendering. | High |
 | 36 | tug-markdown | Original | High-performance markdown/MDX renderer for LLM and agent responses. Three layers: (1) standard CommonMark/GFM rendering with token-driven typography, (2) full MDX support for embedded React components, (3) "MDX+" custom parsing extensions for tugways-specific formatting (agent output, code diffs, plan steps, tool results, etc.). Must handle streaming content (incremental rendering as tokens arrive), large documents without jank, and syntax-highlighted code blocks via tug-rich-text integration. The primary display surface for all AI-generated content in the app. | High |
 | 37 | tug-prompt-input | Original | Rich input field for composing prompts and conversational text. History navigation, typeahead/suggestions, completions, multi-line expansion. Distinct from tug-input (basic field) and tug-textarea (plain multi-line) — prompt-input is the full interactive authoring field. | High |
@@ -264,15 +264,17 @@ Four modality tiers: state barriers, app-modal alerts, card-modal sheets, and no
 - ~~tug-bulletin~~ ✅ *(modeless notifications, Sonner, useTugBulletin hook)*
 - ~~tug-dialog~~ — Skipped. Card system handles dialog use cases natively.
 
-### Group D: Rich Content & Compositions
+### Group D: The Conversation Experience
 
-Markdown renderer and rich text editor are core to card content — tug-markdown is the primary display surface for all AI-generated content. Chat input needs textarea (Group A). Context menus need menu infrastructure (done).
+The core AI interaction: prompt input, streamed markdown rendering, and agent progress. **Prerequisite: tug-feed integration** ([tug-feed-roadmap.md](tug-feed-roadmap.md)) proves the data flow before UI is built. See [tug-conversation.md](tug-conversation.md) for the full proposal.
 
 - tug-markdown
-- tug-rich-text
 - tug-prompt-input
 - tug-prompt-entry
-- tug-search-bar
+
+**Deferred from Group D:**
+- tug-rich-text — Monaco editor wrapper. Moved to a future group. Not needed for the conversation experience.
+- tug-search-bar — TugInput + TugButton composition. Moved to a future group. Trivial, no urgency.
 
 ### Group E: Data Display & Feedback
 
