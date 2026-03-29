@@ -238,6 +238,19 @@ export interface CompactBoundary {
 }
 
 /**
+ * API retry notification. Claude Code retries up to 10 times with exponential backoff.
+ */
+export interface ApiRetry {
+  type: "api_retry";
+  attempt: number;
+  max_retries: number;
+  retry_delay_ms: number;
+  error_status: number | null;
+  error: string;
+  ipc_version: number;
+}
+
+/**
  * Structured tool result for rich UI display per D11/PN-4.
  */
 export interface ToolUseStructured {
@@ -273,6 +286,7 @@ export type OutboundMessage =
   | SystemMetadata
   | CostUpdate
   | CompactBoundary
+  | ApiRetry
   | ToolUseStructured
   | ControlRequestCancel;
 

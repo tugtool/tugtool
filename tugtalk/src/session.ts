@@ -18,6 +18,7 @@ import type {
   OutboundMessage,
   ThinkingText,
   CompactBoundary,
+  ApiRetry,
   ControlRequestForward,
   ControlRequestCancel,
   SystemMetadata,
@@ -286,6 +287,16 @@ export function routeTopLevelEvent(
       } else if (subtype === "compact_boundary") {
         const marker: CompactBoundary = { type: "compact_boundary", ipc_version: 2 };
         messages.push(marker);
+      } else if (subtype === "api_retry") {
+        messages.push({
+          type: "api_retry",
+          attempt: (event.attempt as number) || 0,
+          max_retries: (event.max_retries as number) || 10,
+          retry_delay_ms: (event.retry_delay_ms as number) || 0,
+          error_status: (event.error_status as number | null) ?? null,
+          error: (event.error as string) || "unknown",
+          ipc_version: 2,
+        });
       }
       break;
     }

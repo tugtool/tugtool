@@ -2492,6 +2492,95 @@ describe("protocol audit: §17 context compaction", () => {
   });
 });
 
+describe("api_retry events forwarded through transport", () => {
+  test("api_retry system events produce api_retry IPC messages", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-apiretry-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-retry",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      // First API call fails — retry #1
+      {
+        type: "system", subtype: "api_retry",
+        attempt: 1, max_retries: 10, retry_delay_ms: 1000,
+        error_status: 529, error: "server_error",
+      },
+      // Retry #2
+      {
+        type: "system", subtype: "api_retry",
+        attempt: 2, max_retries: 10, retry_delay_ms: 2000,
+        error_status: 529, error: "server_error",
+      },
+      // Third attempt succeeds — normal response follows
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Success after retries." } } },
+      { type: "result", subtype: "success", result: "Success after retries." },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "hello", attachments: [] })
+    );
+
+    // Two api_retry events forwarded.
+    const retries = ipcMessages.filter((m: any) => m.type === "api_retry");
+    expect(retries.length).toBe(2);
+
+    // First retry has correct fields.
+    expect((retries[0] as any).attempt).toBe(1);
+    expect((retries[0] as any).max_retries).toBe(10);
+    expect((retries[0] as any).retry_delay_ms).toBe(1000);
+    expect((retries[0] as any).error_status).toBe(529);
+    expect((retries[0] as any).error).toBe("server_error");
+
+    // Second retry has incremented attempt and delay.
+    expect((retries[1] as any).attempt).toBe(2);
+    expect((retries[1] as any).retry_delay_ms).toBe(2000);
+
+    // Response text still arrives after retries.
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text" && m.is_partial);
+    expect(textMsgs.length).toBe(1);
+    expect((textMsgs[0] as any).text).toBe("Success after retries.");
+
+    // Turn completes successfully.
+    const turns = ipcMessages.filter((m: any) => m.type === "turn_complete");
+    expect(turns.length).toBe(1);
+    expect((turns[0] as any).result).toBe("success");
+  });
+
+  test("api_retry with rate_limit error and null status", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-ratelimit-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-rl",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      {
+        type: "system", subtype: "api_retry",
+        attempt: 1, max_retries: 10, retry_delay_ms: 5000,
+        error_status: null, error: "rate_limit",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "OK" } } },
+      { type: "result", subtype: "success", result: "OK" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+    );
+
+    const retries = ipcMessages.filter((m: any) => m.type === "api_retry");
+    expect(retries.length).toBe(1);
+    expect((retries[0] as any).error).toBe("rate_limit");
+    expect((retries[0] as any).error_status).toBeNull();
+    expect((retries[0] as any).retry_delay_ms).toBe(5000);
+  });
+});
+
 describe("protocol audit: §3e stream_event types", () => {
   test("content_block_start for tool_use emits no IPC (handled by assistant)", () => {
     // The tool_use start event is informational; actual tool_use IPC comes from the assistant message.
