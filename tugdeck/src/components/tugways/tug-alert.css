@@ -21,6 +21,9 @@ body {
   --tugx-alert-border:     var(--tug7-element-global-border-normal-default-rest);
   --tugx-alert-shadow:     var(--tug7-element-global-shadow-normal-overlay-rest);
   --tugx-alert-icon-fg:    var(--tug7-element-global-icon-normal-muted-rest);
+  /* Spacing grid: A=tight (gap, title margin), B=generous (outer padding, icon-text gap) */
+  --tugx-alert-space-a: 0.75rem;
+  --tugx-alert-space-b: 1.5rem;
 }
 
 /* ---- Keyframe animations [L14] — duration scales via --tug-timing [L13] ---- */
@@ -87,7 +90,7 @@ body {
   /* Sizing — wider to accommodate icon + text side by side */
   width: 100%;
   max-width: 460px;
-  padding: 1.5rem;
+  padding: var(--tugx-alert-space-b);
   /* Box model */
   box-sizing: border-box;
 }
@@ -106,9 +109,9 @@ body {
 
 .tug-alert-body {
   display: flex;
-  gap: 1rem;
+  gap: var(--tugx-alert-space-b);
   align-items: flex-start;
-  margin-bottom: 1.25rem;
+  margin-bottom: var(--tugx-alert-space-b);
 }
 
 /* ---- Icon container ---- */
@@ -137,7 +140,7 @@ body {
 .tug-alert-title {
   font-weight: 600;
   font-size: 1rem;
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 var(--tugx-alert-space-a) 0;
   /* Vertically center title with icon when no message */
   line-height: 1.4;
 }
@@ -157,5 +160,10 @@ body {
 .tug-alert-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--tugx-alert-space-a);
+}
+
+/* Layout: enforce minimum button width so short labels like "OK" match "Cancel" visually */
+.tug-alert-actions .tug-button {
+  min-width: 7rem;
 }

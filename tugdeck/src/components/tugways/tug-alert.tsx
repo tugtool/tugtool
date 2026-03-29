@@ -244,7 +244,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             <div className="tug-alert-actions">
               {cancelLabel !== null && (
                 <AlertDialog.Cancel asChild>
-                  <TugPushButton emphasis="ghost" onClick={handleCancel}>
+                  <TugPushButton emphasis="outlined" onClick={handleCancel}>
                     {cancelLabel}
                   </TugPushButton>
                 </AlertDialog.Cancel>

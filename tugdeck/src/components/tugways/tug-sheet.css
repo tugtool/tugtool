@@ -22,18 +22,21 @@ body {
   --tugx-sheet-border:     var(--tug7-element-global-border-normal-default-rest);
   --tugx-sheet-shadow:     var(--tug7-element-global-shadow-normal-overlay-rest);
   --tugx-sheet-header-fg:  var(--tug7-element-global-text-normal-default-rest);
+  /* Spacing grid: A=tight (gap, close padding), B=generous (outer padding, gutters) */
+  --tugx-sheet-space-a: 0.75rem;
+  --tugx-sheet-space-b: 1.5rem;
 }
 
 /* ---- Keyframe animations [L14] — duration scales via --tug-timing [L13] ---- */
 
 @keyframes tug-sheet-drop {
-  from { transform: translateY(-100%); opacity: 0; }
-  to   { transform: translateY(0);     opacity: 1; }
+  from { transform: translateX(-50%) translateY(-100%); opacity: 0; }
+  to   { transform: translateX(-50%) translateY(0);     opacity: 1; }
 }
 
 @keyframes tug-sheet-retract {
-  from { transform: translateY(0);     opacity: 1; }
-  to   { transform: translateY(-100%); opacity: 0; }
+  from { transform: translateX(-50%) translateY(0);     opacity: 1; }
+  to   { transform: translateX(-50%) translateY(-100%); opacity: 0; }
 }
 
 @keyframes tug-sheet-overlay-in {
@@ -81,11 +84,13 @@ body {
   box-shadow: var(--tugx-sheet-shadow);
   /* Shape — rounded bottom corners only (drops from title bar) */
   border-radius: 0 0 0.5rem 0.5rem;
-  /* Positioning — absolute within the card, just below the title bar */
+  /* Positioning — centered within the card, just below the title bar */
   position: absolute;
   top: var(--tug-chrome-height, 36px);
-  left: 0;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 2 * var(--tugx-sheet-space-b));
+  max-width: 460px;
   /* Above overlay */
   z-index: 11;
   /* Constrained to the card content area */
