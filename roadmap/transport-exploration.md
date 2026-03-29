@@ -1055,10 +1055,36 @@ In the terminal, `/dash` shows output (agent spawning, progress, results) becaus
 
 **This means slash commands are fundamentally a terminal input mechanism with no stream-json equivalent.** Stream-json is for `user_message` → Claude API → streamed response. Slash commands bypass Claude entirely and are handled by the harness.
 
-**Implication for the graphical UI:** Cannot invoke ANY slash command (built-in or plugin) via the `user_message` transport. The UI needs a completely different invocation mechanism — either:
-- A new inbound message type (e.g., `{ type: "slash_command", command: "dash", args: "test-probe say hello" }`) that tugtalk routes to Claude Code's slash command handler
-- Spawning a separate Claude Code process per skill invocation
-- Having tugtalk intercept `/`-prefixed text before sending to Claude and route it to the slash handler itself
+**Implication for the graphical UI:** Cannot invoke ANY slash command (built-in or plugin) via the `user_message` transport. The UI needs a completely different invocation mechanism.
+
+---
+
+## Deep Dive: How Slash Command Output Actually Works in Tugtalk
+
+**Discovered by reading `session.ts` `routeTopLevelEvent`.**
+
+Claude Code's slash command mechanism works like this:
+
+1. Text starting with `/` is sent to Claude's stdin as a normal `user` message.
+2. Claude Code's harness intercepts it as a slash command and processes it internally — the model never sees it.
+3. For simple commands (`/cost`, `/status`), Claude Code emits a `result` event containing the formatted output text.
+4. **Then, on session replay**, Claude Code emits a `{ type: "user", isReplay: true, message: { content: "<local-command-stdout>...</local-command-stdout>" } }` event.
+5. Tugtalk's `case "user"` handler (lines 318-347) detects `isReplay === true`, extracts `<local-command-stdout>` content, and emits it as `assistant_text`.
+
+**This explains our Test 3 (`/cost`):** We saw `cost_update` (from the `result` event) + `turn_complete`, but no `assistant_text` with the formatted cost text. The text only appears on **replay** (session resume), not on first execution.
+
+**Critical question for orchestrator skills (`/dash`, `/plan`):** When these run, they spawn agents, make tool calls, produce progress output. Does this output go through `<local-command-stdout>` on replay? Or does the orchestrator's output come as normal streaming events (`tool_use`, `assistant_text`, `control_request`)? If the latter, tugtalk should already be forwarding those events — but our tests showed zero events.
+
+**Possible explanations for why orchestrator skills produce zero events:**
+1. The orchestrator skill runs in a **separate execution context** whose stdout isn't connected to the stream-json pipe.
+2. The skill output goes through the `<local-command-stdout>` mechanism but the tags are only emitted on replay, and we never resumed the session after running the skill.
+3. The skill errored silently and produced no output.
+4. There's a skill invocation pathway we haven't found.
+
+**Next steps to resolve:**
+- Run `/tugplug:dash` through the probe, then immediately send a resume command or restart the probe to see if replay events contain the skill output.
+- Read Claude Code's source (if available) to understand how the `--input-format stream-json` handler processes `/`-prefixed text.
+- Check if there's an alternative to sending the slash command as text — maybe a structured inbound message type.
 
 ---
 
