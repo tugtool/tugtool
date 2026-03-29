@@ -58,6 +58,21 @@ export function GalleryBanner() {
   const [iconVisible, setIconVisible] = React.useState(false);
   const [errorVisible, setErrorVisible] = React.useState(false);
 
+  const timerRefs = React.useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  React.useEffect(() => {
+    const timers = timerRefs.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, []);
+
+  function showFor3s(setter: React.Dispatch<React.SetStateAction<boolean>>) {
+    setter(true);
+    const t = setTimeout(() => setter(false), 3000);
+    timerRefs.current.push(t);
+  }
+
   const sampleStack = `Error: Something went critically wrong
     at ComponentTree.render (bundle.js:1234)
     at ErrorBoundary.render (bundle.js:5678)
@@ -79,6 +94,13 @@ export function GalleryBanner() {
             onClick={() => setDangerVisible((v) => !v)}
           >
             {dangerVisible ? "Hide Banner" : "Show Banner"}
+          </TugPushButton>
+          <TugPushButton
+            size="sm"
+            emphasis="outlined"
+            onClick={() => showFor3s(setDangerVisible)}
+          >
+            Show for 3s
           </TugPushButton>
         </div>
         <div style={miniViewport} data-slot="deck-canvas">
@@ -107,6 +129,13 @@ export function GalleryBanner() {
           >
             {cautionVisible ? "Hide Banner" : "Show Banner"}
           </TugPushButton>
+          <TugPushButton
+            size="sm"
+            emphasis="outlined"
+            onClick={() => showFor3s(setCautionVisible)}
+          >
+            Show for 3s
+          </TugPushButton>
         </div>
         <div style={miniViewport}>
           <MiniContent />
@@ -133,6 +162,13 @@ export function GalleryBanner() {
             onClick={() => setDefaultVisible((v) => !v)}
           >
             {defaultVisible ? "Hide Banner" : "Show Banner"}
+          </TugPushButton>
+          <TugPushButton
+            size="sm"
+            emphasis="outlined"
+            onClick={() => showFor3s(setDefaultVisible)}
+          >
+            Show for 3s
           </TugPushButton>
         </div>
         <div style={miniViewport}>

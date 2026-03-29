@@ -210,10 +210,10 @@ body {
   --tugx-banner-strip-border: var(--tug7-element-control-border-filled-danger-rest);
 }
 
-/* caution */
+/* caution — dark text for contrast against yellow background */
 .tug-banner[data-tone="caution"] .tug-banner-strip {
   --tugx-banner-strip-bg:     var(--tug7-surface-control-primary-filled-caution-rest);
-  --tugx-banner-strip-fg:     var(--tug7-element-control-text-filled-caution-rest);
+  --tugx-banner-strip-fg:     var(--tug7-element-global-text-normal-onCaution-rest);
   --tugx-banner-strip-border: var(--tug7-element-control-border-filled-caution-rest);
 }
 
