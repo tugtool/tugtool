@@ -126,17 +126,16 @@ body {
 
 /* ---- Sheet actions row (mirrors alert actions conventions) ---- */
 
+/* Actions row lives inside .tug-sheet-body which already has B padding.
+   Only add top spacing (A) to separate from form content above. */
 .tug-sheet-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--tugx-sheet-space-a);
-  padding: var(--tugx-sheet-space-b) var(--tugx-sheet-space-b) var(--tugx-sheet-space-a);
+  padding-top: var(--tugx-sheet-space-a);
 }
 
-/* Layout: tighter padding + minimum width for balanced dialog buttons.
-   Uses padding shorthand to match .tug-button-size-md shorthand — higher
-   specificity (0-3-0 vs 0-1-0) ensures this wins regardless of source order. */
-.tug-sheet-actions .tug-button.tug-button {
-  min-width: 7rem;
-  padding: 0 0.625rem;
+/* Layout: minimum button width so short labels don't look tiny. */
+.tug-sheet-actions .tug-button {
+  min-width: 5rem;
 }
