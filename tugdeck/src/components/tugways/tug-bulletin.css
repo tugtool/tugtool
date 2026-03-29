@@ -22,6 +22,7 @@ body {
   --tugx-bulletin-space-a: 0.75rem;
   --tugx-bulletin-space-b: 1.5rem;
   /* Tone accent borders */
+  --tugx-bulletin-accent-default: var(--tug7-element-global-border-normal-muted-rest);
   --tugx-bulletin-accent-success: var(--tug7-element-tone-border-normal-success-rest);
   --tugx-bulletin-accent-danger:  var(--tug7-element-tone-border-normal-danger-rest);
   --tugx-bulletin-accent-caution: var(--tug7-element-tone-border-normal-caution-rest);
@@ -41,14 +42,14 @@ body {
   max-width: 400px;
   width: 100%;
   box-sizing: border-box;
-  /* Padding using B spacing (generous outer padding, matching alert/sheet) */
-  padding: var(--tugx-bulletin-space-b);
+  /* Padding: A top/bottom (compact), B right, A left (stripe already adds visual weight) */
+  padding: var(--tugx-bulletin-space-a) var(--tugx-bulletin-space-b) var(--tugx-bulletin-space-a) var(--tugx-bulletin-space-a);
   /* Layout */
   display: flex;
   flex-direction: column;
-  gap: var(--tugx-bulletin-space-a);
-  /* Left border slot — transparent by default, colored by tone variants */
-  border-left: 4px solid transparent;
+  gap: calc(var(--tugx-bulletin-space-a) * 0.5);
+  /* Left accent stripe — contrasting gray by default, colored by tone variants */
+  border-left: 4px solid var(--tugx-bulletin-accent-default);
   /* Cursor */
   cursor: default;
   /* Prevent text selection on rapid clicks */
