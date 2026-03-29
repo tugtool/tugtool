@@ -30,6 +30,7 @@ use crate::feeds::terminal::{self, TerminalFeed};
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() {
@@ -38,6 +39,11 @@ async fn main() {
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    // Create own process group so the app can kill tugcast + all children
+    // (tugtalk, bun) with a single kill(-pgid, SIGTERM). Without this,
+    // children become orphans when the app force-kills tugcast.
+    unsafe { libc::setpgid(0, 0); }
 
     // Parse CLI arguments
     let cli = cli::Cli::parse();
@@ -333,7 +339,7 @@ async fn main() {
         ));
     }
 
-    // Start server and select! on shutdown channel
+    // Start server and select! on shutdown channel + SIGTERM
     let server_future = server::run_server(
         listener,
         feed_router,
@@ -341,6 +347,24 @@ async fn main() {
         Some(watch_dir),
         bank_store,
     );
+
+    let mut sigterm =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to register SIGTERM handler");
+
+    // Watch for parent death (e.g. kill -9 on Tug.app). When our parent PID
+    // changes to 1 (launchd/init), the parent is gone and we should exit.
+    let parent_pid = unsafe { libc::getppid() };
+    let parent_watch = async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            let current_ppid = unsafe { libc::getppid() };
+            if current_ppid != parent_pid {
+                info!("Parent died (ppid {} → {}), shutting down", parent_pid, current_ppid);
+                break;
+            }
+        }
+    };
 
     let exit_code = tokio::select! {
         result = server_future => {
@@ -355,6 +379,13 @@ async fn main() {
             info!("shutdown requested with exit code {}", code);
             code as i32
         }
+        _ = sigterm.recv() => {
+            info!("SIGTERM received, shutting down");
+            0
+        }
+        _ = parent_watch => {
+            0
+        }
     };
 
     // Send shutdown message via response channel (draining task writes to socket)
@@ -367,6 +398,14 @@ async fn main() {
 
     // Signal shutdown for background tasks
     cancel.cancel();
+
+    // Kill our entire process group (tugcast + tugtalk + children).
+    // std::process::exit doesn't run destructors, so kill_on_drop and
+    // async cancellation can't be relied upon. Sending SIGTERM to our
+    // own process group is the only reliable way to clean up children.
+    info!("Killing process group before exit");
+    unsafe { libc::kill(0, libc::SIGTERM); }
+
     info!("tugcast shut down");
     std::process::exit(exit_code);
 }

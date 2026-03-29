@@ -471,25 +471,29 @@ class ProcessManager {
             connection.send(["type": "shutdown"])
         }
 
-        // Wait up to 5 seconds for process exit
+        // Wait up to 5 seconds for tugcast to exit from the UDS shutdown.
         if let proc = process, proc.isRunning {
             let deadline = Date().addingTimeInterval(5)
             while proc.isRunning && Date() < deadline {
                 Thread.sleep(forTimeInterval: 0.1)
             }
-            // SIGTERM if still running
             if proc.isRunning {
                 proc.terminate()
-                let termDeadline = Date().addingTimeInterval(2)
-                while proc.isRunning && Date() < termDeadline {
-                    Thread.sleep(forTimeInterval: 0.1)
-                }
-                // SIGKILL if still running
-                if proc.isRunning {
-                    kill(proc.processIdentifier, SIGKILL)
-                    proc.waitUntilExit()
-                }
+                proc.waitUntilExit()
             }
+        }
+
+        // Kill the entire process group to clean up tugtalk and any children.
+        // Tugcast calls setpgid(0,0) at startup to create its own group,
+        // so this won't affect the app. We always do this — even if tugcast
+        // exited gracefully — because std::process::exit in tugcast doesn't
+        // reliably kill children.
+        if let proc = process {
+            let pgid = proc.processIdentifier
+            kill(-pgid, SIGTERM)
+            // Brief wait, then force-kill any stragglers.
+            usleep(200_000)
+            kill(-pgid, SIGKILL)
         }
         process = nil
 

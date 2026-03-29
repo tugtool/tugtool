@@ -149,6 +149,7 @@ pub async fn run_agent_bridge(
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
+            .kill_on_drop(true)
             .spawn()
         {
             Ok(child) => child,
