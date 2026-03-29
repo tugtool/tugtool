@@ -17,7 +17,7 @@ import {
 /** Callback for receiving frames from a specific feed */
 export type FrameCallback = (payload: Uint8Array) => void;
 
-/** State emitted to DisconnectBanner when connection status changes */
+/** State emitted to TugBannerProvider when connection status changes. */
 export interface DisconnectState {
   /** true = disconnected/reconnecting, false = connected */
   disconnected: boolean;
