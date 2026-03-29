@@ -55,7 +55,7 @@ function GalleryAlertInner() {
       message: "This card and all its contents will be permanently removed. You can't undo this action.",
       confirmLabel: "Delete",
       confirmRole: "danger",
-      icon: "trash-2",
+      icon: "Trash2",
     });
     setDangerResult(confirmed ? "confirmed" : "cancelled");
   }
@@ -66,7 +66,7 @@ function GalleryAlertInner() {
       message: 'You\'ve made changes to \u201cHomepage Copy\u201d that haven\'t been saved. Leaving now will discard them.',
       confirmLabel: "Discard Changes",
       confirmRole: "caution",
-      icon: "triangle-alert",
+      icon: "TriangleAlert",
     });
     setCautionResult(confirmed ? "confirmed" : "cancelled");
   }
@@ -98,9 +98,11 @@ function GalleryAlertInner() {
       <div className="cg-section">
         <div className="cg-section-title">Basic Alert</div>
         <div style={labelStyle}>useTugAlert() hook — default action role, default info icon</div>
-        <TugPushButton emphasis="outlined" size="sm" onClick={handleBasicAlert}>
-          Replace File
-        </TugPushButton>
+        <div style={{ display: "flex" }}>
+          <TugPushButton emphasis="outlined" size="sm" onClick={handleBasicAlert}>
+            Replace File
+          </TugPushButton>
+        </div>
         <div style={resultStyle}>
           Result: <strong>{basicResult}</strong>
         </div>
@@ -111,10 +113,12 @@ function GalleryAlertInner() {
       {/* ---- 2. Danger Confirmation ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Danger Confirmation</div>
-        <div style={labelStyle}>confirmRole="danger", icon="trash-2" — destructive action guard</div>
-        <TugPushButton emphasis="filled" role="danger" size="sm" onClick={handleDangerAlert}>
-          Delete Card
-        </TugPushButton>
+        <div style={labelStyle}>confirmRole="danger", icon="Trash2" — destructive action guard</div>
+        <div style={{ display: "flex" }}>
+          <TugPushButton emphasis="filled" role="danger" size="sm" onClick={handleDangerAlert}>
+            Delete Card
+          </TugPushButton>
+        </div>
         <div style={resultStyle}>
           Result: <strong>{dangerResult}</strong>
         </div>
@@ -125,10 +129,12 @@ function GalleryAlertInner() {
       {/* ---- 3. Caution Warning ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Caution Warning</div>
-        <div style={labelStyle}>confirmRole="caution", icon="triangle-alert" — potentially lossy action</div>
-        <TugPushButton emphasis="outlined" size="sm" onClick={handleCautionAlert}>
-          Discard Changes
-        </TugPushButton>
+        <div style={labelStyle}>confirmRole="caution", icon="TriangleAlert" — potentially lossy action</div>
+        <div style={{ display: "flex" }}>
+          <TugPushButton emphasis="outlined" size="sm" onClick={handleCautionAlert}>
+            Discard Changes
+          </TugPushButton>
+        </div>
         <div style={resultStyle}>
           Result: <strong>{cautionResult}</strong>
         </div>
@@ -140,9 +146,11 @@ function GalleryAlertInner() {
       <div className="cg-section">
         <div className="cg-section-title">OK-Only (No Cancel)</div>
         <div style={labelStyle}>cancelLabel=null — single-button acknowledgement variant</div>
-        <TugPushButton emphasis="outlined" size="sm" onClick={handleOkOnlyAlert}>
-          Export Workspace
-        </TugPushButton>
+        <div style={{ display: "flex" }}>
+          <TugPushButton emphasis="outlined" size="sm" onClick={handleOkOnlyAlert}>
+            Export Workspace
+          </TugPushButton>
+        </div>
         <div style={resultStyle}>
           Result: <strong>{okOnlyResult}</strong>
         </div>
@@ -156,9 +164,11 @@ function GalleryAlertInner() {
         <div style={labelStyle}>useRef&lt;TugAlertHandle&gt; + alertRef.current.alert() — alternative to provider pattern</div>
         {/* Standalone TugAlert instance for this section */}
         <TugAlert ref={alertRef} title="Send feedback?" />
-        <TugPushButton emphasis="outlined" size="sm" onClick={handleRefAlert}>
-          Send Feedback
-        </TugPushButton>
+        <div style={{ display: "flex" }}>
+          <TugPushButton emphasis="outlined" size="sm" onClick={handleRefAlert}>
+            Send Feedback
+          </TugPushButton>
+        </div>
         <div style={resultStyle}>
           Result: <strong>{refResult}</strong>
         </div>

@@ -41,16 +41,11 @@ body {
 }
 
 @keyframes tug-alert-content-out {
-  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  to   { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+  from { opacity: 1; transform: translate(-50%, -50%); }
+  to   { opacity: 0; transform: translate(-50%, -50%); }
 }
 
 /* ---- Overlay (scrim) ---- */
-
-/*
- * forceMount: overlay is always in the DOM; visibility is driven by
- * [data-state] so we hide it when closed and let the exit animation play.
- */
 
 .tug-alert-overlay {
   /* @tug-renders-on: --tugx-alert-overlay-bg */
@@ -72,12 +67,6 @@ body {
 }
 
 /* ---- Content panel ---- */
-
-/*
- * forceMount: content is always in the DOM. When closed, the exit animation
- * runs and animation-fill-mode: forwards holds opacity: 0 until Radix
- * removes the open state.
- */
 
 .tug-alert-content {
   /* @tug-renders-on: --tugx-alert-bg */

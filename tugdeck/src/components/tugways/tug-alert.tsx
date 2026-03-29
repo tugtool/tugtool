@@ -22,12 +22,12 @@ import type { TugButtonRole } from "./internal/tug-button";
  * Helpers
  * ---------------------------------------------------------------------------*/
 
-/** Map confirmRole to a default Lucide icon name. */
+/** Map confirmRole to a default Lucide icon name (PascalCase — matches lucide-react `icons` keys). */
 function defaultIconForRole(role: TugButtonRole): string {
   if (role === "danger" || role === "caution") {
-    return "triangle-alert";
+    return "TriangleAlert";
   }
-  return "info";
+  return "Info";
 }
 
 /* ---------------------------------------------------------------------------
@@ -170,12 +170,16 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     // Controlled open: if openProp is provided, use it; otherwise use internal state.
     const isOpen = openProp !== undefined ? openProp : open;
 
+    // IMPORTANT: Never clear overrideRef during close. The exit animation
+    // needs the override values to stay so the content doesn't revert to
+    // singleton defaults while fading out. Overrides are cleared on next open
+    // (the imperative alert() sets fresh overrides before opening).
+
     function handleConfirm() {
       if (resolverRef.current) {
         resolverRef.current(true);
         resolverRef.current = null;
       }
-      overrideRef.current = null;
       setOpen(false);
       onOpenChange?.(false);
       onConfirm?.();
@@ -186,7 +190,6 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
         resolverRef.current(false);
         resolverRef.current = null;
       }
-      overrideRef.current = null;
       setOpen(false);
       onOpenChange?.(false);
       onCancel?.();
@@ -199,7 +202,6 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
           resolverRef.current(false);
           resolverRef.current = null;
         }
-        overrideRef.current = null;
         onCancel?.();
       }
       setOpen(nextOpen);
@@ -208,12 +210,18 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
 
     return (
       <AlertDialog.Root open={isOpen} onOpenChange={handleOpenChange}>
-        <AlertDialog.Portal forceMount>
-          <AlertDialog.Overlay className="tug-alert-overlay" forceMount />
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="tug-alert-overlay" />
           <AlertDialog.Content
             className="tug-alert-content"
             data-slot="tug-alert"
-            forceMount
+            onKeyDown={(e) => {
+              // Cmd+. dismisses (macOS convention) — treat as cancel.
+              if (e.metaKey && e.key === ".") {
+                e.preventDefault();
+                handleOpenChange(false);
+              }
+            }}
           >
             {/* Classic Mac HIG layout: icon left, text right, buttons bottom-right */}
             <div className="tug-alert-body">
