@@ -1,12 +1,12 @@
 /**
- * TugBannerBridge — subscribes to connection disconnect state and renders TugBanner.
+ * TugBannerProvider — subscribes to connection disconnect state and renders TugBanner.
  *
  * Always mounted in the React tree (status variant, never conditionally rendered).
  * Bridges the TugConnection disconnect callback to the TugBanner `visible` prop.
  * Renders TugBanner with the caution tone while disconnected, showing reconnect info.
  *
  * Replaces DisconnectBanner for the new tugways-based rendering. DisconnectBanner
- * can be removed after TugBannerBridge is wired into deck-manager.ts.
+ * can be removed after TugBannerProvider is wired into deck-manager.ts.
  */
 
 import React, { useState, useEffect } from "react";
@@ -15,13 +15,13 @@ import { TugBanner } from "@/components/tugways/tug-banner";
 
 // ---- Props ----
 
-export interface TugBannerBridgeProps {
+export interface TugBannerProviderProps {
   connection: TugConnection | null;
 }
 
 // ---- Component ----
 
-export function TugBannerBridge({ connection }: TugBannerBridgeProps) {
+export function TugBannerProvider({ connection }: TugBannerProviderProps) {
   const [disconnectState, setDisconnectState] = useState<DisconnectState | null>(null);
 
   useEffect(() => {

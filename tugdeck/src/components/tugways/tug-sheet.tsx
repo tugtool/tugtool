@@ -9,6 +9,10 @@
  * Compound API: TugSheet (Root) / TugSheetTrigger / TugSheetContent.
  * Portals into the card root element via TugcardPortalContext.
  *
+ * Imperative hook: useTugSheet() — returns { showSheet, renderSheet }.
+ * Call renderSheet() once in your component's JSX; call showSheet() anywhere
+ * to present a sheet imperatively and await its result.
+ *
  * Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authoring guide,
  *       [L20] token sovereignty (composes child controls)
  */
@@ -381,4 +385,115 @@ export function TugSheetContent({
     </>,
     cardEl,
   );
+}
+
+/* ---------------------------------------------------------------------------
+ * useTugSheet — imperative hook
+ * ---------------------------------------------------------------------------*/
+
+/**
+ * Options for showSheet() returned by useTugSheet().
+ */
+export interface ShowSheetOptions {
+  /** Sheet title (required — wired to aria-labelledby). */
+  title: string;
+  /** Optional description (wired to aria-describedby). */
+  description?: string;
+  /**
+   * Content render function. Receives a `close` callback.
+   * Call close(result?) to dismiss the sheet and resolve the promise.
+   */
+  content: (close: (result?: string) => void) => React.ReactNode;
+  /** Override initial focus target. */
+  onOpenAutoFocus?: (event: Event) => void;
+}
+
+interface UseTugSheetState {
+  options: ShowSheetOptions;
+  resolve: (result: string | undefined) => void;
+}
+
+/**
+ * useTugSheet — imperative Promise-based sheet hook.
+ *
+ * Returns `{ showSheet, renderSheet }`:
+ * - `showSheet(options)` opens a sheet and returns a Promise that resolves
+ *   when the sheet is closed (via the `close` callback, Escape, or Cmd+.).
+ * - `renderSheet()` must be called once in the component's JSX to render
+ *   the sheet portal. Returns null when no sheet is open.
+ *
+ * Must be called from within a Tugcard (requires TugcardPortalContext).
+ *
+ * @example
+ * ```tsx
+ * function MyCardContent() {
+ *   const { showSheet, renderSheet } = useTugSheet();
+ *   return (
+ *     <>
+ *       <TugPushButton onClick={async () => {
+ *         const result = await showSheet({
+ *           title: "Settings",
+ *           content: (close) => (
+ *             <>
+ *               <form>...</form>
+ *               <div className="tug-sheet-actions">
+ *                 <TugPushButton onClick={() => close()}>Cancel</TugPushButton>
+ *                 <TugPushButton onClick={() => close("save")}>Save</TugPushButton>
+ *               </div>
+ *             </>
+ *           ),
+ *         });
+ *         if (result === "save") { ... }
+ *       }}>Open Settings</TugPushButton>
+ *       {renderSheet()}
+ *     </>
+ *   );
+ * }
+ * ```
+ */
+export function useTugSheet(): {
+  showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
+  renderSheet: () => React.ReactNode;
+} {
+  const cardEl = useContext(TugcardPortalContext);
+
+  if (process.env.NODE_ENV !== "production" && !cardEl) {
+    console.warn("[useTugSheet] called outside a Tugcard — TugcardPortalContext is null. Sheet will not render.");
+  }
+
+  const [state, setState] = useState<UseTugSheetState | null>(null);
+  const resolverRef = useRef<((result: string | undefined) => void) | null>(null);
+
+  const showSheet = useCallback((options: ShowSheetOptions): Promise<string | undefined> => {
+    return new Promise<string | undefined>((resolve) => {
+      resolverRef.current = resolve;
+      setState({ options, resolve });
+    });
+  }, []);
+
+  const renderSheet = useCallback((): React.ReactNode => {
+    if (!state) return null;
+
+    const { options } = state;
+
+    const close = (result?: string) => {
+      resolverRef.current?.(result);
+      resolverRef.current = null;
+      setState(null);
+    };
+
+    return (
+      <TugSheet open={true} onOpenChange={(open) => { if (!open) close(); }}>
+        <TugSheetContent
+          title={options.title}
+          description={options.description}
+          onOpenAutoFocus={options.onOpenAutoFocus}
+        >
+          {options.content(close)}
+        </TugSheetContent>
+      </TugSheet>
+    );
+  }, [state]);
+
+  return { showSheet, renderSheet };
 }

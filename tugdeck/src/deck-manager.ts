@@ -44,11 +44,11 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
-import { TugBannerBridge } from "./components/chrome/tug-banner-bridge";
+import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
 import { TugAlertProvider } from "./components/tugways/tug-alert";
-import { TugBulletinViewport } from "./components/tugways/tug-bulletin";
+import { TugBulletinProvider } from "./components/tugways/tug-bulletin";
 import { putLayout, putTabState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
@@ -292,11 +292,14 @@ export class DeckManager implements IDeckManagerStore {
                 React.createElement(
                   TugAlertProvider,
                   null,
-                  React.createElement(TugBannerBridge, {
-                    connection: this.connection,
-                  }),
-                  React.createElement(DeckCanvas, {}),
-                  React.createElement(TugBulletinViewport, {}),
+                  React.createElement(
+                    TugBulletinProvider,
+                    null,
+                    React.createElement(TugBannerProvider, {
+                      connection: this.connection,
+                    }),
+                    React.createElement(DeckCanvas, {}),
+                  ),
                 ),
               ),
             ),

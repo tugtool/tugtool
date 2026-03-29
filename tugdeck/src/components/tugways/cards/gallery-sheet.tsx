@@ -14,6 +14,7 @@ import {
   TugSheet,
   TugSheetTrigger,
   TugSheetContent,
+  useTugSheet,
 } from "@/components/tugways/tug-sheet";
 import type { TugSheetHandle } from "@/components/tugways/tug-sheet";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -51,26 +52,80 @@ const fieldRowStyle: React.CSSProperties = {
 /**
  * GallerySheet -- TugSheet demo tab.
  *
- * Four sections:
- * 1. Basic compound API (TugSheet / TugSheetTrigger / TugSheetContent) with a form.
- * 2. Sheet with optional `description` prop (aria-describedby).
- * 3. Imperative ref API (useRef<TugSheetHandle> + open() / close()).
- * 4. Rich scrollable content (checklist).
+ * Five sections:
+ * 1. useTugSheet() hook — imperative Promise-based API (primary).
+ * 2. Basic compound API (TugSheet / TugSheetTrigger / TugSheetContent) with a form.
+ * 3. Sheet with optional `description` prop (aria-describedby).
+ * 4. Imperative ref API (useRef<TugSheetHandle> + open() / close()).
+ * 5. Rich scrollable content (checklist).
  */
 export function GallerySheet() {
-  // Controlled state for each section so Cancel buttons can close sheets
+  // Controlled state for compound API sections
   const [basicOpen, setBasicOpen] = React.useState(false);
   const [descOpen, setDescOpen] = React.useState(false);
   const [richOpen, setRichOpen] = React.useState(false);
 
-  // Section 3: imperative ref
+  // Section 4: imperative ref
   const sheetRef = useRef<TugSheetHandle>(null);
   const [imperativeOpen, setImperativeOpen] = React.useState(false);
+
+  // Section 1: useTugSheet() hook
+  const { showSheet, renderSheet } = useTugSheet();
+  const [hookResult, setHookResult] = React.useState<string | undefined>(undefined);
 
   return (
     <div className="cg-content" data-testid="gallery-sheet">
 
-      {/* ---- 1. Basic Sheet ---- */}
+      {/* ---- 1. useTugSheet() Hook ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">useTugSheet() Hook</div>
+        <div style={labelStyle}>
+          Imperative Promise API — call showSheet() anywhere, await the result. No compound JSX required.
+        </div>
+        {hookResult !== undefined && (
+          <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "8px" }}>
+            Last result: <code>{hookResult === "" || hookResult === undefined ? "(cancelled)" : JSON.stringify(hookResult)}</code>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: "8px" }}>
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            onClick={async () => {
+              const result = await showSheet({
+                title: "Rename Card",
+                description: "Enter a new name for this card.",
+                content: (close) => (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div style={fieldRowStyle}>
+                      <label style={fieldLabelStyle} htmlFor="hook-sheet-name">Card name</label>
+                      <TugInput
+                        id="hook-sheet-name"
+                        size="sm"
+                        placeholder="Untitled card"
+                        defaultValue="My Project Notes"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="tug-sheet-actions">
+                      <TugPushButton emphasis="outlined" onClick={() => close()}>Cancel</TugPushButton>
+                      <TugPushButton emphasis="filled" onClick={() => close("save")}>Save</TugPushButton>
+                    </div>
+                  </div>
+                ),
+              });
+              setHookResult(result ?? "");
+            }}
+          >
+            Rename Card
+          </TugPushButton>
+        </div>
+        {renderSheet()}
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- 2. Basic Sheet ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Basic Sheet</div>
         <div style={labelStyle}>
@@ -112,7 +167,7 @@ export function GallerySheet() {
 
       <div className="cg-divider" />
 
-      {/* ---- 2. Sheet with Description ---- */}
+      {/* ---- 3. Sheet with Description ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Sheet with Description</div>
         <div style={labelStyle}>
@@ -149,7 +204,7 @@ export function GallerySheet() {
 
       <div className="cg-divider" />
 
-      {/* ---- 3. Imperative API ---- */}
+      {/* ---- 4. Imperative API ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Imperative API</div>
         <div style={labelStyle}>
@@ -204,7 +259,7 @@ export function GallerySheet() {
 
       <div className="cg-divider" />
 
-      {/* ---- 4. Rich Content ---- */}
+      {/* ---- 5. Rich Content ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Rich Content</div>
         <div style={labelStyle}>
