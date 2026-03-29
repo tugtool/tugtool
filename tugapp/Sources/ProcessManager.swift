@@ -105,6 +105,55 @@ class ProcessManager {
         return nil
     }
 
+    /// Read a string value from tugbank. Returns nil if the key doesn't exist
+    /// or tugbank is not available.
+    static func readTugbank(domain: String, key: String) -> String? {
+        guard let tugbankPath = which("tugbank") else { return nil }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: tugbankPath)
+        proc.arguments = ["read", domain, key]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else { return nil }
+            // tugbank text output format: "value" (just the value, trimmed)
+            let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        } catch {
+            return nil
+        }
+    }
+
+    /// Read a boolean value from tugbank. Returns true if the key exists and
+    /// its value is "true" (case-insensitive). Returns false otherwise.
+    static func readTugbankBool(domain: String, key: String) -> Bool {
+        guard let value = readTugbank(domain: domain, key: key) else { return false }
+        return value.caseInsensitiveCompare("true") == .orderedSame
+    }
+
+    /// Write a string value to tugbank.
+    @discardableResult
+    static func writeTugbank(domain: String, key: String, value: String) -> Bool {
+        guard let tugbankPath = which("tugbank") else { return false }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: tugbankPath)
+        proc.arguments = ["write", domain, key, value]
+        proc.standardOutput = Pipe()
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            return proc.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
     /// Resolve tugcast binary path from bundle
     private func resolveTugcastPath() -> URL? {
         guard let executableURL = Bundle.main.executableURL else { return nil }
@@ -482,6 +531,11 @@ class ProcessManager {
             args += ["--dir", dir]
         }
         args += ["--control-socket", controlSocketPath]
+        // Check tugbank for no-auth development flag
+        if Self.readTugbankBool(domain: "dev.tugtool.app", key: "no-auth") {
+            args += ["--no-auth"]
+            NSLog("ProcessManager: --no-auth enabled via tugbank")
+        }
         proc.arguments = args
 
         proc.standardOutput = FileHandle.standardOutput

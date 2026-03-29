@@ -77,8 +77,14 @@ async fn main() {
         std::process::exit(1);
     }
 
-    // Create auth state
-    let auth = new_shared_auth_state(cli.port);
+    // Create auth state. With --no-auth, the token exchange and cookie still
+    // work normally (so the app loads fine), but WebSocket validation is skipped
+    // so external tools can connect without a session cookie.
+    let auth = if cli.no_auth {
+        auth::new_shared_auth_state_no_auth(cli.port)
+    } else {
+        new_shared_auth_state(cli.port)
+    };
 
     let token = auth.lock().unwrap().token().unwrap().to_string();
     let auth_url = format!("http://127.0.0.1:{}/auth?token={}", cli.port, token);

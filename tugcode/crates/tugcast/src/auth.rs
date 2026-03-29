@@ -47,6 +47,8 @@ pub struct AuthState {
     port: u16,
     /// When dev mode is active, also allow origins from the Vite dev server port.
     dev_port: Option<u16>,
+    /// When true, skip all authentication checks (session cookies and origin).
+    no_auth: bool,
 }
 
 impl AuthState {
@@ -61,6 +63,23 @@ impl AuthState {
             session_ttl: DEFAULT_SESSION_TTL,
             port,
             dev_port: None,
+            no_auth: false,
+        }
+    }
+
+    /// Create an AuthState that skips WebSocket authentication checks.
+    /// The token exchange still works normally so the app's auth flow
+    /// is unaffected — only WebSocket session/origin validation is skipped.
+    pub fn new_no_auth(port: u16) -> Self {
+        let token = Self::generate_token();
+        info!("Auth token: {} (--no-auth: WebSocket checks disabled)", token);
+        Self {
+            pending_token: Some(token),
+            sessions: HashMap::new(),
+            session_ttl: DEFAULT_SESSION_TTL,
+            port,
+            dev_port: None,
+            no_auth: true,
         }
     }
 
@@ -137,6 +156,11 @@ pub fn new_shared_auth_state(port: u16) -> SharedAuthState {
     Arc::new(Mutex::new(AuthState::new(port)))
 }
 
+/// Create a shared authentication state that skips all checks
+pub fn new_shared_auth_state_no_auth(port: u16) -> SharedAuthState {
+    Arc::new(Mutex::new(AuthState::new_no_auth(port)))
+}
+
 /// Handle auth token exchange
 ///
 /// Validates the provided token and, if valid, creates a session
@@ -191,17 +215,26 @@ pub fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
 
 /// Validate that the request has a valid session cookie
 pub fn validate_request_session(headers: &HeaderMap, auth: &SharedAuthState) -> bool {
+    let mut auth_state = auth.lock().unwrap();
+    if auth_state.no_auth {
+        return true;
+    }
+
     let session_id = match extract_session_cookie(headers) {
         Some(id) => id,
         None => return false,
     };
 
-    let mut auth_state = auth.lock().unwrap();
     auth_state.validate_session(&session_id)
 }
 
 /// Check that the request origin is allowed
 pub fn check_request_origin(headers: &HeaderMap, auth: &SharedAuthState) -> bool {
+    let auth_state = auth.lock().unwrap();
+    if auth_state.no_auth {
+        return true;
+    }
+
     let origin = match headers.get(header::ORIGIN) {
         Some(value) => match value.to_str() {
             Ok(s) => s,
@@ -210,7 +243,6 @@ pub fn check_request_origin(headers: &HeaderMap, auth: &SharedAuthState) -> bool
         None => return false,
     };
 
-    let auth_state = auth.lock().unwrap();
     auth_state.check_origin(origin)
 }
 
@@ -262,6 +294,7 @@ mod tests {
             session_ttl: Duration::from_millis(1),
             port: 7890,
             dev_port: None,
+            no_auth: false,
         };
 
         let session_id = auth.create_session();

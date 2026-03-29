@@ -15,11 +15,14 @@ enum TugConfig {
     /// is provided.
     static let defaultVitePort: Int = 55155
 
-    // MARK: - UserDefaults keys
+    // MARK: - Tugbank keys
 
-    static let keySourceTreePath = "SourceTreePath"
-    static let keyDevModeEnabled = "DevModeEnabled"
-    static let keyWindowBackground = "TugWindowBackground"
+    /// Tugbank domain for app preferences.
+    static let domain = "dev.tugtool.app"
+
+    static let keySourceTreePath = "source-tree-path"
+    static let keyDevModeEnabled = "dev-mode-enabled"
+    static let keyWindowBackground = "window-background"
 
     // MARK: - Source tree validation
 

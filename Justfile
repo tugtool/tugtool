@@ -64,7 +64,7 @@ app: build
     pkill -x tugcast 2>/dev/null || true
     sleep 0.5
     # Tell the app where the source tree is so tugcast can find tugtalk, tugdeck, etc.
-    defaults write dev.tugtool.app SourceTreePath "$(pwd)"
+    tugbank write dev.tugtool.app source-tree-path "$(pwd)"
     open "$APP_DIR"
 
 # Build unsigned DMG

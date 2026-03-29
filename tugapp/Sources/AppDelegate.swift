@@ -143,14 +143,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Preferences
 
     private func loadPreferences() {
-        devModeEnabled = UserDefaults.standard.bool(forKey: TugConfig.keyDevModeEnabled)
-        sourceTreePath = UserDefaults.standard.string(forKey: TugConfig.keySourceTreePath)
+        devModeEnabled = ProcessManager.readTugbankBool(domain: TugConfig.domain, key: TugConfig.keyDevModeEnabled)
+        sourceTreePath = ProcessManager.readTugbank(domain: TugConfig.domain, key: TugConfig.keySourceTreePath)
     }
 
     private func savePreferences() {
-        UserDefaults.standard.set(devModeEnabled, forKey: TugConfig.keyDevModeEnabled)
+        ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keyDevModeEnabled, value: devModeEnabled ? "true" : "false")
         if let path = sourceTreePath {
-            UserDefaults.standard.set(path, forKey: TugConfig.keySourceTreePath)
+            ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keySourceTreePath, value: path)
         }
     }
 
@@ -483,7 +483,7 @@ extension AppDelegate: BridgeDelegate {
     }
 
     func bridgeSetTheme(color: String) {
-        UserDefaults.standard.set(color, forKey: TugConfig.keyWindowBackground)
+        ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keyWindowBackground, value: color)
         window.updateBackgroundColor(color)
     }
 

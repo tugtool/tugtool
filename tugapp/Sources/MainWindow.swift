@@ -63,7 +63,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
         // Set window background so there is no color mismatch while the
         // webView is hidden during startup.
-        let savedHex = UserDefaults.standard.string(forKey: TugConfig.keyWindowBackground) ?? MainWindow.defaultBackgroundHex
+        let savedHex = ProcessManager.readTugbank(domain: TugConfig.domain, key: TugConfig.keyWindowBackground) ?? MainWindow.defaultBackgroundHex
         updateBackgroundColor(savedHex)
     }
 

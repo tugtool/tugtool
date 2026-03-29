@@ -33,6 +33,12 @@ pub struct Cli {
     /// Path to the tugbank SQLite database (default: ~/.tugbank.db)
     #[arg(long)]
     pub bank_path: Option<PathBuf>,
+
+    /// Skip authentication for development/testing. Allows any WebSocket
+    /// connection without session cookies or origin checks. Do not use
+    /// in production.
+    #[arg(long)]
+    pub no_auth: bool,
 }
 
 impl Cli {
@@ -222,6 +228,29 @@ mod tests {
         assert!(
             help_text.contains("--bank-path"),
             "help should contain --bank-path"
+        );
+    }
+
+    #[test]
+    fn test_no_auth_default_false() {
+        let cli = Cli::try_parse_from(["tugcast"]).unwrap();
+        assert!(!cli.no_auth);
+    }
+
+    #[test]
+    fn test_no_auth_flag() {
+        let cli = Cli::try_parse_from(["tugcast", "--no-auth"]).unwrap();
+        assert!(cli.no_auth);
+    }
+
+    #[test]
+    fn test_help_contains_no_auth() {
+        let result = Cli::try_parse_from(["tugcast", "--help"]);
+        let err = result.unwrap_err();
+        let help_text = err.to_string();
+        assert!(
+            help_text.contains("--no-auth"),
+            "help should contain --no-auth"
         );
     }
 }
