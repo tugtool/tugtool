@@ -101,13 +101,23 @@ Phase 10: Custom Block Renderers  — rich UI for agent output
 - Does `project_info` arrive? What's in it?
 - What does the protocol handshake (`protocol_init` → `protocol_ack`) look like from the client's perspective?
 
-**Exit criteria:**
-- All questions above answered with real examples
-- Event protocol documented with actual JSON samples for every event type observed
-- Known gaps and problems listed
-- Clear picture of what tugcast/tugtalk changes are needed (Phase 2 scope)
+**Status: IN PROGRESS.** 28 tests completed (see [transport-exploration.md](transport-exploration.md)). Core protocol well-understood. Six areas of further exploration identified:
 
-**Outputs:** Protocol documentation with real examples. Gap list. Phase 2 work items.
+1. **Slash command / skill invocation** — the biggest gap. ALL slash commands (built-in and plugin) are consumed client-side with no stream-json output. Neither short names (`/dash`) nor fully-qualified names (`/tugplug:dash`) work.
+2. **Plugin system** — tugtool plugin is loaded but its skills and agents are invisible in `system_metadata`. Need enumeration and invocation paths.
+3. **Hooks visibility** — hooks run silently. No events indicate hook decisions, injected context, timing, or errors.
+4. **Tugcast WebSocket layer** — all testing has been direct-to-tugtalk. Need auth bypass to test the actual production WebSocket path.
+5. **Session management** — session picker, concurrent sessions, session-scoped permission behavior.
+6. **Advanced patterns** — background tasks, MCP servers, elicitation events.
+
+**Exit criteria:**
+- All questions above answered with real examples ✅ (for core protocol)
+- Event protocol documented with actual JSON samples ✅ (12 outbound, 9 inbound)
+- Known gaps and problems listed ✅ (12 Phase 2 work items + 6 exploration areas)
+- Clear picture of what tugcast/tugtalk changes are needed ✅ (Phase 2 scope defined)
+- Further exploration areas listed and scoped ⬜ (in progress)
+
+**Outputs:** [transport-exploration.md](transport-exploration.md) — protocol documentation, event catalogs, terminal-only features checklist, Phase 2 work items, exploration areas.
 
 ---
 
@@ -117,25 +127,39 @@ Phase 10: Custom Block Renderers  — rich UI for agent output
 
 **Inputs:** Phase 1 documentation and gap list.
 
-**Work:** TBD based on Phase 1 findings. Likely candidates:
+**Work:** Known items from Phase 1 exploration (see [transport-exploration.md](transport-exploration.md) for full details):
 
-- Missing or inconsistent event fields that the UI needs
-- Slash command handling (if `/` prefix isn't interpreted as a skill invocation, tugtalk may need changes)
-- `AskUserQuestion` rendering data (if the `question` event shape is incomplete or missing fields the UI needs)
-- Streaming reliability (backpressure, reconnection, bootstrap behavior for conversation state)
-- Error handling (tugtalk crash recovery, error event quality)
-- Any protocol changes needed to support the conversation UI
+1. **Process lifecycle management.** Tugtalk processes outlive tugcast — 137 zombies observed after ~2 weeks. Tugcast must SIGTERM children on shutdown and/or use process groups. Card close must kill the associated tugtalk.
+2. **Session command readiness.** After `session_command: "new"`, `session_init` fires with `session_id: "pending"` before the new process is usable. The UI needs a clear "ready" signal (non-pending session_id) before sending messages.
+3. **API retry handling.** `system` events with `subtype: "api_retry"` carry attempt count, delay, error type. The UI needs a retry indicator.
+4. **Compaction UI.** `compact_boundary` events should show compaction status. Indicate when context is being compacted.
+5. **Permission mode switcher.** The UI needs a mode selector sending `permission_mode` messages. Cycle: default → acceptEdits → plan → auto.
+6. **Session-scoped permissions reset on resume.** Previously approved tools prompt again after session resume. The UI must handle re-approval.
+7. **Slash command UI for interactive commands.** `/model`, `/status`, `/cost` produce no text in stream-json mode. The UI must build its own pickers/displays and send `model_change`, `permission_mode`, `session_command` directly.
+8. **`control_request_forward` is the unified gate event.** Both permissions (`is_question: false` → `tool_approval`) and AskUserQuestion (`is_question: true` → `question_answer`) come through this one event type. The UI dispatches on `is_question`.
+
+Additional items discovered in later Phase 1 tests:
+
+9. **`api_retry` events are silently dropped by tugtalk.** Confirmed by code inspection: `routeTopLevelEvent` only forwards `system` subtypes `"init"` and `"compact_boundary"`. All others (including `api_retry`) are lost. Fix: add forwarding. Also audit for other dropped subtypes.
+10. **`--no-auth` CLI flag for tugcast.** Required to test full WebSocket path during development. Currently auth requires a single-use token exchange that the app consumes on launch.
+11. **Slash command invocation mechanism.** ALL slash commands (both built-in and plugin) are consumed by Claude Code's client-side dispatcher with no stream-json output. This is not limited to tugplug orchestrator skills — `/cost`, `/model`, `/compact`, `/dash`, `/plan` all behave identically: consumed internally, zero events. The graphical UI needs a new inbound message type (e.g., `{ type: "slash_command", command, args }`) that tugtalk routes to Claude Code's slash command handler, with output forwarded to the stream. This is the single biggest transport gap.
+12. **`@` file reference is terminal-only.** The `@` character in `user_message` text is literal — no file injection. The UI must implement its own `@` completion with file content injection (either into message text or as attachments).
+
+See [transport-exploration.md](transport-exploration.md) for complete findings including the terminal-only features checklist (~30 items the graphical UI must implement).
+
+**Note:** Phase 2 is larger than initially expected. The slash command invocation gap alone is a significant design and implementation effort. Phase 2 may need to be split into sub-phases or prioritized — some items (process lifecycle, `api_retry` forwarding, `--no-auth`) are quick fixes, while others (slash command mechanism, plugin enumeration, hooks visibility) are design work that may require changes to how tugtalk interfaces with Claude Code.
 
 **Exit criteria:**
 - All Phase 1 gap items resolved or explicitly deferred with rationale
 - Basic round-trip (send message → receive streamed response) works reliably
-- Slash commands invoke skills correctly
-- AskUserQuestion round-trip works
-- Tool approval round-trip works
+- Slash commands invoke skills correctly through the transport
+- AskUserQuestion round-trip works (via `control_request_forward`)
+- Tool approval round-trip works (via `control_request_forward`)
 - Interrupt reliably stops streaming
+- End-to-end tugcast WebSocket path verified
 - Transport is solid enough to build UI on with confidence
 
-**Outputs:** Hardened tugcast/tugtalk. Updated protocol documentation.
+**Outputs:** Hardened tugcast/tugtalk. Updated protocol documentation. Resolved exploration areas.
 
 ---
 
