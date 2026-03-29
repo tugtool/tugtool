@@ -4,6 +4,27 @@
 
 ---
 
+## The MVP Use Case
+
+The primary v0 use case is a **graphical/card-based frontend onto Claude Code**. The prompt-input sends prompts to Claude Code; the markdown renderer displays streamed responses.
+
+Tugcast already has the transport infrastructure for this. Two existing feed IDs handle the agent conversation:
+
+- **`CodeOutput` (`0x40`)** — tugtalk → tugdeck. JSON-lines stream of agent events: `assistant_text` (with `is_partial` and streaming `status`), `tool_use`, `tool_result`, `tool_approval_request`, `question`, `turn_complete`, `turn_cancelled`, `error`. This is the primary data source for tug-markdown during streaming.
+- **`CodeInput` (`0x41`)** — tugdeck → tugtalk. JSON-lines commands: `user_message`, `tool_approval`, `question_answer`, `interrupt`, `permission_mode`. This is where tug-prompt-input sends its prompts.
+
+The agent bridge (`tugcast/src/feeds/agent_bridge.rs`) manages the tugtalk subprocess lifecycle, IPC via stdin/stdout JSON-lines, protocol handshake, and crash recovery. The WebSocket framing (`[1-byte FeedId][4-byte length][payload]`) multiplexes these alongside terminal, git, filesystem, and stats feeds over a single connection.
+
+The tug-feed system (see [tug-feed.md](tug-feed.md)) adds a semantic layer on top — structured progress events from agent execution, correlated with plan steps and workflow phases, arriving through hooks that capture `SubagentStart`, `SubagentStop`, `PreToolUse`, and `PostToolUse` lifecycle events.
+
+This means:
+- **tug-markdown** renders `assistant_text` events from `CodeOutput` frames, handling `is_partial`/`status` fields for incremental streaming
+- **tug-prompt-input** sends `user_message` commands via `CodeInput` frames and invokes slash commands (both Claude Code built-ins and tugplug skills)
+- **tug-prompt-entry** composes these with submit/stop chrome. Streaming state is driven by `assistant_text(status: "partial")` → streaming, `turn_complete` → idle. The stop button sends an `interrupt` command.
+- The conversation card orchestrates both, with tug-feed events driving progress UI (agent role, step, phase) alongside the markdown stream
+
+---
+
 ## The Text Component Family
 
 Tugdeck has six text components, forming a spectrum from pure display to rich authoring:
@@ -40,6 +61,8 @@ We're not starting from zero. The codebase already has:
 3. **`DOMPurify` (MIT)** — HTML sanitization with strict ALLOWED_TAGS/FORBID_TAGS config in `src/lib/markdown.ts`.
 4. **`MessageRenderer`** — archived React component that calls `renderMarkdown()` then `enhanceCodeBlocks()` post-render. Uses `dangerouslySetInnerHTML`.
 5. **`CodeBlock`** — archived React component with copy-to-clipboard and Shiki highlighting.
+6. **Tugcast agent bridge** — `CodeOutput` (`0x40`) and `CodeInput` (`0x41`) FeedIds already handle bidirectional agent communication. The agent bridge spawns tugtalk, relays JSON-lines over stdin/stdout, and handles crash recovery (3 crashes in 60s budget). Protocol handshake (`protocol_init` → `protocol_ack`) ensures version compatibility. `TugConnection.onFrame()` for subscription on the frontend.
+7. **Syntax token CSS** — `tug-code.css` defines `--tug-syntax-*` and `--tugx-codeBlock-*` tokens for keyword, string, number, function, type, variable, comment, operator, punctuation colors plus code block surface/header tokens.
 
 This pipeline works but has specific problems that tug-markdown needs to solve:
 - **Re-parses entire content on every render** — O(n) per token during streaming
@@ -86,16 +109,23 @@ tug-markdown will do: markdown string → token array → React elements → vir
 
 ### Streaming Strategy
 
-The critical performance requirement. LLM responses can be thousands of tokens arriving over 30+ seconds. The renderer must be smooth at 60fps throughout.
+The critical performance requirement. Streaming is the key use case — we must be great at it. One streaming code path handles both live LLM output and static content (static content simply completes immediately without throttling).
+
+LLM responses can be thousands of tokens arriving over 30+ seconds. The renderer must be smooth at 60fps throughout.
 
 ```
-WebSocket frame
-  → TugConnection dispatches to feed callback
-  → PropertyStore<string>.set(accumulated) [L02]
-  → useSyncExternalStore triggers render
+Tugcast WebSocket frame (CodeOutput feed, FeedId 0x40)
+  → TugConnection.onFrame(FeedId.CODE_OUTPUT, cb)
+  → Parse JSON-lines: { type: "assistant_text", text, is_partial, status }
+  → Accumulate text into PropertyStore<string> [L02]
+  → useSyncExternalStore triggers render (throttled to rAF)
   → marked.lexer(accumulated) produces token[]
   → React reconciles: only last block changed
   → DOM patch: append text / update last paragraph
+
+  On { type: "turn_complete" }:
+  → Final render with complete text
+  → Streaming cursor removed
 ```
 
 **Throttling:** The PropertyStore subscription fires synchronously on every token. We throttle the React update to at most once per animation frame. This batches 5-15 tokens per render at typical LLM speeds.
@@ -126,18 +156,16 @@ tug-markdown defines `--tugx-md-*` token aliases:
 --tugx-md-hr-color: var(--tug7-element-field-border-normal-muted-rest);
 ```
 
-Shiki themes will be generated from these tokens rather than using a hardcoded `github-dark`. This means code highlighting automatically follows the active tug theme (brio/harmony).
-
 ### Code Blocks — TugCodeBlock
 
 Extracted from the archived `CodeBlock` component, made tugways-compliant:
 
 - **Language label** in header bar
 - **Copy-to-clipboard** button with transient check animation
-- **Shiki highlighting** with tug-theme-derived VS Code theme
+- **Shiki highlighting** with hand-authored theme file referencing `--tug-syntax-*` CSS custom properties (from existing `tug-code.css` tokens: keyword, string, number, function, type, variable, comment, operator, punctuation)
 - **Line numbers** (optional)
 - **Word wrap toggle** (optional)
-- **Lazy language loading** — only load grammars on demand
+- **Lazy language loading** — only load grammars on demand (17 preloaded per existing config: typescript, javascript, python, rust, shellscript, json, css, html, markdown, go, java, c, cpp, sql, yaml, toml, dockerfile)
 - **Collapse/expand** for long blocks (configurable line threshold)
 
 ### MDX+ Extensions
@@ -187,11 +215,11 @@ Monaco is ~5MB of JavaScript. It's a serious dependency. But for an AI coding ID
 
 **Key decisions:**
 
-1. **Lazy-load only** — Monaco is never in the initial bundle. It loads on first render of a `tug-rich-text` instance via dynamic `import()`. A skeleton placeholder shows during loading.
+1. **Lazy-load only** — Monaco is never in the initial bundle. It loads on first render of a `tug-rich-text` instance via dynamic `import()`. A TugProgress spinner shows during loading — no FOUC.
 
 2. **Web Worker** — Monaco's language services run in a Web Worker. Vite's `?worker` imports handle this.
 
-3. **Token-driven theming** — Define a custom Monaco theme from `--tugx-*` tokens at runtime. Read computed styles, generate the Monaco theme object, apply it. Theme changes (brio ↔ harmony) trigger theme regeneration.
+3. **Token-driven theming** — Hand-authored theme file referencing `--tugx-*` CSS custom properties (same approach as TugCodeBlock's Shiki theme). Read computed styles on mount and when theme changes (brio ↔ harmony), update the Monaco theme.
 
 4. **Controlled component** — `value` / `onValueChange` props. The editor's internal model is synchronized via Monaco's `onDidChangeModelContent`.
 
@@ -240,6 +268,18 @@ interface TugRichTextProps {
 
 The primary input surface for composing prompts to AI agents. This is one of the two most important components in tugdeck (paired with tug-markdown on the output side). It must feel as natural as a terminal, as polished as an IDE, and as responsive as a chat app.
 
+### The Claude Code Frontend Context
+
+The v0 use case is a graphical wrapper around Claude Code. This shapes the prompt input directly:
+
+**Slash commands come from two sources:**
+1. **Claude Code built-ins:** `/help`, `/clear`, `/compact`, `/cost`, `/model`, `/status`, `/fast`, `/config`, `/doctor`, `/permissions`, `/review`, `/vim`
+2. **Tugplug skills:** `/plan`, `/implement`, `/merge`, `/dash`, `/commit`
+
+The parent component (conversation card) provides these as a declarative list. tug-prompt-input doesn't know where they come from.
+
+**Prompt submission** sends a `{ type: "user_message", text }` JSON-line via the `CodeInput` (`0x41`) feed. The response stream arrives as `assistant_text` events on the `CodeOutput` (`0x40`) feed, feeding tug-markdown. Stop sends an `{ type: "interrupt" }` command through the same `CodeInput` feed.
+
 ### Architecture — Phased
 
 **Phase 1: Enhanced Textarea.** Build on TugTextarea's auto-resize. Add history, slash commands, keyboard handling. This gives us a working prompt input immediately with minimal new dependencies.
@@ -263,7 +303,7 @@ Terminal-model history, the most natural UX for power users:
 - **Prefix search** — type partial text, then up arrow searches history entries starting with that prefix
 - **Current draft preservation** — navigating away saves the in-progress text; navigating back restores it
 
-Storage: **IndexedDB** via a thin `PromptHistory` store class. Per-context history (each card/conversation has its own history). Unlimited entries (IndexedDB has no practical size limit). The store is external state accessed via `useSyncExternalStore` [L02].
+Storage: **IndexedDB** via a thin `PromptHistory` store class. Per-card history (each card/conversation has its own history). The store is external state accessed via `useSyncExternalStore` [L02].
 
 ```typescript
 interface PromptHistoryStore {
@@ -285,13 +325,13 @@ interface PromptHistoryStore {
 
 Trigger: `/` at the start of input or after a newline.
 
-A filtered popup list appears below the input. Keyboard navigation (up/down/enter/escape). The list is provided via props — tug-prompt-input doesn't know what commands exist; the parent component provides them:
+A filtered popup list appears below the input. Keyboard navigation (up/down/enter/escape). The list is provided via props — tug-prompt-input doesn't know what commands exist; the parent provides them declaratively:
 
 ```typescript
 interface SlashCommand {
   name: string;         // "/commit"
   description: string;  // "Commit staged changes"
-  icon?: string;        // Lucide icon name
+  icon?: string;        // Lucide icon name (PascalCase)
 }
 
 interface TugPromptInputProps {
@@ -300,6 +340,37 @@ interface TugPromptInputProps {
   onSlashCommand?: (command: string) => void;
 }
 ```
+
+**Initial slash command set** (provided by the conversation card):
+
+Claude Code exposes 60+ built-in slash commands. We surface a curated subset — the commands most useful in a graphical IDE context — plus all tugplug skills. The full Claude Code command list remains available by typing `/` and scrolling, but the curated set gets priority positioning.
+
+**Tugplug skills (always first):**
+
+| Command | Description |
+|---------|-------------|
+| `/plan` | Create an implementation plan |
+| `/implement` | Execute a plan's steps |
+| `/merge` | Merge implementation branch |
+| `/dash` | Quick task without plan ceremony |
+| `/commit` | Git commit |
+
+**Claude Code essentials (curated subset):**
+
+| Command | Description |
+|---------|-------------|
+| `/clear` | Clear conversation |
+| `/compact` | Compact context |
+| `/cost` | Show token/cost usage |
+| `/model` | Switch model |
+| `/status` | Show status |
+| `/fast` | Toggle fast mode |
+| `/help` | Show help |
+| `/resume` | Resume previous session |
+| `/diff` | Show current changes |
+| `/review` | Code review |
+| `/memory` | Show memory files |
+| `/doctor` | Diagnostic checks |
 
 The popup itself uses `@floating-ui/react` (MIT, already a Radix transitive dep) for positioning. Minimal custom UI — this is an internal popup, not a reusable component.
 
@@ -316,6 +387,8 @@ The popup itself uses `@floating-ui/react` (MIT, already a Radix transitive dep)
 | Escape | Input focused, no popup | Blur input |
 | Tab | Popup open | Accept highlighted item |
 | / | Start of line | Open slash command popup |
+
+**IME safety:** Check `e.nativeEvent.isComposing` before handling Enter to avoid submitting during CJK composition.
 
 #### Multi-line Expansion
 
@@ -394,6 +467,17 @@ This is a **composition**, not a primitive. It arranges existing components and 
 
 During streaming, the send button becomes a stop button (filled → danger tone). An optional TugProgress spinner shows in the utility row.
 
+### Integration with Tugcast
+
+The prompt entry connects to the conversation lifecycle through the existing CodeOutput/CodeInput feed pair:
+
+- **Submit** → send `{ type: "user_message", text: "..." }` via `CodeInput` (`0x41`) frame
+- **Stop** → send `{ type: "interrupt" }` via `CodeInput` frame
+- **Streaming state** → driven by `CodeOutput` events: `assistant_text(status: "partial")` → streaming, `turn_complete` → idle, `turn_cancelled` → idle
+- **Tool approval** → `tool_approval_request` events trigger an inline approval UI; user response sent as `{ type: "tool_approval", request_id, decision: "allow"|"deny" }`
+- **Questions** → `question` events trigger an inline question UI; user response sent as `{ type: "question_answer", request_id, answers: {...} }`
+- **Progress indicator** → can show agent role from tug-feed events ("architect thinking...", "coder implementing...", "reviewer checking...")
+
 ### Props
 
 ```typescript
@@ -453,17 +537,17 @@ Components ordered by dependency and user impact:
 
 ### Dash 1: tug-markdown — Core Renderer
 
-Build the token-level rendering pipeline with `marked.lexer()` → React elements. Standard markdown: headings, paragraphs, bold/italic, links, lists, blockquotes, tables, horizontal rules, inline code. No streaming yet — static rendering first.
+Build the token-level rendering pipeline with `marked.lexer()` → React elements. Standard markdown: headings, paragraphs, bold/italic, links, lists, blockquotes, tables, horizontal rules, inline code. Streaming from day one — the single code path handles both static and live content (static content completes immediately without throttle).
 
 Token aliases in CSS. Gallery card with representative markdown content.
 
 ### Dash 2: tug-markdown — Code Blocks (TugCodeBlock)
 
-Extract and modernize the archived CodeBlock component. Shiki integration with tug-token-derived themes. Copy button, language label, line numbers. Register as the renderer for `code` tokens.
+Extract and modernize the archived CodeBlock component. Shiki integration with hand-authored theme file referencing `--tug-syntax-*` CSS custom properties. Copy button, language label, line numbers. Register as the renderer for `code` tokens.
 
-### Dash 3: tug-markdown — Streaming
+### Dash 3: tug-markdown — Streaming Polish
 
-PropertyStore-backed content source [L02]. Throttled re-rendering. Incomplete markdown healing. Gallery section showing simulated streaming.
+Gallery section showing simulated streaming (timed token injection). Incomplete markdown healing for edge cases. Streaming cursor indicator. Performance profiling and throttle tuning.
 
 ### Dash 4: tug-markdown — MDX+ Extensions
 
@@ -471,23 +555,23 @@ Custom block renderers for `tug-diff`, `tug-plan-step`, `tug-tool-result`, etc. 
 
 ### Dash 5: tug-prompt-input — Core
 
-Enhanced textarea with auto-resize (from TugTextarea), submit/cancel keyboard handling, `onSubmit` callback. Gallery card.
+Enhanced textarea with auto-resize (from TugTextarea), submit/cancel keyboard handling, `onSubmit` callback. IME-safe Enter handling. Gallery card.
 
 ### Dash 6: tug-prompt-input — History
 
-PromptHistory IndexedDB store. Up/down arrow navigation. Prefix search. Draft preservation. Gallery section showing history navigation.
+PromptHistory IndexedDB store. Up/down arrow navigation. Prefix search. Draft preservation. Per-card isolation via `historyKey`. Gallery section showing history navigation.
 
 ### Dash 7: tug-prompt-input — Slash Commands
 
-Slash command popup with filtering, keyboard navigation. `@floating-ui/react` positioning. Gallery section with sample commands.
+Slash command popup with filtering, keyboard navigation. `@floating-ui/react` positioning. Initial command set (tugplug skills + Claude Code built-ins). Gallery section with sample commands.
 
 ### Dash 8: tug-prompt-entry
 
-Compose tug-prompt-input + submit button + stop button + utility row. Streaming state integration. Gallery card.
+Compose tug-prompt-input + submit button + stop button + utility row. Streaming state integration driven by tug-feed events. Agent role indicator. Gallery card.
 
 ### Dash 9: tug-rich-text
 
-Monaco editor wrapper. Lazy loading, token-driven theme, controlled/uncontrolled, read-only mode. Gallery card.
+Monaco editor wrapper. Lazy loading with TugProgress spinner. Hand-authored theme file with CSS custom property references. Controlled/uncontrolled. Read-only mode. Gallery card.
 
 ### Dash 10: tug-search-bar
 
@@ -495,14 +579,14 @@ TugInput + TugPushButton composition. Gallery card. Quick build.
 
 ---
 
-## Open Questions
+## Resolved Questions
 
-1. **Shiki theme generation** — Should we generate a full VS Code theme JSON from tug tokens at runtime, or maintain a hand-authored theme file that references CSS custom properties? The former is dynamic but complex; the latter is simpler but requires manual sync.
+1. **Shiki theme generation** — Hand-authored theme file referencing `--tug-syntax-*` CSS custom properties from existing `tug-code.css`. Simpler, no runtime generation, manual sync is acceptable since syntax colors change rarely.
 
-2. **Monaco lazy-load UX** — Monaco takes 1-3 seconds to load on first render. Should the skeleton placeholder show a shimmer (like TugSkeleton), a spinner (TugProgress), or the raw text content without highlighting?
+2. **Monaco lazy-load UX** — TugProgress spinner during load. No FOUC.
 
-3. **History persistence scope** — Per-card history makes sense conceptually, but should there also be a global "recent prompts" list that spans cards? Power users might want to reuse a prompt they sent in a different conversation.
+3. **History persistence scope** — Per-card history via `historyKey` prop. No global cross-card history for now.
 
-4. **Slash command extensibility** — Should slash commands be purely declarative (parent provides the list) or should there be a registration system (like the responder chain) where any component can contribute commands?
+4. **Slash command extensibility** — Purely declarative. Parent provides the list. No registration system.
 
-5. **tug-markdown in non-streaming contexts** — Some uses (plan documents, tool descriptions) are static, not streamed. Should these bypass the streaming pipeline entirely, or does the same code path handle both? (Leaning: same code path, just without the throttle — simpler to maintain one path.)
+5. **Streaming vs static code paths** — One streaming code path. Static content completes immediately without throttle. Streaming is the key use case and must be great.
