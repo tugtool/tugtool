@@ -14,8 +14,21 @@ import "./tug-alert.css";
 
 import React from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import { icons } from "lucide-react";
 import { TugPushButton } from "./tug-push-button";
 import type { TugButtonRole } from "./internal/tug-button";
+
+/* ---------------------------------------------------------------------------
+ * Helpers
+ * ---------------------------------------------------------------------------*/
+
+/** Map confirmRole to a default Lucide icon name. */
+function defaultIconForRole(role: TugButtonRole): string {
+  if (role === "danger" || role === "caution") {
+    return "triangle-alert";
+  }
+  return "info";
+}
 
 /* ---------------------------------------------------------------------------
  * TugAlertHandle
@@ -33,6 +46,8 @@ export interface TugAlertHandle {
     confirmLabel?: string;
     cancelLabel?: string | null;
     confirmRole?: TugButtonRole;
+    /** Lucide icon name override. Defaults to role-based icon. */
+    icon?: string;
   }): Promise<boolean>;
 }
 
@@ -61,6 +76,11 @@ export interface TugAlertProps {
    * @default "action"
    */
   confirmRole?: TugButtonRole;
+  /**
+   * Lucide icon name. Defaults to a role-based icon.
+   * Pass an empty string to suppress the icon.
+   */
+  icon?: string;
   /**
    * Controlled open state.
    * @selector [data-state]
@@ -92,6 +112,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       confirmLabel: confirmLabelProp = "OK",
       cancelLabel: cancelLabelProp = "Cancel",
       confirmRole: confirmRoleProp = "action",
+      icon: iconProp,
       open: openProp,
       onOpenChange,
       onConfirm,
@@ -108,6 +129,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       confirmLabel?: string;
       cancelLabel?: string | null;
       confirmRole?: TugButtonRole;
+      icon?: string;
     } | null>(null);
 
     // Resolver for imperative mode. Null when not in an active promise.
@@ -132,6 +154,18 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       ? override?.cancelLabel
       : cancelLabelProp;
     const confirmRole = override?.confirmRole ?? confirmRoleProp;
+    const iconName = override !== undefined && "icon" in (override ?? {})
+      ? override?.icon
+      : iconProp;
+
+    // Resolve icon component: explicit name, role-based default, or nothing if "".
+    const resolvedIconName = iconName !== undefined
+      ? iconName
+      : defaultIconForRole(confirmRole);
+
+    const IconComponent = resolvedIconName
+      ? (icons[resolvedIconName as keyof typeof icons] ?? null)
+      : null;
 
     // Controlled open: if openProp is provided, use it; otherwise use internal state.
     const isOpen = openProp !== undefined ? openProp : open;
@@ -174,20 +208,31 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
 
     return (
       <AlertDialog.Root open={isOpen} onOpenChange={handleOpenChange}>
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="tug-alert-overlay" />
+        <AlertDialog.Portal forceMount>
+          <AlertDialog.Overlay className="tug-alert-overlay" forceMount />
           <AlertDialog.Content
             className="tug-alert-content"
             data-slot="tug-alert"
+            forceMount
           >
-            <AlertDialog.Title className="tug-alert-title">
-              {title}
-            </AlertDialog.Title>
-            {message && (
-              <AlertDialog.Description className="tug-alert-message">
-                {message}
-              </AlertDialog.Description>
-            )}
+            {/* Classic Mac HIG layout: icon left, text right, buttons bottom-right */}
+            <div className="tug-alert-body">
+              {IconComponent && (
+                <div className="tug-alert-icon" aria-hidden="true">
+                  {React.createElement(IconComponent, { size: 48 })}
+                </div>
+              )}
+              <div className="tug-alert-text">
+                <AlertDialog.Title className="tug-alert-title">
+                  {title}
+                </AlertDialog.Title>
+                {message && (
+                  <AlertDialog.Description className="tug-alert-message">
+                    {message}
+                  </AlertDialog.Description>
+                )}
+              </div>
+            </div>
             <div className="tug-alert-actions">
               {cancelLabel !== null && (
                 <AlertDialog.Cancel asChild>
@@ -225,6 +270,8 @@ interface TugAlertContextValue {
     confirmLabel?: string;
     cancelLabel?: string | null;
     confirmRole?: TugButtonRole;
+    /** Lucide icon name override. Defaults to role-based icon. */
+    icon?: string;
   }) => Promise<boolean>;
 }
 
@@ -251,6 +298,7 @@ export function TugAlertProvider({ children }: TugAlertProviderProps) {
       confirmLabel?: string;
       cancelLabel?: string | null;
       confirmRole?: TugButtonRole;
+      icon?: string;
     }) => {
       if (!alertRef.current) {
         return Promise.resolve(false);
@@ -294,6 +342,7 @@ export function useTugAlert(): (options?: {
   confirmLabel?: string;
   cancelLabel?: string | null;
   confirmRole?: TugButtonRole;
+  icon?: string;
 }) => Promise<boolean> {
   const ctx = React.useContext(TugAlertContext);
   if (!ctx) {

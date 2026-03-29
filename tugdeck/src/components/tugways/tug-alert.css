@@ -9,6 +9,7 @@
  * |--------------------------|--------------------------|---------------|----------------------------------------|
  * | --tugx-alert-fg          | --tugx-alert-bg          | content       | .tug-alert-content (color)             |
  * | --tugx-alert-border      | --tugx-alert-bg          | informational | .tug-alert-content (border-color)      |
+ * | --tugx-alert-icon-fg     | --tugx-alert-bg          | decorative    | .tug-alert-icon (color)                |
  */
 
 /* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
@@ -19,6 +20,7 @@ body {
   --tugx-alert-fg:         var(--tug7-element-global-text-normal-default-rest);
   --tugx-alert-border:     var(--tug7-element-global-border-normal-default-rest);
   --tugx-alert-shadow:     var(--tug7-element-global-shadow-normal-overlay-rest);
+  --tugx-alert-icon-fg:    var(--tug7-element-global-icon-normal-muted-rest);
 }
 
 /* ---- Keyframe animations [L14] — duration scales via --tug-timing [L13] ---- */
@@ -45,6 +47,11 @@ body {
 
 /* ---- Overlay (scrim) ---- */
 
+/*
+ * forceMount: overlay is always in the DOM; visibility is driven by
+ * [data-state] so we hide it when closed and let the exit animation play.
+ */
+
 .tug-alert-overlay {
   /* @tug-renders-on: --tugx-alert-overlay-bg */
   background-color: var(--tugx-alert-overlay-bg);
@@ -60,9 +67,17 @@ body {
 
 .tug-alert-overlay[data-state="closed"] {
   animation: tug-alert-overlay-out calc(100ms * var(--tug-timing, 1)) ease-in;
+  animation-fill-mode: forwards;
+  pointer-events: none;
 }
 
 /* ---- Content panel ---- */
+
+/*
+ * forceMount: content is always in the DOM. When closed, the exit animation
+ * runs and animation-fill-mode: forwards holds opacity: 0 until Radix
+ * removes the open state.
+ */
 
 .tug-alert-content {
   /* @tug-renders-on: --tugx-alert-bg */
@@ -80,10 +95,10 @@ body {
   transform: translate(-50%, -50%);
   /* Layering — one above overlay */
   z-index: 99991;
-  /* Sizing */
+  /* Sizing — wider to accommodate icon + text side by side */
   width: 100%;
-  max-width: 400px;
-  padding: 1.25rem;
+  max-width: 460px;
+  padding: 1.5rem;
   /* Box model */
   box-sizing: border-box;
 }
@@ -94,6 +109,38 @@ body {
 
 .tug-alert-content[data-state="closed"] {
   animation: tug-alert-content-out calc(100ms * var(--tug-timing, 1)) ease-in;
+  animation-fill-mode: forwards;
+  pointer-events: none;
+}
+
+/* ---- Body — icon left, text right (classic Mac HIG layout) ---- */
+
+.tug-alert-body {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+}
+
+/* ---- Icon container ---- */
+
+.tug-alert-icon {
+  /* @tug-renders-on: --tugx-alert-bg */
+  color: var(--tugx-alert-icon-fg);
+  /* Fixed size — does not shrink under long text */
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Text column (title + message) ---- */
+
+.tug-alert-text {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---- Title ---- */
@@ -102,6 +149,8 @@ body {
   font-weight: 600;
   font-size: 1rem;
   margin: 0 0 0.5rem 0;
+  /* Vertically center title with icon when no message */
+  line-height: 1.4;
 }
 
 /* ---- Message ---- */
@@ -109,7 +158,7 @@ body {
 .tug-alert-message {
   font-size: 0.875rem;
   line-height: 1.5;
-  margin: 0 0 1rem 0;
+  margin: 0;
   /* Slightly muted */
   opacity: 0.8;
 }

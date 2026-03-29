@@ -43,36 +43,38 @@ function GalleryAlertInner() {
 
   async function handleBasicAlert() {
     const confirmed = await showAlert({
-      title: "Alert Title",
-      message: "This is an alert message.",
+      title: "Replace existing file?",
+      message: 'A file named \u201cQ4 Report.pdf\u201d already exists in Downloads. Replacing it will overwrite the current version.',
     });
     setBasicResult(confirmed ? "confirmed" : "cancelled");
   }
 
   async function handleDangerAlert() {
     const confirmed = await showAlert({
-      title: "Delete Card",
-      message: "This action cannot be undone.",
+      title: 'Delete \u201cDesign System v3\u201d?',
+      message: "This card and all its contents will be permanently removed. You can't undo this action.",
       confirmLabel: "Delete",
       confirmRole: "danger",
+      icon: "trash-2",
     });
     setDangerResult(confirmed ? "confirmed" : "cancelled");
   }
 
   async function handleCautionAlert() {
     const confirmed = await showAlert({
-      title: "Unsaved Changes",
-      message: "You have unsaved changes. Discard them?",
-      confirmLabel: "Discard",
+      title: "Discard unsaved changes?",
+      message: 'You\'ve made changes to \u201cHomepage Copy\u201d that haven\'t been saved. Leaving now will discard them.',
+      confirmLabel: "Discard Changes",
       confirmRole: "caution",
+      icon: "triangle-alert",
     });
     setCautionResult(confirmed ? "confirmed" : "cancelled");
   }
 
   async function handleOkOnlyAlert() {
     const confirmed = await showAlert({
-      title: "Export Complete",
-      message: "Your data has been exported successfully.",
+      title: "Export complete",
+      message: 'Your workspace has been exported to \u201ctugtool-export-2026-03-28.zip\u201d and saved to your Downloads folder.',
       confirmLabel: "OK",
       cancelLabel: null,
     });
@@ -82,8 +84,9 @@ function GalleryAlertInner() {
   async function handleRefAlert() {
     if (!alertRef.current) return;
     const confirmed = await alertRef.current.alert({
-      title: "Ref-Based Alert",
-      message: "This alert was opened via the imperative ref API.",
+      title: "Send feedback?",
+      message: "This will share your last session log with the Tugtool team to help diagnose the issue you reported.",
+      confirmLabel: "Send",
     });
     setRefResult(confirmed ? "confirmed" : "cancelled");
   }
@@ -94,9 +97,9 @@ function GalleryAlertInner() {
       {/* ---- 1. Basic Alert (useTugAlert hook) ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Basic Alert</div>
-        <div style={labelStyle}>useTugAlert() hook — default action role</div>
+        <div style={labelStyle}>useTugAlert() hook — default action role, default info icon</div>
         <TugPushButton emphasis="outlined" size="sm" onClick={handleBasicAlert}>
-          Show Alert
+          Replace File
         </TugPushButton>
         <div style={resultStyle}>
           Result: <strong>{basicResult}</strong>
@@ -108,7 +111,7 @@ function GalleryAlertInner() {
       {/* ---- 2. Danger Confirmation ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Danger Confirmation</div>
-        <div style={labelStyle}>confirmRole="danger" — destructive action guard</div>
+        <div style={labelStyle}>confirmRole="danger", icon="trash-2" — destructive action guard</div>
         <TugPushButton emphasis="filled" role="danger" size="sm" onClick={handleDangerAlert}>
           Delete Card
         </TugPushButton>
@@ -122,7 +125,7 @@ function GalleryAlertInner() {
       {/* ---- 3. Caution Warning ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Caution Warning</div>
-        <div style={labelStyle}>confirmRole="caution" — potentially lossy action</div>
+        <div style={labelStyle}>confirmRole="caution", icon="triangle-alert" — potentially lossy action</div>
         <TugPushButton emphasis="outlined" size="sm" onClick={handleCautionAlert}>
           Discard Changes
         </TugPushButton>
@@ -138,7 +141,7 @@ function GalleryAlertInner() {
         <div className="cg-section-title">OK-Only (No Cancel)</div>
         <div style={labelStyle}>cancelLabel=null — single-button acknowledgement variant</div>
         <TugPushButton emphasis="outlined" size="sm" onClick={handleOkOnlyAlert}>
-          Export Data
+          Export Workspace
         </TugPushButton>
         <div style={resultStyle}>
           Result: <strong>{okOnlyResult}</strong>
@@ -152,9 +155,9 @@ function GalleryAlertInner() {
         <div className="cg-section-title">Ref-Based Imperative API</div>
         <div style={labelStyle}>useRef&lt;TugAlertHandle&gt; + alertRef.current.alert() — alternative to provider pattern</div>
         {/* Standalone TugAlert instance for this section */}
-        <TugAlert ref={alertRef} title="Ref-Based Alert" />
+        <TugAlert ref={alertRef} title="Send feedback?" />
         <TugPushButton emphasis="outlined" size="sm" onClick={handleRefAlert}>
-          Show Ref Alert
+          Send Feedback
         </TugPushButton>
         <div style={resultStyle}>
           Result: <strong>{refResult}</strong>
