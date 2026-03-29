@@ -58,6 +58,11 @@ const fieldRowStyle: React.CSSProperties = {
  * 4. Rich scrollable content (checklist).
  */
 export function GallerySheet() {
+  // Controlled state for each section so Cancel buttons can close sheets
+  const [basicOpen, setBasicOpen] = React.useState(false);
+  const [descOpen, setDescOpen] = React.useState(false);
+  const [richOpen, setRichOpen] = React.useState(false);
+
   // Section 3: imperative ref
   const sheetRef = useRef<TugSheetHandle>(null);
   const [imperativeOpen, setImperativeOpen] = React.useState(false);
@@ -72,7 +77,7 @@ export function GallerySheet() {
           Compound API — TugSheet / TugSheetTrigger / TugSheetContent with a settings form
         </div>
         <div style={{ display: "flex" }}>
-          <TugSheet>
+          <TugSheet open={basicOpen} onOpenChange={setBasicOpen}>
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Open Settings</TugPushButton>
             </TugSheetTrigger>
@@ -95,9 +100,10 @@ export function GallerySheet() {
                     placeholder="Optional description"
                   />
                 </div>
-                <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
-                  <TugPushButton emphasis="filled" size="sm">Save</TugPushButton>
-                </div>
+              </div>
+              <div className="tug-sheet-actions">
+                <TugPushButton emphasis="outlined" size="sm" onClick={() => setBasicOpen(false)}>Cancel</TugPushButton>
+                <TugPushButton emphasis="filled" size="sm" onClick={() => setBasicOpen(false)}>Save</TugPushButton>
               </div>
             </TugSheetContent>
           </TugSheet>
@@ -113,7 +119,7 @@ export function GallerySheet() {
           Optional <code>description</code> prop — renders beneath the title, wired to aria-describedby
         </div>
         <div style={{ display: "flex" }}>
-          <TugSheet>
+          <TugSheet open={descOpen} onOpenChange={setDescOpen}>
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Share Settings</TugPushButton>
             </TugSheetTrigger>
@@ -131,9 +137,10 @@ export function GallerySheet() {
                     placeholder="colleague@example.com"
                   />
                 </div>
-                <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
-                  <TugPushButton emphasis="filled" size="sm">Send Invite</TugPushButton>
-                </div>
+              </div>
+              <div className="tug-sheet-actions">
+                <TugPushButton emphasis="outlined" size="sm" onClick={() => setDescOpen(false)}>Cancel</TugPushButton>
+                <TugPushButton emphasis="filled" size="sm" onClick={() => setDescOpen(false)}>Invite</TugPushButton>
               </div>
             </TugSheetContent>
           </TugSheet>
@@ -165,11 +172,14 @@ export function GallerySheet() {
                   defaultValue="#alerts"
                 />
               </div>
-              <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
-                <TugPushButton emphasis="filled" size="sm" onClick={() => sheetRef.current?.close()}>
-                  Apply
-                </TugPushButton>
-              </div>
+            </div>
+            <div className="tug-sheet-actions">
+              <TugPushButton emphasis="outlined" size="sm" onClick={() => sheetRef.current?.close()}>
+                Cancel
+              </TugPushButton>
+              <TugPushButton emphasis="filled" size="sm" onClick={() => sheetRef.current?.close()}>
+                Apply
+              </TugPushButton>
             </div>
           </TugSheetContent>
         </TugSheet>
@@ -201,12 +211,12 @@ export function GallerySheet() {
           Scrollable content within the sheet&apos;s max-height constraint — checklist with multiple items
         </div>
         <div style={{ display: "flex" }}>
-          <TugSheet>
+          <TugSheet open={richOpen} onOpenChange={setRichOpen}>
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Review Checklist</TugPushButton>
             </TugSheetTrigger>
             <TugSheetContent title="Pre-launch Checklist">
-              <RichChecklistContent />
+              <RichChecklistContent onClose={() => setRichOpen(false)} />
             </TugSheetContent>
           </TugSheet>
         </div>
@@ -233,7 +243,7 @@ const CHECKLIST_ITEMS = [
   { id: "cl-10", label: "Schedule launch announcement", defaultChecked: false },
 ];
 
-function RichChecklistContent() {
+function RichChecklistContent({ onClose }: { onClose: () => void }) {
   const [checked, setChecked] = React.useState<Record<string, boolean>>(
     () => Object.fromEntries(CHECKLIST_ITEMS.map((item) => [item.id, item.defaultChecked])),
   );
@@ -275,8 +285,9 @@ function RichChecklistContent() {
           </label>
         ))}
       </div>
-      <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
-        <TugPushButton emphasis="filled" size="sm">Save Progress</TugPushButton>
+      <div className="tug-sheet-actions">
+        <TugPushButton emphasis="outlined" size="sm" onClick={onClose}>Cancel</TugPushButton>
+        <TugPushButton emphasis="filled" size="sm" onClick={onClose}>Save</TugPushButton>
       </div>
     </div>
   );

@@ -163,7 +163,10 @@ body {
   gap: var(--tugx-alert-space-a);
 }
 
-/* Layout: enforce minimum button width so short labels like "OK" match "Cancel" visually */
-.tug-alert-actions .tug-button {
+/* Layout: tighter padding + minimum width for balanced dialog buttons.
+   Uses padding shorthand to match .tug-button-size-md shorthand — higher
+   specificity (0-3-0 vs 0-1-0) ensures this wins regardless of source order. */
+.tug-alert-actions .tug-button.tug-button {
   min-width: 7rem;
+  padding: 0 0.625rem;
 }

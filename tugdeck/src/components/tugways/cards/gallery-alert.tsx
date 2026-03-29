@@ -64,7 +64,7 @@ function GalleryAlertInner() {
     const confirmed = await showAlert({
       title: "Discard unsaved changes?",
       message: 'You\'ve made changes to \u201cHomepage Copy\u201d that haven\'t been saved. Leaving now will discard them.',
-      confirmLabel: "Discard Changes",
+      confirmLabel: "Discard",
       confirmRole: "caution",
       icon: "TriangleAlert",
     });

@@ -379,6 +379,24 @@ body {
 
 Never chain aliases (`--tugx-card-bg: var(--tugx-card-other-alias)`) — that is a second hop and violates [L17].
 
+### Enter/Exit Animations [L13, L14]
+
+Components that animate on mount/unmount must choose the correct regime based on **who owns the DOM lifecycle**:
+
+**Library-managed lifecycle → CSS keyframes [L14].** When Radix, Sonner, or another library controls when elements mount and unmount, use CSS `@keyframes` on `[data-state]` or equivalent attributes. The library listens for `animationend` to time its unmount — WAAPI does not fire `animationend`, so TugAnimator would break the library's lifecycle.
+
+- Radix wrappers (tug-alert, tug-popover, tug-accordion, tug-tooltip): CSS keyframes + `[data-state]`
+- Sonner wrappers (tug-bulletin): CSS styling of Sonner's DOM
+
+**Self-managed lifecycle → TugAnimator [L13].** When the component owns its own mount/unmount (original components, portal-based components), use `animate()` from TugAnimator. The `.finished` promise sequences post-animation work (unmount portals, remove `inert`, restore focus). Named `key` slots handle rapid open-close-open sequences cleanly.
+
+- Original modals (tug-sheet, tug-banner): TugAnimator with `.finished` for unmount sequencing
+- Group coordination: `group()` when multiple elements animate together (overlay fade + content slide)
+
+**Never mix.** Do not use CSS keyframes with manual `animationend` listeners in self-managed components — that's hand-rolling what TugAnimator already provides. Do not use TugAnimator for library-managed lifecycle — that breaks the library's unmount timing.
+
+**CSS still owns static properties.** Even when TugAnimator drives motion, CSS owns position, sizing, z-index, background-color, border-radius — everything that doesn't animate. Only the motion properties (transform, opacity) move to WAAPI.
+
 ### State Selectors
 
 States progress in a consistent order. Interactive controls lighten progressively: rest (darkest) → hover → active (lightest). [L15]

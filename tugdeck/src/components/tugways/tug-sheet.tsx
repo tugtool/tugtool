@@ -26,7 +26,6 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
 import { TugcardPortalContext } from "./tug-card";
 
@@ -222,6 +221,29 @@ export function TugSheetContent({
   const titleId = `${contentId}-title`;
   const descriptionId = `${contentId}-desc`;
 
+  // Presence: keep the portal mounted during the retract (exit) animation.
+  // `mounted` stays true until animationend fires on the closing sheet.
+  const [mounted, setMounted] = useState(false);
+  const sheetContentRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (open) {
+      setMounted(true);
+    }
+    // When open goes false, mounted stays true — animationend will set it false.
+  }, [open]);
+
+  // Listen for animationend on the sheet content to unmount after retract.
+  useLayoutEffect(() => {
+    if (open || !mounted) return;
+    const el = sheetContentRef.current;
+    if (!el) { setMounted(false); return; }
+
+    const onEnd = () => setMounted(false);
+    el.addEventListener("animationend", onEnd, { once: true });
+    return () => el.removeEventListener("animationend", onEnd);
+  }, [open, mounted]);
+
   // Dev warning: aria-labelledby requires a target.
   if (process.env.NODE_ENV !== "production" && !title) {
     console.warn("[TugSheetContent] `title` prop is required for aria-labelledby.");
@@ -272,7 +294,7 @@ export function TugSheetContent({
     }
   }
 
-  if (!open || !cardEl) return null;
+  if (!mounted || !cardEl) return null;
 
   return createPortal(
     <>
@@ -283,33 +305,30 @@ export function TugSheetContent({
         onClick={() => onOpenChange(false)}
       />
 
-      {/* FocusScope wraps content to trap Tab/Shift-Tab */}
-      <FocusScopeRadix.FocusScope
-        trapped
-        loop
-        onMountAutoFocus={handleMountAutoFocus}
-        onUnmountAutoFocus={handleUnmountAutoFocus}
-      >
-        <div
-          id={contentId}
-          className="tug-sheet-content"
-          role="dialog"
-          aria-labelledby={titleId}
-          aria-describedby={description ? descriptionId : undefined}
-          data-slot="tug-sheet"
-          data-state={open ? "open" : "closed"}
-          onKeyDown={handleKeyDown}
+      {/* Clip container: overflow hidden at title bar edge so sheet
+           visually emerges from UNDER the title bar, not above it */}
+      <div className="tug-sheet-clip">
+        {/* FocusScope wraps content to trap Tab/Shift-Tab */}
+        <FocusScopeRadix.FocusScope
+          trapped={open}
+          loop
+          onMountAutoFocus={handleMountAutoFocus}
+          onUnmountAutoFocus={handleUnmountAutoFocus}
         >
-          {/* Sheet header: title + close button */}
+          <div
+            ref={sheetContentRef}
+            id={contentId}
+            className="tug-sheet-content"
+            role="dialog"
+            aria-labelledby={titleId}
+            aria-describedby={description ? descriptionId : undefined}
+            data-slot="tug-sheet"
+            data-state={open ? "open" : "closed"}
+            onKeyDown={handleKeyDown}
+          >
+          {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape */}
           <div className="tug-sheet-header">
             <h2 id={titleId} className="tug-sheet-title">{title}</h2>
-            <button
-              className="tug-sheet-close"
-              onClick={() => onOpenChange(false)}
-              aria-label="Close"
-            >
-              <X size={16} />
-            </button>
           </div>
 
           {/* Optional description */}
@@ -320,7 +339,8 @@ export function TugSheetContent({
           {/* Sheet body: arbitrary content */}
           <div className="tug-sheet-body">{children}</div>
         </div>
-      </FocusScopeRadix.FocusScope>
+        </FocusScopeRadix.FocusScope>
+      </div>
     </>,
     cardEl,
   );

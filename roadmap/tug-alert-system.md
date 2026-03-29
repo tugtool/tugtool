@@ -738,18 +738,36 @@ tug-bulletin.css   — viewport layout, bulletin card styling, tone variants, an
 
 ## Shared Patterns
 
-### Animation
+### Animation — Two Regimes [L13, L14]
 
-CSS keyframe enter/exit animations [L14]. No WAAPI for enter/exit — Radix Presence owns the DOM lifecycle for tug-alert (AlertDialog). Other components (banner, sheet, bulletin) use their own CSS keyframes driven by data attributes or Sonner's animation system.
+The alert system uses two distinct animation regimes, determined by **who owns the DOM lifecycle**:
 
-| Component | Enter | Exit |
-|-----------|-------|------|
-| tug-banner (status) | Slide down from top + scrim fade | Slide up + scrim fade |
-| tug-banner (error) | Fade in + scrim fade | Fade out + scrim fade |
-| tug-alert | Fade + scale (centered) + scrim fade | Fade + scale + scrim fade |
-| tug-sheet | Drop down from title bar + card scrim fade | Slide up into title bar + scrim fade |
-| tug-dialog | Card appears (DeckManager centers on deck) | Card close |
-| tug-bulletin | Slide in from top-right edge | Slide out to right |
+**Library-managed lifecycle → CSS keyframes [L14]:** When a library (Radix, Sonner) controls when elements mount and unmount, it listens for `animationend` on CSS keyframes to know when exit animations complete. WAAPI does NOT fire `animationend`, so using TugAnimator here would break the library's unmount timing. CSS keyframes are correct and required.
+
+- **tug-alert:** Radix AlertDialog manages Presence. CSS `@keyframes` on `[data-state]`. Correct.
+- **tug-bulletin:** Sonner manages toast lifecycle. CSS styling of Sonner's DOM. Correct.
+
+**Self-managed lifecycle → TugAnimator [L13]:** When we own the DOM lifecycle (original components that control their own mount/unmount), we need completion promises to sequence post-animation work (unmount portals, remove `inert`, restore focus). TugAnimator provides `.finished` promises, named slot cancellation (for rapid open-close-open sequences), and duration token scaling — exactly the machinery we need.
+
+- **tug-banner:** Original. Uses `animate()` with `.finished` to sequence `inert` removal after scrim fade-out.
+- **tug-sheet:** Original. Uses `animate()` with `.finished` to sequence portal unmount after retract, and `group()` to coordinate overlay fade + content retract simultaneously.
+
+**tug-dialog** has no component-level animation — the card system handles card appearance/removal.
+
+**What TugAnimator replaces in banner and sheet:**
+- Manual `animationend` event listeners → `.finished` promise
+- `mounted` state + `useLayoutEffect` listener dance → `animate().finished.then(() => setMounted(false))`
+- CSS `@keyframes` + `animation-fill-mode: forwards` → WAAPI keyframes with `fill: 'forwards'`
+- No named slot cancellation → `key` option handles rapid toggling cleanly
+
+| Component | Regime | Enter | Exit |
+|-----------|--------|-------|------|
+| tug-banner (status) | TugAnimator [L13] | Slide down + scrim fade | Slide up + scrim fade → `.finished` removes `inert` |
+| tug-banner (error) | Mount only | Fade in on mount | No exit (ErrorBoundary replaces tree) |
+| tug-alert | CSS keyframes [L14] | Fade + scale + scrim fade | Fade + scrim fade (Radix Presence manages unmount) |
+| tug-sheet | TugAnimator [L13] | Drop from title bar + scrim fade | Retract into title bar + scrim fade → `.finished` unmounts portal |
+| tug-dialog | Card system | Card appears (DeckManager) | Card close (DeckManager) |
+| tug-bulletin | CSS/Sonner [L14] | Slide in (Sonner-managed) | Slide out (Sonner-managed) |
 
 ### Scrim — Dimming, Not Disabling
 
@@ -795,7 +813,7 @@ The scrim is an appearance-zone element [L06] — a semi-transparent overlay wit
 | Card-scoped inertness (sheet) | — | `inert` attribute on `.tugcard-body` |
 | Focus trapping (sheet) | Radix `FocusScope` (standalone) | Wired into original sheet component |
 | Escape handling (sheet) | — | Keydown listener on sheet content |
-| Window-shade animation (sheet) | — | CSS keyframes on `data-state` attribute |
+| Window-shade animation (sheet) | — | TugAnimator WAAPI with `.finished` for unmount sequencing |
 | Card spawning (dialog) | — | `useTugDialog` hook + DeckManager centered positioning |
 | Toast stacking (bulletin) | Sonner | Tug styling + token integration |
 | Enter/exit animations | Radix `data-state` / Sonner | CSS keyframes |
@@ -827,10 +845,51 @@ Note: `@radix-ui/react-focus-scope` is currently installed as a transitive depen
 
 ### Dashes
 
-- **Dash 1:** tug-banner component + CSS + gallery card
-- **Dash 2:** tug-alert component + CSS
-- **Dash 3:** tug-alert gallery card
-- **Dash 4:** tug-sheet component + CSS
-- **Dash 5:** tug-sheet gallery card
+- **Dash 1:** tug-banner component + CSS + gallery card ✅
+- **Dash 2:** tug-alert component + CSS ✅
+- **Dash 3:** tug-alert gallery card ✅
+- **Dash 4:** tug-sheet component + CSS ✅
+- **Dash 5:** tug-sheet gallery card ✅
+- **Dash 5.1:** Migrate banner + sheet animations from CSS keyframes to TugAnimator (see below)
 - **Dash 6:** tug-bulletin component + CSS + gallery card
 - **Dash 7:** tug-dialog hook + centered positioning in DeckManager
+
+### Dash 5.1 — TugAnimator Migration for Banner + Sheet
+
+**Problem:** tug-banner and tug-sheet are original components (we own the DOM lifecycle) but use CSS keyframes with manual `animationend` listeners for post-animation sequencing. This is L14-style tooling applied to L13-category work. The result is fragile: hand-rolled `animationend` listeners, a `mounted` state dance, `animation-fill-mode: forwards` hacks, and no cancellation handling for rapid open-close-open sequences.
+
+**Solution:** Migrate both components to use `animate()` from TugAnimator. Replace CSS keyframes + `animationend` listeners with WAAPI keyframes + `.finished` promises.
+
+**tug-banner changes:**
+- Remove CSS `@keyframes` for `tug-banner-slide-in`, `tug-banner-slide-out`, `tug-banner-scrim-fade-in`, `tug-banner-scrim-fade-out`
+- Remove `animationend` listener and `animEndListenerRef` from the useLayoutEffect
+- Add `animate()` calls in useLayoutEffect when `visible` changes:
+  - Banner strip: `animate(stripEl, [{ transform: 'translateY(-100%)' }, { transform: 'translateY(0)' }], { key: 'banner-strip', duration: '--tug-motion-duration-moderate' })`
+  - Scrim: `animate(scrimEl, [{ opacity: 0 }, { opacity: 1 }], { key: 'banner-scrim', duration: '--tug-motion-duration-moderate' })`
+- On close: reverse animations, then `.finished.then(() => canvas.removeAttribute('inert'))`
+- Named `key` slots handle rapid toggling — a close animation cancels a running open animation cleanly
+- Keep CSS for static layout (position, z-index, background-color) — only motion moves to WAAPI
+
+**tug-sheet changes:**
+- Remove CSS `@keyframes` for `tug-sheet-drop`, `tug-sheet-retract`, `tug-sheet-overlay-in`, `tug-sheet-overlay-out`
+- Remove the `mounted` state, the `animationend` useLayoutEffect, and `data-state` attribute
+- Replace with TugAnimator `group()` for coordinated enter/exit:
+  - Enter: `group().animate(contentEl, drop keyframes).animate(overlayEl, fade-in keyframes)`
+  - Exit: `group().animate(contentEl, retract keyframes).animate(overlayEl, fade-out keyframes)`
+  - `group.finished.then(() => { setMounted(false); })` for clean unmount after retract
+- Named `key` slots on sheet content and overlay for cancellation on rapid toggle
+- Keep CSS for static layout (position, sizing, border-radius, background) — only motion moves to WAAPI
+
+**tug-alert — NO changes:** Radix AlertDialog owns the DOM lifecycle via Presence. CSS keyframes are correct per L14. Do not migrate.
+
+**tug-bulletin — plan ahead:** Sonner owns toast lifecycle. CSS styling only. When building Dash 6, use CSS for Sonner-managed enter/exit animations (same as tug-alert's relationship with Radix). Note this in the bulletin implementation instructions so the dash agent doesn't reach for TugAnimator.
+
+**Files modified:**
+```
+tug-banner.tsx       — replace animationend listener with animate() + .finished
+tug-banner.css       — remove @keyframes (keep static layout rules)
+tug-sheet.tsx        — replace mounted state dance with animate()/group() + .finished
+tug-sheet.css        — remove @keyframes (keep static layout rules)
+gallery-banner.tsx   — may need minor adjustments if data-visible CSS animations are removed
+gallery-sheet.tsx    — may need minor adjustments if data-state CSS animations are removed
+```

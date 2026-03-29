@@ -30,13 +30,13 @@ body {
 /* ---- Keyframe animations [L14] — duration scales via --tug-timing [L13] ---- */
 
 @keyframes tug-sheet-drop {
-  from { transform: translateX(-50%) translateY(-100%); opacity: 0; }
-  to   { transform: translateX(-50%) translateY(0);     opacity: 1; }
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
 }
 
 @keyframes tug-sheet-retract {
-  from { transform: translateX(-50%) translateY(0);     opacity: 1; }
-  to   { transform: translateX(-50%) translateY(-100%); opacity: 0; }
+  from { transform: translateY(0); }
+  to   { transform: translateY(-100%); }
 }
 
 @keyframes tug-sheet-overlay-in {
@@ -73,28 +73,42 @@ body {
   pointer-events: none;
 }
 
+/* ---- Clip container — hides the sheet above the title bar line ---- */
+
+.tug-sheet-clip {
+  position: absolute;
+  top: var(--tug-chrome-height, 36px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  z-index: 11;
+  pointer-events: none;
+}
+
 /* ---- Content panel (the sheet itself) ---- */
 
 .tug-sheet-content {
   /* @tug-renders-on: --tugx-sheet-bg */
   background-color: var(--tugx-sheet-bg);
   color: var(--tugx-sheet-fg);
-  border: 1px solid var(--tugx-sheet-border);
-  /* Depth */
-  box-shadow: var(--tugx-sheet-shadow);
-  /* Shape — rounded bottom corners only (drops from title bar) */
+  /* No border — the sheet emerges from under the title bar, borders break the illusion */
+  border: none;
+  /* Depth — strong inset shadow at top sells "emerging from under title bar" illusion.
+     Outer shadow for depth against dimmed card content. */
+  box-shadow:
+    0 8px 24px oklch(0 0 0 / 0.35),
+    inset 0 6px 16px -4px oklch(0 0 0 / 0.5);
+  /* Shape — rounded bottom corners only */
   border-radius: 0 0 0.5rem 0.5rem;
-  /* Positioning — centered within the card, just below the title bar */
-  position: absolute;
-  top: var(--tug-chrome-height, 36px);
-  left: 50%;
-  transform: translateX(-50%);
+  /* Positioning — centered within the clip container */
+  position: relative;
+  margin: 0 auto;
   width: calc(100% - 2 * var(--tugx-sheet-space-b));
   max-width: 460px;
-  /* Above overlay */
-  z-index: 11;
-  /* Constrained to the card content area */
-  max-height: calc(100% - var(--tug-chrome-height, 36px));
+  pointer-events: auto;
+  /* Constrained to the clip container height */
+  max-height: 100%;
   overflow-y: auto;
   /* Box model */
   box-sizing: border-box;
@@ -118,9 +132,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
+  padding: var(--tugx-sheet-space-a) var(--tugx-sheet-space-b);
   border-bottom: 1px solid var(--tugx-sheet-border);
-  gap: 0.5rem;
+  gap: var(--tugx-sheet-space-a);
 }
 
 /* ---- Sheet title ---- */
@@ -132,45 +146,35 @@ body {
   line-height: 1.4;
 }
 
-/* ---- Close button ---- */
-
-.tug-sheet-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Reset button defaults */
-  background: none;
-  border: none;
-  padding: 0.25rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  color: var(--tugx-sheet-header-fg);
-  opacity: 0.6;
-  flex-shrink: 0;
-  transition: opacity 100ms;
-}
-
-.tug-sheet-close:hover {
-  opacity: 1;
-}
-
-.tug-sheet-close:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-
 /* ---- Optional description ---- */
 
 .tug-sheet-description {
   font-size: 0.8125rem;
   line-height: 1.5;
   margin: 0;
-  padding: 0.5rem 1rem 0;
+  padding: var(--tugx-sheet-space-a) var(--tugx-sheet-space-b) 0;
   opacity: 0.75;
 }
 
 /* ---- Sheet body: arbitrary content ---- */
 
 .tug-sheet-body {
-  padding: 1rem;
+  padding: var(--tugx-sheet-space-b);
+}
+
+/* ---- Sheet actions row (mirrors alert actions conventions) ---- */
+
+.tug-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--tugx-sheet-space-a);
+  padding: var(--tugx-sheet-space-b) var(--tugx-sheet-space-b) var(--tugx-sheet-space-a);
+}
+
+/* Layout: tighter padding + minimum width for balanced dialog buttons.
+   Uses padding shorthand to match .tug-button-size-md shorthand — higher
+   specificity (0-3-0 vs 0-1-0) ensures this wins regardless of source order. */
+.tug-sheet-actions .tug-button.tug-button {
+  min-width: 7rem;
+  padding: 0 0.625rem;
 }
