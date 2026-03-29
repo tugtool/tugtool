@@ -850,8 +850,9 @@ Note: `@radix-ui/react-focus-scope` is currently installed as a transitive depen
 - **Dash 3:** tug-alert gallery card ✅
 - **Dash 4:** tug-sheet component + CSS ✅
 - **Dash 5:** tug-sheet gallery card ✅
-- **Dash 5.1:** Migrate banner + sheet animations from CSS keyframes to TugAnimator (see below)
-- **Dash 6:** tug-bulletin component + CSS + gallery card
+- **Dash 5.1:** Migrate banner + sheet animations from CSS keyframes to TugAnimator ✅
+- **Dash 6:** tug-bulletin component + CSS + gallery card ✅
+- **Dash 6.1:** API consistency audit + `useTugSheet()` imperative hook (see below)
 - **Dash 7:** tug-dialog hook + centered positioning in DeckManager
 
 ### Dash 5.1 — TugAnimator Migration for Banner + Sheet
@@ -893,3 +894,128 @@ tug-sheet.css        — remove @keyframes (keep static layout rules)
 gallery-banner.tsx   — may need minor adjustments if data-visible CSS animations are removed
 gallery-sheet.tsx    — may need minor adjustments if data-state CSS animations are removed
 ```
+
+### Dash 6.1 — API Consistency Audit + `useTugSheet()` Imperative Hook
+
+#### The Problem: Three Singletons, Three Patterns
+
+The four alert system components use three different API patterns, with inconsistent naming:
+
+| Component | Singleton Mount | Access Pattern | Naming |
+|---|---|---|---|
+| **Banner** | `TugBannerBridge` (component) | Props-only — no hook, no context | "Bridge" — unique term |
+| **Alert** | `TugAlertProvider` (context provider) | `useTugAlert()` hook → `showAlert()` | "Provider" + "use" hook |
+| **Sheet** | None (composed at use site) | Compound JSX + controlled state | No singleton, no hook |
+| **Bulletin** | `TugBulletinViewport` (component) | `bulletin()` bare function import | "Viewport" — unique term |
+
+Problems:
+1. **Naming inconsistency:** Bridge, Provider, Viewport — three different suffixes for the same concept (a singleton mounted in the root tree).
+2. **Access inconsistency:** Hook (alert), bare function (bulletin), props (banner), compound JSX (sheet) — four different patterns.
+3. **Sheet is the outlier:** It's the only component that requires callers to compose JSX, manage controlled state, and wire up Cancel buttons. Every other component is imperative ("call a function, get a result").
+
+#### The Apple Model
+
+In AppKit, modal presentation is always programmatic:
+- `NSAlert.runModal()` / `beginSheetModal(for:)` — call a method, get a result
+- `NSWindow.beginSheet(_:completionHandler:)` — call a method, pass content, get a callback
+- `UNUserNotificationCenter.add(_:)` — call a method, fire-and-forget
+
+The common thread: **the caller describes what to show, the framework handles presentation**. The caller never composes layout, manages open/close state, or wires dismiss buttons.
+
+#### Proposed Changes
+
+**1. Standardize singleton naming: all use "Provider" suffix.**
+
+| Current | Proposed |
+|---|---|
+| `TugBannerBridge` | `TugBannerProvider` |
+| `TugAlertProvider` | `TugAlertProvider` (no change) |
+| `TugBulletinViewport` | `TugBulletinProvider` |
+
+The "Provider" suffix communicates: "this is a singleton mounted in the root tree that provides a service to the app." Bridge and Viewport are implementation details, not concepts callers care about.
+
+**2. Standardize access: all use `useTug*()` hooks.**
+
+| Component | Current Access | Proposed Access |
+|---|---|---|
+| **Banner** | Props on TugBannerBridge | No change — banner is system-driven, not caller-invoked. The "provider" renders it based on connection state. No hook needed. |
+| **Alert** | `useTugAlert()` → `showAlert()` | No change — already correct. |
+| **Sheet** | Compound JSX | **Add `useTugSheet()`** → `showSheet()` as primary API. Keep compound JSX as escape hatch. |
+| **Bulletin** | `bulletin()` bare function | **Add `useTugBulletin()`** → `showBulletin()` for consistency. Keep `bulletin()` bare function as convenience alias. |
+
+The hook pattern provides:
+- Consistent API across alert, sheet, bulletin
+- React context awareness (the hook knows it's inside a provider)
+- Clear error when used outside the provider tree
+- Testability (mock the hook in tests)
+
+The `bulletin()` bare function is a valid convenience — it works because Sonner's `toast()` is global. But `useTugBulletin()` provides the standard access pattern for code that's already in a React component.
+
+**3. Add `useTugSheet()` — imperative sheet presentation.**
+
+```tsx
+const showSheet = useTugSheet();
+
+// Show a sheet programmatically — returns when the sheet closes
+await showSheet({
+  title: "Card Settings",
+  content: (close) => (
+    <>
+      <form>...</form>
+      <div className="tug-sheet-actions">
+        <TugPushButton emphasis="outlined" onClick={() => close()}>Cancel</TugPushButton>
+        <TugPushButton emphasis="filled" onClick={() => close("save")}>Save</TugPushButton>
+      </div>
+    </>
+  ),
+});
+```
+
+Key design points:
+- **`content` is a render function** that receives a `close` callback. The callback optionally takes a result value.
+- **Returns a Promise** that resolves when the sheet closes (with the close result, or `undefined` if dismissed via Escape).
+- **The caller provides the content, the framework handles everything else:** portal into card, inert management, focus trapping, scrim, animation, Escape/Cmd+. handling.
+- **No controlled state, no `onOpenChange`, no wiring Cancel buttons to close** — the `close` callback does it all.
+- **Scoped to the card** — `useTugSheet()` reads `TugcardPortalContext` to know which card to present in. Must be called from within a card's content.
+
+This is the AppKit `beginSheet` model: call a method, pass a content factory, get notified on close.
+
+**4. Where `useTugSheet()` lives:**
+
+Unlike alert and bulletin (which are app-level singletons), sheet is card-scoped. It doesn't need a provider in the root tree — it needs the TugcardPortalContext (already provided by every Tugcard). The hook reads the portal context directly.
+
+```tsx
+export function useTugSheet(): (options: ShowSheetOptions) => Promise<string | undefined> {
+  const cardEl = useContext(TugcardPortalContext);
+  // Returns a function that creates a sheet portal, manages lifecycle, returns a Promise
+}
+```
+
+No new provider needed. The hook is self-contained — it uses the card portal context that already exists.
+
+**5. Keep compound JSX as escape hatch.**
+
+`TugSheet` / `TugSheetTrigger` / `TugSheetContent` remain for cases where:
+- The trigger is tightly coupled to the sheet (e.g., a settings gear icon that always opens the same sheet)
+- The caller wants fine-grained control over open/close state
+- The content needs to react to external state changes while open
+
+But `useTugSheet()` is the **primary API** — most callers just want "open a sheet with this content."
+
+#### Implementation Plan
+
+**Files changed:**
+```
+tug-banner.tsx (or tug-banner-bridge.tsx) — rename TugBannerBridge to TugBannerProvider
+tug-bulletin.tsx                         — rename TugBulletinViewport to TugBulletinProvider,
+                                           add useTugBulletin() hook
+tug-sheet.tsx                            — add useTugSheet() hook + internal sheet renderer
+deck-manager.ts                          — update createElement calls for renamed components
+gallery-sheet.tsx                        — add demos using useTugSheet()
+```
+
+**What NOT to change:**
+- `TugAlertProvider` / `useTugAlert()` — already correct
+- `bulletin()` bare function — keep as convenience alias alongside the hook
+- `TugSheet` compound API — keep as escape hatch
+- `TugBanner` component — keep as-is (banner is system-driven, not user-invoked)
