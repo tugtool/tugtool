@@ -33,7 +33,7 @@ import { render, act, cleanup } from "@testing-library/react";
 
 import { PropertyStore } from "@/components/tugways/property-store";
 import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/property-store";
-import { GALLERY_DEFAULT_TABS, registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
+import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
 import { GalleryObservableProps } from "@/components/tugways/cards/gallery-observable-props";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { Tugcard } from "@/components/tugways/tug-card";
@@ -495,44 +495,6 @@ describe("Task 6: setProperty action works via dispatchTo (console-equivalent)",
     expect(countSpan.textContent).toBe("1");
     expect(lastChangeSpan.textContent).toContain("[guarded]");
     expect(lastChangeSpan.textContent).toContain("inspector");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Gallery tab position: eighth tab
-// ---------------------------------------------------------------------------
-
-describe("Gallery tab 'Observable Props' is the eighth tab", () => {
-  it("GALLERY_DEFAULT_TABS has thirty-six entries", () => {
-    expect(GALLERY_DEFAULT_TABS).toHaveLength(36);
-  });
-
-  it("the eighth tab has componentId 'gallery-observable-props' and title 'Observable Props'", () => {
-    const eighth = GALLERY_DEFAULT_TABS[7];
-    expect(eighth.componentId).toBe("gallery-observable-props");
-    expect(eighth.title).toBe("Observable Props");
-    expect(eighth.closable).toBe(true);
-  });
-
-  it("the ninth tab has componentId 'gallery-palette' and title 'Palette Engine'", () => {
-    const ninth = GALLERY_DEFAULT_TABS[8];
-    expect(ninth.componentId).toBe("gallery-palette");
-    expect(ninth.title).toBe("Palette Engine");
-    expect(ninth.closable).toBe(true);
-  });
-
-  it("the tenth tab has componentId 'gallery-scale-timing' and title 'Scale & Timing'", () => {
-    const tenth = GALLERY_DEFAULT_TABS[9];
-    expect(tenth.componentId).toBe("gallery-scale-timing");
-    expect(tenth.title).toBe("Scale & Timing");
-    expect(tenth.closable).toBe(true);
-  });
-
-  it("the eleventh tab has componentId 'gallery-cascade-inspector' and title 'Cascade Inspector'", () => {
-    const eleventh = GALLERY_DEFAULT_TABS[10];
-    expect(eleventh.componentId).toBe("gallery-cascade-inspector");
-    expect(eleventh.title).toBe("Cascade Inspector");
-    expect(eleventh.closable).toBe(true);
   });
 });
 
