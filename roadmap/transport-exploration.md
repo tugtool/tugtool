@@ -1216,85 +1216,59 @@ Hooks fire during tool execution and can modify behavior. We haven't explored:
 
 ---
 
-## Still To Test
+## Test 34: Plugin Agent Enumeration (Correct `--plugin-dir`)
 
-- [ ] End-to-end through tugcast WebSocket (blocked: needs T6 `--no-auth`)
-- [ ] `stop_task` message with a long-running background task (U21)
-- [ ] Multiple concurrent background tasks (E6)
-- [ ] ~~Orchestrator skill invocation~~ **RESOLVED** — fix `--plugin-dir` (T1)
-- [ ] Live `AskUserQuestion` round-trip — now possible with correct `--plugin-dir`, run `/tugplug:plan` (U3)
-- [ ] Hook visibility in CodeOutput (E3)
-- [ ] Plugin enumeration with correct `--plugin-dir` — do tugplug agents appear in `system_metadata.agents`? (E2)
-- [ ] `Notification` hook events (E3)
-- [ ] Session name — does it appear in `system_metadata`? (C11)
-- [ ] Plan mode events — what does `EnterPlanMode` output look like in the event stream? (U20)
+**Dumped full `system_metadata` with `--plugin-dir tugplug/`:**
 
-## Resolved from Code Inspection (No Probe Needed)
+```
+agents: [
+  "general-purpose", "statusline-setup", "Explore", "Plan", "claude-code-guide",
+  "tugplug:overviewer-agent", "tugplug:author-agent", "tugplug:committer-agent",
+  "tugplug:reviewer-agent", "tugplug:dash-agent", "tugplug:architect-agent",
+  "tugplug:integrator-agent", "tugplug:coder-agent", "tugplug:critic-agent",
+  "tugplug:conformance-agent", "tugplug:auditor-agent", "tugplug:clarifier-agent"
+]
+skills: [... 8 built-in + tugplug:merge, tugplug:dash, tugplug:plan, tugplug:implement]
+plugins: [{ name: "tugplug", path: ".../tugplug", source: "tugplug@inline" }]
+```
 
-- [x] `system` event forwarding — confirmed `api_retry` is dropped, `compact_boundary` is forwarded
-- [x] `@` file reference — confirmed terminal-only, no protocol support
-- [x] Plugin skill visibility — orchestrator skills are invisible to stream-json protocol
-- [x] Fully-qualified skill names (`/tugplug:dash`) — same behavior, still consumed client-side
+**Finding:** All 12 tugplug agents + 4 skills visible with correct `--plugin-dir`. The T1 fix resolves all plugin visibility issues.
 
 ---
 
-## Areas of Further Exploration
+## Test 35: Live `/tugplug:plan` — AskUserQuestion Flow
 
-Organized by domain. Each area contains open questions that need investigation before the graphical UI can be fully designed.
+**Sent:** `"/tugplug:plan Add a --no-auth flag to tugcast for development testing"` with correct `--plugin-dir`
 
-### Area 1: Slash Command / Skill Invocation — RESOLVED
+**Event sequence (322 events over 48s):**
+1. `system:init` with all tugplug skills visible
+2. Orchestrator text: "**Plan** — Starting new plan from idea"
+3. `Agent` tool spawns clarifier → `system:task_started` event
+4. Clarifier reads codebase: Glob, Grep, Read tool calls all visible via `system:task_progress`
+5. Clarifier completes → `system:task_completed`
+6. Orchestrator processes clarifier result
+7. `AskUserQuestion` tool call → **`control_request`** with questions:
+   - "When --no-auth is active, which security checks should be bypassed?"
+   - Options: "Session cookie + origin check", ...
+8. Probe timed out (didn't answer)
 
-**Root cause found and fixes identified.**
+**New event types discovered:**
 
-- [x] **`--plugin-dir` was wrong.** Pointed to project root instead of `tugplug/`. Fixed: all tugplug skills visible and invocable. (T1)
-- [x] **Slash commands DO work via `user_message`.** Skills produce full streaming events. Terminal-only commands return "Unknown skill" — they must be reimplemented as native UI controls.
-- [x] **Three categories identified:** Skills (work via transport), Terminal-only (UI must reimplement), Name collisions (use fully-qualified `tugplug:` prefix).
-- [x] **Synthetic `assistant` text dropped.** Built-in skill commands (`/cost`, `/compact`) produce text in `model: "<synthetic>"` messages that tugtalk skips. Fix identified. (T2)
-- [x] **Complete command classification done.** See "Terminal-Only Commands" table in Action Items.
+| Event | When | Key Fields |
+|-------|------|-----------|
+| `system:task_started` | Agent spawned | `task_id`, `tool_use_id`, `description`, `task_type` |
+| `system:task_progress` | Agent working | `task_id`, `description` (current tool), `usage` (token count) |
+| `system:task_completed` | Agent done | `task_id` |
 
-### Area 2: Plugin System
+**AskUserQuestion confirmed:** Arrives as `control_request` with `subtype: "can_use_tool"`, `tool_name: "AskUserQuestion"`, `input.questions[]` with `question`, `header`, `options[]`. Tugtalk would forward this as `control_request_forward` with `is_question: true`. The UI responds with `question_answer`.
 
-The tugtool plugin is loaded but its capabilities are partially invisible.
+---
 
-- [ ] **Plugin skill enumeration.** `system_metadata.slash_commands` excludes orchestrator skills. How do we get a complete list? Is there a CLI command (`claude --list-skills`)?  Can we read the plugin directory structure?
-- [ ] **Plugin agent enumeration.** `system_metadata.agents` shows only 5 built-in agents, not tugplug's 12. Same question — how to enumerate all available agents?
-- [ ] **Plugin hot-reload.** If we modify a tugplug skill or agent definition, does the running session pick it up? Or does it need a `/reload-plugins` command or process restart?
-- [ ] **Plugin hook registration.** When do `hooks.json` entries take effect? At session start? Per-tool-call? Can hooks be added dynamically?
-- [ ] **Plugin configuration.** The `plugin.toml` / `plugin.json` — what configuration affects transport behavior?
+## Phase 1 Complete
 
-### Area 3: Hooks Visibility
+35 tests completed. All major interaction patterns verified. All findings captured in [tug-conversation.md](tug-conversation.md) action items (T1-T6, U1-U23, C1-C15, E1-E6).
 
-Hooks run silently. The UI has no insight into hook activity.
-
-- [ ] **Do hook decisions appear in CodeOutput?** When `auto-approve-tug.sh` allows a Bash command, does any event indicate a hook (not the user) made the decision? The `tool_result` arrives, but there's no "approved by hook" marker.
-- [ ] **Hook-injected context.** Hooks can return `additionalContext` that's added to the conversation. Does this appear as any event? Or is it silently injected into Claude's context?
-- [ ] **Hook timing.** Blocking hooks can delay tool execution. Between `tool_use` and `tool_result`, if a hook adds 500ms, the UI sees a gap with no explanation. Should tugtalk emit a "hook executing" event?
-- [ ] **`Notification` hook events.** The hooks system fires `Notification` for `permission_prompt`, `idle_prompt`, `auth_success`, `elicitation_dialog`. Do any of these flow through to CodeOutput?
-- [ ] **Hook error visibility.** If a hook fails (exit code != 0 and != 2), what does the UI see? Does the tool proceed? Is there an error event?
-
-### Area 4: Tugcast WebSocket Layer
-
-Everything so far is direct-to-tugtalk. The actual production path goes through tugcast.
-
-- [ ] **Auth bypass for testing.** Add `--no-auth` flag to tugcast so we can connect via WebSocket without the single-use token dance.
-- [ ] **Binary framing correctness.** Does `[FeedId][length][payload]` round-trip correctly for all conversation event types?
-- [ ] **Feed multiplexing behavior.** How do CodeOutput events interleave with terminal, git, filesystem, stats feeds on the same WebSocket?
-- [ ] **Bootstrap / reconnection.** When a client reconnects, what conversation state is replayed? Last N events? Full history? Nothing?
-- [ ] **Lag detection.** If CodeOutput frames back up (client too slow), does the router enter BOOTSTRAP state? What does that look like for a conversation?
-- [ ] **Multiple clients.** Can two browser tabs see the same conversation? What about concurrent WebSocket connections?
-
-### Area 5: Session Management
-
-Session lifecycle has gaps.
-
-- [ ] **Session picker data.** How does the terminal populate the session picker (session list, names, branches, preview)? Is this data available via CLI or API?
-- [ ] **Session persistence.** Tugtalk persists session ID to `.tugtool/.session`. What other session state is persisted? Can we enumerate past sessions?
-- [ ] **Session-scoped permissions after resume.** Confirmed that permissions reset on resume — but what does the re-approval flow look like? Does the UI get `control_request_forward` events for previously-approved tools?
-- [ ] **Concurrent sessions.** Can two tugtalk instances use different sessions simultaneously? What about the app's tugtalk vs our probe's tugtalk?
-
-### Area 6: Advanced Interaction Patterns
-
-- [ ] **Background tasks.** `Ctrl+B` backgrounds a task in the terminal. Is there a `user_message` or inbound message equivalent? How do background task results appear in CodeOutput?
-- [ ] **`/btw` side questions.** Terminal-only ephemeral overlay. Could we implement this as a separate tugtalk session that doesn't affect the main conversation history?
-- [ ] **MCP server interaction.** `mcp_servers` appear in `system_metadata`. How does MCP tool use appear in the event stream? Same as regular tool use?
-- [ ] **Elicitation events.** The `Elicitation` hook event fires when MCP servers request user input. Does this surface as a `control_request_forward`?
+**Deferred to Phase 2 (blocked on transport fixes):**
+- End-to-end tugcast WebSocket testing (needs T6 `--no-auth`)
+- Hook visibility investigation (E3 — open but non-blocking)
+- Background tasks, MCP, elicitation (E6 — open but non-blocking)

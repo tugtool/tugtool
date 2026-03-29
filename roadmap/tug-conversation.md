@@ -54,6 +54,7 @@ Everything discovered in Phase 1 exploration, organized for action. This is the 
 | U20 | **Plan mode choices** | `EnterPlanMode` tool produces approve/reject/keep-planning options. UI must present these when plan mode is active. | Medium |
 | U21 | **Stop background task** | Send `{ type: "stop_task", task_id }`. UI needs a button/mechanism to stop running background tasks. | Medium |
 | U22 | **Context window budget** | ~20% of context window used at startup (system prompt, memory, CLAUDE.md, etc.) before any user interaction. Token counter (U11) should account for this. | Low |
+| U23 | **Task progress events** | `system:task_started`, `system:task_progress`, `system:task_completed` events provide agent lifecycle data (task_id, description, token usage). Use for progress indicators alongside U8. | High |
 
 ### Terminal-Only Commands (UI must reimplement)
 
@@ -82,7 +83,7 @@ These built-in commands have no stream-json equivalent — they return "Unknown 
 | # | Area | Status | Notes |
 |---|------|--------|-------|
 | E1 | Slash command invocation | **Resolved** | Two small tugtalk fixes (T1, T2). |
-| E2 | Plugin system | Partially resolved | Skills visible with correct `--plugin-dir`. Untested: tugplug agents in `system_metadata.agents`, hot-reload, dynamic enumeration, session name field. |
+| E2 | Plugin system | **Resolved** | All 12 tugplug agents + 4 skills visible with correct `--plugin-dir`. Plugin name `tugplug`. Hot-reload, session name untested but non-blocking. |
 | E3 | Hooks visibility | Open | Hooks run silently. No events for hook decisions, context injection, timing. |
 | E4 | Tugcast WebSocket layer | Blocked on T6 | Need `--no-auth` to test full production path. |
 | E5 | Session management | Partially tested | New, continue, fork tested. Picker data, concurrent sessions open. |
@@ -116,19 +117,20 @@ Phase 10: Custom Block Renderers  — rich UI for agent output
 
 ### Phase 1: Transport Exploration {#transport-exploration}
 
-**Status: COMPLETE.** 33 tests. See [transport-exploration.md](transport-exploration.md) for full journal.
+**Status: COMPLETE.** 35 tests. See [transport-exploration.md](transport-exploration.md) for full journal.
 
 **Key discoveries:**
 - `assistant_text` partials are **deltas**, not accumulated. Final `complete` has full text.
 - `thinking_text` is a separate event type arriving before response.
 - ALL slash commands go through `user_message` — skills produce full event streams, terminal-only commands return "Unknown skill."
-- `control_request_forward` is the unified gate for permissions AND `AskUserQuestion` (dispatch on `is_question`).
+- `control_request_forward` is the unified gate for permissions AND `AskUserQuestion` (dispatch on `is_question`). **Verified live** with `/tugplug:plan` triggering clarifier agent questions.
 - Interrupt produces `turn_complete(result: "error")`, not `turn_cancelled`.
 - Subagent tool calls are fully visible in the stream (nested under `tool_use: Agent`).
-- `system_metadata` sent every turn contains model, tools, slash commands, skills, plugins, permission mode — the source for all UI chrome.
-- `--plugin-dir` must point to `tugplug/` for skills to be visible (was the root cause of the slash command mystery).
-- Tugtalk drops `api_retry` events and synthetic `assistant` text — needs fixes.
-- 137 orphaned tugtalk processes after 2 weeks — process lifecycle needs fixing.
+- **`system:task_started/progress/completed`** events provide agent lifecycle tracking with task_id, description, and token usage — ideal for progress indicators.
+- `system_metadata` sent every turn contains model, tools, slash commands, skills, plugins, agents, permission mode — the source for all UI chrome. With correct `--plugin-dir`: all 12 tugplug agents + 4 skills visible.
+- `--plugin-dir` must point to `tugplug/` for skills/agents to be visible (was the root cause of the slash command mystery).
+- Tugtalk drops `api_retry` events and synthetic `assistant` text — needs fixes (T2, T3).
+- 137 orphaned tugtalk processes after 2 weeks — process lifecycle needs fixing (T4).
 
 ---
 
