@@ -104,7 +104,6 @@ Components that exist today, audited to compliance with `tuglaws/component-autho
 | tug-box | Recursive disable propagation via React context |
 | tug-banner | State-driven app-modal barrier with scrim + inert. No Radix equivalent. |
 | tug-sheet | Card-scoped modality requires portal into card, card-scoped inert — Radix Dialog is document-level. Uses Radix FocusScope (standalone). |
-| tug-dialog | Dialog-as-card via DeckManager. Uses card infrastructure, not Radix Dialog overlay. |
 
 ### Radix Primitives — Skipped
 
@@ -181,7 +180,6 @@ Five-tier modal system modeled on AppKit. See [tug-alert-system.md](tug-alert-sy
 | 18 | tug-sheet | Original + FocusScope | Card-modal | Window-shade from title bar, card-scoped inert, TugcardPortalContext | High |
 | 19 | tug-confirm-popover | Wrapper (Radix) | Button-local | Wraps `@radix-ui/react-popover`. Destructive action confirmation | High |
 | 20 | tug-bulletin | Wrapper (Sonner) | Non-blocking | Wraps Sonner. Fire-and-forget, tone variants, auto-dismiss, top-right default | High |
-| 23 | tug-dialog | Card-spawned | Deck | Dialog-as-card via DeckManager. Centered positioning, Promise API, dialog family | High |
 
 ## Planned Components — Data Display
 
@@ -258,13 +256,13 @@ Separators, progress indicators, collapsible sections, tooltips, context menus, 
 
 ### Group C: Alert System
 
-Five modality tiers: state barriers, app-modal alerts, card-modal sheets, dialog-as-card, and notifications. See [tug-alert-system.md](tug-alert-system.md) for the consolidated proposal.
+Four modality tiers: state barriers, app-modal alerts, card-modal sheets, and notifications. See [tug-alert-system.md](tug-alert-system.md) for the consolidated proposal. **Group C is complete.**
 
-- tug-banner *(state-driven app-modal barrier, replaces disconnect-banner + error-boundary)*
-- tug-alert *(app-modal, Radix AlertDialog, Promise API)*
-- tug-sheet *(card-modal, original + FocusScope, window-shade from title bar, TugcardPortalContext)*
-- tug-dialog *(dialog-as-card, DeckManager centered positioning)*
-- tug-bulletin *(modeless notifications, Sonner, top-right default)*
+- ~~tug-banner~~ ✅ *(state-driven app-modal barrier, replaces disconnect-banner + error-boundary)*
+- ~~tug-alert~~ ✅ *(app-modal, Radix AlertDialog, Promise API, useTugAlert hook)*
+- ~~tug-sheet~~ ✅ *(card-modal, original + FocusScope, window-shade, TugcardPortalContext, useTugSheet hook)*
+- ~~tug-bulletin~~ ✅ *(modeless notifications, Sonner, useTugBulletin hook)*
+- ~~tug-dialog~~ — Skipped. Card system handles dialog use cases natively.
 
 ### Group D: Rich Content & Compositions
 

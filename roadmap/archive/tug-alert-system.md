@@ -852,8 +852,10 @@ Note: `@radix-ui/react-focus-scope` is currently installed as a transitive depen
 - **Dash 5:** tug-sheet gallery card ✅
 - **Dash 5.1:** Migrate banner + sheet animations from CSS keyframes to TugAnimator ✅
 - **Dash 6:** tug-bulletin component + CSS + gallery card ✅
-- **Dash 6.1:** API consistency audit + `useTugSheet()` imperative hook (see below)
-- **Dash 7:** tug-dialog hook + centered positioning in DeckManager
+- **Dash 6.1:** API consistency audit + `useTugSheet()` imperative hook ✅
+- **Dash 7:** ~~tug-dialog hook~~ — **Skipped.** The card system already handles everything a "dialog card" would need. When specific use cases arise (about box, settings, pickers), they'll be registered as card content components with positioning options added to `addCard()` at that point.
+
+**Group C: Alert System is complete.**
 
 ### Dash 5.1 — TugAnimator Migration for Banner + Sheet
 
