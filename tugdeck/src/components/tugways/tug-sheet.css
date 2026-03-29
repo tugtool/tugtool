@@ -27,28 +27,6 @@ body {
   --tugx-sheet-space-b: 1.5rem;
 }
 
-/* ---- Keyframe animations [L14] — duration scales via --tug-timing [L13] ---- */
-
-@keyframes tug-sheet-drop {
-  from { transform: translateY(-100%); }
-  to   { transform: translateY(0); }
-}
-
-@keyframes tug-sheet-retract {
-  from { transform: translateY(0); }
-  to   { transform: translateY(-100%); }
-}
-
-@keyframes tug-sheet-overlay-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes tug-sheet-overlay-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-
 /* ---- Overlay (scrim) ---- */
 
 .tug-sheet-overlay {
@@ -61,16 +39,8 @@ body {
   top: var(--tug-chrome-height, 36px);
   /* Above card content, below sheet panel */
   z-index: 10;
-}
-
-.tug-sheet-overlay[data-state="open"] {
-  animation: tug-sheet-overlay-in calc(200ms * var(--tug-timing, 1)) linear;
-}
-
-.tug-sheet-overlay[data-state="closed"] {
-  animation: tug-sheet-overlay-out calc(150ms * var(--tug-timing, 1)) linear;
-  animation-fill-mode: forwards;
-  pointer-events: none;
+  /* Base state: hidden. TugAnimator's fill:forwards holds the final opacity after each animation. */
+  opacity: 0;
 }
 
 /* ---- Clip container — hides the sheet above the title bar line ---- */
@@ -112,16 +82,8 @@ body {
   overflow-y: auto;
   /* Box model */
   box-sizing: border-box;
-}
-
-.tug-sheet-content[data-state="open"] {
-  animation: tug-sheet-drop calc(200ms * var(--tug-timing, 1)) linear;
-}
-
-.tug-sheet-content[data-state="closed"] {
-  animation: tug-sheet-retract calc(150ms * var(--tug-timing, 1)) linear;
-  animation-fill-mode: forwards;
-  pointer-events: none;
+  /* Base state: off-screen above clip. TugAnimator's fill:forwards holds the final position. */
+  transform: translateY(-100%);
 }
 
 /* ---- Sheet header: title left, close button right ---- */

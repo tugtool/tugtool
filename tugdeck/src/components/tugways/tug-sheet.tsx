@@ -28,6 +28,7 @@ import React, {
 import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
 import { TugcardPortalContext } from "./tug-card";
+import { group } from "@/components/tugways/tug-animator";
 
 /* ---------------------------------------------------------------------------
  * Internal context
@@ -221,27 +222,60 @@ export function TugSheetContent({
   const titleId = `${contentId}-title`;
   const descriptionId = `${contentId}-desc`;
 
-  // Presence: keep the portal mounted during the retract (exit) animation.
-  // `mounted` stays true until animationend fires on the closing sheet.
+  // Presence: keep the portal mounted during the exit animation.
+  // `mounted` becomes true when open goes true, and false only after the exit animation completes.
   const [mounted, setMounted] = useState(false);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const sheetContentRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     if (open) {
       setMounted(true);
     }
-    // When open goes false, mounted stays true — animationend will set it false.
+    // When open goes false, mounted stays true — exit animation will set it false.
   }, [open]);
 
-  // Listen for animationend on the sheet content to unmount after retract.
+  // Enter animation: runs after mount when open && mounted (DOM is present).
+  useLayoutEffect(() => {
+    if (!open || !mounted) return;
+    const overlayEl = overlayRef.current;
+    const contentEl = sheetContentRef.current;
+    if (!overlayEl || !contentEl) return;
+
+    const g = group({ duration: "--tug-motion-duration-moderate" });
+    g.animate(overlayEl, [{ opacity: 0 }, { opacity: 1 }], { key: "sheet-overlay" });
+    g.animate(contentEl, [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }], {
+      key: "sheet-content",
+      easing: "ease-out",
+    });
+  }, [open, mounted]);
+
+  // Exit animation: runs when !open && mounted (DOM still present for animation).
   useLayoutEffect(() => {
     if (open || !mounted) return;
-    const el = sheetContentRef.current;
-    if (!el) { setMounted(false); return; }
+    const overlayEl = overlayRef.current;
+    const contentEl = sheetContentRef.current;
+    if (!overlayEl && !contentEl) {
+      setMounted(false);
+      return;
+    }
 
-    const onEnd = () => setMounted(false);
-    el.addEventListener("animationend", onEnd, { once: true });
-    return () => el.removeEventListener("animationend", onEnd);
+    const g = group({ duration: "--tug-motion-duration-moderate" });
+    if (overlayEl) {
+      g.animate(overlayEl, [{ opacity: 1 }, { opacity: 0 }], { key: "sheet-overlay" });
+    }
+    if (contentEl) {
+      g.animate(contentEl, [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], {
+        key: "sheet-content",
+        easing: "ease-in",
+      });
+    }
+    g.finished.then(() => {
+      setMounted(false);
+    }).catch(() => {
+      // Animation interrupted — unmount anyway to avoid stuck state.
+      setMounted(false);
+    });
   }, [open, mounted]);
 
   // Dev warning: aria-labelledby requires a target.
@@ -300,8 +334,8 @@ export function TugSheetContent({
     <>
       {/* Overlay (scrim) — positioned absolute within the card, below title bar */}
       <div
+        ref={overlayRef}
         className="tug-sheet-overlay"
-        data-state={open ? "open" : "closed"}
         onClick={() => onOpenChange(false)}
       />
 
@@ -323,7 +357,6 @@ export function TugSheetContent({
             aria-labelledby={titleId}
             aria-describedby={description ? descriptionId : undefined}
             data-slot="tug-sheet"
-            data-state={open ? "open" : "closed"}
             onKeyDown={handleKeyDown}
           >
           {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape */}

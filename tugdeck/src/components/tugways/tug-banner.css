@@ -31,33 +31,6 @@ body {
   --tugx-banner-overlay-bg:   var(--tug7-surface-global-primary-normal-overlay-rest);
 }
 
-/* ---- Keyframe animations — duration scales via --tug-timing [L13] ---- */
-
-@keyframes tug-banner-slide-in {
-  from { transform: translateY(-100%); }
-  to   { transform: translateY(0); }
-}
-
-@keyframes tug-banner-slide-out {
-  from { transform: translateY(0); }
-  to   { transform: translateY(-100%); }
-}
-
-@keyframes tug-banner-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes tug-banner-scrim-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes tug-banner-scrim-fade-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-
 /* ---- Banner strip — shared by status variant and error variant top strip ---- */
 
 .tug-banner-strip {
@@ -91,20 +64,20 @@ body {
   top: 0;
   left: 0;
   right: 0;
+  /* Base state: off-screen. TugAnimator's fill:forwards holds the final position after each animation. */
+  transform: translateY(-100%);
   /* Hidden state: pointer events disabled so banner doesn't block interaction */
   pointer-events: none;
 }
 
-/* Status visible: enter animation */
+/* Status visible: pointer-events active; TugAnimator drives the strip slide-in */
 .tug-banner[data-variant="status"][data-visible="true"] {
   pointer-events: auto;
-  animation: tug-banner-slide-in calc(200ms * var(--tug-timing, 1)) ease forwards;
 }
 
-/* Status hidden: exit animation */
+/* Status hidden: no pointer-events; TugAnimator drives the strip slide-out */
 .tug-banner[data-variant="status"][data-visible="false"] {
   pointer-events: none;
-  animation: tug-banner-slide-out calc(150ms * var(--tug-timing, 1)) ease forwards;
 }
 
 /* Status variant icon and message live inside .tug-banner-strip */
@@ -119,8 +92,6 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Enter animation on mount */
-  animation: tug-banner-fade-in calc(150ms * var(--tug-timing, 1)) ease;
   /* Subtle scrim behind detail panel */
   background-color: var(--tug7-surface-overlay-primary-normal-dim-rest);
 }
@@ -187,23 +158,14 @@ body {
   z-index: 99998;
   /* @tug-renders-on: document background */
   background-color: var(--tugx-banner-scrim-bg);
-}
-
-.tug-banner-scrim[data-visible="true"] {
-  pointer-events: auto;
-  opacity: 1;
-  animation: tug-banner-scrim-fade-in calc(200ms * var(--tug-timing, 1)) ease-out;
+  /* Base state: hidden. TugAnimator's fill:forwards holds the final opacity after each animation. */
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Contained mode: scrim dims visually but doesn't block interaction (gallery demos) */
 .tug-banner-scrim[data-contained="true"] {
   pointer-events: none;
-}
-
-.tug-banner-scrim[data-visible="false"] {
-  pointer-events: none;
-  opacity: 0;
-  animation: tug-banner-scrim-fade-out calc(150ms * var(--tug-timing, 1)) ease-in;
 }
 
 /* ---- Tone variants — override strip aliases per tone ---- */

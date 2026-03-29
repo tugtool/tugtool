@@ -23,6 +23,7 @@ import "./tug-banner.css";
 import React from "react";
 import { icons } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { animate } from "@/components/tugways/tug-animator";
 
 /* ---------------------------------------------------------------------------
  * TugBanner
@@ -66,7 +67,8 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
     ref,
   ) {
     const rootRef = React.useRef<HTMLDivElement | null>(null);
-    const animEndListenerRef = React.useRef<(() => void) | null>(null);
+    const stripRef = React.useRef<HTMLDivElement | null>(null);
+    const scrimRef = React.useRef<HTMLDivElement | null>(null);
 
     // Combine forwarded ref with our internal ref
     const setRef = React.useCallback(
@@ -82,6 +84,7 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
     );
 
     // Status variant only: manage inert on deck canvas sibling when visible changes.
+    // TugAnimator's .finished promise replaces the fragile animationend listener dance.
     React.useLayoutEffect(() => {
       if (contained || variant !== "status") return;
 
@@ -96,33 +99,56 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
       const canvas = parent.querySelector<HTMLElement>("[data-slot=\"deck-canvas\"]");
       if (!canvas) return;
 
-      // Clean up any previous animationend listener
-      if (animEndListenerRef.current) {
-        root.removeEventListener("animationend", animEndListenerRef.current);
-        animEndListenerRef.current = null;
-      }
+      const stripEl = stripRef.current;
+      const scrimEl = scrimRef.current;
 
       if (visible) {
-        // Apply inert immediately on show
+        // Apply inert immediately on show — banner blocks interaction as it enters.
         canvas.setAttribute("inert", "");
+        // Animate strip in.
+        if (stripEl) {
+          animate(stripEl, [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }], {
+            key: "banner-strip",
+            duration: "--tug-motion-duration-moderate",
+            easing: "ease-out",
+          });
+        }
+        // Animate scrim in.
+        if (scrimEl) {
+          animate(scrimEl, [{ opacity: 0 }, { opacity: 1 }], {
+            key: "banner-scrim",
+            duration: "--tug-motion-duration-moderate",
+          });
+        }
       } else {
-        // Remove inert after the exit animation completes
-        const onAnimEnd = () => {
+        // Animate strip out.
+        if (stripEl) {
+          animate(stripEl, [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], {
+            key: "banner-strip",
+            duration: "--tug-motion-duration-moderate",
+            easing: "ease-in",
+          });
+        }
+        // Animate scrim out; remove inert after scrim animation completes.
+        if (scrimEl) {
+          const scrimAnim = animate(scrimEl, [{ opacity: 1 }, { opacity: 0 }], {
+            key: "banner-scrim",
+            duration: "--tug-motion-duration-moderate",
+          });
+          scrimAnim.finished.then(() => {
+            canvas.removeAttribute("inert");
+          }).catch(() => {
+            // Animation interrupted (e.g. rapid toggle) — ensure inert is removed.
+            canvas.removeAttribute("inert");
+          });
+        } else {
           canvas.removeAttribute("inert");
-          root.removeEventListener("animationend", onAnimEnd);
-          animEndListenerRef.current = null;
-        };
-        animEndListenerRef.current = onAnimEnd;
-        root.addEventListener("animationend", onAnimEnd, { once: true });
+        }
       }
 
       return () => {
-        // On unmount ensure inert is always removed
+        // On unmount ensure inert is always removed.
         canvas.removeAttribute("inert");
-        if (animEndListenerRef.current) {
-          root.removeEventListener("animationend", animEndListenerRef.current);
-          animEndListenerRef.current = null;
-        }
       };
     }, [visible, variant, contained]);
 
@@ -157,6 +183,7 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
       <>
         {/* Scrim — always rendered for status variant (contained only skips inert, not scrim) */}
         <div
+          ref={scrimRef}
           className="tug-banner-scrim"
           data-visible={String(visible)}
           data-contained={contained ? "true" : undefined}
@@ -173,7 +200,7 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
           className={cn("tug-banner", className)}
         >
           {/* Strip — full-width, solid, bold attention strip */}
-          <div className="tug-banner-strip">
+          <div ref={stripRef} className="tug-banner-strip">
             {icon && (
               <span className="tug-banner-icon" aria-hidden="true">
                 {/* Icon rendered as text — caller passes Lucide icon name as string */}
