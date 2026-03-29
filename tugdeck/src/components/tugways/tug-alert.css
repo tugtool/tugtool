@@ -1,0 +1,123 @@
+/* @tug-pairings {
+  --tugx-alert-fg     | --tugx-alert-bg     | content
+  --tugx-alert-border | --tugx-alert-bg     | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                  | Surface                  | Role          | Context                                |
+ * |--------------------------|--------------------------|---------------|----------------------------------------|
+ * | --tugx-alert-fg          | --tugx-alert-bg          | content       | .tug-alert-content (color)             |
+ * | --tugx-alert-border      | --tugx-alert-bg          | informational | .tug-alert-content (border-color)      |
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-alert-overlay-bg: var(--tug7-surface-overlay-primary-normal-dim-rest);
+  --tugx-alert-bg:         var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-alert-fg:         var(--tug7-element-global-text-normal-default-rest);
+  --tugx-alert-border:     var(--tug7-element-global-border-normal-default-rest);
+  --tugx-alert-shadow:     var(--tug7-element-global-shadow-normal-overlay-rest);
+}
+
+/* ---- Keyframe animations [L14] — duration scales via --tug-timing [L13] ---- */
+
+@keyframes tug-alert-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes tug-alert-overlay-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes tug-alert-content-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes tug-alert-content-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to   { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+}
+
+/* ---- Overlay (scrim) ---- */
+
+.tug-alert-overlay {
+  /* @tug-renders-on: --tugx-alert-overlay-bg */
+  background-color: var(--tugx-alert-overlay-bg);
+  position: fixed;
+  inset: 0;
+  /* Below banner at 99999, above everything else */
+  z-index: 99990;
+}
+
+.tug-alert-overlay[data-state="open"] {
+  animation: tug-alert-overlay-in calc(150ms * var(--tug-timing, 1)) ease-out;
+}
+
+.tug-alert-overlay[data-state="closed"] {
+  animation: tug-alert-overlay-out calc(100ms * var(--tug-timing, 1)) ease-in;
+}
+
+/* ---- Content panel ---- */
+
+.tug-alert-content {
+  /* @tug-renders-on: --tugx-alert-bg */
+  background-color: var(--tugx-alert-bg);
+  color: var(--tugx-alert-fg);
+  border: 1px solid var(--tugx-alert-border);
+  /* Shape */
+  border-radius: 0.5rem;
+  /* Depth */
+  box-shadow: var(--tugx-alert-shadow);
+  /* Positioning — centered in viewport */
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* Layering — one above overlay */
+  z-index: 99991;
+  /* Sizing */
+  width: 100%;
+  max-width: 400px;
+  padding: 1.25rem;
+  /* Box model */
+  box-sizing: border-box;
+}
+
+.tug-alert-content[data-state="open"] {
+  animation: tug-alert-content-in calc(150ms * var(--tug-timing, 1)) ease-out;
+}
+
+.tug-alert-content[data-state="closed"] {
+  animation: tug-alert-content-out calc(100ms * var(--tug-timing, 1)) ease-in;
+}
+
+/* ---- Title ---- */
+
+.tug-alert-title {
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 0 0 0.5rem 0;
+}
+
+/* ---- Message ---- */
+
+.tug-alert-message {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0 0 1rem 0;
+  /* Slightly muted */
+  opacity: 0.8;
+}
+
+/* ---- Actions row ---- */
+
+.tug-alert-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}

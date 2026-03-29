@@ -47,6 +47,7 @@ import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { TugBannerBridge } from "./components/chrome/tug-banner-bridge";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
+import { TugAlertProvider } from "./components/tugways/tug-alert";
 import { putLayout, putTabState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
@@ -287,12 +288,16 @@ export class DeckManager implements IDeckManagerStore {
               React.createElement(
                 DeckManagerContext.Provider,
                 { value: this },
-                React.createElement(TugBannerBridge, {
-                  connection: this.connection,
-                }),
-                React.createElement(DeckCanvas, {
-                  connection: this.connection,
-                }),
+                React.createElement(
+                  TugAlertProvider,
+                  null,
+                  React.createElement(TugBannerBridge, {
+                    connection: this.connection,
+                  }),
+                  React.createElement(DeckCanvas, {
+                    connection: this.connection,
+                  }),
+                ),
               ),
             ),
           ),
