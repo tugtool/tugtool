@@ -155,14 +155,12 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
     // Status variant: always mounted, visibility controlled by data-visible.
     return (
       <>
-        {/* Scrim — only rendered for status variant */}
-        {!contained && (
-          <div
-            className="tug-banner-scrim"
-            data-visible={String(visible)}
-            aria-hidden="true"
-          />
-        )}
+        {/* Scrim — always rendered for status variant (contained only skips inert, not scrim) */}
+        <div
+          className="tug-banner-scrim"
+          data-visible={String(visible)}
+          aria-hidden="true"
+        />
         <div
           ref={setRef}
           data-slot="tug-banner"

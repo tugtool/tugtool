@@ -294,9 +294,7 @@ export class DeckManager implements IDeckManagerStore {
                   React.createElement(TugBannerBridge, {
                     connection: this.connection,
                   }),
-                  React.createElement(DeckCanvas, {
-                    connection: this.connection,
-                  }),
+                  React.createElement(DeckCanvas, {}),
                 ),
               ),
             ),

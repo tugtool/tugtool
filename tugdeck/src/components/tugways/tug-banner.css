@@ -186,19 +186,19 @@ body {
   inset: 0;
   z-index: 99998;
   /* @tug-renders-on: document background */
-  background-color: var(--tugx-banner-overlay-bg);
-  pointer-events: none;
-  opacity: 0;
+  background-color: var(--tugx-banner-scrim-bg);
 }
 
 .tug-banner-scrim[data-visible="true"] {
   pointer-events: auto;
-  animation: tug-banner-scrim-fade-in calc(200ms * var(--tug-timing, 1)) ease forwards;
+  opacity: 1;
+  animation: tug-banner-scrim-fade-in calc(200ms * var(--tug-timing, 1)) ease-out;
 }
 
 .tug-banner-scrim[data-visible="false"] {
   pointer-events: none;
-  animation: tug-banner-scrim-fade-out calc(150ms * var(--tug-timing, 1)) ease forwards;
+  opacity: 0;
+  animation: tug-banner-scrim-fade-out calc(150ms * var(--tug-timing, 1)) ease-in;
 }
 
 /* ---- Tone variants — override strip aliases per tone ---- */

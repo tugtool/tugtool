@@ -2,11 +2,6 @@
  * DeckCanvas -- canvas shell with responder chain support and CardFrame rendering
  * from DeckState (Phase 5).
  *
- * Phase 2: Rendered DisconnectBanner and optionally the ComponentGallery panel.
- *          Gallery visibility driven by show-component-gallery action via
- *          action-dispatch -- registerGallerySetter connected React state to
- *          the module-level gallerySetterRef.
- *
  * Phase 3: Registers as root responder "deck-canvas" via useResponder.
  *          Handles canvas-level actions: cycleCard, resetLayout, showSettings,
  *          showComponentGallery. DeckCanvas auto-becomes the first responder when
@@ -65,13 +60,11 @@
  */
 
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
-import type { TugConnection } from "@/connection";
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tug-card";
-import { DisconnectBanner } from "./disconnect-banner";
 import { CardFrame, updateSetAppearance } from "./card-frame";
 import { getRegistration } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
@@ -86,11 +79,9 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
  *
  * deckState, onCardMoved, onCardClosed, and onCardFocused are removed --
  * DeckCanvas reads them from the DeckManagerContext store via
- * useSyncExternalStore. Only `connection` remains as a prop (for DisconnectBanner).
+ * useSyncExternalStore. No props remain.
  */
-export interface DeckCanvasProps {
-  connection: TugConnection | null;
-}
+export interface DeckCanvasProps {}
 
 // ---- Card z-index base ----
 
@@ -105,14 +96,13 @@ const CARD_ZINDEX_BASE = 1;
 /**
  * DeckCanvas -- plain function component (Phase 5 removes forwardRef).
  *
- * Renders the responder-chain root, the disconnect banner, and one CardFrame
- * per card in deckState.
+ * Renders the responder-chain root and one CardFrame per card in deckState.
  *
  * State is read from DeckManagerContext via useSyncExternalStore -- no
  * deckState prop. The variable `store` holds the IDeckManagerStore instance;
  * `manager` continues to hold the ResponderChainManager (unchanged).
  */
-export function DeckCanvas({ connection }: DeckCanvasProps) {
+export function DeckCanvas(_props: DeckCanvasProps) {
   // ---- Store subscription ([D04], Spec S04) ----
   // Named `store` (not `manager`) to avoid collision with the ResponderChainManager
   // variable below.
@@ -421,8 +411,6 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
         onPointerDown={handleCanvasPointerDown}
         style={{ position: "absolute", inset: 0, zIndex: 0 }}
       />
-
-      <DisconnectBanner connection={connection} />
 
       {/*
         * containerRef wrapper: positioning context for card frames, snap guides,
