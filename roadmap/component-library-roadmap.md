@@ -266,7 +266,7 @@ Four modality tiers: state barriers, app-modal alerts, card-modal sheets, and no
 
 ### Group D: The Conversation Experience
 
-The core AI interaction: prompt input, streamed markdown rendering, and agent progress. **Prerequisite: tug-feed integration** ([tug-feed-roadmap.md](tug-feed-roadmap.md)) proves the data flow before UI is built. See [tug-conversation.md](tug-conversation.md) for the full proposal.
+The core AI interaction: prompt input, streamed markdown rendering, and agent progress. Ten phases from hook capture to custom block renderers, each scoped as a `/plan` → `/implement` cycle. See [tug-conversation.md](tug-conversation.md) for the full roadmap.
 
 - tug-markdown
 - tug-prompt-input
