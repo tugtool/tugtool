@@ -21,20 +21,14 @@ const labelStyle: React.CSSProperties = {
   marginBottom: "4px",
 };
 
-/** Mini-viewport container for contained banner demos. */
+/** Mini-viewport container for contained status banner demos. */
 const miniViewport: React.CSSProperties = {
   position: "relative",
   overflow: "hidden",
-  height: "64px",
+  height: "80px",
   border: "1px solid var(--tug7-element-global-border-normal-default-rest)",
   borderRadius: "6px",
   background: "var(--tug7-surface-global-primary-normal-content-rest)",
-};
-
-/** Mini-viewport for the error variant (taller to show content). */
-const miniViewportError: React.CSSProperties = {
-  ...miniViewport,
-  height: "200px",
 };
 
 /** Placeholder content inside the mini-viewport so there's something to dim. */
@@ -67,7 +61,9 @@ export function GalleryBanner() {
   const sampleStack = `Error: Something went critically wrong
     at ComponentTree.render (bundle.js:1234)
     at ErrorBoundary.render (bundle.js:5678)
-    at ReactDOM.render (bundle.js:9012)`;
+    at ReactDOM.render (bundle.js:9012)
+    at Object.create (bundle.js:3456)
+    at Module.evaluate (bundle.js:7890)`;
 
   return (
     <div className="cg-content" data-testid="gallery-banner">
@@ -75,7 +71,7 @@ export function GalleryBanner() {
       {/* ---- 1. Status variant — danger tone (default) ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Status — Danger Tone</div>
-        <div style={labelStyle}>Default tone. Slide-in/out animation. App content below is dimmed by scrim (contained demo).</div>
+        <div style={labelStyle}>Solid-fill strip. Bold text. Full-opacity — impossible to miss.</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
             size="sm"
@@ -102,7 +98,7 @@ export function GalleryBanner() {
       {/* ---- 2. Status variant — caution tone ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Status — Caution Tone</div>
-        <div style={labelStyle}>tone="caution" — yellow palette.</div>
+        <div style={labelStyle}>tone="caution" — solid yellow palette.</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
             size="sm"
@@ -129,7 +125,7 @@ export function GalleryBanner() {
       {/* ---- 3. Status variant — default tone ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Status — Default Tone</div>
-        <div style={labelStyle}>tone="default" — neutral palette.</div>
+        <div style={labelStyle}>tone="default" — neutral overlay palette.</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
             size="sm"
@@ -156,7 +152,7 @@ export function GalleryBanner() {
       {/* ---- 4. Status variant with icon ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Status with Icon</div>
-        <div style={labelStyle}>icon="wifi-off" — Lucide icon rendered inline.</div>
+        <div style={labelStyle}>icon="wifi-off" — Lucide icon rendered inline in strip.</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
             size="sm"
@@ -184,7 +180,10 @@ export function GalleryBanner() {
       {/* ---- 5. Error variant ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Error Variant</div>
-        <div style={labelStyle}>variant="error" — full-panel with stack trace and reload button. Conditionally rendered (no exit animation).</div>
+        <div style={labelStyle}>
+          variant="error" — two parts: bold strip at top (same urgency as status), centered detail panel
+          below with stack trace + reload. Detail panel is scrollable and non-alarming.
+        </div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <TugPushButton
             size="sm"
@@ -192,21 +191,21 @@ export function GalleryBanner() {
             role="danger"
             onClick={() => setErrorVisible((v) => !v)}
           >
-            {errorVisible ? "Hide Error Panel" : "Show Error Panel"}
+            {errorVisible ? "Hide Error" : "Show Error"}
           </TugPushButton>
         </div>
         {errorVisible && (
-          <div style={miniViewportError}>
-            <TugBanner
-              contained
-              visible={true}
-              variant="error"
-              tone="danger"
-              message="Render Error: Something went critically wrong"
-            >
-              <pre style={{ margin: "0 0 12px", whiteSpace: "pre-wrap" }}>
-                {sampleStack}
-              </pre>
+          <TugBanner
+            contained
+            visible={true}
+            variant="error"
+            tone="danger"
+            message="Render Error: Something went critically wrong"
+          >
+            <pre style={{ margin: "0 0 12px", whiteSpace: "pre-wrap" }}>
+              {sampleStack}
+            </pre>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <TugPushButton
                 size="sm"
                 emphasis="outlined"
@@ -215,8 +214,8 @@ export function GalleryBanner() {
               >
                 Dismiss (demo only)
               </TugPushButton>
-            </TugBanner>
-          </div>
+            </div>
+          </TugBanner>
         )}
       </div>
 

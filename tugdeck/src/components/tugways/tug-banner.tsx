@@ -2,13 +2,17 @@
  * TugBanner — app-modal state barrier for system conditions.
  *
  * Two variants: "status" (compact horizontal strip, always mounted, visibility
- * driven by the `visible` prop) and "error" (full-viewport panel, conditionally
- * rendered by ErrorBoundary as its fallback UI). No user action can dismiss it —
- * the `visible` prop or React unmount controls presence.
+ * driven by the `visible` prop) and "error" (strip at top + centered detail panel,
+ * conditionally rendered by ErrorBoundary as its fallback UI). No user action can
+ * dismiss it — the `visible` prop or React unmount controls presence.
  *
  * Status variant: scrim + `inert` on the deck canvas sibling block interaction
  * while visible. Exit animation plays, then `inert` is removed. Error variant:
  * composes TugPushButton for the reload action [L20] — button keeps its own tokens.
+ *
+ * Both variants share a .tug-banner-strip element that renders as a bold, full-width,
+ * solid-color attention strip. The error variant adds a .tug-banner-detail-panel
+ * below the strip for the stack trace and reload action.
  *
  * Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authoring guide,
  *       [L20] token sovereignty (error variant composes TugPushButton)
@@ -35,7 +39,7 @@ export interface TugBannerProps {
   message: string;
   /** Optional Lucide icon name (status variant) */
   icon?: string;
-  /** Rich content (error variant) */
+  /** Rich content for the error detail panel (error variant only) */
   children?: React.ReactNode;
   /**
    * Disables the inert/scrim blocking behavior — use in gallery demos
@@ -122,7 +126,8 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
       };
     }, [visible, variant, contained]);
 
-    // Error variant: conditionally rendered — always show as visible, no scrim.
+    // Error variant: strip at top + detail panel centered below.
+    // Conditionally rendered — always shown as visible, no exit animation.
     if (variant === "error") {
       return (
         <div
@@ -135,10 +140,14 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
           aria-live="assertive"
           className={cn("tug-banner", className)}
         >
-          <div className="tug-banner-error-header">
+          {/* Strip — full-width, solid, high-urgency */}
+          <div className="tug-banner-strip">
             <span className="tug-banner-message">{message}</span>
           </div>
-          <div className="tug-banner-error-body">{children}</div>
+          {/* Detail panel — centered, constrained, scrollable diagnostic area */}
+          <div className="tug-banner-detail-panel">
+            <div className="tug-banner-detail-body">{children}</div>
+          </div>
         </div>
       );
     }
@@ -164,13 +173,16 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
           aria-live="polite"
           className={cn("tug-banner", className)}
         >
-          {icon && (
-            <span className="tug-banner-icon" aria-hidden="true">
-              {/* Icon rendered as text — caller passes Lucide icon name as string */}
-              <BannerIcon name={icon} />
-            </span>
-          )}
-          <span className="tug-banner-message">{message}</span>
+          {/* Strip — full-width, solid, bold attention strip */}
+          <div className="tug-banner-strip">
+            {icon && (
+              <span className="tug-banner-icon" aria-hidden="true">
+                {/* Icon rendered as text — caller passes Lucide icon name as string */}
+                <BannerIcon name={icon} />
+              </span>
+            )}
+            <span className="tug-banner-message">{message}</span>
+          </div>
         </div>
       </>
     );

@@ -1,23 +1,34 @@
 /* @tug-pairings {
-  --tugx-banner-fg     | --tugx-banner-bg     | content
-  --tugx-banner-border | --tugx-banner-bg     | informational
+  --tugx-banner-strip-fg     | --tugx-banner-strip-bg     | content
+  --tugx-banner-strip-border | --tugx-banner-strip-bg     | informational
+  --tugx-banner-detail-fg    | --tugx-banner-detail-bg    | content
 } */
 
 /**
  * @tug-pairings
- * | Element                  | Surface                  | Role          | Context                                          |
- * |--------------------------|--------------------------|---------------|--------------------------------------------------|
- * | --tugx-banner-fg         | --tugx-banner-bg         | content       | .tug-banner (color)                              |
- * | --tugx-banner-border     | --tugx-banner-bg         | informational | .tug-banner (border-color)                       |
+ * | Element                     | Surface                     | Role          | Context                                                |
+ * |-----------------------------|---------------------------  |---------------|--------------------------------------------------------|
+ * | --tugx-banner-strip-fg      | --tugx-banner-strip-bg      | content       | .tug-banner-strip (color)                              |
+ * | --tugx-banner-strip-border  | --tugx-banner-strip-bg      | informational | .tug-banner-strip (border-color)                       |
+ * | --tugx-banner-detail-fg     | --tugx-banner-detail-bg     | content       | .tug-banner-detail-panel (color)                       |
  */
 
 /* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
 
 body {
-  --tugx-banner-bg:         var(--tug7-surface-tone-primary-normal-danger-rest);
-  --tugx-banner-fg:         var(--tug7-element-tone-text-normal-danger-rest);
-  --tugx-banner-border:     var(--tug7-element-tone-border-normal-danger-rest);
-  --tugx-banner-overlay-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
+  /* Strip — solid filled surface for high-urgency banner strips */
+  --tugx-banner-strip-bg:     var(--tug7-surface-control-primary-filled-danger-rest);
+  --tugx-banner-strip-fg:     var(--tug7-element-control-text-filled-danger-rest);
+  --tugx-banner-strip-border: var(--tug7-element-control-border-filled-danger-rest);
+
+  /* Detail panel — subdued overlay surface for the error diagnostic area */
+  --tugx-banner-detail-bg:    var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-banner-detail-fg:    var(--tug7-element-global-text-normal-default-rest);
+  --tugx-banner-detail-border: var(--tug7-element-global-border-normal-default-rest);
+
+  /* Scrim behind the error detail panel */
+  --tugx-banner-scrim-bg:     var(--tug7-surface-overlay-primary-normal-scrim-rest);
+  --tugx-banner-overlay-bg:   var(--tug7-surface-global-primary-normal-overlay-rest);
 }
 
 /* ---- Keyframe animations — duration scales via --tug-timing [L13] ---- */
@@ -47,15 +58,31 @@ body {
   to   { opacity: 0; }
 }
 
+/* ---- Banner strip — shared by status variant and error variant top strip ---- */
+
+.tug-banner-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 24px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.4;
+  /* @tug-renders-on: --tugx-banner-strip-bg */
+  background-color: var(--tugx-banner-strip-bg);
+  color: var(--tugx-banner-strip-fg);
+  border-bottom: 1px solid var(--tugx-banner-strip-border);
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* ---- Banner root ---- */
 
 .tug-banner {
   position: fixed;
   z-index: 99999;
-  /* @tug-renders-on: --tugx-banner-bg */
-  background-color: var(--tugx-banner-bg);
-  color: var(--tugx-banner-fg);
-  border-bottom: 1px solid var(--tugx-banner-border);
 }
 
 /* ---- Status variant — horizontal strip at top ---- */
@@ -64,14 +91,6 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  line-height: 1.4;
   /* Hidden state: pointer events disabled so banner doesn't block interaction */
   pointer-events: none;
 }
@@ -88,39 +107,62 @@ body {
   animation: tug-banner-slide-out calc(150ms * var(--tug-timing, 1)) ease forwards;
 }
 
-/* ---- Error variant — full-viewport panel ---- */
+/* Status variant icon and message live inside .tug-banner-strip */
+.tug-banner[data-variant="status"] .tug-banner-strip {
+  /* Status strip is the entire banner — no additional layout changes needed */
+}
+
+/* ---- Error variant — strip at top + detail panel centered below ---- */
 
 .tug-banner[data-variant="error"] {
   inset: 0;
   display: flex;
   flex-direction: column;
-  border-bottom: none;
+  align-items: center;
   /* Enter animation on mount */
   animation: tug-banner-fade-in calc(150ms * var(--tug-timing, 1)) ease;
+  /* Subtle scrim behind detail panel */
+  background-color: var(--tug7-surface-overlay-primary-normal-dim-rest);
 }
 
-.tug-banner-error-header {
-  padding: 20px 24px 12px;
-  border-bottom: 1px solid var(--tugx-banner-border);
-  flex-shrink: 0;
+/* Error strip — same visual weight as status strip, pinned to top */
+.tug-banner[data-variant="error"] .tug-banner-strip {
+  align-self: stretch;
 }
 
-.tug-banner-error-header .tug-banner-message {
-  font-size: 1rem;
-  font-weight: 600;
-  /* @tug-renders-on: --tugx-banner-bg */
-  color: var(--tugx-banner-fg);
+/* Detail panel — contained, centered, scrollable diagnostic area */
+.tug-banner-detail-panel {
+  margin-top: 32px;
+  width: calc(100% - 48px);
+  max-width: 680px;
+  max-height: calc(100vh - 160px);
+  display: flex;
+  flex-direction: column;
+  /* @tug-renders-on: --tugx-banner-detail-bg */
+  background-color: var(--tugx-banner-detail-bg);
+  border: 1px solid var(--tugx-banner-detail-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
 }
 
-.tug-banner-error-body {
+.tug-banner-detail-body {
   flex: 1;
   overflow: auto;
-  padding: 16px 24px;
+  padding: 20px 24px;
   font-size: 0.8125rem;
   font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Monaco, Consolas, monospace;
   line-height: 1.6;
-  /* @tug-renders-on: --tugx-banner-bg */
-  color: var(--tugx-banner-fg);
+  /* @tug-renders-on: --tugx-banner-detail-bg */
+  color: var(--tugx-banner-detail-fg);
+}
+
+.tug-banner-detail-footer {
+  flex-shrink: 0;
+  padding: 12px 24px 16px;
+  border-top: 1px solid var(--tugx-banner-detail-border);
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* ---- Icon ---- */
@@ -134,11 +176,10 @@ body {
 /* ---- Message text ---- */
 
 .tug-banner-message {
-  /* @tug-renders-on: --tugx-banner-bg */
-  color: var(--tugx-banner-fg);
+  /* color is inherited from .tug-banner-strip */
 }
 
-/* ---- Scrim ---- */
+/* ---- Scrim (status variant only) ---- */
 
 .tug-banner-scrim {
   position: fixed;
@@ -160,25 +201,25 @@ body {
   animation: tug-banner-scrim-fade-out calc(150ms * var(--tug-timing, 1)) ease forwards;
 }
 
-/* ---- Tone variants — override base aliases ---- */
+/* ---- Tone variants — override strip aliases per tone ---- */
 
 /* danger (default, already set in body) */
-.tug-banner[data-tone="danger"] {
-  --tugx-banner-bg:     var(--tug7-surface-tone-primary-normal-danger-rest);
-  --tugx-banner-fg:     var(--tug7-element-tone-text-normal-danger-rest);
-  --tugx-banner-border: var(--tug7-element-tone-border-normal-danger-rest);
+.tug-banner[data-tone="danger"] .tug-banner-strip {
+  --tugx-banner-strip-bg:     var(--tug7-surface-control-primary-filled-danger-rest);
+  --tugx-banner-strip-fg:     var(--tug7-element-control-text-filled-danger-rest);
+  --tugx-banner-strip-border: var(--tug7-element-control-border-filled-danger-rest);
 }
 
 /* caution */
-.tug-banner[data-tone="caution"] {
-  --tugx-banner-bg:     var(--tug7-surface-tone-primary-normal-caution-rest);
-  --tugx-banner-fg:     var(--tug7-element-tone-text-normal-caution-rest);
-  --tugx-banner-border: var(--tug7-element-tone-border-normal-caution-rest);
+.tug-banner[data-tone="caution"] .tug-banner-strip {
+  --tugx-banner-strip-bg:     var(--tug7-surface-control-primary-filled-caution-rest);
+  --tugx-banner-strip-fg:     var(--tug7-element-control-text-filled-caution-rest);
+  --tugx-banner-strip-border: var(--tug7-element-control-border-filled-caution-rest);
 }
 
-/* default — neutral */
-.tug-banner[data-tone="default"] {
-  --tugx-banner-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
-  --tugx-banner-fg:     var(--tug7-element-global-text-normal-default-rest);
-  --tugx-banner-border: var(--tug7-element-global-border-normal-default-rest);
+/* default — neutral filled */
+.tug-banner[data-tone="default"] .tug-banner-strip {
+  --tugx-banner-strip-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-banner-strip-fg:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-banner-strip-border: var(--tug7-element-global-border-normal-default-rest);
 }
