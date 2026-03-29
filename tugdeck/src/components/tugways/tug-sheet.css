@@ -62,23 +62,20 @@ body {
   /* @tug-renders-on: --tugx-sheet-bg */
   background-color: var(--tugx-sheet-bg);
   color: var(--tugx-sheet-fg);
-  /* No border — the sheet emerges from under the title bar, borders break the illusion */
-  border: none;
-  /* Depth — strong inset shadow at top sells "emerging from under title bar" illusion.
-     Outer shadow for depth against dimmed card content. */
-  box-shadow:
-    0 8px 24px oklch(0 0 0 / 0.35),
-    inset 0 6px 16px -4px oklch(0 0 0 / 0.5);
-  /* Shape — rounded bottom corners only */
-  border-radius: 0 0 0.5rem 0.5rem;
-  /* Positioning — centered within the clip container */
+  border: 1px solid var(--tugx-sheet-border);
+  box-shadow: var(--tugx-sheet-shadow);
+  /* All four corners rounded — sheet is a standalone panel below the title bar */
+  border-radius: 0.5rem;
+  /* Positioning — centered, dropped A below clip top (title bar bottom edge) */
   position: relative;
-  margin: 0 auto;
+  margin: var(--tugx-sheet-space-a) auto 0;
   width: calc(100% - 2 * var(--tugx-sheet-space-b));
   max-width: 460px;
   pointer-events: auto;
+  /* Uniform padding like alert: B on all sides */
+  padding: var(--tugx-sheet-space-b);
   /* Constrained to the clip container height */
-  max-height: 100%;
+  max-height: calc(100% - var(--tugx-sheet-space-a));
   overflow-y: auto;
   /* Box model */
   box-sizing: border-box;
@@ -94,9 +91,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--tugx-sheet-space-a) var(--tugx-sheet-space-b);
+  /* No side padding — panel's B padding handles edges */
+  padding-bottom: var(--tugx-sheet-space-a);
+  margin-bottom: var(--tugx-sheet-space-a);
   border-bottom: 1px solid var(--tugx-sheet-border);
-  gap: var(--tugx-sheet-space-a);
 }
 
 /* ---- Sheet title ---- */
@@ -113,26 +111,24 @@ body {
 .tug-sheet-description {
   font-size: 0.8125rem;
   line-height: 1.5;
-  margin: 0;
-  padding: var(--tugx-sheet-space-a) var(--tugx-sheet-space-b) 0;
+  margin: 0 0 var(--tugx-sheet-space-a) 0;
   opacity: 0.75;
 }
 
 /* ---- Sheet body: arbitrary content ---- */
 
 .tug-sheet-body {
-  padding: var(--tugx-sheet-space-b);
+  /* No padding — panel's B padding handles edges */
 }
 
 /* ---- Sheet actions row (mirrors alert actions conventions) ---- */
 
-/* Actions row lives inside .tug-sheet-body which already has B padding.
-   Only add top spacing (A) to separate from form content above. */
+/* Actions row: B spacing above (matching alert body→actions gap), A gap between buttons. */
 .tug-sheet-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--tugx-sheet-space-a);
-  padding-top: var(--tugx-sheet-space-a);
+  margin-top: var(--tugx-sheet-space-b);
 }
 
 /* Layout: minimum button width so short labels don't look tiny. */
