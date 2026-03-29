@@ -1,0 +1,184 @@
+/* @tug-pairings {
+  --tugx-banner-fg     | --tugx-banner-bg     | content
+  --tugx-banner-border | --tugx-banner-bg     | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                  | Surface                  | Role          | Context                                          |
+ * |--------------------------|--------------------------|---------------|--------------------------------------------------|
+ * | --tugx-banner-fg         | --tugx-banner-bg         | content       | .tug-banner (color)                              |
+ * | --tugx-banner-border     | --tugx-banner-bg         | informational | .tug-banner (border-color)                       |
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-banner-bg:         var(--tug7-surface-tone-primary-normal-danger-rest);
+  --tugx-banner-fg:         var(--tug7-element-tone-text-normal-danger-rest);
+  --tugx-banner-border:     var(--tug7-element-tone-border-normal-danger-rest);
+  --tugx-banner-overlay-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
+}
+
+/* ---- Keyframe animations — duration scales via --tug-timing [L13] ---- */
+
+@keyframes tug-banner-slide-in {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes tug-banner-slide-out {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-100%); }
+}
+
+@keyframes tug-banner-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes tug-banner-scrim-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes tug-banner-scrim-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* ---- Banner root ---- */
+
+.tug-banner {
+  position: fixed;
+  z-index: 99999;
+  /* @tug-renders-on: --tugx-banner-bg */
+  background-color: var(--tugx-banner-bg);
+  color: var(--tugx-banner-fg);
+  border-bottom: 1px solid var(--tugx-banner-border);
+}
+
+/* ---- Status variant — horizontal strip at top ---- */
+
+.tug-banner[data-variant="status"] {
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  /* Hidden state: pointer events disabled so banner doesn't block interaction */
+  pointer-events: none;
+}
+
+/* Status visible: enter animation */
+.tug-banner[data-variant="status"][data-visible="true"] {
+  pointer-events: auto;
+  animation: tug-banner-slide-in calc(200ms * var(--tug-timing, 1)) ease forwards;
+}
+
+/* Status hidden: exit animation */
+.tug-banner[data-variant="status"][data-visible="false"] {
+  pointer-events: none;
+  animation: tug-banner-slide-out calc(150ms * var(--tug-timing, 1)) ease forwards;
+}
+
+/* ---- Error variant — full-viewport panel ---- */
+
+.tug-banner[data-variant="error"] {
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  border-bottom: none;
+  /* Enter animation on mount */
+  animation: tug-banner-fade-in calc(150ms * var(--tug-timing, 1)) ease;
+}
+
+.tug-banner-error-header {
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--tugx-banner-border);
+  flex-shrink: 0;
+}
+
+.tug-banner-error-header .tug-banner-message {
+  font-size: 1rem;
+  font-weight: 600;
+  /* @tug-renders-on: --tugx-banner-bg */
+  color: var(--tugx-banner-fg);
+}
+
+.tug-banner-error-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 24px;
+  font-size: 0.8125rem;
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Monaco, Consolas, monospace;
+  line-height: 1.6;
+  /* @tug-renders-on: --tugx-banner-bg */
+  color: var(--tugx-banner-fg);
+}
+
+/* ---- Icon ---- */
+
+.tug-banner-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ---- Message text ---- */
+
+.tug-banner-message {
+  /* @tug-renders-on: --tugx-banner-bg */
+  color: var(--tugx-banner-fg);
+}
+
+/* ---- Scrim ---- */
+
+.tug-banner-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 99998;
+  /* @tug-renders-on: document background */
+  background-color: var(--tugx-banner-overlay-bg);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.tug-banner-scrim[data-visible="true"] {
+  pointer-events: auto;
+  animation: tug-banner-scrim-fade-in calc(200ms * var(--tug-timing, 1)) ease forwards;
+}
+
+.tug-banner-scrim[data-visible="false"] {
+  pointer-events: none;
+  animation: tug-banner-scrim-fade-out calc(150ms * var(--tug-timing, 1)) ease forwards;
+}
+
+/* ---- Tone variants — override base aliases ---- */
+
+/* danger (default, already set in body) */
+.tug-banner[data-tone="danger"] {
+  --tugx-banner-bg:     var(--tug7-surface-tone-primary-normal-danger-rest);
+  --tugx-banner-fg:     var(--tug7-element-tone-text-normal-danger-rest);
+  --tugx-banner-border: var(--tug7-element-tone-border-normal-danger-rest);
+}
+
+/* caution */
+.tug-banner[data-tone="caution"] {
+  --tugx-banner-bg:     var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-banner-fg:     var(--tug7-element-tone-text-normal-caution-rest);
+  --tugx-banner-border: var(--tug7-element-tone-border-normal-caution-rest);
+}
+
+/* default — neutral */
+.tug-banner[data-tone="default"] {
+  --tugx-banner-bg:     var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-banner-fg:     var(--tug7-element-global-text-normal-default-rest);
+  --tugx-banner-border: var(--tug7-element-global-border-normal-default-rest);
+}

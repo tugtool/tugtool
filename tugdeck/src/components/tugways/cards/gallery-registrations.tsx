@@ -58,6 +58,7 @@ import { GallerySeparator } from "./gallery-separator";
 import { GalleryProgress } from "./gallery-progress";
 import { GalleryAccordion } from "./gallery-accordion";
 import { GalleryTooltip } from "./gallery-tooltip";
+import { GalleryBanner } from "./gallery-banner";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -109,6 +110,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-popover",        title: "TugPopover",            closable: true },
   { id: "template", componentId: "gallery-separator",      title: "TugSeparator",          closable: true },
   { id: "template", componentId: "gallery-progress",      title: "TugProgress",           closable: true },
+  { id: "template", componentId: "gallery-banner",        title: "TugBanner",             closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -226,7 +228,7 @@ export function GalleryBadge() {
 // ---------------------------------------------------------------------------
 
 /**
- * Register all twenty-three gallery card types in the global card registry.
+ * Register all gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -597,6 +599,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-progress",
     contentFactory: (_cardId) => <GalleryProgress />,
     defaultMeta: { title: "TugProgress", icon: "Activity", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-banner ----
+  // TugBanner showcase: status variant (danger/caution/default tones), status with
+  // icon, and error variant with sample stack trace and dismiss button.
+  registerCard({
+    componentId: "gallery-banner",
+    contentFactory: (_cardId) => <GalleryBanner />,
+    defaultMeta: { title: "TugBanner", icon: "AlertTriangle", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
