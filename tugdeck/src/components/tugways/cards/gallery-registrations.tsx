@@ -60,6 +60,7 @@ import { GalleryAccordion } from "./gallery-accordion";
 import { GalleryTooltip } from "./gallery-tooltip";
 import { GalleryBanner } from "./gallery-banner";
 import { GalleryAlert } from "./gallery-alert";
+import { GallerySheet } from "./gallery-sheet";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -113,6 +114,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-progress",      title: "TugProgress",           closable: true },
   { id: "template", componentId: "gallery-banner",        title: "TugBanner",             closable: true },
   { id: "template", componentId: "gallery-alert",         title: "TugAlert",              closable: true },
+  { id: "template", componentId: "gallery-sheet",         title: "TugSheet",              closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -623,6 +625,19 @@ export function registerGalleryCards(): void {
     componentId: "gallery-alert",
     contentFactory: (_cardId) => <GalleryAlert />,
     defaultMeta: { title: "TugAlert", icon: "AlertCircle", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-sheet ----
+  // TugSheet showcase: basic compound API with a settings form, sheet with
+  // optional description (aria-describedby), imperative ref API (open/close),
+  // and rich scrollable checklist content. Sheet portals into the gallery card
+  // and drops from the title bar as a window shade — production-accurate behavior.
+  registerCard({
+    componentId: "gallery-sheet",
+    contentFactory: (_cardId) => <GallerySheet />,
+    defaultMeta: { title: "TugSheet", icon: "PanelTopOpen", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
