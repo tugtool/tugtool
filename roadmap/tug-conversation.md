@@ -1,6 +1,6 @@
 # The Conversation Experience — Roadmap
 
-*From hook capture to rendered markdown. One vertical slice, phased for incremental delivery.*
+*Plumb the pipe first. See what comes out. Then build the UI.*
 
 **Architecture reference:** [tug-feed.md](tug-feed.md) — event schemas, correlation strategy, feed design.
 
@@ -8,175 +8,156 @@
 
 ## Vision
 
-Build a graphical Claude Code conversation experience: the user types a prompt, the AI responds with streamed markdown, and agent progress is visible throughout. This is the core of what makes tug different from a terminal.
+Build a graphical Claude Code conversation experience: the user types a prompt, the AI responds with streamed markdown, and agent progress is visible throughout.
 
-The work spans the full stack — hooks capturing agent events, shell scripts correlating them, a Rust CLI for inspection, tugcast delivering events to the browser, and React components rendering the conversation. It's one body of work, phased so that each layer proves the next.
+The transport already exists — tugcast's agent bridge spawns tugtalk, relays JSON-lines over WebSocket via `CodeOutput` (`0x40`) and `CodeInput` (`0x41`). But we've never sent "are you there?" through this pipe and watched what comes back. Before building any UI, we need to prove the transport works, understand its behavior, and harden it.
 
 ---
 
 ## What Already Exists
 
-| Layer | Status | Notes |
-|-------|--------|-------|
-| **Claude Code hooks API** | Stable | 24 event types including `SubagentStart`, `SubagentStop`, `PreToolUse`, `PostToolUse`. Async hooks don't block. |
-| **Tugplug hooks** | Minimal | Auto-approval and init only. No feed capture. |
-| **Tugcast agent bridge** | Working | `CodeOutput` (`0x40`) and `CodeInput` (`0x41`) carry conversation events via JSON-lines over WebSocket. |
-| **Tugstate** | Working | `tugcode state show --json` returns step status, artifacts, checklists. |
-| **Markdown pipeline** | Archived | `marked` + `shiki` + `DOMPurify` in `src/lib/markdown.ts` and `src/_archive/`. Wrong architecture for streaming (HTML string → `dangerouslySetInnerHTML`). |
-| **Syntax tokens** | Working | `tug-code.css` defines `--tug-syntax-*` and `--tugx-codeBlock-*` token families. |
-| **Feed infrastructure** | Doesn't exist | No `.tugtool/feed/`, no capture scripts, no tugcast feed, no CLI. |
-| **Conversation components** | Don't exist | No tug-markdown, tug-prompt-input, or tug-prompt-entry. |
+| Layer | Status | Key Question |
+|-------|--------|-------------|
+| **Tugcast agent bridge** | Code exists | Does it actually work end-to-end? Can we send a message and get a streamed response? |
+| **CodeOutput (`0x40`)** | Defined | What do `assistant_text` events actually look like? Full text or delta? How frequent? |
+| **CodeInput (`0x41`)** | Defined | Does sending `{ type: "user_message", text: "/plan ..." }` invoke the skill? |
+| **`question` events** | Defined | When `AskUserQuestion` fires, what arrives on CodeOutput? How do we answer? |
+| **`tool_approval_request`** | Defined | Same — what's the round-trip look like in practice? |
+| **`interrupt`** | Defined | Does sending interrupt reliably stop streaming? |
+| **Markdown pipeline** | Archived | `marked` + `shiki` + `DOMPurify` exist. Wrong architecture for streaming, but the libraries are there. |
+| **Syntax tokens** | Working | `tug-code.css` defines `--tug-syntax-*` and `--tugx-codeBlock-*` tokens. |
+| **Feed infrastructure** | Doesn't exist | Hooks, correlation, CLI — all unbuilt. Comes after the basic conversation works. |
+| **Conversation components** | Don't exist | tug-markdown, tug-prompt-input, tug-prompt-entry — all unbuilt. |
 
 ---
 
 ## Phases
 
-Each phase is scoped to be **one tugplan** — plannable and implementable with `/plan` and `/implement`. Phases have explicit inputs, outputs, and exit criteria. Later phases depend on earlier ones; earlier phases are independently valuable.
+The work falls into three tiers: **prove the pipe**, **build the UI**, **add the feed layer**. Each phase is scoped to be one `/plan` → `/implement` cycle (or `/dash` for investigation phases).
 
 ```
-Phase 1: Hook Capture           — prove events fire, collect real data samples
-Phase 2: Correlation            — build the semantic layer, enrich with step context
-Phase 3: Conversation Transport — understand CodeOutput/CodeInput, document event shapes
-Phase 4: Feed CLI               — tugcode feed tail/show/status (Rust)
-Phase 5: Tugcast Integration    — feed events reach the browser
-Phase 6: Core Markdown          — tug-markdown with streaming
-Phase 7: Prompt Input           — tug-prompt-input with history and slash commands
-Phase 8: Prompt Entry           — tug-prompt-entry composition, wired to tugcast
-Phase 9: Agent-Internal Events  — fine-grained file/command events from within agents
-Phase 10: Custom Block Renderers — designed against real data from phases 1-5
+─── TIER 1: PROVE THE PIPE ───────────────────────────────────
+Phase 1: Transport Exploration    — send messages, observe responses, document everything
+Phase 2: Transport Hardening      — fix gaps, handle edge cases, make it solid
+
+─── TIER 2: BUILD THE UI ─────────────────────────────────────
+Phase 3: Core Markdown            — tug-markdown with streaming
+Phase 4: Prompt Input             — tug-prompt-input with history and slash commands
+Phase 5: Prompt Entry             — tug-prompt-entry, wired end-to-end
+
+─── TIER 3: ADD THE FEED LAYER ───────────────────────────────
+Phase 6: Hook Capture             — agent lifecycle events to feed.jsonl
+Phase 7: Feed Correlation         — semantic enrichment with step context
+Phase 8: Feed CLI + Tugcast       — tugcode feed commands, events reach browser
+Phase 9: Agent-Internal Events    — file/command detail from within agents
+Phase 10: Custom Block Renderers  — rich UI for agent output
 ```
 
 ---
 
-### Phase 1: Hook Capture {#hook-capture}
+### Phase 1: Transport Exploration {#transport-exploration}
 
-**Goal:** Add async hooks that capture agent lifecycle events and write raw JSON to `.tugtool/feed/raw-events.jsonl`. No correlation — just prove the data arrives.
+**Goal:** Send messages through the tugcast pipe and see what comes back. Document every event type, every field, every edge case. This is investigation, not implementation.
 
-**Inputs:** Working `/implement` workflow on a small plan.
+**Approach:** Interactive — `/dash` or hands-on session. We're instrumenting, observing, and documenting.
 
-**Work:**
-- Create `.tugtool/feed/` directory convention in `tugcode init`
-- Write `feed-capture.sh` — receives hook JSON on stdin, appends timestamped entry to `raw-events.jsonl`
-- Add four async hooks to `tugplug/hooks/hooks.json`: `PreToolUse(Task)`, `PostToolUse(Task)`, `SubagentStart(tugplug:*)`, `SubagentStop(tugplug:*)`
-- Run `/implement` on a small plan and manually verify with `tail -f` + `jq`
+**Questions to answer:**
+
+**Basic round-trip:**
+- Send `{ type: "user_message", text: "Say hello." }` via CodeInput. What events appear on CodeOutput?
+- What does `assistant_text` look like? Is `text` the full accumulated response or a delta since last event? What are the `is_partial`, `status`, `seq`, `rev`, `msg_id` fields in practice?
+- How often do partial events arrive? Every token? Every few tokens? Batched?
+- What does `turn_complete` contain?
+
+**Slash commands:**
+- Send `{ type: "user_message", text: "/status" }`. Does Claude Code interpret it as a slash command?
+- Send `{ type: "user_message", text: "/plan build a login page" }`. Does the `/plan` skill activate? Do `SubagentStart` events appear on CodeOutput, or only through hooks?
+- Is there any difference between how a regular message and a slash command are sent?
+
+**AskUserQuestion flow:**
+- Trigger a workflow that uses `AskUserQuestion` (e.g., `/plan` on an ambiguous idea).
+- What event appears on CodeOutput? Presumably `question` with `request_id` and `questions[]`.
+- What's the exact shape of `questions[]`? How do `options`, `multiSelect`, and `header` fields appear?
+- Send `{ type: "question_answer", request_id: "...", answers: {...} }` back. Does the workflow continue?
+
+**Tool approval flow:**
+- Trigger a tool call that needs approval.
+- What does `tool_approval_request` look like on CodeOutput?
+- Send `{ type: "tool_approval", request_id: "...", decision: "allow" }`. Does the tool execute?
+- Send `decision: "deny"`. Does the agent handle rejection gracefully?
+
+**Streaming edge cases:**
+- Send a prompt that produces a very long response (thousands of words). Does streaming stay smooth? Any backpressure?
+- Send `{ type: "interrupt" }` mid-stream. What events follow? `turn_cancelled`? Does it have `partial_result`?
+- What happens if we send a new `user_message` before `turn_complete`?
+- What happens on tugtalk crash? Does the agent bridge restart? What events does the client see?
+
+**Tool events:**
+- When Claude Code uses Read, Edit, Bash, etc. — do `tool_use` and `tool_result` events appear on CodeOutput?
+- What's in `tool_use.input` and `tool_result.output` for each tool type? (These shapes inform custom block renderers later.)
+
+**Session lifecycle:**
+- Does `session_init` fire on first connect? What's in it?
+- Does `project_info` arrive? What's in it?
+- What does the protocol handshake (`protocol_init` → `protocol_ack`) look like from the client's perspective?
 
 **Exit criteria:**
-- All four hook types fire reliably during an `/implement` run
-- `SubagentStart` and `SubagentStop` have matching `agent_id` values
-- `PreToolUse(Task)` contains the orchestrator's prompt with step context embedded
-- Events for parallel agents (conformance + critic in `/plan`) don't collide
-- Real data samples captured for every agent type's `last_assistant_message`
+- All questions above answered with real examples
+- Event protocol documented with actual JSON samples for every event type observed
+- Known gaps and problems listed
+- Clear picture of what tugcast/tugtalk changes are needed (Phase 2 scope)
 
-**Outputs:** `raw-events.jsonl` with real hook data. Documented data samples.
+**Outputs:** Protocol documentation with real examples. Gap list. Phase 2 work items.
 
 ---
 
-### Phase 2: Correlation {#correlation}
+### Phase 2: Transport Hardening {#transport-hardening}
 
-**Goal:** Correlate raw events into meaningful feed events with plan-step context. Write enriched events to `.tugtool/feed/feed.jsonl`.
+**Goal:** Fix the gaps and problems discovered in Phase 1. Make the CodeOutput/CodeInput transport reliable and complete enough to build UI on.
 
-**Inputs:** Working Phase 1 hooks. Real data samples from Phase 1.
+**Inputs:** Phase 1 documentation and gap list.
 
-**Work:**
-- Write correlation logic (upgrade `feed-capture.sh` or new `feed-correlate.sh`): parse `tool_input.prompt` for `step_anchor`/`plan_path`, stash in `.pending-agents.json`, associate on `SubagentStart`, enrich and emit on `SubagentStop`
-- Define the feed event schema (version, timestamp, session_id, event_type, plan_path, step_anchor, agent_role, agent_id, data)
-- Parse `last_assistant_message` per agent type — document actual shapes for architect, coder, reviewer, committer, auditor
-- Handle concurrent agents (conformance + critic use different agent_types, so key is unambiguous)
-- Optionally enrich with `tugcode state show --json` for step titles and progress counts
+**Work:** TBD based on Phase 1 findings. Likely candidates:
+
+- Missing or inconsistent event fields that the UI needs
+- Slash command handling (if `/` prefix isn't interpreted as a skill invocation, tugtalk may need changes)
+- `AskUserQuestion` rendering data (if the `question` event shape is incomplete or missing fields the UI needs)
+- Streaming reliability (backpressure, reconnection, bootstrap behavior for conversation state)
+- Error handling (tugtalk crash recovery, error event quality)
+- Any protocol changes needed to support the conversation UI
 
 **Exit criteria:**
-- `feed.jsonl` contains enriched events with correct `step_anchor` and `agent_role` for every agent dispatch
-- Concurrent agent correlation (conformance + critic) verified with a real `/plan` run
-- Agent output shapes documented for all tugplug agent types
-- Correlation state (`.pending-agents.json`) recovers gracefully from lost entries
+- All Phase 1 gap items resolved or explicitly deferred with rationale
+- Basic round-trip (send message → receive streamed response) works reliably
+- Slash commands invoke skills correctly
+- AskUserQuestion round-trip works
+- Tool approval round-trip works
+- Interrupt reliably stops streaming
+- Transport is solid enough to build UI on with confidence
 
-**Outputs:** `feed.jsonl` with semantic events. Agent output shape documentation.
+**Outputs:** Hardened tugcast/tugtalk. Updated protocol documentation.
 
 ---
 
-### Phase 3: Conversation Transport {#conversation-transport}
-
-**Goal:** Understand and document the existing CodeOutput/CodeInput protocol as it actually behaves in practice. This is investigation, not implementation.
-
-**Inputs:** Working tugcast with agent bridge.
-
-**Work:**
-- Trace a full conversation turn: `user_message` → `assistant_text` (partial/complete) → `tool_use` → `tool_result` → `tool_approval_request` → `turn_complete`
-- Document `assistant_text` streaming behavior: frequency of partials, full-text vs delta, `is_partial` transition, interrupt → `turn_cancelled`
-- Document tool event shapes for each tool type (`tool_use.input`, `tool_result.output`)
-- Identify gaps: anything missing from CodeOutput that tug-markdown needs?
-
-**Exit criteria:**
-- Complete protocol documentation with real examples
-- Streaming behavior characterized (frequency, text accumulation model, edge cases)
-- Gap analysis completed — known issues listed
-- Confidence level established for building tug-markdown on this transport
-
-**Outputs:** Protocol documentation. Gap analysis. Decision on whether any tugcast/tugtalk changes are needed before Phase 6.
-
----
-
-### Phase 4: Feed CLI {#feed-cli}
-
-**Goal:** Rust CLI commands for inspecting and tailing the feed, replacing ad-hoc `jq` one-liners.
-
-**Inputs:** Working `feed.jsonl` from Phase 2.
-
-**Work:**
-- `tugcode feed tail` — live-tailing with human-readable formatting (step progress, agent activity, file counts)
-- `tugcode feed show` — dump events as JSON for piping/scripting
-- `tugcode feed status` — summary of current progress (steps completed/in-progress/pending, active agents)
-
-**Exit criteria:**
-- `tugcode feed tail` renders a readable live progress view during `/implement`
-- `tugcode feed show --json` outputs valid JSON for each event
-- `tugcode feed status` gives an accurate one-line summary
-
-**Outputs:** Three `tugcode feed` subcommands in the tugcode binary.
-
----
-
-### Phase 5: Tugcast Integration {#tugcast-integration}
-
-**Goal:** Feed events reach tugdeck through tugcast's WebSocket infrastructure.
-
-**Inputs:** Working `feed.jsonl` from Phase 2. Working tugcast server.
-
-**Work:**
-- Register `TugFeed = 0x50` FeedId in Rust (`tugcast-core/src/protocol.rs`) and TypeScript (`tugdeck/src/protocol.ts`)
-- Implement `TugFeedFeed` as a `StreamFeed` in tugcast — tails `feed.jsonl` via `notify` file watcher, publishes frames
-- Frontend subscription: `connection.onFrame(FeedId.TUG_FEED, cb)` with console logging to verify
-- End-to-end test: run `/implement`, watch events arrive in browser console
-
-**Exit criteria:**
-- Feed events arrive in tugdeck within 1 second of hook firing
-- Bootstrap delivers recent events to newly connected clients
-- Feed survives tugcast reconnection (client catches up)
-
-**Outputs:** Working feed pipeline: hook → shell → feed.jsonl → tugcast → WebSocket → tugdeck.
-
----
-
-### Phase 6: Core Markdown {#core-markdown}
+### Phase 3: Core Markdown {#core-markdown}
 
 **Goal:** tug-markdown component with streaming support. The primary display surface for AI-generated content.
 
-**Inputs:** Phase 3 documentation (CodeOutput event shapes). Existing `marked`/`shiki`/`DOMPurify` libraries.
+**Inputs:** Phase 2 (solid transport). Actual `assistant_text` event shapes from Phase 1 documentation.
 
 **Work:**
 - Token-level rendering pipeline: `marked.lexer()` → keyed React elements per block. Standard markdown: headings, paragraphs, bold/italic, links, lists, blockquotes, tables, HR, inline code.
-- Streaming via `PropertyStore<string>` [L02] with rAF throttle. Incomplete markdown healing for unclosed delimiters.
-- TugCodeBlock: extracted from archived CodeBlock. Shiki with hand-authored tug theme, copy-to-clipboard, language label, optional line numbers, collapse/expand.
+- Streaming via `PropertyStore<string>` [L02] with rAF throttle. Incomplete markdown healing for unclosed delimiters. Streaming cursor.
+- TugCodeBlock: extracted from archived CodeBlock. Shiki with hand-authored tug theme (`--tug-syntax-*` CSS custom properties), copy-to-clipboard, language label, optional line numbers, collapse/expand.
 - `--tugx-md-*` token aliases in CSS. `@tug-pairings` declarations per [L16, L19].
-- `tug-*` custom block extension point (language prefix → React component mapping).
+- `tug-*` custom block extension point (language prefix → React component mapping) — registered but no custom blocks yet.
 - Gallery card with static content, simulated streaming, and code blocks.
 
 **Exit criteria:**
-- All standard GFM markdown renders correctly (prose, code, tables, lists, blockquotes)
+- All standard GFM markdown renders correctly
 - Simulated streaming at 60fps with no jank for 5000+ word responses
-- Code blocks syntax-highlighted with tug theme tokens
-- Copy-to-clipboard works
-- Extension point registered (even if no custom blocks yet)
+- Code blocks syntax-highlighted with tug theme tokens, copy-to-clipboard works
+- Extension point registered
 - Gallery card demonstrates all features
 - Laws compliance: [L02, L06, L10, L16, L19, L20]
 
@@ -184,7 +165,7 @@ Phase 10: Custom Block Renderers — designed against real data from phases 1-5
 
 ---
 
-### Phase 7: Prompt Input {#prompt-input}
+### Phase 4: Prompt Input {#prompt-input}
 
 **Goal:** tug-prompt-input component with history and slash commands.
 
@@ -195,13 +176,13 @@ Phase 10: Custom Block Renderers — designed against real data from phases 1-5
 - Keyboard: Enter submit, Shift+Enter newline, Cmd+Enter submit. IME-safe (`isComposing` check).
 - `PromptHistoryStore`: IndexedDB per-card storage, `subscribe`/`getSnapshot` for `useSyncExternalStore` [L02]. Up/down arrow navigation, prefix search, draft preservation.
 - Slash command popup: `/` trigger at start of line, filtered list via `@floating-ui/react`, keyboard navigation. Declarative command list from parent.
+- Slash command set: tugplug skills (`/plan`, `/implement`, `/merge`, `/dash`, `/commit`) + Claude Code essentials (`/clear`, `/compact`, `/cost`, `/model`, `/status`, `/fast`, `/help`, `/resume`, `/diff`, `/review`, `/memory`, `/doctor`). Full 60+ list available by scrolling.
 - `--tugx-prompt-*` token aliases. Gallery card.
 
 **Exit criteria:**
 - Enter submits, Shift+Enter newlines, up/down navigates history
 - History persists across page reloads (IndexedDB)
-- Prefix search works (type partial text, up arrow filters)
-- Slash popup appears, filters, keyboard-navigable, selectable
+- Prefix search, slash popup filtering and keyboard navigation all work
 - CJK input works (IME composition not interrupted)
 - Gallery card demonstrates all features
 
@@ -209,127 +190,177 @@ Phase 10: Custom Block Renderers — designed against real data from phases 1-5
 
 ---
 
-### Phase 8: Prompt Entry {#prompt-entry}
+### Phase 5: Prompt Entry {#prompt-entry}
 
-**Goal:** tug-prompt-entry composition wired to tugcast CodeOutput/CodeInput.
+**Goal:** tug-prompt-entry composition wired end-to-end through tugcast. The first time a user types a prompt in tugdeck and gets a rendered response back.
 
-**Inputs:** tug-prompt-input (Phase 7). Tugcast CodeOutput/CodeInput (Phase 3 documentation).
+**Inputs:** tug-markdown (Phase 3), tug-prompt-input (Phase 4), hardened transport (Phase 2).
 
 **Work:**
-- Compose tug-prompt-input + submit/stop button + utility row (attach, voice placeholders).
-- Wire to CodeOutput/CodeInput: submit sends `user_message`, stop sends `interrupt`, streaming state from `assistant_text(status)`, `turn_complete`, `turn_cancelled`.
-- Tool approval inline UI from `tool_approval_request`, response via `tool_approval`.
-- Question inline UI from `question`, response via `question_answer`.
-- Progress indicator showing agent role from tug-feed events (Phase 5).
-- Gallery card.
+- Compose tug-prompt-input + submit/stop button + utility row.
+- Wire to CodeOutput/CodeInput: submit sends `user_message`, stop sends `interrupt`.
+- Streaming state from `assistant_text(status)` → `turn_complete` / `turn_cancelled`.
+- Tool approval inline UI from `tool_approval_request` → `tool_approval` response.
+- Question inline UI from `question` → `question_answer` response.
+- Gallery card + live integration test.
 
 **Exit criteria:**
-- Submit sends `user_message` and clears input
-- Stop sends `interrupt` during streaming
-- Streaming state correctly tracks partial → complete → idle
+- Type a prompt, get a streamed markdown response — the full round-trip works
+- Slash commands invoke skills correctly
 - Tool approval and question flows work end-to-end
-- Agent role indicator updates from tug-feed events
+- Interrupt stops streaming
 - Gallery card demonstrates all features
 
 **Outputs:** `tug-prompt-entry.tsx` + `tug-prompt-entry.css` + `gallery-prompt-entry.tsx`.
 
 ---
 
-### Phase 9: Agent-Internal Events {#agent-internal-events}
+### Phase 6: Hook Capture {#hook-capture}
 
-**Goal:** Fine-grained events from within agent execution — file modifications, bash commands, build/test results.
+**Goal:** Add async hooks that capture agent lifecycle events and write raw JSON to `.tugtool/feed/raw-events.jsonl`.
 
-**Inputs:** Working Phase 2 correlation. Real `/implement` runs.
+**Inputs:** Working conversation experience (Phases 1-5). Working `/plan` and `/implement` workflows.
 
 **Work:**
-- Add agent-scoped `PostToolUse` hooks to coder-agent frontmatter: `Edit|Write` → `feed-file-change.sh`, `Bash` → `feed-command-result.sh`
-- Capture scripts tag events with step context from `.pending-agents.json`
-- New event types in `feed.jsonl`: `file_modified`, `command_ran`, `build_result`, `test_result`
+- `tugcode init` change: create `.tugtool/feed/` directory.
+- `feed-capture.sh`: receives hook JSON on stdin, appends to `raw-events.jsonl`. Resolves project root via `git rev-parse --show-toplevel`.
+- Four async hooks in `hooks.json`: `PreToolUse(Task)`, `PostToolUse(Task)`, `SubagentStart(tugplug:*)`, `SubagentStop(tugplug:*)`.
 
 **Exit criteria:**
-- File modification events appear in feed with correct step context
-- Bash command results captured with exit codes
-- No measurable impact on agent execution speed (async hooks)
-- `tugcode feed tail` shows file-level detail under active steps
+- All four hook types fire reliably during `/plan` and `/implement`
+- `SubagentStart`/`SubagentStop` have matching `agent_id` values
+- Async hooks add no observable delay
 
-**Outputs:** Agent-scoped hooks. Two new capture scripts. Richer `feed.jsonl` events.
+**Outputs:** `raw-events.jsonl` with real hook data.
+
+---
+
+### Phase 7: Feed Correlation {#feed-correlation}
+
+**Goal:** Correlate raw events into meaningful feed events with plan-step context.
+
+**Inputs:** Phase 6 raw events. Real data samples.
+
+**Work:**
+- Correlation logic: parse orchestrator prompts for `step_anchor`/`plan_path`, stash pending agents, enrich on `SubagentStop`.
+- Feed event schema in `.tugtool/feed/feed.jsonl`.
+- Parse `last_assistant_message` per agent type. Document actual shapes.
+- Handle concurrent agents. Optionally enrich with `tugcode state show --json`.
+
+**Exit criteria:**
+- `feed.jsonl` has correct `step_anchor` and `agent_role` for every agent dispatch
+- Concurrent correlation verified
+
+**Outputs:** `feed.jsonl` with semantic events. Agent output shape documentation.
+
+---
+
+### Phase 8: Feed CLI + Tugcast {#feed-cli-tugcast}
+
+**Goal:** Feed inspection tools and browser delivery.
+
+**Inputs:** Phase 7 feed.jsonl.
+
+**Work:**
+- `tugcode feed tail/show/status` Rust CLI commands.
+- Register `TugFeed = 0x50` FeedId in Rust and TypeScript.
+- `TugFeedFeed` StreamFeed in tugcast — tails `feed.jsonl`, publishes frames.
+- Frontend subscription: `connection.onFrame(FeedId.TUG_FEED, cb)`.
+
+**Exit criteria:**
+- `tugcode feed tail` renders live progress during `/implement`
+- Feed events arrive in tugdeck within 1 second of hook firing
+- Feed survives reconnection
+
+**Outputs:** CLI commands. Working feed pipeline through to browser.
+
+---
+
+### Phase 9: Agent-Internal Events {#agent-internal-events}
+
+**Goal:** Fine-grained events from within agent execution.
+
+**Inputs:** Phase 7 correlation. Real `/implement` runs.
+
+**Work:**
+- Agent-scoped `PostToolUse` hooks on coder-agent for `Edit|Write` and `Bash`.
+- `feed-file-change.sh` and `feed-command-result.sh` capture scripts.
+- New event types: `file_modified`, `command_ran`, `build_result`, `test_result`.
+
+**Exit criteria:**
+- File/command events in feed with correct step context
+- No impact on agent speed
+
+**Outputs:** Agent-scoped hooks. Richer feed events.
 
 ---
 
 ### Phase 10: Custom Block Renderers {#custom-blocks}
 
-**Goal:** Rich, interactive UI for agent output that differentiates tug from the terminal.
+**Goal:** Rich UI for agent output that differentiates tug from the terminal.
 
-**Inputs:** Real data from Phases 1-5 and 9. Working tug-markdown extension point from Phase 6.
+**Inputs:** Real data from all previous phases. tug-markdown extension point from Phase 3.
 
-**Work:** Individual dashes per block type, designed against actual data shapes. Planned block types:
+**Work:** Individual dashes per block type:
 
 | Block Type | Renders | Data Source |
 |-----------|---------|-------------|
-| `tug-diff` | Side-by-side or unified diff with syntax highlighting | `tool_result` for Edit/Write tools |
-| `tug-tool-result` | Collapsible tool output with icon, status, duration | `tool_use` + `tool_result` events |
-| `tug-plan-step` | Step card with status badge, agent role, progress | tug-feed `step_started`/`step_completed` |
-| `tug-thinking` | Collapsible reasoning/thinking block | `assistant_text` thinking blocks |
-| `tug-file-change` | File path with operation badge (created/edited/deleted) | tug-feed `file_modified` events |
-| `tug-build-result` | Build/test summary with pass/fail counts | tug-feed `build_result`/`test_result` |
-| `tug-review-verdict` | Reviewer finding with APPROVE/REVISE badge | tug-feed `review_verdict` events |
-| `tug-approval` | Tool approval request with allow/deny buttons | `tool_approval_request` events |
+| `tug-diff` | Diff with syntax highlighting | `tool_result` for Edit/Write |
+| `tug-tool-result` | Collapsible tool output | `tool_use` + `tool_result` |
+| `tug-plan-step` | Step card with status/progress | tug-feed events |
+| `tug-thinking` | Collapsible reasoning block | `assistant_text` thinking blocks |
+| `tug-file-change` | File path with operation badge | tug-feed `file_modified` |
+| `tug-build-result` | Build/test summary | tug-feed `build_result`/`test_result` |
+| `tug-review-verdict` | APPROVE/REVISE badge | tug-feed `review_verdict` |
+| `tug-approval` | Allow/deny buttons | `tool_approval_request` |
 
-**Exit criteria per block type:** Renders real data correctly. Handles edge cases (empty data, long content, error states). Gallery section demonstrates the block.
-
-**Sequencing:** Order TBD based on which blocks prove most valuable. `tug-tool-result` and `tug-diff` are likely first (highest frequency in real conversations). `tug-plan-step` and `tug-build-result` follow (tug-feed dependent).
+**Sequencing:** Order TBD. `tug-tool-result` and `tug-diff` likely first.
 
 ---
 
 ## Driving Plans with `/plan` and `/implement`
 
-Each phase above is designed to be one `/plan` → `/implement` cycle. The mapping:
+| Phase | Approach | Estimated Steps |
+|-------|----------|-----------------|
+| 1. Transport Exploration | `/dash` (investigation) | — |
+| 2. Transport Hardening | `/plan` + `/implement` (scope TBD from Phase 1) | 3-5 |
+| 3. Core Markdown | `/plan` + `/implement` | 4-5 |
+| 4. Prompt Input | `/plan` + `/implement` | 4-5 |
+| 5. Prompt Entry | `/plan` + `/implement` | 3-4 |
+| 6. Hook Capture | `/plan` + `/implement` | 3-4 |
+| 7. Feed Correlation | `/plan` + `/implement` | 4-5 |
+| 8. Feed CLI + Tugcast | `/plan` + `/implement` | 4-5 |
+| 9. Agent-Internal Events | `/plan` + `/implement` | 2-3 |
+| 10. Custom Block Renderers | Multiple small `/plan` cycles | 2-3 per block |
 
-| Phase | Tugplan Scope | Estimated Steps |
-|-------|---------------|-----------------|
-| 1. Hook Capture | Shell scripts + hooks.json + tugcode init change | 3-4 |
-| 2. Correlation | Shell scripts + event schema + concurrency handling | 4-5 |
-| 3. Conversation Transport | Investigation + documentation (no code) | 2-3 |
-| 4. Feed CLI | Rust: `tugcode feed` subcommands | 3-4 |
-| 5. Tugcast Integration | Rust + TypeScript: new FeedId + StreamFeed + frontend sub | 3-4 |
-| 6. Core Markdown | React + CSS: tug-markdown + TugCodeBlock + gallery | 4-5 |
-| 7. Prompt Input | React + CSS + IndexedDB: tug-prompt-input + history + slash | 4-5 |
-| 8. Prompt Entry | React + CSS: composition + tugcast wiring + gallery | 3-4 |
-| 9. Agent-Internal Events | Shell scripts + agent frontmatter hooks | 2-3 |
-| 10. Custom Block Renderers | React: individual block types (multiple plans likely) | 2-3 per block |
+**Phase 1 is exploration** — `/dash` or interactive, not a formal plan. Its output defines Phase 2's scope.
 
-**Phase 3 is an exception** — it's investigation/documentation, not implementation. It could be a `/dash` rather than a full `/plan` + `/implement` cycle, or done interactively.
-
-**Phases 1-2** should probably be planned together as one tugplan since they're tightly coupled (the capture informs the correlation), but implemented sequentially within that plan.
-
-**Phase 10** will likely be multiple small tugplans — one per block type or one covering 2-3 related blocks.
-
-**The roadmap is the sequencing guide.** Each phase's "Inputs" section tells you what must be done first. Each phase's "Exit criteria" tell you when to move on. If a phase exposes problems that invalidate later phases, we stop, update this roadmap, and re-plan.
+**Phase 2 scope is unknown until Phase 1 completes.** It could be small (everything works, minor fixes) or large (protocol gaps, tugtalk changes needed). The roadmap adapts.
 
 ---
 
 ## Deferred
 
-- **tug-rich-text** — Monaco editor wrapper. Moved to a future group. Not needed for the conversation experience.
-- **tug-search-bar** — TugInput + TugButton composition. Moved to a future group.
-- **Tiptap migration** for tug-prompt-input (Phase 2: @-mentions, ghost text, inline chips). Future work.
-- **Mermaid diagrams, KaTeX math** — tug-markdown extensions. Add when needed via the extension point.
+- **tug-rich-text** — Monaco editor wrapper. Future group.
+- **tug-search-bar** — TugInput + TugButton. Future group.
+- **Tiptap migration** for tug-prompt-input (@-mentions, ghost text). Future.
+- **Mermaid, KaTeX** — tug-markdown extensions via the extension point. When needed.
 
 ---
 
 ## Risks
 
-1. **`PreToolUse(Task)` prompt parsing is fragile.** The orchestrator's prompt is natural language with embedded JSON. Mitigation: structured JSON payloads with well-known keys. Discovered in Phase 1, addressed in Phase 2.
+1. **Transport may not work as documented.** Phase 1 exists to discover this early. If CodeOutput/CodeInput has fundamental problems, we find out before building any UI.
 
-2. **Agent-scoped hooks may not resolve project-root paths correctly in worktrees.** `$CLAUDE_PROJECT_DIR` may point to the worktree. Verify in Phase 9.
+2. **Slash commands may not route through `user_message`.** Tugtalk may need explicit skill invocation support, not just text passthrough. Phase 1 will reveal this.
 
-3. **Feed file contention with parallel agents.** Mitigation: JSONL with atomic `O_APPEND` writes.
+3. **`AskUserQuestion` may not have a CodeOutput representation.** If the `question` event doesn't exist or is incomplete, the conversational UI for skills like `/plan` won't work without tugcast/tugtalk changes.
 
-4. **Shell script overhead on high-frequency hooks.** ~50ms per invocation. Monitor in Phase 9; consider Rust CLI fallback if needed.
+4. **Streaming text model unknown.** Full-text vs delta has major implications for tug-markdown's architecture. Phase 1 answers this before Phase 3 commits to a design.
 
-5. **`last_assistant_message` may not be reliably structured.** Phase 1 discovers actual shapes; Phase 2 adapts.
+5. **Feed hook parsing fragility.** Orchestrator prompts are natural language with embedded JSON. Mitigated by well-known keys.
 
-6. **CodeOutput event shapes may differ from documentation.** Phase 3 exists specifically to discover this.
+6. **Shell script overhead on high-frequency hooks.** ~50ms per invocation. Monitor in Phase 9.
 
 ---
 
@@ -338,5 +369,6 @@ Each phase above is designed to be one `/plan` → `/implement` cycle. The mappi
 1. **Shiki theme** — Hand-authored theme file referencing `--tug-syntax-*` CSS custom properties.
 2. **History scope** — Per-card via `historyKey`. No global cross-card history for now.
 3. **Slash command extensibility** — Declarative list from parent. No registration system.
-4. **Streaming vs static** — One streaming code path. Static completes immediately without throttle.
-5. **Custom block renderers** — Extension point built early (Phase 6), individual block designs deferred until real data flows (Phase 10).
+4. **Streaming vs static** — One streaming code path. Static completes without throttle.
+5. **Custom block renderers** — Extension point built in Phase 3, individual blocks designed in Phase 10 against real data.
+6. **tug-rich-text / tug-search-bar** — Deferred from Group D.
