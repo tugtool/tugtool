@@ -50,7 +50,14 @@ ci: lint test
 
 # Build tugmark-wasm via wasm-pack (output goes to tugdeck/crates/tugmark-wasm/pkg/)
 wasm:
-    PATH="$HOME/.cargo/bin:$PATH" wasm-pack build --target web --release tugdeck/crates/tugmark-wasm
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WASM_PACK="$(command -v wasm-pack 2>/dev/null || echo "$HOME/.cargo/bin/wasm-pack")"
+    if [[ ! -x "$WASM_PACK" ]]; then
+        echo "wasm-pack not found. Install with: cargo install wasm-pack"
+        exit 1
+    fi
+    "$WASM_PACK" build --target web --release tugdeck/crates/tugmark-wasm
 
 # Build the Mac app (with all dependencies), and run/restart it
 app: build wasm
