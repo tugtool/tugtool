@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-30T02:47:27Z
+---
+
+## step-1: Created BlockHeightIndex class with Float64Array-backed prefix sum, lazy recomputation, binary search for offset-to-block mapping, growable array, and height estimation constants. 44 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
 step: step-7
 date: 2025-03-23T18:41:19Z
 ---
