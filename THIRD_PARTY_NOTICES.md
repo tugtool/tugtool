@@ -74,7 +74,7 @@ SOFTWARE.
 
 **Source:** https://github.com/andywer/threads.js
 **What was adopted:** Thenable task handle pattern (`QueuedTask` with `.cancel()` + `.then()`); discriminated union pool event protocol; worker init handshake with timeout.
-**Used in:** `tugdeck/src/lib/tug-worker-service.ts` (planned, Phase 3A.1)
+**Used in:** `tugdeck/src/lib/tug-worker-pool.ts` (Phase 3A.1)
 
 ```
 The MIT License (MIT)
@@ -106,7 +106,7 @@ SOFTWARE.
 
 **Source:** https://github.com/poolifier/poolifier-web-worker
 **What was adopted:** Priority queue with aging to prevent starvation; least-used worker selection strategy; promise-response-map RPC pattern with AbortSignal integration; back-pressure signaling via queue depth thresholds.
-**Used in:** `tugdeck/src/lib/tug-worker-service.ts` (planned, Phase 3A.1)
+**Used in:** `tugdeck/src/lib/tug-worker-pool.ts` (Phase 3A.1)
 
 ```
 MIT License
@@ -138,7 +138,7 @@ SOFTWARE.
 
 **Source:** https://github.com/developit/greenlet
 **What was adopted:** Promise-per-call RPC mechanism using counter-based task IDs with resolve/reject stashed in a Map; automatic transferable detection by filtering for ArrayBuffer/MessagePort/ImageBitmap.
-**Used in:** `tugdeck/src/lib/tug-worker-service.ts` (planned, Phase 3A.1)
+**Used in:** `tugdeck/src/lib/tug-worker-pool.ts` (Phase 3A.1)
 
 ```
 MIT License
