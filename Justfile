@@ -50,7 +50,7 @@ ci: lint test
 
 # Build tugmark-wasm via wasm-pack (output goes to tugdeck/crates/tugmark-wasm/pkg/)
 wasm:
-    wasm-pack build --target web --release tugdeck/crates/tugmark-wasm
+    PATH="$HOME/.cargo/bin:$PATH" wasm-pack build --target web --release tugdeck/crates/tugmark-wasm
 
 # Build the Mac app (with all dependencies), and run/restart it
 app: build wasm
