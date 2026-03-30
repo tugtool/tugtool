@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import type { PropertyStore } from "@/components/tugways/property-store";
+import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
 // ---------------------------------------------------------------------------
 // DOMPurify initialization (mirrors lib/markdown.ts strategy)
@@ -60,6 +61,60 @@ function getDOMPurify(): ReturnType<typeof DOMPurifyModule> {
   const win: any = typeof window !== "undefined" ? window : (global as any).window;
   _dompurify = DOMPurifyModule(win);
   return _dompurify;
+}
+
+// ---------------------------------------------------------------------------
+// Block decoding helpers — translate packed Uint32Array from lex_blocks() [D05]
+// ---------------------------------------------------------------------------
+
+const STRIDE = 4;
+const BLOCK_TYPES = ['?','heading','paragraph','code','blockquote','list','table','hr','html','other'];
+
+interface BlockMeta {
+  type: string;
+  start: number;
+  end: number;
+  depth: number;
+  itemCount: number;
+  rowCount: number;
+}
+
+function decodeBlocks(buf: Uint32Array): BlockMeta[] {
+  const count = buf.length / STRIDE;
+  const blocks: BlockMeta[] = new Array(count);
+  for (let i = 0, j = 0; i < buf.length; i += STRIDE, j++) {
+    const w0 = buf[i];
+    blocks[j] = {
+      type: BLOCK_TYPES[w0 & 0xFF] ?? 'other',
+      start: buf[i + 1],
+      end: buf[i + 2],
+      depth: (w0 >> 8) & 0xFF,
+      itemCount: buf[i + 3] & 0xFFFF,
+      rowCount: (buf[i + 3] >> 16) & 0xFFFF,
+    };
+  }
+  return blocks;
+}
+
+const LINE_HEIGHT = 24;
+const CODE_LINE_HEIGHT = 20;
+const CODE_HEADER_HEIGHT = 36;
+const HR_HEIGHT = 33;
+
+function estimateBlockHeight(block: BlockMeta): number {
+  const rawLen = block.end - block.start;
+  switch (block.type) {
+    case 'heading': return [0, 56, 48, 40, 36, 32, 28][block.depth] ?? LINE_HEIGHT * 2;
+    case 'code': {
+      const lineCount = Math.max(1, Math.round(rawLen / 40));
+      return CODE_HEADER_HEIGHT + lineCount * CODE_LINE_HEIGHT;
+    }
+    case 'hr': return HR_HEIGHT;
+    case 'list': return Math.max(1, block.itemCount) * LINE_HEIGHT * 1.5;
+    case 'table': return (Math.max(1, block.rowCount) + 1) * LINE_HEIGHT * 1.5;
+    case 'blockquote': return Math.max(1, Math.ceil(rawLen / 70)) * LINE_HEIGHT;
+    default: return Math.max(1, Math.ceil(rawLen / 80)) * LINE_HEIGHT;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -103,11 +158,16 @@ interface MarkdownEngineState {
    */
   contentText: string;
   /**
-   * Cumulative end offsets per block from Phase 1 lex response.
-   * offsets[i] = character position where block i ends.
-   * To extract block i's raw: contentText.slice(offsets[i-1] ?? 0, offsets[i])
+   * Start character offsets per block from lex_blocks() response.
+   * blockStarts[i] = character position where block i begins.
    */
-  blockOffsets: number[];
+  blockStarts: number[];
+  /**
+   * End character offsets per block from lex_blocks() response.
+   * blockEnds[i] = character position where block i ends.
+   * To extract block i's raw: contentText.slice(blockStarts[i], blockEnds[i])
+   */
+  blockEnds: number[];
   /**
    * The accumulated streaming text. Grows as deltas arrive.
    */
@@ -188,7 +248,8 @@ export function TugMarkdownView({
       const blockWindow = new RenderedBlockWindow(heightIndex, DEFAULT_VIEWPORT_HEIGHT, 2);
       engineRef.current = {
         contentText: "",
-        blockOffsets: [],
+        blockStarts: [],
+        blockEnds: [],
         accumulatedText: "",
         heightIndex,
         blockWindow,
@@ -384,10 +445,55 @@ export function TugMarkdownView({
     return () => resizeObs.disconnect();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Static rendering path — TODO: wire lex/parse in Phase 3B ----
+  // ---- Static rendering path ----
   useEffect(() => {
     if (content === undefined) return;
-    // TODO: Phase 3B — submit lex task, populate heightIndex, submit parse batches
+    const engine = getEngine();
+
+    // Clear previous state
+    engine.heightIndex.clear();
+    engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
+    for (const [, el] of engine.blockNodes) {
+      resizeObserverRef.current?.unobserve(el);
+      el.remove();
+    }
+    engine.blockNodes.clear();
+    engine.htmlCache.clear();
+    engine.cacheHits = 0;
+    engine.cacheMisses = 0;
+    engine.blockStarts = [];
+    engine.blockEnds = [];
+    engine.blockCount = 0;
+    engine.contentText = content;
+    applySpacers(0, 0);
+
+    // Lex: synchronous WASM call
+    const packed = lex_blocks(content);
+    const blocks = decodeBlocks(packed);
+    engine.blockCount = blocks.length;
+    engine.blockStarts = blocks.map(b => b.start);
+    engine.blockEnds = blocks.map(b => b.end);
+
+    // Populate height index with estimates
+    for (const block of blocks) {
+      engine.heightIndex.appendBlock(estimateBlockHeight(block));
+    }
+
+    // Parse visible + overscan blocks and populate HTML cache
+    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+    const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+    engine.blockWindow.setViewportHeight(viewportHeight);
+    const range = computeOverscanRange(engine, scrollTop);
+    for (let i = range.startIndex; i < range.endIndex; i++) {
+      if (!engine.htmlCache.has(i)) {
+        const raw = content.slice(engine.blockStarts[i], engine.blockEnds[i]);
+        engine.htmlCache.set(i, parse_to_html(raw));
+      }
+    }
+
+    // Enter visible blocks into DOM
+    const update = engine.blockWindow.update(scrollTop);
+    applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
   }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- RAF-coalesced scroll handler [D02, L05] ----
@@ -404,12 +510,23 @@ export function TugMarkdownView({
       const pendingTop = engine.pendingScrollTop ?? scrollTop;
       engine.pendingScrollTop = null;
 
-      // Update window (handles enter/exit for cached blocks).
+      // Update window (handles enter/exit for cached blocks)
       const update = engine.blockWindow.update(pendingTop);
       applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
 
-      // TODO: Phase 3B — submit parse batches for uncached blocks in new range
-      void computeOverscanRange(engine, pendingTop);
+      // Parse uncached blocks in overscan range on demand
+      const newRange = computeOverscanRange(engine, pendingTop);
+      let anyNew = false;
+      for (let i = newRange.startIndex; i < newRange.endIndex; i++) {
+        if (!engine.htmlCache.has(i) && engine.blockStarts[i] !== undefined) {
+          const raw = engine.contentText.slice(engine.blockStarts[i], engine.blockEnds[i]);
+          engine.htmlCache.set(i, parse_to_html(raw));
+          anyNew = true;
+        }
+      }
+      if (anyNew) {
+        rebuildWindow(engine);
+      }
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

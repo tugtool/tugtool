@@ -2,6 +2,8 @@
 // which self-accepts HMR updates so CSS changes never trigger a full page reload here.
 import "./css-imports";
 
+import initTugmark from "../crates/tugmark-wasm/pkg/tugmark_wasm.js";
+import wasmUrl from "../crates/tugmark-wasm/pkg/tugmark_wasm_bg.wasm?url";
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
@@ -42,11 +44,13 @@ if (!container) {
 //            Tab state fetch depends on tab IDs from the deserialized layout,
 //            so it cannot be parallelized with the layout fetch itself.
 (async () => {
-  // Phase 1: parallel fetch of layout, theme, and focused card ID.
+  // Phase 1: parallel fetch of layout, theme, focused card ID, and WASM init.
+  // WASM must complete before DeckManager construction (before root.render() — L01).
   const [layout, theme, focusedCardId] = await Promise.all([
     fetchLayoutWithRetry(),
     fetchThemeWithRetry(),
     fetchDeckStateWithRetry(),
+    initTugmark(wasmUrl),
   ]);
 
   const initialTheme = (theme as string) ?? BASE_THEME_NAME;
