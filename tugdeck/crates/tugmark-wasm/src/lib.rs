@@ -1,11 +1,9 @@
 //! tugmark-wasm — Markdown lexer and parser via pulldown-cmark, compiled to WASM.
 //!
-//! Production API:
-//!   - `lex_blocks(text)` → packed Vec<u32>, 4 words per block (binary transport)
-//!   - `parse_to_html(text)` → HTML string
+//! # API
 //!
-//! Benchmark API (spike only):
-//!   - `lex_blocks_json(text)` → JSON string for comparison
+//! - [`lex_blocks`] — lex markdown into packed binary block metadata (4 × u32 per block)
+//! - [`parse_to_html`] — parse markdown to an HTML string
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use wasm_bindgen::prelude::*;
@@ -127,79 +125,3 @@ pub fn parse_to_html(text: &str) -> String {
     html
 }
 
-// ---------------------------------------------------------------------------
-// JSON variant for benchmark comparison only
-// ---------------------------------------------------------------------------
-
-/// Lex markdown into a JSON string. Benchmark comparison against packed binary.
-#[wasm_bindgen]
-pub fn lex_blocks_json(text: &str) -> String {
-    let parser = Parser::new_ext(text, parser_options());
-    let mut json = String::from("[");
-    let mut first = true;
-
-    let mut block_start: Option<usize> = None;
-    let mut block_type: &str = "";
-    let mut depth: u8 = 0;
-    let mut nesting: usize = 0;
-    let mut item_count: usize = 0;
-    let mut row_count: usize = 0;
-
-    for (event, range) in parser.into_offset_iter() {
-        match event {
-            Event::Start(ref tag) => {
-                if nesting == 0 {
-                    block_start = Some(range.start);
-                    item_count = 0;
-                    row_count = 0;
-                    block_type = match tag {
-                        Tag::Heading { level, .. } => { depth = *level as u8; "heading" }
-                        Tag::Paragraph => "paragraph",
-                        Tag::CodeBlock(_) => "code",
-                        Tag::BlockQuote(_) => "blockquote",
-                        Tag::List(_) => "list",
-                        Tag::Table(_) => "table",
-                        Tag::HtmlBlock => "html",
-                        _ => "other",
-                    };
-                }
-                if nesting == 1 {
-                    match tag {
-                        Tag::Item => item_count += 1,
-                        Tag::TableRow => row_count += 1,
-                        _ => {}
-                    }
-                }
-                nesting += 1;
-            }
-            Event::End(ref tag_end) => {
-                nesting = nesting.saturating_sub(1);
-                if nesting == 0 {
-                    if let Some(start) = block_start.take() {
-                        if !first { json.push(','); }
-                        first = false;
-                        json.push_str(&format!(
-                            r#"{{"type":"{}","start":{},"end":{}"#,
-                            block_type, start, range.end
-                        ));
-                        match tag_end {
-                            TagEnd::Heading(_) => json.push_str(&format!(r#","depth":{}}}"#, depth)),
-                            TagEnd::List(_) => json.push_str(&format!(r#","itemCount":{}}}"#, item_count)),
-                            TagEnd::Table => json.push_str(&format!(r#","rowCount":{}}}"#, row_count)),
-                            _ => json.push('}'),
-                        }
-                    }
-                }
-            }
-            Event::Rule => {
-                if !first { json.push(','); }
-                first = false;
-                json.push_str(&format!(r#"{{"type":"hr","start":{},"end":{}}}"#, range.start, range.end));
-            }
-            _ => {}
-        }
-    }
-
-    json.push(']');
-    json
-}

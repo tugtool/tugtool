@@ -1,0 +1,15 @@
+{
+  "name": "tugmark-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "tugmark_wasm_bg.wasm",
+    "tugmark_wasm.js",
+    "tugmark_wasm.d.ts"
+  ],
+  "main": "tugmark_wasm.js",
+  "types": "tugmark_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

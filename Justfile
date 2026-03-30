@@ -48,8 +48,12 @@ lint:
 # Full pre-merge gate (lint + test)
 ci: lint test
 
+# Build tugmark-wasm via wasm-pack (output goes to tugdeck/crates/tugmark-wasm/pkg/)
+wasm:
+    wasm-pack build --target web --release tugdeck/crates/tugmark-wasm
+
 # Build the Mac app (with all dependencies), and run/restart it
-app: build
+app: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
     (cd tugdeck && bun run build)

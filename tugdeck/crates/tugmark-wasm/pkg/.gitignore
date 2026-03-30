@@ -1,0 +1,9 @@
+# Allow pkg/ output to be committed so consumers don't need wasm-pack installed.
+# wasm-pack regenerates this file with '*' on each build — this file must be
+# restored after running `just wasm` if the contents have changed.
+!.gitignore
+!tugmark_wasm.js
+!tugmark_wasm.d.ts
+!tugmark_wasm_bg.wasm
+!tugmark_wasm_bg.wasm.d.ts
+!package.json
