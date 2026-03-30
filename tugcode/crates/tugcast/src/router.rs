@@ -117,7 +117,7 @@ pub async fn ws_handler(
 }
 
 /// Handle a WebSocket client connection
-async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
+async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
     info!("Client connected");
 
     // Subscribe to terminal output broadcast
@@ -183,9 +183,16 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
             ClientState::Live => {
                 info!("Client in LIVE state");
 
-                // Send initial snapshots for all watch channels
-                for watch_rx in &router.snapshot_watches {
-                    let frame = watch_rx.borrow().clone();
+                // Create a channel for merged snapshot updates
+                let (snap_tx, mut snap_rx) = mpsc::channel::<Frame>(16);
+
+                // Send initial snapshot and then forward updates for each watch channel.
+                // borrow_and_update() marks the value as seen so changed() won't fire
+                // immediately, preventing double delivery.
+                // Take ownership of snapshot_watches so we can move receivers into tasks.
+                let snapshot_watches = std::mem::take(&mut router.snapshot_watches);
+                for mut watch_rx in snapshot_watches {
+                    let frame = watch_rx.borrow_and_update().clone();
                     if !frame.payload.is_empty()
                         && socket
                             .send(Message::Binary(frame.encode().into()))
@@ -195,13 +202,6 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                         info!("Client disconnected during initial snapshot send");
                         return;
                     }
-                }
-
-                // Create a channel for merged snapshot updates
-                let (snap_tx, mut snap_rx) = mpsc::channel::<Frame>(16);
-
-                // Spawn a task per snapshot watch to forward updates
-                for mut watch_rx in router.snapshot_watches.clone() {
                     let snap_tx_clone = snap_tx.clone();
                     tokio::spawn(async move {
                         while watch_rx.changed().await.is_ok() {

@@ -10,14 +10,24 @@ import { spawn } from "bun";
 const PROJECT_DIR = "/Users/kocienda/Mounts/u/src/tugtool";
 const message = Bun.argv[2] || "/cost";
 
-// Read session ID from .tugtool/.session (same as tugtalk does)
-const sessionFile = `${PROJECT_DIR}/.tugtool/.session`;
+// Read session ID from tugbank (same as tugtalk does)
 let sessionId: string | null = null;
 try {
-  sessionId = (await Bun.file(sessionFile).text()).trim();
-  console.log(`Session ID: ${sessionId}`);
+  const result = Bun.spawnSync(["tugbank", "read", "dev.tugtool.app", "session-id"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (result.exitCode === 0) {
+    const output = new TextDecoder().decode(result.stdout as Uint8Array).trim();
+    sessionId = output.length > 0 ? output : null;
+  }
+  if (sessionId) {
+    console.log(`Session ID: ${sessionId}`);
+  } else {
+    console.log("No session ID in tugbank, using fresh session");
+  }
 } catch {
-  console.log("No session file found, using fresh session");
+  console.log("Failed to read session from tugbank, using fresh session");
 }
 
 console.log(`=== Raw Stdin Probe ===`);

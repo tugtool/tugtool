@@ -115,7 +115,6 @@ async fn main() {
     // Create code channels
     let (code_tx, _) = broadcast::channel(feeds::code::CODE_BROADCAST_CAPACITY);
     let (code_input_tx, code_input_rx) = mpsc::channel(256);
-    let (code_watch_tx, code_watch_rx) = watch::channel(Frame::new(FeedId::CodeOutput, vec![]));
 
     // Create terminal feed
     let feed = TerminalFeed::new(cli.session.clone());
@@ -202,31 +201,10 @@ async fn main() {
         None
     };
 
-    // Create feed router
-    let feed_router = FeedRouter::new(
-        terminal_tx.clone(),
-        input_tx,
-        code_tx.clone(),
-        code_input_tx,
-        cli.session.clone(),
-        auth.clone(),
-        vec![
-            fs_watch_rx,
-            git_watch_rx,
-            stats_agg_rx,
-            stats_proc_rx,
-            stats_token_rx,
-            stats_build_rx,
-            code_watch_rx,
-        ],
-        shutdown_tx,
-        client_action_tx,
-        shared_dev_state.clone(),
-    );
-
     // Start terminal feed in background task
     let cancel = CancellationToken::new();
     let feed_cancel = cancel.clone();
+    let terminal_tx_for_router = terminal_tx.clone();
     tokio::spawn(async move {
         feed.run(terminal_tx, feed_cancel).await;
     });
@@ -241,19 +219,38 @@ async fn main() {
         );
     }
     let agent_cancel = cancel.clone();
-    let agent_tx = code_tx.clone();
     let agent_watch_dir = watch_dir.clone();
-    tokio::spawn(async move {
-        feeds::agent_bridge::run_agent_bridge(
-            agent_tx,
-            code_watch_tx,
-            code_input_rx,
-            tugtalk_path,
-            agent_watch_dir,
-            agent_cancel,
-        )
-        .await;
-    });
+    let agent_handles = feeds::agent_bridge::spawn_agent_bridge(
+        code_tx.clone(),
+        code_input_rx,
+        tugtalk_path,
+        agent_watch_dir,
+        agent_cancel,
+    );
+
+    // Create feed router
+    let mut snapshot_watches = vec![
+        fs_watch_rx,
+        git_watch_rx,
+        stats_agg_rx,
+        stats_proc_rx,
+        stats_token_rx,
+        stats_build_rx,
+    ];
+    snapshot_watches.extend(agent_handles.snapshot_watches);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx_for_router,
+        input_tx,
+        code_tx.clone(),
+        code_input_tx,
+        cli.session.clone(),
+        auth.clone(),
+        snapshot_watches,
+        shutdown_tx,
+        client_action_tx,
+        shared_dev_state.clone(),
+    );
 
     // Start filesystem feed in background task
     let fs_cancel = cancel.clone();

@@ -25,7 +25,6 @@ import type {
   CostUpdate,
   Attachment,
 } from "./types.ts";
-import { mkdir, exists } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 
 interface PendingRequest<T> {
@@ -796,7 +795,7 @@ export class SessionManager {
         if (event.type === "system" && event.subtype === "init") {
           const sessionId = event.session_id || "unknown";
           writeLine({ type: "session_init", session_id: sessionId, ipc_version: 2 });
-          await this.persistSessionId(sessionId);
+          this.persistSessionId(sessionId);
           this.sessionIdPersisted = true;
 
           // Push any buffered lines back into stdoutBuffer so
@@ -822,7 +821,7 @@ export class SessionManager {
    * Initialize session: try to resume from persisted ID, fall back to create new.
    */
   async initialize(): Promise<void> {
-    const existingId = await this.readSessionId();
+    const existingId = this.readSessionId();
 
     if (existingId) {
       console.log(`Attempting to resume session: ${existingId}`);
@@ -842,7 +841,7 @@ export class SessionManager {
     });
 
     if (existingId) {
-      await this.persistSessionId(existingId);
+      this.persistSessionId(existingId);
       this.sessionIdPersisted = true;
     }
   }
@@ -924,9 +923,7 @@ export class SessionManager {
         // Persist session_id from system/init per D04.
         if (routeResult.sessionId && !this.sessionIdPersisted) {
           this.sessionIdPersisted = true;
-          this.persistSessionId(routeResult.sessionId).catch((err: unknown) =>
-            console.error("Failed to persist session ID:", err)
-          );
+          this.persistSessionId(routeResult.sessionId);
         }
 
         // Emit IPC messages from router, stamping parent_tool_use_id per §15.
@@ -1245,28 +1242,37 @@ export class SessionManager {
   }
 
   /**
-   * Persist session ID to .tugtool/.session file.
+   * Persist session ID via tugbank CLI.
+   * Uses `tugbank write dev.tugtool.app session-id <value>` so the session ID
+   * is stored outside the project working tree and doesn't dirty the git index.
    */
-  private async persistSessionId(id: string): Promise<void> {
-    const tugtoolDir = join(this.projectDir, ".tugtool");
-    if (!(await exists(tugtoolDir))) {
-      await mkdir(tugtoolDir, { recursive: true });
+  private persistSessionId(id: string): void {
+    const result = Bun.spawnSync(["tugbank", "write", "dev.tugtool.app", "session-id", id], {
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+    if (result.exitCode !== 0) {
+      const stderr = result.stderr ? new TextDecoder().decode(result.stderr as Uint8Array) : "";
+      console.error(`Failed to persist session ID via tugbank: ${stderr.trim()}`);
+    } else {
+      console.log(`Persisted session ID to tugbank (dev.tugtool.app / session-id)`);
     }
-    const sessionFile = join(tugtoolDir, ".session");
-    await Bun.write(sessionFile, id);
-    console.log(`Persisted session ID to ${sessionFile}`);
   }
 
   /**
-   * Read session ID from .tugtool/.session file.
+   * Read session ID via tugbank CLI.
+   * Uses `tugbank read dev.tugtool.app session-id` and returns the trimmed output.
    */
-  private async readSessionId(): Promise<string | null> {
-    const sessionFile = join(this.projectDir, ".tugtool", ".session");
-    if (await exists(sessionFile)) {
-      const content = await Bun.file(sessionFile).text();
-      return content.trim();
+  private readSessionId(): string | null {
+    const result = Bun.spawnSync(["tugbank", "read", "dev.tugtool.app", "session-id"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (result.exitCode !== 0) {
+      return null;
     }
-    return null;
+    const output = result.stdout ? new TextDecoder().decode(result.stdout as Uint8Array).trim() : "";
+    return output.length > 0 ? output : null;
   }
 
   /**

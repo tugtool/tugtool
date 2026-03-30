@@ -97,13 +97,52 @@ pub fn resolve_tugtalk_path(cli_override: Option<&Path>, project_dir: &Path) -> 
     project_dir.join("tugtalk/src/main.ts")
 }
 
+/// Handles returned from `spawn_agent_bridge` — contains the watch receivers
+/// that clients need to get snapshots of persistent state.
+pub struct AgentBridgeHandles {
+    pub snapshot_watches: Vec<watch::Receiver<Frame>>,
+}
+
+/// Spawn the agent bridge background task.
+///
+/// Creates internal watch channels, spawns the async task, and returns handles
+/// so callers don't need to manage channel creation themselves.
+pub fn spawn_agent_bridge(
+    code_tx: broadcast::Sender<Frame>,
+    code_input_rx: mpsc::Receiver<Frame>,
+    tugtalk_path: PathBuf,
+    project_dir: PathBuf,
+    cancel: CancellationToken,
+) -> AgentBridgeHandles {
+    use tugcast_core::FeedId;
+
+    let (project_info_tx, project_info_rx) =
+        watch::channel(Frame::new(FeedId::CodeOutput, vec![]));
+    let (session_watch_tx, session_watch_rx) =
+        watch::channel(Frame::new(FeedId::CodeOutput, vec![]));
+
+    tokio::spawn(run_agent_bridge(
+        code_tx,
+        project_info_tx,
+        session_watch_tx,
+        code_input_rx,
+        tugtalk_path,
+        project_dir,
+        cancel,
+    ));
+
+    AgentBridgeHandles {
+        snapshot_watches: vec![project_info_rx, session_watch_rx],
+    }
+}
+
 /// Run the agent bridge
 ///
 /// Spawns tugtalk, performs protocol handshake, relays messages, handles crashes.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_agent_bridge(
+async fn run_agent_bridge(
     code_tx: broadcast::Sender<Frame>,
-    code_watch_tx: watch::Sender<Frame>,
+    project_info_tx: watch::Sender<Frame>,
+    session_watch_tx: watch::Sender<Frame>,
     mut code_input_rx: mpsc::Receiver<Frame>,
     tugtalk_path: PathBuf,
     project_dir: PathBuf,
@@ -119,7 +158,7 @@ pub async fn run_agent_bridge(
     );
     let project_info_frame = code_output_frame(project_info_json.as_bytes());
     let _ = code_tx.send(project_info_frame.clone());
-    let _ = code_watch_tx.send(project_info_frame);
+    let _ = project_info_tx.send(project_info_frame);
 
     loop {
         if crash_budget.is_exhausted() {
@@ -207,6 +246,11 @@ pub async fn run_agent_bridge(
                         Ok(Some(line)) => {
                             // Parse and forward to code broadcast feed
                             let frame = code_output_frame(line.as_bytes());
+                            // Also latch session_init onto the watch channel so
+                            // clients connecting after startup receive it.
+                            if line.contains("\"type\":\"session_init\"") {
+                                let _ = session_watch_tx.send(frame.clone());
+                            }
                             let _ = code_tx.send(frame);
                         }
                         Ok(None) => {
