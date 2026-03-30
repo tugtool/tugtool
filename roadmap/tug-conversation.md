@@ -1077,10 +1077,12 @@ Verify: `bun test` passes (remaining tests: block-height-index, rendered-block-w
 Build the static rendering path on the clean skeleton:
 - Add WASM init to `main.tsx` startup sequence (parallel with layout/theme fetch).
 - Import `lex_blocks`, `parse_to_html` from the tugmark-wasm pkg.
-- On content change: call `lex_blocks(content)` synchronously. Decode the `Uint32Array` into block metadata. Populate BlockHeightIndex with estimated heights (from block type + byte length). Store block start/end offsets.
+- Update `MarkdownEngineState`: replace the old `blockOffsets: number[]` (cumulative end offsets from the worker pipeline) with `blockStarts: number[]` and `blockEnds: number[]` — direct start/end pairs decoded from the WASM packed `Uint32Array`. Each block's raw text is `content.slice(blockStarts[i], blockEnds[i])`. Update all references.
+- On content change: call `lex_blocks(content)` synchronously. Decode the `Uint32Array` (4 words per block: type|depth, start, end, itemCount|rowCount). Populate `blockStarts`/`blockEnds`. Populate BlockHeightIndex with estimated heights (from block type + byte length). Store block count.
 - Call `blockWindow.update(scrollTop)` → `applyWindowUpdate()` to enter visible blocks.
-- For each visible block: `raw = content.slice(start, end)`, `html = parse_to_html(raw)`, sanitize with DOMPurify, write to innerHTML.
-- HTML cache: `Map<number, string>` for sanitized HTML. Cache hit skips WASM call + DOMPurify.
+- For each visible block: `raw = content.slice(blockStarts[i], blockEnds[i])`, `html = parse_to_html(raw)`, sanitize with DOMPurify, write to innerHTML.
+- HTML cache: `Map<number, string>` for parsed HTML. Cache hit skips WASM parse + DOMPurify.
+- Parse only visible + overscan blocks on initial load. Remaining blocks parsed on scroll (cache miss → WASM call).
 
 Verify: gallery card Static 1MB renders. DOM nodes > 0. Lex time < 50ms in diagnostic.
 
