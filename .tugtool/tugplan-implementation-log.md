@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-30T17:31:12Z
+---
+
+## step-5: Verified streaming path already wired to worker pipeline from step 4. Fixed streaming task handle tracking: stream handles now pushed to inFlightParses for cancellation on unmount, with .finally() cleanup to prevent unbounded growth.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-4
 date: 2025-03-30T17:13:05Z
 ---

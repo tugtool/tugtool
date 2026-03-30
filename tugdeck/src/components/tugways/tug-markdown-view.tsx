@@ -798,6 +798,9 @@ export function TugMarkdownView({
           viewportHint: vpHint,
         });
 
+        // Track handle so cancelInFlightParses() can cancel it on unmount [D02].
+        engine.inFlightParses.push(handle);
+
         handle.promise.then((res) => {
           if (res.type !== "stream") return;
 
@@ -856,6 +859,10 @@ export function TugMarkdownView({
           applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
         }).catch(() => {
           // Ignore cancelled/error.
+        }).finally(() => {
+          // Remove settled handle from inFlightParses to prevent unbounded growth.
+          const idx = engine.inFlightParses.indexOf(handle);
+          if (idx !== -1) engine.inFlightParses.splice(idx, 1);
         });
       }, 100);
     }
