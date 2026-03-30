@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-30T17:39:22Z
+---
+
+## step-6: Modified addBlockNode() to create placeholder divs on cache miss with estimated height. Added placeholderIndices Set to engine state. Parse response handlers replace placeholders with sanitized HTML. Added .tugx-md-placeholder CSS class.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-5
 date: 2025-03-30T17:31:12Z
 ---

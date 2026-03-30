@@ -259,6 +259,12 @@ interface MarkdownEngineState {
   cacheHits: number;
   /** Cache miss counter for diagnostics. */
   cacheMisses: number;
+  /**
+   * Set of block indices that currently have placeholder nodes in the DOM.
+   * Used to track which blocks were added as cache-miss placeholders so we
+   * can replace them when parse results arrive.
+   */
+  placeholderIndices: Set<number>;
   /** In-flight parse task handles for cancellation on range change [D02]. */
   inFlightParses: TaskHandle<MdWorkerRes>[];
   /** Streaming coalescing dirty flag [D05]. */
@@ -343,6 +349,7 @@ export function TugMarkdownView({
         htmlCache: new Map(),
         cacheHits: 0,
         cacheMisses: 0,
+        placeholderIndices: new Set(),
         inFlightParses: [],
         streamingDirty: false,
         streamingInterval: null,
@@ -387,15 +394,27 @@ export function TugMarkdownView({
 
   // ---- Add a single block DOM node ----
   // Cache stores unsanitized HTML from workers; DOMPurify runs here [D04].
+  // On cache miss: insert a placeholder div at estimated height so the virtual
+  // scroll layout remains accurate. The placeholder is replaced when the worker
+  // delivers parsed HTML (see submitParseBatches and the streaming handler).
   function addBlockNode(engine: MarkdownEngineState, index: number) {
     if (!blockContainerRef.current) return;
     if (engine.blockNodes.has(index)) return;
 
     const cachedHtml = engine.htmlCache.get(index);
     if (cachedHtml === undefined) {
-      // Cache miss — placeholder or skip. Placeholder rendering is Step 6.
-      // For now, skip rendering until the worker delivers HTML.
+      // Cache miss — create a placeholder at the estimated height [Step 6].
       engine.cacheMisses++;
+      const estimatedHeight = engine.heightIndex.getHeight(index);
+      const el = document.createElement("div");
+      el.className = "tugx-md-block tugx-md-placeholder";
+      el.dataset.blockIndex = String(index);
+      el.style.height = `${estimatedHeight}px`;
+      blockContainerRef.current.appendChild(el);
+      engine.blockNodes.set(index, el);
+      engine.placeholderIndices.add(index);
+      // Observe so measured heights update the prefix sum when real content arrives.
+      resizeObserverRef.current?.observe(el);
       return;
     }
 
@@ -423,6 +442,7 @@ export function TugMarkdownView({
     resizeObserverRef.current?.unobserve(el);
     el.remove();
     engine.blockNodes.delete(index);
+    engine.placeholderIndices.delete(index);
   }
 
   // ---- Apply a WindowUpdate to the DOM ----
@@ -518,16 +538,21 @@ export function TugMarkdownView({
         const update = engine.blockWindow.update(currentScrollTop);
         applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
 
-        // Re-render existing nodes that were waiting for cache (cache miss → now available).
+        // Replace placeholder nodes and render newly-cached blocks [Step 6].
         for (const { index } of res.results) {
           const el = engine.blockNodes.get(index);
           if (el) {
             const html = engine.htmlCache.get(index);
             if (html !== undefined) {
+              // Replace placeholder: clear estimated height, remove placeholder class,
+              // and inject sanitized HTML. No CSS transition per plan spec.
+              el.style.height = "";
+              el.classList.remove("tugx-md-placeholder");
               el.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+              engine.placeholderIndices.delete(index);
             }
           } else if (engine.blockWindow.currentRange.startIndex <= index && index < engine.blockWindow.currentRange.endIndex) {
-            // Block is in range but wasn't added (was a cache miss) — add it now.
+            // Block is in range but wasn't added yet — add it now (will be a cache hit).
             addBlockNode(engine, index);
           }
         }
@@ -653,6 +678,7 @@ export function TugMarkdownView({
     engine.htmlCache.clear();
     engine.cacheHits = 0;
     engine.cacheMisses = 0;
+    engine.placeholderIndices.clear();
     engine.blockOffsets = [];
     engine.blockCount = 0;
     engine.contentText = content;
@@ -849,6 +875,21 @@ export function TugMarkdownView({
           for (const { index, height } of res.metadataOnly) {
             const absIndex = relexFromIndex + index;
             engine.heightIndex.setHeight(absIndex, height);
+          }
+
+          // Replace placeholder nodes for newly-parsed blocks [Step 6].
+          for (const { index } of res.parsedBlocks) {
+            const absIndex = relexFromIndex + index;
+            const el = engine.blockNodes.get(absIndex);
+            if (el && engine.placeholderIndices.has(absIndex)) {
+              const html = engine.htmlCache.get(absIndex);
+              if (html !== undefined) {
+                el.style.height = "";
+                el.classList.remove("tugx-md-placeholder");
+                el.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+                engine.placeholderIndices.delete(absIndex);
+              }
+            }
           }
 
           // Rebuild visible window.
