@@ -192,6 +192,20 @@ function mainThreadFallback(req: MdWorkerReq): MdWorkerRes {
 }
 
 // ---------------------------------------------------------------------------
+// Module-level worker pool — lives outside React, immune to reconciliation [L06]
+// ---------------------------------------------------------------------------
+
+/**
+ * Singleton worker pool for markdown processing. Created at module load, never
+ * destroyed by React. Components use it but don't own it. This follows L06:
+ * the pool is infrastructure, not appearance state.
+ */
+const _pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(
+  () => new Worker(new URL("../../workers/markdown-worker.ts", import.meta.url), { type: "module" }),
+  { fallbackHandler: mainThreadFallback },
+);
+
+// ---------------------------------------------------------------------------
 // Overscan constant [Q01 — start at 4 screens, tune based on gallery card test]
 // ---------------------------------------------------------------------------
 
@@ -277,8 +291,6 @@ interface MarkdownEngineState {
   scrollRafHandle: number | null;
   /** RAF handle for auto-scroll during streaming [L05]. */
   rafHandle: number | null;
-  /** The TugWorkerPool instance [D01]. */
-  pool: TugWorkerPool<MdWorkerReq, MdWorkerRes> | null;
   /** Total block count from last lex response. */
   blockCount: number;
 }
@@ -356,7 +368,6 @@ export function TugMarkdownView({
         pendingScrollTop: null,
         scrollRafHandle: null,
         rafHandle: null,
-        pool: null,
         blockCount: 0,
       };
     }
@@ -511,7 +522,7 @@ export function TugMarkdownView({
 
   // ---- Submit parse batches for uncached blocks in range ----
   function submitParseBatches(engine: MarkdownEngineState, range: { startIndex: number; endIndex: number }) {
-    if (!engine.pool) return;
+
 
     // Collect uncached block indices in range.
     const uncached: number[] = [];
@@ -537,7 +548,7 @@ export function TugMarkdownView({
 
       if (batch.length === 0) continue;
 
-      const handle = engine.pool.submit({ type: "parse", batch });
+      const handle = _pool.submit({ type: "parse", batch });
       engine.inFlightParses.push(handle);
 
       handle.promise.then((res) => {
@@ -566,7 +577,7 @@ export function TugMarkdownView({
 
         // Fire diagnostics callback.
         onDiagnostics?.({
-          poolSize: engine.pool?.poolSize ?? 0,
+          poolSize: _pool.poolSize,
           inFlightTasks: engine.inFlightParses.length,
           cacheSize: engine.htmlCache.size,
           cacheHitRate: engine.cacheHits + engine.cacheMisses > 0
@@ -574,23 +585,20 @@ export function TugMarkdownView({
             : 0,
           blockCount: engine.blockCount,
         });
-      }).catch(() => {
-        // Cancelled or worker error — ignore.
+      }).catch((err) => {
+        if (err instanceof Error && err.message.includes("cancelled")) return;
+        console.error("[TugMarkdownView] parse batch failed:", err);
       });
     }
   }
 
-  // ---- Create the worker pool at mount ----
-  useLayoutEffect(() => {
-    const engine = getEngine();
-    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(
-      new URL("../../workers/markdown-worker.ts", import.meta.url),
-      { fallbackHandler: mainThreadFallback },
-    );
-    engine.pool = pool;
-
+  // ---- Cleanup component-scoped resources on unmount ----
+  // The pool is module-level (_pool) and survives unmount [L06].
+  // Only cancel this component instance's in-flight work.
+  useEffect(() => {
     return () => {
-      // Cleanup: cancel in-flight parses, clear streaming interval, cancel scroll RAF, terminate pool.
+      const engine = engineRef.current;
+      if (!engine) return;
       cancelInFlightParses(engine);
       if (engine.streamingInterval !== null) {
         clearInterval(engine.streamingInterval);
@@ -604,10 +612,8 @@ export function TugMarkdownView({
         cancelAnimationFrame(engine.rafHandle);
         engine.rafHandle = null;
       }
-      pool.terminate();
-      engine.pool = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---- Setup ResizeObserver for block height measurement ----
   useLayoutEffect(() => {
@@ -665,7 +671,7 @@ export function TugMarkdownView({
     if (content === undefined) return;
 
     const engine = getEngine();
-    if (!engine.pool) return;
+
 
     // Cancel any in-flight parses from a previous content load.
     cancelInFlightParses(engine);
@@ -693,7 +699,7 @@ export function TugMarkdownView({
     applySpacers(0, 0);
 
     // Phase 1: Submit lex task to worker — returns heights[] and offsets[], not tokens.
-    const lexHandle = engine.pool.submit({ type: "lex", text: content });
+    const lexHandle = _pool.submit({ type: "lex", text: content });
 
     lexHandle.promise.then((res) => {
       if (res.type !== "lex") return;
@@ -724,8 +730,9 @@ export function TugMarkdownView({
 
       const range = computeOverscanRange(engine, scrollTop);
       submitParseBatches(engine, range);
-    }).catch(() => {
-      // Cancelled or error — ignore.
+    }).catch((err) => {
+      if (err instanceof Error && err.message.includes("cancelled")) return;
+      console.error("[TugMarkdownView] lex failed:", err);
     });
   }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -803,7 +810,7 @@ export function TugMarkdownView({
         engine.streamingDirty = false;
 
         const text = engine.accumulatedText;
-        if (!text || !engine.pool) return;
+        if (!text) return;
 
         // Determine tail re-lex offset from last stable block boundary.
         const oldCount = engine.blockCount;
@@ -830,7 +837,7 @@ export function TugMarkdownView({
           endIndex: Math.max(0, viewportEndBlock - relexFromIndex),
         };
 
-        const handle = engine.pool.submit({
+        const handle = _pool.submit({
           type: "stream",
           tailText,
           relexFromOffset,
@@ -902,8 +909,9 @@ export function TugMarkdownView({
           engine.blockWindow.setViewportHeight(vpHeight);
           const update = engine.blockWindow.update(currentScrollTop);
           applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-        }).catch(() => {
-          // Ignore cancelled/error.
+        }).catch((err) => {
+          if (err instanceof Error && err.message.includes("cancelled")) return;
+          console.error("[TugMarkdownView] stream failed:", err);
         }).finally(() => {
           // Remove settled handle from inFlightParses to prevent unbounded growth.
           const idx = engine.inFlightParses.indexOf(handle);
@@ -921,7 +929,7 @@ export function TugMarkdownView({
 
     if (wasStreaming && !isStreaming && streamingStore) {
       const engine = engineRef.current;
-      if (!engine || !engine.pool) return;
+      if (!engine) return;
 
       // Clear streaming interval.
       if (engine.streamingInterval !== null) {
@@ -937,7 +945,7 @@ export function TugMarkdownView({
 
       engine.contentText = fullText;
 
-      const lexHandle = engine.pool.submit({ type: "lex", text: fullText });
+      const lexHandle = _pool.submit({ type: "lex", text: fullText });
 
       lexHandle.promise.then((res) => {
         if (res.type !== "lex") return;
@@ -959,22 +967,12 @@ export function TugMarkdownView({
         submitParseBatches(engine, range);
 
         rebuildWindow(engine);
-      }).catch(() => {
-        // Ignore.
+      }).catch((err) => {
+        if (err instanceof Error && err.message.includes("cancelled")) return;
+        console.error("[TugMarkdownView] finalization lex failed:", err);
       });
     }
   }, [isStreaming, streamingStore, streamingPath]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---- Cleanup on unmount ----
-  useEffect(() => {
-    return () => {
-      const engine = engineRef.current;
-      if (!engine) return;
-      if (engine.rafHandle !== null) {
-        cancelAnimationFrame(engine.rafHandle);
-      }
-    };
-  }, []);
 
   return (
     <div

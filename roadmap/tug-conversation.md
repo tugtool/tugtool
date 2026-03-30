@@ -109,8 +109,9 @@ Phase 2c: WebSocket Fixes           — DONE (T8-T11)
 
 ─── TIER 2: BUILD THE UI ─────────────────────────────────────
 Phase 3A: Markdown Rendering Core    — virtualization, prefix sum, two-path rendering — DONE
-Phase 3A.1: TugWorkerPool             — typed worker pool for parallel computation across cores
-Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-only rendering
+Phase 3A.1: TugWorkerPool             — typed worker pool for parallel computation across cores — DONE
+Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-only rendering — DONE (non-functional)
+Phase 3A.3: Worker Pipeline Remediation — fix laws violations, Vite worker loading, silent errors
 Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
 Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
@@ -766,6 +767,98 @@ These issues were identified during code review of TugWorkerPool but deferred to
 3. **Least-busy dispatch is untested with real workers.** The unit test uses fallback mode (single inline executor), which doesn't exercise multi-slot dispatch. Add a test with real workers that submits tasks with varying durations and verifies they distribute across slots — e.g., submit N slow tasks + 1 fast task and confirm the fast task doesn't queue behind the slow ones on a single worker.
 
 4. **Init handshake timeout path is untested.** A worker that never sends `{ type: 'init' }` should still process tasks after the timeout fires. Add a test with a delayed-init worker to verify the timeout → ready → flush-queue path works.
+
+---
+
+### Phase 3A.3: Worker Pipeline Remediation {#worker-pipeline-remediation}
+
+**Status:** Not started.
+
+**Goal:** Fix all issues that make the Phase 3A.2 worker pipeline non-functional in the browser. The code passed all bun tests but rendered nothing — a blank screen with zero DOM nodes. This phase does not add features. It makes the existing code work correctly and conform to the Laws of Tug.
+
+**Inputs:** Phase 3A.2 code (TugWorkerPool, markdown-worker.ts, TugMarkdownView worker pipeline). Audit findings from post-merge debugging session.
+
+#### What went wrong in Phase 3A.2
+
+Three failures compounded to produce a completely non-functional component that silently showed a blank screen:
+
+**Failure 1: Vite could not detect the worker entry point.**
+TugWorkerPool's original constructor accepted a `URL` and called `new Worker(url, { type: "module" })` internally. Vite's static analysis requires the `new Worker(new URL(...))` pattern to be a single expression in the source — split across files, Vite cannot detect it. The production build emitted a raw 8.58 kB `.ts` stub instead of a properly bundled `.js` worker. The browser received TypeScript it couldn't execute. The worker errored on load.
+
+This was fixed during debugging by changing TugWorkerPool to accept a `WorkerFactory` (`() => Worker`) and using the `new Worker(new URL(...))` expression inline at the call site. The production build now emits a properly bundled 41.24 kB `.js` worker file with all dependencies (marked, height estimator) included. The API change is correct and should be kept.
+
+**Failure 2: Silent error swallowing.**
+Four `.catch(() => {})` handlers in tug-markdown-view.tsx swallowed every error from the worker pipeline — worker load failures, pool terminations, message routing errors. The component showed a blank screen with zero console output. Diagnosing the root cause took hours because the code actively hid its own failures. This violates basic engineering practice: errors that affect user-visible behavior must never be silently swallowed.
+
+This was fixed during debugging by replacing all four handlers with logging that filters out expected cancellations and logs everything else. The fix should be kept.
+
+**Failure 3: Pool lifecycle owned by React.**
+The pool was created in `useLayoutEffect` and terminated in its cleanup function. React reconciliation destroyed the pool while a lex task was in flight, producing "pool terminated" errors. The gallery card's mode switching (which unmounts and remounts TugMarkdownView) triggered this reliably.
+
+This was fixed during debugging by moving the pool to module scope. The pool is now a singleton created at module load time — React cannot touch it. Component unmount cancels in-flight tasks but does not terminate the pool. This is correct per L06: the pool is infrastructure, not appearance state.
+
+#### Remaining issues from audit
+
+The debugging session fixed the three showstoppers above. The following issues remain:
+
+**Issue 1: L05 violation — auto-scroll RAF gated on React state commit (lines 768-789).**
+A `useEffect` depends on `[streamingText, isStreaming]`. When React commits a new `streamingText`, the effect schedules a RAF to write `scrollTop`. But the height index is updated by the worker's stream response on a separate 100ms interval — not by the React commit. The RAF reads `heightIndex.getTotalHeight()` which may not yet reflect the commit that triggered the effect.
+
+L05: "Never use requestAnimationFrame for operations that depend on React state commits. RAF timing relative to React's commit cycle is a browser implementation detail, not a contract." [D79]
+
+The auto-scroll effect also violates the spirit of L05 as described in react-anti-patterns.md: "every `requestAnimationFrame` used to paper over a React timing gap is a latent bug waiting for a browser update or a React version bump to expose it."
+
+**Issue 2: Pool `onerror` does not switch to fallback mode (tug-worker-pool.ts lines 359-362).**
+When a worker errors during execution (not construction), the slot is removed and `_spawned` resets to `false`. The next `submit()` retries worker creation — which may fail again, creating an infinite failure loop. The pool has a `fallbackHandler` (mainThreadFallback) that works correctly, but never engages it when workers die at runtime.
+
+**Issue 3: L16 — missing `@tug-renders-on` annotations in CSS.**
+tug-markdown-view.css sets border colors in three rules (blockquote line 121, hr line 138, table line 153) without `background-color` in the same rule and without `@tug-renders-on` annotations. L16: "If a CSS rule sets `color`, `fill`, or `border-color` without setting `background-color` in the same rule, it must include a `@tug-renders-on` annotation."
+
+**Issue 4: Browser verification.**
+The factory-based worker pattern (`new Worker(new URL(...))` inside a closure) has not been verified working in the browser runtime. The production build emits the correct output (41 kB bundled `.js`), but the actual round-trip — worker loads in browser, sends init, receives lex task, responds with heights/offsets — must be confirmed.
+
+#### Steps
+
+**Step 1: Fix L05 — move auto-scroll into stream response handler.**
+Remove the auto-scroll `useEffect` (lines 768-789). Move the scroll-to-tail logic into the stream response `.then()` callback, after heights are reconciled. The scroll write still uses RAF (correct — it's a DOM write per L06), but the trigger is the worker response completing, not React committing a new `streamingText` value. This eliminates the timing gap where the RAF reads stale height data.
+
+Verify: streaming mode in gallery card auto-scrolls to tail as content arrives. No separate `useEffect` with `[streamingText]` dependency.
+
+**Step 2: Fix pool `onerror` fallback.**
+In `_createSlot()`'s `worker.onerror` handler: when `this._slots.length === 0` after removing the broken slot, check `this._fallbackHandler`. If defined, set `this._fallbackMode = true` and log `console.warn("[TugWorkerPool] All workers failed — switching to fallback mode")`. If not defined, reset `this._spawned = false` (existing behavior — allows retry on next submit).
+
+Verify: bun test passes. Manually test by temporarily breaking the worker URL — component should render via fallback path with console warning.
+
+**Step 3: Add `@tug-renders-on` annotations to CSS.**
+Add `/* @tug-renders-on --tugx-md-block-bg */` (or the appropriate surface token) to the three CSS rules that set border-color without background-color: blockquote (line 121), hr (line 138), table borders (line 153).
+
+Verify: `audit-tokens lint` passes (if available), or visual inspection confirms annotations are present.
+
+**Step 4: Browser verification.**
+Load the gallery card in the browser. Verify all three modes:
+- **Static 1MB:** Content renders. DOM nodes > 0. Blocks > 0. No `[TugMarkdownView]` error logs in console. Worker diagnostics (Pool, In-flight, Cache, Hit rate) visible and updating.
+- **Streaming:** Content streams incrementally. Auto-scroll follows tail. No errors. Progress shows chunk count advancing.
+- **Stress 10MB:** Content renders. DOM nodes < 500. Scrolling is navigable.
+
+If the worker fails to load: verify `[TugWorkerPool] All workers failed — switching to fallback mode` appears in console and content still renders (slower).
+
+#### Checkpoints
+
+- `bun test` — all existing tests pass (1645+).
+- `bun run build` — build succeeds, `markdown-worker-*.js` chunk is properly bundled (40+ kB, not a raw `.ts` stub).
+- Browser: Static 1MB renders with content visible.
+- Browser: Streaming mode renders with auto-scroll.
+- Browser: No `[TugMarkdownView]` error logs in console.
+- Browser: Worker diagnostics display in gallery card overlay.
+
+#### Exit criteria
+
+- L05 violation resolved: no `useEffect` + RAF combination that depends on React state commits. Auto-scroll triggered by worker response, not React commit.
+- Pool `onerror` correctly engages fallback mode when all workers die and `fallbackHandler` exists.
+- CSS annotations satisfy L16 for all border-color rules.
+- Gallery card renders content in the browser in all three modes (static, streaming, stress).
+- Zero silent error swallowing. Every `.catch()` logs non-cancellation errors.
+- All four `.catch()` handlers in tug-markdown-view.tsx log with `[TugMarkdownView]` prefix.
 
 ---
 

@@ -26,6 +26,10 @@ import { TugWorkerPool } from "../lib/tug-worker-pool";
 const SLOW_WORKER_URL = new URL("./workers/slow-worker.ts", import.meta.url);
 const DELAYED_INIT_WORKER_URL = new URL("./workers/delayed-init-worker.ts", import.meta.url);
 
+/** Create a factory from a URL (works in bun test where .ts is natively supported). */
+const slowWorkerFactory = () => new Worker(SLOW_WORKER_URL, { type: "module" });
+const delayedInitWorkerFactory = () => new Worker(DELAYED_INIT_WORKER_URL, { type: "module" });
+
 /** Wait up to `ms` for a promise, or throw a timeout error. */
 function withTimeout<T>(promise: Promise<T>, ms: number, label?: string): Promise<T> {
   return Promise.race([
@@ -58,7 +62,7 @@ describe("multi-slot dispatch — least-busy routing", () => {
     const SLOW_DELAY_MS = 300;
     const FAST_DELAY_MS = 0;
 
-    const pool = new TugWorkerPool<{ delayMs: number; value: number }, number>(SLOW_WORKER_URL, {
+    const pool = new TugWorkerPool<{ delayMs: number; value: number }, number>(slowWorkerFactory, {
       poolSize: POOL_SIZE,
       initTimeoutMs: 5000,
       idleTimeoutMs: 60_000,
@@ -127,7 +131,7 @@ describe("init timeout path — delayed-init worker", () => {
     // The pool is configured with initTimeoutMs=5000 so the real init fires first
     // (not the timeout). Tasks submitted immediately are queued in readyQueue and
     // must complete once init arrives and flushReadyQueue runs.
-    const pool = new TugWorkerPool<{ value: number }, { value: number }>(DELAYED_INIT_WORKER_URL, {
+    const pool = new TugWorkerPool<{ value: number }, { value: number }>(delayedInitWorkerFactory, {
       poolSize: 1,
       initTimeoutMs: 5000,
       idleTimeoutMs: 60_000,
@@ -156,7 +160,7 @@ describe("init timeout path — delayed-init worker", () => {
     // Configure a very short initTimeoutMs (150ms) so the timeout fires before
     // the delayed-init worker (200ms delay) sends its init message. The pool must
     // treat the slot as ready after the timeout and flush queued tasks.
-    const pool = new TugWorkerPool<{ value: number }, { value: number }>(DELAYED_INIT_WORKER_URL, {
+    const pool = new TugWorkerPool<{ value: number }, { value: number }>(delayedInitWorkerFactory, {
       poolSize: 1,
       initTimeoutMs: 100, // shorter than the worker's 200ms delay
       idleTimeoutMs: 60_000,
@@ -189,8 +193,8 @@ describe("transferable detection — string/primitive payloads", () => {
     // The short-circuit in collectTransferables returns [] immediately for
     // strings without walking the object tree. Use the echo worker to verify
     // round-trip works correctly with a string payload.
-    const ECHO_WORKER_URL = new URL("./workers/echo-worker.ts", import.meta.url);
-    const pool = new TugWorkerPool<string, string>(ECHO_WORKER_URL, {
+    const echoUrl = new URL("./workers/echo-worker.ts", import.meta.url);
+    const pool = new TugWorkerPool<string, string>(() => new Worker(echoUrl, { type: "module" }), {
       poolSize: 1,
       initTimeoutMs: 5000,
       idleTimeoutMs: 60_000,
@@ -203,8 +207,8 @@ describe("transferable detection — string/primitive payloads", () => {
   });
 
   it("pool accepts number payloads without error (short-circuit path exercised)", async () => {
-    const ECHO_WORKER_URL = new URL("./workers/echo-worker.ts", import.meta.url);
-    const pool = new TugWorkerPool<number, number>(ECHO_WORKER_URL, {
+    const echoUrl = new URL("./workers/echo-worker.ts", import.meta.url);
+    const pool = new TugWorkerPool<number, number>(() => new Worker(echoUrl, { type: "module" }), {
       poolSize: 1,
       initTimeoutMs: 5000,
       idleTimeoutMs: 60_000,

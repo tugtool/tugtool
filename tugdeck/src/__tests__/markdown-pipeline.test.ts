@@ -141,8 +141,8 @@ function mainThreadFallback(req: MdWorkerReq): MdWorkerRes {
   }
 }
 
-/** URL that can never actually load — forces fallback mode when poolSize = 0. */
-const FAKE_WORKER_URL = new URL("data:text/javascript,");
+/** Factory that would fail if actually called — forces fallback mode when poolSize = 0. */
+const fakeWorkerFactory = () => { throw new Error("should not be called with poolSize=0"); return null as unknown as Worker; };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -302,7 +302,7 @@ describe("markdown pipeline — stream response structure", () => {
 
 describe("markdown pipeline — graceful degradation (poolSize: 0)", () => {
   it("lex request runs inline when poolSize=0", async () => {
-    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(FAKE_WORKER_URL, {
+    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(fakeWorkerFactory, {
       poolSize: 0,
       fallbackHandler: mainThreadFallback,
     });
@@ -318,7 +318,7 @@ describe("markdown pipeline — graceful degradation (poolSize: 0)", () => {
   });
 
   it("parse request runs inline when poolSize=0", async () => {
-    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(FAKE_WORKER_URL, {
+    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(fakeWorkerFactory, {
       poolSize: 0,
       fallbackHandler: mainThreadFallback,
     });
@@ -342,7 +342,7 @@ describe("markdown pipeline — graceful degradation (poolSize: 0)", () => {
   });
 
   it("stream request runs inline when poolSize=0", async () => {
-    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(FAKE_WORKER_URL, {
+    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(fakeWorkerFactory, {
       poolSize: 0,
       fallbackHandler: mainThreadFallback,
     });
@@ -366,7 +366,7 @@ describe("markdown pipeline — graceful degradation (poolSize: 0)", () => {
   });
 
   it("multiple concurrent requests all resolve in fallback mode", async () => {
-    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(FAKE_WORKER_URL, {
+    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(fakeWorkerFactory, {
       poolSize: 0,
       fallbackHandler: mainThreadFallback,
     });
@@ -387,7 +387,7 @@ describe("markdown pipeline — graceful degradation (poolSize: 0)", () => {
   });
 
   it("two-phase roundtrip in fallback mode: lex then parse same content", async () => {
-    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(FAKE_WORKER_URL, {
+    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(fakeWorkerFactory, {
       poolSize: 0,
       fallbackHandler: mainThreadFallback,
     });

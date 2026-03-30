@@ -19,8 +19,8 @@ import { TugWorkerPool } from "../lib/tug-worker-pool";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** URL that can never actually load — used when we expect fallback mode. */
-const FAKE_URL = new URL("data:text/javascript,");
+/** Factory that would fail if actually called — used when we expect fallback mode (poolSize: 0). */
+const fakeFactory = () => { throw new Error("should not be called with poolSize=0"); return null as unknown as Worker; };
 
 /**
  * Build a pool that always runs inline via the fallback handler.
@@ -32,7 +32,7 @@ function makePool<TReq, TRes>(
   handler: (req: TReq) => TRes | Promise<TRes>,
   _logicalSize = 2,
 ) {
-  return new TugWorkerPool<TReq, TRes>(FAKE_URL, {
+  return new TugWorkerPool<TReq, TRes>(fakeFactory, {
     fallbackHandler: handler,
     poolSize: 0, // force inline execution — no real workers
     idleTimeoutMs: 60_000, // long enough to not interfere with tests
@@ -244,7 +244,7 @@ describe("no fallback handler", () => {
   it("rejects with a clear message when Worker fails and no fallback provided", async () => {
     // Force fallback mode by using a data: URL (Worker construction will fail or succeed
     // depending on environment). We check behavior for the case where fallback kicks in.
-    const pool = new TugWorkerPool<number, number>(FAKE_URL, {
+    const pool = new TugWorkerPool<number, number>(fakeFactory, {
       poolSize: 1,
       idleTimeoutMs: 60_000,
       // No fallbackHandler — if Worker fails, tasks should reject.

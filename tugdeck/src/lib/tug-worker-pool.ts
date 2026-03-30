@@ -134,10 +134,27 @@ export function serializeError(err: unknown): { message: string; stack?: string;
 // ---------------------------------------------------------------------------
 
 /**
+ * Factory function that creates a Worker instance.
+ *
+ * Vite requires static analysis to detect worker entry points. Using a factory
+ * keeps the `new Worker()` call at the import site where Vite can see it:
+ *
+ *   import MyWorker from './my-worker?worker';
+ *   const pool = new TugWorkerPool<Req, Res>(() => new MyWorker());
+ *
+ * In test environments (bun), a URL-based factory also works:
+ *
+ *   const url = new URL('./my-worker.ts', import.meta.url);
+ *   const pool = new TugWorkerPool<Req, Res>(() => new Worker(url, { type: 'module' }));
+ */
+export type WorkerFactory = () => Worker;
+
+/**
  * Typed worker pool that spreads computation across multiple cores.
  *
  * Usage:
- *   const pool = new TugWorkerPool<Req, Res>(new URL('./worker.ts', import.meta.url));
+ *   import MyWorker from './worker?worker';
+ *   const pool = new TugWorkerPool<Req, Res>(() => new MyWorker());
  *   const handle = pool.submit(req);
  *   const result = await handle;      // thenable
  *   const result2 = await handle.promise;  // explicit
@@ -145,7 +162,7 @@ export function serializeError(err: unknown): { message: string; stack?: string;
  *   pool.terminate();                 // shut down all workers
  */
 export class TugWorkerPool<TReq, TRes> {
-  private readonly _workerUrl: URL;
+  private readonly _workerFactory: WorkerFactory;
   private readonly _poolSize: number;
   private readonly _initTimeoutMs: number;
   private readonly _idleTimeoutMs: number;
@@ -162,8 +179,8 @@ export class TugWorkerPool<TReq, TRes> {
   /** All pending fallback tasks (for terminate()). */
   private _fallbackTasks: Map<number, PendingTask<TRes>> = new Map();
 
-  constructor(workerUrl: URL, options?: TugWorkerPoolOptions<TReq, TRes>) {
-    this._workerUrl = workerUrl;
+  constructor(workerFactory: WorkerFactory, options?: TugWorkerPoolOptions<TReq, TRes>) {
+    this._workerFactory = workerFactory;
     this._poolSize = options?.poolSize ?? defaultPoolSize();
     this._initTimeoutMs = options?.initTimeoutMs ?? 5000;
     this._idleTimeoutMs = options?.idleTimeoutMs ?? 30000;
@@ -292,7 +309,7 @@ export class TugWorkerPool<TReq, TRes> {
 
   private _createSlot(): WorkerSlot<TReq, TRes> {
     // This may throw if Worker is not available or CSP blocks it.
-    const worker = new Worker(this._workerUrl, { type: "module" });
+    const worker = this._workerFactory();
 
     const slot: WorkerSlot<TReq, TRes> = {
       worker,

@@ -19,6 +19,7 @@ import { TugWorkerPool } from "../lib/tug-worker-pool";
 // ---------------------------------------------------------------------------
 
 const ECHO_WORKER_URL = new URL("./workers/echo-worker.ts", import.meta.url);
+const echoWorkerFactory = () => new Worker(ECHO_WORKER_URL, { type: "module" });
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,7 +41,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 describe("real Worker round-trip", () => {
   it("submits a task and receives the echoed result", async () => {
-    const pool = new TugWorkerPool<{ value: number }, { value: number }>(ECHO_WORKER_URL, {
+    const pool = new TugWorkerPool<{ value: number }, { value: number }>(echoWorkerFactory, {
       poolSize: 1,
       initTimeoutMs: 5000,
       idleTimeoutMs: 60_000,
@@ -53,7 +54,7 @@ describe("real Worker round-trip", () => {
   });
 
   it("echoes string payload", async () => {
-    const pool = new TugWorkerPool<string, string>(ECHO_WORKER_URL, {
+    const pool = new TugWorkerPool<string, string>(echoWorkerFactory, {
       poolSize: 1,
       initTimeoutMs: 5000,
       idleTimeoutMs: 60_000,
@@ -74,7 +75,7 @@ describe("concurrent tasks", () => {
   it("handles multiple tasks simultaneously with a pool of 2 workers", async () => {
     const POOL_SIZE = 2;
     const TASK_COUNT = 6;
-    const pool = new TugWorkerPool<number, number>(ECHO_WORKER_URL, {
+    const pool = new TugWorkerPool<number, number>(echoWorkerFactory, {
       poolSize: POOL_SIZE,
       initTimeoutMs: 5000,
       idleTimeoutMs: 60_000,
@@ -98,7 +99,7 @@ describe("concurrent tasks", () => {
 
 describe("terminate", () => {
   it("terminates the pool cleanly", async () => {
-    const pool = new TugWorkerPool<number, number>(ECHO_WORKER_URL, {
+    const pool = new TugWorkerPool<number, number>(echoWorkerFactory, {
       poolSize: 2,
       initTimeoutMs: 5000,
       idleTimeoutMs: 60_000,
