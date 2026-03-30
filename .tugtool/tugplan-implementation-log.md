@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-30T16:36:01Z
+---
+
+## step-1: Removed idle-callback pre-rendering system (scheduleIdleBatch, CHUNKED_CONTENT_THRESHOLD, RENDER_BATCH_SIZE, idleHandle, renderedCount) and added htmlCache Map with cacheHits/cacheMisses counters to MarkdownEngineState. addBlockNode() now checks cache before calling renderToken().
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-30T03:38:26Z
 ---

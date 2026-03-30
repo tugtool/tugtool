@@ -17,9 +17,9 @@
  *
  * Design decisions:
  * - [D03] Lib + component split: data structures in lib/, component here
+ * - [D03] HTML cache: parsed HTML stored in Map<number, string>, never evicted
+ *   (content model is append-only). Eliminates scheduleIdleBatch pre-rendering.
  * - [D05] Hardcoded height constants — Phase 3B refines with theme measurement
- * - [D06] Content >1MB: lex synchronously (fast), render in batches via
- *   requestIdleCallback to keep UI responsive during DOM work
  *
  * @module components/tugways/tug-markdown-view
  */
@@ -119,13 +119,6 @@ function renderToken(token: Token): string {
 }
 
 // ---------------------------------------------------------------------------
-// Large-content chunked rendering threshold [D06]
-// ---------------------------------------------------------------------------
-
-const CHUNKED_CONTENT_THRESHOLD = 1024 * 1024; // 1 MB
-const RENDER_BATCH_SIZE = 50; // blocks per idle callback
-
-// ---------------------------------------------------------------------------
 // TugMarkdownViewProps (Spec S03)
 // ---------------------------------------------------------------------------
 
@@ -169,10 +162,16 @@ interface MarkdownEngineState {
   blockWindow: RenderedBlockWindow;
   /** Map from block index to the rendered DOM node. */
   blockNodes: Map<number, HTMLElement>;
-  /** Handle for pending requestIdleCallback batch rendering. */
-  idleHandle: ReturnType<typeof requestIdleCallback> | null;
-  /** How many tokens have been rendered (chunked mode progress). */
-  renderedCount: number;
+  /**
+   * HTML cache: block index → sanitized HTML string.
+   * Populated by renderToken() at render time. Never evicted (content is
+   * append-only). Eliminates re-parsing on scroll-back [D03].
+   */
+  htmlCache: Map<number, string>;
+  /** Cache hit counter for diagnostics. */
+  cacheHits: number;
+  /** Cache miss counter for diagnostics. */
+  cacheMisses: number;
   /** RAF handle for auto-scroll. */
   rafHandle: number | null;
 }
@@ -232,8 +231,9 @@ export function TugMarkdownView({
         heightIndex,
         blockWindow,
         blockNodes: new Map(),
-        idleHandle: null,
-        renderedCount: 0,
+        htmlCache: new Map(),
+        cacheHits: 0,
+        cacheMisses: 0,
         rafHandle: null,
       };
     }
@@ -276,7 +276,18 @@ export function TugMarkdownView({
     const token = engine.tokens[index];
     if (!token) return;
 
-    const html = renderToken(token);
+    // Check HTML cache first [D03]. Cache hit: reuse sanitized HTML without
+    // re-parsing. Cache miss: render and populate cache.
+    let html: string;
+    if (engine.htmlCache.has(index)) {
+      html = engine.htmlCache.get(index)!;
+      engine.cacheHits++;
+    } else {
+      html = renderToken(token);
+      engine.htmlCache.set(index, html);
+      engine.cacheMisses++;
+    }
+
     const el = document.createElement("div");
     el.className = "tugx-md-block";
     el.dataset.blockIndex = String(index);
@@ -289,6 +300,9 @@ export function TugMarkdownView({
   }
 
   // ---- Remove a single block DOM node ----
+  // NOTE: htmlCache is intentionally NOT evicted here. The content model is
+  // append-only, so cached HTML is always valid. Retaining the cache means
+  // scrolling back to a previously-rendered block is a cache hit [D03].
   function removeBlockNode(engine: MarkdownEngineState, index: number) {
     const el = engine.blockNodes.get(index);
     if (!el) return;
@@ -386,12 +400,6 @@ export function TugMarkdownView({
 
     const engine = getEngine();
 
-    // Cancel any in-flight idle render.
-    if (engine.idleHandle !== null) {
-      cancelIdleCallback(engine.idleHandle);
-      engine.idleHandle = null;
-    }
-
     // Clear previous state.
     engine.heightIndex.clear();
     engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
@@ -402,6 +410,12 @@ export function TugMarkdownView({
       el.remove();
     }
     engine.blockNodes.clear();
+
+    // Clear the HTML cache on new content load (new content = stale HTML).
+    engine.htmlCache.clear();
+    engine.cacheHits = 0;
+    engine.cacheMisses = 0;
+
     applySpacers(0, 0);
 
     // Lex synchronously (marked.lexer is fast even for large content).
@@ -409,7 +423,6 @@ export function TugMarkdownView({
     engine.tokens = tokens;
     engine.blockOffsets = [];
     engine.accumulatedText = content;
-    engine.renderedCount = 0;
 
     // Populate BlockHeightIndex with estimated heights and track byte offsets.
     let cumulativeOffset = 0;
@@ -420,46 +433,12 @@ export function TugMarkdownView({
       engine.blockOffsets.push(cumulativeOffset);
     }
 
-    // Render visible window immediately.
+    // Render visible window immediately. addBlockNode() populates htmlCache
+    // on first render; subsequent scroll-back is a cache hit [D03].
     const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
     engine.blockWindow.setViewportHeight(viewportHeight);
     rebuildWindow(engine);
-
-    // For large content, render additional blocks in idle batches [D06].
-    if (content.length > CHUNKED_CONTENT_THRESHOLD) {
-      // The visible range is already rendered. Schedule idle batches to pre-render
-      // off-screen blocks so fast scrolling finds them ready.
-      scheduleIdleBatch(engine);
-    }
-
-    // Cleanup on unmount / content change.
-    return () => {
-      if (engine.idleHandle !== null) {
-        cancelIdleCallback(engine.idleHandle);
-        engine.idleHandle = null;
-      }
-    };
   }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** Schedule a requestIdleCallback batch to pre-render off-screen blocks. */
-  function scheduleIdleBatch(engine: MarkdownEngineState) {
-    const schedule = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (fn: () => void) => setTimeout(fn, 0);
-    engine.idleHandle = schedule(() => {
-      engine.idleHandle = null;
-      const current = engine.blockWindow.currentRange;
-      // Find the next un-rendered block outside the current window.
-      let batchStart = current.endIndex;
-      let count = 0;
-      while (batchStart < engine.tokens.length && count < RENDER_BATCH_SIZE) {
-        addBlockNode(engine, batchStart);
-        batchStart++;
-        count++;
-      }
-      if (batchStart < engine.tokens.length) {
-        scheduleIdleBatch(engine);
-      }
-    }) as ReturnType<typeof requestIdleCallback>;
-  }
 
   // ---- Auto-scroll during streaming [L05: RAF only for scroll write] ----
   useEffect(() => {
@@ -539,11 +518,14 @@ export function TugMarkdownView({
         const newHtml = renderToken(newToken);
         const oldEl = engine.blockNodes.get(blockIndex);
         if (oldEl && oldEl.innerHTML !== newHtml) {
+          // Update cache with new HTML for this changed block.
+          engine.htmlCache.set(blockIndex, newHtml);
           engine.blockWindow.markDirty(blockIndex);
           engine.tokens[blockIndex] = newToken;
           engine.heightIndex.setHeight(blockIndex, estimateBlockHeight(newToken));
         } else if (!oldEl) {
-          // Block not in DOM yet — just update the token reference.
+          // Block not in DOM yet — update token reference and cache.
+          engine.htmlCache.set(blockIndex, newHtml);
           engine.tokens[blockIndex] = newToken;
           engine.heightIndex.setHeight(blockIndex, estimateBlockHeight(newToken));
         }
@@ -579,12 +561,15 @@ export function TugMarkdownView({
     }
 
     // Update dirty block DOM nodes in the current window.
+    // The cache was already updated during reconciliation above, so we read
+    // from the cache here rather than re-rendering from the token.
     const current = engine.blockWindow.currentRange;
     for (let i = current.startIndex; i < current.endIndex; i++) {
       if (engine.blockWindow.isDirty(i)) {
         const el = engine.blockNodes.get(i);
         if (el) {
-          el.innerHTML = renderToken(engine.tokens[i]);
+          const cachedHtml = engine.htmlCache.get(i);
+          el.innerHTML = cachedHtml !== undefined ? cachedHtml : renderToken(engine.tokens[i]);
           engine.blockWindow.clearDirty(i);
         }
       }
@@ -649,12 +634,14 @@ export function TugMarkdownView({
         }
       }
 
-      // Refresh all visible block DOM nodes.
+      // Refresh all visible block DOM nodes, updating the cache with final HTML.
       const current = engine.blockWindow.currentRange;
       for (let i = current.startIndex; i < current.endIndex; i++) {
         const el = engine.blockNodes.get(i);
         if (el && engine.tokens[i]) {
-          el.innerHTML = renderToken(engine.tokens[i]);
+          const finalHtml = renderToken(engine.tokens[i]);
+          engine.htmlCache.set(i, finalHtml);
+          el.innerHTML = finalHtml;
         }
       }
 
@@ -667,9 +654,6 @@ export function TugMarkdownView({
     return () => {
       const engine = engineRef.current;
       if (!engine) return;
-      if (engine.idleHandle !== null) {
-        cancelIdleCallback(engine.idleHandle);
-      }
       if (engine.rafHandle !== null) {
         cancelAnimationFrame(engine.rafHandle);
       }
