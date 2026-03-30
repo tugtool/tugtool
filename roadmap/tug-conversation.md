@@ -94,31 +94,38 @@ These built-in commands have no stream-json equivalent — they return "Unknown 
 
 ## Phases
 
-The work falls into three tiers: **prove the pipe**, **build the UI**, **add the feed layer**. Each phase is scoped to be one `/plan` → `/implement` cycle (or `/dash` for investigation phases).
+The work falls into three tiers: **prove the pipe**, **build the UI**, **add the feed layer**. Each phase is scoped to be one `/plan` → `/implement` cycle (or `/dash` for investigation/verification phases).
 
 ```
 ─── TIER 1: PROVE THE PIPE ───────────────────────────────────
-Phase 1: Transport Exploration    — DONE (33 tests, journal at transport-exploration.md)
-Phase 2: Transport Hardening      — T1-T6 fixes
+Phase 1: Transport Exploration      — DONE (35 tests)
+Phase 2: Transport Hardening        — DONE (T1-T7)
+Phase 2b: WebSocket Verification    — E4 end-to-end through tugcast
 
 ─── TIER 2: BUILD THE UI ─────────────────────────────────────
-Phase 3: Core Markdown            — tug-markdown with streaming (U1, U5, U6, U7)
-Phase 4: Prompt Input             — tug-prompt-input with history and slash commands (U12, U13)
-Phase 5: Prompt Entry             — tug-prompt-entry, wired end-to-end (U2-U4, U8-U11, U14-U15, U19-U22)
+Phase 3: Streaming Markdown         — rendering layer (U1, U5, U6, U7)
+Phase 4: Prompt Input               — input layer (U12, U13, U19)
+Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
+Phase 6: Chrome & Status            — switchers, indicators, cost (U9-U11, U16, U17, U20-U22)
+                                      + terminal commands: C1, C2, C3, C10
+Phase 7: Session & Commands         — remaining terminal commands (C4-C9, C11-C15)
+                                      + image attachments (U15), permission reset (U18), session picker (E5)
 
 ─── TIER 3: ADD THE FEED LAYER ───────────────────────────────
-Phase 6: Hook Capture             — agent lifecycle events to feed.jsonl
-Phase 7: Feed Correlation         — semantic enrichment with step context
-Phase 8: Feed CLI + Tugcast       — tugcode feed commands, events reach browser
-Phase 9: Agent-Internal Events    — file/command detail from within agents
-Phase 10: Custom Block Renderers  — rich UI for agent output
+Phase 8: Hook Capture               — agent lifecycle events to feed.jsonl
+Phase 9: Feed Correlation           — semantic enrichment with step context
+Phase 10: Feed CLI + Tugcast        — tugcode feed commands, events reach browser
+Phase 11: Agent-Internal Events     — file/command detail from within agents
+Phase 12: Custom Block Renderers    — rich UI for agent output
 ```
+
+**Item coverage:** Every U1-U23 and C1-C15 item is assigned to a phase. E3 (hooks visibility) and E6 (background tasks, MCP) remain deferred — non-blocking for UI work.
 
 ---
 
 ### Phase 1: Transport Exploration {#transport-exploration}
 
-**Status: COMPLETE.** 35 tests. See [transport-exploration.md](transport-exploration.md) for full journal.
+**Status: DONE.** 35 tests. See [transport-exploration.md](transport-exploration.md) for full journal.
 
 **Key discoveries:**
 - `assistant_text` partials are **deltas**, not accumulated. Final `complete` has full text.
@@ -137,34 +144,55 @@ Phase 10: Custom Block Renderers  — rich UI for agent output
 
 ### Phase 2: Transport Hardening {#transport-hardening}
 
-**Goal:** Fix T1-T6. Make the transport reliable enough to build UI on.
+**Status: DONE.** All seven items committed.
 
-**Inputs:** Phase 1 findings.
+**Commits:**
+1. `ec7fad06` T1 — fix `--plugin-dir` to point to `tugplug/`
+2. `923a655c` T2 — forward synthetic assistant text
+3. `f3ac0249` T3 — forward `api_retry` events
+4. `ac3cdf54` T6 — `--no-auth` flag, port defaults to tugbank
+5. `67c22ad1` T4 — process lifecycle (process groups, parent-death watchdog, kill_on_drop)
+6. `314a13cc` T5 — session command readiness signaling
+7. `70e8733e` T7 — compile tugtalk to standalone binary
 
-**Work:** Items T1-T6 from the action items table above. Prioritized:
-1. T1 (fix `--plugin-dir`) — tiny, unblocks all skill invocation
-2. T2 (synthetic text forwarding) — small, unblocks built-in skill output
-3. T3 (`api_retry` forwarding) — small, enables retry indicators
-4. T6 (`--no-auth`) — small, unblocks WebSocket testing
-5. T4 (process lifecycle) — medium, prevents zombie accumulation
-6. T5 (session readiness) — medium, enables clean session management
-
-**Exit criteria:**
+**Exit criteria met:**
 - All tugplug skills visible in `system_metadata.skills` and invocable via `user_message`
 - Built-in skill commands (`/cost`, `/compact`) produce text output through tugtalk
 - `api_retry` events forwarded
 - No orphaned tugtalk processes after app quit
-- End-to-end tugcast WebSocket path verified (via `--no-auth`)
-
-**Outputs:** Hardened tugcast/tugtalk.
+- `--no-auth` flag available for WebSocket testing
+- Session new/fork/continue all signal readiness correctly
+- Tugtalk compiles to standalone binary — no Bun runtime dependency in production
 
 ---
 
-### Phase 3: Core Markdown {#core-markdown}
+### Phase 2b: WebSocket Verification {#websocket-verification}
+
+**Goal:** Verify the full production WebSocket path end-to-end before building UI on it. Addresses E4.
+
+**Inputs:** `--no-auth` flag (T6). All transport hardening (T1-T7).
+
+**Work:**
+- Launch tugcast with `--no-auth`
+- Connect via WebSocket from browser or probe script
+- Verify: handshake, `protocol_init`, `session_init`, `user_message` → streamed response
+- Test: binary framing behavior, reconnection, conversation bootstrap
+- Document any gaps or new transport items
+
+**Exit criteria:**
+- Full round-trip through WebSocket: browser connects → sends message → receives streamed response
+- Reconnection behavior documented
+- No new blocking issues, or new issues added to action items
+
+**Outputs:** Verified WebSocket path. Confidence to build UI.
+
+---
+
+### Phase 3: Streaming Markdown {#streaming-markdown}
 
 **Goal:** tug-markdown component with streaming support. Addresses U1, U5, U6, U7.
 
-**Inputs:** Phase 2 (solid transport). `assistant_text` delta model from Phase 1.
+**Inputs:** Verified transport (Phases 2, 2b). `assistant_text` delta model from Phase 1.
 
 **Work:**
 - Token-level rendering: `marked.lexer()` → keyed React elements per block.
@@ -182,11 +210,13 @@ Phase 10: Custom Block Renderers  — rich UI for agent output
 - Code blocks highlighted, copy works
 - Laws compliance: [L02, L06, L10, L16, L19, L20]
 
+**Demo:** Feed recorded `assistant_text` deltas into tug-markdown, watch it stream.
+
 ---
 
 ### Phase 4: Prompt Input {#prompt-input}
 
-**Goal:** tug-prompt-input with history and slash commands. Addresses U12, U13.
+**Goal:** tug-prompt-input with history, slash commands, and message queueing. Addresses U12, U13, U19.
 
 **Inputs:** TugTextarea auto-resize. `system_metadata` slash command data.
 
@@ -196,80 +226,135 @@ Phase 10: Custom Block Renderers  — rich UI for agent output
 - `PromptHistoryStore`: IndexedDB, per-card, `useSyncExternalStore` [L02].
 - Slash command popup (U12): merge `system_metadata.slash_commands` + `.skills`, `@floating-ui/react`.
 - `@` file completion (U13): detect `@`, file picker, inject content.
+- Message queueing during turn (U19): disable send during streaming, show queue indicator. Use `interrupt` to cancel.
 - Gallery card.
 
 **Exit criteria:**
 - Submit, history navigation, prefix search, slash popup, `@` completion all work
 - CJK input works
+- Send disabled / queue indicator shown during active turn
+
+**Demo:** Working prompt with slash popup, history, and queueing behavior.
 
 ---
 
-### Phase 5: Prompt Entry {#prompt-entry}
+### Phase 5: Conversation Wiring {#conversation-wiring}
 
-**Goal:** tug-prompt-entry wired end-to-end. Addresses U2, U3, U4, U8, U9, U10, U11, U14, U15.
+**Goal:** Wire the core conversation loop end-to-end. Addresses U2, U3, U4, U8, U14, U23.
 
 **Inputs:** tug-markdown (Phase 3), tug-prompt-input (Phase 4), hardened transport (Phase 2).
 
 **Work:**
-- Compose prompt input + submit/stop button + utility row.
+- Compose prompt input + submit/stop button.
 - Wire to CodeOutput/CodeInput: submit sends `user_message`, stop sends `interrupt` (U4).
-- Permission dialog (U2): `control_request_forward` with `is_question: false`.
-- AskUserQuestion dialog (U3): `control_request_forward` with `is_question: true`.
-- Subagent activity display (U8).
-- Model switcher (U9), permission mode switcher (U10), cost display (U11).
-- Session handling (U14), image attachments (U15).
+- Permission dialog (U2): `control_request_forward` with `is_question: false`. Allow/deny buttons. Permission suggestions.
+- AskUserQuestion dialog (U3): `control_request_forward` with `is_question: true`. Single/multi-select options.
+- Subagent activity display (U8): `tool_use: Agent` brackets subagent lifetime. Nested tool calls visible.
+- Session handling (U14): detect pending session IDs (`"pending"`, `"pending-fork"`), wait for real ID.
+- Task progress display (U23): `system:task_started/progress/completed` events for agent lifecycle indicators.
 - Gallery card + live integration test.
 
 **Exit criteria:**
 - Full round-trip: type prompt → streamed markdown response
-- Slash commands invoke skills
 - Permission and question dialogs work
 - Interrupt stops streaming
+- Subagent activity visible
+- Session new/fork handled cleanly
+
+**Demo:** Real conversation with Claude through the UI.
 
 ---
 
-### Phases 6-10: Feed Layer
+### Phase 6: Chrome & Status {#chrome-and-status}
 
-See earlier sections of this document for full details. Summary:
+**Goal:** Status indicators, switchers, and cost display. Addresses U9, U10, U11, U16, U17, U20, U21, U22, C1, C2, C3, C10.
+
+**Inputs:** Working conversation (Phase 5). `system_metadata` and `cost_update` events.
+
+**Work:**
+- Model switcher (U9): send `model_change`, synthetic `assistant_text` confirms, `system_metadata` updates.
+- Permission mode switcher (U10): send `permission_mode`, cycle default → acceptEdits → plan → auto.
+- Cost/token display (U11): `cost_update` with `total_cost_usd`, `num_turns`, `duration_ms`, `usage`.
+- API retry indicator (U16): `api_retry` events — attempt count, delay, error type.
+- Compaction indicator (U17): `compact_boundary` events — show when context is being compacted.
+- Plan mode choices (U20): `EnterPlanMode` approve/reject/keep-planning options.
+- Stop background task (U21): send `{ type: "stop_task", task_id }` button.
+- Context window budget (U22): account for ~20% startup overhead in token counter.
+- `/status` (C1): model, session, context usage from `system_metadata` + `cost_update.usage`.
+- `/model` (C2): model picker → `model_change` message.
+- `/permissions` (C3): mode display + switcher → `permission_mode` message.
+- `/compact` (C10): invoke skill, show compaction indicator.
+
+**Exit criteria:**
+- Model and permission mode switch correctly, UI reflects changes
+- Cost display updates each turn
+- Retry and compaction indicators visible when events arrive
+- /status, /model, /permissions, /compact all functional
+
+**Demo:** Full conversation chrome — switch models, see cost, trigger compaction.
+
+---
+
+### Phase 7: Session & Commands {#session-and-commands}
+
+**Goal:** Terminal command reimplementations, session management, and remaining features. Addresses C4-C9, C11-C15, U15, U18, E5.
+
+**Inputs:** Full conversation UI (Phases 3-6).
+
+**Work:**
+- `/clear` (C4): clear conversation → `session_command: "new"`.
+- `/resume` (C5): session picker — list, preview, rename, filter. Data from filesystem (E5 exploration).
+- `/diff` (C6): run git diff, render result.
+- `/export` (C7): serialize conversation from accumulated events.
+- `/copy` (C8): copy last response from accumulated `assistant_text`.
+- `/btw` (C9): side question overlay — separate API call, no history impact.
+- `/rename` (C11): text input → update session metadata.
+- `/branch`, `/rewind` (C12): session fork → `session_command: "fork"`.
+- `/vim` (C13): keybinding mode toggle.
+- `/color`, `/theme` (C14): theme picker.
+- `/help` (C15): help display.
+- Image attachments (U15): base64 in `user_message.attachments`. Drag-drop/paste → encode → attach.
+- Session-scoped permission reset (U18): handle re-approval after resume.
+
+**Exit criteria:**
+- All terminal commands have UI equivalents
+- Session picker works (list, resume, rename)
+- Image attachments work via drag-drop/paste
+- Permissions re-prompt correctly after session resume
+
+**Demo:** Full session lifecycle — new, resume, fork, rename. All commands accessible.
+
+---
+
+### Phases 8-12: Feed Layer {#feed-layer}
 
 | Phase | Goal | Scope |
 |-------|------|-------|
-| 6. Hook Capture | Agent lifecycle → `raw-events.jsonl` | Shell scripts + hooks.json |
-| 7. Feed Correlation | Semantic enrichment → `feed.jsonl` | Correlation logic |
-| 8. Feed CLI + Tugcast | `tugcode feed` + browser delivery | Rust CLI + tugcast feed |
-| 9. Agent-Internal Events | File/command detail | Agent frontmatter hooks |
-| 10. Custom Block Renderers | Rich agent output UI | React components |
-
----
-
-## Driving Plans with `/plan` and `/implement`
-
-| Phase | Approach | Estimated Steps |
-|-------|----------|-----------------|
-| 1 | ~~`/dash` (investigation)~~ DONE | — |
-| 2 | `/plan` + `/implement` | 3-4 |
-| 3 | `/plan` + `/implement` | 4-5 |
-| 4 | `/plan` + `/implement` | 4-5 |
-| 5 | `/plan` + `/implement` | 3-4 |
-| 6-10 | `/plan` + `/implement` each | 2-5 each |
+| 8. Hook Capture | Agent lifecycle → `raw-events.jsonl` | Shell scripts + hooks.json |
+| 9. Feed Correlation | Semantic enrichment → `feed.jsonl` | Correlation logic |
+| 10. Feed CLI + Tugcast | `tugcode feed` + browser delivery | Rust CLI + tugcast feed |
+| 11. Agent-Internal Events | File/command detail | Agent frontmatter hooks |
+| 12. Custom Block Renderers | Rich agent output UI | React components |
 
 ---
 
 ## Deferred
 
-- **tug-rich-text** — Monaco editor wrapper. Future group.
-- **tug-search-bar** — TugInput + TugButton. Future group.
+- **tug-rich-text** — Monaco editor wrapper. Future.
+- **tug-search-bar** — TugInput + TugButton. Future.
 - **Tiptap migration** for tug-prompt-input (@-mentions, ghost text). Future.
 - **Mermaid, KaTeX** — tug-markdown extensions via the extension point. When needed.
+- **E3 (hooks visibility)** — Hooks run silently. No events for hook decisions, context injection, timing. Non-blocking for UI.
+- **E6 (advanced patterns)** — Background tasks, MCP, elicitation untested. Non-blocking for UI.
 
 ---
 
 ## Risks
 
 1. **Feed hook parsing fragility.** Orchestrator prompts are natural language with embedded JSON.
-2. **Shell script overhead on high-frequency hooks.** ~50ms per invocation. Monitor in Phase 9.
-3. **Hooks visibility gap (E3).** Hooks run silently — UI blind to hook decisions. May need tugtalk changes.
-4. **Tugcast WebSocket unknowns (E4).** Binary framing, reconnection, bootstrap for conversations untested until T6.
+2. **Shell script overhead on high-frequency hooks.** ~50ms per invocation. Monitor in Phase 11.
+3. **Hooks visibility gap (E3).** Hooks run silently — UI blind to hook decisions. May need tugtalk changes. Deferred.
+4. **WebSocket unknowns.** Binary framing, reconnection, bootstrap for conversations — Phase 2b will surface issues before UI work begins.
 
 ---
 
@@ -279,6 +364,9 @@ See earlier sections of this document for full details. Summary:
 2. **History scope** — Per-card via `historyKey`. No global cross-card history for now.
 3. **Slash command extensibility** — Declarative list from `system_metadata`. No registration system.
 4. **Streaming text model** — Deltas on partials, full text on complete. UI accumulates.
-5. **Slash command invocation** — Works via `user_message`. Fix `--plugin-dir` (T1) + synthetic text (T2).
-6. **Custom block renderers** — Extension point in Phase 3, individual blocks in Phase 10.
-7. **tug-rich-text / tug-search-bar** — Deferred from Group D.
+5. **Slash command invocation** — Works via `user_message`. Fixed with T1 (`--plugin-dir`) + T2 (synthetic text).
+6. **Custom block renderers** — Extension point in Phase 3, individual blocks in Phase 12.
+7. **tug-rich-text / tug-search-bar** — Deferred.
+8. **Process lifecycle** — Solved with process groups, parent-death watchdog, kill_on_drop (T4).
+9. **Production Bun dependency** — Eliminated. Tugtalk compiles to standalone binary (T7).
+10. **Auth bypass for testing** — `--no-auth` flag bypasses WS session/origin checks, auth URL still generated normally (T6).
