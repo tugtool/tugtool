@@ -16,10 +16,13 @@
  *   data-slot="markdown-view", file pair (tsx + css).
  *
  * Design decisions:
- * - [D03] Lib + component split: data structures in lib/, component here
- * - [D03] HTML cache: parsed HTML stored in Map<number, string>, never evicted
- *   (content model is append-only). Eliminates scheduleIdleBatch pre-rendering.
+ * - [D01] Two-phase lex/parse pipeline via TugWorkerPool
+ * - [D02] Viewport-priority parsing with scroll coalescing
+ * - [D03] HTML cache replaces pre-rendering (Map<number, string>, never evicted)
+ * - [D04] DOMPurify at render time only — workers return unsanitized HTML
  * - [D05] Hardcoded height constants — Phase 3B refines with theme measurement
+ * - [D07] Graceful degradation to main-thread inline execution via fallbackHandler
+ * - [D08] Parse workers re-lex from raw strings (no Token cloning)
  *
  * @module components/tugways/tug-markdown-view
  */
@@ -28,12 +31,13 @@ import "./tug-markdown-view.css";
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { marked } from "marked";
-import type { Token } from "marked";
 import DOMPurifyModule from "dompurify";
 import { cn } from "@/lib/utils";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { DefaultTextEstimator } from "@/lib/markdown-height-estimator";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
+import { TugWorkerPool } from "@/lib/tug-worker-pool";
+import type { TaskHandle } from "@/lib/tug-worker-pool";
 import type { PropertyStore } from "@/components/tugways/property-store";
 
 // ---------------------------------------------------------------------------
@@ -67,30 +71,136 @@ function getDOMPurify(): ReturnType<typeof DOMPurifyModule> {
 }
 
 // ---------------------------------------------------------------------------
-// Height estimation
+// Worker message types (Spec S01 / S02)
+// ---------------------------------------------------------------------------
+
+/** Discriminated union of requests sent to the markdown worker. */
+export type MdWorkerReq =
+  | { type: "lex"; text: string }
+  | { type: "parse"; batch: { index: number; raw: string }[] }
+  | { type: "stream"; tailText: string; relexFromOffset: number; viewportHint?: { startIndex: number; endIndex: number } };
+
+/** Discriminated union of responses from the markdown worker. */
+export type MdWorkerRes =
+  | { type: "lex"; blockCount: number; heights: number[]; offsets: number[] }
+  | { type: "parse"; results: { index: number; html: string }[] }
+  | { type: "stream"; newHeights: number[]; newOffsets: number[]; parsedBlocks: { index: number; html: string }[]; metadataOnly: { index: number; height: number }[] };
+
+// ---------------------------------------------------------------------------
+// MarkdownDiagnostics (Spec S03)
+// ---------------------------------------------------------------------------
+
+/** Metrics object emitted via onDiagnostics callback on each parse response. */
+export interface MarkdownDiagnostics {
+  poolSize: number;
+  inFlightTasks: number;
+  cacheSize: number;
+  cacheHitRate: number;
+  blockCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Height estimation (fallback for main-thread inline execution)
 // ---------------------------------------------------------------------------
 
 /** Module-level estimator instance. Pure, no state, safe to share. */
 const _estimator = new DefaultTextEstimator();
 
-/** Estimate the rendered height of a marked Token using [D05] constants. */
-function estimateBlockHeight(token: Token): number {
-  return _estimator.estimate(token.type, (token as { raw?: string }).raw ?? "", {
-    depth: (token as { depth?: number }).depth,
-    itemCount: (token as { items?: unknown[] }).items?.length,
-    rowCount: (token as { rows?: unknown[][] }).rows?.length,
-  });
+/** Estimate height of a block from token type, raw text, and optional metadata. */
+function estimateBlockHeight(tokenType: string, raw: string, meta?: { depth?: number; itemCount?: number; rowCount?: number }): number {
+  return _estimator.estimate(tokenType, raw, meta);
 }
 
-/** Render a single token to sanitized HTML. */
-function renderToken(token: Token): string {
-  try {
-    const html = marked.parser([token]);
-    return getDOMPurify().sanitize(html, SANITIZE_CONFIG);
-  } catch {
-    return "";
+// ---------------------------------------------------------------------------
+// Fallback handler — runs lex/parse/stream inline on the main thread [D07]
+// ---------------------------------------------------------------------------
+
+/**
+ * Fallback handler for graceful degradation [D07].
+ * When Worker construction fails, the pool calls this inline via queueMicrotask.
+ * Implements the same switch logic as markdown-worker.ts.
+ */
+function mainThreadFallback(req: MdWorkerReq): MdWorkerRes {
+  switch (req.type) {
+    case "lex": {
+      const tokens = marked.lexer(req.text).filter((t) => t.type !== "space");
+      const heights: number[] = [];
+      const offsets: number[] = [];
+      let cursor = 0;
+      for (const token of tokens) {
+        const raw = (token as { raw?: string }).raw ?? "";
+        const meta = {
+          depth: (token as { depth?: number }).depth,
+          itemCount: (token as { items?: unknown[] }).items?.length,
+          rowCount: (token as { rows?: unknown[][] }).rows?.length,
+        };
+        heights.push(estimateBlockHeight(token.type, raw, meta));
+        const tokenStart = req.text.indexOf(raw, cursor);
+        if (tokenStart >= 0) {
+          cursor = tokenStart + raw.length;
+        } else {
+          cursor += raw.length;
+        }
+        offsets.push(cursor);
+      }
+      return { type: "lex", blockCount: tokens.length, heights, offsets };
+    }
+    case "parse": {
+      const results: { index: number; html: string }[] = [];
+      for (const { index, raw } of req.batch) {
+        const html = marked.parser(marked.lexer(raw));
+        results.push({ index, html });
+      }
+      return { type: "parse", results };
+    }
+    case "stream": {
+      const tokens = marked.lexer(req.tailText).filter((t) => t.type !== "space");
+      const newHeights: number[] = [];
+      const newOffsets: number[] = [];
+      const parsedBlocks: { index: number; html: string }[] = [];
+      const metadataOnly: { index: number; height: number }[] = [];
+      let cursor = req.relexFromOffset;
+      for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        const raw = (token as { raw?: string }).raw ?? "";
+        const meta = {
+          depth: (token as { depth?: number }).depth,
+          itemCount: (token as { items?: unknown[] }).items?.length,
+          rowCount: (token as { rows?: unknown[][] }).rows?.length,
+        };
+        const height = estimateBlockHeight(token.type, raw, meta);
+        newHeights.push(height);
+        const tokenStart = req.tailText.indexOf(raw, cursor - req.relexFromOffset);
+        if (tokenStart >= 0) {
+          cursor = req.relexFromOffset + tokenStart + raw.length;
+        } else {
+          cursor += raw.length;
+        }
+        newOffsets.push(cursor);
+        const vp = req.viewportHint;
+        const inViewport = vp === undefined || (i >= vp.startIndex && i <= vp.endIndex);
+        if (inViewport) {
+          const html = marked.parser(marked.lexer(raw));
+          parsedBlocks.push({ index: i, html });
+        } else {
+          metadataOnly.push({ index: i, height });
+        }
+      }
+      return { type: "stream", newHeights, newOffsets, parsedBlocks, metadataOnly };
+    }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Overscan constant [Q01 — start at 4 screens, tune based on gallery card test]
+// ---------------------------------------------------------------------------
+
+/**
+ * Number of screens above and below the viewport to keep parsed and in the
+ * HTML cache. Shallow overscan causes placeholder flicker during fast scrolling;
+ * deep overscan wastes worker time. Starts at 4 per plan [Q01].
+ */
+const OVERSCAN_SCREENS = 4;
 
 // ---------------------------------------------------------------------------
 // TugMarkdownViewProps (Spec S03)
@@ -107,6 +217,8 @@ export interface TugMarkdownViewProps {
   isStreaming?: boolean;
   /** Callback when a block enters the viewport and is measured. */
   onBlockMeasured?: (index: number, measuredHeight: number) => void;
+  /** Callback fired on each parse response with pool/cache metrics. */
+  onDiagnostics?: (metrics: MarkdownDiagnostics) => void;
   /** CSS class for the scroll container. */
   className?: string;
 }
@@ -116,18 +228,19 @@ export interface TugMarkdownViewProps {
 // ---------------------------------------------------------------------------
 
 interface MarkdownEngineState {
-  /** The list of lexed tokens (aligned 1:1 with BlockHeightIndex blocks). */
-  tokens: Token[];
   /**
-   * Byte offset in the source text where each block ends.
-   * blockOffsets[i] = sum of raw lengths for tokens[0..i] (exclusive).
-   * Used by the streaming path to re-lex only from the last stable boundary.
-   * Populated for both static and streaming paths.
+   * The source text for static content. Main thread slices raws using offsets
+   * from Phase 1 lex response (D08).
+   */
+  contentText: string;
+  /**
+   * Cumulative end offsets per block from Phase 1 lex response.
+   * offsets[i] = character position where block i ends.
+   * To extract block i's raw: contentText.slice(offsets[i-1] ?? 0, offsets[i])
    */
   blockOffsets: number[];
   /**
    * The accumulated streaming text. Grows as deltas arrive.
-   * Raw character delta appends are supported by appending to this string.
    */
   accumulatedText: string;
   /** The BlockHeightIndex driving the virtual layout. */
@@ -137,20 +250,41 @@ interface MarkdownEngineState {
   /** Map from block index to the rendered DOM node. */
   blockNodes: Map<number, HTMLElement>;
   /**
-   * HTML cache: block index → sanitized HTML string.
-   * Populated by renderToken() at render time. Never evicted (content is
-   * append-only). Eliminates re-parsing on scroll-back [D03].
+   * HTML cache: block index → unsanitized HTML string from worker.
+   * DOMPurify runs at render time in addBlockNode() [D04].
+   * Never evicted (content is append-only) [D03].
    */
   htmlCache: Map<number, string>;
   /** Cache hit counter for diagnostics. */
   cacheHits: number;
   /** Cache miss counter for diagnostics. */
   cacheMisses: number;
-  /** RAF handle for auto-scroll. */
+  /** In-flight parse task handles for cancellation on range change [D02]. */
+  inFlightParses: TaskHandle<MdWorkerRes>[];
+  /** Streaming coalescing dirty flag [D05]. */
+  streamingDirty: boolean;
+  /** setInterval handle for 100ms streaming coalescing [D05]. */
+  streamingInterval: ReturnType<typeof setInterval> | null;
+  /** Pending scroll top for RAF coalescing [D02]. */
+  pendingScrollTop: number | null;
+  /** RAF handle for scroll coalescing [D02]. */
+  scrollRafHandle: number | null;
+  /** RAF handle for auto-scroll during streaming [L05]. */
   rafHandle: number | null;
+  /** The TugWorkerPool instance [D01]. */
+  pool: TugWorkerPool<MdWorkerReq, MdWorkerRes> | null;
+  /** Total block count from last lex response. */
+  blockCount: number;
 }
 
 const DEFAULT_VIEWPORT_HEIGHT = 600;
+
+// ---------------------------------------------------------------------------
+// Parse batch size — number of blocks per worker task
+// ---------------------------------------------------------------------------
+
+/** Maximum blocks per parse batch. Balances parallelism vs. per-task overhead. */
+const PARSE_BATCH_SIZE = 10;
 
 // ---------------------------------------------------------------------------
 // TugMarkdownView component
@@ -179,6 +313,7 @@ export function TugMarkdownView({
   streamingPath = "text",
   isStreaming = false,
   onBlockMeasured,
+  onDiagnostics,
   className,
 }: TugMarkdownViewProps) {
   // ---- DOM refs ----
@@ -199,7 +334,7 @@ export function TugMarkdownView({
       const heightIndex = new BlockHeightIndex(1024);
       const blockWindow = new RenderedBlockWindow(heightIndex, DEFAULT_VIEWPORT_HEIGHT, 2);
       engineRef.current = {
-        tokens: [],
+        contentText: "",
         blockOffsets: [],
         accumulatedText: "",
         heightIndex,
@@ -208,7 +343,14 @@ export function TugMarkdownView({
         htmlCache: new Map(),
         cacheHits: 0,
         cacheMisses: 0,
+        inFlightParses: [],
+        streamingDirty: false,
+        streamingInterval: null,
+        pendingScrollTop: null,
+        scrollRafHandle: null,
         rafHandle: null,
+        pool: null,
+        blockCount: 0,
       };
     }
     return engineRef.current;
@@ -244,28 +386,26 @@ export function TugMarkdownView({
   }
 
   // ---- Add a single block DOM node ----
+  // Cache stores unsanitized HTML from workers; DOMPurify runs here [D04].
   function addBlockNode(engine: MarkdownEngineState, index: number) {
     if (!blockContainerRef.current) return;
     if (engine.blockNodes.has(index)) return;
-    const token = engine.tokens[index];
-    if (!token) return;
 
-    // Check HTML cache first [D03]. Cache hit: reuse sanitized HTML without
-    // re-parsing. Cache miss: render and populate cache.
-    let html: string;
-    if (engine.htmlCache.has(index)) {
-      html = engine.htmlCache.get(index)!;
-      engine.cacheHits++;
-    } else {
-      html = renderToken(token);
-      engine.htmlCache.set(index, html);
+    const cachedHtml = engine.htmlCache.get(index);
+    if (cachedHtml === undefined) {
+      // Cache miss — placeholder or skip. Placeholder rendering is Step 6.
+      // For now, skip rendering until the worker delivers HTML.
       engine.cacheMisses++;
+      return;
     }
+
+    engine.cacheHits++;
+    const sanitized = getDOMPurify().sanitize(cachedHtml, SANITIZE_CONFIG);
 
     const el = document.createElement("div");
     el.className = "tugx-md-block";
     el.dataset.blockIndex = String(index);
-    el.innerHTML = html;
+    el.innerHTML = sanitized;
     blockContainerRef.current.appendChild(el);
     engine.blockNodes.set(index, el);
 
@@ -286,14 +426,20 @@ export function TugMarkdownView({
   }
 
   // ---- Apply a WindowUpdate to the DOM ----
-  function applyWindowUpdate(engine: MarkdownEngineState, topSpacer: number, bottomSpacer: number, enter: { startIndex: number; endIndex: number }[], exit: { startIndex: number; endIndex: number }[]) {
+  function applyWindowUpdate(
+    engine: MarkdownEngineState,
+    topSpacer: number,
+    bottomSpacer: number,
+    enter: { startIndex: number; endIndex: number }[],
+    exit: { startIndex: number; endIndex: number }[],
+  ) {
     // Remove exiting blocks
     for (const range of exit) {
       for (let i = range.startIndex; i < range.endIndex; i++) {
         removeBlockNode(engine, i);
       }
     }
-    // Add entering blocks
+    // Add entering blocks (cache hits only — misses are placeholders, Step 6)
     for (const range of enter) {
       for (let i = range.startIndex; i < range.endIndex; i++) {
         addBlockNode(engine, i);
@@ -309,12 +455,126 @@ export function TugMarkdownView({
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
   }
 
-  // ---- Scroll handler ----
-  const handleScroll = useCallback(() => {
+  // ---- Compute the visible+overscan block range ----
+  function computeOverscanRange(engine: MarkdownEngineState, scrollTop: number): { startIndex: number; endIndex: number } {
+    const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+    const overscanPixels = viewportHeight * OVERSCAN_SCREENS;
+    const rangeTop = Math.max(0, scrollTop - overscanPixels);
+    const rangeBottom = scrollTop + viewportHeight + overscanPixels;
+    const startIndex = engine.heightIndex.getBlockAtOffset(rangeTop);
+    const endIndex = engine.heightIndex.getBlockAtOffset(rangeBottom) + 1;
+    return { startIndex: Math.max(0, startIndex), endIndex: Math.min(engine.blockCount, endIndex) };
+  }
+
+  // ---- Cancel all in-flight parse handles ----
+  function cancelInFlightParses(engine: MarkdownEngineState) {
+    for (const handle of engine.inFlightParses) {
+      handle.cancel();
+    }
+    engine.inFlightParses = [];
+  }
+
+  // ---- Submit parse batches for uncached blocks in range ----
+  function submitParseBatches(engine: MarkdownEngineState, range: { startIndex: number; endIndex: number }) {
+    if (!engine.pool) return;
+
+    // Collect uncached block indices in range.
+    const uncached: number[] = [];
+    for (let i = range.startIndex; i < range.endIndex; i++) {
+      if (!engine.htmlCache.has(i)) {
+        uncached.push(i);
+      }
+    }
+    if (uncached.length === 0) return;
+
+    // Split into batches and submit.
+    for (let batchStart = 0; batchStart < uncached.length; batchStart += PARSE_BATCH_SIZE) {
+      const batchIndices = uncached.slice(batchStart, batchStart + PARSE_BATCH_SIZE);
+      const batch = batchIndices
+        .map((idx) => {
+          const startOffset = idx > 0 ? (engine.blockOffsets[idx - 1] ?? 0) : 0;
+          const endOffset = engine.blockOffsets[idx];
+          if (endOffset === undefined) return null;
+          const raw = engine.contentText.slice(startOffset, endOffset);
+          return { index: idx, raw };
+        })
+        .filter((entry): entry is { index: number; raw: string } => entry !== null);
+
+      if (batch.length === 0) continue;
+
+      const handle = engine.pool.submit({ type: "parse", batch });
+      engine.inFlightParses.push(handle);
+
+      handle.promise.then((res) => {
+        if (res.type !== "parse") return;
+
+        // Populate HTML cache with unsanitized HTML from worker [D04].
+        for (const { index, html } of res.results) {
+          engine.htmlCache.set(index, html);
+        }
+
+        // Render any blocks that are now in the visible window.
+        const currentScrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+        const update = engine.blockWindow.update(currentScrollTop);
+        applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+
+        // Re-render existing nodes that were waiting for cache (cache miss → now available).
+        for (const { index } of res.results) {
+          const el = engine.blockNodes.get(index);
+          if (el) {
+            const html = engine.htmlCache.get(index);
+            if (html !== undefined) {
+              el.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+            }
+          } else if (engine.blockWindow.currentRange.startIndex <= index && index < engine.blockWindow.currentRange.endIndex) {
+            // Block is in range but wasn't added (was a cache miss) — add it now.
+            addBlockNode(engine, index);
+          }
+        }
+
+        // Fire diagnostics callback.
+        onDiagnostics?.({
+          poolSize: engine.inFlightParses.length,
+          inFlightTasks: engine.inFlightParses.length,
+          cacheSize: engine.htmlCache.size,
+          cacheHitRate: engine.cacheHits + engine.cacheMisses > 0
+            ? engine.cacheHits / (engine.cacheHits + engine.cacheMisses)
+            : 0,
+          blockCount: engine.blockCount,
+        });
+      }).catch(() => {
+        // Cancelled or worker error — ignore.
+      });
+    }
+  }
+
+  // ---- Create the worker pool at mount ----
+  useLayoutEffect(() => {
     const engine = getEngine();
-    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
-    const update = engine.blockWindow.update(scrollTop);
-    applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+    const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(
+      new URL("../../workers/markdown-worker.ts", import.meta.url),
+      { fallbackHandler: mainThreadFallback },
+    );
+    engine.pool = pool;
+
+    return () => {
+      // Cleanup: cancel in-flight parses, clear streaming interval, cancel scroll RAF, terminate pool.
+      cancelInFlightParses(engine);
+      if (engine.streamingInterval !== null) {
+        clearInterval(engine.streamingInterval);
+        engine.streamingInterval = null;
+      }
+      if (engine.scrollRafHandle !== null) {
+        cancelAnimationFrame(engine.scrollRafHandle);
+        engine.scrollRafHandle = null;
+      }
+      if (engine.rafHandle !== null) {
+        cancelAnimationFrame(engine.rafHandle);
+        engine.rafHandle = null;
+      }
+      pool.terminate();
+      engine.pool = null;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Setup ResizeObserver for block height measurement ----
@@ -368,11 +628,15 @@ export function TugMarkdownView({
     return () => resizeObs.disconnect();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Static rendering path ----
+  // ---- Static rendering path — wired to two-phase worker pipeline [D01] ----
   useEffect(() => {
     if (content === undefined) return;
 
     const engine = getEngine();
+    if (!engine.pool) return;
+
+    // Cancel any in-flight parses from a previous content load.
+    cancelInFlightParses(engine);
 
     // Clear previous state.
     engine.heightIndex.clear();
@@ -389,30 +653,71 @@ export function TugMarkdownView({
     engine.htmlCache.clear();
     engine.cacheHits = 0;
     engine.cacheMisses = 0;
+    engine.blockOffsets = [];
+    engine.blockCount = 0;
+    engine.contentText = content;
 
     applySpacers(0, 0);
 
-    // Lex synchronously (marked.lexer is fast even for large content).
-    const tokens = marked.lexer(content).filter((t) => t.type !== "space");
-    engine.tokens = tokens;
-    engine.blockOffsets = [];
-    engine.accumulatedText = content;
+    // Phase 1: Submit lex task to worker — returns heights[] and offsets[], not tokens.
+    const lexHandle = engine.pool.submit({ type: "lex", text: content });
 
-    // Populate BlockHeightIndex with estimated heights and track byte offsets.
-    let cumulativeOffset = 0;
-    for (const token of tokens) {
-      engine.heightIndex.appendBlock(estimateBlockHeight(token));
-      // Each token has a .raw field containing the original source text.
-      cumulativeOffset += (token as { raw?: string }).raw?.length ?? 0;
-      engine.blockOffsets.push(cumulativeOffset);
-    }
+    lexHandle.promise.then((res) => {
+      if (res.type !== "lex") return;
 
-    // Render visible window immediately. addBlockNode() populates htmlCache
-    // on first render; subsequent scroll-back is a cache hit [D03].
-    const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
-    engine.blockWindow.setViewportHeight(viewportHeight);
-    rebuildWindow(engine);
+      engine.blockCount = res.blockCount;
+      engine.blockOffsets = res.offsets;
+
+      // Populate BlockHeightIndex with estimated heights from worker.
+      engine.heightIndex.clear();
+      for (const h of res.heights) {
+        engine.heightIndex.appendBlock(h);
+      }
+
+      // Phase 2: Submit parse batches for visible+overscan blocks only [D02].
+      const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+      const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+      engine.blockWindow.setViewportHeight(viewportHeight);
+
+      // Trigger initial spacer layout.
+      const update = engine.blockWindow.update(scrollTop);
+      applySpacers(update.topSpacerHeight, update.bottomSpacerHeight);
+
+      const range = computeOverscanRange(engine, scrollTop);
+      submitParseBatches(engine, range);
+    }).catch(() => {
+      // Cancelled or error — ignore.
+    });
   }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- RAF-coalesced scroll handler [D02, L05] ----
+  const handleScroll = useCallback(() => {
+    const engine = getEngine();
+    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+
+    // Update pending scroll position and request RAF if not already pending.
+    engine.pendingScrollTop = scrollTop;
+    if (engine.scrollRafHandle !== null) return;
+
+    engine.scrollRafHandle = requestAnimationFrame(() => {
+      engine.scrollRafHandle = null;
+      const pendingTop = engine.pendingScrollTop ?? scrollTop;
+      engine.pendingScrollTop = null;
+
+      // Update window (handles enter/exit for cached blocks).
+      const update = engine.blockWindow.update(pendingTop);
+      applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+
+      // Compute new overscan range.
+      const newRange = computeOverscanRange(engine, pendingTop);
+
+      // Cancel stale in-flight parses for blocks no longer in range.
+      cancelInFlightParses(engine);
+
+      // Submit parse batches for uncached blocks in the new range.
+      submitParseBatches(engine, newRange);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Auto-scroll during streaming [L05: RAF only for scroll write] ----
   useEffect(() => {
@@ -439,122 +744,121 @@ export function TugMarkdownView({
 
   // ---- Streaming rendering path ----
   // streamingText comes from useSyncExternalStore [L02].
-  // On each update we re-lex only from the start of the last stable block
-  // boundary, using the blockOffsets array to locate it efficiently.
-  // This is O(k) where k is the number of changed/new blocks — not O(n).
+  // Updates are coalesced at 100ms via setInterval [D05].
   useEffect(() => {
     if (!streamingStore) return;
     const engine = getEngine();
 
-    // Accept the new text from the store. The caller may provide either a
-    // full running string (common case) or we accumulate raw delta appends.
-    // Here streamingText IS the full accumulated string [D04].
     const newText = streamingText;
     if (!newText) return;
 
-    // Update accumulated text (for delta append support — the full-string path
-    // also sets this so both modes stay consistent).
     engine.accumulatedText = newText;
 
-    const oldCount = engine.tokens.length;
+    // Mark dirty so the interval callback picks it up.
+    engine.streamingDirty = true;
 
-    // Determine the re-lex start position.
-    // Re-lex from the start of the last block (index oldCount - 1) to handle
-    // boundary shifts. If there are no blocks yet, lex from position 0.
-    // blockOffsets[i] is the end offset of block i; so the start offset of
-    // block (oldCount-1) is blockOffsets[oldCount-2] (or 0 if oldCount <= 1).
-    let relexFromIndex: number; // block index to start updating from
-    let relexFromOffset: number; // byte offset in newText to start lexing from
+    // Start the coalescing interval on first streaming update [D05].
+    if (engine.streamingInterval === null) {
+      engine.streamingInterval = setInterval(() => {
+        if (!engine.streamingDirty) return;
+        engine.streamingDirty = false;
 
-    if (oldCount === 0) {
-      relexFromIndex = 0;
-      relexFromOffset = 0;
-    } else {
-      // Re-lex the last block (and any that follow it).
-      relexFromIndex = Math.max(0, oldCount - 1);
-      relexFromOffset = relexFromIndex > 0 ? (engine.blockOffsets[relexFromIndex - 1] ?? 0) : 0;
-    }
+        const text = engine.accumulatedText;
+        if (!text || !engine.pool) return;
 
-    // Lex only the tail of the text from the stable boundary.
-    const tailText = newText.slice(relexFromOffset);
-    const tailTokens = marked.lexer(tailText).filter((t) => t.type !== "space");
-
-    // Reconcile re-lexed tail tokens against existing tokens from relexFromIndex.
-    let tailCumulativeOffset = relexFromOffset;
-    for (let ti = 0; ti < tailTokens.length; ti++) {
-      const blockIndex = relexFromIndex + ti;
-      const newToken = tailTokens[ti];
-      const rawLen = (newToken as { raw?: string }).raw?.length ?? 0;
-      tailCumulativeOffset += rawLen;
-
-      if (blockIndex < oldCount) {
-        // Block already exists — check if content changed.
-        const newHtml = renderToken(newToken);
-        const oldEl = engine.blockNodes.get(blockIndex);
-        if (oldEl && oldEl.innerHTML !== newHtml) {
-          // Update cache with new HTML for this changed block.
-          engine.htmlCache.set(blockIndex, newHtml);
-          engine.blockWindow.markDirty(blockIndex);
-          engine.tokens[blockIndex] = newToken;
-          engine.heightIndex.setHeight(blockIndex, estimateBlockHeight(newToken));
-        } else if (!oldEl) {
-          // Block not in DOM yet — update token reference and cache.
-          engine.htmlCache.set(blockIndex, newHtml);
-          engine.tokens[blockIndex] = newToken;
-          engine.heightIndex.setHeight(blockIndex, estimateBlockHeight(newToken));
+        // Determine tail re-lex offset from last stable block boundary.
+        const oldCount = engine.blockCount;
+        let relexFromIndex: number;
+        let relexFromOffset: number;
+        if (oldCount === 0) {
+          relexFromIndex = 0;
+          relexFromOffset = 0;
+        } else {
+          relexFromIndex = Math.max(0, oldCount - 1);
+          relexFromOffset = relexFromIndex > 0 ? (engine.blockOffsets[relexFromIndex - 1] ?? 0) : 0;
         }
-        engine.blockOffsets[blockIndex] = tailCumulativeOffset;
-      } else {
-        // New block — append.
-        engine.tokens.push(newToken);
-        engine.heightIndex.appendBlock(estimateBlockHeight(newToken));
-        engine.blockOffsets.push(tailCumulativeOffset);
-      }
-    }
 
-    // If the tail re-lex produced fewer blocks than expected, the last block
-    // boundary shifted. Trim the engine state to match.
-    const expectedEnd = relexFromIndex + tailTokens.length;
-    if (expectedEnd < engine.tokens.length) {
-      // Remove stale trailing blocks from DOM and engine state.
-      for (let i = expectedEnd; i < engine.tokens.length; i++) {
-        removeBlockNode(engine, i);
-      }
-      engine.tokens.splice(expectedEnd);
-      engine.blockOffsets.splice(expectedEnd);
-      // BlockHeightIndex does not support truncation; rebuild the tail region
-      // by setting heights to 0 (they will be re-appended or re-estimated
-      // on the next update). We use a no-op approach: the phantom blocks will
-      // have zero height and be ignored by the window manager once they have
-      // no tokens. For correctness, clear and rebuild if count decreased.
-      // In practice this path is rare (boundary shift at stream end).
-      engine.heightIndex.clear();
-      for (const token of engine.tokens) {
-        engine.heightIndex.appendBlock(estimateBlockHeight(token));
-      }
-    }
+        const tailText = text.slice(relexFromOffset);
+        const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+        const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+        const overscanPixels = viewportHeight * OVERSCAN_SCREENS;
+        const viewportStartBlock = engine.heightIndex.getBlockAtOffset(Math.max(0, scrollTop - overscanPixels));
+        const viewportEndBlock = engine.heightIndex.getBlockAtOffset(scrollTop + viewportHeight + overscanPixels) + 1;
 
-    // Update dirty block DOM nodes in the current window.
-    // The cache was already updated during reconciliation above, so we read
-    // from the cache here rather than re-rendering from the token.
-    const current = engine.blockWindow.currentRange;
-    for (let i = current.startIndex; i < current.endIndex; i++) {
-      if (engine.blockWindow.isDirty(i)) {
-        const el = engine.blockNodes.get(i);
-        if (el) {
-          const cachedHtml = engine.htmlCache.get(i);
-          el.innerHTML = cachedHtml !== undefined ? cachedHtml : renderToken(engine.tokens[i]);
-          engine.blockWindow.clearDirty(i);
-        }
-      }
-    }
+        // Translate to tail-relative indices.
+        const vpHint = {
+          startIndex: Math.max(0, viewportStartBlock - relexFromIndex),
+          endIndex: Math.max(0, viewportEndBlock - relexFromIndex),
+        };
 
-    // Rebuild window to add any new visible blocks.
-    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
-    const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
-    engine.blockWindow.setViewportHeight(viewportHeight);
-    const update = engine.blockWindow.update(scrollTop);
-    applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+        const handle = engine.pool.submit({
+          type: "stream",
+          tailText,
+          relexFromOffset,
+          viewportHint: vpHint,
+        });
+
+        handle.promise.then((res) => {
+          if (res.type !== "stream") return;
+
+          // Reconcile heights and offsets for tail blocks.
+          for (let ti = 0; ti < res.newHeights.length; ti++) {
+            const blockIndex = relexFromIndex + ti;
+            const h = res.newHeights[ti];
+            const off = res.newOffsets[ti];
+
+            if (blockIndex < engine.blockCount) {
+              engine.heightIndex.setHeight(blockIndex, h);
+              engine.blockOffsets[blockIndex] = off;
+            } else {
+              engine.heightIndex.appendBlock(h);
+              engine.blockOffsets.push(off);
+              engine.blockCount++;
+            }
+          }
+
+          // Trim stale tail blocks if tail produced fewer.
+          const expectedEnd = relexFromIndex + res.newHeights.length;
+          if (expectedEnd < engine.blockCount) {
+            for (let i = expectedEnd; i < engine.blockCount; i++) {
+              removeBlockNode(engine, i);
+            }
+            engine.blockOffsets.splice(expectedEnd);
+            // Snapshot heights before clearing (getHeight() requires count > index).
+            const snapshotHeights: number[] = [];
+            for (let i = 0; i < expectedEnd; i++) {
+              snapshotHeights.push(engine.heightIndex.getHeight(i));
+            }
+            engine.blockCount = expectedEnd;
+            engine.heightIndex.clear();
+            for (const h of snapshotHeights) {
+              engine.heightIndex.appendBlock(h);
+            }
+          }
+
+          // Populate HTML cache for parsed blocks [D03].
+          for (const { index, html } of res.parsedBlocks) {
+            const absIndex = relexFromIndex + index;
+            engine.htmlCache.set(absIndex, html);
+          }
+
+          // Update height estimates for metadata-only blocks.
+          for (const { index, height } of res.metadataOnly) {
+            const absIndex = relexFromIndex + index;
+            engine.heightIndex.setHeight(absIndex, height);
+          }
+
+          // Rebuild visible window.
+          const currentScrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+          const vpHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+          engine.blockWindow.setViewportHeight(vpHeight);
+          const update = engine.blockWindow.update(currentScrollTop);
+          applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+        }).catch(() => {
+          // Ignore cancelled/error.
+        });
+      }, 100);
+    }
   }, [streamingText, streamingStore]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Finalization pass on turn_complete ----
@@ -565,61 +869,47 @@ export function TugMarkdownView({
 
     if (wasStreaming && !isStreaming && streamingStore) {
       const engine = engineRef.current;
-      if (!engine) return;
+      if (!engine || !engine.pool) return;
 
-      // Finalization pass: re-lex the full accumulated text from scratch to
-      // ensure the block list is consistent with the final content. This is
-      // the safety net for any boundary shifts that occurred during streaming.
+      // Clear streaming interval.
+      if (engine.streamingInterval !== null) {
+        clearInterval(engine.streamingInterval);
+        engine.streamingInterval = null;
+      }
+      engine.streamingDirty = false;
+
+      // Finalization: submit a lex task on the full accumulated text to verify
+      // block count and update heights/offsets.
       const fullText = engine.accumulatedText || ((streamingStore.get(streamingPath) as string) ?? "");
-      const finalTokens = marked.lexer(fullText).filter((t) => t.type !== "space");
+      if (!fullText) return;
 
-      // Rebuild blockOffsets for the finalized token list.
-      const finalOffsets: number[] = [];
-      let cumOffset = 0;
-      for (const token of finalTokens) {
-        cumOffset += (token as { raw?: string }).raw?.length ?? 0;
-        finalOffsets.push(cumOffset);
-      }
+      engine.contentText = fullText;
 
-      // Update all tokens, heights, and offsets.
-      for (let i = 0; i < finalTokens.length; i++) {
-        if (i < engine.tokens.length) {
-          engine.tokens[i] = finalTokens[i];
-          engine.heightIndex.setHeight(i, estimateBlockHeight(finalTokens[i]));
-          engine.blockOffsets[i] = finalOffsets[i];
-        } else {
-          engine.tokens.push(finalTokens[i]);
-          engine.heightIndex.appendBlock(estimateBlockHeight(finalTokens[i]));
-          engine.blockOffsets.push(finalOffsets[i]);
-        }
-      }
+      const lexHandle = engine.pool.submit({ type: "lex", text: fullText });
 
-      // If finalization produced fewer blocks, trim the stale tail.
-      if (finalTokens.length < engine.tokens.length) {
-        for (let i = finalTokens.length; i < engine.tokens.length; i++) {
-          removeBlockNode(engine, i);
-        }
-        engine.tokens.splice(finalTokens.length);
-        engine.blockOffsets.splice(finalTokens.length);
-        // Rebuild the height index from scratch to match the trimmed token list.
+      lexHandle.promise.then((res) => {
+        if (res.type !== "lex") return;
+
+        // Rebuild heights from finalized lex.
         engine.heightIndex.clear();
-        for (const token of engine.tokens) {
-          engine.heightIndex.appendBlock(estimateBlockHeight(token));
+        for (const h of res.heights) {
+          engine.heightIndex.appendBlock(h);
         }
-      }
+        engine.blockOffsets = res.offsets;
+        engine.blockCount = res.blockCount;
 
-      // Refresh all visible block DOM nodes, updating the cache with final HTML.
-      const current = engine.blockWindow.currentRange;
-      for (let i = current.startIndex; i < current.endIndex; i++) {
-        const el = engine.blockNodes.get(i);
-        if (el && engine.tokens[i]) {
-          const finalHtml = renderToken(engine.tokens[i]);
-          engine.htmlCache.set(i, finalHtml);
-          el.innerHTML = finalHtml;
-        }
-      }
+        // Parse visible+overscan range with final content.
+        const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+        const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+        engine.blockWindow.setViewportHeight(viewportHeight);
 
-      rebuildWindow(engine);
+        const range = computeOverscanRange(engine, scrollTop);
+        submitParseBatches(engine, range);
+
+        rebuildWindow(engine);
+      }).catch(() => {
+        // Ignore.
+      });
     }
   }, [isStreaming, streamingStore, streamingPath]); // eslint-disable-line react-hooks/exhaustive-deps
 

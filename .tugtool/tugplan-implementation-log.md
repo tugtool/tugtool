@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-30T17:13:05Z
+---
+
+## step-4: Rewrote static rendering path to use TugWorkerPool with lex-then-parse pipeline. Added MdWorkerReq/MdWorkerRes types, pool creation in useLayoutEffect, fallbackHandler for graceful degradation, RAF-coalesced scroll handler with in-flight parse cancellation. Worker chunk now emitted in build.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-3
 date: 2025-03-30T16:57:23Z
 ---
