@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-30T03:09:16Z
+---
+
+## step-3: Created TugMarkdownView component with static content rendering, virtualized scroll window, ResizeObserver-based height refinement, DOMPurify sanitization, and chunked idle-callback batching for large content. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
 step: step-2
 date: 2025-03-30T02:54:36Z
 ---
