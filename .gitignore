@@ -40,6 +40,7 @@ aside
 .tugtool/state.db-wal
 .tugtool/state.db-shm
 .tugtool/deck-settings.json
+.tugtool/.session
 
 node_modules/
 
