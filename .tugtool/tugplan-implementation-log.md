@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-30T03:38:26Z
+---
+
+## audit-fix: CI fix: ran cargo fmt to resolve pre-existing formatting diffs in tugcast/src/auth.rs, tugcast/src/feeds/agent_bridge.rs, and tugcast/src/main.rs
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
 step: step-5
 date: 2025-03-30T03:26:48Z
 ---

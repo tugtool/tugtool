@@ -43,7 +43,9 @@ async fn main() {
     // Create own process group so the app can kill tugcast + all children
     // (tugtalk, bun) with a single kill(-pgid, SIGTERM). Without this,
     // children become orphans when the app force-kills tugcast.
-    unsafe { libc::setpgid(0, 0); }
+    unsafe {
+        libc::setpgid(0, 0);
+    }
 
     // Parse CLI arguments
     let cli = cli::Cli::parse();
@@ -345,9 +347,8 @@ async fn main() {
         bank_store,
     );
 
-    let mut sigterm =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to register SIGTERM handler");
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("failed to register SIGTERM handler");
 
     // Watch for parent death (e.g. kill -9 on Tug.app). When our parent PID
     // changes to 1 (launchd/init), the parent is gone and we should exit.
@@ -357,7 +358,10 @@ async fn main() {
             tokio::time::sleep(Duration::from_secs(2)).await;
             let current_ppid = unsafe { libc::getppid() };
             if current_ppid != parent_pid {
-                info!("Parent died (ppid {} → {}), shutting down", parent_pid, current_ppid);
+                info!(
+                    "Parent died (ppid {} → {}), shutting down",
+                    parent_pid, current_ppid
+                );
                 break;
             }
         }
@@ -401,7 +405,9 @@ async fn main() {
     // async cancellation can't be relied upon. Sending SIGTERM to our
     // own process group is the only reliable way to clean up children.
     info!("Killing process group before exit");
-    unsafe { libc::kill(0, libc::SIGTERM); }
+    unsafe {
+        libc::kill(0, libc::SIGTERM);
+    }
 
     info!("tugcast shut down");
     std::process::exit(exit_code);
