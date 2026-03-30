@@ -31,10 +31,7 @@ import * as net from "net";
 
 const PROJECT_DIR = resolve(import.meta.dir, "..");
 
-// Tugcast binary: use the main repo's build (shared across worktrees)
-// The worktree doesn't have its own build artifacts; they live in the main repo.
-const MAIN_REPO_DIR = "/Users/kocienda/Mounts/u/src/tugtool";
-const TUGCAST_BIN = `${MAIN_REPO_DIR}/tugcode/target/debug/tugcast`;
+const TUGCAST_BIN = resolve(PROJECT_DIR, "tugcode/target/debug/tugcast");
 const PROBE_PORT = 55266; // use a non-default port to avoid conflicts
 const WS_URL = `ws://127.0.0.1:${PROBE_PORT}/ws`;
 const TIMEOUT_MS = 120_000;

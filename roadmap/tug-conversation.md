@@ -105,7 +105,7 @@ The work falls into three tiers: **prove the pipe**, **build the UI**, **add the
 Phase 1: Transport Exploration      — DONE (35 tests)
 Phase 2: Transport Hardening        — DONE (T1-T7)
 Phase 2b: WebSocket Verification    — DONE (probe written, 4 issues found)
-Phase 2c: WebSocket Fixes           — T8-T11 fixes from Phase 2b findings
+Phase 2c: WebSocket Fixes           — DONE (T8-T11)
 
 ─── TIER 2: BUILD THE UI ─────────────────────────────────────
 Phase 3: Streaming Markdown         — rendering layer (U1, U5, U6, U7)

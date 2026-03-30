@@ -1420,13 +1420,13 @@ describe("SessionManager behavioral", () => {
     expect(() => new SessionManager("/tmp/test-constructor")).not.toThrow();
   });
 
-  test("session ID persistence round-trip", async () => {
+  test("session ID persistence round-trip", () => {
     const tmpDir = `/tmp/tugtalk-persist-${Date.now()}`;
     const manager = new SessionManager(tmpDir);
 
-    // Write then read back the session ID via the private helpers.
-    await (manager as any).persistSessionId("round-trip-id");
-    const readBack = await (manager as any).readSessionId();
+    // persistSessionId and readSessionId are synchronous (Bun.spawnSync).
+    (manager as any).persistSessionId("round-trip-id");
+    const readBack = (manager as any).readSessionId();
     expect(readBack).toBe("round-trip-id");
   });
 

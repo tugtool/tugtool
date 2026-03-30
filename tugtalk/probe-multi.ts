@@ -8,8 +8,9 @@
  */
 
 import { spawn } from "bun";
+import { resolve } from "path";
 
-const PROJECT_DIR = "/Users/kocienda/Mounts/u/src/tugtool";
+const PROJECT_DIR = resolve(import.meta.dir, "..");
 const testName = Bun.argv[2] || "approval";
 
 const tests: Record<string, { message: string; description: string }> = {

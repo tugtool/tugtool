@@ -5,8 +5,9 @@
  */
 
 import { spawn } from "bun";
+import { resolve } from "path";
 
-const PROJECT_DIR = "/Users/kocienda/Mounts/u/src/tugtool";
+const PROJECT_DIR = resolve(import.meta.dir, "..");
 
 console.log("=== Model Change Probe ===\n");
 

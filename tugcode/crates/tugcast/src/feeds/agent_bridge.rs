@@ -200,8 +200,21 @@ async fn run_agent_bridge(
             }
         };
 
-        let mut stdin = child.stdin.take().expect("Failed to take stdin");
-        let stdout = child.stdout.take().expect("Failed to take stdout");
+        // stdin/stdout are guaranteed Some because we set Stdio::piped() above.
+        let Some(mut stdin) = child.stdin.take() else {
+            error!("tugtalk stdin not available despite Stdio::piped()");
+            crash_budget.record_crash();
+            let _ = child.kill().await;
+            sleep(Duration::from_secs(1)).await;
+            continue;
+        };
+        let Some(stdout) = child.stdout.take() else {
+            error!("tugtalk stdout not available despite Stdio::piped()");
+            crash_budget.record_crash();
+            let _ = child.kill().await;
+            sleep(Duration::from_secs(1)).await;
+            continue;
+        };
         let mut stdout_reader = BufReader::new(stdout).lines();
 
         // Send protocol_init

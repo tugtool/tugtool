@@ -6,8 +6,9 @@
  */
 
 import { spawn } from "bun";
+import { resolve } from "path";
 
-const PROJECT_DIR = "/Users/kocienda/Mounts/u/src/tugtool";
+const PROJECT_DIR = resolve(import.meta.dir, "..");
 const message = Bun.argv[2] || "/cost";
 
 console.log(`=== Raw Claude Code Probe ===`);

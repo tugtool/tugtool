@@ -197,9 +197,11 @@ same session should be available.
 
 ## Is the path ready for UI work?
 
-**Partially.** The transport layer is solid — binary framing, feed routing, and
-bidirectional communication all work. However, the `session_init` race condition is a
-blocking issue for any UI component that depends on session state at startup. UI work
-that doesn't require `session_init` (terminal display, filesystem feed, git feed,
-stats display) can proceed. The conversation/code panel UI should wait for the
-`session_init` fix first.
+**Yes.** All four issues discovered in Phase 2b have been fixed in Phase 2c (commit `e0174373`):
+
+- T8: `session_init` now delivered as snapshot via dedicated watch channel — no more race
+- T9: Double delivery fixed using `borrow_and_update()` in router
+- T10: Agent bridge channels encapsulated in `AgentBridgeHandles` — one-file change to add new snapshots
+- T11: Session ID moved to tugbank — `.tugtool/.session` removed from repo
+
+The WebSocket path is fully verified and ready for UI development.
