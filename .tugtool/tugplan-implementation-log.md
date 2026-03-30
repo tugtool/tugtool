@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-30T18:24:51Z
+---
+
+## step-9: Integration checkpoint: verified all automated checks pass (1621 tests, build with worker chunk, zero tsc errors in pipeline files). Consolidated inline DOMPurify.sanitize() calls into upgradePlaceholderNode() function. Confirmed marked.parser() only in fallback handler. Gallery card browser tests deferred.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-8
 date: 2025-03-30T18:02:04Z
 ---

@@ -432,6 +432,21 @@ export function TugMarkdownView({
     resizeObserverRef.current?.observe(el);
   }
 
+  // ---- Upgrade a placeholder DOM node to rendered content ----
+  // Called after the worker delivers HTML for a block that was previously
+  // rendered as a placeholder. DOMPurify runs here [D04] — the only other
+  // sanitize call site is addBlockNode() for direct cache hits.
+  function upgradePlaceholderNode(engine: MarkdownEngineState, index: number) {
+    const el = engine.blockNodes.get(index);
+    if (!el || !engine.placeholderIndices.has(index)) return;
+    const html = engine.htmlCache.get(index);
+    if (html === undefined) return;
+    el.style.height = "";
+    el.classList.remove("tugx-md-placeholder");
+    el.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+    engine.placeholderIndices.delete(index);
+  }
+
   // ---- Remove a single block DOM node ----
   // NOTE: htmlCache is intentionally NOT evicted here. The content model is
   // append-only, so cached HTML is always valid. Retaining the cache means
@@ -540,17 +555,9 @@ export function TugMarkdownView({
 
         // Replace placeholder nodes and render newly-cached blocks [Step 6].
         for (const { index } of res.results) {
-          const el = engine.blockNodes.get(index);
-          if (el) {
-            const html = engine.htmlCache.get(index);
-            if (html !== undefined) {
-              // Replace placeholder: clear estimated height, remove placeholder class,
-              // and inject sanitized HTML. No CSS transition per plan spec.
-              el.style.height = "";
-              el.classList.remove("tugx-md-placeholder");
-              el.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
-              engine.placeholderIndices.delete(index);
-            }
+          if (engine.blockNodes.has(index)) {
+            // Upgrade any existing placeholder to real content [D04].
+            upgradePlaceholderNode(engine, index);
           } else if (engine.blockWindow.currentRange.startIndex <= index && index < engine.blockWindow.currentRange.endIndex) {
             // Block is in range but wasn't added yet — add it now (will be a cache hit).
             addBlockNode(engine, index);
@@ -880,16 +887,7 @@ export function TugMarkdownView({
           // Replace placeholder nodes for newly-parsed blocks [Step 6].
           for (const { index } of res.parsedBlocks) {
             const absIndex = relexFromIndex + index;
-            const el = engine.blockNodes.get(absIndex);
-            if (el && engine.placeholderIndices.has(absIndex)) {
-              const html = engine.htmlCache.get(absIndex);
-              if (html !== undefined) {
-                el.style.height = "";
-                el.classList.remove("tugx-md-placeholder");
-                el.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
-                engine.placeholderIndices.delete(absIndex);
-              }
-            }
+            upgradePlaceholderNode(engine, absIndex);
           }
 
           // Rebuild visible window.
