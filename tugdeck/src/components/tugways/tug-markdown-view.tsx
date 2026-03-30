@@ -123,27 +123,23 @@ function estimateBlockHeight(tokenType: string, raw: string, meta?: { depth?: nu
 function mainThreadFallback(req: MdWorkerReq): MdWorkerRes {
   switch (req.type) {
     case "lex": {
-      const tokens = marked.lexer(req.text).filter((t) => t.type !== "space");
+      const tokens = marked.lexer(req.text);
       const heights: number[] = [];
       const offsets: number[] = [];
       let cursor = 0;
       for (const token of tokens) {
         const raw = (token as { raw?: string }).raw ?? "";
+        cursor += raw.length;
+        if (token.type === "space") continue;
         const meta = {
           depth: (token as { depth?: number }).depth,
           itemCount: (token as { items?: unknown[] }).items?.length,
           rowCount: (token as { rows?: unknown[][] }).rows?.length,
         };
         heights.push(estimateBlockHeight(token.type, raw, meta));
-        const tokenStart = req.text.indexOf(raw, cursor);
-        if (tokenStart >= 0) {
-          cursor = tokenStart + raw.length;
-        } else {
-          cursor += raw.length;
-        }
         offsets.push(cursor);
       }
-      return { type: "lex", blockCount: tokens.length, heights, offsets };
+      return { type: "lex", blockCount: heights.length, heights, offsets };
     }
     case "parse": {
       const results: { index: number; html: string }[] = [];
@@ -154,37 +150,33 @@ function mainThreadFallback(req: MdWorkerReq): MdWorkerRes {
       return { type: "parse", results };
     }
     case "stream": {
-      const tokens = marked.lexer(req.tailText).filter((t) => t.type !== "space");
+      const tokens = marked.lexer(req.tailText);
       const newHeights: number[] = [];
       const newOffsets: number[] = [];
       const parsedBlocks: { index: number; html: string }[] = [];
       const metadataOnly: { index: number; height: number }[] = [];
       let cursor = req.relexFromOffset;
-      for (let i = 0; i < tokens.length; i++) {
-        const token = tokens[i];
+      let blockIndex = 0;
+      for (const token of tokens) {
         const raw = (token as { raw?: string }).raw ?? "";
+        cursor += raw.length;
+        if (token.type === "space") continue;
         const meta = {
           depth: (token as { depth?: number }).depth,
           itemCount: (token as { items?: unknown[] }).items?.length,
           rowCount: (token as { rows?: unknown[][] }).rows?.length,
         };
-        const height = estimateBlockHeight(token.type, raw, meta);
-        newHeights.push(height);
-        const tokenStart = req.tailText.indexOf(raw, cursor - req.relexFromOffset);
-        if (tokenStart >= 0) {
-          cursor = req.relexFromOffset + tokenStart + raw.length;
-        } else {
-          cursor += raw.length;
-        }
+        newHeights.push(estimateBlockHeight(token.type, raw, meta));
         newOffsets.push(cursor);
         const vp = req.viewportHint;
-        const inViewport = vp === undefined || (i >= vp.startIndex && i <= vp.endIndex);
+        const inViewport = vp === undefined || (blockIndex >= vp.startIndex && blockIndex <= vp.endIndex);
         if (inViewport) {
           const html = marked.parser(marked.lexer(raw));
-          parsedBlocks.push({ index: i, html });
+          parsedBlocks.push({ index: blockIndex, html });
         } else {
-          metadataOnly.push({ index: i, height });
+          metadataOnly.push({ index: blockIndex, height: estimateBlockHeight(token.type, raw, meta) });
         }
+        blockIndex++;
       }
       return { type: "stream", newHeights, newOffsets, parsedBlocks, metadataOnly };
     }
@@ -701,8 +693,10 @@ export function TugMarkdownView({
     // Phase 1: Submit lex task to worker — returns heights[] and offsets[], not tokens.
     const lexHandle = _pool.submit({ type: "lex", text: content });
 
+    const t0 = performance.now();
     lexHandle.promise.then((res) => {
       if (res.type !== "lex") return;
+      const t1 = performance.now();
 
       engine.blockCount = res.blockCount;
       engine.blockOffsets = res.offsets;
@@ -729,6 +723,8 @@ export function TugMarkdownView({
       applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
 
       const range = computeOverscanRange(engine, scrollTop);
+      // DIAGNOSTIC — remove after debugging
+      console.log(`[TugMarkdownView] lex: ${res.blockCount} blocks in ${(t1 - t0).toFixed(0)}ms | viewport: ${viewportHeight}px | scrollTop: ${scrollTop} | parse range: [${range.startIndex}, ${range.endIndex}) = ${range.endIndex - range.startIndex} blocks | window enter: ${update.enter.map(r => `[${r.startIndex},${r.endIndex})`).join(",") || "none"}`);
       submitParseBatches(engine, range);
     }).catch((err) => {
       if (err instanceof Error && err.message.includes("cancelled")) return;

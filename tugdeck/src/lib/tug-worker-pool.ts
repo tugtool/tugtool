@@ -285,10 +285,11 @@ export class TugWorkerPool<TReq, TRes> {
     try {
       const slot = this._createSlot();
       this._slots.push(slot);
-    } catch {
+    } catch (err) {
       // Worker construction failed — switch to fallback mode.
       this._fallbackMode = true;
       this._slots = [];
+      console.warn("[TugWorkerPool] Worker construction failed — switching to fallback mode:", err);
     }
   }
 

@@ -71,35 +71,31 @@ function extractMeta(token: Token): { depth?: number; itemCount?: number; rowCou
  * Does NOT return raw strings — callers use offsets to slice the original text.
  */
 function handleLex(text: string): Extract<MdWorkerRes, { type: "lex" }> {
+  const t0 = performance.now();
   const tokens = marked.lexer(text);
-
-  // Filter out 'space' tokens at the top level — they carry no visible content.
-  const blocks = tokens.filter((t) => t.type !== "space");
+  const t1 = performance.now();
+  console.log(`[markdown-worker] lexer: ${(t1 - t0).toFixed(0)}ms for ${text.length} chars, ${tokens.length} tokens`);
 
   const heights: number[] = [];
   const offsets: number[] = [];
 
+  // Walk ALL tokens (including space) to compute cumulative offsets.
+  // Space tokens are skipped for heights/offsets output but their raw
+  // length still advances the cursor. This avoids the O(n*m) indexOf
+  // scan that was causing 15-second lex times on repeated content.
   let cursor = 0;
 
-  for (const token of blocks) {
-    const meta = extractMeta(token);
-    const height = estimator.estimate(token.type, token.raw, meta);
-    heights.push(height);
+  for (const token of tokens) {
+    cursor += token.raw.length;
 
-    // Advance cursor past this token's raw text.
-    // We locate the token in the original text starting from cursor to compute
-    // its end offset. marked tokens carry their raw source so we match by raw.
-    const rawLen = token.raw.length;
-    const tokenStart = text.indexOf(token.raw, cursor);
-    if (tokenStart >= 0) {
-      cursor = tokenStart + rawLen;
-    } else {
-      cursor += rawLen;
-    }
+    if (token.type === "space") continue;
+
+    const meta = extractMeta(token);
+    heights.push(estimator.estimate(token.type, token.raw, meta));
     offsets.push(cursor);
   }
 
-  return { type: "lex", blockCount: blocks.length, heights, offsets };
+  return { type: "lex", blockCount: heights.length, heights, offsets };
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +135,6 @@ function handleStream(
   viewportHint?: { startIndex: number; endIndex: number },
 ): Extract<MdWorkerRes, { type: "stream" }> {
   const tokens = marked.lexer(tailText);
-  const blocks = tokens.filter((t) => t.type !== "space");
 
   const newHeights: number[] = [];
   const newOffsets: number[] = [];
@@ -147,35 +142,32 @@ function handleStream(
   const metadataOnly: { index: number; height: number }[] = [];
 
   let cursor = relexFromOffset;
+  let blockIndex = 0;
 
-  for (let i = 0; i < blocks.length; i++) {
-    const token = blocks[i];
+  for (const token of tokens) {
+    cursor += token.raw.length;
+
+    if (token.type === "space") continue;
+
     const meta = extractMeta(token);
     const height = estimator.estimate(token.type, token.raw, meta);
     newHeights.push(height);
-
-    // Compute cumulative offset from the start of the full document.
-    const rawLen = token.raw.length;
-    const tokenStart = tailText.indexOf(token.raw, cursor - relexFromOffset);
-    if (tokenStart >= 0) {
-      cursor = relexFromOffset + tokenStart + rawLen;
-    } else {
-      cursor += rawLen;
-    }
     newOffsets.push(cursor);
 
     // Parse blocks within the viewport hint; emit metadata-only for others.
     const inViewport =
       viewportHint === undefined ||
-      (i >= viewportHint.startIndex && i <= viewportHint.endIndex);
+      (blockIndex >= viewportHint.startIndex && blockIndex <= viewportHint.endIndex);
 
     if (inViewport) {
       const blockTokens = marked.lexer(token.raw);
       const html = marked.parser(blockTokens);
-      parsedBlocks.push({ index: i, html });
+      parsedBlocks.push({ index: blockIndex, html });
     } else {
-      metadataOnly.push({ index: i, height });
+      metadataOnly.push({ index: blockIndex, height });
     }
+
+    blockIndex++;
   }
 
   return { type: "stream", newHeights, newOffsets, parsedBlocks, metadataOnly };
@@ -225,5 +217,18 @@ self.onmessage = (e: MessageEvent) => {
   }
 };
 
+// Quick benchmark: how fast is marked.lexer in this runtime?
+const benchText = "# Heading\n\nParagraph text.\n\n```\ncode\n```\n\n";
+const bench1k = benchText.repeat(Math.ceil(1000 / benchText.length)).slice(0, 1000);
+const bench10k = benchText.repeat(Math.ceil(10000 / benchText.length)).slice(0, 10000);
+const bench100k = benchText.repeat(Math.ceil(100000 / benchText.length)).slice(0, 100000);
+
+const b1 = performance.now(); marked.lexer(bench1k); const b2 = performance.now();
+marked.lexer(bench10k); const b3 = performance.now();
+marked.lexer(bench100k); const b4 = performance.now();
+
+console.log(`[markdown-worker] benchmark: 1KB=${(b2-b1).toFixed(1)}ms, 10KB=${(b3-b2).toFixed(1)}ms, 100KB=${(b4-b3).toFixed(1)}ms`);
+
 // Send init handshake so TugWorkerPool marks this slot as ready.
+console.log("[markdown-worker] initialized, sending init handshake");
 self.postMessage({ type: "init" });
