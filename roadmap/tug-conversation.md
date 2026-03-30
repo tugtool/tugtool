@@ -28,6 +28,10 @@ Everything discovered in Phase 1 exploration, organized for action. This is the 
 | T5 | **Session command readiness.** `session_command: "new"` and `"fork"` have a gap: `session_init` fires with pending ID before new process is ready. Need clear readiness signal. | tugtalk session handling | Medium |
 | T6 | **`--no-auth` flag for tugcast.** Skip session cookie + origin validation for dev/testing. Required to test the full WebSocket path. | tugcast `auth.rs` | Small |
 | T7 | **Compile tugtalk to standalone binary.** `bun build --compile` produces a native executable — no Bun runtime dependency in production. Update justfile `app` recipe to build and copy. Agent bridge already prefers sibling binary. | tugtalk build, justfile | Small |
+| T8 | **Fix `session_init` race condition.** `session_init` is broadcast (fire-and-forget) via `code_tx` only. Clients connecting after tugtalk startup never see it. Put `session_init` on a watch channel so it's delivered as a snapshot on connect, like `project_info`. | tugcast `agent_bridge.rs` | Small |
+| T9 | **Fix double delivery of snapshot feeds.** Router borrows watch receivers for initial snapshot send, then clones them for ongoing watch tasks. Cloned receivers haven't "seen" the current value, so `changed()` fires immediately and re-sends. Fix: use `borrow_and_update()` and take ownership instead of borrow-then-clone. | tugcast `router.rs` | Small |
+| T10 | **Encapsulate agent bridge watch channels.** Adding a new snapshot type (e.g. T8) requires touching 5 places across `main.rs` and `agent_bridge.rs`. Bridge should own its watch channels internally and return receivers via `AgentBridgeHandles`. Adding a new snapshot becomes a one-file change. | tugcast `agent_bridge.rs`, `main.rs` | Small |
+| T11 | **Move `.tugtool/.session` to tugbank.** Tugtalk persists the current Claude Code session ID to `.tugtool/.session` inside the project directory, which dirties the working tree. Write session ID to tugbank instead. | tugtalk session persistence, tugbank | Small |
 
 ### UI Must Build (Phases 3-5 and beyond)
 
@@ -86,7 +90,7 @@ These built-in commands have no stream-json equivalent — they return "Unknown 
 | E1 | Slash command invocation | **Resolved** | Two small tugtalk fixes (T1, T2). |
 | E2 | Plugin system | **Resolved** | All 12 tugplug agents + 4 skills visible with correct `--plugin-dir`. Plugin name `tugplug`. Hot-reload, session name untested but non-blocking. |
 | E3 | Hooks visibility | Open | Hooks run silently. No events for hook decisions, context injection, timing. |
-| E4 | Tugcast WebSocket layer | Blocked on T6 | Need `--no-auth` to test full production path. |
+| E4 | Tugcast WebSocket layer | **Resolved** | Full path verified in Phase 2b. Wire protocol documented. Four issues found (T8-T11). |
 | E5 | Session management | Partially tested | New, continue, fork tested. Picker data, concurrent sessions open. |
 | E6 | Advanced patterns | Open | Background tasks, MCP, elicitation untested. |
 
@@ -100,7 +104,8 @@ The work falls into three tiers: **prove the pipe**, **build the UI**, **add the
 ─── TIER 1: PROVE THE PIPE ───────────────────────────────────
 Phase 1: Transport Exploration      — DONE (35 tests)
 Phase 2: Transport Hardening        — DONE (T1-T7)
-Phase 2b: WebSocket Verification    — E4 end-to-end through tugcast
+Phase 2b: WebSocket Verification    — DONE (probe written, 4 issues found)
+Phase 2c: WebSocket Fixes           — T8-T11 fixes from Phase 2b findings
 
 ─── TIER 2: BUILD THE UI ─────────────────────────────────────
 Phase 3: Streaming Markdown         — rendering layer (U1, U5, U6, U7)
@@ -168,21 +173,39 @@ Phase 12: Custom Block Renderers    — rich UI for agent output
 
 ### Phase 2b: WebSocket Verification {#websocket-verification}
 
-**Goal:** Verify the full production WebSocket path end-to-end before building UI on it. Addresses E4.
+**Status: DONE.** Probe written (`tugtalk/probe-websocket.ts`), full findings in [ws-verification.md](ws-verification.md).
 
-**Inputs:** `--no-auth` flag (T6). All transport hardening (T1-T7).
+**Key findings:**
+- Wire protocol confirmed: binary frames `[1-byte FeedId][4-byte BE u32 length][payload]`
+- Full round-trip works: WebSocket connect → `protocol_init` → `user_message` → streamed `assistant_text` → `turn_complete(result=success)`
+- Reconnection works: fresh snapshot feeds delivered immediately
+- All snapshot feeds (filesystem, git, stats, project_info) arrive on connect
 
-**Work:**
-- Launch tugcast with `--no-auth`
-- Connect via WebSocket from browser or probe script
-- Verify: handshake, `protocol_init`, `session_init`, `user_message` → streamed response
-- Test: binary framing behavior, reconnection, conversation bootstrap
-- Document any gaps or new transport items
+**Issues discovered (T8-T11):**
+- T8: `session_init` race — broadcast before client subscribes, missed on every fresh launch
+- T9: Double delivery — snapshot feeds sent twice on connect due to watch receiver clone bug
+- T10: Five touchpoints to add a watch channel — agent bridge should encapsulate its own channels
+- T11: `.tugtool/.session` written to repo tree, dirties working tree
+
+---
+
+### Phase 2c: WebSocket Fixes {#websocket-fixes}
+
+**Goal:** Fix T8-T11. Clean up the issues found in Phase 2b before building UI.
+
+**Inputs:** Phase 2b findings.
+
+**Work:** Items T8-T11 from the action items table. Prioritized:
+1. T8 (session_init watch channel) — directly blocks UI session handling
+2. T9 (double delivery) — code smell in router, fix while touching snapshot code
+3. T10 (encapsulate bridge channels) — clean up the pattern T8 introduced
+4. T11 (session file location) — stop dirtying the repo tree
 
 **Exit criteria:**
-- Full round-trip through WebSocket: browser connects → sends message → receives streamed response
-- Reconnection behavior documented
-- No new blocking issues, or new issues added to action items
+- `session_init` delivered as snapshot on connect (no race)
+- No double delivery of snapshot feeds
+- Adding a new agent bridge snapshot type is a one-file change
+- No tugtalk-written files inside the repo tree
 
 **Outputs:** Verified WebSocket path. Confidence to build UI.
 
@@ -354,7 +377,7 @@ Phase 12: Custom Block Renderers    — rich UI for agent output
 1. **Feed hook parsing fragility.** Orchestrator prompts are natural language with embedded JSON.
 2. **Shell script overhead on high-frequency hooks.** ~50ms per invocation. Monitor in Phase 11.
 3. **Hooks visibility gap (E3).** Hooks run silently — UI blind to hook decisions. May need tugtalk changes. Deferred.
-4. **WebSocket unknowns.** Binary framing, reconnection, bootstrap for conversations — Phase 2b will surface issues before UI work begins.
+4. ~~**WebSocket unknowns.**~~ Resolved in Phase 2b. Wire protocol documented, four issues found (T8-T11), fixes tracked in Phase 2c.
 
 ---
 
