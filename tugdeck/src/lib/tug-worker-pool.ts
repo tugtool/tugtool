@@ -358,7 +358,12 @@ export class TugWorkerPool<TReq, TRes> {
       }
       // Allow re-spawn on next submit if all slots are gone.
       if (this._slots.length === 0) {
-        this._spawned = false;
+        if (this._fallbackHandler) {
+          this._fallbackMode = true;
+          console.warn("[TugWorkerPool] All workers failed — switching to fallback mode");
+        } else {
+          this._spawned = false;
+        }
       }
     };
 

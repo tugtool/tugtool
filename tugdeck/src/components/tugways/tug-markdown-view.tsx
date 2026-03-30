@@ -765,29 +765,6 @@ export function TugMarkdownView({
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Auto-scroll during streaming [L05: RAF only for scroll write] ----
-  useEffect(() => {
-    const engine = engineRef.current;
-    if (!engine) return;
-    if (!isStreaming) return;
-    if (!scrollContainerRef.current) return;
-
-    const totalHeight = engine.heightIndex.getTotalHeight();
-    const viewportHeight = scrollContainerRef.current.clientHeight;
-    const targetScrollTop = Math.max(0, totalHeight - viewportHeight);
-
-    // Use RAF only for the scroll position write [L05].
-    if (engine.rafHandle !== null) {
-      cancelAnimationFrame(engine.rafHandle);
-    }
-    engine.rafHandle = requestAnimationFrame(() => {
-      engine.rafHandle = null;
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = targetScrollTop;
-      }
-    });
-  }, [streamingText, isStreaming]);
-
   // ---- Streaming rendering path ----
   // streamingText comes from useSyncExternalStore [L02].
   // Updates are coalesced at 100ms via setInterval [D05].
@@ -909,6 +886,20 @@ export function TugMarkdownView({
           engine.blockWindow.setViewportHeight(vpHeight);
           const update = engine.blockWindow.update(currentScrollTop);
           applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+
+          // Auto-scroll to tail during streaming [L05: trigger from worker response,
+          // not React commit; L06: DOM write via RAF is fine].
+          const totalHeight = engine.heightIndex.getTotalHeight();
+          const targetScrollTop = Math.max(0, totalHeight - vpHeight);
+          if (engine.rafHandle !== null) {
+            cancelAnimationFrame(engine.rafHandle);
+          }
+          engine.rafHandle = requestAnimationFrame(() => {
+            engine.rafHandle = null;
+            if (scrollContainerRef.current) {
+              scrollContainerRef.current.scrollTop = targetScrollTop;
+            }
+          });
         }).catch((err) => {
           if (err instanceof Error && err.message.includes("cancelled")) return;
           console.error("[TugMarkdownView] stream failed:", err);

@@ -117,6 +117,7 @@
   font-size: 0.875em;
 }
 
+/* @tug-renders-on: --tugx-md-surface */
 .tugx-md-block blockquote {
   border-left: 3px solid var(--tugx-md-blockquote-border, currentColor);
   margin: 0.5em 0;
@@ -135,6 +136,7 @@
   line-height: 1.5;
 }
 
+/* @tug-renders-on: --tugx-md-surface */
 .tugx-md-block hr {
   border: none;
   border-top: 1px solid var(--tugx-md-hr-color, currentColor);
@@ -148,6 +150,7 @@
   margin: 0.5em 0;
 }
 
+/* @tug-renders-on: --tugx-md-surface */
 .tugx-md-block th,
 .tugx-md-block td {
   border: 1px solid var(--tugx-md-table-border, rgba(0, 0, 0, 0.15));
