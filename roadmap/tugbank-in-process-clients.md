@@ -105,7 +105,7 @@ In WAL mode, SQLite writes go to the `-wal` file, not the main database file. Wa
 
 Instead, the authoritative signal is **`PRAGMA data_version`**. SQLite provides this specifically for detecting external modifications: it returns a version counter that changes whenever *any other connection* commits a write to the database. It's a single pragma call with no disk I/O — essentially free.
 
-The client polls `PRAGMA data_version` on a short interval (100–200ms). When the value changes:
+The client polls `PRAGMA data_version` on a short interval (500ms). When the value changes:
 
 1. Read the `generation` column for all cached domains.
 2. For any domain whose generation has increased, re-read that domain's entries.
@@ -113,7 +113,7 @@ The client polls `PRAGMA data_version` on a short interval (100–200ms). When t
 
 This is cheap: one pragma check per poll (no I/O), then on actual change, one `SELECT` to check generations + one `SELECT` to reload per changed domain. Most changes touch one domain.
 
-**Why not file watching?** File-system events can supplement polling as a hint to check sooner (reducing latency from 100ms to near-instant), but they cannot be the sole mechanism due to WAL. A hybrid approach — file watch as a fast-path trigger, `data_version` poll as the reliable fallback — is possible but adds complexity. Pure `data_version` polling at 100–200ms is simple, reliable, and fast enough for UI reactivity.
+**Why not file watching?** File-system events can supplement polling as a hint to check sooner (reducing latency from 100ms to near-instant), but they cannot be the sole mechanism due to WAL. A hybrid approach — file watch as a fast-path trigger, `data_version` poll as the reliable fallback — is possible but adds complexity. Pure `data_version` polling at 500ms is simple, reliable, and fast enough for UI reactivity.
 
 ### Writes: Write-Through Cache
 
