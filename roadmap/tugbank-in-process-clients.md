@@ -52,7 +52,7 @@ tugcast is the only process that holds a `DefaultsStore` open for its lifetime. 
                   └──────┬─────────────────┘
                          │
                          │ PRAGMA data_version
-                         │ (polled 100-200ms)
+                         │ (polled 500ms)
                          │
           ┌──────────────┼──────────────────────────┐
           │              │                           │
@@ -117,7 +117,9 @@ This is cheap: one pragma check per poll (no I/O), then on actual change, one `S
 
 ### Writes: Write-Through Cache
 
-Writes go directly to the database (using the existing `DefaultsStore` API), then update the local cache in the same call. The file-system event from the write will also fire, but the generation check will see the cache is already current and skip the reload.
+Writes go directly to the database (using the existing `DefaultsStore` API), then update the local cache in the same call. The next `data_version` poll will see a change (from the perspective of other connections), but the local client's generation check will see the cache is already current and skip the reload.
+
+Note: `PRAGMA data_version` only changes when *another* connection commits. A connection's own writes do not change its `data_version`. This is exactly what we want — the write-through cache handles the local update, and `data_version` polling handles external updates.
 
 ```
 client.set(domain, key, value)
@@ -126,13 +128,13 @@ client.set(domain, key, value)
   → return
 ```
 
-Other processes watching the file will see the write event and refresh their caches.
+Other processes polling `data_version` will detect the change on their next poll cycle and refresh their caches.
 
 ### Write Contention
 
 SQLite WAL mode with `busy_timeout=5000` already serializes writers. The existing `BEGIN IMMEDIATE` + generation CAS pattern handles concurrent writes correctly:
 
-- Two clients writing to the **same domain** at the same time: SQLite serializes the transactions. Both succeed. The second writer's file-watch event triggers a full reload of the domain.
+- Two clients writing to the **same domain** at the same time: SQLite serializes the transactions. Both succeed. Each client's `data_version` poll detects the other's write and triggers a reload of the domain.
 - Two clients writing to **different domains**: WAL allows readers and one writer concurrently. Transactions are short (single upsert + generation bump), so contention is minimal.
 - **CAS writes** (`set_if_generation`): Work exactly as before. The in-memory generation is checked first (fast-path rejection), then the database CAS provides the authoritative check.
 
@@ -189,11 +191,11 @@ class TugbankClient {
 }
 ```
 
-Writes from tugdeck still go through the existing `PUT /api/defaults/:domain/:key` HTTP endpoint. tugcast writes to the database, its `TugbankClient` detects the change on the next poll, and pushes the updated snapshot back to all WebSocket clients (including the one that initiated the write). This is slightly indirect but keeps writes consistent — the database is always the source of truth.
+Writes from tugdeck still go through the existing `PUT /api/defaults/:domain/:key` HTTP endpoint. tugdeck optimistically updates its own cache immediately on PUT (matching the write-through pattern used by Rust/Swift clients). tugcast writes to the database, its `TugbankClient` detects the change on the next poll, and pushes the updated snapshot back to all WebSocket clients. The writing client's cache is already current; other clients get the update within the poll window. The database remains the source of truth — if the PUT fails, the optimistic cache update is rolled back.
 
 ### The TypeScript Case: tugtalk
 
-tugtalk runs in Bun, which has a native SQLite API (`bun:sqlite`). tugtalk can open `~/.tugbank.db` directly and use `fs.watch` for change detection, similar to the Rust and Swift clients. No HTTP needed.
+tugtalk runs in Bun, which has a native SQLite API (`bun:sqlite`). tugtalk can open `~/.tugbank.db` directly for reads and writes. For change detection, it polls `PRAGMA data_version` on a timer, same as the Rust and Swift clients. No HTTP needed.
 
 This eliminates the `Bun.spawnSync(["tugbank", ...])` pattern entirely.
 
@@ -230,7 +232,7 @@ This eliminates all `Process()` spawns for tugbank access. The app reads theme, 
 
 The `tugbank` CLI binary is a short-lived command. It opens the database, performs one operation, and exits. There's no benefit to an in-memory cache for a process that lives for milliseconds. The CLI continues using `DefaultsStore` directly, as it does today.
 
-When the CLI writes, it modifies the database file, which triggers file-watch events in any long-running clients (tugcast, tugapp).
+When the CLI writes, it modifies the database. Long-running clients (tugcast, tugapp) detect the change on their next `data_version` poll cycle.
 
 ## Change Notification Callbacks
 
@@ -285,6 +287,8 @@ Two parallel tracks:
 
 Build as a static library (`.a`) for linking into the Swift app.
 
+**FFI memory management**: Values cross the boundary as JSON-serialized byte buffers. `tugbank_get` and `tugbank_read_domain` return a Rust-allocated C string (`*mut c_char`) containing the JSON-encoded tagged value or snapshot. The caller must free it via `tugbank_free_string(ptr)`. String parameters (`domain`, `key`) are borrowed `*const c_char` — Rust reads them, caller retains ownership. This keeps the FFI surface simple and avoids exposing Rust's `Value` enum layout to C.
+
 **DEFAULTS feed**: Add `DEFAULTS` feed ID (`0x50`) to the existing WebSocket protocol:
 - On client connect: push full snapshot for every populated domain, then a sync-complete sentinel
 - On domain change: push full updated snapshot to all connected clients
@@ -316,7 +320,7 @@ Replace `ProcessManager.readTugbank` / `writeTugbank` with `TugbankClient` calls
 Replace `Bun.spawnSync(["tugbank", ...])` in tugtalk with direct `bun:sqlite` access:
 - Read-only path: decode `value_kind` discriminators (straightforward, minimal logic)
 - Schema migration is not tugtalk's responsibility — the Rust CLI or tugcast handles that
-- `fs.watch` or poll-based change detection for cache invalidation
+- `PRAGMA data_version` polling for cache invalidation
 
 ## Resolved Questions
 
