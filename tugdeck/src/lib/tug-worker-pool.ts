@@ -76,6 +76,8 @@ interface WorkerSlot<TReq, TRes> {
   readyQueue: Array<{ msg: MainToWorkerMessage<TReq>; task: PendingTask<TRes> }>;
   /** Idle timer handle. */
   idleTimer: ReturnType<typeof setTimeout> | null;
+  /** Init handshake timeout handle. */
+  initTimer: ReturnType<typeof setTimeout> | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +201,10 @@ export class TugWorkerPool<TReq, TRes> {
 
     // Terminate workers and reject their pending tasks.
     for (const slot of this._slots) {
+      if (slot.initTimer !== null) {
+        clearTimeout(slot.initTimer);
+        slot.initTimer = null;
+      }
       if (slot.idleTimer !== null) {
         clearTimeout(slot.idleTimer);
         slot.idleTimer = null;
@@ -258,6 +264,7 @@ export class TugWorkerPool<TReq, TRes> {
       ready: false,
       readyQueue: [],
       idleTimer: null,
+      initTimer: null,
     };
 
     worker.onmessage = (e: MessageEvent<WorkerToMainMessage<TRes>>) => {
@@ -274,20 +281,42 @@ export class TugWorkerPool<TReq, TRes> {
       }
       slot.pending.clear();
       slot.inFlight = 0;
+
+      // Terminate the broken worker and remove the slot from the pool.
+      // A worker that has errored may be in a corrupt state — subsequent
+      // tasks dispatched to it could silently fail.
+      if (slot.initTimer !== null) {
+        clearTimeout(slot.initTimer);
+        slot.initTimer = null;
+      }
+      if (slot.idleTimer !== null) {
+        clearTimeout(slot.idleTimer);
+        slot.idleTimer = null;
+      }
+      try {
+        slot.worker.terminate();
+      } catch {
+        // ignore
+      }
+      const idx = this._slots.indexOf(slot);
+      if (idx >= 0) {
+        this._slots.splice(idx, 1);
+      }
+      // Allow re-spawn on next submit if all slots are gone.
+      if (this._slots.length === 0) {
+        this._spawned = false;
+      }
     };
 
     // Set up init timeout.
-    const initTimer = setTimeout(() => {
+    slot.initTimer = setTimeout(() => {
       if (!slot.ready) {
         // Treat as ready anyway — some workers may not send init.
         slot.ready = true;
+        slot.initTimer = null;
         this._flushReadyQueue(slot);
       }
     }, this._initTimeoutMs);
-
-    // Store timer so we can clear it when init arrives.
-    (slot as WorkerSlot<TReq, TRes> & { _initTimer?: ReturnType<typeof setTimeout> })._initTimer =
-      initTimer;
 
     return slot;
   }
@@ -298,11 +327,9 @@ export class TugWorkerPool<TReq, TRes> {
 
   private _onWorkerMessage(slot: WorkerSlot<TReq, TRes>, msg: WorkerToMainMessage<TRes>): void {
     if (msg.type === "init") {
-      // Clear init timeout if present.
-      const s = slot as WorkerSlot<TReq, TRes> & { _initTimer?: ReturnType<typeof setTimeout> };
-      if (s._initTimer !== undefined) {
-        clearTimeout(s._initTimer);
-        delete s._initTimer;
+      if (slot.initTimer !== null) {
+        clearTimeout(slot.initTimer);
+        slot.initTimer = null;
       }
       slot.ready = true;
       this._flushReadyQueue(slot);
@@ -413,15 +440,13 @@ export class TugWorkerPool<TReq, TRes> {
   private _postToSlot(
     slot: WorkerSlot<TReq, TRes>,
     msg: MainToWorkerMessage<TReq>,
-    _task: PendingTask<TRes>,
+    task: PendingTask<TRes>,
   ): void {
     const transferables = msg.type === "task" ? collectTransferables(msg.payload) : [];
     try {
       slot.worker.postMessage(msg, transferables);
     } catch {
-      // If postMessage fails, reject the task.
-      const task = slot.pending.get(msg.type === "task" ? msg.taskId : 0);
-      if (task && !task.cancelled) {
+      if (!task.cancelled) {
         task.reject(new Error("TugWorkerPool: postMessage failed"));
         slot.pending.delete(task.taskId);
         slot.inFlight = Math.max(0, slot.inFlight - 1);

@@ -636,6 +636,18 @@ Update the gallery card to show worker status (idle/busy, cache hit rate, parse 
 - R04: Placeholder-to-real swap may cause layout shift if estimated height differs significantly from actual. Mitigation: the existing ResizeObserver measurement + prefix sum recomputation handles this — it's the same mechanism that already corrects estimated heights. The pluggable HeightEstimator (W18) allows type-specific estimation that gets closer to measured heights, reducing visible shifts. The learning estimator (future) will converge on accurate heights after measuring a few blocks of each type. For MDX/React elements, a component registry can provide preferred heights before first render.
 - R05: Worker initialization time (~10-50ms for module loading). Mitigation: initialize worker eagerly on first TugMarkdownView mount, not on first content load. Worker stays alive for the component's lifetime.
 
+#### TugWorkerPool hardening (deferred from Phase 3A.1 review)
+
+These issues were identified during code review of TugWorkerPool but deferred to this phase, where a real consumer exercises the pool under load:
+
+1. **`collectTransferables` walks the entire payload object tree.** For markdown payloads (plain strings), this is wasted work. Evaluate under real load — if profiling shows measurable cost, make transferable detection opt-in (caller passes explicit transferables list) or short-circuit for primitive/string payloads.
+
+2. **Idle timeout respawns the full pool as a batch.** When all workers idle-terminate and `_spawned` resets, the next `submit()` re-creates all N workers at once, paying init handshake cost × N. Under real usage patterns (bursts of scroll-driven parsing separated by idle periods), evaluate whether per-slot lazy respawn is needed to avoid startup latency spikes.
+
+3. **Least-busy dispatch is untested with real workers.** The unit test uses fallback mode (single inline executor), which doesn't exercise multi-slot dispatch. Add a test with real workers that submits tasks with varying durations and verifies they distribute across slots — e.g., submit N slow tasks + 1 fast task and confirm the fast task doesn't queue behind the slow ones on a single worker.
+
+4. **Init handshake timeout path is untested.** A worker that never sends `{ type: 'init' }` should still process tasks after the timeout fires. Add a test with a delayed-init worker to verify the timeout → ready → flush-queue path works.
+
 ---
 
 ### Phase 3B: Markdown Content Types {#markdown-content-types}
