@@ -506,78 +506,173 @@ Monaco encodes tokens as `Uint32Array` (32 bits per token field) for efficient m
 - Does not pre-tokenize large files — viewport-first, always.
 - Falls back gracefully to main thread if workers are unavailable.
 
-#### Architecture: the worker-based markdown pipeline
+#### Architecture: two-phase worker pipeline (Model C)
 
-The new architecture has three layers:
+Three task-to-worker models were evaluated:
+
+**Model A: One task = one block.** Submit 5,000 individual tasks. Maximum parallelism, but ~5,000 `postMessage` round-trips at ~0.1ms each = ~500ms in message overhead alone. Rejected — message overhead dominates parse time.
+
+**Model B: One task = a batch of blocks.** Submit batches of ~100 blocks. Fewer messages (~50), better throughput. But coarser cancellation. Viable but not optimal.
+
+**Model C: Two-phase (chosen).** Phase 1 sends the entire raw text to a single worker for `marked.lexer()` → returns lightweight metadata (token types, raw text lengths, estimated heights). This is fast (~5ms for 1MB) and produces the data needed to populate BlockHeightIndex and render the scrollbar immediately. Phase 2 submits batches of block indices to the worker pool for `marked.parser()` → returns `{ index, html }[]`. Only blocks in the visible + overscan range are submitted. Parsing is the expensive step (~2ms per block) and this is where parallelism pays off.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  WORKER THREAD (MarkdownWorker)                         │
-│                                                         │
-│  Receives: raw markdown text + visible range hint       │
-│  Produces: Token[], estimated heights, parsed HTML[]    │
-│                                                         │
-│  1. marked.lexer(text) → Token[]                        │
-│  2. estimateBlockHeight(token) for each token           │
-│  3. marked.parser([token]) for each token → HTML[]      │
-│     (priority: visible range first, then outward)       │
-│  4. postMessage({ tokens, heights, htmlByIndex })       │
-│                                                         │
-│  For streaming: incremental tail-lex, same priority     │
-└──────────────────────┬──────────────────────────────────┘
-                       │ postMessage (structured clone)
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  MAIN THREAD (TugMarkdownView)                          │
-│                                                         │
-│  Receives: tokens, heights, pre-parsed HTML strings     │
-│                                                         │
-│  1. Populate BlockHeightIndex from heights              │
-│  2. On scroll: RenderedBlockWindow.update(scrollTop)    │
-│  3. For entering blocks:                                │
-│     a. If htmlByIndex has the HTML → sanitize + render  │
-│     b. If not yet parsed → request from worker (async)  │
-│        meanwhile show placeholder / estimated-height    │
-│  4. DOMPurify.sanitize(html) — ONLY for visible blocks  │
-│  5. DOM write: element.innerHTML = sanitizedHtml        │
-│                                                         │
-│  DOMPurify stays on main thread (requires DOM).         │
-│  Sanitization cost is bounded: only visible blocks,     │
-│  never more than ~60-100 at a time.                     │
-└─────────────────────────────────────────────────────────┘
+   PHASE 1: LEX (single worker, fast)
+   ──────────────────────────────────
+   Main thread                    Worker (any one from pool)
+       │                              │
+       ├─ submit({ type: 'lex',       │
+       │    text: '# Hello\n...' }) ──→ marked.lexer(text)
+       │                              │  estimateBlockHeight(token) for each
+       │                              │  compute byte offsets per token
+       │                           ←──┤  { blockCount, heights[], offsets[] }
+       │                              │
+       ├─ populate BlockHeightIndex   │  (scrollbar now accurate)
+       ├─ store offsets               │  (main thread slices raws from content)
+       ├─ compute visible range       │
+       └─ immediately request Phase 2 │
+
+   Note: Phase 1 returns offsets (block boundary positions in the source
+   text), NOT the raw strings themselves. The main thread already has the
+   original content string — it slices content.slice(offsets[i-1], offsets[i])
+   to get each block's raw text for Phase 2. This keeps the Phase 1 response
+   payload at ~80KB (heights + offsets as number arrays) instead of ~1MB+
+   (the raw text re-serialized). For a 10MB document, this is the difference
+   between ~1ms and ~350ms of structured clone overhead.
+
+
+   PHASE 2: PARSE (pool of N workers, parallel, on-demand)
+   ────────────────────────────────────────────────────────
+   Main thread                    Worker pool (N workers)
+       │                              │
+       │  (slice raws from content    │
+       │   using offsets from Phase 1)│
+       │                              │
+       ├─ submit({ type: 'parse',     │   ← batch 1 of ~10 blocks
+       │    batch: [{ index, raw }]}) ────→ W1
+       ├─ submit({ type: 'parse',     │   ← batch 2
+       │    batch: [{ index, raw }]}) ────→ W2
+       ├─ submit(...)                 ────→ W3  ... up to N batches
+       │    ...                       ────→ W4     for N workers
+       │                              │
+       │  ←───── { index, html }[] ───┤  (as each worker finishes)
+       │                              │
+       ├─ cache HTML per index        │
+       ├─ sanitize + render visible   │
+       └─ (next scroll → new batches) │
+
+   The main thread splits the uncached blocks in the visible+overscan
+   range into N batches (one per worker) and submits N tasks via
+   pool.submit(). The pool dispatches each to the least-busy worker.
+   As each worker finishes, its results populate the HTML cache and
+   visible blocks are rendered immediately.
+
+
+   STREAMING: tail-lex + parse (batched, low frequency)
+   ──────────────────────────────────────────────────────
+   Main thread                    Worker (single)
+       │                              │
+       │  (every ~100ms, not every delta)
+       ├─ submit({ type: 'stream',    │
+       │    tailText: '...',          │
+       │    relexFromOffset: N }) ────→ marked.lexer(tail)
+       │                              │  marked.parser for new/changed blocks
+       │                           ←──┤  { newHeights[], newOffsets[],
+       │                              │    parsedBlocks: {index, html}[] }
+       │                              │
+       ├─ append to BlockHeightIndex  │
+       ├─ extend offsets array        │
+       ├─ update cache for changed    │
+       ├─ render if in viewport       │
+       └─ auto-scroll to tail         │
 ```
+
+**Why Model C wins:**
+- Phase 1 is one message, completes in ~5-10ms, and gives the main thread everything it needs to render the scrollbar and compute the visible range. The response is lightweight (~80KB of number arrays), not a re-serialization of the document text. No waiting for parse results before the UI is interactive.
+- Phase 2 uses the full worker pool for parallelism where it matters most: the expensive `marked.parser()` calls. The main thread splits the work into N batches and submits N tasks — one per worker. Message overhead is low (~12 messages for 12 workers) while throughput scales with core count.
+- The worker file handles all three message types (`lex`, `parse`, `stream`) via a simple switch. No task registry, no dynamic imports.
+- Streaming uses a batched approach (~100ms coalescing, not per-delta) to avoid flooding the worker with 25 requests/second.
 
 **Key design decisions:**
 
-**W07: Use TugWorkerPool for parallel parsing.**
-Phase 3A.1's `TugWorkerPool<TReq, TRes>` provides a fleet of identical workers for parallel computation. TugMarkdownView creates a pool of N markdown workers (N from `navigator.hardwareConcurrency`). When blocks need parsing, batches are spread across all workers simultaneously — 5,000 blocks across 4 workers completes in ~1/4 the time of a single worker. The pool handles RPC, cancellation (W15), and graceful degradation (W16). The worker file owns its imports (`marked`) and its `onmessage` handler — the pool doesn't dictate worker internals.
+**W07: Two-phase lex/parse pipeline via TugWorkerPool.**
+Phase 3A.1's `TugWorkerPool<TReq, TRes>` manages a fleet of identical markdown workers. The component creates one pool at mount time. Phase 1 (lex) and Phase 2 (parse) are both submitted via `pool.submit()`. The pool dispatches to the least-busy worker. Cancellation (W15) and graceful degradation (W16) come from the pool for free.
 
-**W08: Viewport-priority parsing with deep overscan.**
-The worker pool receives a `visibleRange` hint with each request. It parses blocks in this order: (1) blocks in the visible range, (2) blocks in the overscan range, (3) stop. It does NOT parse the entire document. When the user scrolls, stale requests are cancelled and new ones submitted for the new viewport.
+The pool's generic types use discriminated unions to handle the three message types through a single pool instance:
+```typescript
+type MdWorkerReq =
+  | { type: 'lex'; text: string }
+  | { type: 'parse'; batch: { index: number; raw: string }[] }
+  | { type: 'stream'; tailText: string; relexFromOffset: number };
 
-Getting overscan right is critical to the illusion that everything is always rendered. The overscan must be deep enough that a fast scrollbar yank — grabbing the scrollbar thumb and dragging it aggressively — never reveals unrendered blocks. The scrollbar cannot hitch, judder, or show placeholders during aggressive scrolling. This means:
+type MdWorkerRes =
+  | { type: 'lex'; blockCount: number; heights: number[]; offsets: number[] }
+  | { type: 'parse'; results: { index: number; html: string }[] }
+  | { type: 'stream'; newHeights: number[]; newOffsets: number[];
+      parsedBlocks: { index: number; html: string }[] };
+
+const pool = new TugWorkerPool<MdWorkerReq, MdWorkerRes>(workerUrl);
+```
+
+The caller narrows the response type by matching on the `type` discriminant. The worker file is a single `markdown-worker.ts` with a switch on `payload.type`:
+- `lex`: receives raw text, runs `marked.lexer()`, returns block count + heights + byte offsets (no raw strings, no HTML — the main thread has the original text).
+- `parse`: receives a batch of `{ index, raw }` entries, runs `marked.parser(marked.lexer(raw))` for each (see W19), returns `{ index, html }[]`.
+- `stream`: receives tail text + relex offset, runs incremental lex + parse for new/changed blocks, returns heights + offsets + HTML for affected blocks.
+
+**W19: Parse workers re-lex from raw strings, not serialized Tokens.**
+Phase 2 parse batches send `{ index, raw }` — the block's raw markdown text, not serialized Token objects. The parse worker calls `marked.parser(marked.lexer(raw))` to reconstruct the token and produce HTML. This is the faster path:
+- Structured-cloning a full Token object (which contains nested `tokens[]` arrays for inline markup) costs ~0.5ms per token via `postMessage`.
+- Re-lexing a single block's raw text (~100-500 bytes) costs ~0.1ms — 5x cheaper than cloning the Token.
+- The Phase 1 lex response returns only `heights[]` and `offsets[]` (flat number arrays). The Token objects never cross the worker boundary.
+- Each Phase 2 parse worker independently reconstructs its batch's tokens from raw strings. No shared state, no coordination between workers.
+
+**W08: Viewport-priority parsing with deep overscan and scroll coalescing.**
+The worker pool receives parse requests only for blocks in the visible + overscan range. Getting overscan right is critical to the illusion that everything is always rendered. The scrollbar cannot hitch, judder, or show placeholders during aggressive scrolling.
+
+Overscan tuning:
 - Overscan of 3-5 screens above and below the viewport (tunable, not hardcoded).
-- The HTML cache (W09) retains parsed blocks even after they leave the overscan zone, so scrolling back doesn't re-parse.
-- When the scroll position jumps (scrollbar drag, keyboard Page Down), the pool immediately submits the new visible+overscan range as a parallel batch across all workers. With 4 workers and ~120 overscan blocks, each worker handles ~30 blocks — completing in the time it takes to parse 30 blocks sequentially (~60ms), well under the next frame.
-- If a block enters the viewport before its HTML arrives from the worker, a placeholder at estimated height is shown and swapped on arrival. But the overscan depth should make this a rare edge case, not the normal path.
+- The HTML cache (W09) retains parsed blocks permanently (for the lifetime of the content), so scrolling back never re-parses.
+
+Scroll coalescing:
+- The scroll handler does NOT submit worker requests directly. Instead, it updates a `pendingScrollTop` variable and requests a coalescing frame via `requestAnimationFrame`.
+- The RAF callback fires once per frame (~16ms). It computes the new visible+overscan range, diffs against the last submitted range, cancels any in-flight parse requests for blocks no longer in the range, and submits a new batch for uncached blocks in the new range.
+- This means: rapid scrollbar dragging generates many scroll events per frame, but only ONE worker batch per frame. The pool never receives stale requests because each frame cancels the previous batch before submitting a new one.
+- For large jumps (scrollbar yank from top to bottom), the entire new visible+overscan range is submitted as parallel batches across all workers. With 12 workers and ~120 overscan blocks, each worker handles ~10 blocks — completing in ~20ms, well under the next frame.
+
+Placeholder strategy:
+- If a block enters the viewport before its HTML arrives from the worker, render a placeholder `<div>` at estimated height. Replace with real content when the worker responds.
+- The overscan depth should make placeholders a rare edge case, not the normal path.
+- No CSS transition on the swap — transitions add latency and visual noise. The swap should be instantaneous; if the user can see it, the overscan isn't deep enough.
 
 **W09: HTML cache, not pre-rendering.**
-Parsed HTML strings are cached in a `Map<number, string>` on the main thread. When a block enters the viewport, the main thread checks the cache first. Cache hit → sanitize and render immediately. Cache miss → request from worker, show a placeholder div at estimated height. The placeholder is replaced when the worker responds. This eliminates `scheduleIdleBatch` entirely.
+Parsed HTML strings are cached in a `Map<number, string>` on the main thread. The cache is populated by worker responses and never evicted (content is append-only per the content model). When a block enters the viewport: cache hit → sanitize + render immediately (synchronous, fast). Cache miss → submit to worker pool, show placeholder. This eliminates `scheduleIdleBatch` entirely.
 
 **W10: DOMPurify only at render time.**
-DOMPurify requires the DOM and cannot run in a worker. Instead of sanitizing all blocks eagerly, sanitize only when a block enters the viewport and is about to be written to the DOM. This bounds sanitization cost to ~60-100 blocks at any time (viewport + overscan), regardless of document size.
+DOMPurify requires the DOM and cannot run in a worker. Sanitize only when a block enters the viewport and is about to be written to the DOM. Cost is bounded: only visible blocks, never more than ~60-100 at a time. The sanitization call is synchronous but fast (~0.5ms per block for typical markdown HTML).
 
-**W11: Streaming path uses same worker.**
-Streaming deltas are sent to the worker for incremental tail-lexing (same as Phase 3A's approach, but off-thread). The worker returns only the changed/new tokens and their HTML. The main thread applies the diff to the visible window. Off-screen streaming blocks are not parsed until scrolled to.
+**W11: Streaming path — batched, not per-delta.**
+Streaming deltas arrive at ~25/second from the PropertyStore. Sending a worker request per delta would flood the pool with 25 messages/second, most of which would be superseded by the next delta before the worker finishes.
+
+Instead, the streaming path coalesces:
+- A `streamingDirty` flag is set on each `useSyncExternalStore` update.
+- A `setInterval` at ~100ms (configurable) checks the flag. If dirty: read the accumulated text from the store, compute the tail diff, submit one `stream` task to a single worker (not the full pool — streaming tail-lex is sequential by nature). Clear the flag.
+- The worker returns new/changed block metadata + HTML for blocks near the viewport.
+- The main thread updates BlockHeightIndex (append new heights), updates the HTML cache for changed blocks, and re-renders if affected blocks are visible.
+- Auto-scroll to tail uses RAF for the scroll position write [L05], same as Phase 3A.
+- On `isStreaming` transition to false (turn_complete): one final `lex` of the full accumulated text for verification, same as Phase 3A's finalization pass but off-thread.
+
+This bounds streaming worker traffic to ~10 requests/second regardless of delta rate, while keeping the display current within ~100ms of each delta.
 
 **W12: Graceful degradation.**
-If the worker fails to initialize (e.g., CSP restrictions, old browser), fall back to main-thread lexing + parsing with the viewport-only discipline (W08). The fallback is still faster than Phase 3A because it never pre-renders all blocks.
+If worker construction fails, the pool's fallback handler runs lex/parse/stream inline on the main thread via `queueMicrotask`. The viewport-only discipline (W08) still applies — the fallback never pre-renders all blocks. Performance is worse than the worker path but still far better than Phase 3A.
 
 **W18: Height estimation as pluggable infrastructure.**
 The Phase 3A `estimateBlockHeight()` function uses naive line-counting heuristics (paragraph = `ceil(text.length / 80) * LINE_HEIGHT`). This is inadequate for two reasons: (1) real content has variable-width fonts, padding, margins, and nested structures that make character-counting unreliable, and (2) MDX and React elements embedded in the document flow will have heights that cannot be estimated from text alone.
 
+The height estimation logic must be shared between the worker (which estimates heights during Phase 1 lex) and the main thread (which uses the estimates for BlockHeightIndex). This means `estimateBlockHeight()` is a pure function in a shared module — importable by both the worker file and the component.
+
 The height estimation system must be designed as pluggable infrastructure, not a hardcoded switch/case:
-- **`HeightEstimator` interface** with a `estimate(token: Token): number` method. BlockHeightIndex accepts an estimator at construction.
+- **`HeightEstimator` interface** with an `estimate(tokenType: string, raw: string): number` method. Takes token type and raw text, returns estimated pixel height. Pure function, no DOM dependency — works in both main thread and worker.
 - **Default text estimator** uses the current heuristic (line counting + constants) as a baseline. Good enough for plain markdown.
 - **Measured-height feedback loop** already exists (ResizeObserver → `setHeight()`). The estimator's job is to get *close enough* that the placeholder-to-measured swap doesn't cause visible layout shift. Within 20% is the target.
 - **Type-specific estimators** can be registered for block types that need special logic: code blocks (account for line numbers, header chrome, syntax highlighting padding), embedded React components (use a registered default height or query a component registry for preferred size), tables (estimate from row/column count + cell padding).
@@ -587,35 +682,59 @@ This is forward-looking infrastructure. Phase 3A.2 implements the interface + de
 
 #### Work
 
-**Step 1: Rip out `scheduleIdleBatch` and fix viewport-only rendering.**
-Before adding workers, fix the immediate performance disaster. Remove `scheduleIdleBatch`, `RENDER_BATCH_SIZE`, and the idle callback plumbing. Ensure `addBlockNode()` is called ONLY by `applyWindowUpdate()` (entering blocks) — never in a pre-render loop. Add an HTML cache (`Map<number, string>`) so blocks exiting and re-entering the window don't re-parse. This alone should reduce the 1MB render from ~15s to ~200ms.
+**Step 1: Rip out `scheduleIdleBatch` and add HTML cache.**
+Fix the immediate performance disaster before touching the worker pipeline. Remove `scheduleIdleBatch`, `RENDER_BATCH_SIZE`, `CHUNKED_CONTENT_THRESHOLD`, and all idle callback plumbing. Ensure `addBlockNode()` is called ONLY by `applyWindowUpdate()` (entering blocks) — never in a pre-render loop. Add an HTML cache (`Map<number, string>`) to `MarkdownEngineState`. Modify `addBlockNode()` to check the cache before calling `renderToken()`. Modify `removeBlockNode()` to NOT evict the cache entry (cache lives forever per content model). This alone should reduce the 1MB render from ~15s to ~200ms. Verify with the gallery card.
 
-**Step 2: Create the markdown task handler.**
-New file: `tugdeck/src/workers/markdown-tasks.ts`. This is a task handler registered with TugWorkerService (Phase 3A.1). It handles task types:
-- `markdown:lex` — runs `marked.lexer()`, returns tokens + estimated heights.
-- `markdown:parse` — runs `marked.parser([token])` for each token in a range, returns `{ index, html }[]`.
-- `markdown:parse-incremental` — streaming tail-lex + parse.
+**Step 2: Extract shared height estimation module.**
+Move `estimateBlockHeight()` and the height constants out of `tug-markdown-view.tsx` into a new shared module: `tugdeck/src/lib/markdown-height-estimator.ts`. Define the `HeightEstimator` interface. Implement `DefaultTextEstimator` using the existing heuristics. This module must be pure (no DOM, no React) so the worker can import it. Update `tug-markdown-view.tsx` and `block-height-index.ts` to import from the new module.
 
-TugWorkerService handles lifecycle, cancellation, and priority dispatch. The task handler is pure computation with no framework dependencies.
+**Step 3: Create the markdown worker file.**
+New file: `tugdeck/src/workers/markdown-worker.ts`. A plain `self.onmessage` handler with a switch on message type:
+- `lex`: receives `{ type: 'lex', text: string }`. Runs `marked.lexer(text)`, filters space tokens, estimates heights via the shared estimator, computes byte offsets for each block. Returns `{ type: 'result', payload: { blockCount, heights: number[], offsets: number[] } }`. Does NOT return raw strings — the main thread has the original text and slices raws using the offsets.
+- `parse`: receives `{ type: 'parse', batch: { index: number, raw: string }[] }`. Runs `marked.parser([reconstructedToken])` for each entry. Returns `{ type: 'result', payload: { results: { index: number, html: string }[] } }`.
+- `stream`: receives `{ type: 'stream', tailText: string, relexFromOffset: number }`. Runs incremental tail-lex, estimates heights for new/changed blocks, parses blocks near the viewport hint. Returns `{ type: 'result', payload: { newBlocks: [...], changedBlocks: [...] } }`.
 
-**Step 3: Wire TugMarkdownView to the worker.**
-Replace synchronous `marked.lexer()` and `renderToken()` calls with async worker requests. The static path becomes: (1) send `lex` to worker, (2) on response, populate BlockHeightIndex + render visible window from returned HTML, (3) on scroll, send `parse` for newly visible blocks. The streaming path sends `parse-incremental` on each delta.
+Static imports only: `import { marked } from 'marked'` and `import { DefaultTextEstimator } from '../lib/markdown-height-estimator'`. Sends `{ type: 'init' }` on load.
 
-**Step 4: Add placeholder blocks for async rendering.**
-When a block enters the viewport but its HTML isn't cached yet (cache miss, worker still processing), render a placeholder `<div>` at the estimated height. When the worker responds, replace the placeholder with the real content. Use a CSS transition (opacity fade) so the swap isn't jarring.
+**Important:** Worker files are separate Vite entry points. The `@/` path alias from `vite.config.ts` may not resolve in the worker build — use relative imports (`../lib/...`) from the worker file to be safe. Verify with `bun run build` that the worker chunk includes the estimator module.
 
-**Step 5: Verify performance and stress test.**
-Update the gallery card to show worker status (idle/busy, cache hit rate, parse queue depth). Verify: 1MB renders in <50ms (viewport visible), 10MB in <100ms, scroll to any position completes in <16ms (one frame), streaming at 60fps with zero main-thread jank.
+**Step 4: Wire TugMarkdownView to the two-phase pipeline.**
+Replace the synchronous static rendering path:
+- On `content` prop change: submit `lex` task to pool. On response: populate BlockHeightIndex from returned heights, store offsets in engine state (main thread slices raws from the original `content` string using these offsets), compute visible+overscan range, split uncached blocks into N batches and submit N `parse` tasks. On parse responses: populate HTML cache, sanitize + render visible blocks.
+- On scroll: RAF-coalesced handler computes new visible+overscan range, diffs against last range, cancels stale parse tasks, submits new parse batch for uncached blocks. On response: populate cache, sanitize + render entering blocks.
+- Create the pool at component mount: `new TugWorkerPool<MdWorkerReq, MdWorkerRes>(new URL('../workers/markdown-worker.ts', import.meta.url))`. Terminate on unmount.
+
+**Step 5: Wire the streaming path to the batched worker model.**
+Replace the synchronous streaming useEffect:
+- Add `streamingDirty` flag and `streamingInterval` (100ms) to engine state.
+- On `useSyncExternalStore` update: set `streamingDirty = true`.
+- Interval callback: if dirty, read accumulated text, submit `stream` task to one worker with tail text and relex offset. On response: append new blocks to BlockHeightIndex, update HTML cache for changed blocks, re-render if visible, auto-scroll via RAF.
+- On `isStreaming` → false: submit final `lex` of full text for verification (finalization pass), reconcile, clear interval.
+
+**Step 6: Add placeholder blocks for async rendering.**
+When `addBlockNode()` encounters a cache miss: create a `<div class="tugx-md-block tugx-md-placeholder">` at estimated height. Store a reference. When the worker responds and the HTML cache is populated, check if the placeholder is still in the DOM (block still in viewport). If so, replace its innerHTML with the sanitized HTML and remove the placeholder class. No CSS transition — if the user sees the swap, the overscan isn't deep enough.
+
+**Step 7: Update gallery card diagnostics.**
+Add to the diagnostic overlay: worker pool size, in-flight parse tasks, HTML cache size, cache hit rate (hits / (hits + misses) since last content load). These metrics are essential for tuning overscan depth and batch size.
+
+**Step 8: Performance verification and stress test.**
+Run the gallery card through all three modes:
+- Static 1MB: viewport visible in <200ms, scroll to any position jank-free, DOM nodes <500.
+- Static 10MB: viewport visible in <200ms, scrollbar yank test (drag top to bottom in <1s, zero judder).
+- Streaming: 60fps, zero dropped frames during 5000+ word stream, auto-scroll smooth.
+Profile with Chrome DevTools Performance tab. Verify: zero long tasks (>50ms) on main thread during any operation. All `marked.parser()` calls happen in worker threads. `DOMPurify.sanitize()` only for visible blocks.
 
 #### Checkpoints
 
 - `bun test` — all existing BlockHeightIndex + RenderedBlockWindow tests still pass.
+- `bun test` — new tests for HeightEstimator interface, DefaultTextEstimator, HTML cache behavior.
 - `bunx tsc --noEmit` — no new type errors (pre-existing errors in unrelated files are acceptable).
-- `bun run build` — build succeeds, worker chunk emitted.
+- `bun run build` — build succeeds, markdown worker chunk emitted alongside pool worker chunk.
 - Gallery card: 1MB static content appears in <200ms. DOM node count stays <500. Scrolling is jank-free.
-- Gallery card: 10MB stress test — viewport appears in <200ms, scroll is smooth.
+- Gallery card: 10MB stress test — viewport appears in <200ms, scrollbar yank test passes.
 - Gallery card: streaming mode — 60fps, no dropped frames during 5000+ word stream.
-- `performance.now()` measurement in gallery diagnostic: `renderToken()` never called outside viewport+overscan range.
+- Gallery diagnostic: cache hit rate, in-flight tasks, pool size all visible and updating.
+- Chrome DevTools Performance tab: zero long tasks (>50ms) on main thread during any rendering operation.
 
 #### Exit criteria
 
@@ -632,9 +751,9 @@ Update the gallery card to show worker status (idle/busy, cache hit rate, parse 
 
 #### Risks
 
-- R03: `postMessage` serialization cost for Token objects. Marked Token objects contain nested properties (e.g., `tokens` array on paragraphs for inline markup). Structured clone handles this but may add 1-5ms per message for large token lists. Mitigation: transfer only what's needed — for the `parse` response, send `{ index: number, html: string }[]` (flat array of strings), not full Token objects.
-- R04: Placeholder-to-real swap may cause layout shift if estimated height differs significantly from actual. Mitigation: the existing ResizeObserver measurement + prefix sum recomputation handles this — it's the same mechanism that already corrects estimated heights. The pluggable HeightEstimator (W18) allows type-specific estimation that gets closer to measured heights, reducing visible shifts. The learning estimator (future) will converge on accurate heights after measuring a few blocks of each type. For MDX/React elements, a component registry can provide preferred heights before first render.
-- R05: Worker initialization time (~10-50ms for module loading). Mitigation: initialize worker eagerly on first TugMarkdownView mount, not on first content load. Worker stays alive for the component's lifetime.
+- R03: **Phase 1 lex response payload size.** Resolved by design: Phase 1 returns `heights: number[]` + `offsets: number[]` (~80KB for 5,000 blocks), not the raw text strings. The main thread already has the original `content` string and slices block raws using the offsets. For a 10MB document, the Phase 1 response is still ~80KB — structured clone cost is negligible (~1ms).
+- R04: **Placeholder-to-real swap layout shift.** Mitigation: ResizeObserver measurement + prefix sum recomputation handles this (same mechanism as Phase 3A). The pluggable HeightEstimator (W18) allows type-specific estimation that gets closer to measured heights. The learning estimator (future) will converge after measuring a few blocks of each type. For MDX/React elements, a component registry can provide preferred heights before first render. Deep overscan (W08) should make placeholder visibility rare.
+- R05: **Worker pool initialization time.** The pool spawns N workers lazily on first submit. Each worker loads `marked` (~50ms). For 12 workers, that's ~50ms wall time (parallel spawn) + init handshake. Mitigation: create the pool at component mount time (not first content load). The Phase 1 lex request naturally triggers the first worker spawn; by the time Phase 2 parse batches are submitted, most workers should be ready.
 
 #### TugWorkerPool hardening (deferred from Phase 3A.1 review)
 
