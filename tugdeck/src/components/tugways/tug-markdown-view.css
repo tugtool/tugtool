@@ -66,6 +66,20 @@
   padding: 0 var(--tugx-md-block-padding-x, 1rem);
 }
 
+/* ---- Placeholder blocks ---- */
+
+/*
+ * Placeholder blocks appear when a block enters the viewport before the worker
+ * has delivered parsed HTML (cache miss). The placeholder holds the estimated
+ * height so the virtual scroll layout remains accurate. It is invisible by
+ * default; set --tugx-md-placeholder-bg to a visible color for debugging.
+ *
+ * No CSS transition when replaced by real content [Step 6 spec].
+ */
+.tugx-md-placeholder {
+  background: var(--tugx-md-placeholder-bg, transparent);
+}
+
 /* ---- Typography defaults ---- */
 /*
  * Prose styles scoped to the markdown block container.

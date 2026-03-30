@@ -26,6 +26,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownView } from "@/components/tugways/tug-markdown-view";
+import type { MarkdownDiagnostics } from "@/components/tugways/tug-markdown-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 
 // ---------------------------------------------------------------------------
@@ -203,6 +204,7 @@ export function GalleryMarkdownView() {
     totalBlocks: 0,
     streamProgress: "idle",
   });
+  const [workerDiagnostics, setWorkerDiagnostics] = useState<MarkdownDiagnostics | null>(null);
 
   // Streaming store — Spec S04
   const streamingStoreRef = useRef<PropertyStore | null>(null);
@@ -246,6 +248,11 @@ export function GalleryMarkdownView() {
       ...prev,
       totalBlocks: Math.max(prev.totalBlocks, _index + 1),
     }));
+  }, []);
+
+  // Update worker diagnostics from onDiagnostics callback
+  const handleDiagnostics = useCallback((metrics: MarkdownDiagnostics) => {
+    setWorkerDiagnostics(metrics);
   }, []);
 
   // Start streaming simulation
@@ -343,7 +350,7 @@ export function GalleryMarkdownView() {
           emphasis={mode === "static-1mb" ? "filled" : "outlined"}
           role="action"
           size="sm"
-          onClick={() => { stopStreaming(); setMode("static-1mb"); }}
+          onClick={() => { stopStreaming(); setMode("static-1mb"); setWorkerDiagnostics(null); }}
         >
           Static 1MB
         </TugPushButton>
@@ -351,7 +358,7 @@ export function GalleryMarkdownView() {
           emphasis={mode === "streaming" ? "filled" : "outlined"}
           role="action"
           size="sm"
-          onClick={() => { setMode("streaming"); resetStreaming(); }}
+          onClick={() => { setMode("streaming"); resetStreaming(); setWorkerDiagnostics(null); }}
         >
           Streaming
         </TugPushButton>
@@ -359,7 +366,7 @@ export function GalleryMarkdownView() {
           emphasis={mode === "stress-10mb" ? "filled" : "outlined"}
           role="action"
           size="sm"
-          onClick={() => { stopStreaming(); setMode("stress-10mb"); }}
+          onClick={() => { stopStreaming(); setMode("stress-10mb"); setWorkerDiagnostics(null); }}
         >
           Stress 10MB
         </TugPushButton>
@@ -389,6 +396,14 @@ export function GalleryMarkdownView() {
         <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center", fontSize: 11, fontFamily: "var(--tugx-md-mono-font, ui-monospace, monospace)", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
           <span>DOM nodes: <strong>{diagnostics.domNodeCount}</strong></span>
           <span>Blocks: <strong>{diagnostics.totalBlocks}</strong></span>
+          {workerDiagnostics !== null && (
+            <>
+              <span>Pool: <strong>{workerDiagnostics.poolSize}</strong></span>
+              <span>In-flight: <strong>{workerDiagnostics.inFlightTasks}</strong></span>
+              <span>Cache: <strong>{workerDiagnostics.cacheSize}</strong></span>
+              <span>Hit rate: <strong>{(workerDiagnostics.cacheHitRate * 100).toFixed(0)}%</strong></span>
+            </>
+          )}
           {mode === "streaming" && (
             <span>Progress: <strong>{diagnostics.streamProgress}</strong></span>
           )}
@@ -406,6 +421,7 @@ export function GalleryMarkdownView() {
           <TugMarkdownView
             content={resolvedContent}
             onBlockMeasured={handleBlockMeasured}
+            onDiagnostics={handleDiagnostics}
             className="gallery-md-view"
           />
         )}
@@ -415,6 +431,7 @@ export function GalleryMarkdownView() {
             streamingPath="text"
             isStreaming={isStreaming}
             onBlockMeasured={handleBlockMeasured}
+            onDiagnostics={handleDiagnostics}
             className="gallery-md-view"
           />
         )}

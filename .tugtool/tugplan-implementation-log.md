@@ -9,6 +9,126 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-30T18:42:46Z
+---
+
+## step-10: Added markdown-pipeline.test.ts with 24 tests covering graceful degradation (poolSize=0 fallback), pipeline protocol correctness (lex/parse/stream contracts), HeightEstimator accuracy, and code audit verifications. Browser performance measurements (1MB viewport, 10MB yank, streaming 60fps) deferred to manual gallery card verification. OVERSCAN_SCREENS=4 per Q01.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-9
+date: 2025-03-30T18:24:51Z
+---
+
+## step-9: Integration checkpoint: verified all automated checks pass (1621 tests, build with worker chunk, zero tsc errors in pipeline files). Consolidated inline DOMPurify.sanitize() calls into upgradePlaceholderNode() function. Confirmed marked.parser() only in fallback handler. Gallery card browser tests deferred.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-8
+date: 2025-03-30T18:02:04Z
+---
+
+## step-8: Optimized collectTransferables with primitive short-circuit. Implemented per-slot lazy respawn after idle termination. Added multi-slot dispatch test with slow-worker and init timeout tests with delayed-init-worker. 5 new integration tests, all passing.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-7
+date: 2025-03-30T17:50:56Z
+---
+
+## step-7: Added MarkdownDiagnostics interface per Spec S03, onDiagnostics callback prop, and poolSize getter to TugWorkerPool. Gallery card now displays pool size, in-flight tasks, cache size, and hit rate in diagnostic overlay.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-6
+date: 2025-03-30T17:39:22Z
+---
+
+## step-6: Modified addBlockNode() to create placeholder divs on cache miss with estimated height. Added placeholderIndices Set to engine state. Parse response handlers replace placeholders with sanitized HTML. Added .tugx-md-placeholder CSS class.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-5
+date: 2025-03-30T17:31:12Z
+---
+
+## step-5: Verified streaming path already wired to worker pipeline from step 4. Fixed streaming task handle tracking: stream handles now pushed to inFlightParses for cancellation on unmount, with .finally() cleanup to prevent unbounded growth.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-4
+date: 2025-03-30T17:13:05Z
+---
+
+## step-4: Rewrote static rendering path to use TugWorkerPool with lex-then-parse pipeline. Added MdWorkerReq/MdWorkerRes types, pool creation in useLayoutEffect, fallbackHandler for graceful degradation, RAF-coalesced scroll handler with in-flight parse cancellation. Worker chunk now emitted in build.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-3
+date: 2025-03-30T16:57:23Z
+---
+
+## step-3: Created tugdeck/src/workers/markdown-worker.ts implementing Web Worker script with lex, parse, and stream message handlers. Uses marked and DefaultTextEstimator with relative imports. Implements MainToWorkerMessage/WorkerToMainMessage protocol with serializeError for error handling.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-2
+date: 2025-03-30T16:45:28Z
+---
+
+## step-2: Created markdown-height-estimator.ts with HeightEstimator interface, HeightEstimatorMeta, and DefaultTextEstimator class. Updated block-height-index.ts to re-export constants. Updated tug-markdown-view.tsx to delegate to DefaultTextEstimator. Added comprehensive test suite.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
+step: step-1
+date: 2025-03-30T16:36:01Z
+---
+
+## step-1: Removed idle-callback pre-rendering system (scheduleIdleBatch, CHUNKED_CONTENT_THRESHOLD, RENDER_BATCH_SIZE, idleHandle, renderedCount) and added htmlCache Map with cacheHits/cacheMisses counters to MarkdownEngineState. addBlockNode() now checks cache before calling renderToken().
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-30T03:38:26Z
 ---

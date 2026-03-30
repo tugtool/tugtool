@@ -6,7 +6,8 @@
  *
  * Design decisions:
  * - [D01] Float64Array gives cache-friendly contiguous memory, avoids object overhead
- * - [D05] Height estimation constants exported here; Phase 3B will replace with theme measurement
+ * - [D05] Height estimation constants re-exported from markdown-height-estimator for
+ *   backward compatibility; the canonical definitions live in that module.
  *
  * Capacity management: starts at `initialCapacity`, doubles on overflow.
  * Watermark tracks the lowest dirty index — prefix sum is recomputed lazily only
@@ -14,27 +15,10 @@
  */
 
 // ---------------------------------------------------------------------------
-// Height estimation constants [D05]
-// TODO(Phase 3B): Replace hardcoded constants with CSS custom property measurement
-// once theme tokens are available for precise height computation.
-
-/** Base line height in pixels for paragraph text. */
-export const LINE_HEIGHT = 24;
-
-/** Line height in pixels for code block content. */
-export const CODE_LINE_HEIGHT = 20;
-
-/** Fixed header height for code blocks (language label + border). */
-export const CODE_HEADER_HEIGHT = 36;
-
-/** Height of a horizontal rule in pixels. */
-export const HR_HEIGHT = 33;
-
-/**
- * Heading heights by level (index 0 = unused, 1-6 = h1-h6).
- * Includes top/bottom margins.
- */
-export const HEADING_HEIGHTS: readonly number[] = [0, 56, 48, 40, 36, 32, 28];
+// Height estimation constants [D05] — re-exported for backward compatibility.
+// The canonical definitions now live in markdown-height-estimator.ts so that
+// web workers can import them without pulling in any DOM or React dependencies.
+export { LINE_HEIGHT, CODE_LINE_HEIGHT, CODE_HEADER_HEIGHT, HR_HEIGHT, HEADING_HEIGHTS } from "./markdown-height-estimator";
 
 // ---------------------------------------------------------------------------
 // BlockHeightIndex
