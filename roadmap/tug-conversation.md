@@ -109,7 +109,7 @@ Phase 2c: WebSocket Fixes           — DONE (T8-T11)
 
 ─── TIER 2: BUILD THE UI ─────────────────────────────────────
 Phase 3A: Markdown Rendering Core    — virtualization, prefix sum, two-path rendering — DONE
-Phase 3A.1: TugWorkerService         — general-purpose worker infrastructure for tugdeck
+Phase 3A.1: TugWorkerPool             — typed worker pool for parallel computation across cores
 Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-only rendering
 Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
@@ -284,17 +284,21 @@ Monaco's `RenderedLinesCollection` maintains a contiguous array of DOM nodes map
 
 ---
 
-### Phase 3A.1: TugWorkerService {#tug-worker-service}
+### Phase 3A.1: TugWorkerPool {#tug-worker-pool}
 
 **Status:** Not started.
 
-**Goal:** Build a general-purpose worker infrastructure for tugdeck that any feature can use to move heavy computation off the main thread. The markdown pipeline is the first consumer, but Shiki syntax highlighting (Phase 3B), feed correlation (Phases 8-12), and other CPU-intensive operations will also use this service. Build it once, build it right.
+**Goal:** Build a typed worker pool that spreads computation across multiple cores. The point is parallelism, throughput, and *never blocking the UI thread with compute-intensive work*. When there are 5,000 markdown blocks to parse, split them across N workers and get the answer N times faster. Dev machines have 8-16+ cores sitting idle; this infrastructure lights them up.
 
-**Inputs:** Phase 3A experience (what goes wrong without workers). Library research (below).
+**Inputs:** Phase 3A experience (what goes wrong without workers). Library research and risk validation (below).
+
+**Non-goal:** This is not a job scheduler, not a generic service bus, not a task registry. It's a pool of identical workers that you throw work at in parallel.
+
+**Hard constraint:** The main thread is sacred. No compute-intensive work — lexing, parsing, height estimation, syntax highlighting — may run on the main thread. The main thread handles DOM reads/writes, scroll events, and React rendering. Everything else goes to workers. This is not aspirational; it is a rule. Violating it produces the same 15-second freeze we're fixing.
 
 #### Library research findings
 
-Surveyed the landscape of MIT-compatible worker libraries for browser use:
+Surveyed MIT-compatible worker libraries for browser use:
 
 | Library | License | Stars | Bundle | Pool | Cancel | Priority | Maintained |
 |---------|---------|-------|--------|------|--------|----------|------------|
@@ -304,190 +308,159 @@ Surveyed the landscape of MIT-compatible worker libraries for browser use:
 | **poolifier-web-worker** | MIT | 62 | Small | Yes | ? | Yes | Active |
 | **greenlet** | MIT | 4.7K | 1kB | No | No | No | Unmaintained |
 
-**Comlink** (Google Chrome Labs) is the best RPC ergonomics — it uses ES6 Proxy to make workers feel like local async objects. But it has no pool management, no cancellation (open issues #372, #428), and pending promises leak if the worker is terminated. It's a great idea executed 80% of the way.
-
-**workerpool** has the most real-world usage (13.3M weekly npm downloads) with proper cancellation and timeout support. But it's Apache-2.0, and its browser worker setup requires careful configuration.
-
-**poolifier-web-worker** is the only MIT-licensed option with priority queuing and task stealing. But it has 62 GitHub stars — low adoption means low battle-testing.
-
-**Recommendation: Build our own, informed by the MIT-licensed libraries.** The tugdeck codebase already has strong TypeScript patterns for services (DeckManager, ResponderChain, PropertyStore). A custom `TugWorkerService` that owns lifecycle, dispatch, cancellation, and priority fits naturally into these patterns. The total implementation is ~300-500 lines — less than adopting and wrapping an external library. Zero new dependencies.
+**Recommendation: Build our own, informed by the MIT-licensed libraries.** ~200 lines. Zero dependencies. Fits existing tugdeck patterns (DeckManager, ResponderChain, PropertyStore).
 
 #### Patterns adopted from MIT-licensed libraries [L21]
 
-Source study of three MIT-licensed libraries yielded specific patterns worth adopting. Copyright notices are preserved in `THIRD_PARTY_NOTICES.md` at the repo root per [L21]. Source files that implement these patterns must include a comment referencing the relevant notice entry.
+Copyright notices preserved in `THIRD_PARTY_NOTICES.md` per [L21]. Source files must reference the relevant notice entry.
 
 **From threads.js** (Copyright (c) 2019 Andy Wermke, MIT):
-- **Thenable task handle with cancellation.** `QueuedTask` is both `await`-able (has `.then()`) and controllable (has `.cancel()`). Adopted for our `TaskHandle` return type.
-- **Discriminated union pool events.** Events use a `type` field enum for exhaustive TypeScript narrowing. Adopted for our message protocol (W18).
-- **Init handshake with timeout.** Workers send an `init` message after loading; main thread waits with configurable timeout. Prevents silent worker initialization failures. Adopted for worker spawn.
+- **Thenable task handle with cancellation.** Return object is both `await`-able and has `.cancel()`.
+- **Discriminated union message protocol.** `type` field enum for TypeScript narrowing.
+- **Init handshake with timeout.** Workers send `init` on load; pool waits with configurable timeout.
 
 **From poolifier-web-worker** (Copyright (c) 2023-2024 Jerome Benoit, MIT):
-- **Priority queue with aging.** `effectivePriority = priority - elapsedTime * agingFactor` prevents starvation of low-priority tasks. Adopted for W14.
-- **Least-used worker selection.** Pick the worker with fewest executing + queued tasks. Better than round-robin for heterogeneous workloads. Adopted for dispatcher.
-- **Promise-response-map RPC with AbortSignal.** Each task gets a UUID; `Map<id, {resolve, reject, abortSignal}>` resolves on worker response. Adopted as the core dispatch mechanism.
-- **Back-pressure signaling.** Queue depth per worker emits events when thresholds are crossed, enabling upstream flow control. Adopted as a future extension point.
+- **Least-busy worker selection.** Pick the worker with fewest in-flight tasks.
+- **Promise-response-map RPC.** `Map<taskId, {resolve, reject}>` resolved on worker response.
 
 **From greenlet** (Copyright (c) Jason Miller, MIT):
-- **Minimal promise-per-call RPC.** Counter-based task IDs with `{resolve, reject}` stashed in a Map. The simplest correct RPC pattern — greenlet does it in 5 lines. Adopted as the foundation for the promise-response-map.
-- **Automatic transferable detection.** Filter message args for `ArrayBuffer`, `MessagePort`, `ImageBitmap` and pass as the transferables list. Adopted to avoid requiring explicit `Transfer()` wrappers.
+- **Counter-based task IDs with stashed resolve/reject.** Simplest correct RPC in ~5 lines.
+- **Automatic transferable detection.** Filter for `ArrayBuffer`/`MessagePort`/`ImageBitmap`.
 
-**Pitfalls identified and avoided:**
-- threads.js `delay(0)` timing hack for subscription setup — resolve promises directly from message handlers instead.
-- poolifier's 2,500-line abstract pool with deep inheritance and `new Function()` task injection — keep ours flat and ~300 lines.
-- greenlet's missing cleanup (workers live forever, Blob URLs never revoked) — our idle timeout and `terminate()` prevent this.
-- greenlet's lossy error serialization (`'' + er`) — serialize `{ message, stack, name }` to preserve diagnostics.
-- threads.js Observable dependency for simple event dispatch — use plain promises + callbacks.
+**Pitfalls avoided:** threads.js `delay(0)` timing hack, poolifier's 2,500-line abstract pool with `new Function()` injection, greenlet's missing cleanup and lossy error serialization.
 
-#### Architecture patterns from production apps
+#### Design: TugWorkerPool\<TReq, TRes\>
 
-**Google Sheets** runs its entire calculation engine in a Web Worker. Main thread handles only rendering and user interaction. Clean separation: UI thread renders, worker thread computes.
-
-**Monaco/VS Code** uses one dedicated worker per language service (TypeScript, JSON, CSS, HTML). Workers maintain mirror models synced from the main thread. Communication is request-response via `postMessage`. Fallback to main thread if workers are unavailable.
-
-**Common pattern:** `navigator.hardwareConcurrency` is read to inform capacity, but most apps use a small fixed number of workers (1-4), not a pool sized to core count. The practical cap is `Math.min(hardwareConcurrency - 1, 4)` to avoid over-allocation.
-
-**`postMessage` performance:** Structured clone costs <1ms for payloads under 100KB. For 1MB payloads, ~35ms. For large ArrayBuffers, Transferable objects reduce this to <1ms (zero-copy). For our use case (token arrays + HTML strings typically 10-100KB), structured clone is fine.
-
-#### Design: TugWorkerService
+Each consumer creates its own pool of N identical workers. No shared pool, no cross-type dispatch. Markdown gets a pool. Shiki gets a pool (later). They don't interfere because they have different initialization needs (Shiki workers carry a persistent highlighter instance; markdown workers are stateless).
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  TugWorkerService (main thread singleton)                │
-│                                                          │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
-│  │ Task Queue   │  │ Worker Pool  │  │ Task Registry  │  │
-│  │ (priority)   │  │ (1..N)       │  │ (type→handler) │  │
-│  └──────┬──────┘  └──────┬───────┘  └───────┬────────┘  │
-│         │                │                   │           │
-│         ▼                ▼                   ▼           │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │                  Dispatcher                      │    │
-│  │  • Dequeues highest-priority task                │    │
-│  │  • Finds idle worker (or queues)                 │    │
-│  │  • Sends typed message via postMessage           │    │
-│  │  • Tracks in-flight tasks for cancellation       │    │
-│  │  • Resolves/rejects caller's Promise on response │    │
-│  └──────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────┘
-                           │
-            postMessage / onmessage
-                           │
-┌──────────────────────────┴───────────────────────────────┐
-│  TugWorker (worker thread, one per pool slot)            │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │  Task Handler Registry (same types as main)      │    │
-│  │                                                  │    │
-│  │  'markdown:lex'   → lexHandler(payload)          │    │
-│  │  'markdown:parse'  → parseHandler(payload)       │    │
-│  │  'shiki:highlight' → highlightHandler(payload)   │    │
-│  │  ... extensible ...                              │    │
-│  └──────────────────────────────────────────────────┘    │
-│                                                          │
-│  Receives: { taskId, type, payload, priority }           │
-│  Returns:  { taskId, result } or { taskId, error }       │
-└──────────────────────────────────────────────────────────┘
+   TugMarkdownView                          Shiki (Phase 3B)
+        │                                        │
+        ▼                                        ▼
+ TugWorkerPool<ParseReq, ParseRes>    TugWorkerPool<HighlightReq, HighlightRes>
+   ┌─────┬─────┬─────┐                  ┌─────┬─────┐
+   │ W1  │ W2  │ W3  │ W4               │ W1  │ W2  │
+   │.....│.....│.....│......             │.....│.....│
+   │ md  │ md  │ md  │ md               │shiki│shiki│
+   └─────┴─────┴─────┘                  └─────┴─────┘
+        ▲                                     ▲
+     N = hardwareConcurrency-based         N = separate
 ```
 
-**Key design decisions:**
+**The pool is generic over request/response types.** The caller decides what goes in and what comes out. The pool handles:
 
-**W13: Task handler registry, not per-feature workers.**
-Instead of one worker for markdown, another for Shiki, another for feeds, all task handlers register with the same worker pool. A worker can execute any registered task type. This maximizes worker utilization — a worker idle after finishing a markdown lex can immediately pick up a Shiki highlight task. New features add a handler file, not a new worker.
+1. **Spawning N workers** from a single worker script URL.
+2. **Dispatching tasks** to the least-busy worker (fewest in-flight tasks).
+3. **Promise-response-map RPC** — each `submit()` returns `{ promise, cancel() }`.
+4. **Cancellation** — removes queued tasks or signals in-flight workers.
+5. **Typed messages** — discriminated union protocol, no `any`.
+6. **Lazy spawn + idle timeout** — workers created on first task, terminated after 30s idle.
+7. **Graceful degradation** — if `Worker` constructor fails, run handler inline on main thread.
 
-**W14: Priority queue with three levels.**
-Tasks have priority: `high` (visible viewport blocks — user is waiting), `normal` (overscan/prefetch), `low` (background work). The dispatcher always dequeues the highest-priority task first. When the user scrolls, pending `normal` tasks for the old viewport can be cancelled and replaced with `high` tasks for the new viewport. This is how Monaco avoids wasting cycles on invisible content.
+**What the pool does NOT handle:** Priority queuing, task registries, back-pressure signaling, worker selection strategies beyond least-busy. The caller controls what to submit and when — if the viewport scrolls, the component cancels stale tasks and submits new ones. Priority is the caller's concern.
+
+#### Key design decisions
+
+**W13: Per-consumer pools, not a shared service.**
+Each feature creates its own `TugWorkerPool` pointing at its own worker file. This avoids the cross-type dispatch problem (Shiki needs persistent state in the worker; markdown is stateless) and keeps the pool implementation simple. If two features compete for cores, the OS scheduler handles it — that's what it's for.
+
+**W14: Pool size from `navigator.hardwareConcurrency`.**
+Default: `Math.max(1, Math.min((navigator.hardwareConcurrency || 4) - 2, 12))`. On a 16-core machine: 12 workers. Reserves 2 cores (main thread + OS/browser overhead), caps at 12 to stay reasonable. Target audience runs beefy dev machines with 32-128GB+ RAM — each worker context is ~5-10MB, so even 12 workers is <120MB. Configurable per pool — markdown might want the full 12, a lightweight task might want 4. Lazy spawn: workers created on first task, not at pool creation.
 
 **W15: Cancellation via task ID.**
-Every task gets a unique ID. The caller receives a handle with `{ promise, cancel() }`. Calling `cancel()` removes the task from the queue if it hasn't started, or sends a cancellation signal to the worker if it's in-flight. Workers check for cancellation between processing steps (e.g., between parsing individual blocks in a batch). This is the workerpool pattern without the workerpool dependency.
+Every `submit()` returns a handle. `handle.cancel()` either removes from the queue (if pending) or posts a cancellation message to the worker (if in-flight). Workers should check a cancellation flag between processing steps (e.g., between parsing blocks in a batch).
 
-**W16: Pool size from `navigator.hardwareConcurrency`.**
-Default pool size: `Math.max(1, Math.min((navigator.hardwareConcurrency || 4) - 1, 4))`. This reserves the main thread, caps at 4 workers to avoid over-allocation, and handles missing values. The pool grows lazily — workers are spawned on first task, not at service creation. Workers are terminated after an idle timeout (30 seconds) to free resources.
+**W16: Graceful degradation.**
+If `Worker` construction fails, the pool creates an inline executor that runs the handler function directly on the main thread via `queueMicrotask`. Same `TaskHandle` API. Callers don't know the difference. Essential for test environments and CSP-restricted contexts.
 
-**W17: Graceful degradation.**
-If `Worker` constructor throws (CSP restrictions, old browser, or test environment), the service falls back to running task handlers synchronously on the main thread. The API is identical — callers don't know or care whether work ran in a worker or on the main thread. This is critical for `bun test` where web workers aren't available.
+**W17: Typed message protocol.**
+Wire protocol: `{ taskId: number, type: 'task', payload: TReq }` → `{ taskId: number, type: 'result', payload: TRes }` | `{ taskId: number, type: 'error', error: { message, stack, name } }`. Plus `{ type: 'init' }` handshake and `{ type: 'cancel', taskId }` signal. Discriminated union, no `any`.
 
-**W18: Typed message protocol.**
-The wire protocol between main thread and worker is a discriminated union of typed messages. No `any`, no string-based dispatch. Task handler authors define their input/output types; the service enforces them. This catches errors at compile time, not runtime.
-
-#### API sketch
+#### API
 
 ```typescript
-// --- Registration (at app startup or lazy) ---
-import { workerService } from '@/lib/tug-worker-service';
-import type { MarkdownLexTask, MarkdownParseTask } from '@/workers/markdown-tasks';
+// --- Pool creation (in a component, hook, or module) ---
+const mdPool = new TugWorkerPool<MarkdownParseReq, MarkdownParseRes>(
+  new URL('./workers/markdown-worker.ts', import.meta.url),
+  { poolSize: 4 }  // optional, defaults to hardwareConcurrency-based
+);
 
-// Register task types (tells the service which handler module to load in workers)
-workerService.register('markdown:lex', () => import('@/workers/markdown-tasks'));
-workerService.register('markdown:parse', () => import('@/workers/markdown-tasks'));
-workerService.register('shiki:highlight', () => import('@/workers/shiki-tasks'));
+// --- Submit work ---
+const handle = mdPool.submit({ blockIndex: 42, tokenRaw: '## Hello' });
+const result = await handle.promise;  // { index: 42, html: '<h2>Hello</h2>' }
 
-// --- Usage (from any component or hook) ---
-const handle = workerService.submit<MarkdownLexTask>({
-  type: 'markdown:lex',
-  payload: { text: contentString },
-  priority: 'high',
-});
-
-// Await result
-const { tokens, heights } = await handle.promise;
-
-// Or cancel if user scrolled away
+// --- Cancel (e.g., user scrolled away) ---
 handle.cancel();
 
-// --- In the worker (markdown-tasks.ts) ---
-export function handleTask(task: MarkdownLexTask | MarkdownParseTask) {
-  switch (task.type) {
-    case 'markdown:lex':
-      return lexMarkdown(task.payload);
-    case 'markdown:parse':
-      return parseMarkdown(task.payload);
+// --- Submit a batch in parallel ---
+const handles = blocks.map(b => mdPool.submit(b));
+const results = await Promise.all(handles.map(h => h.promise));
+
+// --- Cleanup ---
+mdPool.terminate();  // kills all workers
+
+// --- In the worker file (markdown-worker.ts) ---
+import { marked } from 'marked';
+
+self.onmessage = (e: MessageEvent) => {
+  const { taskId, type, payload } = e.data;
+  if (type === 'cancel') { /* set flag */ return; }
+  if (type === 'task') {
+    try {
+      const html = marked.parser([rebuildToken(payload)]);
+      self.postMessage({ taskId, type: 'result', payload: { index: payload.blockIndex, html } });
+    } catch (err) {
+      self.postMessage({ taskId, type: 'error', error: serializeError(err) });
+    }
   }
-}
+};
+self.postMessage({ type: 'init' });
 ```
+
+The worker file is plain — it owns its imports, its state, its `onmessage` handler. The pool doesn't dictate what happens inside the worker. It just manages the fleet and the RPC plumbing.
 
 #### Work
 
-**Step 1: Core service (`tugdeck/src/lib/tug-worker-service.ts`).**
-The `TugWorkerService` class: task queue (priority-sorted), worker pool (lazy spawn, idle timeout), dispatcher loop, cancellation tracking. Exported as a module-level singleton. ~200 lines.
+**Step 1: Types (`tugdeck/src/lib/tug-worker-pool.ts`, top section).**
+`TaskHandle<T>`, `WorkerMessage<TReq, TRes>` discriminated union, `TugWorkerPoolOptions`. ~40 lines.
 
-**Step 2: Worker entry point (`tugdeck/src/workers/tug-worker.ts`).**
-The worker-side runtime: receives messages, looks up handler by task type, executes, posts result. Handles cancellation checks. Dynamically imports handler modules on first use. ~100 lines.
+**Step 2: Pool implementation (`tugdeck/src/lib/tug-worker-pool.ts`, main class).**
+`TugWorkerPool<TReq, TRes>`: constructor takes worker URL + options. Manages `WorkerSlot[]` (worker instance + in-flight count + pending queue). `submit()` picks least-busy slot, posts message, returns handle. `onmessage` resolves/rejects from response map. Lazy spawn on first submit. Idle timeout per worker. `terminate()` kills all. ~150 lines.
 
-**Step 3: Type definitions (`tugdeck/src/lib/tug-worker-types.ts`).**
-Shared types for the message protocol: `TaskRequest`, `TaskResponse`, `TaskHandle`, `TaskPriority`, `TaskHandlerModule`. Used by both main thread and worker thread. ~50 lines.
+**Step 3: Graceful degradation (`tugdeck/src/lib/tug-worker-pool.ts`, fallback path).**
+If `new Worker()` throws, create `InlineSlot` that runs a user-provided handler function via `queueMicrotask`. Constructor accepts optional `fallbackHandler: (req: TReq) => TRes | Promise<TRes>`. ~30 lines.
 
-**Step 4: Graceful degradation path.**
-When `Worker` construction fails, the service creates a `MainThreadExecutor` that imports handler modules directly and runs them synchronously (or via `queueMicrotask` for async feel). Same `TaskHandle` API. ~50 lines.
+**Step 4: Tests (`tugdeck/src/__tests__/tug-worker-pool.test.ts`).**
+Test via degradation path (fallback handler). Verify: submit resolves, cancellation of queued tasks, least-busy dispatch (submit N+1 tasks to pool of N, verify distribution), error propagation (handler throws → promise rejects with structured error), terminate cleans up. ~120 lines.
 
-**Step 5: Tests (`tugdeck/src/__tests__/tug-worker-service.test.ts`).**
-Test the service in Bun's test environment (which uses the degradation path). Verify: task submission and resolution, priority ordering, cancellation of queued tasks, cancellation of in-flight tasks, idle worker cleanup, graceful degradation. ~150 lines.
+**Step 5: Integration test with real worker.**
+`tugdeck/src/__tests__/tug-worker-pool.integration.test.ts` — create a trivial `echo-worker.ts` that posts back what it receives. Verify real `Worker` spawn in Bun, round-trip message passing, pool of 2 workers handles concurrent tasks. ~50 lines.
 
-**Step 6: Verify Vite worker bundling.**
-Confirm that `bun run build` emits a separate worker chunk. Confirm the worker loads and runs in the browser. No special Vite config should be needed — Vite 7.3.1 handles `new Worker(new URL(...))` natively.
+**Step 6: Vite build verification.**
+`bun run build` emits worker chunk. Manual browser test: pool spawns real workers, devtools shows threads.
 
 #### Checkpoints
 
-- `bun test src/__tests__/tug-worker-service.test.ts` — all tests pass (degradation mode in Bun).
+- `bun test src/__tests__/tug-worker-pool.test.ts` — all tests pass.
+- `bun test src/__tests__/tug-worker-pool.integration.test.ts` — real worker round-trip passes.
 - `bunx tsc --noEmit` — no new type errors.
-- `bun run build` — build succeeds, worker chunk emitted in `dist/`.
-- Manual verification: open browser devtools → Sources → confirm worker script loaded.
+- `bun run build` — build succeeds, worker chunk emitted.
 
 #### Exit criteria
 
-- `workerService.submit()` dispatches to a real web worker in the browser.
-- `workerService.submit()` falls back to main-thread execution in tests and restricted environments.
-- Priority ordering verified: `high` tasks execute before `normal` before `low`.
-- Cancellation works for both queued and in-flight tasks.
-- Workers are spawned lazily and terminated after 30s idle.
-- Pool size adapts to `navigator.hardwareConcurrency`.
-- Adding a new task type requires only a handler file + one `register()` call.
-- Zero external dependencies.
+- `new TugWorkerPool(url).submit(req)` dispatches to a real web worker and resolves with the response.
+- Pool spreads tasks across N workers (verified: N tasks submitted simultaneously → N workers each get one).
+- Cancellation works for queued and in-flight tasks.
+- Graceful degradation: fallback handler runs inline when `Worker` constructor fails.
+- Idle workers are terminated after timeout. New tasks respawn them.
+- `terminate()` kills all workers and rejects all pending promises.
+- ~200 lines total. Zero dependencies.
 
-#### Risks
+#### Risks (grounded)
 
-- R06: **Vite requires static string literals in `new Worker(new URL(...))`** (confirmed). The URL path must be a literal string — no variables, no template literals, no computed paths. Vite performs static analysis at build time; if it can't see the literal, it silently skips bundling and the worker fails at runtime. **Mitigation confirmed:** `new Worker(new URL('./workers/tug-worker.ts', import.meta.url), { type: 'module' })` is the exact documented pattern. Vite handles `.ts` files natively via esbuild. The worker's static imports (e.g., `import { marked } from 'marked'`) are automatically bundled into the worker chunk. The build emits a separate `worker-[hash].js` file. **Risk: LOW.**
-- R07: **Dynamic `import()` inside workers is broken with Vite's default `worker.format: 'iife'`** (confirmed via Vite issues #18585, #5402). The build fails because IIFE does not support code splitting. Setting `worker.format: 'es'` enables dynamic imports but has its own historical bugs (#3311, #6706). **Mitigation: use static imports only.** All task handlers import their dependencies statically. The worker entry point uses a static switch/registry — `switch (task.type) { case 'markdown:lex': ... }` with eagerly imported handler modules. Handler modules are small; bundling them all into the worker is acceptable. This avoids the entire dynamic import risk category. **Risk: ELIMINATED** (by design choice).
-- R08: **Bun's test runner DOES have a native `Worker` global** (confirmed). Bun supports real Web Workers in all contexts including `bun test` — it spawns actual threads. However, this means tests using real Workers have file-path dependencies, real async behavior, and timing sensitivity. Neither happy-dom nor jsdom provide Worker stubs. **Revised mitigation:** Two-tier test strategy. (1) Unit tests mock the worker boundary — `TugWorkerService` accepts an injected worker factory; tests provide a synchronous mock executor that runs task handlers directly. This tests the service logic (queue, priority, cancellation) without real threads. (2) Integration tests (separate test file, tagged `@integration`) use real Bun Workers to verify the actual worker entry point loads and processes tasks end-to-end. The graceful degradation path (W17) is tested by the unit tests inherently, since the mock executor IS the degradation executor. **Risk: LOW** (real Worker support in Bun is a positive surprise).
+- R06: **Vite requires static string literals in `new Worker(new URL(...))`** (confirmed). Must be a literal — no variables, no template literals. Vite handles `.ts` natively. Static imports inside the worker are auto-bundled into the worker chunk. **Risk: LOW.** Each consumer writes the literal `new URL('./workers/foo-worker.ts', import.meta.url)` directly.
+- R07: **Dynamic `import()` inside workers is broken with Vite's default IIFE format** (confirmed, Vite issues #18585, #5402). **Mitigation: not our problem.** Worker files use static imports only. Each worker file imports its own dependencies at the top level. The pool doesn't dictate worker internals. **Risk: ELIMINATED.**
+- R08: **Bun test runner has native `Worker` global** (confirmed). Real threads spawn in `bun test`. **Mitigation:** Unit tests use the fallback handler (no real threads). Integration tests use real Workers with a trivial echo worker to verify the spawn/message/terminate lifecycle. **Risk: LOW.**
 
 ---
 
@@ -497,7 +470,9 @@ Confirm that `bun run build` emits a separate worker chunk. Confirm the worker l
 
 **Goal:** Move all heavy markdown computation off the main thread. The Phase 3A implementation put lexing, parsing, and sanitization on the main thread, then compounded the problem by pre-rendering all ~5,000 blocks via `scheduleIdleBatch`. The result: ~15 seconds of main-thread blocking for a 1MB document. This phase fixes the architecture.
 
-**Inputs:** Phase 3A code (BlockHeightIndex, RenderedBlockWindow, TugMarkdownView). Phase 3A.1 TugWorkerService. Monaco editor architecture study (below).
+**Content model:** This is a *viewer*, not an editor. The component supports exactly two operations: (1) loading a potentially large initial markdown document, and (2) appending new content to the end of it (streaming). There is no editing, no insertion at arbitrary positions, no deletion, no cursor. This constraint simplifies the entire architecture — the block list is append-only during streaming, the prefix sum never needs mid-array insertion, the HTML cache is never invalidated by user edits, and the scroll position only auto-advances (tail-follow) or stays put (user-controlled). Do not design for general-purpose editing.
+
+**Inputs:** Phase 3A code (BlockHeightIndex, RenderedBlockWindow, TugMarkdownView). Phase 3A.1 TugWorkerPool. Monaco editor architecture study (below).
 
 #### What went wrong in Phase 3A
 
@@ -574,11 +549,17 @@ The new architecture has three layers:
 
 **Key design decisions:**
 
-**W07: Use TugWorkerService, not a dedicated worker.**
-Phase 3A.1's TugWorkerService provides the worker pool, priority queue, and cancellation. Markdown tasks register as `markdown:lex` and `markdown:parse` task types. The service handles pool sizing via `navigator.hardwareConcurrency` (W16), priority dispatch (W14), and cancellation (W15). No markdown-specific worker management code needed.
+**W07: Use TugWorkerPool for parallel parsing.**
+Phase 3A.1's `TugWorkerPool<TReq, TRes>` provides a fleet of identical workers for parallel computation. TugMarkdownView creates a pool of N markdown workers (N from `navigator.hardwareConcurrency`). When blocks need parsing, batches are spread across all workers simultaneously — 5,000 blocks across 4 workers completes in ~1/4 the time of a single worker. The pool handles RPC, cancellation (W15), and graceful degradation (W16). The worker file owns its imports (`marked`) and its `onmessage` handler — the pool doesn't dictate worker internals.
 
-**W08: Viewport-priority parsing.**
-The worker receives a `visibleRange` hint with each request. It parses blocks in this order: (1) blocks in the visible range, (2) blocks in the overscan range, (3) stop. It does NOT parse the entire document. When the user scrolls, a new `visibleRange` is sent, and the worker re-prioritizes. Blocks outside the viewport are parsed on-demand when they enter the overscan zone.
+**W08: Viewport-priority parsing with deep overscan.**
+The worker pool receives a `visibleRange` hint with each request. It parses blocks in this order: (1) blocks in the visible range, (2) blocks in the overscan range, (3) stop. It does NOT parse the entire document. When the user scrolls, stale requests are cancelled and new ones submitted for the new viewport.
+
+Getting overscan right is critical to the illusion that everything is always rendered. The overscan must be deep enough that a fast scrollbar yank — grabbing the scrollbar thumb and dragging it aggressively — never reveals unrendered blocks. The scrollbar cannot hitch, judder, or show placeholders during aggressive scrolling. This means:
+- Overscan of 3-5 screens above and below the viewport (tunable, not hardcoded).
+- The HTML cache (W09) retains parsed blocks even after they leave the overscan zone, so scrolling back doesn't re-parse.
+- When the scroll position jumps (scrollbar drag, keyboard Page Down), the pool immediately submits the new visible+overscan range as a parallel batch across all workers. With 4 workers and ~120 overscan blocks, each worker handles ~30 blocks — completing in the time it takes to parse 30 blocks sequentially (~60ms), well under the next frame.
+- If a block enters the viewport before its HTML arrives from the worker, a placeholder at estimated height is shown and swapped on arrival. But the overscan depth should make this a rare edge case, not the normal path.
 
 **W09: HTML cache, not pre-rendering.**
 Parsed HTML strings are cached in a `Map<number, string>` on the main thread. When a block enters the viewport, the main thread checks the cache first. Cache hit → sanitize and render immediately. Cache miss → request from worker, show a placeholder div at estimated height. The placeholder is replaced when the worker responds. This eliminates `scheduleIdleBatch` entirely.
@@ -590,7 +571,19 @@ DOMPurify requires the DOM and cannot run in a worker. Instead of sanitizing all
 Streaming deltas are sent to the worker for incremental tail-lexing (same as Phase 3A's approach, but off-thread). The worker returns only the changed/new tokens and their HTML. The main thread applies the diff to the visible window. Off-screen streaming blocks are not parsed until scrolled to.
 
 **W12: Graceful degradation.**
-If the worker fails to initialize (e.g., CSP restrictions, old browser), fall back to main-thread lexing + parsing with the viewport-only discipline (D08). The fallback is still faster than Phase 3A because it never pre-renders all blocks.
+If the worker fails to initialize (e.g., CSP restrictions, old browser), fall back to main-thread lexing + parsing with the viewport-only discipline (W08). The fallback is still faster than Phase 3A because it never pre-renders all blocks.
+
+**W18: Height estimation as pluggable infrastructure.**
+The Phase 3A `estimateBlockHeight()` function uses naive line-counting heuristics (paragraph = `ceil(text.length / 80) * LINE_HEIGHT`). This is inadequate for two reasons: (1) real content has variable-width fonts, padding, margins, and nested structures that make character-counting unreliable, and (2) MDX and React elements embedded in the document flow will have heights that cannot be estimated from text alone.
+
+The height estimation system must be designed as pluggable infrastructure, not a hardcoded switch/case:
+- **`HeightEstimator` interface** with a `estimate(token: Token): number` method. BlockHeightIndex accepts an estimator at construction.
+- **Default text estimator** uses the current heuristic (line counting + constants) as a baseline. Good enough for plain markdown.
+- **Measured-height feedback loop** already exists (ResizeObserver → `setHeight()`). The estimator's job is to get *close enough* that the placeholder-to-measured swap doesn't cause visible layout shift. Within 20% is the target.
+- **Type-specific estimators** can be registered for block types that need special logic: code blocks (account for line numbers, header chrome, syntax highlighting padding), embedded React components (use a registered default height or query a component registry for preferred size), tables (estimate from row/column count + cell padding).
+- **Learning estimator (future)** — after measuring N blocks of a given type, use the median measured height as the estimate for subsequent blocks of the same type. This converges quickly and adapts to theme changes, font size preferences, and container width.
+
+This is forward-looking infrastructure. Phase 3A.2 implements the interface + default estimator + measured-height feedback. Phase 3B adds the code block estimator. MDX/React element estimators come when those content types arrive.
 
 #### Work
 
@@ -627,17 +620,20 @@ Update the gallery card to show worker status (idle/busy, cache hit rate, parse 
 #### Exit criteria
 
 - Zero synchronous `marked.parser()` or `DOMPurify.sanitize()` calls for off-screen blocks.
+- Zero compute-intensive work on the main thread. Lexing, parsing, and height estimation run in workers only.
 - Main thread never blocks for more than 16ms (one frame) during any rendering operation.
-- Worker processes visible blocks first; off-screen blocks are never pre-parsed.
+- Worker pool processes visible+overscan blocks first; blocks beyond overscan are never pre-parsed.
 - 1MB document: viewport visible in <200ms, full scroll range navigable immediately.
 - 10MB document: viewport visible in <200ms, scroll to any position in <16ms.
+- **Scrollbar yank test:** grab the scrollbar thumb and drag it from top to bottom of a 10MB document in under 1 second. Zero judder, zero placeholder flashes, zero dropped frames. The overscan depth and parallel worker throughput must make this seamless.
 - Streaming: 60fps, zero jank for 5000+ words of live deltas.
+- `HeightEstimator` interface implemented. Default text estimator produces heights within 20% of measured for standard markdown blocks. BlockHeightIndex accepts a pluggable estimator.
 - Graceful degradation: works (slower) without worker.
 
 #### Risks
 
 - R03: `postMessage` serialization cost for Token objects. Marked Token objects contain nested properties (e.g., `tokens` array on paragraphs for inline markup). Structured clone handles this but may add 1-5ms per message for large token lists. Mitigation: transfer only what's needed — for the `parse` response, send `{ index: number, html: string }[]` (flat array of strings), not full Token objects.
-- R04: Placeholder-to-real swap may cause layout shift if estimated height differs significantly from actual. Mitigation: the existing ResizeObserver measurement + prefix sum recomputation handles this — it's the same mechanism that already corrects estimated heights.
+- R04: Placeholder-to-real swap may cause layout shift if estimated height differs significantly from actual. Mitigation: the existing ResizeObserver measurement + prefix sum recomputation handles this — it's the same mechanism that already corrects estimated heights. The pluggable HeightEstimator (W18) allows type-specific estimation that gets closer to measured heights, reducing visible shifts. The learning estimator (future) will converge on accurate heights after measuring a few blocks of each type. For MDX/React elements, a component registry can provide preferred heights before first render.
 - R05: Worker initialization time (~10-50ms for module loading). Mitigation: initialize worker eagerly on first TugMarkdownView mount, not on first content load. Worker stays alive for the component's lifetime.
 
 ---
