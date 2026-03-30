@@ -712,9 +712,15 @@ export function TugMarkdownView({
       const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
       engine.blockWindow.setViewportHeight(viewportHeight);
 
-      // Trigger initial spacer layout.
+      // Trigger initial window layout — creates placeholder blocks for the
+      // visible range so the scroll geometry is correct immediately. Parse
+      // responses will upgrade placeholders to real content via
+      // upgradePlaceholderNode(). Calling applyWindowUpdate() (not just
+      // applySpacers()) is critical: blockWindow.update() advances its
+      // internal range tracking, so the enter ranges must be consumed here
+      // or the parse handler's update() call will see an empty diff.
       const update = engine.blockWindow.update(scrollTop);
-      applySpacers(update.topSpacerHeight, update.bottomSpacerHeight);
+      applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
 
       const range = computeOverscanRange(engine, scrollTop);
       submitParseBatches(engine, range);

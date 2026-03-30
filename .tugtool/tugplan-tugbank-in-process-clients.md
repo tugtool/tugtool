@@ -30,8 +30,8 @@ The roadmap (`roadmap/tugbank-in-process-clients.md`) defines a five-phase migra
 - Build the `TugbankClient` in `tugbank-core` as a new module that wraps `DefaultsStore` with domain snapshots and `PRAGMA data_version` polling on a dedicated `std::thread`.
 - Use a channel-based design: the polling thread sends change notifications to tokio tasks via `std::sync::mpsc`, keeping sync SQLite work off the async runtime.
 - Add `FeedId::Defaults = 0x50` to `tugcast-core` protocol, with `from_byte` and `as_byte` support.
-- Build a defaults feed in tugcast that uses `TugbankClient` to detect changes and push full domain snapshots to all WebSocket clients via the existing `watch::Sender<Frame>` pattern.
-- Send a sentinel DEFAULTS frame (`{"sentinel":"sync-complete"}`) after initial domain snapshots so clients know when bootstrap is done.
+- Build a defaults feed in tugcast that uses `TugbankClient` to detect changes and push a single aggregated DEFAULTS frame (containing all domain snapshots) to all WebSocket clients via the existing `watch::Sender<Frame>` pattern. Each frame is a self-contained snapshot of all domains, so `watch` (which holds exactly one value) always contains the complete current state.
+- No sentinel frame is needed — the aggregated frame is complete on arrival. Clients know bootstrap is done when they receive the first DEFAULTS frame.
 - Migrate tugcast's HTTP handlers from `Arc<DefaultsStore>` to `Arc<TugbankClient>`, with `TugbankClient` exposing the underlying store for handler compatibility.
 - Keep the tugbank CLI unchanged — it continues using `DefaultsStore` directly.
 
@@ -40,16 +40,15 @@ The roadmap (`roadmap/tugbank-in-process-clients.md`) defines a five-phase migra
 - `TugbankClient::get()` returns cached values without hitting SQLite after initial load (`cargo nextest run` verifies via assertion on call count or timing)
 - External writes detected within one poll cycle: a write on a second `DefaultsStore` connection triggers a cache refresh in `TugbankClient` (integration test with two connections)
 - `FeedId::from_byte(0x50)` returns `Some(FeedId::Defaults)` and round-trips correctly (unit test)
-- tugcast pushes DEFAULTS frames on WebSocket connect and on domain change (integration test or manual verification)
+- tugcast pushes a single aggregated DEFAULTS frame on WebSocket connect and on any domain change (integration test or manual verification)
 - All existing tugcast HTTP endpoints (`/api/defaults/...`) continue to work unchanged after migration to `TugbankClient` (`cargo nextest run` — existing tests pass)
 
 #### Scope {#scope}
 
 1. New `TugbankClient` type in `tugbank-core` with in-memory domain snapshots, `PRAGMA data_version` polling, and domain change callbacks
 2. New `FeedId::Defaults = 0x50` variant in `tugcast-core/protocol.rs`
-3. New defaults feed module in tugcast that pushes domain snapshots via WebSocket
-4. Sentinel frame (`{"sentinel":"sync-complete"}`) after initial snapshot batch
-5. Migration of tugcast HTTP handlers from `Arc<DefaultsStore>` to `Arc<TugbankClient>`
+3. New defaults feed module in tugcast that pushes a single aggregated DEFAULTS frame (all domains in one JSON object) via WebSocket
+4. Migration of tugcast HTTP handlers from `Arc<DefaultsStore>` to `Arc<TugbankClient>`
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -73,7 +72,7 @@ The roadmap (`roadmap/tugbank-in-process-clients.md`) defines a five-phase migra
 - Polling thread must be a dedicated `std::thread`, not a tokio task, because `DefaultsStore` uses `Mutex<Connection>` (sync blocking)
 - SQLite `PRAGMA data_version` is the sole change-detection mechanism — no file watching
 - Poll interval: 500ms (matches roadmap spec)
-- DEFAULTS payload format must be JSON: `{"domain":"...","generation":N,"entries":{...}}` where entries use the existing tagged-value wire format from `tugcast/src/defaults.rs`
+- DEFAULTS payload format must be JSON: `{"domains":{"domain.name":{"generation":N,"entries":{...}},...}}` where entries use the existing tagged-value wire format from `tugcast/src/defaults.rs`
 
 #### Assumptions {#assumptions}
 
@@ -81,6 +80,7 @@ The roadmap (`roadmap/tugbank-in-process-clients.md`) defines a five-phase migra
 - Domain count is small enough that polling all domain generations on each `data_version` change is cheap (current usage: ~4 domains)
 - The existing `watch::Sender<Frame>` pattern supports adding new feeds without protocol-breaking changes
 - `TugbankClient` holds its own `DefaultsStore` internally and exposes get/set methods that callers use instead of the raw `DefaultsStore` API
+- Self-writes via `TugbankClient::set` will trigger redundant polling callbacks (data_version changes on the same connection); consumers must be idempotent
 - The tugbank CLI binary is explicitly out of scope — no changes needed
 
 ---
@@ -161,31 +161,33 @@ The roadmap (`roadmap/tugbank-in-process-clients.md`) defines a five-phase migra
 - Add `0x50 => Some(FeedId::Defaults)` to `from_byte` match
 - TypeScript `protocol.ts` in tugdeck must add `DEFAULTS: 0x50` (done in a future plan's Phase 3, but the Rust side ships now)
 
-#### [D04] Sentinel frame signals sync-complete (DECIDED) {#d04-sentinel-frame}
+#### [D04] Single aggregated DEFAULTS frame (DECIDED) {#d04-aggregated-frame}
 
-**Decision:** After pushing initial domain snapshots on WebSocket connect, tugcast sends a DEFAULTS frame with payload `{"sentinel":"sync-complete"}` to signal that the initial batch is complete.
+**Decision:** Each DEFAULTS frame contains all domain snapshots in a single JSON object (`{"domains":{...}}`). The `watch::Sender` holds exactly one frame representing the complete current state. No sentinel frame is needed.
 
 **Rationale:**
-- Clients (future tugdeck `TugbankClient`) need to know when the initial snapshot batch is done so `await client.ready()` can resolve
-- Using the same feed ID (`0x50`) avoids adding another feed ID just for signaling
-- The `"sentinel"` key is unambiguous — regular domain snapshot frames have a `"domain"` key
+- `watch::Sender<Frame>` holds exactly one value — pushing per-domain frames would overwrite earlier domains, and clients would only see the last one written
+- A single aggregated frame means every `borrow()` returns the complete state, which is the natural `watch` semantics
+- Eliminates the need for a sentinel: the first frame a client receives is already complete
+- Domain count is small (~4 domains), so aggregating is cheap
 
 **Implications:**
-- Clients must check for the `"sentinel"` key to distinguish sync-complete frames from domain snapshot frames
-- The sentinel is sent once per WebSocket connection, after all initial domain snapshots
+- On any domain change, the defaults feed rebuilds the full aggregated frame and sends it via `watch::Sender::send()`
+- Clients receive a single self-contained snapshot on connect and on every change
+- No sentinel logic needed in client or server
 
-#### [D05] Domain snapshot payload uses existing tagged-value wire format (DECIDED) {#d05-snapshot-payload}
+#### [D05] Aggregated payload uses existing tagged-value wire format (DECIDED) {#d05-snapshot-payload}
 
-**Decision:** DEFAULTS frame payloads use JSON with the same tagged-value format already used by the HTTP API: `{"domain":"...","generation":N,"entries":{"key":{"kind":"...","value":...},...}}`.
+**Decision:** The DEFAULTS frame payload is a single JSON object wrapping all domains: `{"domains":{"domain.name":{"generation":N,"entries":{...}},...}}`. Each domain's entries use the same tagged-value format already used by the HTTP API.
 
 **Rationale:**
 - Reuses the existing `value_to_tagged` / `tagged_to_value` functions from `tugcast/src/defaults.rs`
-- tugdeck already understands this format from its HTTP-based `settings-api.ts`
-- No new serialization format to define or maintain
+- tugdeck already understands the tagged-value format from its HTTP-based `settings-api.ts`
+- Wrapping in `{"domains":{...}}` makes the frame self-describing and extensible
 
 **Implications:**
-- The `entries` object maps keys to tagged-value objects, not raw values
 - The DEFAULTS feed module in tugcast must import and use `value_to_tagged` from `defaults.rs`
+- On any domain change, all domains are re-serialized into one frame (cheap with ~4 domains)
 
 ---
 
@@ -201,7 +203,7 @@ impl TugbankClient {
     pub fn open(path: impl AsRef<Path>, poll_interval: Duration) -> Result<Self, Error>;
 
     /// Create from an existing DefaultsStore. Spawns a background polling thread.
-    pub fn from_store(store: DefaultsStore, poll_interval: Duration) -> Self;
+    pub fn from_store(store: DefaultsStore, poll_interval: Duration) -> Result<Self, Error>;
 
     /// Access the underlying DefaultsStore (for HTTP handler compatibility).
     pub fn store(&self) -> &DefaultsStore;
@@ -219,6 +221,9 @@ impl TugbankClient {
     pub fn get(&self, domain: &str, key: &str) -> Result<Option<Value>, Error>;
 
     /// Write a value. Updates DB and local cache atomically.
+    /// Note: self-writes increment data_version, so the polling thread
+    /// will detect the change and fire callbacks redundantly. This is
+    /// acceptable — callbacks and consumers must be idempotent.
     pub fn set(&self, domain: &str, key: &str, value: Value) -> Result<(), Error>;
 
     /// Read all entries for a domain (from cache after first load).
@@ -227,6 +232,9 @@ impl TugbankClient {
     /// Get the current PRAGMA data_version.
     pub fn data_version(&self) -> Result<u64, Error>;
 
+    /// List all known domains. Used by the polling thread for domain discovery.
+    pub fn list_domains(&self) -> Result<Vec<String>, Error>;
+
     /// Register a callback for domain changes. Returns a handle to unregister.
     pub fn on_domain_changed<F>(&self, callback: F) -> CallbackHandle
     where
@@ -234,24 +242,28 @@ impl TugbankClient {
 }
 ```
 
+**Polling thread domain discovery:** The polling thread maintains a `HashMap<String, u64>` mapping domain names to their last-known generation. On each poll cycle, when `data_version` has changed, it calls `list_domains()` and checks `generation()` for each domain, comparing against the stored values. Callbacks fire only for domains whose generation has increased. New domains are detected when `list_domains()` returns names not present in the map.
+
 **Spec S03: DEFAULTS frame payload format** {#s03-defaults-payload}
 
-Domain snapshot frame:
+Aggregated DEFAULTS frame (contains all domains in a single JSON object):
 ```json
 {
-  "domain": "dev.tugtool.deck.layout",
-  "generation": 42,
-  "entries": {
-    "layout": {"kind": "json", "value": {"tabs": [...]}},
-    "other-key": {"kind": "string", "value": "hello"}
+  "domains": {
+    "dev.tugtool.deck.layout": {
+      "generation": 42,
+      "entries": {
+        "layout": {"kind": "json", "value": {"tabs": [...]}},
+        "other-key": {"kind": "string", "value": "hello"}
+      }
+    },
+    "dev.tugtool.deck.theme": {
+      "generation": 7,
+      "entries": {
+        "active-theme": {"kind": "string", "value": "brio"}
+      }
+    }
   }
-}
-```
-
-Sentinel frame:
-```json
-{
-  "sentinel": "sync-complete"
 }
 ```
 
@@ -285,6 +297,7 @@ No new crates in this phase. All work is in existing crates.
 | `DomainSnapshot` | type alias | `tugbank-core/src/client.rs` | `BTreeMap<String, Value>` |
 | `FeedId::Defaults` | enum variant | `tugcast-core/src/protocol.rs` | `= 0x50` |
 | `defaults_feed` | fn | `tugcast/src/feeds/defaults.rs` | Spawns polling + push task, returns `watch::Receiver<Frame>` |
+| `list_domains` | fn | `tugbank-core/src/client.rs` | Lists all known domains via `DefaultsStore` |
 
 ---
 
@@ -343,14 +356,15 @@ No new crates in this phase. All work is in existing crates.
 **Tasks:**
 - [ ] Create `client.rs` with `TugbankClient` struct holding: `DefaultsStore`, `Arc<Mutex<HashMap<String, DomainSnapshot>>>` for cache, `Arc<AtomicBool>` for shutdown signal, `JoinHandle<()>` for polling thread
 - [ ] Implement `TugbankClient::open(path, poll_interval)` — opens `DefaultsStore`, spawns polling thread
-- [ ] Implement `TugbankClient::from_store(store, poll_interval)` — wraps existing store
+- [ ] Implement `TugbankClient::from_store(store, poll_interval) -> Result<Self, Error>` — wraps existing store, returns `Result` for consistency since it calls `PRAGMA data_version` on construction
 - [ ] Implement `store(&self) -> &DefaultsStore` for raw access
 - [ ] Implement `get(domain, key)` — loads domain into cache on first access, then reads from cache
 - [ ] Implement `set(domain, key, value)` — writes to DB via `DefaultsStore`, updates cache
 - [ ] Implement `read_domain(domain)` — returns cached snapshot, loading on first access
 - [ ] Implement `data_version(&self)` — calls `PRAGMA data_version` on the connection
 - [ ] Implement `on_domain_changed(callback)` — registers callback, returns `CallbackHandle`
-- [ ] Implement polling thread: loop on `poll_interval`, check `PRAGMA data_version`, on change reload affected domain generations and snapshots, fire callbacks
+- [ ] Implement `list_domains(&self) -> Result<Vec<String>, Error>` — delegates to `DefaultsStore`
+- [ ] Implement polling thread: loop on `poll_interval`, check `PRAGMA data_version`. On change, call `list_domains()` + `generation()` for each domain, compare against a `HashMap<String, u64>` of last-known generations, reload snapshots and fire callbacks for domains whose generation increased or that are newly discovered
 - [ ] Implement `Drop` for `TugbankClient` — sets shutdown flag, joins polling thread
 - [ ] Add `mod client` to `lib.rs`, re-export `TugbankClient` and `CallbackHandle`
 - [ ] Ensure `TugbankClient` is `Send + Sync` (compile-time assertion)
@@ -374,7 +388,7 @@ No new crates in this phase. All work is in existing crates.
 
 **Commit:** `feat(tugcast): add DEFAULTS feed for real-time tugbank domain snapshots`
 
-**References:** [D03] DEFAULTS feed ID is 0x50, [D04] Sentinel frame signals sync-complete, [D05] Domain snapshot payload uses existing tagged-value wire format, Spec S03, (#s03-defaults-payload, #d04-sentinel-frame, #d05-snapshot-payload, #strategy)
+**References:** [D03] DEFAULTS feed ID is 0x50, [D04] Single aggregated DEFAULTS frame, [D05] Aggregated payload uses existing tagged-value wire format, Spec S03, (#s03-defaults-payload, #d04-aggregated-frame, #d05-snapshot-payload, #strategy)
 
 **Artifacts:**
 - New file `tugcode/crates/tugcast/src/feeds/defaults.rs`
@@ -383,12 +397,14 @@ No new crates in this phase. All work is in existing crates.
 **Tasks:**
 - [ ] Create `feeds/defaults.rs` with `defaults_feed` function that:
   - Accepts `Arc<TugbankClient>` and returns `watch::Receiver<Frame>`
-  - Creates a `watch::Sender<Frame>` for the initial snapshot
-  - Registers an `on_domain_changed` callback on `TugbankClient` that serializes the changed domain snapshot to JSON (using `value_to_tagged` from `defaults.rs`) and sends it as a DEFAULTS frame via a broadcast or watch channel
-- [ ] Implement initial snapshot logic: on WebSocket connect, push a DEFAULTS frame for every populated domain, then send the sentinel frame `{"sentinel":"sync-complete"}`
+  - Creates a `watch::channel<Frame>` and sends an initial aggregated DEFAULTS frame containing all domain snapshots (one JSON object with all domains)
+  - Registers an `on_domain_changed` callback on `TugbankClient` that rebuilds the full aggregated frame (all domains, not just the changed one) and sends it via `watch::Sender::send()`
 - [ ] Wire the defaults feed into tugcast's `main.rs`: create `TugbankClient`, call `defaults_feed`, add the returned `watch::Receiver<Frame>` to `snapshot_watches`
 - [ ] Add `pub mod defaults` to `feeds/mod.rs`
 - [ ] Make `value_to_tagged` function in `tugcast/src/defaults.rs` `pub(crate)` if not already (it is currently `pub(crate)`)
+
+**Tests:**
+- [ ] `test_defaults_feed_aggregates_all_domains`: create `TugbankClient` with two domains, call `defaults_feed`, verify the initial `watch::Receiver` value contains both domains in a single frame
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugcode && cargo build`
@@ -406,13 +422,21 @@ No new crates in this phase. All work is in existing crates.
 
 **Artifacts:**
 - Modified `tugcode/crates/tugcast/src/defaults.rs` — change `Extension<Arc<DefaultsStore>>` to `Extension<Arc<TugbankClient>>`
-- Modified `tugcode/crates/tugcast/src/server.rs` — change `Arc<DefaultsStore>` to `Arc<TugbankClient>` in extension layer
+- Modified `tugcode/crates/tugcast/src/server.rs` — change `Arc<DefaultsStore>` to `Arc<TugbankClient>` in `build_app` and `run_server` signatures
+- Modified `tugcode/crates/tugcast/src/integration_tests.rs` — update `build_defaults_test_app`, `build_migration_test_app`, and all `build_app` call sites that pass `Some(store)` to construct a `TugbankClient` from the store instead
 
 **Tasks:**
 - [ ] In `defaults.rs`, change all four handler signatures from `Extension<Arc<DefaultsStore>>` to `Extension<Arc<TugbankClient>>`
 - [ ] In each handler, replace `store.domain(&domain)?` with `client.store().domain(&domain)?` (delegate to underlying store)
-- [ ] In `server.rs`, change the `bank_store` type from `Option<Arc<DefaultsStore>>` to `Option<Arc<TugbankClient>>` and update the extension layer accordingly
+- [ ] In `server.rs`, change `build_app` parameter `bank_store: Option<Arc<DefaultsStore>>` to `bank_store: Option<Arc<TugbankClient>>` and update the extension layer accordingly
+- [ ] In `server.rs`, change `run_server` parameter `bank_store: Option<Arc<DefaultsStore>>` to `bank_store: Option<Arc<TugbankClient>>`
 - [ ] In `main.rs`, pass the `Arc<TugbankClient>` created in Step 3 to the server's extension layer instead of creating a separate `DefaultsStore`
+- [ ] In `integration_tests.rs`, update `build_defaults_test_app` to wrap the `DefaultsStore` in a `TugbankClient` before passing to `build_app`
+- [ ] In `integration_tests.rs`, update `build_migration_test_app(store: Arc<DefaultsStore>)` to accept `Arc<TugbankClient>` or wrap the store internally, and update its three call sites
+- [ ] In `integration_tests.rs`, update the `test_defaults_non_loopback_forbidden` test's `build_app` call (line ~969) to wrap the store in a `TugbankClient`
+
+**Tests:**
+- [ ] All existing integration tests in `integration_tests.rs` compile and pass after the migration (verified by checkpoint)
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugcode && cargo build`
@@ -434,6 +458,9 @@ No new crates in this phase. All work is in existing crates.
 **Tasks:**
 - [ ] Add `DEFAULTS: 0x50,` to the `FeedId` const object in `protocol.ts` (between `CODE_INPUT` and `CONTROL`)
 
+**Tests:**
+- [ ] TypeScript compiles without errors (verified by checkpoint `tsc --noEmit`)
+
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck && npx tsc --noEmit`
 
@@ -445,13 +472,16 @@ No new crates in this phase. All work is in existing crates.
 
 **Commit:** `N/A (verification only)`
 
-**References:** [D01] Dedicated std::thread with channel for polling, [D02] TugbankClient wraps DefaultsStore internally, [D03] DEFAULTS feed ID is 0x50, [D04] Sentinel frame signals sync-complete, (#success-criteria)
+**References:** [D01] Dedicated std::thread with channel for polling, [D02] TugbankClient wraps DefaultsStore internally, [D03] DEFAULTS feed ID is 0x50, [D04] Single aggregated DEFAULTS frame, (#success-criteria)
 
 **Tasks:**
 - [ ] Verify all existing tugcast tests pass (HTTP handlers still work via `TugbankClient`)
 - [ ] Verify tugbank-core tests pass (new `TugbankClient` tests + existing `DefaultsStore` tests)
 - [ ] Verify tugcast-core tests pass (new `FeedId::Defaults` tests + existing protocol tests)
 - [ ] Verify tugdeck TypeScript compiles with new `DEFAULTS` feed ID
+
+**Tests:**
+- [ ] Full workspace test suite passes end-to-end (verified by checkpoint)
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugcode && cargo nextest run`
@@ -468,7 +498,7 @@ No new crates in this phase. All work is in existing crates.
 - [ ] `TugbankClient` is `Send + Sync` and passes all unit and integration tests (`cargo nextest run -p tugbank-core`)
 - [ ] `FeedId::Defaults` (0x50) exists in both Rust (`tugcast-core`) and TypeScript (`tugdeck/protocol.ts`)
 - [ ] tugcast starts with `TugbankClient` instead of raw `DefaultsStore` — all existing HTTP handler tests pass
-- [ ] DEFAULTS feed pushes initial snapshots + sentinel on WebSocket connect
+- [ ] DEFAULTS feed pushes aggregated snapshot frame on WebSocket connect
 - [ ] External writes to `~/.tugbank.db` trigger DEFAULTS frame pushes within the poll interval
 
 **Acceptance tests:**
