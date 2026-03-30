@@ -108,7 +108,8 @@ Phase 2b: WebSocket Verification    — DONE (probe written, 4 issues found)
 Phase 2c: WebSocket Fixes           — DONE (T8-T11)
 
 ─── TIER 2: BUILD THE UI ─────────────────────────────────────
-Phase 3: Streaming Markdown         — rendering layer (U1, U5, U6, U7)
+Phase 3A: Markdown Rendering Core    — virtualization, prefix sum, two-path rendering
+Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
 Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
 Phase 6: Chrome & Status            — switchers, indicators, cost (U9-U11, U16, U17, U20-U22)
@@ -211,29 +212,101 @@ Phase 12: Custom Block Renderers    — rich UI for agent output
 
 ---
 
-### Phase 3: Streaming Markdown {#streaming-markdown}
+### Phase 3A: Markdown Rendering Core {#markdown-rendering-core}
 
-**Goal:** tug-markdown component with streaming support. Addresses U1, U5, U6, U7.
+**Goal:** Build the virtualized markdown rendering engine that handles multi-MB content. This is the foundation everything else renders through.
 
 **Inputs:** Verified transport (Phases 2, 2b). `assistant_text` delta model from Phase 1.
 
+**Key constraint:** Claude Code sessions routinely reach multi-MB sizes (observed: 110MB, 20MB, 3.4MB in real usage). Rendering the full conversation into the DOM is not viable. The component must virtualize, informed by how Monaco editor achieves instant rendering of arbitrarily large files.
+
+#### Monaco-informed architecture
+
+Monaco's rendering performance comes from three core ideas that transfer directly to our markdown use case:
+
+**1. PrefixSumComputer — the single most important data structure.**
+
+Monaco stores per-line heights in a `Uint32Array` with a lazily-computed prefix sum. `getIndexOf(scrollTop)` finds the first visible line via binary search in O(log n). The scrollbar is accurate for million-line files without rendering them. Our equivalent:
+
+- `BlockHeightIndex`: a `Float64Array` of per-block heights (estimated before render, measured after).
+- Lazy prefix sum with a validity watermark — recompute only from the point of change.
+- `getBlockAtOffset(scrollTop)` → binary search → first visible block. O(log n).
+- `getTotalHeight()` → sum of all block heights. Drives the scrollbar/scroll container sizing.
+- Estimated heights: paragraph = line count × line height; heading = known per level; code = line count × code line height + header; hr = fixed. Refined to measured heights once a block enters the viewport and renders.
+
+**2. Viewport-only DOM — sliding window of rendered blocks.**
+
+Monaco's `RenderedLinesCollection` maintains a contiguous array of DOM nodes mapped to document line numbers. Only lines in/near the viewport exist in the DOM. Our equivalent:
+
+- `RenderedBlockWindow`: tracks which blocks currently have DOM nodes (startIndex, endIndex).
+- On scroll: compute new visible range from `BlockHeightIndex`, diff against current window, add entering blocks, remove exiting blocks.
+- Overscan: render 1-2 screens above/below the viewport for smooth scrolling.
+- Unchanged blocks in the viewport: reposition only (translate Y), don't rebuild.
+- Each block has a dirty flag (Monaco's `_isMaybeInvalid`). Skip DOM update if content unchanged.
+- A spacer element above and below the rendered window, sized from the prefix sum, creates the correct scroll height.
+
+**3. Two rendering paths — static and streaming.**
+
+*Static path* — Full content already available (resumed sessions, history, completed messages).
+- `marked.lexer()` once → block list. Estimate heights. Populate `BlockHeightIndex`.
+- Render only the viewport window. Measure rendered blocks, update heights.
+- For very large content (>1MB): lex in chunks via `requestIdleCallback` to avoid blocking. Show a progress indicator or render from the tail (most recent content first).
+
+*Streaming path* — Deltas arriving live from `assistant_text` events.
+- Accumulate deltas into a buffer (U1). `PropertyStore<string>` [L02], rAF throttle.
+- Incremental lexing: only re-lex from the last stable block boundary. Previous blocks are frozen.
+- New blocks append to the block list and `BlockHeightIndex`. Viewport auto-scrolls to tail.
+- On `turn_complete`, finalize: full lex of the last block for verification, freeze all blocks.
+
+*Transition:* Prior messages load via static path. Active response uses streaming path. Both coexist in a single scroll container backed by one `BlockHeightIndex`.
+
 **Work:**
-- Token-level rendering: `marked.lexer()` → keyed React elements per block.
-- Streaming via `PropertyStore<string>` [L02] with rAF throttle. Accumulate deltas (U1). Streaming cursor (U5).
-- Thinking block rendering (U6): collapsible `thinking_text` events.
-- Tool use display (U7): `tool_use` → `tool_result` → `tool_use_structured`.
-- TugCodeBlock: Shiki with tug theme, copy-to-clipboard, language label, line numbers, collapse/expand.
+- `BlockHeightIndex`: `Float64Array` prefix sum with lazy recomputation, binary search for offset→block mapping.
+- `RenderedBlockWindow`: sliding window of DOM nodes, overscan, dirty tracking.
+- `marked.lexer()` → keyed block list. Block types: paragraph, heading, code, blockquote, list, table, hr, html.
+- Scroll container: spacer elements sized from prefix sum, scroll event → viewport recalc.
+- Static path: bulk lex, chunked for large content.
+- Streaming path: delta accumulation, incremental tail lexing, auto-scroll.
+- Height estimation heuristics per block type. Measure-and-refine cycle.
+- Integration with `PropertyStore` [L02] for streaming state.
+
+**Exit criteria:**
+- DOM node count stays bounded regardless of content size — verified with 10MB+ test content.
+- Static: 1MB renders in <200ms (viewport visible). 10MB renders in <1s (viewport visible, background lex continues). Scrollbar accurate within 5% before full measurement.
+- Streaming: 60fps, no jank for 5000+ words of live deltas.
+- Scroll through 10MB content at 60fps — no dropped frames.
+- `BlockHeightIndex.getBlockAtOffset()` completes in <1ms for 100K blocks.
+- Laws compliance: [L02, L06].
+
+**Demo:** Load a 5MB recorded conversation, scroll through it smoothly. Then feed live deltas at the tail and watch it stream while scrolling remains responsive.
+
+---
+
+### Phase 3B: Markdown Content Types {#markdown-content-types}
+
+**Goal:** Rich rendering for all markdown content types, built on the Phase 3A virtualization engine. Addresses U1, U5, U6, U7.
+
+**Inputs:** Phase 3A rendering core (BlockHeightIndex, RenderedBlockWindow, two-path rendering).
+
+**Work:**
+- GFM markdown: paragraphs, headings, emphasis, links, images, lists, tables, blockquotes, horizontal rules. All standard `marked.lexer()` token types rendered as React elements.
+- TugCodeBlock: Shiki with tug theme, copy-to-clipboard, language label, line numbers, collapse/expand. **Lazy highlighting**: only highlight code blocks when they enter the viewport. Off-screen blocks queued via `requestIdleCallback`. Stale highlights discarded via version IDs (Monaco pattern).
+- Streaming cursor (U5): visible during `assistant_text` partials. Positioned at end of last block. Removed on `turn_complete`.
+- Thinking block rendering (U6): `thinking_text` events → collapsible block. Shows "Thinking..." during streaming, full text when complete.
+- Tool use display (U7): `tool_use` → `tool_result` → `tool_use_structured`. Show tool name, input, output, duration. Collapsible.
 - `--tugx-md-*` token aliases. `@tug-pairings` per [L16, L19].
-- `tug-*` custom block extension point.
+- `tug-*` custom block extension point (for future Phase 12 custom renderers).
 - Gallery card.
 
 **Exit criteria:**
-- All standard GFM markdown renders correctly
-- Simulated streaming at 60fps, no jank for 5000+ words
-- Code blocks highlighted, copy works
-- Laws compliance: [L02, L06, L10, L16, L19, L20]
+- All standard GFM markdown renders correctly (test against CommonMark spec examples).
+- Code blocks: Shiki highlighting works for top-20 languages. Lazy — only visible blocks highlighted. Copy-to-clipboard works.
+- Thinking blocks render and collapse correctly.
+- Tool use blocks show name, input/output, duration.
+- Streaming cursor visible during partials, gone on complete.
+- Laws compliance: [L02, L06, L10, L16, L19, L20].
 
-**Demo:** Feed recorded `assistant_text` deltas into tug-markdown, watch it stream.
+**Demo:** Full conversation rendering: thinking → streamed response with code blocks → tool use → follow-up. All content types visible and interactive.
 
 ---
 
@@ -265,7 +338,7 @@ Phase 12: Custom Block Renderers    — rich UI for agent output
 
 **Goal:** Wire the core conversation loop end-to-end. Addresses U2, U3, U4, U8, U14, U23.
 
-**Inputs:** tug-markdown (Phase 3), tug-prompt-input (Phase 4), hardened transport (Phase 2).
+**Inputs:** tug-markdown (Phases 3A+3B), tug-prompt-input (Phase 4), hardened transport (Phase 2).
 
 **Work:**
 - Compose prompt input + submit/stop button.
