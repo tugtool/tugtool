@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-30T18:42:46Z
+---
+
+## step-10: Added markdown-pipeline.test.ts with 24 tests covering graceful degradation (poolSize=0 fallback), pipeline protocol correctness (lex/parse/stream contracts), HeightEstimator accuracy, and code audit verifications. Browser performance measurements (1MB viewport, 10MB yank, streaming 60fps) deferred to manual gallery card verification. OVERSCAN_SCREENS=4 per Q01.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-9
 date: 2025-03-30T18:24:51Z
 ---
