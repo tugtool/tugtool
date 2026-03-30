@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-30T03:18:25Z
+---
+
+## step-4: Enhanced TugMarkdownView streaming path with blockOffsets parallel array for source byte offset tracking, incremental tail re-lexing from last block boundary, dirty flag reconciliation, RAF-based auto-scroll, and finalization pass on turn_complete. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
 step: step-3
 date: 2025-03-30T03:09:16Z
 ---

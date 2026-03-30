@@ -151,6 +151,18 @@ export interface TugMarkdownViewProps {
 interface MarkdownEngineState {
   /** The list of lexed tokens (aligned 1:1 with BlockHeightIndex blocks). */
   tokens: Token[];
+  /**
+   * Byte offset in the source text where each block ends.
+   * blockOffsets[i] = sum of raw lengths for tokens[0..i] (exclusive).
+   * Used by the streaming path to re-lex only from the last stable boundary.
+   * Populated for both static and streaming paths.
+   */
+  blockOffsets: number[];
+  /**
+   * The accumulated streaming text. Grows as deltas arrive.
+   * Raw character delta appends are supported by appending to this string.
+   */
+  accumulatedText: string;
   /** The BlockHeightIndex driving the virtual layout. */
   heightIndex: BlockHeightIndex;
   /** The sliding window manager. */
@@ -215,6 +227,8 @@ export function TugMarkdownView({
       const blockWindow = new RenderedBlockWindow(heightIndex, DEFAULT_VIEWPORT_HEIGHT, 2);
       engineRef.current = {
         tokens: [],
+        blockOffsets: [],
+        accumulatedText: "",
         heightIndex,
         blockWindow,
         blockNodes: new Map(),
@@ -393,11 +407,17 @@ export function TugMarkdownView({
     // Lex synchronously (marked.lexer is fast even for large content).
     const tokens = marked.lexer(content).filter((t) => t.type !== "space");
     engine.tokens = tokens;
+    engine.blockOffsets = [];
+    engine.accumulatedText = content;
     engine.renderedCount = 0;
 
-    // Populate BlockHeightIndex with estimated heights for all blocks.
+    // Populate BlockHeightIndex with estimated heights and track byte offsets.
+    let cumulativeOffset = 0;
     for (const token of tokens) {
       engine.heightIndex.appendBlock(estimateBlockHeight(token));
+      // Each token has a .raw field containing the original source text.
+      cumulativeOffset += (token as { raw?: string }).raw?.length ?? 0;
+      engine.blockOffsets.push(cumulativeOffset);
     }
 
     // Render visible window immediately.
@@ -466,44 +486,99 @@ export function TugMarkdownView({
 
   // ---- Streaming rendering path ----
   // streamingText comes from useSyncExternalStore [L02].
-  // On each update we re-lex from the last stable block boundary.
+  // On each update we re-lex only from the start of the last stable block
+  // boundary, using the blockOffsets array to locate it efficiently.
+  // This is O(k) where k is the number of changed/new blocks — not O(n).
   useEffect(() => {
     if (!streamingStore) return;
     const engine = getEngine();
 
+    // Accept the new text from the store. The caller may provide either a
+    // full running string (common case) or we accumulate raw delta appends.
+    // Here streamingText IS the full accumulated string [D04].
     const newText = streamingText;
     if (!newText) return;
 
-    // Lex from the beginning (simplest approach for correctness; the lexer is
-    // fast on the accumulated text since it grows incrementally).
-    // For correctness with re-lex from last boundary: lex the full text.
-    const allTokens = marked.lexer(newText).filter((t) => t.type !== "space");
+    // Update accumulated text (for delta append support — the full-string path
+    // also sets this so both modes stay consistent).
+    engine.accumulatedText = newText;
 
     const oldCount = engine.tokens.length;
-    const newCount = allTokens.length;
 
-    // Handle blocks that changed (re-lexed tail).
-    const overlapStart = Math.max(0, oldCount - 2);
-    for (let i = overlapStart; i < Math.min(oldCount, newCount); i++) {
-      const newToken = allTokens[i];
-      const oldToken = engine.tokens[i];
-      // Compare rendered HTML to detect changes.
-      const newHtml = renderToken(newToken);
-      const oldEl = engine.blockNodes.get(i);
-      if (oldEl && oldEl.innerHTML !== newHtml) {
-        engine.blockWindow.markDirty(i);
-        engine.tokens[i] = newToken;
-        engine.heightIndex.setHeight(i, estimateBlockHeight(newToken));
+    // Determine the re-lex start position.
+    // Re-lex from the start of the last block (index oldCount - 1) to handle
+    // boundary shifts. If there are no blocks yet, lex from position 0.
+    // blockOffsets[i] is the end offset of block i; so the start offset of
+    // block (oldCount-1) is blockOffsets[oldCount-2] (or 0 if oldCount <= 1).
+    let relexFromIndex: number; // block index to start updating from
+    let relexFromOffset: number; // byte offset in newText to start lexing from
+
+    if (oldCount === 0) {
+      relexFromIndex = 0;
+      relexFromOffset = 0;
+    } else {
+      // Re-lex the last block (and any that follow it).
+      relexFromIndex = Math.max(0, oldCount - 1);
+      relexFromOffset = relexFromIndex > 0 ? (engine.blockOffsets[relexFromIndex - 1] ?? 0) : 0;
+    }
+
+    // Lex only the tail of the text from the stable boundary.
+    const tailText = newText.slice(relexFromOffset);
+    const tailTokens = marked.lexer(tailText).filter((t) => t.type !== "space");
+
+    // Reconcile re-lexed tail tokens against existing tokens from relexFromIndex.
+    let tailCumulativeOffset = relexFromOffset;
+    for (let ti = 0; ti < tailTokens.length; ti++) {
+      const blockIndex = relexFromIndex + ti;
+      const newToken = tailTokens[ti];
+      const rawLen = (newToken as { raw?: string }).raw?.length ?? 0;
+      tailCumulativeOffset += rawLen;
+
+      if (blockIndex < oldCount) {
+        // Block already exists — check if content changed.
+        const newHtml = renderToken(newToken);
+        const oldEl = engine.blockNodes.get(blockIndex);
+        if (oldEl && oldEl.innerHTML !== newHtml) {
+          engine.blockWindow.markDirty(blockIndex);
+          engine.tokens[blockIndex] = newToken;
+          engine.heightIndex.setHeight(blockIndex, estimateBlockHeight(newToken));
+        } else if (!oldEl) {
+          // Block not in DOM yet — just update the token reference.
+          engine.tokens[blockIndex] = newToken;
+          engine.heightIndex.setHeight(blockIndex, estimateBlockHeight(newToken));
+        }
+        engine.blockOffsets[blockIndex] = tailCumulativeOffset;
+      } else {
+        // New block — append.
+        engine.tokens.push(newToken);
+        engine.heightIndex.appendBlock(estimateBlockHeight(newToken));
+        engine.blockOffsets.push(tailCumulativeOffset);
       }
     }
 
-    // Append new blocks.
-    for (let i = oldCount; i < newCount; i++) {
-      engine.tokens.push(allTokens[i]);
-      engine.heightIndex.appendBlock(estimateBlockHeight(allTokens[i]));
+    // If the tail re-lex produced fewer blocks than expected, the last block
+    // boundary shifted. Trim the engine state to match.
+    const expectedEnd = relexFromIndex + tailTokens.length;
+    if (expectedEnd < engine.tokens.length) {
+      // Remove stale trailing blocks from DOM and engine state.
+      for (let i = expectedEnd; i < engine.tokens.length; i++) {
+        removeBlockNode(engine, i);
+      }
+      engine.tokens.splice(expectedEnd);
+      engine.blockOffsets.splice(expectedEnd);
+      // BlockHeightIndex does not support truncation; rebuild the tail region
+      // by setting heights to 0 (they will be re-appended or re-estimated
+      // on the next update). We use a no-op approach: the phantom blocks will
+      // have zero height and be ignored by the window manager once they have
+      // no tokens. For correctness, clear and rebuild if count decreased.
+      // In practice this path is rare (boundary shift at stream end).
+      engine.heightIndex.clear();
+      for (const token of engine.tokens) {
+        engine.heightIndex.appendBlock(estimateBlockHeight(token));
+      }
     }
 
-    // Update dirty block DOM nodes.
+    // Update dirty block DOM nodes in the current window.
     const current = engine.blockWindow.currentRange;
     for (let i = current.startIndex; i < current.endIndex; i++) {
       if (engine.blockWindow.isDirty(i)) {
@@ -533,18 +608,44 @@ export function TugMarkdownView({
       const engine = engineRef.current;
       if (!engine) return;
 
-      // Re-lex the full text and reconcile block list.
-      const fullText = (streamingStore.get(streamingPath) as string) ?? "";
+      // Finalization pass: re-lex the full accumulated text from scratch to
+      // ensure the block list is consistent with the final content. This is
+      // the safety net for any boundary shifts that occurred during streaming.
+      const fullText = engine.accumulatedText || ((streamingStore.get(streamingPath) as string) ?? "");
       const finalTokens = marked.lexer(fullText).filter((t) => t.type !== "space");
 
-      // Update all tokens and heights.
+      // Rebuild blockOffsets for the finalized token list.
+      const finalOffsets: number[] = [];
+      let cumOffset = 0;
+      for (const token of finalTokens) {
+        cumOffset += (token as { raw?: string }).raw?.length ?? 0;
+        finalOffsets.push(cumOffset);
+      }
+
+      // Update all tokens, heights, and offsets.
       for (let i = 0; i < finalTokens.length; i++) {
         if (i < engine.tokens.length) {
           engine.tokens[i] = finalTokens[i];
           engine.heightIndex.setHeight(i, estimateBlockHeight(finalTokens[i]));
+          engine.blockOffsets[i] = finalOffsets[i];
         } else {
           engine.tokens.push(finalTokens[i]);
           engine.heightIndex.appendBlock(estimateBlockHeight(finalTokens[i]));
+          engine.blockOffsets.push(finalOffsets[i]);
+        }
+      }
+
+      // If finalization produced fewer blocks, trim the stale tail.
+      if (finalTokens.length < engine.tokens.length) {
+        for (let i = finalTokens.length; i < engine.tokens.length; i++) {
+          removeBlockNode(engine, i);
+        }
+        engine.tokens.splice(finalTokens.length);
+        engine.blockOffsets.splice(finalTokens.length);
+        // Rebuild the height index from scratch to match the trimmed token list.
+        engine.heightIndex.clear();
+        for (const token of engine.tokens) {
+          engine.heightIndex.appendBlock(estimateBlockHeight(token));
         }
       }
 
