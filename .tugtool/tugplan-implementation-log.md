@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-30T16:45:28Z
+---
+
+## step-2: Created markdown-height-estimator.ts with HeightEstimator interface, HeightEstimatorMeta, and DefaultTextEstimator class. Updated block-height-index.ts to re-export constants. Updated tug-markdown-view.tsx to delegate to DefaultTextEstimator. Added comprehensive test suite.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-1
 date: 2025-03-30T16:36:01Z
 ---

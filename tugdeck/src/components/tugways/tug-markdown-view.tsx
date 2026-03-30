@@ -31,7 +31,8 @@ import { marked } from "marked";
 import type { Token } from "marked";
 import DOMPurifyModule from "dompurify";
 import { cn } from "@/lib/utils";
-import { BlockHeightIndex, LINE_HEIGHT, CODE_LINE_HEIGHT, CODE_HEADER_HEIGHT, HEADING_HEIGHTS, HR_HEIGHT } from "@/lib/block-height-index";
+import { BlockHeightIndex } from "@/lib/block-height-index";
+import { DefaultTextEstimator } from "@/lib/markdown-height-estimator";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import type { PropertyStore } from "@/components/tugways/property-store";
 
@@ -69,43 +70,16 @@ function getDOMPurify(): ReturnType<typeof DOMPurifyModule> {
 // Height estimation
 // ---------------------------------------------------------------------------
 
+/** Module-level estimator instance. Pure, no state, safe to share. */
+const _estimator = new DefaultTextEstimator();
+
 /** Estimate the rendered height of a marked Token using [D05] constants. */
 function estimateBlockHeight(token: Token): number {
-  switch (token.type) {
-    case "heading": {
-      const level = Math.min(6, Math.max(1, (token as { depth: number }).depth));
-      return HEADING_HEIGHTS[level] ?? HEADING_HEIGHTS[6];
-    }
-    case "code": {
-      const lines = ((token as { text: string }).text.match(/\n/g) ?? []).length + 1;
-      return CODE_HEADER_HEIGHT + lines * CODE_LINE_HEIGHT;
-    }
-    case "hr":
-      return HR_HEIGHT;
-    case "space":
-      return 0;
-    case "paragraph": {
-      const text = (token as { text: string }).text ?? "";
-      // Rough estimate: ~80 chars per line
-      const lines = Math.max(1, Math.ceil(text.length / 80));
-      return lines * LINE_HEIGHT + 8; // 8px padding
-    }
-    case "blockquote": {
-      const text = (token as { text?: string }).text ?? "";
-      const lines = Math.max(1, Math.ceil(text.length / 70));
-      return lines * LINE_HEIGHT + 16;
-    }
-    case "list": {
-      const items = (token as { items?: unknown[] }).items ?? [];
-      return Math.max(items.length, 1) * (LINE_HEIGHT + 4) + 8;
-    }
-    case "table": {
-      const rows = (token as { rows?: unknown[][] }).rows ?? [];
-      return (rows.length + 1) * (LINE_HEIGHT + 8) + 16; // +1 for header
-    }
-    default:
-      return LINE_HEIGHT * 2;
-  }
+  return _estimator.estimate(token.type, (token as { raw?: string }).raw ?? "", {
+    depth: (token as { depth?: number }).depth,
+    itemCount: (token as { items?: unknown[] }).items?.length,
+    rowCount: (token as { rows?: unknown[][] }).rows?.length,
+  });
 }
 
 /** Render a single token to sanitized HTML. */
