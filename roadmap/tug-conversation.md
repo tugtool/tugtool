@@ -109,9 +109,10 @@ Phase 2c: WebSocket Fixes           — DONE (T8-T11)
 
 ─── TIER 2: BUILD THE UI ─────────────────────────────────────
 Phase 3A: Markdown Rendering Core    — virtualization, prefix sum, two-path rendering — DONE
-Phase 3A.1: TugWorkerPool             — typed worker pool for parallel computation across cores — DONE
-Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-only rendering — DONE (non-functional)
-Phase 3A.3: Worker Pipeline Remediation — fix laws violations, Vite worker loading, silent errors
+Phase 3A.1: TugWorkerPool             — typed worker pool for parallel computation across cores — DONE (superseded)
+Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-only rendering — DONE (superseded)
+Phase 3A.3: Worker Pipeline Remediation — partial fixes applied — DONE (superseded)
+Phase 3A.4: WASM Markdown Pipeline   — replace worker infra with pulldown-cmark WASM, simplify architecture
 Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
 Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
@@ -862,6 +863,251 @@ If the worker fails to load: verify `[TugWorkerPool] All workers failed — swit
 
 ---
 
+### Phase 3A.4: WASM Markdown Pipeline {#wasm-markdown-pipeline}
+
+**Status:** Not started.
+
+**Goal:** Replace the entire worker-based markdown pipeline with a pulldown-cmark WASM module that runs synchronously on the main thread. Remove all worker infrastructure. The result is a TugMarkdownView that renders 1MB in under 50ms and 10MB in under 200ms, with no workers, no async chains, no Vite detection issues, and full Laws of Tug compliance.
+
+**Inputs:** Phase 3A code (BlockHeightIndex, RenderedBlockWindow — these are keepers). Spike benchmark results: pulldown-cmark WASM lexes+parses 1MB in 14ms and 10MB in 132ms on JSC (Safari/WKWebView). `marked.lexer()` takes 15,000ms for the same 1MB — a confirmed JSC regex regression (marked issue #2863).
+
+#### Why the worker model is being removed
+
+The worker infrastructure (TugWorkerPool, markdown-worker.ts, fallback handler, init handshake, Vite worker detection) was built to work around a slow lexer. With pulldown-cmark WASM performing lex + full HTML generation for 1MB in 14ms — fast enough to run synchronously before the next frame — the entire worker model is unnecessary complexity:
+
+- **Vite worker detection** caused a completely non-functional component (blank screen, silent errors). The `new Worker(new URL(...))` pattern must be a single expression for Vite's static analysis; splitting it across files broke the production build.
+- **Pool lifecycle owned by React** caused "pool terminated" errors during reconciliation. Moving the pool to module scope was a patch, not a fix.
+- **Silent `.catch(() => {})` handlers** swallowed every error, making diagnosis take hours.
+- **The two-phase async pipeline** (lex → `.then()` → parse → `.then()`) created race conditions with `blockWindow.update()` consuming enter ranges, leaving the parse handler with empty diffs.
+- **The L05 violation** (RAF gated on React state commits) was an inherent consequence of bridging async worker responses into React's commit cycle.
+
+None of these problems exist when the pipeline is synchronous. The WASM module returns results immediately — no promises, no message passing, no init handshakes, no cancellation protocol.
+
+The worker pool (TugWorkerPool) may have future uses, but not for markdown. If a future feature needs off-thread work, the pool can be rebuilt from the existing code. For now, it goes — completely, no vestiges.
+
+#### What we keep from Phases 3A–3A.3
+
+| Feature | Source | Status |
+|---------|--------|--------|
+| **BlockHeightIndex** | Phase 3A | KEEP — prefix sum, binary search, lazy recomputation. Proven correct, well-tested. |
+| **RenderedBlockWindow** | Phase 3A | KEEP — sliding window, enter/exit diffing, spacer computation. Proven correct, well-tested. |
+| **Virtual scroll layout** | Phase 3A | KEEP — spacer divs, `overflow-y: auto`, DOM-only block management per L06. |
+| **DOMPurify sanitization at render time** | Phase 3A.2 | KEEP — sanitize HTML when writing to DOM, never before. |
+| **Streaming via useSyncExternalStore** | Phase 3A | KEEP — PropertyStore + useSyncExternalStore for streaming text per L02. |
+| **Gallery card** | Phase 3A.2 | KEEP (rewrite) — Static 1MB, Streaming, Stress 10MB modes with diagnostic overlay. |
+| **CSS file** | Phase 3A.2 | KEEP — scroll container, spacer, block, placeholder styles with L16 annotations. |
+| **HeightEstimator interface** | Phase 3A.2 | EVALUATE — may be simpler to estimate directly from WASM block metadata (type + byte length). |
+
+| Feature | Source | Status |
+|---------|--------|--------|
+| **TugWorkerPool** | Phase 3A.1 | REMOVE — 623 lines. |
+| **markdown-worker.ts** | Phase 3A.2 | REMOVE — 234 lines. |
+| **Worker fallback handler** | Phase 3A.2 | REMOVE — mainThreadFallback in tug-markdown-view.tsx. |
+| **Worker pool tests** | Phase 3A.1–3A.2 | REMOVE — tug-worker-pool.test.ts, integration test, hardening test, echo/slow/delayed-init workers. |
+| **markdown-pipeline.test.ts** | Phase 3A.2 | REMOVE — tests the worker pipeline fallback mode. |
+| **markdown-height-estimator.ts** | Phase 3A.2 | EVALUATE — may fold into WASM or simplify. |
+| **MdWorkerReq/MdWorkerRes types** | Phase 3A.2 | REMOVE — discriminated union for worker messages. |
+| **Pool creation, init handshake, task handles** | Phase 3A.2 | REMOVE — all pool lifecycle code in tug-markdown-view.tsx. |
+
+#### Build infrastructure: tuglex-wasm
+
+The spike lives at `tugdeck/crates/tuglex-wasm/`. This becomes a permanent part of the build:
+
+**Crate structure:**
+```
+tugdeck/crates/tuglex-wasm/
+├── Cargo.toml          # pulldown-cmark + wasm-bindgen + serde
+├── src/lib.rs          # lex_blocks(), parse_to_html(), lex_and_parse()
+└── pkg/                # wasm-pack output (committed or CI-built)
+    ├── tuglex_wasm.js       # JS glue (wasm-bindgen generated)
+    ├── tuglex_wasm.d.ts     # TypeScript declarations
+    └── tuglex_wasm_bg.wasm  # WASM binary (~240KB, ~80KB gzipped)
+```
+
+**Build command:** `/Users/kocienda/.cargo/bin/wasm-pack build --target web --release tugdeck/crates/tuglex-wasm`
+
+**justfile integration:** Add a `wasm` recipe that builds tuglex-wasm. Add it as a dependency of `app` (which already builds tugdeck). The `build` recipe (Rust binaries) does NOT include WASM — different toolchain, different target. Keep them separate.
+
+```
+# Build WASM modules
+wasm:
+    wasm-pack build --target web --release tugdeck/crates/tuglex-wasm
+
+# Build the Mac app (with all dependencies)
+app: build wasm
+    ...
+```
+
+**Developer setup:** `rustup target add wasm32-unknown-unknown && cargo install wasm-pack`. One-time, takes seconds. Document in a setup section or README.
+
+**Vite integration:** The `pkg/` output is a standard ES module. Import the JS glue from the component:
+```typescript
+import init, { lex_blocks, parse_to_html } from "@/lib/tuglex-wasm/tuglex_wasm.js";
+```
+Configure Vite to serve the `.wasm` file as an asset. The `init()` call loads the WASM binary asynchronously — call it once at app startup (not per-component), store a ready flag. After init, `lex_blocks()` and `parse_to_html()` are synchronous.
+
+**Alternative: commit the pkg/ output.** The WASM binary is a build artifact, not source. Committing it means developers don't need wasm-pack for normal TypeScript work — only for modifying the Rust lexer. The justfile `wasm` recipe rebuilds it when needed. CI verifies the committed artifact matches the source.
+
+#### Architecture: synchronous WASM pipeline
+
+The new pipeline is radically simpler than the worker model:
+
+```
+STATIC PATH (content prop change):
+────────────────────────────────────
+  content string
+      │
+      ├─ lex_blocks(content)           ← WASM, synchronous, ~7ms for 1MB
+      │  returns: blocks[] with {type, start, end, depth?, itemCount?, rowCount?}
+      │
+      ├─ populate BlockHeightIndex     ← estimate height from block type + byte length
+      │  populate blockOffsets         ← block.start, block.end from WASM
+      │
+      ├─ blockWindow.update(scrollTop) ← compute visible range
+      │  applyWindowUpdate()           ← create DOM nodes for entering blocks
+      │
+      └─ for each visible block:
+           raw = content.slice(block.start, block.end)
+           html = parse_to_html(raw)   ← WASM, synchronous, <1ms per block
+           sanitize + innerHTML         ← DOMPurify at render time [D04]
+
+SCROLL (onScroll handler):
+──────────────────────────
+  scrollTop
+      │
+      ├─ blockWindow.update(scrollTop)
+      │  applyWindowUpdate()           ← enter/exit blocks
+      │
+      └─ for each entering block:
+           html = parse_to_html(raw)   ← cache hit or WASM call
+           sanitize + innerHTML
+
+STREAMING PATH (useSyncExternalStore update):
+─────────────────────────────────────────────
+  streamingText (from PropertyStore via useSyncExternalStore [L02])
+      │
+      ├─ lex_blocks(streamingText)     ← WASM, re-lex full text (~7ms for 1MB)
+      │                                  or incremental: lex_blocks(tail) for delta
+      │
+      ├─ reconcile BlockHeightIndex    ← append new blocks, update changed
+      │
+      ├─ blockWindow.update(scrollTop)
+      │  applyWindowUpdate()
+      │
+      └─ auto-scroll to tail           ← direct DOM write [L06]
+```
+
+No promises. No `.then()` chains. No message passing. No cancellation protocol. No init handshake. No fallback handler. The WASM calls return immediately with the answer.
+
+**Laws compliance:**
+- **L02:** Streaming text enters via `useSyncExternalStore` — unchanged.
+- **L05:** No RAF depends on React state commits. Auto-scroll writes `scrollTop` directly after WASM returns heights — no async gap.
+- **L06:** All appearance changes (spacer heights, block DOM, scroll position) via direct DOM writes — unchanged.
+- **L07:** WASM module is a stable singleton. No closures over stale state.
+- **L16:** CSS annotations carried forward from Phase 3A.3.
+
+#### Steps
+
+**Step 1: Productionize tuglex-wasm.**
+Move spike to production quality. Clean up `lib.rs`: proper error handling, remove `serde_json` for the lex path (return structured data via wasm-bindgen instead of JSON strings — typed arrays for offsets, string array for types). Keep `parse_to_html(text) -> String` as-is (HTML is naturally a string). Add `justfile` recipe. Document developer setup (wasm-pack, wasm32 target).
+
+Verify: `just wasm` builds cleanly. The `pkg/` output imports correctly from TypeScript. `bun run build` includes the WASM asset.
+
+**Step 2: Integrate WASM into TugMarkdownView.**
+Rewrite the static rendering path in tug-markdown-view.tsx:
+- Remove all worker infrastructure: pool creation, `_pool` module-level singleton, `MdWorkerReq`/`MdWorkerRes` types, `mainThreadFallback`, `submitParseBatches`, `cancelInFlightParses`, the entire streaming interval/coalescing mechanism.
+- Replace with synchronous WASM calls: `lex_blocks(content)` → populate height index → `blockWindow.update()` → for each visible block, `parse_to_html(raw)` → sanitize → innerHTML.
+- HTML cache: keep `Map<number, string>` for parsed HTML. On cache hit, skip the WASM parse call. On scroll, entering blocks check cache first.
+- The component should shrink dramatically — the 976-line file should be closer to 400-500 lines.
+
+Verify: gallery card Static 1MB renders. DOM nodes > 0. Console log shows lex time < 50ms.
+
+**Step 3: Rewrite the streaming path.**
+- On `useSyncExternalStore` update: call `lex_blocks(streamingText)` synchronously. Compare block count to previous — append new blocks to height index, update changed blocks. Parse visible blocks via `parse_to_html()`. Update DOM directly.
+- No coalescing interval needed. WASM re-lex of the full accumulated text is ~7ms for 1MB. At 25 deltas/second, each delta re-lexes a slightly larger string. For typical conversation sizes (<100KB), re-lex is <1ms per delta — no coalescing needed.
+- For very large streaming documents (>1MB), consider incremental lex (lex only the tail from last stable boundary). pulldown-cmark supports this via offset-based parsing.
+- Auto-scroll: direct DOM write of `scrollTop` after height index is updated. No RAF gating on React commits.
+
+Verify: gallery card Streaming mode renders, auto-scrolls, no jank.
+
+**Step 4: Remove all worker infrastructure.**
+Delete these files entirely:
+- `tugdeck/src/lib/tug-worker-pool.ts` (623 lines)
+- `tugdeck/src/workers/markdown-worker.ts` (234 lines)
+- `tugdeck/src/__tests__/tug-worker-pool.test.ts`
+- `tugdeck/src/__tests__/tug-worker-pool.integration.test.ts`
+- `tugdeck/src/__tests__/tug-worker-pool.hardening.test.ts`
+- `tugdeck/src/__tests__/markdown-pipeline.test.ts`
+- `tugdeck/src/__tests__/workers/echo-worker.ts`
+- `tugdeck/src/__tests__/workers/slow-worker.ts`
+- `tugdeck/src/__tests__/workers/delayed-init-worker.ts`
+
+Evaluate and likely remove:
+- `tugdeck/src/lib/markdown-height-estimator.ts` — if height estimation is simpler with WASM block metadata (type + byte length), fold it into the component. If the `HeightEstimator` interface still adds value for future extensibility, keep it.
+
+Remove from tug-markdown-view.tsx:
+- `import { marked }` — no longer needed.
+- `import { TugWorkerPool }` and `import type { TaskHandle }` — gone.
+- `mainThreadFallback` function — gone.
+- `MdWorkerReq`, `MdWorkerRes` types — gone.
+- All `.catch()` handlers for worker promise chains — gone (no promises).
+- `inFlightParses`, `streamingDirty`, `streamingInterval` from engine state — gone.
+
+Verify: `bun test` passes (remaining tests: block-height-index, rendered-block-window, markdown-height-estimator if kept). `bun run build` succeeds with no worker chunk. No `tug-worker-pool` import anywhere in the codebase.
+
+**Step 5: Gallery card cleanup and verification.**
+Update gallery-markdown-view.tsx to remove worker-specific diagnostics (pool size, in-flight tasks). Replace with WASM-relevant diagnostics: lex time, parse time, block count, cache size. Keep DOM node count and streaming progress.
+
+Run all three gallery modes and verify:
+- **Static 1MB:** Viewport visible in <50ms. Scroll jank-free. DOM nodes <500.
+- **Stress 10MB:** Viewport visible in <200ms. Scrollbar navigable.
+- **Streaming:** Content streams smoothly. Auto-scroll follows tail.
+- **Console:** Zero errors. Lex/parse timing visible in diagnostics.
+
+#### Checkpoints
+
+- `just wasm` builds tuglex-wasm cleanly.
+- `bun run build` succeeds. No worker chunk in output. WASM asset included.
+- `bun test` passes — existing BlockHeightIndex + RenderedBlockWindow tests unaffected.
+- No `tug-worker-pool` import exists anywhere in `tugdeck/src/`.
+- No `markdown-worker` import exists anywhere in `tugdeck/src/`.
+- No `.catch(() => {})` exists anywhere in `tugdeck/src/`.
+- Gallery card: Static 1MB renders in <50ms (measured via diagnostic overlay).
+- Gallery card: Streaming renders and auto-scrolls.
+- Gallery card: Stress 10MB renders in <200ms.
+
+#### Exit criteria
+
+- TugMarkdownView renders all three gallery modes correctly in the browser.
+- Static 1MB: viewport visible in <50ms. Full document navigable via scroll.
+- Stress 10MB: viewport visible in <200ms.
+- Streaming: smooth at 60fps for 5000+ words.
+- Zero worker infrastructure remains in the codebase. No TugWorkerPool, no markdown-worker, no worker test fixtures.
+- Full Laws of Tug compliance: L02 (useSyncExternalStore for streaming), L05 (no RAF on React commits), L06 (DOM-only appearance changes), L07 (refs/singletons, no stale closures), L16 (CSS annotations), L19 (component authoring).
+- WASM build integrated into justfile. Developer setup documented.
+- pulldown-cmark handles all GFM block types: headings, paragraphs, code blocks, lists, blockquotes, tables, horizontal rules, HTML blocks.
+
+#### WASM initialization
+
+`WebAssembly.instantiate()` returns a promise. The WASM module must be initialized before any `lex_blocks()` or `parse_to_html()` call. This is handled by the existing app startup sequence in `main.tsx`.
+
+The app already has an async IIFE (line 44) that fetches layout, theme, and deck state in parallel before constructing DeckManager (and thus before `root.render()` — L01). WASM init joins this parallel fetch:
+
+```typescript
+const [layout, theme, focusedCardId] = await Promise.all([
+  fetchLayoutWithRetry(),
+  fetchThemeWithRetry(),
+  fetchDeckStateWithRetry(),
+  initTuglex(),  // WASM init — parallel with settings fetches
+]);
+```
+
+After the `await`, `lex_blocks()` and `parse_to_html()` are synchronous function calls. Every component is guaranteed WASM is ready because `DeckManager` construction happens after the `await`. No ready flag, no fallback, no conditional checks. If WASM init fails, the `await` throws and the app doesn't start — same as any other critical init failure.
+
+**Laws compliance:** L01 is preserved — `root.render()` still happens exactly once, after all init completes. Components call WASM functions synchronously; no async gap bridging into React's commit cycle (L05). No external state entering React (L02 not involved).
+
+---
+
 ### Phase 3B: Markdown Content Types {#markdown-content-types}
 
 **Goal:** Rich rendering for all markdown content types, built on the Phase 3A virtualization engine. Addresses U1, U5, U6, U7.
@@ -869,8 +1115,8 @@ If the worker fails to load: verify `[TugWorkerPool] All workers failed — swit
 **Inputs:** Phase 3A rendering core (BlockHeightIndex, RenderedBlockWindow, two-path rendering).
 
 **Work:**
-- GFM markdown: paragraphs, headings, emphasis, links, images, lists, tables, blockquotes, horizontal rules. All standard `marked.lexer()` token types rendered as React elements.
-- TugCodeBlock: Shiki with tug theme, copy-to-clipboard, language label, line numbers, collapse/expand. **Lazy highlighting**: only highlight code blocks when they enter the viewport. Off-screen blocks queued via `requestIdleCallback`. Stale highlights discarded via version IDs (Monaco pattern).
+- GFM markdown: paragraphs, headings, emphasis, links, images, lists, tables, blockquotes, horizontal rules. All standard pulldown-cmark block types rendered via the WASM pipeline.
+- TugCodeBlock: syntax highlighting (approach TBD — evaluate pulldown-cmark's code fence output, Shiki WASM, or lighter alternatives). Copy-to-clipboard, language label, line numbers, collapse/expand. **Lazy highlighting**: only highlight code blocks when they enter the viewport.
 - Streaming cursor (U5): visible during `assistant_text` partials. Positioned at end of last block. Removed on `turn_complete`.
 - Thinking block rendering (U6): `thinking_text` events → collapsible block. Shows "Thinking..." during streaming, full text when complete.
 - Tool use display (U7): `tool_use` → `tool_result` → `tool_use_structured`. Show tool name, input, output, duration. Collapsible.
