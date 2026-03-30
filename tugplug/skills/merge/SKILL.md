@@ -301,7 +301,8 @@ If step 3 fails, report clearly and suggest recovery. Do not retry automatically
 **Blocking errors**:
 - **Uncommitted changes in main**: Any tracked modified files on main will block the merge. User must commit or stash these changes before merging.
 - **Dirty implementation worktree**: Uncommitted changes in the implementation worktree would be lost during cleanup. Must commit or discard before merging.
-- **Main out of sync with origin** (remote mode): Local main has unpushed commits that `reset --hard origin/main` would destroy. Push or stash local changes before merging.
+- **Local main ahead of origin** (remote mode): Local main has unpushed commits. After the PR merges on GitHub, the fast-forward sync will fail. Push local commits first (`git push origin main`).
+- **Local main diverged from origin** (remote mode): Local main has diverged from origin/main. Local and remote have commits that aren't ancestors of each other. Reconcile with `git pull --rebase origin main` then push before merging.
 
 ---
 

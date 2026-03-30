@@ -455,8 +455,28 @@ fn squash_merge_branch(repo_root: &Path, branch: &str, message: &str) -> Result<
         .to_string())
 }
 
-/// Check if local main is in sync with origin/main
-fn check_main_sync(repo_root: &Path) -> Result<(), String> {
+/// State of local main relative to origin/main
+#[derive(Debug)]
+enum MainSyncState {
+    InSync,
+    LocalAhead {
+        local: String,
+        remote: String,
+        ahead_count: u32,
+    },
+    LocalBehind {
+        _local: String,
+        _remote: String,
+        _behind_count: u32,
+    },
+    Diverged {
+        local: String,
+        remote: String,
+    },
+}
+
+/// Check how local main relates to origin/main
+fn check_main_sync(repo_root: &Path) -> Result<MainSyncState, String> {
     // Step 1: Fetch origin/main to get latest state
     let fetch_output = Command::new("git")
         .arg("-C")
@@ -504,20 +524,70 @@ fn check_main_sync(repo_root: &Path) -> Result<(), String> {
         .trim()
         .to_string();
 
-    // Step 4: Compare hashes
-    if local_hash != remote_hash {
-        return Err(format!(
-            "Local main is out of sync with origin/main.\n\
-             Local:  {}\n\
-             Remote: {}\n\
-             \n\
-             Please push your local changes first:\n\
-             git push origin main",
-            local_hash, remote_hash
-        ));
+    // Step 4: If hashes are equal, we're in sync
+    if local_hash == remote_hash {
+        return Ok(MainSyncState::InSync);
     }
 
-    Ok(())
+    // Step 5: Check if origin/main is an ancestor of main (local is ahead)
+    let ahead_check = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["merge-base", "--is-ancestor", "origin/main", "main"])
+        .output()
+        .map_err(|e| format!("Failed to run merge-base check: {}", e))?;
+
+    if ahead_check.status.success() {
+        // origin/main is an ancestor of main → local is ahead
+        let count_output = Command::new("git")
+            .arg("-C")
+            .arg(repo_root)
+            .args(["rev-list", "--count", "origin/main..main"])
+            .output()
+            .map_err(|e| format!("Failed to count ahead commits: {}", e))?;
+        let ahead_count = String::from_utf8_lossy(&count_output.stdout)
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(0);
+        return Ok(MainSyncState::LocalAhead {
+            local: local_hash,
+            remote: remote_hash,
+            ahead_count,
+        });
+    }
+
+    // Step 6: Check if main is an ancestor of origin/main (local is behind)
+    let behind_check = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["merge-base", "--is-ancestor", "main", "origin/main"])
+        .output()
+        .map_err(|e| format!("Failed to run merge-base check: {}", e))?;
+
+    if behind_check.status.success() {
+        // main is an ancestor of origin/main → local is behind
+        let count_output = Command::new("git")
+            .arg("-C")
+            .arg(repo_root)
+            .args(["rev-list", "--count", "main..origin/main"])
+            .output()
+            .map_err(|e| format!("Failed to count behind commits: {}", e))?;
+        let behind_count = String::from_utf8_lossy(&count_output.stdout)
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(0);
+        return Ok(MainSyncState::LocalBehind {
+            _local: local_hash,
+            _remote: remote_hash,
+            _behind_count: behind_count,
+        });
+    }
+
+    // Step 7: Neither is an ancestor of the other → diverged
+    Ok(MainSyncState::Diverged {
+        local: local_hash,
+        remote: remote_hash,
+    })
 }
 
 /// Run the merge command
@@ -695,38 +765,116 @@ fn run_merge_in(
         }
     }
 
-    // P4: Main sync check (remote mode: blocker, local mode: skip)
-    // In remote mode, merge does fetch + reset --hard origin/main, which
-    // destroys any local unpushed commits. Block the merge to protect them.
+    // P4: Main sync check (remote mode: blocker for ahead/diverged, local mode: skip)
+    // In remote mode, merge does fetch + merge --ff-only origin/main after the PR
+    // merges on GitHub. LocalBehind is fine (ff-only handles it). LocalAhead or
+    // Diverged will cause the fast-forward to fail, so block early.
     if effective_mode == "remote" {
-        if let Err(e) = check_main_sync(&repo_root) {
-            let err_msg = format!(
-                "Local main has unpushed changes that would be lost by remote merge.\n\
-                 {}\n\
-                 Push or stash your local changes before merging.",
-                e
-            );
-            let data = MergeData {
-                status: "error".to_string(),
-                merge_mode: Some("remote".to_string()),
-                branch_name: Some(branch.clone()),
-                worktree_path: Some(wt_path.display().to_string()),
-                pr_url: pr_info.as_ref().map(|p| p.url.clone()),
-                pr_number: pr_info.as_ref().map(|p| p.number),
-                squash_commit: None,
-                worktree_cleaned: None,
-                dry_run,
-                untracked_files: None,
-                warnings: Some(all_warnings.clone()),
-                error: Some(err_msg.clone()),
-                message: None,
-            };
-            if json {
-                println!("{}", serde_json::to_string_pretty(&data).unwrap());
-            } else if !quiet {
-                eprintln!("error: {}", err_msg);
+        match check_main_sync(&repo_root) {
+            Err(e) => {
+                let data = MergeData {
+                    status: "error".to_string(),
+                    merge_mode: Some("remote".to_string()),
+                    branch_name: Some(branch.clone()),
+                    worktree_path: Some(wt_path.display().to_string()),
+                    pr_url: pr_info.as_ref().map(|p| p.url.clone()),
+                    pr_number: pr_info.as_ref().map(|p| p.number),
+                    squash_commit: None,
+                    worktree_cleaned: None,
+                    dry_run,
+                    untracked_files: None,
+                    warnings: Some(all_warnings.clone()),
+                    error: Some(e.clone()),
+                    message: None,
+                };
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&data).unwrap());
+                } else if !quiet {
+                    eprintln!("error: {}", e);
+                }
+                return Err(e);
             }
-            return Err(err_msg);
+            Ok(MainSyncState::InSync) | Ok(MainSyncState::LocalBehind { .. }) => {
+                // InSync: nothing to do.
+                // LocalBehind: merge --ff-only will fast-forward local main after the PR
+                // merges on GitHub, so this is safe to proceed.
+            }
+            Ok(MainSyncState::LocalAhead {
+                local,
+                remote,
+                ahead_count,
+            }) => {
+                let err_msg = format!(
+                    "Local main is {} commit(s) ahead of origin/main.\n\
+                     \n\
+                     Local:  {}\n\
+                     Remote: {}\n\
+                     \n\
+                     After the PR merges on GitHub, git merge --ff-only will fail because\n\
+                     local main has commits that origin doesn't. Push your local commits\n\
+                     first so the fast-forward succeeds:\n\
+                     \n\
+                       git push origin main",
+                    ahead_count, local, remote
+                );
+                let data = MergeData {
+                    status: "error".to_string(),
+                    merge_mode: Some("remote".to_string()),
+                    branch_name: Some(branch.clone()),
+                    worktree_path: Some(wt_path.display().to_string()),
+                    pr_url: pr_info.as_ref().map(|p| p.url.clone()),
+                    pr_number: pr_info.as_ref().map(|p| p.number),
+                    squash_commit: None,
+                    worktree_cleaned: None,
+                    dry_run,
+                    untracked_files: None,
+                    warnings: Some(all_warnings.clone()),
+                    error: Some(err_msg.clone()),
+                    message: None,
+                };
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&data).unwrap());
+                } else if !quiet {
+                    eprintln!("error: {}", err_msg);
+                }
+                return Err(err_msg);
+            }
+            Ok(MainSyncState::Diverged { local, remote }) => {
+                let err_msg = format!(
+                    "Local main has diverged from origin/main.\n\
+                     \n\
+                     Local:  {}\n\
+                     Remote: {}\n\
+                     \n\
+                     Local and remote have different commits that aren't ancestors of each\n\
+                     other. Reconcile before merging:\n\
+                     \n\
+                       git pull --rebase origin main\n\
+                       git push origin main",
+                    local, remote
+                );
+                let data = MergeData {
+                    status: "error".to_string(),
+                    merge_mode: Some("remote".to_string()),
+                    branch_name: Some(branch.clone()),
+                    worktree_path: Some(wt_path.display().to_string()),
+                    pr_url: pr_info.as_ref().map(|p| p.url.clone()),
+                    pr_number: pr_info.as_ref().map(|p| p.number),
+                    squash_commit: None,
+                    worktree_cleaned: None,
+                    dry_run,
+                    untracked_files: None,
+                    warnings: Some(all_warnings.clone()),
+                    error: Some(err_msg.clone()),
+                    message: None,
+                };
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&data).unwrap());
+                } else if !quiet {
+                    eprintln!("error: {}", err_msg);
+                }
+                return Err(err_msg);
+            }
         }
     }
 
@@ -2246,20 +2394,244 @@ mod tests {
             .output()
             .expect("git commit");
 
-        // Check sync — should fail with actionable message
+        // Check sync — local is ahead (unpushed commit)
         let result = check_main_sync(clone_path);
-        assert!(result.is_err(), "Expected sync check to fail");
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("out of sync"),
-            "Error should mention sync: {}",
-            err
-        );
-        assert!(
-            err.contains("git push origin main"),
-            "Error should suggest push: {}",
-            err
-        );
+        assert!(result.is_ok(), "check_main_sync should succeed");
+        match result.unwrap() {
+            MainSyncState::LocalAhead { ahead_count, .. } => {
+                assert_eq!(ahead_count, 1, "Should be 1 commit ahead");
+            }
+            other => panic!("Expected LocalAhead, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_check_main_sync_local_behind() {
+        use tempfile::TempDir;
+
+        // Create bare origin repo
+        let origin_dir = TempDir::new().unwrap();
+        let origin_path = origin_dir.path();
+        Command::new("git")
+            .arg("-C")
+            .arg(origin_path)
+            .args(["init", "--bare", "-b", "main"])
+            .output()
+            .expect("git init --bare");
+
+        // Create clone
+        let clone_dir = TempDir::new().unwrap();
+        let clone_path = clone_dir.path();
+        Command::new("git")
+            .args([
+                "clone",
+                origin_path.to_str().unwrap(),
+                clone_path.to_str().unwrap(),
+            ])
+            .output()
+            .expect("git clone");
+
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["config", "user.email", "test@example.com"])
+            .output()
+            .expect("git config email");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["config", "user.name", "Test User"])
+            .output()
+            .expect("git config name");
+
+        // Initial commit and push
+        fs::write(clone_path.join("README.md"), "Test").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["add", "README.md"])
+            .output()
+            .expect("git add");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["commit", "-m", "Initial"])
+            .output()
+            .expect("git commit");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["push", "origin", "main"])
+            .output()
+            .expect("git push");
+
+        // Make another commit and push (so origin is ahead)
+        fs::write(clone_path.join("extra.txt"), "extra").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["add", "extra.txt"])
+            .output()
+            .expect("git add");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["commit", "-m", "Extra commit"])
+            .output()
+            .expect("git commit");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["push", "origin", "main"])
+            .output()
+            .expect("git push");
+
+        // Reset local back one commit so it's behind origin
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["reset", "--hard", "HEAD~1"])
+            .output()
+            .expect("git reset");
+
+        // Check sync — local is behind
+        let result = check_main_sync(clone_path);
+        assert!(result.is_ok(), "check_main_sync should succeed");
+        match result.unwrap() {
+            MainSyncState::LocalBehind { _behind_count, .. } => {
+                assert_eq!(_behind_count, 1, "Should be 1 commit behind");
+            }
+            other => panic!("Expected LocalBehind, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_check_main_sync_true_divergence() {
+        use tempfile::TempDir;
+
+        // Create bare origin repo
+        let origin_dir = TempDir::new().unwrap();
+        let origin_path = origin_dir.path();
+        Command::new("git")
+            .arg("-C")
+            .arg(origin_path)
+            .args(["init", "--bare", "-b", "main"])
+            .output()
+            .expect("git init --bare");
+
+        // Create clone
+        let clone_dir = TempDir::new().unwrap();
+        let clone_path = clone_dir.path();
+        Command::new("git")
+            .args([
+                "clone",
+                origin_path.to_str().unwrap(),
+                clone_path.to_str().unwrap(),
+            ])
+            .output()
+            .expect("git clone");
+
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["config", "user.email", "test@example.com"])
+            .output()
+            .expect("git config email");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["config", "user.name", "Test User"])
+            .output()
+            .expect("git config name");
+
+        // Initial commit and push
+        fs::write(clone_path.join("README.md"), "Test").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["add", "README.md"])
+            .output()
+            .expect("git add");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["commit", "-m", "Initial"])
+            .output()
+            .expect("git commit");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["push", "origin", "main"])
+            .output()
+            .expect("git push");
+
+        // Create a second clone to push a different commit to origin
+        let clone2_dir = TempDir::new().unwrap();
+        let clone2_path = clone2_dir.path();
+        Command::new("git")
+            .args([
+                "clone",
+                origin_path.to_str().unwrap(),
+                clone2_path.to_str().unwrap(),
+            ])
+            .output()
+            .expect("git clone 2");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone2_path)
+            .args(["config", "user.email", "test@example.com"])
+            .output()
+            .expect("git config email");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone2_path)
+            .args(["config", "user.name", "Test User"])
+            .output()
+            .expect("git config name");
+
+        // Push a different commit from clone2
+        fs::write(clone2_path.join("remote.txt"), "remote change").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(clone2_path)
+            .args(["add", "remote.txt"])
+            .output()
+            .expect("git add");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone2_path)
+            .args(["commit", "-m", "Remote commit"])
+            .output()
+            .expect("git commit");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone2_path)
+            .args(["push", "origin", "main"])
+            .output()
+            .expect("git push");
+
+        // Make a local commit in clone1 (now diverged from origin)
+        fs::write(clone_path.join("local.txt"), "local change").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["add", "local.txt"])
+            .output()
+            .expect("git add");
+        Command::new("git")
+            .arg("-C")
+            .arg(clone_path)
+            .args(["commit", "-m", "Local commit"])
+            .output()
+            .expect("git commit");
+
+        // Check sync — should detect true divergence
+        let result = check_main_sync(clone_path);
+        assert!(result.is_ok(), "check_main_sync should succeed");
+        match result.unwrap() {
+            MainSyncState::Diverged { .. } => {}
+            other => panic!("Expected Diverged, got {:?}", other),
+        }
     }
 
     #[test]
@@ -2800,20 +3172,16 @@ mod tests {
             .output()
             .unwrap();
 
-        // Verify check_main_sync detects divergence
+        // Verify check_main_sync detects local ahead (not true divergence —
+        // divergence requires both sides to have unique commits)
         let result = check_main_sync(clone_path);
-        assert!(result.is_err(), "Should detect divergence");
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("out of sync"),
-            "Error should mention sync issue: {}",
-            err
-        );
-        assert!(
-            err.contains("git push origin main"),
-            "Error should suggest push: {}",
-            err
-        );
+        assert!(result.is_ok(), "check_main_sync should succeed");
+        match result.unwrap() {
+            MainSyncState::LocalAhead { ahead_count, .. } => {
+                assert_eq!(ahead_count, 1, "Should be 1 commit ahead");
+            }
+            other => panic!("Expected LocalAhead, got {:?}", other),
+        }
     }
 
     #[test]
