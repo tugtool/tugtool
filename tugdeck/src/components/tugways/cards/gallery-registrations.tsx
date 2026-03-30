@@ -62,6 +62,7 @@ import { GalleryBanner } from "./gallery-banner";
 import { GalleryAlert } from "./gallery-alert";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
+import { GalleryMarkdownView } from "./gallery-markdown-view";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -117,6 +118,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-alert",         title: "TugAlert",              closable: true },
   { id: "template", componentId: "gallery-sheet",         title: "TugSheet",              closable: true },
   { id: "template", componentId: "gallery-bulletin",      title: "TugBulletin",           closable: true },
+  { id: "template", componentId: "gallery-markdown-view", title: "TugMarkdownView",        closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -652,6 +654,19 @@ export function registerGalleryCards(): void {
     componentId: "gallery-bulletin",
     contentFactory: (_cardId) => <GalleryBulletin />,
     defaultMeta: { title: "TugBulletin", icon: "Bell", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-markdown-view ----
+  // TugMarkdownView showcase: static 1MB rendering, streaming path with
+  // PropertyStore-driven deltas, and a 10MB stress test for DOM node count
+  // verification. Diagnostic overlay shows DOM node count, window range, and
+  // total block count.
+  registerCard({
+    componentId: "gallery-markdown-view",
+    contentFactory: (_cardId) => <GalleryMarkdownView />,
+    defaultMeta: { title: "TugMarkdownView", icon: "FileText", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

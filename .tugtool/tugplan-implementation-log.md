@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-30T03:26:48Z
+---
+
+## step-5: Created gallery-markdown-view.tsx demonstrating TugMarkdownView in static (1MB), streaming (PropertyStore-driven deltas), and 10MB stress test modes with diagnostic overlay. Registered in gallery-registrations.tsx. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
 step: step-4
 date: 2025-03-30T03:18:25Z
 ---
