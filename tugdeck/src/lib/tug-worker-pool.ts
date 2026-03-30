@@ -160,6 +160,11 @@ export class TugWorkerPool<TReq, TRes> {
   // Public API
   // -------------------------------------------------------------------------
 
+  /** The configured number of workers (from options.poolSize or defaultPoolSize()). */
+  get poolSize(): number {
+    return this._poolSize;
+  }
+
   /**
    * Submit a task to the pool. Returns a TaskHandle that is thenable and
    * has a .cancel() method.

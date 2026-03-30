@@ -559,7 +559,7 @@ export function TugMarkdownView({
 
         // Fire diagnostics callback.
         onDiagnostics?.({
-          poolSize: engine.inFlightParses.length,
+          poolSize: engine.pool?.poolSize ?? 0,
           inFlightTasks: engine.inFlightParses.length,
           cacheSize: engine.htmlCache.size,
           cacheHitRate: engine.cacheHits + engine.cacheMisses > 0

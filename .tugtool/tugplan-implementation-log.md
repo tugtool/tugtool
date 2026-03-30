@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-30T17:50:56Z
+---
+
+## step-7: Added MarkdownDiagnostics interface per Spec S03, onDiagnostics callback prop, and poolSize getter to TugWorkerPool. Gallery card now displays pool size, in-flight tasks, cache size, and hit rate in diagnostic overlay.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-6
 date: 2025-03-30T17:39:22Z
 ---
