@@ -1271,22 +1271,10 @@ export class SessionManager {
 
   /**
    * Resolve the tugplug plugin directory for --plugin-dir.
-   * The plugin lives at `tugplug/` under the tugtool repo root.
+   * The plugin lives at `tugplug/` under the project directory (passed via --dir).
    */
   private getPluginDir(): string {
-    let root: string;
-    const execPath = process.execPath;
-    if (execPath.includes("/target/")) {
-      root = resolve(dirname(execPath), "../..");
-    } else {
-      const scriptPath = process.argv[1];
-      if (scriptPath) {
-        root = resolve(dirname(scriptPath), "../..");
-      } else {
-        root = this.projectDir;
-      }
-    }
-    const pluginDir = join(root, "tugplug");
+    const pluginDir = join(this.projectDir, "tugplug");
     console.log(`Plugin dir: ${pluginDir}`);
     return pluginDir;
   }

@@ -83,6 +83,11 @@ echo "==> Building Rust binaries (release mode)"
 cd "$TUGCODE_DIR"
 cargo build --release -p tugcast -p tugcode -p tugtool
 
+# Step 1b: Build tugtalk standalone binary
+echo "==> Building tugtalk (bun compile)"
+cd "$REPO_ROOT"
+bun build --compile tugtalk/src/main.ts --outfile tugcode/target/release/tugtalk
+
 # Step 2: Build tugdeck frontend
 echo "==> Building tugdeck frontend"
 cd "$TUGDECK_DIR"
@@ -116,6 +121,7 @@ mkdir -p "$STAGING_APP/Contents/MacOS"
 cp "$TUGCODE_DIR/target/release/tugcast" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugcode" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugtool" "$STAGING_APP/Contents/MacOS/"
+cp "$TUGCODE_DIR/target/release/tugtalk" "$STAGING_APP/Contents/MacOS/"
 
 # Step 6: Copy tugplug to Contents/Resources/
 echo "==> Copying tugplug to Contents/Resources/"
