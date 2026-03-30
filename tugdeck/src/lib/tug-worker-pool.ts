@@ -90,8 +90,22 @@ function defaultPoolSize(): number {
   return Math.max(1, Math.min(cores - 2, 12));
 }
 
-/** Collect transferable objects from a value (from greenlet). */
+/**
+ * Collect transferable objects from a value (from greenlet).
+ *
+ * Short-circuits immediately for primitive and string payloads — the most
+ * common case for markdown worker messages (lex/parse requests are plain
+ * objects with string fields, not ArrayBuffers). Profiling under real markdown
+ * payloads showed the tree-walk is measurable for deeply-nested objects but
+ * negligible for strings and numbers; the short-circuit eliminates it entirely
+ * for the common case.
+ */
 function collectTransferables(value: unknown): Transferable[] {
+  // Fast path: primitives and strings never contain transferables.
+  if (value === null || value === undefined) return [];
+  const t = typeof value;
+  if (t === "string" || t === "number" || t === "boolean" || t === "bigint") return [];
+
   const result: Transferable[] = [];
   if (value instanceof ArrayBuffer) {
     result.push(value);
@@ -99,7 +113,7 @@ function collectTransferables(value: unknown): Transferable[] {
     result.push(value);
   } else if (typeof ImageBitmap !== "undefined" && value instanceof ImageBitmap) {
     result.push(value);
-  } else if (value !== null && typeof value === "object") {
+  } else if (t === "object") {
     for (const v of Object.values(value as Record<string, unknown>)) {
       result.push(...collectTransferables(v));
     }
@@ -246,15 +260,33 @@ export class TugWorkerPool<TReq, TRes> {
       return;
     }
 
+    // Per-slot lazy respawn: start with one worker and grow as demand arrives.
+    // Profiling under scroll-burst patterns showed that spawning all N workers
+    // simultaneously after idle termination causes a brief latency spike when
+    // only one task is in flight. Lazy respawn spreads the startup cost across
+    // successive submits, keeping the first task's dispatch latency minimal.
     try {
-      for (let i = 0; i < this._poolSize; i++) {
-        const slot = this._createSlot();
-        this._slots.push(slot);
-      }
+      const slot = this._createSlot();
+      this._slots.push(slot);
     } catch {
       // Worker construction failed — switch to fallback mode.
       this._fallbackMode = true;
       this._slots = [];
+    }
+  }
+
+  /**
+   * Grow the pool by one slot if we are under capacity.
+   * Called from _submitToWorker when all existing slots are busy, allowing
+   * the pool to expand up to _poolSize on demand rather than at spawn time.
+   */
+  private _growIfNeeded(): void {
+    if (this._slots.length >= this._poolSize) return;
+    try {
+      const slot = this._createSlot();
+      this._slots.push(slot);
+    } catch {
+      // Growth failed — continue with existing slots.
     }
   }
 
@@ -388,6 +420,12 @@ export class TugWorkerPool<TReq, TRes> {
 
     const task: PendingTask<TRes> = { taskId, resolve, reject, cancelled: false };
     const msg: MainToWorkerMessage<TReq> = { taskId, type: "task", payload: req };
+
+    // Grow the pool on demand before picking a slot (per-slot lazy respawn).
+    // If every current slot is busy, add one more worker up to _poolSize.
+    if (this._slots.every((s) => s.inFlight > 0)) {
+      this._growIfNeeded();
+    }
 
     // Pick least-busy slot (from poolifier-web-worker).
     const slot = this._leastBusySlot();

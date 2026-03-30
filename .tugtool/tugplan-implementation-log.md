@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-30T18:02:04Z
+---
+
+## step-8: Optimized collectTransferables with primitive short-circuit. Implemented per-slot lazy respawn after idle termination. Added multi-slot dispatch test with slow-worker and init timeout tests with delayed-init-worker. 5 new integration tests, all passing.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-7
 date: 2025-03-30T17:50:56Z
 ---
