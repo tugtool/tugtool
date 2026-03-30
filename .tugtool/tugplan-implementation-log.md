@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-30T16:57:23Z
+---
+
+## step-3: Created tugdeck/src/workers/markdown-worker.ts implementing Web Worker script with lex, parse, and stream message handlers. Uses marked and DefaultTextEstimator with relative imports. Implements MainToWorkerMessage/WorkerToMainMessage protocol with serializeError for error handling.
+
+**Files changed:**
+- .tugtool/tugplan-worker-markdown-pipeline.md
+
+---
+
+---
 step: step-2
 date: 2025-03-30T16:45:28Z
 ---
