@@ -67,3 +67,9 @@
 ## Composition
 
 **L20. Each component owns tokens scoped to its own component slot; composed children keep theirs.** When component A composes component B, A's CSS references only A-scoped tokens (e.g., `radio` for TugRadioGroup) and B's CSS references only B-scoped tokens (e.g., `control` for TugButton). A never overrides, aliases, or references B's tokens. B's appearance remains independently tunable per theme. The seven-slot `component` slot is the ownership boundary. [L15, L18, L19]
+
+---
+
+## Licensing
+
+**L21. Third-party code and patterns require license compliance before use.** When adopting code, algorithms, or substantial implementation patterns from external libraries: (1) verify the license is permissive (MIT, Apache-2.0, BSD, ISC); (2) preserve the required copyright notice in `THIRD_PARTY_NOTICES.md` at the repository root; (3) add a comment in the consuming source file referencing the notice entry. Studying public code for ideas requires no attribution. Copying or closely adapting specific implementations does. When in doubt, attribute. Never use code under GPL, LGPL, SSPL, or other copyleft licenses without explicit approval.
