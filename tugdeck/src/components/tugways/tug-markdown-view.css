@@ -1,0 +1,146 @@
+/**
+ * tug-markdown-view.css — styles for TugMarkdownView virtualized renderer.
+ *
+ * Uses --tugx-md-* namespace for component-scoped tokens per [D05].
+ *
+ * Block layout strategy [D02]:
+ * - Scroll container uses overflow-y: auto and a defined height.
+ * - Top and bottom spacer divs hold the virtual scroll height; they appear
+ *   before and after the block container in normal document flow.
+ * - Block nodes are in normal document flow inside the block container —
+ *   no transform: translateY() needed. The spacers handle the offset.
+ *
+ * Laws:
+ * - [L06] All appearance changes go through CSS; spacer heights are set via
+ *   direct style.height writes (DOM, not React state).
+ */
+
+/* ---- Scroll container ---- */
+
+.tugx-md-scroll-container {
+  /* Height must be set by the parent or via a className override. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  box-sizing: border-box;
+
+  /* Smooth scrolling only when not streaming (streaming auto-scrolls directly). */
+  scroll-behavior: auto;
+}
+
+/* ---- Spacers ---- */
+
+/*
+ * Spacer divs before and after the block container.
+ * Heights are set imperatively via style.height in the component.
+ * Initial height is 0 — set by the engine on first render.
+ */
+.tugx-md-spacer {
+  width: 100%;
+  /* height set by component imperatively */
+}
+
+.tugx-md-spacer--top {
+  /* Pushes the block container down to the correct scroll position. */
+}
+
+.tugx-md-spacer--bottom {
+  /* Provides scroll-height padding below the last visible block. */
+}
+
+/* ---- Block container ---- */
+
+/*
+ * Normal document flow. Blocks are appended/removed by the windowing engine.
+ */
+.tugx-md-block-container {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ---- Individual block ---- */
+
+.tugx-md-block {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 var(--tugx-md-block-padding-x, 1rem);
+}
+
+/* ---- Typography defaults ---- */
+/*
+ * Prose styles scoped to the markdown block container.
+ * These mirror conversation-prose defaults from the legacy markdown.ts path.
+ * Phase 3B will replace with proper theme tokens.
+ */
+
+.tugx-md-block h1,
+.tugx-md-block h2,
+.tugx-md-block h3,
+.tugx-md-block h4,
+.tugx-md-block h5,
+.tugx-md-block h6 {
+  margin: 0.5em 0 0.25em;
+  line-height: 1.3;
+}
+
+.tugx-md-block p {
+  margin: 0.4em 0;
+  line-height: 1.5;
+}
+
+.tugx-md-block pre {
+  background: var(--tugx-md-code-bg, rgba(0, 0, 0, 0.06));
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  font-size: 0.875em;
+  line-height: 1.4;
+  margin: 0.5em 0;
+}
+
+.tugx-md-block code {
+  font-family: var(--tugx-md-mono-font, ui-monospace, "SFMono-Regular", Consolas, monospace);
+  font-size: 0.875em;
+}
+
+.tugx-md-block blockquote {
+  border-left: 3px solid var(--tugx-md-blockquote-border, currentColor);
+  margin: 0.5em 0;
+  padding-left: 1em;
+  opacity: 0.75;
+}
+
+.tugx-md-block ul,
+.tugx-md-block ol {
+  margin: 0.4em 0;
+  padding-left: 1.5em;
+}
+
+.tugx-md-block li {
+  margin: 0.2em 0;
+  line-height: 1.5;
+}
+
+.tugx-md-block hr {
+  border: none;
+  border-top: 1px solid var(--tugx-md-hr-color, currentColor);
+  opacity: 0.2;
+  margin: 0.75em 0;
+}
+
+.tugx-md-block table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+
+.tugx-md-block th,
+.tugx-md-block td {
+  border: 1px solid var(--tugx-md-table-border, rgba(0, 0, 0, 0.15));
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+
+.tugx-md-block th {
+  font-weight: 600;
+}

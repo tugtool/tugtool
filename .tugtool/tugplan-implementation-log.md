@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-30T03:38:26Z
+---
+
+## audit-fix: CI fix: ran cargo fmt to resolve pre-existing formatting diffs in tugcast/src/auth.rs, tugcast/src/feeds/agent_bridge.rs, and tugcast/src/main.rs
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
+step: step-5
+date: 2025-03-30T03:26:48Z
+---
+
+## step-5: Created gallery-markdown-view.tsx demonstrating TugMarkdownView in static (1MB), streaming (PropertyStore-driven deltas), and 10MB stress test modes with diagnostic overlay. Registered in gallery-registrations.tsx. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
+step: step-4
+date: 2025-03-30T03:18:25Z
+---
+
+## step-4: Enhanced TugMarkdownView streaming path with blockOffsets parallel array for source byte offset tracking, incremental tail re-lexing from last block boundary, dirty flag reconciliation, RAF-based auto-scroll, and finalization pass on turn_complete. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
+step: step-3
+date: 2025-03-30T03:09:16Z
+---
+
+## step-3: Created TugMarkdownView component with static content rendering, virtualized scroll window, ResizeObserver-based height refinement, DOMPurify sanitization, and chunked idle-callback batching for large content. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
+step: step-2
+date: 2025-03-30T02:54:36Z
+---
+
+## step-2: Created RenderedBlockWindow class with overscan-based visible range computation, enter/exit range diffing, spacer height calculation, and dirty tracking. 24 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
+step: step-1
+date: 2025-03-30T02:47:27Z
+---
+
+## step-1: Created BlockHeightIndex class with Float64Array-backed prefix sum, lazy recomputation, binary search for offset-to-block mapping, growable array, and height estimation constants. 44 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
 step: step-7
 date: 2025-03-23T18:41:19Z
 ---

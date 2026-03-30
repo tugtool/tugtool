@@ -72,7 +72,10 @@ impl AuthState {
     /// is unaffected — only WebSocket session/origin validation is skipped.
     pub fn new_no_auth(port: u16) -> Self {
         let token = Self::generate_token();
-        info!("Auth token: {} (--no-auth: WebSocket checks disabled)", token);
+        info!(
+            "Auth token: {} (--no-auth: WebSocket checks disabled)",
+            token
+        );
         Self {
             pending_token: Some(token),
             sessions: HashMap::new(),
