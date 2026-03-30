@@ -3,7 +3,7 @@
 *Live document. Updated as we probe the tugcast/tugtalk transport.*
 
 **Date:** 2026-03-29
-**Method:** Direct tugtalk probing via `tugtalk/probe.ts` — bypasses tugcast, connects to tugtalk's stdin/stdout JSON-lines protocol. 33 tests completed.
+**Method:** Direct tugtalk probing via `tugtalk/probe.ts` — bypasses tugcast, connects to tugtalk's stdin/stdout JSON-lines protocol. 35 tests completed.
 
 ---
 

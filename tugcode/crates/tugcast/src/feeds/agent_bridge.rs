@@ -341,8 +341,19 @@ mod tests {
 
     #[test]
     fn test_crash_budget_outside_window() {
-        // This test would need to use fake time, skipping for now
-        // In real usage, crashes > 60s apart don't count toward budget
+        let mut budget = CrashBudget::new(3, Duration::from_millis(1));
+        // Exhaust the budget
+        budget.record_crash();
+        budget.record_crash();
+        assert!(budget.record_crash());
+        assert!(budget.is_exhausted());
+
+        // Wait for the window to expire
+        std::thread::sleep(Duration::from_millis(10));
+
+        // Budget should reset — old crashes fall outside the window
+        assert!(!budget.record_crash());
+        assert!(!budget.is_exhausted());
     }
 
     #[test]

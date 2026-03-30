@@ -1425,7 +1425,8 @@ describe("SessionManager behavioral", () => {
     const manager = new SessionManager(tmpDir);
 
     // persistSessionId and readSessionId are synchronous (Bun.spawnSync).
-    (manager as any).persistSessionId("round-trip-id");
+    const persisted = (manager as any).persistSessionId("round-trip-id");
+    expect(persisted).toBe(true);
     const readBack = (manager as any).readSessionId();
     expect(readBack).toBe("round-trip-id");
   });

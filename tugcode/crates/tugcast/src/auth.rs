@@ -351,6 +351,38 @@ mod tests {
     }
 
     #[test]
+    fn test_no_auth_validate_session_always_true() {
+        let auth = new_shared_auth_state_no_auth(7890);
+        // No cookie at all — should still pass with no_auth
+        let headers = HeaderMap::new();
+        assert!(validate_request_session(&headers, &auth));
+    }
+
+    #[test]
+    fn test_no_auth_check_origin_always_true() {
+        let auth = new_shared_auth_state_no_auth(7890);
+        // Wrong origin — should still pass with no_auth
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ORIGIN, "http://evil.com:9999".parse().unwrap());
+        assert!(check_request_origin(&headers, &auth));
+
+        // No origin header — should still pass
+        let empty_headers = HeaderMap::new();
+        assert!(check_request_origin(&empty_headers, &auth));
+    }
+
+    #[test]
+    fn test_no_auth_does_not_affect_token_exchange() {
+        let mut auth = AuthState::new_no_auth(7890);
+        let token = auth.token().unwrap().to_string();
+
+        // Token exchange still works normally (not bypassed)
+        assert!(auth.validate_token(&token));
+        assert!(auth.token().is_none());
+        assert!(!auth.validate_token(&token));
+    }
+
+    #[test]
     fn test_extract_session_cookie_missing() {
         let headers = HeaderMap::new();
         assert_eq!(extract_session_cookie(&headers), None);

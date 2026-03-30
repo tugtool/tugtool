@@ -795,14 +795,12 @@ export class SessionManager {
         if (event.type === "system" && event.subtype === "init") {
           const sessionId = event.session_id || "unknown";
           writeLine({ type: "session_init", session_id: sessionId, ipc_version: 2 });
-          this.persistSessionId(sessionId);
-          this.sessionIdPersisted = true;
+          this.sessionIdPersisted = this.persistSessionId(sessionId);
 
           // Push any buffered lines back into stdoutBuffer so
           // handleUserMessage will process them.
           if (bufferedLines.length > 0) {
-            const prefix = bufferedLines.map(l => l + "\n").join("");
-            this.stdoutBuffer = prefix + this.stdoutBuffer;
+            this.stdoutBuffer = bufferedLines.join("\n") + "\n" + this.stdoutBuffer;
           }
           return;
         }
@@ -841,8 +839,7 @@ export class SessionManager {
     });
 
     if (existingId) {
-      this.persistSessionId(existingId);
-      this.sessionIdPersisted = true;
+      this.sessionIdPersisted = this.persistSessionId(existingId);
     }
   }
 
@@ -922,8 +919,7 @@ export class SessionManager {
 
         // Persist session_id from system/init per D04.
         if (routeResult.sessionId && !this.sessionIdPersisted) {
-          this.sessionIdPersisted = true;
-          this.persistSessionId(routeResult.sessionId);
+          this.sessionIdPersisted = this.persistSessionId(routeResult.sessionId);
         }
 
         // Emit IPC messages from router, stamping parent_tool_use_id per §15.
@@ -1246,7 +1242,7 @@ export class SessionManager {
    * Uses `tugbank write dev.tugtool.app session-id <value>` so the session ID
    * is stored outside the project working tree and doesn't dirty the git index.
    */
-  private persistSessionId(id: string): void {
+  private persistSessionId(id: string): boolean {
     const result = Bun.spawnSync(["tugbank", "write", "dev.tugtool.app", "session-id", id], {
       stdout: "ignore",
       stderr: "pipe",
@@ -1254,9 +1250,10 @@ export class SessionManager {
     if (result.exitCode !== 0) {
       const stderr = result.stderr ? new TextDecoder().decode(result.stderr as Uint8Array) : "";
       console.error(`Failed to persist session ID via tugbank: ${stderr.trim()}`);
-    } else {
-      console.log(`Persisted session ID to tugbank (dev.tugtool.app / session-id)`);
+      return false;
     }
+    console.log(`Persisted session ID to tugbank (dev.tugtool.app / session-id)`);
+    return true;
   }
 
   /**
