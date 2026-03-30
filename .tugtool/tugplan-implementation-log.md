@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-30T02:54:36Z
+---
+
+## step-2: Created RenderedBlockWindow class with overscan-based visible range computation, enter/exit range diffing, spacer height calculation, and dirty tracking. 24 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-markdown-rendering-core.md
+
+---
+
+---
 step: step-1
 date: 2025-03-30T02:47:27Z
 ---
