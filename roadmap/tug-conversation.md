@@ -909,29 +909,29 @@ The worker pool (TugWorkerPool) may have future uses, but not for markdown. If a
 | **MdWorkerReq/MdWorkerRes types** | Phase 3A.2 | REMOVE — discriminated union for worker messages. |
 | **Pool creation, init handshake, task handles** | Phase 3A.2 | REMOVE — all pool lifecycle code in tug-markdown-view.tsx. |
 
-#### Build infrastructure: tuglex-wasm
+#### Build infrastructure: tugmark-wasm
 
-The spike lives at `tugdeck/crates/tuglex-wasm/`. This becomes a permanent part of the build:
+The spike lives at `tugdeck/crates/tugmark-wasm/`. This becomes a permanent part of the build:
 
 **Crate structure:**
 ```
-tugdeck/crates/tuglex-wasm/
-├── Cargo.toml          # pulldown-cmark + wasm-bindgen + serde
-├── src/lib.rs          # lex_blocks(), parse_to_html(), lex_and_parse()
-└── pkg/                # wasm-pack output (committed or CI-built)
-    ├── tuglex_wasm.js       # JS glue (wasm-bindgen generated)
-    ├── tuglex_wasm.d.ts     # TypeScript declarations
-    └── tuglex_wasm_bg.wasm  # WASM binary (~240KB, ~80KB gzipped)
+tugdeck/crates/tugmark-wasm/
+├── Cargo.toml          # pulldown-cmark + wasm-bindgen
+├── src/lib.rs          # lex_blocks(), parse_to_html()
+└── pkg/                # wasm-pack output (committed)
+    ├── tugmark_wasm.js       # JS glue (wasm-bindgen generated)
+    ├── tugmark_wasm.d.ts     # TypeScript declarations
+    └── tugmark_wasm_bg.wasm  # WASM binary (~240KB)
 ```
 
-**Build command:** `/Users/kocienda/.cargo/bin/wasm-pack build --target web --release tugdeck/crates/tuglex-wasm`
+**Build command:** `/Users/kocienda/.cargo/bin/wasm-pack build --target web --release tugdeck/crates/tugmark-wasm`
 
-**justfile integration:** Add a `wasm` recipe that builds tuglex-wasm. Add it as a dependency of `app` (which already builds tugdeck). The `build` recipe (Rust binaries) does NOT include WASM — different toolchain, different target. Keep them separate.
+**justfile integration:** Add a `wasm` recipe that builds tugmark-wasm. Add it as a dependency of `app` (which already builds tugdeck). The `build` recipe (Rust binaries) does NOT include WASM — different toolchain, different target. Keep them separate.
 
 ```
 # Build WASM modules
 wasm:
-    wasm-pack build --target web --release tugdeck/crates/tuglex-wasm
+    wasm-pack build --target web --release tugdeck/crates/tugmark-wasm
 
 # Build the Mac app (with all dependencies)
 app: build wasm
@@ -942,11 +942,32 @@ app: build wasm
 
 **Vite integration:** The `pkg/` output is a standard ES module. Import the JS glue from the component:
 ```typescript
-import init, { lex_blocks, parse_to_html } from "@/lib/tuglex-wasm/tuglex_wasm.js";
+import init, { lex_blocks, parse_to_html } from "@/lib/tugmark-wasm/tugmark_wasm.js";
 ```
-Configure Vite to serve the `.wasm` file as an asset. The `init()` call loads the WASM binary asynchronously — call it once at app startup (not per-component), store a ready flag. After init, `lex_blocks()` and `parse_to_html()` are synchronous.
+Configure Vite to serve the `.wasm` file as an asset. The `init()` call loads the WASM binary asynchronously — call it once at app startup (not per-component). After init, `lex_blocks()` returns a `Uint32Array` (packed binary, 4 words per block) and `parse_to_html()` returns a string. Both are synchronous.
 
-**Alternative: commit the pkg/ output.** The WASM binary is a build artifact, not source. Committing it means developers don't need wasm-pack for normal TypeScript work — only for modifying the Rust lexer. The justfile `wasm` recipe rebuilds it when needed. CI verifies the committed artifact matches the source.
+**Commit the pkg/ output.** The WASM binary is a build artifact, not source. Committing it means developers don't need wasm-pack for normal TypeScript work — only for modifying the Rust code. The justfile `wasm` recipe rebuilds it when needed.
+
+#### Data transport: packed binary, not JSON
+
+The spike used JSON strings (`serde_json::to_string` → `JSON.parse`). Production uses packed `Vec<u32>` via wasm-bindgen. Each block is 4 u32 words (16 bytes):
+
+| Word | Contents |
+|------|----------|
+| 0 | `type:u8 \| depth:u8<<8` |
+| 1 | `start:u32` (byte offset into source text) |
+| 2 | `end:u32` (byte offset into source text) |
+| 3 | `item_count:u16 \| row_count:u16<<16` |
+
+For 8000 blocks: 128KB as a flat `Uint32Array`. wasm-bindgen returns `Vec<u32>` as a single memcpy from WASM linear memory into a JS typed array — no serialization, no string encoding, no parsing. The JS side decodes inline with bit shifts.
+
+`parse_to_html(text) -> String` stays as-is (HTML is naturally a string).
+
+The combined `lex_and_parse()` from the spike is removed. Production API is two functions:
+- `lex_blocks(text) -> Vec<u32>` — returns packed block metadata
+- `parse_to_html(text) -> String` — returns HTML for a single block's raw text
+
+Remove the `serde` and `serde_json` dependencies from Cargo.toml.
 
 #### Architecture: synchronous WASM pipeline
 
@@ -958,10 +979,10 @@ STATIC PATH (content prop change):
   content string
       │
       ├─ lex_blocks(content)           ← WASM, synchronous, ~7ms for 1MB
-      │  returns: blocks[] with {type, start, end, depth?, itemCount?, rowCount?}
+      │  returns: Uint32Array, 4 words per block (type, start, end, meta)
       │
       ├─ populate BlockHeightIndex     ← estimate height from block type + byte length
-      │  populate blockOffsets         ← block.start, block.end from WASM
+      │  store block offsets            ← start/end from packed array
       │
       ├─ blockWindow.update(scrollTop) ← compute visible range
       │  applyWindowUpdate()           ← create DOM nodes for entering blocks
@@ -986,8 +1007,10 @@ STREAMING PATH (useSyncExternalStore update):
 ─────────────────────────────────────────────
   streamingText (from PropertyStore via useSyncExternalStore [L02])
       │
-      ├─ lex_blocks(streamingText)     ← WASM, re-lex full text (~7ms for 1MB)
-      │                                  or incremental: lex_blocks(tail) for delta
+      ├─ incremental tail lex:
+      │    tail = streamingText.slice(lastStableOffset)
+      │    lex_blocks(tail)            ← WASM, <1ms for typical delta
+      │    remap offsets: add lastStableOffset to each start/end
       │
       ├─ reconcile BlockHeightIndex    ← append new blocks, update changed
       │
@@ -996,6 +1019,12 @@ STREAMING PATH (useSyncExternalStore update):
       │
       └─ auto-scroll to tail           ← direct DOM write [L06]
 ```
+
+**Streaming uses incremental tail-lex, not full re-lex.** Each delta triggers a lex of only the text from the last stable block boundary forward. For a typical 200-character delta appended to a 500KB document, the tail is ~500 bytes — lex cost is <0.1ms regardless of document size. The "last stable boundary" is the `end` offset of the second-to-last block from the previous lex (the last block may be incomplete during streaming).
+
+This keeps per-delta cost constant. No coalescing interval needed. No threshold for switching strategies. Every delta is cheap.
+
+**Full re-lex** happens only on finalization (when `isStreaming` transitions to false) — one final `lex_blocks(fullText)` to verify block count and boundaries. For a typical conversation (<100KB), this is <1ms. For stress-test 1MB, it's ~7ms.
 
 No promises. No `.then()` chains. No message passing. No cancellation protocol. No init handshake. No fallback handler. The WASM calls return immediately with the answer.
 
@@ -1008,30 +1037,18 @@ No promises. No `.then()` chains. No message passing. No cancellation protocol. 
 
 #### Steps
 
-**Step 1: Productionize tuglex-wasm.**
-Move spike to production quality. Clean up `lib.rs`: proper error handling, remove `serde_json` for the lex path (return structured data via wasm-bindgen instead of JSON strings — typed arrays for offsets, string array for types). Keep `parse_to_html(text) -> String` as-is (HTML is naturally a string). Add `justfile` recipe. Document developer setup (wasm-pack, wasm32 target).
+**Step 1: Productionize tugmark-wasm.**
+Move spike to production quality:
+- Rewrite `lib.rs`: remove `serde`, `serde_json`, and the `lex_and_parse()` combined function. Production API is two functions: `lex_blocks(text) -> Vec<u32>` (packed binary, 4 words per block) and `parse_to_html(text) -> String`.
+- Proper error handling (no `.unwrap()` in production paths).
+- Add `justfile` `wasm` recipe. Add as dependency of `app`.
+- Commit the `pkg/` output so developers don't need wasm-pack for normal TypeScript work.
+- Document developer setup (wasm-pack, wasm32 target) in the justfile or a README.
 
 Verify: `just wasm` builds cleanly. The `pkg/` output imports correctly from TypeScript. `bun run build` includes the WASM asset.
 
-**Step 2: Integrate WASM into TugMarkdownView.**
-Rewrite the static rendering path in tug-markdown-view.tsx:
-- Remove all worker infrastructure: pool creation, `_pool` module-level singleton, `MdWorkerReq`/`MdWorkerRes` types, `mainThreadFallback`, `submitParseBatches`, `cancelInFlightParses`, the entire streaming interval/coalescing mechanism.
-- Replace with synchronous WASM calls: `lex_blocks(content)` → populate height index → `blockWindow.update()` → for each visible block, `parse_to_html(raw)` → sanitize → innerHTML.
-- HTML cache: keep `Map<number, string>` for parsed HTML. On cache hit, skip the WASM parse call. On scroll, entering blocks check cache first.
-- The component should shrink dramatically — the 976-line file should be closer to 400-500 lines.
-
-Verify: gallery card Static 1MB renders. DOM nodes > 0. Console log shows lex time < 50ms.
-
-**Step 3: Rewrite the streaming path.**
-- On `useSyncExternalStore` update: call `lex_blocks(streamingText)` synchronously. Compare block count to previous — append new blocks to height index, update changed blocks. Parse visible blocks via `parse_to_html()`. Update DOM directly.
-- No coalescing interval needed. WASM re-lex of the full accumulated text is ~7ms for 1MB. At 25 deltas/second, each delta re-lexes a slightly larger string. For typical conversation sizes (<100KB), re-lex is <1ms per delta — no coalescing needed.
-- For very large streaming documents (>1MB), consider incremental lex (lex only the tail from last stable boundary). pulldown-cmark supports this via offset-based parsing.
-- Auto-scroll: direct DOM write of `scrollTop` after height index is updated. No RAF gating on React commits.
-
-Verify: gallery card Streaming mode renders, auto-scrolls, no jank.
-
-**Step 4: Remove all worker infrastructure.**
-Delete these files entirely:
+**Step 2: Delete all worker infrastructure.**
+Clean slate before building the new pipeline. Delete these files entirely:
 - `tugdeck/src/lib/tug-worker-pool.ts` (623 lines)
 - `tugdeck/src/workers/markdown-worker.ts` (234 lines)
 - `tugdeck/src/__tests__/tug-worker-pool.test.ts`
@@ -1041,32 +1058,56 @@ Delete these files entirely:
 - `tugdeck/src/__tests__/workers/echo-worker.ts`
 - `tugdeck/src/__tests__/workers/slow-worker.ts`
 - `tugdeck/src/__tests__/workers/delayed-init-worker.ts`
+- `tugdeck/src/lib/markdown-height-estimator.ts` (height estimation is simpler with WASM block metadata)
+- `tugdeck/src/__tests__/markdown-height-estimator.test.ts`
 
-Evaluate and likely remove:
-- `tugdeck/src/lib/markdown-height-estimator.ts` — if height estimation is simpler with WASM block metadata (type + byte length), fold it into the component. If the `HeightEstimator` interface still adds value for future extensibility, keep it.
+Strip tug-markdown-view.tsx down to a skeleton:
+- Remove `import { marked }`.
+- Remove `import { TugWorkerPool }` and `import type { TaskHandle }`.
+- Remove `mainThreadFallback` function.
+- Remove `MdWorkerReq`, `MdWorkerRes` types.
+- Remove `_pool` module-level singleton.
+- Remove all `.catch()` handlers for worker promise chains.
+- Remove `inFlightParses`, `streamingDirty`, `streamingInterval`, `submitParseBatches`, `cancelInFlightParses` from engine state and component body.
+- Keep: BlockHeightIndex, RenderedBlockWindow, virtual scroll layout (spacers, refs, CSS), DOMPurify, useSyncExternalStore for streaming, addBlockNode/removeBlockNode/applyWindowUpdate/rebuildWindow (these are DOM manipulation per L06), onScroll handler, engine state ref.
 
-Remove from tug-markdown-view.tsx:
-- `import { marked }` — no longer needed.
-- `import { TugWorkerPool }` and `import type { TaskHandle }` — gone.
-- `mainThreadFallback` function — gone.
-- `MdWorkerReq`, `MdWorkerRes` types — gone.
-- All `.catch()` handlers for worker promise chains — gone (no promises).
-- `inFlightParses`, `streamingDirty`, `streamingInterval` from engine state — gone.
+Verify: `bun test` passes (remaining tests: block-height-index, rendered-block-window). `bun run build` succeeds — no worker chunk, no `tug-worker-pool` import, no `markdown-worker` import anywhere. The component won't render content yet (no lex/parse wired), but it compiles.
 
-Verify: `bun test` passes (remaining tests: block-height-index, rendered-block-window, markdown-height-estimator if kept). `bun run build` succeeds with no worker chunk. No `tug-worker-pool` import anywhere in the codebase.
+**Step 3: Wire WASM into TugMarkdownView (static path).**
+Build the static rendering path on the clean skeleton:
+- Add WASM init to `main.tsx` startup sequence (parallel with layout/theme fetch).
+- Import `lex_blocks`, `parse_to_html` from the tugmark-wasm pkg.
+- On content change: call `lex_blocks(content)` synchronously. Decode the `Uint32Array` into block metadata. Populate BlockHeightIndex with estimated heights (from block type + byte length). Store block start/end offsets.
+- Call `blockWindow.update(scrollTop)` → `applyWindowUpdate()` to enter visible blocks.
+- For each visible block: `raw = content.slice(start, end)`, `html = parse_to_html(raw)`, sanitize with DOMPurify, write to innerHTML.
+- HTML cache: `Map<number, string>` for sanitized HTML. Cache hit skips WASM call + DOMPurify.
+
+Verify: gallery card Static 1MB renders. DOM nodes > 0. Lex time < 50ms in diagnostic.
+
+**Step 4: Wire WASM into TugMarkdownView (streaming path).**
+Build the streaming path using incremental tail-lex:
+- On `useSyncExternalStore` update: compute `lastStableOffset` (end of second-to-last block from previous lex). Slice tail: `tail = streamingText.slice(lastStableOffset)`. Call `lex_blocks(tail)` — cost is <0.1ms for typical delta regardless of document size. Remap offsets by adding `lastStableOffset` to each start/end.
+- Reconcile: compare new tail blocks against existing. Append new blocks to BlockHeightIndex. Update changed blocks.
+- Parse visible blocks. Update DOM. Auto-scroll to tail via direct `scrollTop` write [L06].
+- On finalization (`isStreaming` → false): one full `lex_blocks(fullText)` to verify boundaries, then rebuild.
+
+Verify: gallery card Streaming mode renders, auto-scrolls, no jank. Per-delta cost < 1ms regardless of document size.
 
 **Step 5: Gallery card cleanup and verification.**
-Update gallery-markdown-view.tsx to remove worker-specific diagnostics (pool size, in-flight tasks). Replace with WASM-relevant diagnostics: lex time, parse time, block count, cache size. Keep DOM node count and streaming progress.
+Update gallery-markdown-view.tsx:
+- Remove worker-specific diagnostics (pool size, in-flight tasks).
+- Add WASM diagnostics: lex time, parse time, block count, cache size, cache hit rate.
+- Keep DOM node count and streaming progress.
 
 Run all three gallery modes and verify:
 - **Static 1MB:** Viewport visible in <50ms. Scroll jank-free. DOM nodes <500.
 - **Stress 10MB:** Viewport visible in <200ms. Scrollbar navigable.
 - **Streaming:** Content streams smoothly. Auto-scroll follows tail.
-- **Console:** Zero errors. Lex/parse timing visible in diagnostics.
+- **Console:** Zero errors. Timing visible in diagnostics.
 
 #### Checkpoints
 
-- `just wasm` builds tuglex-wasm cleanly.
+- `just wasm` builds tugmark-wasm cleanly.
 - `bun run build` succeeds. No worker chunk in output. WASM asset included.
 - `bun test` passes — existing BlockHeightIndex + RenderedBlockWindow tests unaffected.
 - No `tug-worker-pool` import exists anywhere in `tugdeck/src/`.
