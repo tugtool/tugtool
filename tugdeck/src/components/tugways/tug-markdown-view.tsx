@@ -159,17 +159,6 @@ function estimateBlockHeight(block: BlockMeta): number {
 }
 
 // ---------------------------------------------------------------------------
-// Overscan constant [Q01 — start at 4 screens, tune based on gallery card test]
-// ---------------------------------------------------------------------------
-
-/**
- * Number of screens above and below the viewport to keep parsed and in the
- * HTML cache. Shallow overscan causes placeholder flicker during fast scrolling;
- * deep overscan wastes work. Starts at 4 per plan [Q01].
- */
-const OVERSCAN_SCREENS = 4;
-
-// ---------------------------------------------------------------------------
 // TugMarkdownViewProps
 // ---------------------------------------------------------------------------
 
@@ -230,12 +219,10 @@ interface MarkdownEngineState {
    * HTML cache: block index → unsanitized HTML string.
    * DOMPurify runs at render time in addBlockNode() [D04].
    * Never evicted (content is append-only) [D03].
+   * All blocks are parsed upfront on content load, so this cache is always
+   * fully populated before any scroll event fires.
    */
   htmlCache: Map<number, string>;
-  /** Cache hit counter for diagnostics. */
-  cacheHits: number;
-  /** Cache miss counter for diagnostics. */
-  cacheMisses: number;
   /** Pending scroll top for RAF coalescing [D02]. */
   pendingScrollTop: number | null;
   /** RAF handle for scroll coalescing [D02]. */
@@ -304,8 +291,6 @@ export function TugMarkdownView({
         blockWindow,
         blockNodes: new Map(),
         htmlCache: new Map(),
-        cacheHits: 0,
-        cacheMisses: 0,
         pendingScrollTop: null,
         scrollRafHandle: null,
         rafHandle: null,
@@ -363,11 +348,9 @@ export function TugMarkdownView({
 
     const cachedHtml = engine.htmlCache.get(index);
     if (cachedHtml === undefined) {
-      engine.cacheMisses++;
+      console.warn(`[TugMarkdownView] cache miss for block ${index} — all blocks should be pre-parsed`);
       return;
     }
-
-    engine.cacheHits++;
     const sanitized = getDOMPurify().sanitize(cachedHtml, SANITIZE_CONFIG);
 
     const el = document.createElement("div");
@@ -434,17 +417,6 @@ export function TugMarkdownView({
     const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
     const update = engine.blockWindow.update(scrollTop);
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-  }
-
-  // ---- Compute the visible+overscan block range ----
-  function computeOverscanRange(engine: MarkdownEngineState, scrollTop: number): { startIndex: number; endIndex: number } {
-    const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
-    const overscanPixels = viewportHeight * OVERSCAN_SCREENS;
-    const rangeTop = Math.max(0, scrollTop - overscanPixels);
-    const rangeBottom = scrollTop + viewportHeight + overscanPixels;
-    const startIndex = engine.heightIndex.getBlockAtOffset(rangeTop);
-    const endIndex = engine.heightIndex.getBlockAtOffset(rangeBottom) + 1;
-    return { startIndex: Math.max(0, startIndex), endIndex: Math.min(engine.blockCount, endIndex) };
   }
 
   // ---- Cleanup component-scoped resources on unmount ----
@@ -528,8 +500,6 @@ export function TugMarkdownView({
     }
     engine.blockNodes.clear();
     engine.htmlCache.clear();
-    engine.cacheHits = 0;
-    engine.cacheMisses = 0;
     engine.blockStarts = [];
     engine.blockEnds = [];
     engine.byteToCharMap = null;
@@ -553,30 +523,18 @@ export function TugMarkdownView({
       engine.heightIndex.appendBlock(estimateBlockHeight(block));
     }
 
-    // Parse ONLY the visible + overscan range — not all blocks [Bug 3 partial fix].
-    // For 10MB content with 80,000+ blocks, parsing all blocks synchronously
-    // would freeze the main thread. Remaining blocks are parsed on-demand in
-    // the scroll handler.
+    // Parse ALL blocks upfront. Benchmarks show 1MB lex+parse = ~29ms, which is
+    // fast enough to avoid jank. All blocks are cached before any DOM update or
+    // scroll event, eliminating on-demand parse paths entirely.
     const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
     const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
     engine.blockWindow.setViewportHeight(viewportHeight);
-    const range = computeOverscanRange(engine, scrollTop);
 
-    let firstCodeBlockLogged = false;
-    for (let i = range.startIndex; i < range.endIndex; i++) {
-      if (!engine.htmlCache.has(i)) {
-        const charStart = engine.byteToCharMap[engine.blockStarts[i]];
-        const charEnd = engine.byteToCharMap[engine.blockEnds[i]];
-        const raw = content.slice(charStart, charEnd);
-        const html = parse_to_html(raw);
-        engine.htmlCache.set(i, html);
-        // Diagnostic: log the first code block's raw slice and HTML output [Bug 2 debug].
-        if (!firstCodeBlockLogged && blocks[i]?.type === 'code') {
-          console.log('[TugMarkdownView] first code block raw slice:', JSON.stringify(raw.slice(0, 200)));
-          console.log('[TugMarkdownView] first code block parse_to_html:', html.slice(0, 200));
-          firstCodeBlockLogged = true;
-        }
-      }
+    for (let i = 0; i < blocks.length; i++) {
+      const charStart = engine.byteToCharMap[engine.blockStarts[i]];
+      const charEnd = engine.byteToCharMap[engine.blockEnds[i]];
+      const raw = content.slice(charStart, charEnd);
+      engine.htmlCache.set(i, parse_to_html(raw));
     }
 
     // Enter visible blocks into DOM
@@ -597,29 +555,8 @@ export function TugMarkdownView({
       engine.scrollRafHandle = null;
       const pendingTop = engine.pendingScrollTop ?? scrollTop;
       engine.pendingScrollTop = null;
-
-      // Update window (handles enter/exit for cached blocks)
       const update = engine.blockWindow.update(pendingTop);
       applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-
-      // Parse uncached blocks in overscan range on demand
-      const newRange = computeOverscanRange(engine, pendingTop);
-      let anyNew = false;
-      for (let i = newRange.startIndex; i < newRange.endIndex; i++) {
-        if (!engine.htmlCache.has(i) && engine.blockStarts[i] !== undefined) {
-          // Use byteToCharMap if available to convert UTF-8 byte offsets to char indices [Bug 2 fix].
-          const byteStart = engine.blockStarts[i];
-          const byteEnd = engine.blockEnds[i];
-          const charStart = engine.byteToCharMap ? engine.byteToCharMap[byteStart] : byteStart;
-          const charEnd = engine.byteToCharMap ? engine.byteToCharMap[byteEnd] : byteEnd;
-          const raw = engine.contentText.slice(charStart, charEnd);
-          engine.htmlCache.set(i, parse_to_html(raw));
-          anyNew = true;
-        }
-      }
-      if (anyNew) {
-        rebuildWindow(engine);
-      }
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
