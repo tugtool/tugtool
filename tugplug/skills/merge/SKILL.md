@@ -246,17 +246,17 @@ git commit -m "chore: archive completed plan <plan_basename>"
 
 If there are no staged changes (exit code 0), the plan was already archived — skip the commit silently.
 
-#### Step 6d: Garbage-collect stale state entries
+#### Step 6d: Archive plan in state database
 
-After archiving, the old plan path no longer exists on disk. Run state gc to
-remove its entries from state.db:
+After archiving, the old plan path no longer exists on disk. Run state archive to
+preserve its entries in state.db with archived status:
 
 ```bash
-tugcode state gc
+tugcode state archive <plan_id>
 ```
 
-This is safe and idempotent. It also cleans up any other orphaned plan entries
-that may have accumulated. If it fails, report the error but do not halt.
+This transitions the plan to archived status and takes a content snapshot.
+If it fails, report the error but do not halt.
 
 ---
 
@@ -282,7 +282,7 @@ that may have accumulated. If it fails, report the error but do not halt.
 
 ## Error Handling
 
-**The merge itself (step 3) is the only hard failure.** Once the merge succeeds, all subsequent steps (health check, dependency install, archive, state gc) are best-effort cleanup. If any cleanup step fails, report the error as a warning and continue to the next step. Never let a cleanup failure prevent the merge from being reported as successful.
+**The merge itself (step 3) is the only hard failure.** Once the merge succeeds, all subsequent steps (health check, dependency install, archive, state archive) are best-effort cleanup. If any cleanup step fails, report the error as a warning and continue to the next step. Never let a cleanup failure prevent the merge from being reported as successful.
 
 If step 3 fails, report clearly and suggest recovery. Do not retry automatically.
 
