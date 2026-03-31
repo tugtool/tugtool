@@ -1095,18 +1095,37 @@ Build the streaming path using incremental tail-lex:
 
 Verify: gallery card Streaming mode renders, auto-scrolls, no jank. Per-delta cost < 1ms regardless of document size.
 
-**Step 5: Gallery card cleanup and verification.**
-Update gallery-markdown-view.tsx:
-- Remove worker-specific diagnostics (pool size, in-flight tasks).
-- Add WASM diagnostics: lex time, parse time, block count, cache size, cache hit rate.
+**Step 5: Cleanup, verification, and laws audit.**
+
+Dead code removal in tug-markdown-view.tsx:
+- Remove `rafHandle` from MarkdownEngineState and its cleanup in the unmount handler. Auto-scroll no longer uses RAF — the field is never set.
+- Remove `accumulatedText` from MarkdownEngineState if nothing reads it outside the streaming observer.
+- Remove `byteToCharMap` from MarkdownEngineState if it's only used as a local variable inside `lexParseAndRender` and the streaming observer (rebuilt each call, never read between calls).
+- Final stale comment sweep: remove any remaining references to workers, "Phase 1", D08, or other artifacts of the old worker architecture.
+
+Gallery card updates (gallery-markdown-view.tsx):
+- Add WASM diagnostics to the overlay: lex time (ms), parse time (ms), block count.
 - Keep DOM node count and streaming progress.
-- Remove all spike investigations and code.
+
+Spike cleanup (tugdeck/crates/tugmark-wasm/bench.html):
+- Update or remove. The current bench.html references `lex_blocks_json` which no longer exists. Either update to reflect the current API or remove the file.
 
 Run all three gallery modes and verify:
 - **Static 1MB:** Viewport visible in <50ms. Scroll jank-free. DOM nodes <500.
 - **Stress 10MB:** Viewport visible in <200ms. Scrollbar navigable.
 - **Streaming:** Content streams smoothly. Auto-scroll follows tail.
 - **Console:** Zero errors. Timing visible in diagnostics.
+
+Final laws audit — full pass over tug-markdown-view.tsx against tuglaws/:
+- L01: no root.render() calls.
+- L03: all DOM setup uses useLayoutEffect, not useEffect.
+- L05: no RAF gated on React state commits.
+- L06: all appearance changes via DOM, no React state.
+- L07: all handlers access current state through refs, no stale closures.
+- L16: CSS annotations present for all border-color rules (tug-markdown-view.css).
+- L19: docstring, props interface, data-slot, file pair all present and accurate.
+- L22: streaming observes store directly, no React round-trip.
+- Verify: zero useEffect in the component. Zero useSyncExternalStore. Zero useState.
 
 #### Checkpoints
 
