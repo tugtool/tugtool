@@ -848,7 +848,8 @@ fn test_full_lifecycle_plan_done() {
     assert!(output.status.success());
     let show_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("failed to parse show JSON");
-    assert_eq!(show_json["data"]["plan"]["status"], "done");
+    // Per D02: "completed" is derived, not a stored status. Plan stays 'active'.
+    assert_eq!(show_json["data"]["plan"]["status"], "active");
 }
 
 #[test]

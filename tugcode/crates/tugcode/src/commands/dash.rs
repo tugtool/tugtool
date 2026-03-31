@@ -199,7 +199,7 @@ pub fn run_dash_create(
 
     // Open or create state.db
     let state_db_path = repo_root.join(".tugtool/state.db");
-    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+    let db = StateDb::open(&state_db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // Check if dash already exists and is active
     if let Some(existing) = db.get_dash(&name).map_err(|e| e.to_string())? {
@@ -363,7 +363,7 @@ pub fn run_dash_list(all: bool, json: bool, quiet: bool) -> Result<i32, String> 
 
     // Open state.db
     let state_db_path = repo_root.join(".tugtool/state.db");
-    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+    let db = StateDb::open(&state_db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // List dashes
     let dashes = db.list_dashes(!all).map_err(|e| e.to_string())?; // active_only = !all
@@ -430,7 +430,7 @@ pub fn run_dash_show(
 
     // Open state.db
     let state_db_path = repo_root.join(".tugtool/state.db");
-    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+    let db = StateDb::open(&state_db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // Get dash
     let dash = db
@@ -572,7 +572,7 @@ pub fn run_dash_commit(
 
     // Open state.db
     let state_db_path = repo_root.join(".tugtool/state.db");
-    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+    let db = StateDb::open(&state_db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // Get dash
     let dash = db
@@ -724,7 +724,7 @@ pub fn run_dash_join(
 
     // Open state.db
     let state_db_path = repo_root.join(".tugtool/state.db");
-    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+    let db = StateDb::open(&state_db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // Step 1: Look up dash by name (must be active)
     let dash = db
@@ -986,7 +986,7 @@ pub fn run_dash_release(name: String, json: bool, quiet: bool) -> Result<i32, St
 
     // Open state.db
     let state_db_path = repo_root.join(".tugtool/state.db");
-    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+    let db = StateDb::open(&state_db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // Step 1: Look up dash by name (must be active)
     let dash = db
@@ -1220,7 +1220,7 @@ mod tests {
 
         // Mark as joined
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         db.update_dash_status("test-dash", DashStatus::Joined)
             .unwrap();
 
@@ -1255,7 +1255,7 @@ mod tests {
 
         // Mark one as joined
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         db.update_dash_status("dash2", DashStatus::Joined).unwrap();
 
         // List active only (default)
@@ -1279,7 +1279,7 @@ mod tests {
 
         // Mark one as joined
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         db.update_dash_status("dash2", DashStatus::Joined).unwrap();
 
         // List all
@@ -1346,7 +1346,7 @@ mod tests {
         .unwrap();
 
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         db.record_round(
             "test-dash",
             Some("instruction"),
@@ -1533,7 +1533,7 @@ mod tests {
 
         // Verify round was recorded with commit_hash
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let rounds = db.get_dash_rounds("test-dash", true).unwrap();
         assert_eq!(rounds.len(), 1);
         assert!(rounds[0].commit_hash.is_some());
@@ -1569,7 +1569,7 @@ mod tests {
 
         // Verify round was recorded with null commit_hash
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let rounds = db.get_dash_rounds("test-dash", true).unwrap();
         assert_eq!(rounds.len(), 1);
         assert!(rounds[0].commit_hash.is_none());
@@ -1634,7 +1634,7 @@ mod tests {
 
         // Verify round was recorded with metadata
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let rounds = db.get_dash_rounds("test-dash", true).unwrap();
         assert_eq!(rounds.len(), 1);
         assert_eq!(rounds[0].instruction, Some("add test file".to_string()));
@@ -1663,7 +1663,7 @@ mod tests {
 
         // Verify initial round count is 0
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let rounds = db.get_dash_rounds("test-dash", true).unwrap();
         assert_eq!(rounds.len(), 0);
 
@@ -1720,7 +1720,7 @@ mod tests {
 
         // Verify commit was created
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let rounds = db.get_dash_rounds("test-dash", true).unwrap();
         assert_eq!(rounds.len(), 1);
         assert!(rounds[0].commit_hash.is_some());
@@ -1799,7 +1799,7 @@ mod tests {
 
         // Verify state is joined
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let dash = db.get_dash("test-dash").unwrap().unwrap();
         assert_eq!(dash.status, DashStatus::Joined);
     }
@@ -1850,7 +1850,7 @@ mod tests {
 
         // Verify dash is still active
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let dash = db.get_dash("test-dash").unwrap().unwrap();
         assert_eq!(dash.status, DashStatus::Active);
     }
@@ -1901,7 +1901,7 @@ mod tests {
             .unwrap();
 
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let dash = db.get_dash("test-dash").unwrap().unwrap();
         assert_eq!(dash.status, DashStatus::Active);
     }
@@ -1935,7 +1935,7 @@ mod tests {
 
         // Verify synthetic round was recorded
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let rounds = db.get_dash_rounds("test-dash", true).unwrap();
         // Should have one round from auto-commit
         assert!(rounds.iter().any(|r| {
@@ -1991,7 +1991,7 @@ mod tests {
 
         // Verify state is released
         let state_db_path = repo_path.join(".tugtool/state.db");
-        let db = StateDb::open(&state_db_path).unwrap();
+        let db = StateDb::open(&state_db_path, repo_path).unwrap();
         let dash = db.get_dash("test-dash").unwrap().unwrap();
         assert_eq!(dash.status, DashStatus::Released);
     }

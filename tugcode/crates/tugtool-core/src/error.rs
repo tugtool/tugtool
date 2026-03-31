@@ -172,7 +172,7 @@ pub enum TugError {
 
     /// E048: Plan file changed since init
     #[error("E048: Plan hash mismatch: plan file has changed since state init")]
-    StatePlanHashMismatch { plan_path: String },
+    StatePlanHashMismatch { plan_id: String },
 
     /// E049: Worktree does not match claimed_by
     #[error("E049: Ownership violation: step {anchor} is claimed by {claimed_by}, not {worktree}")]
@@ -205,8 +205,8 @@ pub enum TugError {
     StateNoReadySteps,
 
     /// E059: Step not found in state database
-    #[error("E059: Step {anchor} not found for plan {plan_path}")]
-    StateStepNotFound { plan_path: String, anchor: String },
+    #[error("E059: Step {anchor} not found for plan {plan_id}")]
+    StateStepNotFound { plan_id: String, anchor: String },
 
     // === Dash errors (E054-E058) ===
     /// E054: Dash name not found

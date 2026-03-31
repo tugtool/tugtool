@@ -543,8 +543,11 @@ mod tests {
 /// Data payload for state init command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateInitData {
+    /// Plan identifier
+    pub plan_id: String,
     /// Plan file path (relative to repo root)
-    pub plan_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     /// SHA-256 hash of the plan file
     pub plan_hash: String,
     /// True if the plan was already initialized
@@ -560,8 +563,11 @@ pub struct StateInitData {
 /// Data payload for state reinit command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateReinitData {
+    /// Plan identifier
+    pub plan_id: String,
     /// Plan file path (relative to repo root)
-    pub plan_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     /// SHA-256 hash of the plan file after reinitialization
     pub plan_hash: String,
     /// Always true: indicates this was a reinit operation
@@ -572,12 +578,17 @@ pub struct StateReinitData {
     pub dep_count: usize,
     /// Number of checklist items created
     pub checklist_count: usize,
+    /// Plan ID of archived plan (if reinit archived a previous generation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_plan_id: Option<String>,
 }
 
 /// Data payload for state claim command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateClaimData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub claimed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anchor: Option<String>,
@@ -596,7 +607,9 @@ pub struct StateClaimData {
 /// Data payload for state start command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateStartData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub anchor: String,
     pub started: bool,
 }
@@ -604,7 +617,9 @@ pub struct StateStartData {
 /// Data payload for state heartbeat command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateHeartbeatData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub anchor: String,
     pub lease_expires: String,
 }
@@ -612,7 +627,9 @@ pub struct StateHeartbeatData {
 /// Data payload for state update command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateUpdateData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub anchor: String,
     pub items_updated: usize,
 }
@@ -620,7 +637,9 @@ pub struct StateUpdateData {
 /// Data payload for state artifact command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateArtifactData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub anchor: String,
     pub artifact_id: i64,
     pub kind: String,
@@ -629,7 +648,9 @@ pub struct StateArtifactData {
 /// Data payload for state complete command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateCompleteData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub anchor: String,
     pub completed: bool,
     pub forced: bool,
@@ -645,7 +666,9 @@ pub struct StateShowData {
 /// Data payload for state ready command
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StateReadyData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub ready: Vec<tugtool_core::StepInfo>,
     pub blocked: Vec<tugtool_core::StepInfo>,
     pub completed: Vec<tugtool_core::StepInfo>,
@@ -655,7 +678,9 @@ pub struct StateReadyData {
 /// Data payload for state reset command
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StateResetData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub anchor: String,
     pub reset: bool,
 }
@@ -663,7 +688,9 @@ pub struct StateResetData {
 /// Data payload for state release command
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StateReleaseData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub anchor: String,
     pub released: bool,
     pub was_claimed_by: Option<String>,
@@ -672,21 +699,38 @@ pub struct StateReleaseData {
 /// Data payload for state reconcile command
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StateReconcileData {
-    pub plan_path: String,
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
     pub reconciled_count: usize,
     pub skipped_count: usize,
     pub skipped_mismatches: Vec<tugtool_core::SkippedMismatch>,
 }
 
-/// Data payload for state gc command
+/// Data payload for state archive command
 #[derive(Debug, Serialize, Deserialize)]
-pub struct StateGcData {
-    /// Whether this was a dry run (no deletions performed)
-    pub dry_run: bool,
-    /// Plans that were removed (or would be removed with dry_run)
-    pub removed_plans: Vec<String>,
-    /// Number of plans removed (or that would be removed)
-    pub removed_count: usize,
-    /// Number of plans remaining in the database after GC
-    pub remaining_plans: usize,
+pub struct StateArchiveData {
+    pub plan_id: String,
+    pub archived: bool,
+    pub snapshot_taken: bool,
+}
+
+/// Data payload for state list command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateListData {
+    pub plans: Vec<StateListEntry>,
+}
+
+/// Entry in state list output
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateListEntry {
+    pub plan_id: String,
+    pub plan_slug: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_path: Option<String>,
+    pub status: String,
+    pub steps_completed: usize,
+    pub steps_total: usize,
+    pub created_at: String,
+    pub updated_at: String,
 }

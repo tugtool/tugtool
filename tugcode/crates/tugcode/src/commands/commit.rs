@@ -292,7 +292,7 @@ pub fn run_commit(
                 };
 
                 let db_path = repo_root.join(".tugtool").join("state.db");
-                match tugtool_core::StateDb::open(&db_path) {
+                match tugtool_core::StateDb::open(&db_path, &repo_root) {
                     Ok(mut db) => {
                         // Check for plan drift (Path 1 and Path 3)
                         match check_commit_drift(&repo_root, &resolved_plan, &db) {
@@ -482,7 +482,7 @@ mod tests {
     #[test]
     fn test_classify_state_error_drift() {
         let err = tugtool_core::TugError::StatePlanHashMismatch {
-            plan_path: ".tugtool/tugplan-foo.md".to_string(),
+            plan_id: "tugplan-foo-abc1234-1".to_string(),
         };
         assert_eq!(
             classify_state_error(&err),
@@ -545,7 +545,7 @@ mod tests {
     #[test]
     fn test_classify_state_error_step_not_found() {
         let err = tugtool_core::TugError::StateStepNotFound {
-            plan_path: ".tugtool/tugplan-foo.md".to_string(),
+            plan_id: "tugplan-foo-abc1234-1".to_string(),
             anchor: "step-99".to_string(),
         };
         assert_eq!(

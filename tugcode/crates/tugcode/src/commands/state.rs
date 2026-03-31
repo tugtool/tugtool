@@ -3,6 +3,29 @@
 use clap::Subcommand;
 use serde::Deserialize;
 
+/// Resolve a plan identifier (plan_id, slug prefix, or file path) to its plan_id in the database.
+///
+/// Resolution order:
+/// 1. Exact plan_id match
+/// 2. Slug prefix match
+/// 3. File path match (for backward compatibility with existing callers)
+fn resolve_plan_id(
+    db: &tugtool_core::StateDb,
+    input: &str,
+) -> Result<String, String> {
+    if let Ok(Some(id)) = db.lookup_plan_by_id_or_slug(input) {
+        return Ok(id);
+    }
+    // Fall back to file path lookup
+    if let Ok(Some(id)) = db.lookup_plan_id_by_path(input) {
+        return Ok(id);
+    }
+    Err(format!(
+        "Plan not found in state database: {}",
+        input
+    ))
+}
+
 /// Batch update entry for stdin JSON input
 #[derive(Debug, Deserialize)]
 struct BatchUpdateEntry {
@@ -39,16 +62,19 @@ struct DriftInfo {
 /// Check if plan file has drifted from stored hash
 fn check_plan_drift(
     repo_root: &std::path::Path,
-    plan_rel: &std::path::Path,
     db: &tugtool_core::StateDb,
-    plan_path_str: &str,
+    plan_id: &str,
 ) -> Result<Option<DriftInfo>, String> {
-    // Get stored plan state to retrieve hash
-    let plan_state = db.show_plan(plan_path_str).map_err(|e| e.to_string())?;
+    // Get stored plan state to retrieve hash and file path
+    let plan_state = db.show_plan(plan_id).map_err(|e| e.to_string())?;
     let stored_hash = plan_state.plan_hash;
 
-    // Compute current hash
-    let plan_abs = repo_root.join(plan_rel);
+    // Need plan_path to read the current file for drift check
+    let Some(plan_path) = plan_state.plan_path else {
+        return Ok(None); // archived plan, no file to drift against
+    };
+
+    let plan_abs = repo_root.join(&plan_path);
     let current_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
 
     if stored_hash != current_hash {
@@ -216,11 +242,16 @@ pub enum StateCommands {
         /// Plan file path
         plan: String,
     },
-    /// Remove state entries for plans whose plan files no longer exist on disk
-    Gc {
-        /// Show what would be removed without deleting anything
+    /// Archive a plan (transition to archived status)
+    Archive {
+        /// Plan identifier (plan_id or slug prefix)
+        plan: String,
+    },
+    /// List all tracked plans
+    List {
+        /// Include archived plans
         #[arg(long)]
-        dry_run: bool,
+        all: bool,
     },
 }
 
@@ -261,19 +292,20 @@ pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, Stri
 
     // 5. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 6. Init plan
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
     let result = db
-        .init_plan(&plan_rel_str, &parsed, &plan_hash)
+        .init_plan(&plan_rel_str, &parsed, Some(&plan_hash))
         .map_err(|e| e.to_string())?;
 
     // 7. Output
     if json {
         use crate::output::{JsonResponse, StateInitData};
         let data = StateInitData {
-            plan_path: plan_rel_str,
+            plan_id: result.plan_id.clone(),
+            plan_path: Some(plan_rel_str),
             plan_hash,
             already_initialized: result.already_initialized,
             step_count: result.step_count,
@@ -336,24 +368,33 @@ pub fn run_state_reinit(plan: String, json: bool, quiet: bool) -> Result<i32, St
 
     // 5. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 6. Reinit plan (drop all state, then re-initialize)
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
+
+    // Capture existing plan_id before reinit (it will be archived)
+    let archived_plan_id = db
+        .lookup_plan_id_by_path(&plan_rel_str)
+        .ok()
+        .flatten();
+
     let result = db
-        .reinit_plan(&plan_rel_str, &parsed, &plan_hash)
+        .reinit_plan(&plan_rel_str, &parsed, Some(&plan_hash))
         .map_err(|e| e.to_string())?;
 
     // 7. Output
     if json {
         use crate::output::{JsonResponse, StateReinitData};
         let data = StateReinitData {
-            plan_path: plan_rel_str,
+            plan_id: result.plan_id.clone(),
+            plan_path: Some(plan_rel_str),
             plan_hash,
             reinitialized: true,
             step_count: result.step_count,
             dep_count: result.dep_count,
             checklist_count: result.checklist_count,
+            archived_plan_id,
         };
         let response = JsonResponse::ok("state reinit", data);
         println!(
@@ -381,39 +422,29 @@ pub fn run_state_claim(
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let (plan_abs, plan_rel) = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
-            (path, relative_path)
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    // 3. Compute plan hash
-    let plan_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
-
-    // 4. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
+
+    // 3a. Check for plan drift (reject if plan file was modified since init)
+    if let Some(drift) = check_plan_drift(&repo_root, &db, &plan_id)? {
+        return Err(format!(
+            "Plan file has been modified since state was initialized (stored hash: {}..., current: {}...). Re-initialize with `tug state init` to update.",
+            &drift.stored_hash[..8],
+            &drift.current_hash[..8],
+        ));
+    }
+
+    // 4. Get stored hash from DB for claim_step verification
+    let plan_state = db.show_plan(&plan_id).map_err(|e| e.to_string())?;
+    let plan_hash = plan_state.plan_hash;
 
     // 5. Claim step
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
     let result = db
-        .claim_step(&plan_rel_str, &worktree, lease_duration, &plan_hash, force)
+        .claim_step(&plan_id, &worktree, lease_duration, &plan_hash, force)
         .map_err(|e| e.to_string())?;
 
     // 6. Output
@@ -421,6 +452,7 @@ pub fn run_state_claim(
         use crate::output::{JsonResponse, StateClaimData};
         use tugtool_core::ClaimResult;
 
+        let plan_path_opt = plan_state.plan_path.clone();
         let data = match result {
             ClaimResult::Claimed {
                 anchor,
@@ -431,7 +463,8 @@ pub fn run_state_claim(
                 lease_expires,
                 reclaimed,
             } => StateClaimData {
-                plan_path: plan_rel_str,
+                plan_id: plan_id.clone(),
+                plan_path: plan_path_opt,
                 claimed: true,
                 anchor: Some(anchor),
                 title: Some(title),
@@ -446,7 +479,8 @@ pub fn run_state_claim(
                 all_completed,
                 blocked,
             } => StateClaimData {
-                plan_path: plan_rel_str,
+                plan_id: plan_id.clone(),
+                plan_path: plan_path_opt,
                 claimed: false,
                 anchor: None,
                 title: None,
@@ -458,7 +492,8 @@ pub fn run_state_claim(
                 all_completed,
             },
             ClaimResult::AllCompleted => StateClaimData {
-                plan_path: plan_rel_str,
+                plan_id: plan_id.clone(),
+                plan_path: plan_path_opt,
                 claimed: false,
                 anchor: None,
                 title: None,
@@ -527,42 +562,23 @@ pub fn run_state_start(
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let (_plan_abs, plan_rel) = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
-            (path, relative_path)
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    // 3. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Start step
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
-    db.start_step(&plan_rel_str, &step, &worktree)
+    db.start_step(&plan_id, &step, &worktree)
         .map_err(|e| e.to_string())?;
 
     // 5. Output
     if json {
         use crate::output::{JsonResponse, StateStartData};
         let data = StateStartData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             anchor: step.clone(),
             started: true,
         };
@@ -589,43 +605,24 @@ pub fn run_state_heartbeat(
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let (_plan_abs, plan_rel) = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
-            (path, relative_path)
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    // 3. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Heartbeat
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
     let lease_expires = db
-        .heartbeat_step(&plan_rel_str, &step, &worktree, lease_duration)
+        .heartbeat_step(&plan_id, &step, &worktree, lease_duration)
         .map_err(|e| e.to_string())?;
 
     // 5. Output
     if json {
         use crate::output::{JsonResponse, StateHeartbeatData};
         let data = StateHeartbeatData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             anchor: step.clone(),
             lease_expires: lease_expires.clone(),
         };
@@ -655,37 +652,15 @@ pub fn run_state_complete_checklist(
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let (plan_abs, plan_rel) = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
-            (path, relative_path)
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-    let _ = plan_abs; // plan_abs resolved for path validation; not needed after
-
-    // 3. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Check for plan drift
-    if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+    if let Some(drift) = check_plan_drift(&repo_root, &db, &plan_id)? {
         if !allow_drift {
             return Err(format!(
                 "{}. Use --allow-drift to proceed.",
@@ -716,14 +691,15 @@ pub fn run_state_complete_checklist(
 
     // 6. Call batch_update_checklist with complete_remaining = true
     let result = db
-        .batch_update_checklist(&plan_rel_str, &step, &worktree, &entries, true)
+        .batch_update_checklist(&plan_id, &step, &worktree, &entries, true)
         .map_err(|e| e.to_string())?;
 
     // 7. Output
     if json {
         use crate::output::{JsonResponse, StateUpdateData};
         let data = StateUpdateData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             anchor: step.clone(),
             items_updated: result.items_updated,
         };
@@ -754,43 +730,24 @@ pub fn run_state_artifact(
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let (_plan_abs, plan_rel) = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
-            (path, relative_path)
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    // 3. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Record artifact
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
     let artifact_id = db
-        .record_artifact(&plan_rel_str, &step, &worktree, &kind, &summary)
+        .record_artifact(&plan_id, &step, &worktree, &kind, &summary)
         .map_err(|e| e.to_string())?;
 
     // 5. Output
     if json {
         use crate::output::{JsonResponse, StateArtifactData};
         let data = StateArtifactData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             anchor: step.clone(),
             artifact_id,
             kind: kind.clone(),
@@ -822,36 +779,15 @@ pub fn run_state_complete(
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let (_plan_abs, plan_rel) = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
-            (path, relative_path)
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    // 3. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Check for plan drift
-    if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+    if let Some(drift) = check_plan_drift(&repo_root, &db, &plan_id)? {
         if !allow_drift {
             return Err(format!(
                 "{}. Use --allow-drift to proceed.",
@@ -862,14 +798,15 @@ pub fn run_state_complete(
 
     // 5. Complete step
     let result = db
-        .complete_step(&plan_rel_str, &step, &worktree, force, reason.as_deref())
+        .complete_step(&plan_id, &step, &worktree, force, reason.as_deref())
         .map_err(|e| e.to_string())?;
 
-    // 5. Output
+    // 6. Output
     if json {
         use crate::output::{JsonResponse, StateCompleteData};
         let data = StateCompleteData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             anchor: step.clone(),
             completed: result.completed,
             forced: result.forced,
@@ -906,35 +843,15 @@ pub fn run_state_show(
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     if let Some(plan) = plan {
         // Show specific plan
-        let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-        let plan_rel = match resolved {
-            tugtool_core::ResolveResult::Found { path, .. } => {
-                path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
-            }
-            tugtool_core::ResolveResult::NotFound => {
-                return Err(format!("Plan not found: {}", plan));
-            }
-            tugtool_core::ResolveResult::Ambiguous(candidates) => {
-                let candidate_strs: Vec<String> =
-                    candidates.iter().map(|p| p.display().to_string()).collect();
-                return Err(format!(
-                    "Ambiguous plan reference '{}'. Matches: {}",
-                    plan,
-                    candidate_strs.join(", ")
-                ));
-            }
-        };
-
-        let plan_rel_str = plan_rel.to_string_lossy().to_string();
-        let plan_state = db.show_plan(&plan_rel_str).map_err(|e| e.to_string())?;
+        let plan_id = resolve_plan_id(&db, &plan)?;
+        let plan_state = db.show_plan(&plan_id).map_err(|e| e.to_string())?;
 
         // Check for plan drift and warn (non-blocking)
-        if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+        if let Some(drift) = check_plan_drift(&repo_root, &db, &plan_id)? {
             eprintln!("Warning: {}", format_drift_message(&drift));
         }
 
@@ -951,7 +868,7 @@ pub fn run_state_show(
             if checklist {
                 // Checklist mode: show all items with status markers
                 let items = db
-                    .get_checklist_items(&plan_rel_str)
+                    .get_checklist_items(&plan_id)
                     .map_err(|e| e.to_string())?;
                 print_checklist_view(&plan_state, &items);
             } else {
@@ -1000,7 +917,7 @@ pub fn run_state_show(
                 if checklist {
                     // Checklist mode: show all items with status markers
                     let items = db
-                        .get_checklist_items(&plan_state.plan_path)
+                        .get_checklist_items(&plan_state.plan_id)
                         .map_err(|e| e.to_string())?;
                     print_checklist_view(plan_state, &items);
                 } else {
@@ -1016,7 +933,7 @@ pub fn run_state_show(
 
 /// Helper function to print plan state in text format
 fn print_plan_state(plan: &tugtool_core::PlanState) {
-    println!("Plan: {}", plan.plan_path);
+    println!("Plan: {}", plan.plan_path.as_deref().unwrap_or(&plan.plan_id));
     if let Some(title) = &plan.phase_title {
         println!("Title: {}", title);
     }
@@ -1117,7 +1034,13 @@ fn print_checklist_view(
     plan_state: &tugtool_core::PlanState,
     items: &[tugtool_core::ChecklistItemDetail],
 ) {
-    println!("Plan: {}", plan_state.plan_path);
+    println!(
+        "Plan: {}",
+        plan_state
+            .plan_path
+            .as_deref()
+            .unwrap_or(&plan_state.plan_id)
+    );
     if let Some(title) = &plan_state.phase_title {
         println!("Title: {}", title);
     }
@@ -1224,40 +1147,22 @@ pub fn run_state_ready(plan: String, json: bool, quiet: bool) -> Result<i32, Str
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let plan_rel = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    // 3. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Query ready steps
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
-    let result = db.ready_steps(&plan_rel_str).map_err(|e| e.to_string())?;
+    let result = db.ready_steps(&plan_id).map_err(|e| e.to_string())?;
 
     // 5. Output
     if json {
         use crate::output::{JsonResponse, StateReadyData};
         let data = StateReadyData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             ready: result.ready,
             blocked: result.blocked,
             completed: result.completed,
@@ -1298,41 +1203,23 @@ pub fn run_state_reset(plan: String, step: String, json: bool, quiet: bool) -> R
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let plan_rel = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    // 3. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Reset step
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
-    db.reset_step(&plan_rel_str, &step)
+    db.reset_step(&plan_id, &step)
         .map_err(|e| e.to_string())?;
 
     // 5. Output
     if json {
         use crate::output::{JsonResponse, StateResetData};
         let data = StateResetData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             anchor: step.clone(),
             reset: true,
         };
@@ -1359,42 +1246,24 @@ pub fn run_state_release(
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let plan_rel = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    // 3. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Release step
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
     let result = db
-        .release_step(&plan_rel_str, &step, worktree.as_deref(), force)
+        .release_step(&plan_id, &step, worktree.as_deref(), force)
         .map_err(|e| e.to_string())?;
 
     // 5. Output
     if json {
         use crate::output::{JsonResponse, StateReleaseData};
         let data = StateReleaseData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             anchor: step.clone(),
             released: result.released,
             was_claimed_by: result.was_claimed_by,
@@ -1423,42 +1292,26 @@ pub fn run_state_reconcile(
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
-
-    let plan_rel = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
-            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
-        }
-        tugtool_core::ResolveResult::NotFound => {
-            return Err(format!("Plan not found: {}", plan));
-        }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
-            let candidate_strs: Vec<String> =
-                candidates.iter().map(|p| p.display().to_string()).collect();
-            return Err(format!(
-                "Ambiguous plan reference '{}'. Matches: {}",
-                plan,
-                candidate_strs.join(", ")
-            ));
-        }
-    };
-
-    let plan_rel_str = plan_rel.to_string_lossy().to_string();
-
-    // 3. Scan git log for trailers
-    let entries = scan_git_trailers(&repo_root, &plan_rel_str)?;
-
-    // 4. Open state.db
+    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
-    // 5. Reconcile
+    // 3. Resolve plan_id
+    let plan_id = resolve_plan_id(&db, &plan)?;
+
+    // 4. Get plan file path for matching git trailers (trailers may contain file path)
+    let plan_state = db.show_plan(&plan_id).map_err(|e| e.to_string())?;
+    let plan_file_path = plan_state.plan_path;
+
+    // 5. Scan git log for trailers
+    let entries = scan_git_trailers(&repo_root, &plan_id, plan_file_path.as_deref())?;
+
+    // 6. Reconcile
     let result = db
-        .reconcile(&plan_rel_str, &entries, force)
+        .reconcile(&plan_id, &entries, force)
         .map_err(|e| e.to_string())?;
 
-    // 6. Output warnings for mismatches
+    // 7. Output warnings for mismatches
     if !result.skipped_mismatches.is_empty() && !quiet {
         eprintln!(
             "Warning: {} step(s) skipped due to commit hash mismatch:",
@@ -1473,11 +1326,12 @@ pub fn run_state_reconcile(
         eprintln!("Use --force to overwrite DB hashes with git trailer hashes.");
     }
 
-    // 7. Output
+    // 8. Output
     if json {
         use crate::output::{JsonResponse, StateReconcileData};
         let data = StateReconcileData {
-            plan_path: plan_rel_str,
+            plan_id: plan_id.clone(),
+            plan_path: None,
             reconciled_count: result.reconciled_count,
             skipped_count: result.skipped_count,
             skipped_mismatches: result.skipped_mismatches,
@@ -1503,69 +1357,111 @@ pub fn run_state_reconcile(
     Ok(0)
 }
 
-pub fn run_state_gc(dry_run: bool, json: bool, quiet: bool) -> Result<i32, String> {
-    // 1. Resolve repo root
+pub fn run_state_archive(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
-
-    // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let plan_id = resolve_plan_id(&db, &plan)?;
+    let result = db.archive_plan(&plan_id).map_err(|e| e.to_string())?;
 
-    // 3. Run GC (plan_root is the repo root so relative plan paths resolve correctly)
-    let result = db
-        .gc_orphaned_plans(&repo_root, dry_run)
-        .map_err(|e| e.to_string())?;
-
-    let removed_count = result.removed_plans.len();
-
-    // 4. Output
     if json {
-        use crate::output::{JsonResponse, StateGcData};
-        let data = StateGcData {
-            dry_run,
-            removed_count,
-            removed_plans: result.removed_plans,
-            remaining_plans: result.remaining_plans,
+        use crate::output::{JsonResponse, StateArchiveData};
+        let data = StateArchiveData {
+            plan_id: result.plan_id.clone(),
+            archived: true,
+            snapshot_taken: result.snapshot_taken,
         };
-        let response = JsonResponse::ok("state gc", data);
+        let response = JsonResponse::ok("state archive", data);
         println!(
             "{}",
             serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
         );
     } else if !quiet {
-        if dry_run {
-            if removed_count == 0 {
-                println!("No orphaned plans found.");
-            } else {
-                println!(
-                    "Dry run: {} orphaned plan(s) would be removed:",
-                    removed_count
-                );
-                for plan in &result.removed_plans {
-                    println!("  {}", plan);
-                }
-                println!("  ({} plan(s) would remain)", result.remaining_plans);
-            }
-        } else {
-            if removed_count == 0 {
-                println!("No orphaned plans found.");
-            } else {
-                println!("Removed {} orphaned plan(s):", removed_count);
-                for plan in &result.removed_plans {
-                    println!("  {}", plan);
-                }
-            }
-            println!("{} plan(s) remaining in state.db.", result.remaining_plans);
+        println!("Archived plan: {}", result.plan_id);
+        if result.snapshot_taken {
+            println!("  Snapshot: taken");
         }
     }
+    Ok(0)
+}
 
+pub fn run_state_list(all: bool, json: bool, quiet: bool) -> Result<i32, String> {
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let plans = db.list_plans(all).map_err(|e| e.to_string())?;
+
+    if json {
+        use crate::output::{JsonResponse, StateListData, StateListEntry};
+        let entries: Vec<StateListEntry> = plans
+            .iter()
+            .map(|p| StateListEntry {
+                plan_id: p.plan_id.clone(),
+                plan_slug: p.plan_slug.clone(),
+                plan_path: p.plan_path.clone(),
+                status: if p.status == "active"
+                    && p.steps_total > 0
+                    && p.steps_completed == p.steps_total
+                {
+                    "completed".to_string()
+                } else {
+                    p.status.clone()
+                },
+                steps_completed: p.steps_completed,
+                steps_total: p.steps_total,
+                created_at: p.created_at.clone(),
+                updated_at: p.updated_at.clone(),
+            })
+            .collect();
+        let data = StateListData { plans: entries };
+        let response = JsonResponse::ok("state list", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        if plans.is_empty() {
+            println!("No plans tracked.");
+        } else {
+            println!(
+                "{:<40} {:<12} {:<10} {:<12} {}",
+                "PLAN", "STATUS", "STEPS", "CREATED", "UPDATED"
+            );
+            for p in &plans {
+                let display_status = if p.status == "active"
+                    && p.steps_total > 0
+                    && p.steps_completed == p.steps_total
+                {
+                    "completed"
+                } else {
+                    &p.status
+                };
+                let created_short = if p.created_at.len() >= 10 {
+                    &p.created_at[..10]
+                } else {
+                    &p.created_at
+                };
+                let updated_short = if p.updated_at.len() >= 10 {
+                    &p.updated_at[..10]
+                } else {
+                    &p.updated_at
+                };
+                println!(
+                    "{:<40} {:<12} {}/{:<8} {:<12} {}",
+                    p.plan_id, display_status, p.steps_completed, p.steps_total, created_short,
+                    updated_short
+                );
+            }
+        }
+    }
     Ok(0)
 }
 
 /// Scan git log for Tug-Step and Tug-Plan trailers
 fn scan_git_trailers(
     repo_root: &std::path::Path,
-    plan_path: &str,
+    plan_id: &str,
+    plan_file_path: Option<&str>,
 ) -> Result<Vec<tugtool_core::ReconcileEntry>, String> {
     use std::process::Command;
 
@@ -1621,10 +1517,15 @@ fn scan_git_trailers(
         }
     }
 
-    // Filter to only entries for the requested plan
+    // Filter to only entries for the requested plan.
+    // Match against both plan_id and plan_file_path (git trailers may contain
+    // either the plan_id or the file path depending on when the commit was made).
     let filtered: Vec<_> = entries
         .into_iter()
-        .filter(|e| e.plan_path == plan_path)
+        .filter(|e| {
+            e.plan_path == plan_id
+                || plan_file_path.is_some_and(|fp| e.plan_path == fp)
+        })
         .collect();
 
     Ok(filtered)

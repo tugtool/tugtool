@@ -591,7 +591,7 @@ mod tests {
     fn test_create_dash_new() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         let (dash, created) = db
             .create_dash(
@@ -615,7 +615,7 @@ mod tests {
     fn test_create_dash_idempotent() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         let (dash1, created1) = db
             .create_dash(
@@ -646,7 +646,7 @@ mod tests {
     fn test_create_dash_reactivate() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Create and join
         let (dash1, _) = db
@@ -688,7 +688,7 @@ mod tests {
     fn test_get_dash() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         assert!(db.get_dash("nonexistent").unwrap().is_none());
 
@@ -710,7 +710,7 @@ mod tests {
     fn test_record_round_with_commit() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         db.create_dash(
             "test-dash",
@@ -745,7 +745,7 @@ mod tests {
     fn test_record_round_without_commit() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         db.create_dash(
             "test-dash",
@@ -778,7 +778,7 @@ mod tests {
     fn test_get_dash_rounds_current_incarnation_only() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Create dash and add a round
         db.create_dash(
@@ -840,7 +840,7 @@ mod tests {
     fn test_list_dashes_active_only() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         db.create_dash("dash1", Some("d1"), "tugdash/dash1", "/path1", "main")
             .unwrap();
@@ -860,7 +860,7 @@ mod tests {
     fn test_update_dash_status() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         db.create_dash(
             "test-dash",

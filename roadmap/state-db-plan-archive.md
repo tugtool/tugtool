@@ -108,38 +108,49 @@ CREATE TABLE plans (
 -- composite keys change accordingly: (plan_id, anchor), (plan_id, step_anchor, depends_on), etc.
 ```
 
-### Plan Resolution
+### Plan-ID-First CLI Model
 
-`resolve_plan()` currently does filesystem-based resolution (5-stage path cascade) and returns a `ResolveResult::Found { path, stage }`. This needs two changes:
+`state init` is the **only** command that takes a file path. It is the ingestion point: it reads the file, stores content in the DB as a snapshot, generates a plan_id, and returns it. From that moment on, the DB is the source of truth.
 
-1. **Carry plan_id in the result.** The unified return type becomes:
-   - `ResolveResult::Found { plan_id: Option<String>, path: Option<PathBuf>, stage: ResolveStage }` — `plan_id` is `Some` for plans already initialized in the DB, `None` for new plans being init'd for the first time. `path` is `Some` for active plans on disk, `None` for archived plans found via DB fallback.
+**All other state commands take a plan_id or slug prefix.** No file path resolution, no filesystem involvement:
 
-2. **DB fallback.** After the existing 5-stage filesystem cascade fails, search the DB by slug prefix or plan_id. This requires `resolve_plan()` to accept a `&StateDb` parameter (or a new `resolve_plan_with_db()` function).
+```
+tugcode state init .tugtool/tugplan-foo.md          # file path → returns plan_id
+tugcode state claim foo                              # slug prefix
+tugcode state show foo-abc1234-1                     # exact plan_id
+tugcode state complete foo step-1 --worktree /tmp/wt # slug prefix
+tugcode state archive foo                            # slug prefix
+tugcode state list                                   # no plan arg
+```
 
-CLI commands continue to accept file paths, slugs, or plan_ids as input — the resolution layer handles all three.
+CLI resolution for non-init commands is purely DB-based:
+1. Exact `plan_id` match
+2. `plan_slug` prefix match (most recent if ambiguous)
+3. Error if no match
+
+This eliminates the entire `resolve_plan()` → file path → plan_id lookup chain that was creating complexity in every command function. `resolve_plan()` remains unchanged for other uses (validation, worktree setup) but state commands don't use it.
 
 ### `init_plan()` Signature
 
-`init_plan()` currently takes a path and parsed plan structure. Under the new design, it also needs to:
-- Read the plan file content itself (for snapshotting) — callers should not need to pass raw content.
-- Generate the `plan_id` from the slug and content hash.
-- Insert the init snapshot into `plan_snapshots`.
-- Return the generated `plan_id` to the caller.
+`init_plan()` is the ingestion point. It:
+- Takes a file path and parsed plan structure
+- Reads the plan file content (for snapshotting)
+- Computes the SHA-256 hash (or accepts an optional override for tests)
+- Generates the `plan_id` from slug + hash + generation
+- Inserts the plan, snapshot, steps, deps, and checklist items
+- Returns the generated `plan_id` to the caller
 
 ### Cleanup: Just `archive`
 
 The current `state gc` command is removed. The new `state archive` command is the single cleanup operation.
 
 - `state archive <plan>` — explicitly archive a plan. Snapshots content, transitions to `archived`, nulls out `plan_path`. Works on any active plan.
-- **Orphan auto-archive:** Limited to read-only commands (`state list`, `state show`). When these commands encounter a plan whose file no longer exists on disk, they auto-archive it. Operational commands (`claim`, `start`, `heartbeat`, `complete`) do NOT auto-archive — a temporarily inaccessible file (network mount hiccup, worktree churn) should not trigger archival mid-workflow.
-- **No purge command.** If someone truly needs to delete a row from the DB, that's a `sqlite3` session, not a product feature. The whole point of this work is to preserve history.
-
-Net effect: one plan-level cleanup command (`archive`) replaces the current one (`gc`), but preserves instead of destroys.
+- **Orphan auto-archive:** Limited to read-only commands (`state list`, `state show`). When these commands encounter a plan whose `plan_path` file no longer exists on disk, they auto-archive it. Operational commands (`claim`, `start`, `heartbeat`, `complete`) do NOT auto-archive.
+- **No purge command.** Deletion is a `sqlite3` session, not a product feature.
 
 ### JSON Output
 
-CLI JSON output includes both `plan_id` and `plan_path` in all response structs. This allows agents in tugplug/ to migrate from `plan_path` to `plan_id` incrementally rather than all at once.
+CLI JSON output uses `plan_id` as the primary identifier. `plan_path` is included as optional metadata (where the file was at ingestion time).
 
 ```json
 {
@@ -149,7 +160,11 @@ CLI JSON output includes both `plan_id` and `plan_path` in all response structs.
 }
 ```
 
-For archived plans where the file no longer exists, `plan_path` is `null`.
+For archived plans, `plan_path` is `null`.
+
+### Agent Migration (tugplug/)
+
+Agents in tugplug/ currently pass `{plan_path}` to state commands. Since we control this code, we update them to pass `{plan_id}` instead. The JSON output from `state init` and `state claim` already returns `plan_id` — agents capture it once and use it for all subsequent calls. This is a clean cut-over, not a gradual migration.
 
 ### `state list` Command
 
@@ -196,30 +211,30 @@ Migration steps within the v5 upgrade (all in one EXCLUSIVE transaction):
 
 ### Blast radius
 
-The `plan_path` → `plan_id` FK change touches ~150 code locations:
+The plan-id-first model significantly reduces the blast radius compared to the original approach of maintaining backward compatibility with plan_path everywhere:
 
 | Area | Scope |
 |------|-------|
 | Schema + migrations | `state.rs` — 6 tables, 4 indexes, all composite keys |
-| SQL queries | `state.rs` — 50+ queries |
-| CLI commands | `commands/state.rs` — 8+ functions |
-| JSON output structs | `output.rs` — 12+ structs (add `plan_id`, keep `plan_path`) |
-| Other commands | `merge.rs`, `log.rs`, `commit.rs`, `worktree.rs`, `doctor.rs` |
-| Plan resolution | `resolve.rs` — add DB fallback path, new return type |
+| SQL queries | `state.rs` — 50+ queries (already done in steps 1-2) |
+| StateDb methods | `state.rs` — new init_plan, archive_plan, reinit_plan, list_plans, completion snapshot |
+| CLI commands | `commands/state.rs` — all `run_state_*` functions take plan_id instead of resolving file paths |
+| JSON output structs | `output.rs` — 12+ structs (plan_id primary, plan_path as optional metadata) |
+| Other commands | `commit.rs`, `worktree.rs`, `doctor.rs` — use plan_id from init result |
 | Error types | `error.rs` — 2 error variants |
-| Integration tests | `state_integration_tests.rs` — 115+ references |
-| Agent specs | `tugplug/` — 11+ agent docs reference `plan_path` in commands/JSON |
+| Integration tests | `state_integration_tests.rs` — use plan_id in all commands |
+| Agent specs | `tugplug/` — replace `{plan_path}` with `{plan_id}` in command templates |
 
-This is a big change but it's mechanical — the pattern is the same everywhere (replace `plan_path` FK with `plan_id` FK). The agents in tugplug/ can be updated to use `plan_id` gradually since JSON output includes both fields.
+The plan-id-first approach eliminates the resolve_plan() → file path → plan_id translation layer that was the main source of complexity.
 
 ## Design Decisions
 
-- **Two lifecycle states, not three.** `active` and `archived`. No `done` state — "completed" is derived from all steps being done, not a separate lifecycle state. Simpler model, fewer transitions to manage.
+- **Plan-ID-first.** `state init` is the only command that takes a file path. All other commands take plan_id or slug prefix. The DB is the source of truth from the moment a plan is initialized.
+- **Two lifecycle states, not three.** `active` and `archived`. No `done` state — "completed" is derived from all steps being done, not a separate lifecycle state.
 - **Auto-complete on last step:** When the last step completes, a completion snapshot is taken automatically. No separate `state complete-plan` command.
-- **Orphan auto-archive is read-only only.** Only `list` and `show` auto-archive orphaned plans. Operational commands (`claim`, `start`, `heartbeat`, `complete`) do not — prevents accidental archival during transient file access issues.
-- **`init_plan()` reads file content itself.** Callers pass the path; `init_plan()` reads, hashes, snapshots, and generates the plan_id. Simpler API surface.
-- **`reinit` on archived plans:** Not allowed. Archive is final. A `clone` command could be added later if the need arises, but defer until then.
-- **Restoring archived → active:** Not supported. No real-world need yet.
+- **Orphan auto-archive is read-only only.** Only `list` and `show` auto-archive orphaned plans.
+- **`init_plan()` reads file content itself.** Callers pass the path; `init_plan()` reads, hashes, snapshots, and generates the plan_id.
+- **`reinit` on archived plans:** Not allowed. Archive is final.
 - **`show` for archived plans:** Renders from the most recent `plan_snapshots` entry.
-- **`gc` removed, `archive` replaces it.** One cleanup command. Orphans auto-archive on contact (read-only commands only). No purge command.
-- **JSON output:** Both `plan_id` and `plan_path` in all output structs. Agents migrate incrementally.
+- **`gc` removed, `archive` replaces it.** One cleanup command. No purge.
+- **Agent cut-over:** tugplug/ agents updated to use `plan_id` directly. No incremental migration — clean cut-over since we control all the agent code.

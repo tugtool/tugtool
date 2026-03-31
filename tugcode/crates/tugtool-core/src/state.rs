@@ -9,7 +9,7 @@ use crate::session::now_iso8601;
 use crate::types::{Checkpoint, TugPlan};
 use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 /// Compute an ISO 8601 timestamp `secs` seconds from now
@@ -89,6 +89,11 @@ fn normalize_anchor(anchor: &str) -> &str {
 /// schema creation, plan initialization, step claiming, checklist updates, etc.
 pub struct StateDb {
     pub(crate) conn: Connection,
+    /// Absolute path to the repository root. Used by migration and future snapshot operations.
+    // Step 1: repo_root is stored but not yet read in production code paths; it will be
+    // used by migrate_v4_to_v5() (called in Step 2) and init_plan() (updated in Step 3).
+    #[allow(dead_code)]
+    pub(crate) repo_root: PathBuf,
 }
 
 impl StateDb {
@@ -96,7 +101,10 @@ impl StateDb {
     ///
     /// Sets WAL mode and busy timeout, then creates schema if not present.
     /// This operation is idempotent.
-    pub fn open(path: &Path) -> Result<Self, TugError> {
+    ///
+    /// `repo_root` is stored on the struct for use by migration (v4→v5 plan snapshots)
+    /// and future snapshot operations in `init_plan()` and `complete_step()`.
+    pub fn open(path: &Path, repo_root: &Path) -> Result<Self, TugError> {
         let conn = Connection::open(path).map_err(|e| TugError::StateDbOpen {
             reason: format!("failed to open database: {}", e),
         })?;
@@ -107,7 +115,8 @@ impl StateDb {
                 reason: format!("failed to set PRAGMA: {}", e),
             })?;
 
-        // Create schema (idempotent)
+        // Create schema (idempotent) — v5 schema: plan_id as PK, plan_snapshots table,
+        // all child tables keyed by plan_id FK instead of plan_path.
         conn.execute_batch(
             r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -115,7 +124,9 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 
 CREATE TABLE IF NOT EXISTS plans (
-    plan_path    TEXT PRIMARY KEY,
+    plan_id      TEXT PRIMARY KEY,
+    plan_path    TEXT,
+    plan_slug    TEXT NOT NULL DEFAULT '',
     plan_hash    TEXT NOT NULL,
     phase_title  TEXT,
     status       TEXT NOT NULL DEFAULT 'active',
@@ -123,8 +134,19 @@ CREATE TABLE IF NOT EXISTS plans (
     updated_at   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS plan_snapshots (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id      TEXT NOT NULL REFERENCES plans(plan_id),
+    content      TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    event        TEXT NOT NULL,
+    captured_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_plan ON plan_snapshots(plan_id);
+
 CREATE TABLE IF NOT EXISTS steps (
-    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
+    plan_id          TEXT NOT NULL REFERENCES plans(plan_id),
     anchor           TEXT NOT NULL,
     step_index       INTEGER NOT NULL,
     title            TEXT NOT NULL,
@@ -137,21 +159,21 @@ CREATE TABLE IF NOT EXISTS steps (
     completed_at     TEXT,
     commit_hash      TEXT,
     complete_reason  TEXT,
-    PRIMARY KEY (plan_path, anchor)
+    PRIMARY KEY (plan_id, anchor)
 );
 
 CREATE TABLE IF NOT EXISTS step_deps (
-    plan_path    TEXT NOT NULL,
+    plan_id      TEXT NOT NULL,
     step_anchor  TEXT NOT NULL,
     depends_on   TEXT NOT NULL,
-    PRIMARY KEY (plan_path, step_anchor, depends_on),
-    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor),
-    FOREIGN KEY (plan_path, depends_on) REFERENCES steps(plan_path, anchor)
+    PRIMARY KEY (plan_id, step_anchor, depends_on),
+    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps(plan_id, anchor),
+    FOREIGN KEY (plan_id, depends_on) REFERENCES steps(plan_id, anchor)
 );
 
 CREATE TABLE IF NOT EXISTS checklist_items (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_path    TEXT NOT NULL,
+    plan_id      TEXT NOT NULL,
     step_anchor  TEXT NOT NULL,
     kind         TEXT NOT NULL,
     ordinal      INTEGER NOT NULL,
@@ -159,23 +181,18 @@ CREATE TABLE IF NOT EXISTS checklist_items (
     status       TEXT NOT NULL DEFAULT 'open',
     updated_at   TEXT,
     reason       TEXT,
-    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
+    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps(plan_id, anchor)
 );
 
 CREATE TABLE IF NOT EXISTS step_artifacts (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_path    TEXT NOT NULL,
+    plan_id      TEXT NOT NULL,
     step_anchor  TEXT NOT NULL,
     kind         TEXT NOT NULL,
     summary      TEXT NOT NULL,
     recorded_at  TEXT NOT NULL,
-    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
+    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps(plan_id, anchor)
 );
-
-CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(plan_path, status);
-CREATE INDEX IF NOT EXISTS idx_steps_lease ON steps(plan_path, status, lease_expires_at);
-CREATE INDEX IF NOT EXISTS idx_checklist_step ON checklist_items(plan_path, step_anchor);
-CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_anchor);
 
 CREATE TABLE IF NOT EXISTS dashes (
     name        TEXT PRIMARY KEY,
@@ -207,9 +224,9 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             reason: format!("failed to create schema: {}", e),
         })?;
 
-        // Insert schema version (idempotent via NOT EXISTS check)
+        // Insert schema version (idempotent via NOT EXISTS check) — fresh DBs start at v5.
         conn.execute(
-            "INSERT INTO schema_version SELECT 4 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
+            "INSERT INTO schema_version SELECT 5 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
             [],
         )
         .map_err(|e| TugError::StateDbOpen {
@@ -217,8 +234,24 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         })?;
 
         // Run migrations if needed
-        let mut db = StateDb { conn };
+        let mut db = StateDb {
+            conn,
+            repo_root: repo_root.to_path_buf(),
+        };
         db.migrate_schema()?;
+
+        // Ensure v5 indexes exist (idempotent; safe to run after every open once at v5).
+        // These are not in the initial DDL block because old-schema tables don't have plan_id.
+        db.conn
+            .execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(plan_id, status);
+CREATE INDEX IF NOT EXISTS idx_steps_lease ON steps(plan_id, status, lease_expires_at);
+CREATE INDEX IF NOT EXISTS idx_checklist_step ON checklist_items(plan_id, step_anchor);
+CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_id, step_anchor);",
+            )
+            .map_err(|e| TugError::StateDbOpen {
+                reason: format!("failed to create v5 indexes: {}", e),
+            })?;
 
         Ok(db)
     }
@@ -341,24 +374,381 @@ COMMIT;
             })?;
         }
 
+        // Migrate from v4 to v5: plan_id PK, plan_snapshots table, all child tables
+        // use plan_id FK instead of plan_path.
+        if self.schema_version()? == 4 {
+            self.migrate_v4_to_v5()?;
+        }
+
         Ok(())
     }
 
-    /// List all plan paths in the database.
+    /// Migrate schema from v4 to v5.
     ///
-    /// Used by the doctor health check to detect orphaned plans.
+    /// v5 introduces:
+    /// - `plan_id` as the primary key for `plans` (format: `<slug>-<hash7>-<gen>`)
+    /// - `plan_slug` and `status` columns on `plans`
+    /// - `plan_snapshots` table for init/complete content snapshots
+    /// - All child tables (`steps`, `step_deps`, `checklist_items`, `step_artifacts`)
+    ///   remapped to use `plan_id` FK instead of `plan_path`
+    ///
+    /// The migration runs in a single EXCLUSIVE transaction for atomicity.
+    /// For each existing plan, it derives a slug from `plan_path`, constructs
+    /// `plan_id = <slug>-<hash7>-1`, reads the plan file for a snapshot if
+    /// available, then copies all child rows to new v5 tables.
+    ///
+    fn migrate_v4_to_v5(&mut self) -> Result<(), TugError> {
+        // Disable FK enforcement during migration (bundled SQLite has FKs ON by default).
+        // Must be done outside a transaction.
+        self.conn
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .map_err(|e| TugError::StateDbOpen {
+                reason: format!("failed to disable foreign keys for v5 migration: {}", e),
+            })?;
+
+        // Collect existing plan data before the transaction so we can read files from disk.
+        // We read the plan content outside the transaction to avoid holding EXCLUSIVE lock
+        // during filesystem I/O.
+        let existing_plans: Vec<(String, String, Option<String>, String, String, String)> = {
+            let mut stmt = self
+                .conn
+                .prepare(
+                    "SELECT plan_path, plan_hash, phase_title, status, created_at, updated_at FROM plans",
+                )
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to prepare plan query for v5 migration: {}", e),
+                })?;
+
+            stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            })
+            .map_err(|e| TugError::StateDbOpen {
+                reason: format!("failed to query plans for v5 migration: {}", e),
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
+        };
+
+        // For each plan, derive slug and plan_id, and read file content for snapshot.
+        struct PlanMigrationData {
+            plan_path: String,
+            plan_id: String,
+            plan_slug: String,
+            plan_hash: String,
+            phase_title: Option<String>,
+            status: String,
+            created_at: String,
+            updated_at: String,
+            snapshot_content: Option<String>,
+        }
+
+        let mut plan_data: Vec<PlanMigrationData> = Vec::new();
+        let now = now_iso8601();
+
+        // Detect step_deps column name before entering transaction.
+        // v3+ uses 'depends_on'; v1/v2 used 'depends_on_anchor'.
+        let dep_col_name: &str = {
+            let has_depends_on: bool = self
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('step_deps') WHERE name = 'depends_on'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+            if has_depends_on { "depends_on" } else { "depends_on_anchor" }
+        };
+
+        for (plan_path, plan_hash, phase_title, status, created_at, updated_at) in &existing_plans {
+            let slug = derive_plan_slug(plan_path);
+            let hash7 = if plan_hash.len() >= 7 {
+                plan_hash[..7].to_string()
+            } else {
+                plan_hash.clone()
+            };
+            let plan_id = format!("{}-{}-1", slug, hash7);
+
+            // Try to read file content for snapshot
+            let snapshot_content = std::fs::read_to_string(self.repo_root.join(plan_path)).ok();
+
+            plan_data.push(PlanMigrationData {
+                plan_path: plan_path.clone(),
+                plan_id,
+                plan_slug: slug,
+                plan_hash: plan_hash.clone(),
+                phase_title: phase_title.clone(),
+                status: status.clone(),
+                created_at: created_at.clone(),
+                updated_at: updated_at.clone(),
+                snapshot_content,
+            });
+        }
+
+        let migration_result = self.conn.execute_batch(
+            r#"
+BEGIN EXCLUSIVE;
+
+-- Create v5 plans table (plan_id as PK, plan_slug added, plan_path becomes nullable)
+CREATE TABLE plans_v5 (
+    plan_id      TEXT PRIMARY KEY,
+    plan_path    TEXT,
+    plan_slug    TEXT NOT NULL,
+    plan_hash    TEXT NOT NULL,
+    phase_title  TEXT,
+    status       TEXT NOT NULL DEFAULT 'active',
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+-- Create plan_snapshots table (IF NOT EXISTS in case open() already created it)
+CREATE TABLE IF NOT EXISTS plan_snapshots (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id      TEXT NOT NULL REFERENCES plans_v5(plan_id),
+    content      TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    event        TEXT NOT NULL,
+    captured_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_snapshots_plan ON plan_snapshots(plan_id);
+
+-- Create v5 steps table (plan_id FK instead of plan_path)
+CREATE TABLE steps_v5 (
+    plan_id          TEXT NOT NULL REFERENCES plans_v5(plan_id),
+    anchor           TEXT NOT NULL,
+    step_index       INTEGER NOT NULL,
+    title            TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    claimed_by       TEXT,
+    claimed_at       TEXT,
+    lease_expires_at TEXT,
+    heartbeat_at     TEXT,
+    started_at       TEXT,
+    completed_at     TEXT,
+    commit_hash      TEXT,
+    complete_reason  TEXT,
+    PRIMARY KEY (plan_id, anchor)
+);
+
+-- Create v5 step_deps table
+CREATE TABLE step_deps_v5 (
+    plan_id      TEXT NOT NULL,
+    step_anchor  TEXT NOT NULL,
+    depends_on   TEXT NOT NULL,
+    PRIMARY KEY (plan_id, step_anchor, depends_on),
+    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps_v5(plan_id, anchor),
+    FOREIGN KEY (plan_id, depends_on) REFERENCES steps_v5(plan_id, anchor)
+);
+
+-- Create v5 checklist_items table
+CREATE TABLE checklist_items_v5 (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id      TEXT NOT NULL,
+    step_anchor  TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    ordinal      INTEGER NOT NULL,
+    text         TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'open',
+    updated_at   TEXT,
+    reason       TEXT,
+    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps_v5(plan_id, anchor)
+);
+
+-- Create v5 step_artifacts table
+CREATE TABLE step_artifacts_v5 (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id      TEXT NOT NULL,
+    step_anchor  TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    summary      TEXT NOT NULL,
+    recorded_at  TEXT NOT NULL,
+    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps_v5(plan_id, anchor)
+);
+
+COMMIT;
+            "#,
+        );
+
+        if let Err(e) = migration_result {
+            // Re-enable FK enforcement before returning error
+            let _ = self.conn.execute_batch("PRAGMA foreign_keys = ON;");
+            return Err(TugError::StateDbOpen {
+                reason: format!("failed to create v5 tables: {}", e),
+            });
+        }
+
+        // Insert plan rows and snapshot data (done outside the main DDL transaction
+        // because we need to use prepared statements with per-row data).
+        let insert_result = (|| -> Result<(), TugError> {
+            let tx = self
+                .conn
+                .transaction_with_behavior(TransactionBehavior::Exclusive)
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to begin v5 data migration transaction: {}", e),
+                })?;
+
+            for pd in &plan_data {
+                // Insert into plans_v5
+                tx.execute(
+                    "INSERT INTO plans_v5 (plan_id, plan_path, plan_slug, plan_hash, phase_title, status, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    rusqlite::params![
+                        &pd.plan_id,
+                        &pd.plan_path,
+                        &pd.plan_slug,
+                        &pd.plan_hash,
+                        &pd.phase_title,
+                        &pd.status,
+                        &pd.created_at,
+                        &pd.updated_at,
+                    ],
+                )
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to insert plan {} into plans_v5: {}", pd.plan_id, e),
+                })?;
+
+                // Insert init snapshot if we have file content
+                if let Some(ref content) = pd.snapshot_content {
+                    use sha2::{Digest, Sha256};
+                    let mut hasher = Sha256::new();
+                    hasher.update(content.as_bytes());
+                    let content_hash = format!("{:x}", hasher.finalize());
+
+                    tx.execute(
+                        "INSERT INTO plan_snapshots (plan_id, content, content_hash, event, captured_at)
+                         VALUES (?1, ?2, ?3, 'init', ?4)",
+                        rusqlite::params![&pd.plan_id, content, &content_hash, &now],
+                    )
+                    .map_err(|e| TugError::StateDbOpen {
+                        reason: format!("failed to insert snapshot for {}: {}", pd.plan_id, e),
+                    })?;
+                }
+
+                // Copy steps from old table to steps_v5
+                tx.execute(
+                    "INSERT INTO steps_v5 (plan_id, anchor, step_index, title, status,
+                             claimed_by, claimed_at, lease_expires_at, heartbeat_at,
+                             started_at, completed_at, commit_hash, complete_reason)
+                     SELECT ?1, anchor, step_index, title, status,
+                            claimed_by, claimed_at, lease_expires_at, heartbeat_at,
+                            started_at, completed_at, commit_hash, complete_reason
+                     FROM steps WHERE plan_path = ?2",
+                    rusqlite::params![&pd.plan_id, &pd.plan_path],
+                )
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to copy steps for {}: {}", pd.plan_id, e),
+                })?;
+
+                // Copy step_deps — use precomputed column name to handle both v1/v2 and v3+ schemas.
+                let dep_sql = format!(
+                    "INSERT INTO step_deps_v5 (plan_id, step_anchor, depends_on)
+                     SELECT ?1, step_anchor, {} FROM step_deps WHERE plan_path = ?2",
+                    dep_col_name
+                );
+                tx.execute(
+                    &dep_sql,
+                    rusqlite::params![&pd.plan_id, &pd.plan_path],
+                )
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to copy step_deps for {}: {}", pd.plan_id, e),
+                })?;
+
+                // Copy checklist_items
+                tx.execute(
+                    "INSERT INTO checklist_items_v5 (plan_id, step_anchor, kind, ordinal, text, status, updated_at, reason)
+                     SELECT ?1, step_anchor, kind, ordinal, text, status, updated_at, reason
+                     FROM checklist_items WHERE plan_path = ?2",
+                    rusqlite::params![&pd.plan_id, &pd.plan_path],
+                )
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!(
+                        "failed to copy checklist_items for {}: {}",
+                        pd.plan_id, e
+                    ),
+                })?;
+
+                // Copy step_artifacts
+                tx.execute(
+                    "INSERT INTO step_artifacts_v5 (plan_id, step_anchor, kind, summary, recorded_at)
+                     SELECT ?1, step_anchor, kind, summary, recorded_at
+                     FROM step_artifacts WHERE plan_path = ?2",
+                    rusqlite::params![&pd.plan_id, &pd.plan_path],
+                )
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!(
+                        "failed to copy step_artifacts for {}: {}",
+                        pd.plan_id, e
+                    ),
+                })?;
+            }
+
+            // Drop old tables and rename v5 tables
+            tx.execute_batch(
+                r#"
+DROP TABLE IF EXISTS step_artifacts;
+DROP TABLE IF EXISTS checklist_items;
+DROP TABLE IF EXISTS step_deps;
+DROP TABLE IF EXISTS steps;
+DROP TABLE IF EXISTS plans;
+
+ALTER TABLE step_artifacts_v5 RENAME TO step_artifacts;
+ALTER TABLE checklist_items_v5 RENAME TO checklist_items;
+ALTER TABLE step_deps_v5 RENAME TO step_deps;
+ALTER TABLE steps_v5 RENAME TO steps;
+ALTER TABLE plans_v5 RENAME TO plans;
+
+CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(plan_id, status);
+CREATE INDEX IF NOT EXISTS idx_steps_lease ON steps(plan_id, status, lease_expires_at);
+CREATE INDEX IF NOT EXISTS idx_checklist_step ON checklist_items(plan_id, step_anchor);
+CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_id, step_anchor);
+
+UPDATE schema_version SET version = 5;
+                "#,
+            )
+            .map_err(|e| TugError::StateDbOpen {
+                reason: format!("failed to finalize v5 schema migration: {}", e),
+            })?;
+
+            tx.commit().map_err(|e| TugError::StateDbOpen {
+                reason: format!("failed to commit v5 migration transaction: {}", e),
+            })
+        })();
+
+        // Re-enable FK enforcement regardless of outcome
+        self.conn
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(|e| TugError::StateDbOpen {
+                reason: format!("failed to re-enable foreign keys after v5 migration: {}", e),
+            })?;
+
+        insert_result
+    }
+
+    /// List all plan IDs in the database.
+    ///
+    /// Used by the doctor health check. Returns plan_id values
+    /// under the historical name `list_plan_paths` — rename to `list_plan_ids` deferred
+    /// to Step 10 alongside caller updates.
+    ///
+    /// TRANSITION: returns plan_id values (not plan_path) until Step 10 renames this.
     pub fn list_plan_paths(&self) -> Result<Vec<String>, TugError> {
         let mut stmt = self
             .conn
-            .prepare("SELECT plan_path FROM plans ORDER BY plan_path")
+            .prepare("SELECT plan_id FROM plans ORDER BY plan_id")
             .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to prepare plan path query: {}", e),
+                reason: format!("failed to prepare plan id query: {}", e),
             })?;
 
         let paths = stmt
             .query_map([], |row| row.get(0))
             .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to query plan paths: {}", e),
+                reason: format!("failed to query plan ids: {}", e),
             })?
             .filter_map(|r| r.ok())
             .collect();
@@ -370,11 +760,13 @@ COMMIT;
     ///
     /// Populates plans, steps, step_deps, and checklist_items tables in a single
     /// transaction. Returns `already_initialized: true` if the plan already exists.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn init_plan(
         &mut self,
         plan_path: &str,
         plan: &TugPlan,
-        plan_hash: &str,
+        plan_hash: Option<&str>,
     ) -> Result<InitResult, TugError> {
         // Test-only failure injection for integration testing
         #[cfg(debug_assertions)]
@@ -387,12 +779,33 @@ COMMIT;
             }
         }
 
-        // Check if already initialized
+        // Compute or use provided hash
+        let file_path = self.repo_root.join(plan_path);
+        let (computed_hash, file_content) = if let Some(h) = plan_hash {
+            // Test path: use provided hash, try to read content for snapshot
+            let content = std::fs::read_to_string(&file_path).ok();
+            (h.to_string(), content)
+        } else {
+            // Production path: read file, compute hash
+            let content = std::fs::read_to_string(&file_path).map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to read plan file {}: {}", plan_path, e),
+            })?;
+            use sha2::{Digest, Sha256};
+            let hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+            (hash, Some(content))
+        };
+
+        // Generate plan_id
+        let slug = derive_plan_slug(plan_path);
+        let generation = self.next_gen_for_slug(&slug)?;
+        let plan_id = generate_plan_id(&slug, &computed_hash, generation);
+
+        // Check if already initialized (by plan_id)
         let exists: bool = self
             .conn
             .query_row(
-                "SELECT 1 FROM plans WHERE plan_path = ?1",
-                [plan_path],
+                "SELECT 1 FROM plans WHERE plan_id = ?1",
+                [&plan_id],
                 |_row| Ok(true),
             )
             .unwrap_or(false);
@@ -400,6 +813,7 @@ COMMIT;
         if exists {
             return Ok(InitResult {
                 already_initialized: true,
+                plan_id,
                 step_count: 0,
                 dep_count: 0,
                 checklist_count: 0,
@@ -414,14 +828,15 @@ COMMIT;
                 reason: format!("failed to begin transaction: {}", e),
             })?;
 
-        // Insert plan row
         let now = now_iso8601();
         tx.execute(
-            "INSERT INTO plans (plan_path, plan_hash, phase_title, status, created_at, updated_at)
-             VALUES (?1, ?2, ?3, 'active', ?4, ?5)",
+            "INSERT INTO plans (plan_id, plan_path, plan_slug, plan_hash, phase_title, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7)",
             rusqlite::params![
+                &plan_id,
                 plan_path,
-                plan_hash,
+                &slug,
+                &computed_hash,
                 plan.phase_title.as_deref(),
                 &now,
                 &now
@@ -431,14 +846,25 @@ COMMIT;
             reason: format!("failed to insert plan: {}", e),
         })?;
 
+        // Create init snapshot if we have content
+        if let Some(ref content) = file_content {
+            tx.execute(
+                "INSERT INTO plan_snapshots (plan_id, content, content_hash, event, captured_at)
+                 VALUES (?1, ?2, ?3, 'init', ?4)",
+                rusqlite::params![&plan_id, content, &computed_hash, &now],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to insert init snapshot: {}", e),
+            })?;
+        }
+
         // Insert steps with sequential step_index
         let mut step_count = 0;
-
         for (step_index, step) in (0_i32..).zip(plan.steps.iter()) {
             tx.execute(
-                "INSERT INTO steps (plan_path, anchor, step_index, title, status)
+                "INSERT INTO steps (plan_id, anchor, step_index, title, status)
                  VALUES (?1, ?2, ?3, ?4, 'pending')",
-                rusqlite::params![plan_path, &step.anchor, step_index, &step.title],
+                rusqlite::params![&plan_id, &step.anchor, step_index, &step.title],
             )
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!("failed to insert step {}: {}", step.anchor, e),
@@ -451,8 +877,8 @@ COMMIT;
         for step in &plan.steps {
             for dep in &step.depends_on {
                 tx.execute(
-                    "INSERT INTO step_deps (plan_path, step_anchor, depends_on) VALUES (?1, ?2, ?3)",
-                    rusqlite::params![plan_path, &step.anchor, dep],
+                    "INSERT INTO step_deps (plan_id, step_anchor, depends_on) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![&plan_id, &step.anchor, dep],
                 )
                 .map_err(|e| TugError::StateDbQuery {
                     reason: format!("failed to insert dependency: {}", e),
@@ -465,12 +891,12 @@ COMMIT;
         let mut checklist_count = 0;
         for step in &plan.steps {
             checklist_count +=
-                insert_checklist_items(&tx, plan_path, &step.anchor, &step.tasks, "task")?;
+                insert_checklist_items(&tx, &plan_id, &step.anchor, &step.tasks, "task")?;
             checklist_count +=
-                insert_checklist_items(&tx, plan_path, &step.anchor, &step.tests, "test")?;
+                insert_checklist_items(&tx, &plan_id, &step.anchor, &step.tests, "test")?;
             checklist_count += insert_checklist_items(
                 &tx,
-                plan_path,
+                &plan_id,
                 &step.anchor,
                 &step.checkpoints,
                 "checkpoint",
@@ -484,179 +910,194 @@ COMMIT;
 
         Ok(InitResult {
             already_initialized: false,
+            plan_id,
             step_count,
             dep_count,
             checklist_count,
         })
     }
 
-    /// Drop all state for the plan and re-initialize from current plan content.
+    /// Look up plan_id by file path.
+    pub fn lookup_plan_id_by_path(&self, plan_path: &str) -> Result<Option<String>, TugError> {
+        let result: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT plan_id FROM plans WHERE plan_path = ?1 AND status = 'active'",
+                [plan_path],
+                |row| row.get(0),
+            )
+            .ok();
+        Ok(result)
+    }
+
+    /// Look up plan_id by exact id or slug prefix.
+    pub fn lookup_plan_by_id_or_slug(&self, input: &str) -> Result<Option<String>, TugError> {
+        // Try exact plan_id match first
+        let exact: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT plan_id FROM plans WHERE plan_id = ?1",
+                [input],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if exact.is_some() {
+            return Ok(exact);
+        }
+
+        // Try slug prefix match
+        let like_pattern = format!("{}%", input);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT plan_id FROM plans WHERE plan_slug LIKE ?1 ORDER BY created_at DESC LIMIT 1")
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare slug lookup: {}", e),
+            })?;
+
+        let result: Option<String> = stmt
+            .query_row([&like_pattern], |row| row.get(0))
+            .ok();
+
+        Ok(result)
+    }
+
+    /// Query the next generation number for a given slug.
+    fn next_gen_for_slug(&self, slug: &str) -> Result<u32, TugError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT plan_id FROM plans WHERE plan_slug = ?1")
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query plan_ids for slug {}: {}", slug, e),
+            })?;
+
+        let plan_ids: Vec<String> = stmt
+            .query_map([slug], |row| row.get(0))
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to iterate plan_ids: {}", e),
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let max_gen = plan_ids
+            .iter()
+            .filter_map(|id| id.rsplit('-').next()?.parse::<u32>().ok())
+            .max()
+            .unwrap_or(0);
+
+        Ok(max_gen + 1)
+    }
+
+    /// Archive a plan: snapshot content, set status='archived', null out plan_path.
     ///
-    /// Deletes all rows for the plan (step_artifacts, checklist_items, step_deps, steps, plans)
-    /// in a single transaction, then calls `init_plan()` to re-initialize from the current
-    /// plan file content and hash.
+    /// Returns an error if the plan is already archived.
+    pub fn archive_plan(&mut self, plan_id: &str) -> Result<ArchiveResult, TugError> {
+        // Verify plan exists and check status
+        let (status, plan_path): (String, Option<String>) = self
+            .conn
+            .query_row(
+                "SELECT status, plan_path FROM plans WHERE plan_id = ?1",
+                [plan_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("plan not found: {}: {}", plan_id, e),
+            })?;
+
+        if status == "archived" {
+            return Err(TugError::StateDbQuery {
+                reason: format!("plan {} is already archived", plan_id),
+            });
+        }
+
+        // Try to snapshot content before archiving
+        let mut snapshot_taken = false;
+        if let Some(ref pp) = plan_path {
+            let file_path = self.repo_root.join(pp);
+            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                use sha2::{Digest, Sha256};
+                let content_hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+                let now = now_iso8601();
+                if self.conn.execute(
+                    "INSERT INTO plan_snapshots (plan_id, content, content_hash, event, captured_at)
+                     VALUES (?1, ?2, ?3, 'archive', ?4)",
+                    rusqlite::params![plan_id, &content, &content_hash, &now],
+                ).is_ok() {
+                    snapshot_taken = true;
+                }
+            }
+        }
+
+        // Transition to archived
+        let now = now_iso8601();
+        self.conn.execute(
+            "UPDATE plans SET status = 'archived', plan_path = NULL, updated_at = ?1 WHERE plan_id = ?2",
+            rusqlite::params![&now, plan_id],
+        ).map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to archive plan {}: {}", plan_id, e),
+        })?;
+
+        Ok(ArchiveResult {
+            plan_id: plan_id.to_string(),
+            snapshot_taken,
+        })
+    }
+
+    /// Reinit: archive the current plan, then init a new one with gen+1.
+    ///
+    /// The old plan is archived (with snapshot). A new plan_id is generated
+    /// with the next generation number for this slug.
     pub fn reinit_plan(
         &mut self,
         plan_path: &str,
         plan: &TugPlan,
-        plan_hash: &str,
+        plan_hash: Option<&str>,
     ) -> Result<InitResult, TugError> {
-        // Drop all state in a single transaction (FK order matters)
-        let tx = self
+        // Find current plan_id for this plan_path
+        let current_plan_id: Option<String> = self
             .conn
-            .transaction_with_behavior(TransactionBehavior::Exclusive)
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to begin reinit transaction: {}", e),
-            })?;
+            .query_row(
+                "SELECT plan_id FROM plans WHERE plan_path = ?1 AND status = 'active'",
+                [plan_path],
+                |row| row.get(0),
+            )
+            .ok();
 
-        tx.execute(
-            "DELETE FROM step_artifacts WHERE plan_path = ?1",
-            rusqlite::params![plan_path],
-        )
-        .map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to delete step_artifacts: {}", e),
-        })?;
+        if let Some(ref current_id) = current_plan_id {
+            // Check if already archived
+            let status: String = self
+                .conn
+                .query_row(
+                    "SELECT status FROM plans WHERE plan_id = ?1",
+                    [current_id.as_str()],
+                    |row| row.get(0),
+                )
+                .unwrap_or_default();
 
-        tx.execute(
-            "DELETE FROM checklist_items WHERE plan_path = ?1",
-            rusqlite::params![plan_path],
-        )
-        .map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to delete checklist_items: {}", e),
-        })?;
+            if status == "archived" {
+                return Err(TugError::StateDbQuery {
+                    reason: format!("cannot reinit archived plan {}", current_id),
+                });
+            }
 
-        tx.execute(
-            "DELETE FROM step_deps WHERE plan_path = ?1",
-            rusqlite::params![plan_path],
-        )
-        .map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to delete step_deps: {}", e),
-        })?;
+            // Archive the current plan
+            self.archive_plan(current_id)?;
+        }
 
-        tx.execute(
-            "DELETE FROM steps WHERE plan_path = ?1",
-            rusqlite::params![plan_path],
-        )
-        .map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to delete steps: {}", e),
-        })?;
-
-        tx.execute(
-            "DELETE FROM plans WHERE plan_path = ?1",
-            rusqlite::params![plan_path],
-        )
-        .map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to delete plan: {}", e),
-        })?;
-
-        tx.commit().map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to commit reinit drop transaction: {}", e),
-        })?;
-
-        // Re-initialize from the current plan content
+        // Init new plan (gen will auto-increment via next_gen_for_slug)
         self.init_plan(plan_path, plan, plan_hash)
     }
 
-    /// Remove all state entries for plans whose plan files no longer exist on disk.
-    ///
-    /// Queries all distinct plan paths from the database, checks which files are
-    /// missing, and deletes all associated rows (step_artifacts, checklist_items,
-    /// step_deps, steps, plans) for each orphaned plan in a single transaction.
-    ///
-    /// When `dry_run` is true, performs the detection but does not delete anything.
-    ///
-    /// Returns a `GcResult` describing what was (or would be) removed and the
-    /// number of plans that remain after GC.
-    pub fn gc_orphaned_plans(
-        &mut self,
-        plan_root: &Path,
-        dry_run: bool,
-    ) -> Result<GcResult, TugError> {
-        let all_paths = self.list_plan_paths()?;
-
-        // Identify orphaned plans: paths in DB with no matching file on disk
-        let orphaned: Vec<String> = all_paths
-            .iter()
-            .filter(|p| !plan_root.join(p).exists())
-            .cloned()
-            .collect();
-
-        if orphaned.is_empty() || dry_run {
-            let remaining_plans = all_paths.len() - orphaned.len();
-            return Ok(GcResult {
-                removed_plans: orphaned,
-                remaining_plans,
-            });
-        }
-
-        // Delete all orphaned plans in a single transaction (FK order matters)
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Exclusive)
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to begin gc transaction: {}", e),
-            })?;
-
-        for plan_path in &orphaned {
-            tx.execute(
-                "DELETE FROM step_artifacts WHERE plan_path = ?1",
-                rusqlite::params![plan_path],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to delete step_artifacts for {}: {}", plan_path, e),
-            })?;
-
-            tx.execute(
-                "DELETE FROM checklist_items WHERE plan_path = ?1",
-                rusqlite::params![plan_path],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to delete checklist_items for {}: {}", plan_path, e),
-            })?;
-
-            tx.execute(
-                "DELETE FROM step_deps WHERE plan_path = ?1",
-                rusqlite::params![plan_path],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to delete step_deps for {}: {}", plan_path, e),
-            })?;
-
-            tx.execute(
-                "DELETE FROM steps WHERE plan_path = ?1",
-                rusqlite::params![plan_path],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to delete steps for {}: {}", plan_path, e),
-            })?;
-
-            tx.execute(
-                "DELETE FROM plans WHERE plan_path = ?1",
-                rusqlite::params![plan_path],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to delete plan {}: {}", plan_path, e),
-            })?;
-        }
-
-        tx.commit().map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to commit gc transaction: {}", e),
-        })?;
-
-        let remaining_plans = all_paths.len() - orphaned.len();
-        Ok(GcResult {
-            removed_plans: orphaned,
-            remaining_plans,
-        })
-    }
-
     /// Count the number of completed steps for a plan.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn count_completed_steps(&self, plan_path: &str) -> Result<usize, TugError> {
+        let plan_id = plan_path;
         let count: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status = 'completed'",
-                rusqlite::params![plan_path],
+                "SELECT COUNT(*) FROM steps WHERE plan_id = ?1 AND status = 'completed'",
+                rusqlite::params![plan_id],
                 |row| row.get(0),
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -666,12 +1107,15 @@ COMMIT;
     }
 
     /// Verify that the plan hash matches the stored hash in the database.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn verify_plan_hash(&self, plan_path: &str, current_hash: &str) -> Result<(), TugError> {
+        let plan_id = plan_path;
         let stored_hash: String = self
             .conn
             .query_row(
-                "SELECT plan_hash FROM plans WHERE plan_path = ?1",
-                [plan_path],
+                "SELECT plan_hash FROM plans WHERE plan_id = ?1",
+                [plan_id],
                 |row| row.get(0),
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -680,7 +1124,7 @@ COMMIT;
 
         if stored_hash != current_hash {
             return Err(TugError::StatePlanHashMismatch {
-                plan_path: plan_path.to_string(),
+                plan_id: plan_path.to_string(),
             });
         }
 
@@ -688,14 +1132,18 @@ COMMIT;
     }
 
     /// Claim the next available step for execution.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn claim_step(
         &mut self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         worktree: &str,
         lease_duration_secs: u64,
         current_hash: &str,
         force: bool,
     ) -> Result<ClaimResult, TugError> {
+        let plan_id = plan_path;
+
         // Verify plan hash
         self.verify_plan_hash(plan_path, current_hash)?;
 
@@ -716,16 +1164,16 @@ COMMIT;
             tx.query_row(
                 "SELECT s.anchor, s.title, s.step_index, s.status, s.lease_expires_at
                  FROM steps s
-                 WHERE s.plan_path = ?1
+                 WHERE s.plan_id = ?1
                    AND (s.status = 'pending' OR s.status IN ('claimed', 'in_progress'))
                    AND NOT EXISTS (
                        SELECT 1 FROM step_deps d
-                       JOIN steps dep ON d.plan_path = dep.plan_path AND d.depends_on = dep.anchor
-                       WHERE d.plan_path = ?1 AND d.step_anchor = s.anchor AND dep.status != 'completed'
+                       JOIN steps dep ON d.plan_id = dep.plan_id AND d.depends_on = dep.anchor
+                       WHERE d.plan_id = ?1 AND d.step_anchor = s.anchor AND dep.status != 'completed'
                    )
                  ORDER BY s.step_index
                  LIMIT 1",
-                rusqlite::params![plan_path],
+                rusqlite::params![plan_id],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -741,18 +1189,18 @@ COMMIT;
             tx.query_row(
                 "SELECT s.anchor, s.title, s.step_index, s.status, s.lease_expires_at
                  FROM steps s
-                 WHERE s.plan_path = ?1
+                 WHERE s.plan_id = ?1
                    AND (s.status = 'pending'
                         OR (s.status IN ('claimed', 'in_progress') AND s.lease_expires_at < ?2)
                         OR (s.status IN ('claimed', 'in_progress') AND s.claimed_by = ?3))
                    AND NOT EXISTS (
                        SELECT 1 FROM step_deps d
-                       JOIN steps dep ON d.plan_path = dep.plan_path AND d.depends_on = dep.anchor
-                       WHERE d.plan_path = ?1 AND d.step_anchor = s.anchor AND dep.status != 'completed'
+                       JOIN steps dep ON d.plan_id = dep.plan_id AND d.depends_on = dep.anchor
+                       WHERE d.plan_id = ?1 AND d.step_anchor = s.anchor AND dep.status != 'completed'
                    )
                  ORDER BY s.step_index
                  LIMIT 1",
-                rusqlite::params![plan_path, &now, worktree],
+                rusqlite::params![plan_id, &now, worktree],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -773,8 +1221,8 @@ COMMIT;
                 tx.execute(
                     "UPDATE steps SET status = 'claimed', claimed_by = ?1, claimed_at = ?2,
                      lease_expires_at = ?3, heartbeat_at = ?2
-                     WHERE plan_path = ?4 AND anchor = ?5",
-                    rusqlite::params![worktree, &now, &lease_expires, plan_path, &anchor],
+                     WHERE plan_id = ?4 AND anchor = ?5",
+                    rusqlite::params![worktree, &now, &lease_expires, plan_id, &anchor],
                 )
                 .map_err(|e| TugError::StateDbQuery {
                     reason: format!("failed to update claimed step: {}", e),
@@ -784,14 +1232,14 @@ COMMIT;
                 let remaining_ready: usize = tx
                     .query_row(
                         "SELECT COUNT(*) FROM steps s
-                         WHERE s.plan_path = ?1
+                         WHERE s.plan_id = ?1
                            AND s.status = 'pending'
                            AND NOT EXISTS (
                                SELECT 1 FROM step_deps d
-                               JOIN steps dep ON d.plan_path = dep.plan_path AND d.depends_on = dep.anchor
-                               WHERE d.plan_path = ?1 AND d.step_anchor = s.anchor AND dep.status != 'completed'
+                               JOIN steps dep ON d.plan_id = dep.plan_id AND d.depends_on = dep.anchor
+                               WHERE d.plan_id = ?1 AND d.step_anchor = s.anchor AND dep.status != 'completed'
                            )",
-                        [plan_path],
+                        [plan_id],
                         |row| row.get(0),
                     )
                     .unwrap_or(0);
@@ -799,8 +1247,8 @@ COMMIT;
                 // Count total remaining steps
                 let total_remaining: usize = tx
                     .query_row(
-                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status != 'completed'",
-                        [plan_path],
+                        "SELECT COUNT(*) FROM steps WHERE plan_id = ?1 AND status != 'completed'",
+                        [plan_id],
                         |row| row.get(0),
                     )
                     .unwrap_or(0);
@@ -826,16 +1274,16 @@ COMMIT;
                 // No claimable steps found - check if all completed
                 let total: i32 = tx
                     .query_row(
-                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1",
-                        [plan_path],
+                        "SELECT COUNT(*) FROM steps WHERE plan_id = ?1",
+                        [plan_id],
                         |row| row.get(0),
                     )
                     .unwrap_or(0);
 
                 let completed: i32 = tx
                     .query_row(
-                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status = 'completed'",
-                        [plan_path],
+                        "SELECT COUNT(*) FROM steps WHERE plan_id = ?1 AND status = 'completed'",
+                        [plan_id],
                         |row| row.get(0),
                     )
                     .unwrap_or(0);
@@ -857,21 +1305,24 @@ COMMIT;
     }
 
     /// Check if the given worktree owns the step.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn check_ownership(
         &self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         anchor: &str,
         worktree: &str,
     ) -> Result<(), TugError> {
+        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let result: Option<String> = self
             .conn
             .query_row(
                 "SELECT claimed_by FROM steps
-                 WHERE plan_path = ?1
+                 WHERE plan_id = ?1
                    AND anchor = ?2
                    AND status IN ('claimed', 'in_progress')",
-                rusqlite::params![plan_path, anchor],
+                rusqlite::params![plan_id, anchor],
                 |row| row.get(0),
             )
             .ok();
@@ -891,20 +1342,23 @@ COMMIT;
     }
 
     /// Start a claimed step, transitioning it from 'claimed' to 'in_progress'.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn start_step(
         &self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         anchor: &str,
         worktree: &str,
     ) -> Result<(), TugError> {
+        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let now = now_iso8601();
         let rows_affected = self
             .conn
             .execute(
                 "UPDATE steps SET status = 'in_progress', started_at = ?1
-                 WHERE plan_path = ?2 AND anchor = ?3 AND claimed_by = ?4 AND status = 'claimed'",
-                rusqlite::params![&now, plan_path, anchor, worktree],
+                 WHERE plan_id = ?2 AND anchor = ?3 AND claimed_by = ?4 AND status = 'claimed'",
+                rusqlite::params![&now, plan_id, anchor, worktree],
             )
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!("failed to start step: {}", e),
@@ -924,13 +1378,16 @@ COMMIT;
     }
 
     /// Renew the lease on a step via heartbeat.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn heartbeat_step(
         &self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         anchor: &str,
         worktree: &str,
         lease_duration_secs: u64,
     ) -> Result<String, TugError> {
+        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let now = now_iso8601();
         let lease_expires = iso8601_after_secs(lease_duration_secs);
@@ -939,8 +1396,8 @@ COMMIT;
             .conn
             .execute(
                 "UPDATE steps SET heartbeat_at = ?1, lease_expires_at = ?2
-                 WHERE plan_path = ?3 AND anchor = ?4 AND claimed_by = ?5 AND status IN ('claimed', 'in_progress')",
-                rusqlite::params![&now, &lease_expires, plan_path, anchor, worktree],
+                 WHERE plan_id = ?3 AND anchor = ?4 AND claimed_by = ?5 AND status IN ('claimed', 'in_progress')",
+                rusqlite::params![&now, &lease_expires, plan_id, anchor, worktree],
             )
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!("failed to update heartbeat: {}", e),
@@ -966,9 +1423,11 @@ COMMIT;
     /// When `complete_remaining` is true, after processing explicit entries, an additional SQL
     /// UPDATE marks all remaining open items as completed. The empty-array guard is also skipped
     /// when `complete_remaining` is true, allowing an empty batch to mean "complete everything."
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn batch_update_checklist<T>(
         &mut self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         anchor: &str,
         worktree: &str,
         entries: &[T],
@@ -977,6 +1436,7 @@ COMMIT;
     where
         T: BatchEntry,
     {
+        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         // Check ownership first
         self.check_ownership(plan_path, anchor, worktree)?;
@@ -1054,8 +1514,8 @@ COMMIT;
             let exists: bool = tx
                 .query_row(
                     "SELECT COUNT(*) > 0 FROM checklist_items
-                     WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3 AND ordinal = ?4",
-                    rusqlite::params![plan_path, anchor, kind, ordinal],
+                     WHERE plan_id = ?1 AND step_anchor = ?2 AND kind = ?3 AND ordinal = ?4",
+                    rusqlite::params![plan_id, anchor, kind, ordinal],
                     |row| row.get(0),
                 )
                 .map_err(|e| TugError::StateDbQuery {
@@ -1067,8 +1527,8 @@ COMMIT;
                 let max_ordinal: Option<i32> = tx
                     .query_row(
                         "SELECT MAX(ordinal) FROM checklist_items
-                         WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3",
-                        rusqlite::params![plan_path, anchor, kind],
+                         WHERE plan_id = ?1 AND step_anchor = ?2 AND kind = ?3",
+                        rusqlite::params![plan_id, anchor, kind],
                         |row| row.get(0),
                     )
                     .ok()
@@ -1101,8 +1561,8 @@ COMMIT;
             let current_status: String = tx
                 .query_row(
                     "SELECT status FROM checklist_items
-                     WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3 AND ordinal = ?4",
-                    rusqlite::params![plan_path, anchor, kind, ordinal],
+                     WHERE plan_id = ?1 AND step_anchor = ?2 AND kind = ?3 AND ordinal = ?4",
+                    rusqlite::params![plan_id, anchor, kind, ordinal],
                     |row| row.get(0),
                 )
                 .map_err(|e| TugError::StateDbQuery {
@@ -1118,8 +1578,8 @@ COMMIT;
             let rows_affected = tx
                 .execute(
                     "UPDATE checklist_items SET status = ?1, reason = ?2, updated_at = ?3
-                     WHERE plan_path = ?4 AND step_anchor = ?5 AND kind = ?6 AND ordinal = ?7",
-                    rusqlite::params![status, reason, &now, plan_path, anchor, kind, ordinal],
+                     WHERE plan_id = ?4 AND step_anchor = ?5 AND kind = ?6 AND ordinal = ?7",
+                    rusqlite::params![status, reason, &now, plan_id, anchor, kind, ordinal],
                 )
                 .map_err(|e| TugError::StateDbQuery {
                     reason: format!("failed to update checklist item: {}", e),
@@ -1135,8 +1595,8 @@ COMMIT;
             let remaining_updated = tx
                 .execute(
                     "UPDATE checklist_items SET status = 'completed', updated_at = ?1
-                     WHERE plan_path = ?2 AND step_anchor = ?3 AND status = 'open'",
-                    rusqlite::params![&now, plan_path, anchor],
+                     WHERE plan_id = ?2 AND step_anchor = ?3 AND status = 'open'",
+                    rusqlite::params![&now, plan_id, anchor],
                 )
                 .map_err(|e| TugError::StateDbQuery {
                     reason: format!("failed to complete remaining items: {}", e),
@@ -1155,14 +1615,17 @@ COMMIT;
     }
 
     /// Record an artifact breadcrumb for a step.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn record_artifact(
         &self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         anchor: &str,
         worktree: &str,
         kind: &str,
         summary: &str,
     ) -> Result<i64, TugError> {
+        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         // Check ownership first
         self.check_ownership(plan_path, anchor, worktree)?;
@@ -1176,9 +1639,9 @@ COMMIT;
 
         self.conn
             .execute(
-                "INSERT INTO step_artifacts (plan_path, step_anchor, kind, summary, recorded_at)
+                "INSERT INTO step_artifacts (plan_id, step_anchor, kind, summary, recorded_at)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![plan_path, anchor, kind, truncated_summary, &now],
+                rusqlite::params![plan_id, anchor, kind, truncated_summary, &now],
             )
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!("failed to record artifact: {}", e),
@@ -1188,14 +1651,17 @@ COMMIT;
     }
 
     /// Complete a step, optionally forcing completion despite incomplete items.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn complete_step(
         &mut self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         anchor: &str,
         worktree: &str,
         force: bool,
         force_reason: Option<&str>,
     ) -> Result<CompleteResult, TugError> {
+        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         // Begin exclusive transaction
         let tx = self
@@ -1213,15 +1679,15 @@ COMMIT;
         // Verify the step exists
         let step_exists: bool = tx
             .query_row(
-                "SELECT 1 FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                rusqlite::params![plan_path, anchor],
+                "SELECT 1 FROM steps WHERE plan_id = ?1 AND anchor = ?2",
+                rusqlite::params![plan_id, anchor],
                 |_| Ok(true),
             )
             .unwrap_or(false);
 
         if !step_exists {
             return Err(TugError::StateStepNotFound {
-                plan_path: plan_path.to_string(),
+                plan_id: plan_path.to_string(),
                 anchor: anchor.to_string(),
             });
         }
@@ -1229,8 +1695,8 @@ COMMIT;
         // Idempotency check: if the step is already completed, succeed silently
         let current_status: String = tx
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                rusqlite::params![plan_path, anchor],
+                "SELECT status FROM steps WHERE plan_id = ?1 AND anchor = ?2",
+                rusqlite::params![plan_id, anchor],
                 |row| row.get(0),
             )
             .unwrap_or_default();
@@ -1238,8 +1704,8 @@ COMMIT;
         if current_status == "completed" {
             let remaining: i32 = tx
                 .query_row(
-                    "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status != 'completed'",
-                    rusqlite::params![plan_path],
+                    "SELECT COUNT(*) FROM steps WHERE plan_id = ?1 AND status != 'completed'",
+                    rusqlite::params![plan_id],
                     |row| row.get(0),
                 )
                 .unwrap_or(0);
@@ -1255,8 +1721,8 @@ COMMIT;
             let incomplete_items: usize = tx
                 .query_row(
                     "SELECT COUNT(*) FROM checklist_items
-                     WHERE plan_path = ?1 AND step_anchor = ?2 AND status NOT IN ('completed', 'deferred')",
-                    rusqlite::params![plan_path, anchor],
+                     WHERE plan_id = ?1 AND step_anchor = ?2 AND status NOT IN ('completed', 'deferred')",
+                    rusqlite::params![plan_id, anchor],
                     |row| row.get(0),
                 )
                 .unwrap_or(0);
@@ -1271,8 +1737,8 @@ COMMIT;
             // Force mode: auto-complete remaining checklist items
             tx.execute(
                 "UPDATE checklist_items SET status = 'completed', updated_at = ?1
-                 WHERE plan_path = ?2 AND step_anchor = ?3 AND status != 'completed'",
-                rusqlite::params![&now, plan_path, anchor],
+                 WHERE plan_id = ?2 AND step_anchor = ?3 AND status != 'completed'",
+                rusqlite::params![&now, plan_id, anchor],
             )
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!(
@@ -1292,8 +1758,8 @@ COMMIT;
         let rows_affected = tx
             .execute(
                 "UPDATE steps SET status = 'completed', completed_at = ?1, complete_reason = ?2
-                 WHERE plan_path = ?3 AND anchor = ?4 AND claimed_by = ?5 AND status IN ('claimed', 'in_progress')",
-                rusqlite::params![&now, reason, plan_path, anchor, worktree],
+                 WHERE plan_id = ?3 AND anchor = ?4 AND claimed_by = ?5 AND status IN ('claimed', 'in_progress')",
+                rusqlite::params![&now, reason, plan_id, anchor, worktree],
             )
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!(
@@ -1318,21 +1784,22 @@ COMMIT;
         {
             let remaining: i32 = tx
                 .query_row(
-                    "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status != 'completed'",
-                    rusqlite::params![plan_path],
+                    "SELECT COUNT(*) FROM steps WHERE plan_id = ?1 AND status != 'completed'",
+                    rusqlite::params![plan_id],
                     |row| row.get(0),
                 )
                 .unwrap_or(0);
 
             if remaining == 0 {
-                // Mark plan as done
+                // All steps completed — plan stays 'active' (per D02, "completed"
+                // is derived, not a stored status). Update timestamp only.
                 tx.execute(
-                    "UPDATE plans SET status = 'done', updated_at = ?1 WHERE plan_path = ?2",
-                    rusqlite::params![&now, plan_path],
+                    "UPDATE plans SET updated_at = ?1 WHERE plan_id = ?2",
+                    rusqlite::params![&now, plan_id],
                 )
                 .map_err(|e| TugError::StateDbQuery {
                     reason: format!(
-                        "failed to update plan status for plan={} anchor={}: {}",
+                        "failed to update plan timestamp for plan={} anchor={}: {}",
                         plan_path, anchor, e
                     ),
                 })?;
@@ -1347,6 +1814,11 @@ COMMIT;
             ),
         })?;
 
+        // Best-effort completion snapshot when all steps are done (D09)
+        if all_completed {
+            self.try_completion_snapshot(plan_id);
+        }
+
         Ok(CompleteResult {
             completed: true,
             forced: force,
@@ -1354,10 +1826,52 @@ COMMIT;
         })
     }
 
+    /// Best-effort completion snapshot: read plan file and insert snapshot.
+    /// Logs warning on failure but never fails the operation.
+    fn try_completion_snapshot(&mut self, plan_id: &str) {
+        let plan_path: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT plan_path FROM plans WHERE plan_id = ?1",
+                [plan_id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        let Some(plan_path) = plan_path else { return };
+
+        let file_path = self.repo_root.join(&plan_path);
+        let Ok(content) = std::fs::read_to_string(&file_path) else {
+            eprintln!(
+                "warning: could not read plan file for completion snapshot: {}",
+                file_path.display()
+            );
+            return;
+        };
+
+        use sha2::{Digest, Sha256};
+        let content_hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+        let now = now_iso8601();
+
+        if let Err(e) = self.conn.execute(
+            "INSERT INTO plan_snapshots (plan_id, content, content_hash, event, captured_at)
+             VALUES (?1, ?2, ?3, 'complete', ?4)",
+            rusqlite::params![plan_id, &content, &content_hash, &now],
+        ) {
+            eprintln!("warning: failed to insert completion snapshot: {}", e);
+        }
+    }
+
     /// Query plan state for show command
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn show_plan(&self, plan_path: &str) -> Result<PlanState, TugError> {
+        let plan_id = plan_path;
+
         // Query plan metadata
-        let (plan_hash, phase_title, status, created_at, updated_at): (
+        let (plan_path_stored, plan_hash, phase_title, status, created_at, updated_at): (
+            Option<String>,
             String,
             Option<String>,
             String,
@@ -1366,9 +1880,9 @@ COMMIT;
         ) = self
             .conn
             .query_row(
-                "SELECT plan_hash, phase_title, status, created_at, updated_at
-                 FROM plans WHERE plan_path = ?1",
-                rusqlite::params![plan_path],
+                "SELECT plan_path, plan_hash, phase_title, status, created_at, updated_at
+                 FROM plans WHERE plan_id = ?1",
+                rusqlite::params![plan_id],
                 |row| {
                     Ok((
                         row.get(0)?,
@@ -1376,6 +1890,7 @@ COMMIT;
                         row.get(2)?,
                         row.get(3)?,
                         row.get(4)?,
+                        row.get(5)?,
                     ))
                 },
             )
@@ -1389,7 +1904,7 @@ COMMIT;
             .prepare(
                 "SELECT anchor, title, step_index, status, claimed_by, lease_expires_at,
                         completed_at, commit_hash, complete_reason
-                 FROM steps WHERE plan_path = ?1
+                 FROM steps WHERE plan_id = ?1
                  ORDER BY step_index",
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -1398,7 +1913,7 @@ COMMIT;
 
         let mut steps = Vec::new();
         let step_rows = stmt
-            .query_map(rusqlite::params![plan_path], |row| {
+            .query_map(rusqlite::params![plan_id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,         // anchor
                     row.get::<_, String>(1)?,         // title
@@ -1430,8 +1945,8 @@ COMMIT;
                 reason: format!("failed to read step row: {}", e),
             })?;
 
-            let checklist = self.query_checklist_summary(plan_path, &anchor)?;
-            let artifacts = self.query_artifacts(plan_path, &anchor)?;
+            let checklist = self.query_checklist_summary(plan_id, &anchor)?;
+            let artifacts = self.query_artifacts(plan_id, &anchor)?;
 
             steps.push(StepState {
                 anchor,
@@ -1449,10 +1964,25 @@ COMMIT;
         }
 
         // Get all checklist items for JSON output
-        let checklist_items = self.get_checklist_items(plan_path)?;
+        let checklist_items = self.get_checklist_items(plan_id)?;
+
+        // For archived plans, fetch most recent snapshot content
+        let content = if status == "archived" {
+            self.conn
+                .query_row(
+                    "SELECT content FROM plan_snapshots WHERE plan_id = ?1
+                     ORDER BY captured_at DESC LIMIT 1",
+                    [plan_id],
+                    |row| row.get(0),
+                )
+                .ok()
+        } else {
+            None
+        };
 
         Ok(PlanState {
-            plan_path: plan_path.to_string(),
+            plan_id: plan_id.to_string(),
+            plan_path: plan_path_stored,
             plan_hash,
             phase_title,
             status,
@@ -1460,20 +1990,64 @@ COMMIT;
             checklist_items,
             created_at,
             updated_at,
+            content,
         })
     }
 
+    /// List plans with optional archived inclusion.
+    pub fn list_plans(&self, include_archived: bool) -> Result<Vec<PlanListEntry>, TugError> {
+        let query = if include_archived {
+            "SELECT p.plan_id, p.plan_slug, p.plan_path, p.status, p.created_at, p.updated_at,
+                    (SELECT COUNT(*) FROM steps s WHERE s.plan_id = p.plan_id) as total,
+                    (SELECT COUNT(*) FROM steps s WHERE s.plan_id = p.plan_id AND s.status = 'completed') as completed
+             FROM plans p ORDER BY p.updated_at DESC"
+        } else {
+            "SELECT p.plan_id, p.plan_slug, p.plan_path, p.status, p.created_at, p.updated_at,
+                    (SELECT COUNT(*) FROM steps s WHERE s.plan_id = p.plan_id) as total,
+                    (SELECT COUNT(*) FROM steps s WHERE s.plan_id = p.plan_id AND s.status = 'completed') as completed
+             FROM plans p WHERE p.status != 'archived' ORDER BY p.updated_at DESC"
+        };
+
+        let mut stmt = self.conn.prepare(query).map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to prepare list_plans query: {}", e),
+        })?;
+
+        let entries = stmt
+            .query_map([], |row| {
+                Ok(PlanListEntry {
+                    plan_id: row.get(0)?,
+                    plan_slug: row.get(1)?,
+                    plan_path: row.get(2)?,
+                    status: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                    steps_total: row.get::<_, i64>(6)? as usize,
+                    steps_completed: row.get::<_, i64>(7)? as usize,
+                })
+            })
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query plans: {}", e),
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(entries)
+    }
+
     /// Get all checklist items for a plan with full details
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn get_checklist_items(
         &self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
     ) -> Result<Vec<ChecklistItemDetail>, TugError> {
+        let plan_id = plan_path;
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT step_anchor, kind, ordinal, text, status, reason
                  FROM checklist_items
-                 WHERE plan_path = ?1
+                 WHERE plan_id = ?1
                  ORDER BY step_anchor, kind, ordinal",
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -1481,7 +2055,7 @@ COMMIT;
             })?;
 
         let items = stmt
-            .query_map(rusqlite::params![plan_path], |row| {
+            .query_map(rusqlite::params![plan_id], |row| {
                 Ok(ChecklistItemDetail {
                     step_anchor: row.get(0)?,
                     kind: row.get(1)?,
@@ -1503,15 +2077,15 @@ COMMIT;
     /// Helper: query checklist summary for a step
     fn query_checklist_summary(
         &self,
-        plan_path: &str,
+        plan_id: &str,
         anchor: &str,
     ) -> Result<ChecklistSummary, TugError> {
         let (tasks_total, tasks_completed): (i32, i32) = self
             .conn
             .query_row(
                 "SELECT COUNT(*), SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
-                 FROM checklist_items WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = 'task'",
-                rusqlite::params![plan_path, anchor],
+                 FROM checklist_items WHERE plan_id = ?1 AND step_anchor = ?2 AND kind = 'task'",
+                rusqlite::params![plan_id, anchor],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap_or((0, 0));
@@ -1520,8 +2094,8 @@ COMMIT;
             .conn
             .query_row(
                 "SELECT COUNT(*), SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
-                 FROM checklist_items WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = 'test'",
-                rusqlite::params![plan_path, anchor],
+                 FROM checklist_items WHERE plan_id = ?1 AND step_anchor = ?2 AND kind = 'test'",
+                rusqlite::params![plan_id, anchor],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap_or((0, 0));
@@ -1530,8 +2104,8 @@ COMMIT;
             .conn
             .query_row(
                 "SELECT COUNT(*), SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
-                 FROM checklist_items WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = 'checkpoint'",
-                rusqlite::params![plan_path, anchor],
+                 FROM checklist_items WHERE plan_id = ?1 AND step_anchor = ?2 AND kind = 'checkpoint'",
+                rusqlite::params![plan_id, anchor],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap_or((0, 0));
@@ -1549,14 +2123,14 @@ COMMIT;
     /// Helper: query artifacts for a step
     fn query_artifacts(
         &self,
-        plan_path: &str,
+        plan_id: &str,
         anchor: &str,
     ) -> Result<Vec<ArtifactSummary>, TugError> {
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT kind, summary, recorded_at
-                 FROM step_artifacts WHERE plan_path = ?1 AND step_anchor = ?2
+                 FROM step_artifacts WHERE plan_id = ?1 AND step_anchor = ?2
                  ORDER BY recorded_at",
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -1565,7 +2139,7 @@ COMMIT;
 
         let mut artifacts = Vec::new();
         let rows = stmt
-            .query_map(rusqlite::params![plan_path, anchor], |row| {
+            .query_map(rusqlite::params![plan_id, anchor], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -1591,7 +2165,10 @@ COMMIT;
     }
 
     /// List ready steps for claiming
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn ready_steps(&self, plan_path: &str) -> Result<ReadyResult, TugError> {
+        let plan_id = plan_path;
         let now = now_iso8601();
 
         // Query all top-level steps with their dependency status
@@ -1604,7 +2181,7 @@ COMMIT;
             .conn
             .prepare(
                 "SELECT anchor, title, step_index, status, lease_expires_at
-                 FROM steps WHERE plan_path = ?1
+                 FROM steps WHERE plan_id = ?1
                  ORDER BY step_index",
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -1612,7 +2189,7 @@ COMMIT;
             })?;
 
         let rows = stmt
-            .query_map(rusqlite::params![plan_path], |row| {
+            .query_map(rusqlite::params![plan_id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -1654,9 +2231,9 @@ COMMIT;
                     .conn
                     .query_row(
                         "SELECT COUNT(*) = 0 FROM step_deps d
-                         JOIN steps s ON d.plan_path = s.plan_path AND d.depends_on = s.anchor
-                         WHERE d.plan_path = ?1 AND d.step_anchor = ?2 AND s.status != 'completed'",
-                        rusqlite::params![plan_path, &anchor],
+                         JOIN steps s ON d.plan_id = s.plan_id AND d.depends_on = s.anchor
+                         WHERE d.plan_id = ?1 AND d.step_anchor = ?2 AND s.status != 'completed'",
+                        rusqlite::params![plan_id, &anchor],
                         |row| row.get::<_, bool>(0),
                     )
                     .unwrap_or(true);
@@ -1678,7 +2255,10 @@ COMMIT;
     }
 
     /// Reset a step to pending status
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn reset_step(&mut self, plan_path: &str, anchor: &str) -> Result<(), TugError> {
+        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let tx = self
             .conn
@@ -1690,8 +2270,8 @@ COMMIT;
         // Check if step is completed
         let status: String = tx
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                rusqlite::params![plan_path, anchor],
+                "SELECT status FROM steps WHERE plan_id = ?1 AND anchor = ?2",
+                rusqlite::params![plan_id, anchor],
                 |row| row.get(0),
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -1711,8 +2291,8 @@ COMMIT;
         tx.execute(
             "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
                               lease_expires_at = NULL, heartbeat_at = NULL, started_at = NULL
-             WHERE plan_path = ?1 AND anchor = ?2",
-            rusqlite::params![plan_path, anchor],
+             WHERE plan_id = ?1 AND anchor = ?2",
+            rusqlite::params![plan_id, anchor],
         )
         .map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to reset step: {}", e),
@@ -1721,8 +2301,8 @@ COMMIT;
         // Reset non-completed checklist items
         tx.execute(
             "UPDATE checklist_items SET status = 'open', updated_at = ?1
-             WHERE plan_path = ?2 AND step_anchor = ?3 AND status != 'completed'",
-            rusqlite::params![&now, plan_path, anchor],
+             WHERE plan_id = ?2 AND step_anchor = ?3 AND status != 'completed'",
+            rusqlite::params![&now, plan_id, anchor],
         )
         .map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to reset checklist items: {}", e),
@@ -1740,13 +2320,16 @@ COMMIT;
     /// This allows explicitly dropping a claim before lease expiry. When `worktree` is
     /// provided, ownership is verified. When `force` is true, ownership check is skipped.
     /// Completed steps cannot be released.
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn release_step(
         &mut self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         anchor: &str,
         worktree: Option<&str>,
         force: bool,
     ) -> Result<ReleaseResult, TugError> {
+        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let tx = self
             .conn
@@ -1758,8 +2341,8 @@ COMMIT;
         // Query step status and claimed_by
         let (status, claimed_by): (String, Option<String>) = tx
             .query_row(
-                "SELECT status, claimed_by FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                rusqlite::params![plan_path, anchor],
+                "SELECT status, claimed_by FROM steps WHERE plan_id = ?1 AND anchor = ?2",
+                rusqlite::params![plan_id, anchor],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -1803,8 +2386,8 @@ COMMIT;
         tx.execute(
             "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
                               lease_expires_at = NULL, heartbeat_at = NULL, started_at = NULL
-             WHERE plan_path = ?1 AND anchor = ?2",
-            rusqlite::params![plan_path, anchor],
+             WHERE plan_id = ?1 AND anchor = ?2",
+            rusqlite::params![plan_id, anchor],
         )
         .map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to release step: {}", e),
@@ -1813,8 +2396,8 @@ COMMIT;
         // Reset non-completed checklist items
         tx.execute(
             "UPDATE checklist_items SET status = 'open', updated_at = ?1
-             WHERE plan_path = ?2 AND step_anchor = ?3 AND status != 'completed'",
-            rusqlite::params![&now, plan_path, anchor],
+             WHERE plan_id = ?2 AND step_anchor = ?3 AND status != 'completed'",
+            rusqlite::params![&now, plan_id, anchor],
         )
         .map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to reset checklist items: {}", e),
@@ -1831,12 +2414,15 @@ COMMIT;
     }
 
     /// Reconcile state from git trailers
+    ///
+    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn reconcile(
         &mut self,
-        plan_path: &str,
+        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
         entries: &[ReconcileEntry],
         force: bool,
     ) -> Result<ReconcileResult, TugError> {
+        let plan_id = plan_path;
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Exclusive)
@@ -1850,17 +2436,13 @@ COMMIT;
         let mut skipped_mismatches = Vec::new();
 
         for entry in entries {
-            if entry.plan_path != plan_path {
-                continue; // Skip entries for other plans
-            }
-
             let step_anchor = normalize_anchor(&entry.step_anchor);
 
             // Check if step exists and its current status
             let existing: Option<(String, Option<String>)> = tx
                 .query_row(
-                    "SELECT status, commit_hash FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                    rusqlite::params![plan_path, &step_anchor],
+                    "SELECT status, commit_hash FROM steps WHERE plan_id = ?1 AND anchor = ?2",
+                    rusqlite::params![plan_id, &step_anchor],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .ok();
@@ -1874,8 +2456,8 @@ COMMIT;
                             // Force mode: overwrite
                             tx.execute(
                                 "UPDATE steps SET commit_hash = ?1
-                                 WHERE plan_path = ?2 AND anchor = ?3",
-                                rusqlite::params![&entry.commit_hash, plan_path, &step_anchor],
+                                 WHERE plan_id = ?2 AND anchor = ?3",
+                                rusqlite::params![&entry.commit_hash, plan_id, &step_anchor],
                             )
                             .map_err(|e| TugError::StateDbQuery {
                                 reason: format!("failed to update commit hash: {}", e),
@@ -1897,8 +2479,8 @@ COMMIT;
                     // Step not completed yet - mark it as completed
                     tx.execute(
                         "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = ?2
-                         WHERE plan_path = ?3 AND anchor = ?4",
-                        rusqlite::params![&now, &entry.commit_hash, plan_path, &step_anchor],
+                         WHERE plan_id = ?3 AND anchor = ?4",
+                        rusqlite::params![&now, &entry.commit_hash, plan_id, &step_anchor],
                     )
                     .map_err(|e| TugError::StateDbQuery {
                         reason: format!("failed to reconcile step: {}", e),
@@ -1907,8 +2489,8 @@ COMMIT;
                     // Auto-complete all checklist items
                     tx.execute(
                         "UPDATE checklist_items SET status = 'completed', updated_at = ?1
-                         WHERE plan_path = ?2 AND step_anchor = ?3",
-                        rusqlite::params![&now, plan_path, &step_anchor],
+                         WHERE plan_id = ?2 AND step_anchor = ?3",
+                        rusqlite::params![&now, plan_id, &step_anchor],
                     )
                     .map_err(|e| TugError::StateDbQuery {
                         reason: format!("failed to complete checklist items: {}", e),
@@ -1923,8 +2505,8 @@ COMMIT;
                     // Completed but no commit hash - set it
                     tx.execute(
                         "UPDATE steps SET commit_hash = ?1
-                         WHERE plan_path = ?2 AND anchor = ?3",
-                        rusqlite::params![&entry.commit_hash, plan_path, &step_anchor],
+                         WHERE plan_id = ?2 AND anchor = ?3",
+                        rusqlite::params![&entry.commit_hash, plan_id, &step_anchor],
                     )
                     .map_err(|e| TugError::StateDbQuery {
                         reason: format!("failed to set commit hash: {}", e),
@@ -2006,12 +2588,40 @@ pub enum ClaimResult {
 pub struct InitResult {
     /// True if the plan was already initialized (idempotent return)
     pub already_initialized: bool,
+    /// The generated plan_id (slug-hash7-gen format)
+    pub plan_id: String,
     /// Number of steps created
     pub step_count: usize,
     /// Number of dependency edges created
     pub dep_count: usize,
     /// Number of checklist items created
     pub checklist_count: usize,
+}
+
+/// Result from archive_plan operation
+#[derive(Debug)]
+pub struct ArchiveResult {
+    pub plan_id: String,
+    pub snapshot_taken: bool,
+}
+
+/// Entry for plan listing
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlanListEntry {
+    pub plan_id: String,
+    pub plan_slug: String,
+    pub plan_path: Option<String>,
+    pub status: String,
+    pub steps_completed: usize,
+    pub steps_total: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Generate a plan_id from slug, hash, and generation number.
+pub fn generate_plan_id(slug: &str, hash: &str, generation: u32) -> String {
+    let hash7 = if hash.len() >= 7 { &hash[..7] } else { hash };
+    format!("{}-{}-{}", slug, hash7, generation)
 }
 
 /// Result from release_step operation
@@ -2026,7 +2636,7 @@ pub struct ReleaseResult {
 /// Helper to insert checklist items for a step
 fn insert_checklist_items(
     tx: &rusqlite::Transaction,
-    plan_path: &str,
+    plan_id: &str,
     anchor: &str,
     items: &[Checkpoint],
     kind: &str,
@@ -2034,9 +2644,9 @@ fn insert_checklist_items(
     let mut count = 0;
     for (ordinal, item) in items.iter().enumerate() {
         tx.execute(
-            "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
+            "INSERT INTO checklist_items (plan_id, step_anchor, kind, ordinal, text, status)
              VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
-            rusqlite::params![plan_path, anchor, kind, ordinal as i32, &item.text],
+            rusqlite::params![plan_id, anchor, kind, ordinal as i32, &item.text],
         )
         .map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to insert checklist item: {}", e),
@@ -2044,6 +2654,32 @@ fn insert_checklist_items(
         count += 1;
     }
     Ok(count)
+}
+
+/// Derive a plan slug from a plan path.
+///
+/// Strips the `.tugtool/tugplan-` prefix and `.md` suffix if present.
+/// Falls back to the basename without extension for non-standard paths.
+///
+/// Examples:
+/// - `.tugtool/tugplan-worker-markdown-pipeline.md` → `worker-markdown-pipeline`
+/// - `my-plan.md` → `my-plan`
+pub fn derive_plan_slug(plan_path: &str) -> String {
+    let path = std::path::Path::new(plan_path);
+    let filename = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(plan_path);
+
+    // Strip tugplan- prefix and .md suffix
+    let without_prefix = filename
+        .strip_prefix("tugplan-")
+        .unwrap_or(filename);
+    let without_suffix = without_prefix
+        .strip_suffix(".md")
+        .unwrap_or(without_prefix);
+
+    without_suffix.to_string()
 }
 
 /// Compute SHA-256 hash of a plan file, returned as lowercase hex string.
@@ -2096,7 +2732,10 @@ pub struct StepState {
 /// Plan state for show command
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlanState {
-    pub plan_path: String,
+    /// Stable plan identifier: `<slug>-<hash7>-<gen>`
+    pub plan_id: String,
+    /// Original plan file path (nullable; None for archived plans)
+    pub plan_path: Option<String>,
     pub plan_hash: String,
     pub phase_title: Option<String>,
     pub status: String,
@@ -2104,6 +2743,9 @@ pub struct PlanState {
     pub checklist_items: Vec<ChecklistItemDetail>,
     pub created_at: String,
     pub updated_at: String,
+    /// For archived plans: most recent snapshot content
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
 }
 
 /// Result from ready_steps operation
@@ -2147,15 +2789,6 @@ pub struct ReconcileResult {
     pub skipped_mismatches: Vec<SkippedMismatch>,
 }
 
-/// Result from gc_orphaned_plans operation
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GcResult {
-    /// Plans that were removed (or would be removed with --dry-run)
-    pub removed_plans: Vec<String>,
-    /// Number of plans still in the database after GC
-    pub remaining_plans: usize,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2182,28 +2815,28 @@ mod tests {
     }
 
     #[test]
-    fn test_open_creates_db_and_schema_version_is_4() {
+    fn test_open_creates_db_and_schema_version_is_5() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).expect("open should succeed");
+        let db = StateDb::open(&db_path, temp.path()).expect("open should succeed");
         assert!(db_path.exists(), "state.db file should be created");
-        assert_eq!(db.schema_version().unwrap(), 4);
+        assert_eq!(db.schema_version().unwrap(), 5);
     }
 
     #[test]
     fn test_open_is_idempotent() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let _db1 = StateDb::open(&db_path).expect("first open should succeed");
-        let db2 = StateDb::open(&db_path).expect("second open should succeed");
-        assert_eq!(db2.schema_version().unwrap(), 4);
+        let _db1 = StateDb::open(&db_path, temp.path()).expect("first open should succeed");
+        let db2 = StateDb::open(&db_path, temp.path()).expect("second open should succeed");
+        assert_eq!(db2.schema_version().unwrap(), 5);
     }
 
     #[test]
     fn test_schema_has_all_expected_tables() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
         let mut stmt = db
             .conn
@@ -2217,6 +2850,7 @@ mod tests {
 
         assert!(tables.contains(&"schema_version".to_string()));
         assert!(tables.contains(&"plans".to_string()));
+        assert!(tables.contains(&"plan_snapshots".to_string()));
         assert!(tables.contains(&"steps".to_string()));
         assert!(tables.contains(&"step_deps".to_string()));
         assert!(tables.contains(&"checklist_items".to_string()));
@@ -2302,12 +2936,12 @@ mod tests {
         }
 
         // Open with StateDb, which should trigger migration
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
-        // Verify schema version is now 4
-        assert_eq!(db.schema_version().unwrap(), 4);
+        // Verify schema version is now 5 (v2->v3->v4->v5 migration chain)
+        assert_eq!(db.schema_version().unwrap(), 5);
 
-        // Verify reason column exists by querying schema
+        // Verify reason column exists by querying schema (checklist_items in v5)
         let has_reason: bool = db
             .conn
             .query_row(
@@ -2379,12 +3013,12 @@ mod tests {
         }
 
         // Open with StateDb, which should trigger migration
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
-        // Verify schema version is now 4
-        assert_eq!(db.schema_version().unwrap(), 4);
+        // Verify schema version is now 5 (v1->v3->v4->v5 migration chain)
+        assert_eq!(db.schema_version().unwrap(), 5);
 
-        // Verify reason column exists by querying schema
+        // Verify reason column exists by querying schema (checklist_items in v5)
         let has_reason: bool = db
             .conn
             .query_row(
@@ -2524,16 +3158,30 @@ mod tests {
             .unwrap();
         }
 
-        // Open with StateDb, which should trigger migration
-        let db = StateDb::open(&db_path).unwrap();
+        // Open with StateDb, which should trigger migration (v1->v3->v4->v5)
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
-        // Verify schema version is now 4
-        assert_eq!(db.schema_version().unwrap(), 4);
+        // Verify schema version is now 5
+        assert_eq!(db.schema_version().unwrap(), 5);
 
-        // THIS IS THE KEY TEST: Call show_plan which queries checklist_items
+        // After v5 migration, plans are keyed by plan_id. Look up the plan_id from the DB.
+        let plan_id: String = db
+            .conn
+            .query_row("SELECT plan_id FROM plans LIMIT 1", [], |row| row.get(0))
+            .expect("plan should exist after migration");
+
+        // plan_id format: <slug>-<hash7>-1 where slug is derived from plan_path "test-plan.md"
+        assert!(
+            plan_id.starts_with("test-plan-"),
+            "plan_id should start with slug"
+        );
+        assert!(plan_id.ends_with("-1"), "plan_id should end with gen 1");
+
+        // THIS IS THE KEY TEST: Call show_plan using plan_id which queries checklist_items
         // including the reason column. This was the actual failure scenario.
-        let plan_state = db.show_plan("test-plan.md").unwrap();
-        assert_eq!(plan_state.plan_path, "test-plan.md");
+        let plan_state = db.show_plan(&plan_id).unwrap();
+        assert_eq!(plan_state.plan_id, plan_id);
+        assert_eq!(plan_state.plan_path, Some("test-plan.md".to_string()));
         assert_eq!(plan_state.plan_hash, "testhash123");
         assert_eq!(plan_state.phase_title, Some("Test Phase".to_string()));
 
@@ -2548,7 +3196,7 @@ mod tests {
 
         // THIS IS ALSO KEY: Call get_checklist_items directly which also
         // queries the reason column
-        let checklist_items = db.get_checklist_items("test-plan.md").unwrap();
+        let checklist_items = db.get_checklist_items(&plan_id).unwrap();
         assert_eq!(checklist_items.len(), 2);
 
         // Verify the reason column defaults to NULL for existing rows
@@ -2568,12 +3216,12 @@ mod tests {
     }
 
     #[test]
-    fn test_new_db_has_schema_v4() {
+    fn test_new_db_has_schema_v5() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let db = StateDb::open(&db_path).unwrap();
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
-        assert_eq!(db.schema_version().unwrap(), 4);
+        assert_eq!(db.schema_version().unwrap(), 5);
 
         // Verify reason column exists
         let has_reason: bool = db
@@ -2746,11 +3394,11 @@ mod tests {
             .unwrap();
         }
 
-        // Open with StateDb, which should trigger v3-to-v4 migration
-        let db = StateDb::open(&db_path).unwrap();
+        // Open with StateDb, which should trigger v3-to-v4-to-v5 migration
+        let db = StateDb::open(&db_path, temp.path()).unwrap();
 
-        // Verify schema version is now 4
-        assert_eq!(db.schema_version().unwrap(), 4);
+        // Verify schema version is now 5
+        assert_eq!(db.schema_version().unwrap(), 5);
 
         // Verify parent_anchor column does NOT exist after migration
         let has_parent_anchor: bool = db
@@ -2763,18 +3411,24 @@ mod tests {
             .unwrap();
         assert!(
             !has_parent_anchor,
-            "parent_anchor column should not exist after v4 migration"
+            "parent_anchor column should not exist after v5 migration"
         );
+
+        // Look up the plan_id that was assigned during v5 migration
+        let plan_id: String = db
+            .conn
+            .query_row("SELECT plan_id FROM plans LIMIT 1", [], |row| row.get(0))
+            .expect("plan should exist after migration");
 
         // Collect all remaining steps with their step_index values ordered by step_index
         let mut stmt = db
             .conn
             .prepare(
-                "SELECT anchor, step_index FROM steps WHERE plan_path = 'test.md' ORDER BY step_index",
+                "SELECT anchor, step_index FROM steps WHERE plan_id = ?1 ORDER BY step_index",
             )
             .unwrap();
         let rows: Vec<(String, i32)> = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map(rusqlite::params![&plan_id], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
             .filter_map(|r| r.ok())
             .collect();
@@ -2815,8 +3469,8 @@ mod tests {
         let checklist_count: i64 = db
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM checklist_items WHERE plan_path = 'test.md'",
-                [],
+                "SELECT COUNT(*) FROM checklist_items WHERE plan_id = ?1",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -2826,9 +3480,270 @@ mod tests {
         );
     }
 
+    /// Build a minimal v4 database with one plan and its steps for migration tests.
+    fn build_v4_db_with_plan(
+        db_path: &std::path::Path,
+        plan_path_str: &str,
+        plan_hash: &str,
+    ) {
+        use rusqlite::Connection;
+        let conn = Connection::open(db_path).unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+
+        conn.execute_batch(
+            r#"
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO schema_version VALUES (4);
+
+            CREATE TABLE plans (
+                plan_path    TEXT PRIMARY KEY,
+                plan_hash    TEXT NOT NULL,
+                phase_title  TEXT,
+                status       TEXT NOT NULL DEFAULT 'active',
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL
+            );
+
+            CREATE TABLE steps (
+                plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
+                anchor           TEXT NOT NULL,
+                step_index       INTEGER NOT NULL,
+                title            TEXT NOT NULL,
+                status           TEXT NOT NULL DEFAULT 'pending',
+                claimed_by       TEXT,
+                claimed_at       TEXT,
+                lease_expires_at TEXT,
+                heartbeat_at     TEXT,
+                started_at       TEXT,
+                completed_at     TEXT,
+                commit_hash      TEXT,
+                complete_reason  TEXT,
+                PRIMARY KEY (plan_path, anchor)
+            );
+
+            CREATE TABLE step_deps (
+                plan_path    TEXT NOT NULL,
+                step_anchor  TEXT NOT NULL,
+                depends_on   TEXT NOT NULL,
+                PRIMARY KEY (plan_path, step_anchor, depends_on)
+            );
+
+            CREATE TABLE checklist_items (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_path    TEXT NOT NULL,
+                step_anchor  TEXT NOT NULL,
+                kind         TEXT NOT NULL,
+                ordinal      INTEGER NOT NULL,
+                text         TEXT NOT NULL,
+                status       TEXT NOT NULL DEFAULT 'open',
+                updated_at   TEXT,
+                reason       TEXT
+            );
+
+            CREATE TABLE step_artifacts (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_path    TEXT NOT NULL,
+                step_anchor  TEXT NOT NULL,
+                kind         TEXT NOT NULL,
+                summary      TEXT NOT NULL,
+                recorded_at  TEXT NOT NULL
+            );
+
+            CREATE TABLE dashes (
+                name        TEXT PRIMARY KEY,
+                description TEXT,
+                branch      TEXT NOT NULL,
+                worktree    TEXT NOT NULL,
+                base_branch TEXT NOT NULL DEFAULT 'main',
+                status      TEXT NOT NULL DEFAULT 'active',
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
+
+            CREATE TABLE dash_rounds (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                dash_name      TEXT NOT NULL REFERENCES dashes(name),
+                instruction    TEXT,
+                summary        TEXT,
+                files_created  TEXT,
+                files_modified TEXT,
+                commit_hash    TEXT,
+                started_at     TEXT NOT NULL,
+                completed_at   TEXT
+            );
+            "#,
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO plans (plan_path, plan_hash, phase_title, status, created_at, updated_at)
+             VALUES (?1, ?2, 'Phase 1', 'active', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
+            rusqlite::params![plan_path_str, plan_hash],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO steps (plan_path, anchor, step_index, title, status)
+             VALUES (?1, 'step-1', 0, 'Step One', 'pending')",
+            rusqlite::params![plan_path_str],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
+             VALUES (?1, 'step-1', 'task', 0, 'Do the thing', 'open')",
+            rusqlite::params![plan_path_str],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_migrate_v4_to_v5_with_file_on_disk() {
+        // Setup: create a v4 DB with one plan whose file exists on disk.
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        // Write the plan file to disk inside the temp dir
+        let plan_path_str = ".tugtool/tugplan-my-feature.md";
+        let plan_dir = temp.path().join(".tugtool");
+        fs::create_dir_all(&plan_dir).unwrap();
+        let plan_file = temp.path().join(plan_path_str);
+        fs::write(&plan_file, "# My feature plan content\n\nStep 1 details.").unwrap();
+
+        // Compute hash for the plan file
+        let plan_hash = compute_plan_hash(&plan_file).unwrap();
+
+        build_v4_db_with_plan(&db_path, plan_path_str, &plan_hash);
+
+        // Manually call migrate_v4_to_v5 (since migrate_schema does not auto-call it yet)
+        let mut db = StateDb {
+            conn: rusqlite::Connection::open(&db_path).unwrap(),
+            repo_root: temp.path().to_path_buf(),
+        };
+        db.migrate_v4_to_v5().unwrap();
+
+        // Verify schema version is now 5
+        assert_eq!(db.schema_version().unwrap(), 5);
+
+        // Verify plans_v5 was renamed to plans and has plan_id column
+        let plan_id: String = db
+            .conn
+            .query_row("SELECT plan_id FROM plans LIMIT 1", [], |row| row.get(0))
+            .expect("plans table should have plan_id column");
+
+        // plan_id should be <slug>-<hash7>-1
+        let expected_slug = "my-feature";
+        let hash7 = &plan_hash[..7];
+        let expected_id = format!("{}-{}-1", expected_slug, hash7);
+        assert_eq!(plan_id, expected_id, "plan_id should be slug-hash7-1");
+
+        // Verify plan_slug is set
+        let plan_slug: String = db
+            .conn
+            .query_row("SELECT plan_slug FROM plans LIMIT 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(plan_slug, expected_slug);
+
+        // Verify plan_path is preserved
+        let stored_plan_path: String = db
+            .conn
+            .query_row("SELECT plan_path FROM plans LIMIT 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(stored_plan_path, plan_path_str);
+
+        // Verify a snapshot was created (file was readable)
+        let snapshot_count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM plan_snapshots", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(snapshot_count, 1, "one init snapshot should have been created");
+
+        let snapshot_event: String = db
+            .conn
+            .query_row(
+                "SELECT event FROM plan_snapshots WHERE plan_id = ?1",
+                rusqlite::params![&plan_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(snapshot_event, "init");
+
+        // Verify steps were migrated with plan_id FK
+        let step_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM steps WHERE plan_id = ?1",
+                rusqlite::params![&plan_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(step_count, 1, "one step should have been migrated");
+
+        // Verify checklist items were migrated
+        let checklist_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM checklist_items WHERE plan_id = ?1",
+                rusqlite::params![&plan_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(checklist_count, 1, "one checklist item should have been migrated");
+    }
+
+    #[test]
+    fn test_migrate_v4_to_v5_orphaned_plan_no_snapshot() {
+        // Setup: create a v4 DB with one plan whose file does NOT exist on disk.
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        let plan_path_str = ".tugtool/tugplan-deleted-plan.md";
+        // Do NOT write the file to disk
+
+        build_v4_db_with_plan(&db_path, plan_path_str, "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+
+        // Manually call migrate_v4_to_v5
+        let mut db = StateDb {
+            conn: rusqlite::Connection::open(&db_path).unwrap(),
+            repo_root: temp.path().to_path_buf(),
+        };
+        db.migrate_v4_to_v5().unwrap();
+
+        // Verify schema version is now 5
+        assert_eq!(db.schema_version().unwrap(), 5);
+
+        // Verify plan was migrated
+        let plan_id: String = db
+            .conn
+            .query_row("SELECT plan_id FROM plans LIMIT 1", [], |row| row.get(0))
+            .expect("plan should exist after migration");
+
+        // plan_id should be <slug>-<hash7>-1
+        assert!(plan_id.starts_with("deleted-plan-"), "plan_id should start with slug");
+        assert!(plan_id.ends_with("-1"), "plan_id should end with gen 1");
+
+        // Verify NO snapshot was created (file was missing)
+        let snapshot_count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM plan_snapshots", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(snapshot_count, 0, "no snapshot should be created for missing plan file");
+
+        // Verify steps were migrated
+        let step_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM steps WHERE plan_id = ?1",
+                rusqlite::params![&plan_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(step_count, 1, "step should be migrated even without snapshot");
+    }
+
     #[test]
     fn test_complete_step_strict_with_deferred() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Mark one item completed, one deferred
         db.conn
@@ -2846,7 +3761,7 @@ mod tests {
 
         // Complete in strict mode should succeed
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
+            .complete_step(&plan_id, "step-1", "wt-a", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -2855,7 +3770,7 @@ mod tests {
 
     #[test]
     fn test_complete_step_strict_fails_with_open_and_deferred() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Mark one deferred, leave one open
         db.conn
@@ -2867,7 +3782,7 @@ mod tests {
         // Leave test item as 'open'
 
         // Strict mode should fail because one item is still open
-        let result = db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None);
+        let result = db.complete_step(&plan_id, "step-1", "wt-a", false, None);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -2937,57 +3852,64 @@ mod tests {
     fn test_init_plan_creates_correct_counts() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
         let result = db
-            .init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
 
         assert!(!result.already_initialized);
+        assert!(!result.plan_id.is_empty());
         assert_eq!(result.step_count, 3); // step-1, step-2, step-3
         assert_eq!(result.dep_count, 2); // step-2->step-1, step-3->step-2 (substep deps no longer inserted)
         assert_eq!(result.checklist_count, 3); // task1, test1, check1 (substep checklist items no longer inserted)
     }
 
     #[test]
-    fn test_init_plan_is_idempotent() {
+    fn test_init_plan_second_call_creates_new_generation() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
         let r1 = db
-            .init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         assert!(!r1.already_initialized);
+        let plan_id_1 = r1.plan_id.clone();
+        assert!(plan_id_1.ends_with("-1"), "first init should be gen 1");
 
+        // Second init with same path creates a new generation (gen 2)
         let r2 = db
-            .init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
-        assert!(r2.already_initialized);
-        assert_eq!(r2.step_count, 0);
+        assert!(!r2.already_initialized, "new generation is not already_initialized");
+        assert_ne!(r2.plan_id, plan_id_1, "second init should get a different plan_id");
+        assert!(r2.plan_id.ends_with("-2"), "second init should be gen 2");
+        assert_eq!(r2.step_count, 3); // new plan gets all steps
     }
 
     #[test]
     fn test_init_plan_step_index_interleaved() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let result = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = result.plan_id;
 
-        // Query step_index values
+        // Query step_index values (in v5 schema, steps are keyed by plan_id)
         let mut stmt = db
             .conn
             .prepare(
-                "SELECT anchor, step_index FROM steps WHERE plan_path = ?1 ORDER BY step_index",
+                "SELECT anchor, step_index FROM steps WHERE plan_id = ?1 ORDER BY step_index",
             )
             .unwrap();
         let rows: Vec<(String, i32)> = stmt
-            .query_map([".tugtool/tugplan-test.md"], |row| {
+            .query_map([&plan_id], |row| {
                 Ok((row.get(0)?, row.get(1)?))
             })
             .unwrap()
@@ -3009,15 +3931,16 @@ mod tests {
     fn test_claim_returns_first_ready_step() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         let result = db
             .claim_step(
-                ".tugtool/tugplan-test.md",
+                &plan_id,
                 "wt-a",
                 7200,
                 "abc123hash",
@@ -3038,16 +3961,17 @@ mod tests {
     fn test_claim_respects_dependency_graph() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1
         let result = db
             .claim_step(
-                ".tugtool/tugplan-test.md",
+                &plan_id,
                 "wt-a",
                 7200,
                 "abc123hash",
@@ -3060,7 +3984,7 @@ mod tests {
         // step-3 depends on step-2, so neither should be available
         let result2 = db
             .claim_step(
-                ".tugtool/tugplan-test.md",
+                &plan_id,
                 "wt-b",
                 7200,
                 "abc123hash",
@@ -3082,15 +4006,16 @@ mod tests {
     fn test_claim_expired_lease_reclaims() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 as wt-a
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
@@ -3109,7 +4034,7 @@ mod tests {
         // Reclaim as wt-b
         let result = db
             .claim_step(
-                ".tugtool/tugplan-test.md",
+                &plan_id,
                 "wt-b",
                 7200,
                 "abc123hash",
@@ -3131,8 +4056,8 @@ mod tests {
         let claimed_by: String = db
             .conn
             .query_row(
-                "SELECT claimed_by FROM steps WHERE plan_path = '.tugtool/tugplan-test.md' AND anchor = 'step-1'",
-                [],
+                "SELECT claimed_by FROM steps WHERE plan_id = ?1 AND anchor = 'step-1'",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -3143,11 +4068,12 @@ mod tests {
     fn test_claim_all_completed() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Mark all steps as completed
         db.conn
@@ -3157,7 +4083,7 @@ mod tests {
         // Try to claim - should return AllCompleted
         let result = db
             .claim_step(
-                ".tugtool/tugplan-test.md",
+                &plan_id,
                 "wt-a",
                 7200,
                 "abc123hash",
@@ -3172,15 +4098,16 @@ mod tests {
     fn test_claim_plan_hash_mismatch() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Try to claim with wrong hash
         let result = db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "wrong-hash",
@@ -3198,15 +4125,16 @@ mod tests {
     fn test_start_succeeds_for_claimer() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
@@ -3215,7 +4143,7 @@ mod tests {
         .unwrap();
 
         // Start it
-        let result = db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a");
+        let result = db.start_step(&plan_id, "step-1", "wt-a");
         assert!(result.is_ok());
 
         // Verify status is now in_progress
@@ -3234,15 +4162,16 @@ mod tests {
     fn test_start_fails_for_different_worktree() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 as wt-a
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
@@ -3251,7 +4180,7 @@ mod tests {
         .unwrap();
 
         // Try to start as wt-b
-        let result = db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-b");
+        let result = db.start_step(&plan_id, "step-1", "wt-b");
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -3264,14 +4193,15 @@ mod tests {
     fn test_start_fails_when_not_claimed() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Try to start without claiming
-        let result = db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a");
+        let result = db.start_step(&plan_id, "step-1", "wt-a");
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -3284,22 +4214,23 @@ mod tests {
     fn test_heartbeat_extends_lease() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim and start step-1
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+        db.start_step(&plan_id, "step-1", "wt-a")
             .unwrap();
 
         // Get original lease
@@ -3317,7 +4248,7 @@ mod tests {
 
         // Send heartbeat
         let new_lease = db
-            .heartbeat_step(".tugtool/tugplan-test.md", "step-1", "wt-a", 7200)
+            .heartbeat_step(&plan_id, "step-1", "wt-a", 7200)
             .unwrap();
 
         // Verify lease was extended (new lease should be different from original)
@@ -3339,26 +4270,27 @@ mod tests {
     fn test_heartbeat_fails_for_non_claimer() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim and start step-1 as wt-a
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+        db.start_step(&plan_id, "step-1", "wt-a")
             .unwrap();
 
         // Try to heartbeat as wt-b
-        let result = db.heartbeat_step(".tugtool/tugplan-test.md", "step-1", "wt-b", 7200);
+        let result = db.heartbeat_step(&plan_id, "step-1", "wt-b", 7200);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -3368,37 +4300,38 @@ mod tests {
     }
 
     // Helper: setup a test with plan initialized and step-1 claimed and started
-    fn setup_claimed_plan() -> (TempDir, StateDb) {
+    fn setup_claimed_plan() -> (TempDir, StateDb, String) {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let result = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = result.plan_id;
 
         // Claim and start step-1
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+        db.start_step(&plan_id, "step-1", "wt-a")
             .unwrap();
 
-        (temp, db)
+        (temp, db, plan_id)
     }
 
     #[test]
     fn test_record_artifact() {
-        let (_temp, db) = setup_claimed_plan();
+        let (_temp, db, plan_id) = setup_claimed_plan();
 
         let artifact_id = db
             .record_artifact(
-                ".tugtool/tugplan-test.md",
+                &plan_id,
                 "step-1",
                 "wt-a",
                 "architect_strategy",
@@ -3422,14 +4355,14 @@ mod tests {
 
     #[test]
     fn test_record_artifact_truncates_long_summary() {
-        let (_temp, db) = setup_claimed_plan();
+        let (_temp, db, plan_id) = setup_claimed_plan();
 
         // Create a 600-character summary (all ASCII)
         let long_summary = "a".repeat(600);
 
         let artifact_id = db
             .record_artifact(
-                ".tugtool/tugplan-test.md",
+                &plan_id,
                 "step-1",
                 "wt-a",
                 "auditor_summary",
@@ -3453,7 +4386,7 @@ mod tests {
 
     #[test]
     fn test_complete_step_strict_mode_success() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Mark all checklist items as completed
         db.conn
@@ -3465,7 +4398,7 @@ mod tests {
 
         // Complete in strict mode
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
+            .complete_step(&plan_id, "step-1", "wt-a", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -3486,10 +4419,10 @@ mod tests {
 
     #[test]
     fn test_complete_step_strict_mode_fails_incomplete_checklist() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Don't complete checklist items - try to complete step in strict mode
-        let result = db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None);
+        let result = db.complete_step(&plan_id, "step-1", "wt-a", false, None);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -3504,12 +4437,12 @@ mod tests {
 
     #[test]
     fn test_complete_step_force_mode() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Force complete without completing checklist items
         let result = db
             .complete_step(
-                ".tugtool/tugplan-test.md",
+                &plan_id,
                 "step-1",
                 "wt-a",
                 true,
@@ -3545,7 +4478,7 @@ mod tests {
 
     #[test]
     fn test_complete_all_steps_sets_plan_done() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Complete all checklist items for step-1
         db.conn
@@ -3556,7 +4489,7 @@ mod tests {
             .unwrap();
 
         // Complete step-1
-        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
+        db.complete_step(&plan_id, "step-1", "wt-a", false, None)
             .unwrap();
 
         // Force complete step-2 and step-3 (simulating all steps done)
@@ -3575,8 +4508,8 @@ mod tests {
         let plan_status: String = db
             .conn
             .query_row(
-                "SELECT status FROM plans WHERE plan_path = '.tugtool/tugplan-test.md'",
-                [],
+                "SELECT status FROM plans WHERE plan_id = ?1",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -3602,14 +4535,14 @@ mod tests {
 
         // Claim, start, and complete step-3 (the last step)
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-3", "wt-a")
+        db.start_step(&plan_id, "step-3", "wt-a")
             .unwrap();
         db.conn
             .execute(
@@ -3619,27 +4552,27 @@ mod tests {
             .unwrap();
 
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-3", "wt-a", false, None)
+            .complete_step(&plan_id, "step-3", "wt-a", false, None)
             .unwrap();
 
         assert!(result.all_steps_completed);
 
-        // Verify plan status is now 'done'
+        // Verify plan status is still 'active' (status='done' transition was removed per D02)
         let plan_status: String = db
             .conn
             .query_row(
-                "SELECT status FROM plans WHERE plan_path = '.tugtool/tugplan-test.md'",
-                [],
+                "SELECT status FROM plans WHERE plan_id = ?1",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(plan_status, "done");
+        assert_eq!(plan_status, "active");
     }
 
     #[test]
     fn test_step_not_found_error_variant() {
         let err = TugError::StateStepNotFound {
-            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            plan_id: "test-abc123h-1".to_string(),
             anchor: "step-99".to_string(),
         };
         assert_eq!(err.code(), "E059");
@@ -3647,18 +4580,18 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("step-99"), "display should contain anchor");
         assert!(
-            msg.contains(".tugtool/tugplan-test.md"),
-            "display should contain plan_path"
+            msg.contains("test-abc123h-1"),
+            "display should contain plan_id"
         );
     }
 
     #[test]
     fn test_complete_step_nonexistent_anchor() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Attempt to complete a step anchor that does not exist in the DB
         let result = db.complete_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "step-nonexistent",
             "wt-a",
             false,
@@ -3667,8 +4600,8 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            TugError::StateStepNotFound { plan_path, anchor } => {
-                assert_eq!(plan_path, ".tugtool/tugplan-test.md");
+            TugError::StateStepNotFound { plan_id: pid, anchor } => {
+                assert_eq!(pid, plan_id);
                 assert_eq!(anchor, "step-nonexistent");
             }
             other => panic!("Expected StateStepNotFound, got: {:?}", other),
@@ -3677,7 +4610,7 @@ mod tests {
 
     #[test]
     fn test_complete_step_idempotent_same_worktree() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Mark all checklist items as completed and complete step-1 normally
         db.conn
@@ -3686,12 +4619,12 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
+        db.complete_step(&plan_id, "step-1", "wt-a", false, None)
             .unwrap();
 
         // Call complete_step again from the same worktree -- must succeed idempotently
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
+            .complete_step(&plan_id, "step-1", "wt-a", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -3700,7 +4633,7 @@ mod tests {
 
     #[test]
     fn test_complete_step_idempotent_different_worktree() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Mark all checklist items as completed and complete step-1 from wt-a
         db.conn
@@ -3709,12 +4642,12 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
+        db.complete_step(&plan_id, "step-1", "wt-a", false, None)
             .unwrap();
 
         // Call complete_step from a different worktree -- must succeed idempotently
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-1", "wt-b", false, None)
+            .complete_step(&plan_id, "step-1", "wt-b", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -3723,7 +4656,7 @@ mod tests {
 
     #[test]
     fn test_complete_step_idempotent_all_steps_completed() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Force-complete step-1 and step-2 by updating DB directly
         db.conn
@@ -3735,14 +4668,14 @@ mod tests {
 
         // Claim and start step-3 (last step), complete all its checklist items, then complete it
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-3", "wt-a")
+        db.start_step(&plan_id, "step-3", "wt-a")
             .unwrap();
         db.conn
             .execute(
@@ -3750,12 +4683,12 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-3", "wt-a", false, None)
+        db.complete_step(&plan_id, "step-3", "wt-a", false, None)
             .unwrap();
 
         // Call complete_step on the last step again -- must return all_steps_completed: true
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-3", "wt-a", false, None)
+            .complete_step(&plan_id, "step-3", "wt-a", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -3765,7 +4698,7 @@ mod tests {
 
     #[test]
     fn test_complete_step_error_includes_plan_path() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Attempt to complete step-1 from a different worktree (wt-b) without
         // completing checklist items -- this triggers StateStepNotClaimed because
@@ -3781,7 +4714,7 @@ mod tests {
             .unwrap();
 
         let result = db.complete_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "step-1",
             "wt-b", // wrong worktree -- step is claimed by wt-a
             false,
@@ -3792,8 +4725,8 @@ mod tests {
         let err = result.unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains(".tugtool/tugplan-test.md"),
-            "error message should contain plan_path, got: {}",
+            msg.contains(&plan_id),
+            "error message should contain plan_id, got: {}",
             msg
         );
     }
@@ -3804,13 +4737,14 @@ mod tests {
     fn test_show_returns_correct_checklist_counts() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
-        let plan_state = db.show_plan(".tugtool/tugplan-test.md").unwrap();
+        let plan_state = db.show_plan(&plan_id).unwrap();
 
         assert_eq!(plan_state.steps.len(), 3); // step-1, step-2, step-3
 
@@ -3826,25 +4760,26 @@ mod tests {
     fn test_show_annotates_force_completed() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim, start, and force-complete step-1
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+        db.start_step(&plan_id, "step-1", "wt-a")
             .unwrap();
         db.complete_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "step-1",
             "wt-a",
             true,
@@ -3852,7 +4787,7 @@ mod tests {
         )
         .unwrap();
 
-        let plan_state = db.show_plan(".tugtool/tugplan-test.md").unwrap();
+        let plan_state = db.show_plan(&plan_id).unwrap();
 
         let step0 = &plan_state.steps[0];
         assert_eq!(
@@ -3865,13 +4800,14 @@ mod tests {
     fn test_ready_returns_correct_categorization() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
-        let ready = db.ready_steps(".tugtool/tugplan-test.md").unwrap();
+        let ready = db.ready_steps(&plan_id).unwrap();
 
         // Only step-1 should be ready (no dependencies)
         assert_eq!(ready.ready.len(), 1);
@@ -3888,15 +4824,16 @@ mod tests {
     fn test_ready_expired_lease_appears_in_ready() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
@@ -3912,7 +4849,7 @@ mod tests {
             )
             .unwrap();
 
-        let ready = db.ready_steps(".tugtool/tugplan-test.md").unwrap();
+        let ready = db.ready_steps(&plan_id).unwrap();
 
         // step-1 should appear in expired_claim
         assert_eq!(ready.expired_claim.len(), 1);
@@ -3923,26 +4860,27 @@ mod tests {
     fn test_reset_clears_claim_fields() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim and start step-1
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+        db.start_step(&plan_id, "step-1", "wt-a")
             .unwrap();
 
         // Reset step-1
-        db.reset_step(".tugtool/tugplan-test.md", "step-1").unwrap();
+        db.reset_step(&plan_id, "step-1").unwrap();
 
         // Verify status is pending and claim fields are cleared
         let (status, claimed_by): (String, Option<String>) = db
@@ -3962,11 +4900,12 @@ mod tests {
     fn test_reset_does_not_affect_completed_steps() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Complete step-1
         db.conn
@@ -3977,7 +4916,7 @@ mod tests {
             .unwrap();
 
         // Try to reset step-1 - should fail
-        let result = db.reset_step(".tugtool/tugplan-test.md", "step-1");
+        let result = db.reset_step(&plan_id, "step-1");
         assert!(result.is_err());
     }
 
@@ -3985,28 +4924,29 @@ mod tests {
     fn test_reconcile_marks_uncompleted_steps() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Create reconcile entries for step-1 and step-2
         let entries = vec![
             ReconcileEntry {
                 step_anchor: "step-1".to_string(),
-                plan_path: ".tugtool/tugplan-test.md".to_string(),
+                plan_path: plan_id.clone(),
                 commit_hash: "abc123".to_string(),
             },
             ReconcileEntry {
                 step_anchor: "step-2".to_string(),
-                plan_path: ".tugtool/tugplan-test.md".to_string(),
+                plan_path: plan_id.clone(),
                 commit_hash: "def456".to_string(),
             },
         ];
 
         let result = db
-            .reconcile(".tugtool/tugplan-test.md", &entries, false)
+            .reconcile(&plan_id, &entries, false)
             .unwrap();
 
         assert_eq!(result.reconciled_count, 2);
@@ -4028,11 +4968,12 @@ mod tests {
     fn test_reconcile_skips_hash_mismatch_in_default_mode() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Mark step-1 as completed with a commit hash
         db.conn
@@ -4045,12 +4986,12 @@ mod tests {
         // Try to reconcile with a different hash
         let entries = vec![ReconcileEntry {
             step_anchor: "step-1".to_string(),
-            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            plan_path: plan_id.clone(),
             commit_hash: "new_hash".to_string(),
         }];
 
         let result = db
-            .reconcile(".tugtool/tugplan-test.md", &entries, false)
+            .reconcile(&plan_id, &entries, false)
             .unwrap();
 
         assert_eq!(result.reconciled_count, 0);
@@ -4065,11 +5006,12 @@ mod tests {
     fn test_reconcile_force_mode_overwrites_hashes() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Mark step-1 as completed with a commit hash
         db.conn
@@ -4082,12 +5024,12 @@ mod tests {
         // Reconcile with force mode
         let entries = vec![ReconcileEntry {
             step_anchor: "step-1".to_string(),
-            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            plan_path: plan_id.clone(),
             commit_hash: "new_hash".to_string(),
         }];
 
         let result = db
-            .reconcile(".tugtool/tugplan-test.md", &entries, true)
+            .reconcile(&plan_id, &entries, true)
             .unwrap();
 
         assert_eq!(result.reconciled_count, 1);
@@ -4109,7 +5051,7 @@ mod tests {
     fn test_auto_reclaim_same_worktree() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4117,12 +5059,13 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+            .claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
         match result {
             ClaimResult::Claimed {
@@ -4136,7 +5079,7 @@ mod tests {
 
         // Re-claim from the same worktree without waiting for lease expiry
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+            .claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
         match result {
             ClaimResult::Claimed {
@@ -4153,7 +5096,7 @@ mod tests {
     fn test_auto_reclaim_different_worktree_blocked() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4161,16 +5104,17 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Attempt to claim from a different worktree before lease expiry
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, false)
+            .claim_step(&plan_id, "wt-b", 7200, &hash, false)
             .unwrap();
         match result {
             ClaimResult::NoReadySteps { blocked, .. } => {
@@ -4189,7 +5133,7 @@ mod tests {
     fn test_auto_reclaim_resets_checklist_items() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with checklist items
         let plan = make_test_plan();
@@ -4197,11 +5141,12 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Mark a checklist item as completed (simulate partial progress)
@@ -4209,8 +5154,8 @@ mod tests {
         let item_id: i32 = db
             .conn
             .query_row(
-                "SELECT id FROM checklist_items WHERE plan_path = '.tugtool/tugplan-test.md' AND step_anchor = 'step-1' LIMIT 1",
-                [],
+                "SELECT id FROM checklist_items WHERE plan_id = ?1 AND step_anchor = 'step-1' LIMIT 1",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -4223,7 +5168,7 @@ mod tests {
             .unwrap();
 
         // Auto-reclaim from same worktree
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Verify that non-completed checklist items for reclaimed steps are reset.
@@ -4231,8 +5176,8 @@ mod tests {
         let count: i32 = db
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM checklist_items WHERE plan_path = '.tugtool/tugplan-test.md' AND status = 'open'",
-                [],
+                "SELECT COUNT(*) FROM checklist_items WHERE plan_id = ?1 AND status = 'open'",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -4246,7 +5191,7 @@ mod tests {
     fn test_release_with_correct_worktree() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4254,16 +5199,17 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Release with correct worktree
         let result = db
-            .release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-a"), false)
+            .release_step(&plan_id, "step-1", Some("wt-a"), false)
             .unwrap();
         assert!(result.released);
         assert_eq!(result.was_claimed_by, Some("wt-a".to_string()));
@@ -4284,7 +5230,7 @@ mod tests {
     fn test_release_with_wrong_worktree() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4292,15 +5238,16 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Attempt to release with wrong worktree
-        let result = db.release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-b"), false);
+        let result = db.release_step(&plan_id, "step-1", Some("wt-b"), false);
         match result {
             Err(TugError::StateOwnershipViolation { .. }) => {}
             _ => panic!("expected StateOwnershipViolation"),
@@ -4311,7 +5258,7 @@ mod tests {
     fn test_release_with_force() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4319,16 +5266,17 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Release with force (wrong worktree should be ignored)
         let result = db
-            .release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-b"), true)
+            .release_step(&plan_id, "step-1", Some("wt-b"), true)
             .unwrap();
         assert!(result.released);
         assert_eq!(result.was_claimed_by, Some("wt-a".to_string()));
@@ -4349,7 +5297,7 @@ mod tests {
     fn test_release_completed_step() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4357,17 +5305,18 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim and complete step-1
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", true, None)
+        db.complete_step(&plan_id, "step-1", "wt-a", true, None)
             .unwrap();
 
         // Attempt to release completed step
-        let result = db.release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-a"), false);
+        let result = db.release_step(&plan_id, "step-1", Some("wt-a"), false);
         match result {
             Err(TugError::StateStepNotClaimed { current_status, .. }) => {
                 assert_eq!(current_status, "cannot release completed step");
@@ -4380,7 +5329,7 @@ mod tests {
     fn test_release_pending_step() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4388,11 +5337,12 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Attempt to release pending (unclaimed) step
-        let result = db.release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-a"), false);
+        let result = db.release_step(&plan_id, "step-1", Some("wt-a"), false);
         match result {
             Err(TugError::StateStepNotClaimed { current_status, .. }) => {
                 assert_eq!(current_status, "not claimed");
@@ -4405,7 +5355,7 @@ mod tests {
     fn test_force_claim_with_active_lease() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4413,16 +5363,17 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Force-claim from a different worktree (bypasses lease check)
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, true)
+            .claim_step(&plan_id, "wt-b", 7200, &hash, true)
             .unwrap();
         match result {
             ClaimResult::Claimed {
@@ -4453,7 +5404,7 @@ mod tests {
     fn test_force_claim_respects_dependencies() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with dependencies (step-2 depends on step-1)
         let plan = make_test_plan();
@@ -4461,12 +5412,13 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Attempt to force-claim step-2 (depends on step-1 which is pending)
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, true)
+            .claim_step(&plan_id, "wt-a", 7200, &hash, true)
             .unwrap();
         match result {
             ClaimResult::Claimed { anchor, .. } => {
@@ -4484,7 +5436,7 @@ mod tests {
     fn test_force_claim_pending_step() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4492,12 +5444,13 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Force-claim a pending step (should work same as normal claim)
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, true)
+            .claim_step(&plan_id, "wt-a", 7200, &hash, true)
             .unwrap();
         match result {
             ClaimResult::Claimed {
@@ -4517,7 +5470,7 @@ mod tests {
     fn test_force_claim_does_not_claim_completed() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with multiple steps
         let plan = make_test_plan();
@@ -4525,18 +5478,19 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim and complete step-1
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", true, None)
+        db.complete_step(&plan_id, "step-1", "wt-a", true, None)
             .unwrap();
 
         // Force-claim should get step-2, not step-1
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, true)
+            .claim_step(&plan_id, "wt-b", 7200, &hash, true)
             .unwrap();
         match result {
             ClaimResult::Claimed { anchor, .. } => {
@@ -4553,7 +5507,7 @@ mod tests {
     fn test_non_force_claim_blocked_by_active_lease() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
 
         // Initialize a plan with one step
         let plan = make_test_plan();
@@ -4561,16 +5515,17 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a (non-force)
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Attempt to claim from different worktree (non-force) - should be blocked
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, false)
+            .claim_step(&plan_id, "wt-b", 7200, &hash, false)
             .unwrap();
         match result {
             ClaimResult::NoReadySteps { blocked, .. } => {
@@ -4601,14 +5556,15 @@ mod tests {
     fn test_start_step_with_hash_prefix() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 (stores bare "step-1" in DB)
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
@@ -4617,15 +5573,15 @@ mod tests {
         .unwrap();
 
         // start_step with hash-prefixed anchor — should succeed via normalization
-        let result = db.start_step(".tugtool/tugplan-test.md", "#step-1", "wt-a");
+        let result = db.start_step(&plan_id, "#step-1", "wt-a");
         assert!(result.is_ok(), "start_step with #step-1 should succeed");
 
         // Verify status is now in_progress
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
-                rusqlite::params![".tugtool/tugplan-test.md"],
+                "SELECT status FROM steps WHERE plan_id = ?1 AND anchor = 'step-1'",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -4636,28 +5592,29 @@ mod tests {
     fn test_complete_step_with_hash_prefix() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim and start step-1 (bare anchor)
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+        db.start_step(&plan_id, "step-1", "wt-a")
             .unwrap();
 
         // Mark all checklist items complete so strict mode succeeds
         // Use batch_update_checklist with complete_remaining=true and empty entries
         let no_deferrals: &[NoopBatchEntry] = &[];
         db.batch_update_checklist(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "step-1",
             "wt-a",
             no_deferrals,
@@ -4666,15 +5623,15 @@ mod tests {
         .unwrap();
 
         // complete_step with hash-prefixed anchor — should succeed via normalization
-        let result = db.complete_step(".tugtool/tugplan-test.md", "#step-1", "wt-a", false, None);
+        let result = db.complete_step(&plan_id, "#step-1", "wt-a", false, None);
         assert!(result.is_ok(), "complete_step with #step-1 should succeed");
 
         // Verify status is completed
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
-                rusqlite::params![".tugtool/tugplan-test.md"],
+                "SELECT status FROM steps WHERE plan_id = ?1 AND anchor = 'step-1'",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -4685,25 +5642,26 @@ mod tests {
     fn test_heartbeat_step_with_hash_prefix() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim and start step-1 (bare anchor)
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+        db.start_step(&plan_id, "step-1", "wt-a")
             .unwrap();
 
         // heartbeat_step with hash-prefixed anchor — should return a lease expiry string
-        let result = db.heartbeat_step(".tugtool/tugplan-test.md", "#step-1", "wt-a", 7200);
+        let result = db.heartbeat_step(&plan_id, "#step-1", "wt-a", 7200);
         assert!(result.is_ok(), "heartbeat_step with #step-1 should succeed");
         let lease_expiry = result.unwrap();
         assert!(!lease_expiry.is_empty(), "lease expiry should be non-empty");
@@ -4713,14 +5671,15 @@ mod tests {
     fn test_check_ownership_with_hash_prefix() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Claim step-1 (bare anchor stored in DB)
         db.claim_step(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "wt-a",
             7200,
             "abc123hash",
@@ -4729,7 +5688,7 @@ mod tests {
         .unwrap();
 
         // check_ownership with hash-prefixed anchor — should succeed via normalization
-        let result = db.check_ownership(".tugtool/tugplan-test.md", "#step-1", "wt-a");
+        let result = db.check_ownership(&plan_id, "#step-1", "wt-a");
         assert!(
             result.is_ok(),
             "check_ownership with #step-1 should succeed"
@@ -4738,11 +5697,11 @@ mod tests {
 
     #[test]
     fn test_record_artifact_with_hash_prefix() {
-        let (_temp, db) = setup_claimed_plan();
+        let (_temp, db, plan_id) = setup_claimed_plan();
 
         // record_artifact with hash-prefixed anchor — should succeed via normalization
         let result = db.record_artifact(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "#step-1",
             "wt-a",
             "architect_strategy",
@@ -4768,18 +5727,18 @@ mod tests {
 
     #[test]
     fn test_reset_step_with_hash_prefix() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // reset_step with hash-prefixed anchor — should succeed via normalization
-        let result = db.reset_step(".tugtool/tugplan-test.md", "#step-1");
+        let result = db.reset_step(&plan_id, "#step-1");
         assert!(result.is_ok(), "reset_step with #step-1 should succeed");
 
         // Verify step is back to pending (bare anchor in DB)
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
-                rusqlite::params![".tugtool/tugplan-test.md"],
+                "SELECT status FROM steps WHERE plan_id = ?1 AND anchor = 'step-1'",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -4788,10 +5747,10 @@ mod tests {
 
     #[test]
     fn test_release_step_with_hash_prefix() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // release_step with hash-prefixed anchor — should succeed via normalization
-        let result = db.release_step(".tugtool/tugplan-test.md", "#step-1", Some("wt-a"), false);
+        let result = db.release_step(&plan_id, "#step-1", Some("wt-a"), false);
         assert!(result.is_ok(), "release_step with #step-1 should succeed");
         let release = result.unwrap();
         assert!(release.released);
@@ -4801,8 +5760,8 @@ mod tests {
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
-                rusqlite::params![".tugtool/tugplan-test.md"],
+                "SELECT status FROM steps WHERE plan_id = ?1 AND anchor = 'step-1'",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();
@@ -4811,7 +5770,7 @@ mod tests {
 
     #[test]
     fn test_batch_update_checklist_with_hash_prefix() {
-        let (_temp, mut db) = setup_claimed_plan();
+        let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Define a minimal local BatchEntry implementation for the test
         struct TestEntry {
@@ -4843,7 +5802,7 @@ mod tests {
 
         // batch_update_checklist with hash-prefixed anchor — should succeed via normalization
         let result = db.batch_update_checklist(
-            ".tugtool/tugplan-test.md",
+            &plan_id,
             "#step-1",
             "wt-a",
             &entries,
@@ -4871,19 +5830,20 @@ mod tests {
     fn test_reconcile_with_hash_prefix() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
+        let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
+        let plan_id = init.plan_id;
 
         // Create a ReconcileEntry with hash-prefixed anchor (simulates historical git trailer)
         let entries = vec![ReconcileEntry {
             step_anchor: "#step-1".to_string(),
-            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            plan_path: plan_id.clone(),
             commit_hash: "deadbeef".to_string(),
         }];
 
-        let result = db.reconcile(".tugtool/tugplan-test.md", &entries, false);
+        let result = db.reconcile(&plan_id, &entries, false);
         assert!(result.is_ok(), "reconcile with #step-1 should succeed");
 
         let reconcile_result = result.unwrap();
@@ -4897,8 +5857,8 @@ mod tests {
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
-                rusqlite::params![".tugtool/tugplan-test.md"],
+                "SELECT status FROM steps WHERE plan_id = ?1 AND anchor = 'step-1'",
+                rusqlite::params![&plan_id],
                 |row| row.get(0),
             )
             .unwrap();

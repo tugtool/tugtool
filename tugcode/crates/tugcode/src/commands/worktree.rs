@@ -586,8 +586,8 @@ pub fn run_worktree_setup_with_root(
             let (state_initialized, auto_reinitialized, state_warnings, ready_steps) = {
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugtool_core::compute_plan_hash(&synced_plan_path) {
-                    Ok(plan_hash) => match tugtool_core::StateDb::open(&db_path) {
-                        Ok(mut db) => match db.init_plan(&plan, &synced_plan, &plan_hash) {
+                    Ok(plan_hash) => match tugtool_core::StateDb::open(&db_path, &repo_root) {
+                        Ok(mut db) => match db.init_plan(&plan, &synced_plan, Some(&plan_hash)) {
                             Ok(init_result) => {
                                 // If already initialized, check for drift
                                 let auto_reinit = if init_result.already_initialized {
@@ -605,7 +605,7 @@ pub fn run_worktree_setup_with_root(
                                                 match db.reinit_plan(
                                                     &plan,
                                                     &synced_plan,
-                                                    &plan_hash,
+                                                    Some(&plan_hash),
                                                 ) {
                                                     Ok(_) => true,
                                                     Err(e) => {

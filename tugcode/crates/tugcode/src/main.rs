@@ -135,7 +135,10 @@ fn main() -> ExitCode {
                 cli.quiet,
             ),
             StateCommands::Reinit { plan } => commands::run_state_reinit(plan, cli.json, cli.quiet),
-            StateCommands::Gc { dry_run } => commands::run_state_gc(dry_run, cli.json, cli.quiet),
+            StateCommands::Archive { plan } => {
+                commands::run_state_archive(plan, cli.json, cli.quiet)
+            }
+            StateCommands::List { all } => commands::run_state_list(all, cli.json, cli.quiet),
         },
         Some(Commands::Merge {
             plan,

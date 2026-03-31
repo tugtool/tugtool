@@ -663,7 +663,7 @@ fn check_state_health_at(db_path: &Path, plan_root: &Path) -> HealthCheck {
     }
 
     // Open the database
-    let db = match tugtool_core::StateDb::open(db_path) {
+    let db = match tugtool_core::StateDb::open(db_path, plan_root) {
         Ok(db) => db,
         Err(e) => {
             return HealthCheck {
@@ -678,12 +678,12 @@ fn check_state_health_at(db_path: &Path, plan_root: &Path) -> HealthCheck {
     // Check schema version
     match db.schema_version() {
         Ok(version) => {
-            if version != 4 {
+            if version != 5 {
                 return HealthCheck {
                     name: "state_health".to_string(),
                     status: "fail".to_string(),
                     message: format!(
-                        "state.db schema version mismatch: expected 4, got {}",
+                        "state.db schema version mismatch: expected 5, got {}",
                         version
                     ),
                     details: None,
@@ -701,16 +701,24 @@ fn check_state_health_at(db_path: &Path, plan_root: &Path) -> HealthCheck {
     }
 
     // Check for orphaned plans (plan_path in DB but file missing on disk)
+    // list_plan_paths() returns plan_id values; look up each plan's file path
+    // to check for orphans.
     match db.list_plan_paths() {
-        Ok(plan_paths) => {
-            let orphaned: Vec<String> = plan_paths
-                .iter()
-                .filter(|p| !plan_root.join(p).exists())
-                .cloned()
-                .collect();
+        Ok(plan_ids) => {
+            let mut orphaned: Vec<String> = Vec::new();
+            for plan_id in &plan_ids {
+                if let Ok(plan_state) = db.show_plan(plan_id) {
+                    if let Some(ref file_path) = plan_state.plan_path {
+                        if !plan_root.join(file_path).exists() {
+                            orphaned.push(plan_id.clone());
+                        }
+                    }
+                    // Plans with no plan_path (archived) are not orphaned
+                }
+            }
 
             if orphaned.is_empty() {
-                if plan_paths.is_empty() {
+                if plan_ids.is_empty() {
                     HealthCheck {
                         name: "state_health".to_string(),
                         status: "pass".to_string(),
@@ -721,7 +729,7 @@ fn check_state_health_at(db_path: &Path, plan_root: &Path) -> HealthCheck {
                     HealthCheck {
                         name: "state_health".to_string(),
                         status: "pass".to_string(),
-                        message: format!("state.db healthy ({} plan(s) tracked)", plan_paths.len()),
+                        message: format!("state.db healthy ({} plan(s) tracked)", plan_ids.len()),
                         details: None,
                     }
                 }
@@ -780,11 +788,11 @@ mod tests {
         let plan_path = plan_dir.join("tugplan-test.md");
         std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 1: Test Step {#step-1}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
 
-        let mut db = tugtool_core::StateDb::open(&db_path).unwrap();
+        let mut db = tugtool_core::StateDb::open(&db_path, temp.path()).unwrap();
         let plan_content = std::fs::read_to_string(&plan_path).unwrap();
         let parsed = tugtool_core::parse_tugplan(&plan_content).unwrap();
         let hash = tugtool_core::compute_plan_hash(&plan_path).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &parsed, &hash)
+        db.init_plan(".tugtool/tugplan-test.md", &parsed, Some(&hash))
             .unwrap();
 
         let result = check_state_health_at(&db_path, temp.path());
@@ -803,11 +811,11 @@ mod tests {
         let plan_path = plan_dir.join("tugplan-test.md");
         std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 1: Test Step {#step-1}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
 
-        let mut db = tugtool_core::StateDb::open(&db_path).unwrap();
+        let mut db = tugtool_core::StateDb::open(&db_path, temp.path()).unwrap();
         let plan_content = std::fs::read_to_string(&plan_path).unwrap();
         let parsed = tugtool_core::parse_tugplan(&plan_content).unwrap();
         let hash = tugtool_core::compute_plan_hash(&plan_path).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &parsed, &hash)
+        db.init_plan(".tugtool/tugplan-test.md", &parsed, Some(&hash))
             .unwrap();
 
         // Delete the plan file to create orphan
