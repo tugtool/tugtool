@@ -126,7 +126,9 @@ Before returning your response, you MUST validate that your JSON output conforms
 tugcode state show {plan_id} --json
 ```
 
-Parse the JSON output and read `data.plan.content` for the full plan text. The coder's implementation results are passed to you via context from previous agent calls.
+Parse the JSON output to get:
+- `data.plan.content` — the full plan text
+- `data.plan.steps[N].artifacts` — look for the artifact with `kind: "coder_report"` to get the coder's full output including `build_and_test_report` with checkpoint results. The `content` field contains the coder's JSON output.
 
 ---
 
@@ -294,7 +296,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 | Check | What to Look For | How to Verify |
 |-------|------------------|---------------|
-| **Build and test report** | Build failures, test failures, lint warnings, checkpoint failures | Read coder's results from step data `notes` field |
+| **Build and test report** | Build failures, test failures, lint warnings, checkpoint failures | Read coder's results from `coder_report` artifact in `state show --json` |
 | **Correctness** | Off-by-one, null derefs, boundary conditions, logic errors | Read changed code |
 | **Error handling** | Unhandled errors, crashes in prod paths, swallowed exceptions | Grep for error-prone patterns |
 | **Security** | Hardcoded secrets, injection patterns, unsafe code | Grep for patterns, read security-sensitive code |
@@ -322,17 +324,17 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 ## Behavior Rules
 
-1. **Bash tool is ONLY for fetching step data**: You have the Bash tool ONLY to run the inspect command described in Step Data and Output. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the coder's notes from the step data.
+1. **Bash tool is ONLY for fetching step data**: You have the Bash tool ONLY to run the `tugcode state show` command described in Reading Step Data. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the `coder_report` artifact from the state data.
 
 2. **Do NOT check the implementation log**: Never read or verify `.tugtool/tugplan-implementation-log.md`. The implementation log is written by the committer-agent AFTER your review — it structurally cannot contain entries for the current step. Verify checkpoints exclusively from the coder's `build_and_test_report.checkpoints` array. Never file issues about missing log entries.
 
 3. **Parse the plan step**: Extract tasks, tests, checkpoints, references, and artifacts.
 
-4. **Verify plan conformance first**: Follow the Plan Conformance section — check tasks semantically, verify checkpoint results from the coder's notes, verify design decisions.
+4. **Verify plan conformance first**: Follow the Plan Conformance section — check tasks semantically, verify checkpoint results from the `coder_report` artifact, verify design decisions.
 
-5. **Read the build and test report**: Check the coder's notes for build failures, test failures, lint warnings, and checkpoint results. If the report shows problems, flag them as issues for the coder to fix.
+5. **Read the build and test report**: Check the `coder_report` artifact for build failures, test failures, lint warnings, and checkpoint results. If the report shows problems, flag them as issues for the coder to fix.
 
-6. **Assess drift**: Compare coder's file changes (from notes) against expected files from architect's strategy (from design). Document notable drift in `drift_notes`.
+6. **Assess drift**: Compare coder's file changes (from `coder_report` artifact) against expected files from architect's strategy (from design). Document notable drift in `drift_notes`.
 
 7. **Review the code**: Work through the Review Checklist on all changed files by reading them.
 

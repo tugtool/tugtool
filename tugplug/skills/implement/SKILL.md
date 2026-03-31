@@ -528,6 +528,14 @@ Output the Coder post-call message.
 Bash: tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
+**Record coder report artifact (after coder completes successfully, before reviewer):**
+
+```
+Bash: echo '<coder's full JSON output>' | tugcode state artifact {plan_id} {step_anchor} --worktree {worktree_path} --kind coder_report --summary "{first 500 chars of build_and_test_report}"
+```
+
+This stores the coder's complete output (including `build_and_test_report` with checkpoint results) in the state database. The reviewer reads it from `state show --json` output under `data.plan.steps[N].artifacts`.
+
 #### 3d. Reviewer: Verify Implementation
 
 **First step (reviewer_id is null) — FRESH spawn:**
@@ -637,6 +645,10 @@ Output the Coder post-call message.
 
 ```
 Bash: tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
+```
+
+```
+Bash: echo '<coder's full JSON output>' | tugcode state artifact {plan_id} {step_anchor} --worktree {worktree_path} --kind coder_report --summary "{first 500 chars of build_and_test_report}"
 ```
 
 2. **Resume reviewer** for re-review:
@@ -1034,7 +1046,7 @@ Tugstate tracks per-step execution state in an embedded SQLite database. The orc
 1. `tugcode state claim {plan_id} --worktree {worktree_path} --json` — get next ready step
 2. `tugcode state start {plan_id} {step_anchor} --worktree {worktree_path}` — transition to in_progress
 3. `tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}` — after each agent call
-4. `tugcode state artifact {plan_id} {step_anchor} --kind {kind} --summary "{summary}" --worktree {worktree_path}` — after architect (architect_strategy) and reviewer (reviewer_verdict)
+4. `tugcode state artifact {plan_id} {step_anchor} --kind {kind} --summary "{summary}" --worktree {worktree_path}` — after architect (architect_strategy), coder (coder_report, piped via stdin), and reviewer (reviewer_verdict)
 5. `tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}` — after reviewer approval; pipe non-PASS checkpoint items as deferred JSON via stdin, or invoke with no pipe to complete all items; the command auto-completes all other open items (tasks, tests, remaining checkpoints)
 6. `tugcode commit` — internally calls `state complete` (no separate orchestrator call needed)
 

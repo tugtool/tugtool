@@ -728,9 +728,34 @@ pub fn run_state_artifact(
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
 
-    // 4. Record artifact
+    // 4. Read optional content from stdin (TTY-aware, same pattern as complete-checklist)
+    use std::io::IsTerminal;
+    let content: Option<String> = if std::io::stdin().is_terminal() {
+        None
+    } else {
+        let mut buf = String::new();
+        use std::io::Read;
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Failed to read stdin: {}", e))?;
+        let trimmed = buf.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    };
+
+    // 5. Record artifact
     let artifact_id = db
-        .record_artifact(&plan_id, &step, &worktree, &kind, &summary)
+        .record_artifact(
+            &plan_id,
+            &step,
+            &worktree,
+            &kind,
+            &summary,
+            content.as_deref(),
+        )
         .map_err(|e| e.to_string())?;
 
     // 5. Output

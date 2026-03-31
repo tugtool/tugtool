@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS step_artifacts (
     step_anchor  TEXT NOT NULL,
     kind         TEXT NOT NULL,
     summary      TEXT NOT NULL,
+    content      TEXT,
     recorded_at  TEXT NOT NULL,
     FOREIGN KEY (plan_id, step_anchor) REFERENCES steps(plan_id, anchor)
 );
@@ -224,9 +225,9 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             reason: format!("failed to create schema: {}", e),
         })?;
 
-        // Insert schema version (idempotent via NOT EXISTS check) — fresh DBs start at v5.
+        // Insert schema version (idempotent via NOT EXISTS check) — fresh DBs start at v6.
         conn.execute(
-            "INSERT INTO schema_version SELECT 5 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
+            "INSERT INTO schema_version SELECT 6 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
             [],
         )
         .map_err(|e| TugError::StateDbOpen {
@@ -269,466 +270,19 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_id, step_an
 
     /// Run schema migrations if needed.
     fn migrate_schema(&mut self) -> Result<(), TugError> {
-        let version = self.schema_version()?;
-
-        // Migrate from v1 or v2 to v3: add reason column to checklist_items
-        if version < 3 {
+        // Migrate from v5 to v6: add content column to step_artifacts.
+        if self.schema_version()? == 5 {
             self.conn
-                .execute("ALTER TABLE checklist_items ADD COLUMN reason TEXT", [])
+                .execute_batch(
+                    "ALTER TABLE step_artifacts ADD COLUMN content TEXT;
+                     UPDATE schema_version SET version = 6;",
+                )
                 .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to add reason column: {}", e),
+                    reason: format!("failed to migrate schema to v6: {}", e),
                 })?;
-
-            self.conn
-                .execute("UPDATE schema_version SET version = 3", [])
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to update schema version: {}", e),
-                })?;
-        }
-
-        // Migrate from v3 to v4: promote substep rows to top-level, drop parent_anchor column
-        if self.schema_version()? == 3 {
-            // Disable FK enforcement during migration. The bundled SQLite is compiled
-            // with SQLITE_DEFAULT_FOREIGN_KEYS=1, so FKs are ON by default. The migration
-            // deletes parent rows before clearing substep parent_anchor references, and
-            // drops/recreates the steps table while other tables still reference it —
-            // both operations violate FK constraints if enforcement is active.
-            // PRAGMA foreign_keys must be set outside a transaction.
-            self.conn
-                .execute_batch("PRAGMA foreign_keys = OFF;")
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to disable foreign keys for v4 migration: {}", e),
-                })?;
-
-            let migration_result = self.conn.execute_batch(
-                r#"
-BEGIN EXCLUSIVE;
-
--- Delete pure container parent rows BEFORE promoting substeps.
--- A pure container parent is a step that:
--- 1. Has parent_anchor IS NULL (is itself a top-level step, not a substep)
--- 2. Appears as parent_anchor in other rows (has substeps)
--- 3. Has no checklist items of its own
--- These rows exist only as structural containers and carry no work.
-DELETE FROM steps
-WHERE parent_anchor IS NULL
-AND anchor IN (SELECT DISTINCT parent_anchor FROM steps WHERE parent_anchor IS NOT NULL)
-AND anchor NOT IN (SELECT DISTINCT step_anchor FROM checklist_items);
-
--- Promote substep rows: clear parent_anchor so they become top-level steps.
-UPDATE steps SET parent_anchor = NULL WHERE parent_anchor IS NOT NULL;
-
--- Renumber step_index sequentially (0, 1, 2, ...) per plan, ordered by the
--- original step_index. After deleting container parents and promoting substeps
--- the step_index values may have gaps; this closes them.
-UPDATE steps SET step_index = (
-    SELECT COUNT(*) FROM steps s2
-    WHERE s2.plan_path = steps.plan_path AND s2.step_index < steps.step_index
-);
-
--- Recreate the steps table without the parent_anchor column
-CREATE TABLE steps_v4 (
-    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
-    anchor           TEXT NOT NULL,
-    step_index       INTEGER NOT NULL,
-    title            TEXT NOT NULL,
-    status           TEXT NOT NULL DEFAULT 'pending',
-    claimed_by       TEXT,
-    claimed_at       TEXT,
-    lease_expires_at TEXT,
-    heartbeat_at     TEXT,
-    started_at       TEXT,
-    completed_at     TEXT,
-    commit_hash      TEXT,
-    complete_reason  TEXT,
-    PRIMARY KEY (plan_path, anchor)
-);
-
-INSERT INTO steps_v4
-    SELECT plan_path, anchor, step_index, title, status, claimed_by, claimed_at,
-           lease_expires_at, heartbeat_at, started_at, completed_at, commit_hash, complete_reason
-    FROM steps;
-
-DROP TABLE steps;
-ALTER TABLE steps_v4 RENAME TO steps;
-
--- Recreate indexes on the new steps table
-CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(plan_path, status);
-CREATE INDEX IF NOT EXISTS idx_steps_lease ON steps(plan_path, status, lease_expires_at);
-
-UPDATE schema_version SET version = 4;
-
-COMMIT;
-                    "#,
-            );
-
-            // Re-enable FK enforcement regardless of migration outcome
-            self.conn
-                .execute_batch("PRAGMA foreign_keys = ON;")
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to re-enable foreign keys after v4 migration: {}", e),
-                })?;
-
-            migration_result.map_err(|e| TugError::StateDbOpen {
-                reason: format!("failed to migrate schema to v4: {}", e),
-            })?;
-        }
-
-        // Migrate from v4 to v5: plan_id PK, plan_snapshots table, all child tables
-        // use plan_id FK instead of plan_path.
-        if self.schema_version()? == 4 {
-            self.migrate_v4_to_v5()?;
         }
 
         Ok(())
-    }
-
-    /// Migrate schema from v4 to v5.
-    ///
-    /// v5 introduces:
-    /// - `plan_id` as the primary key for `plans` (format: `<slug>-<hash7>-<gen>`)
-    /// - `plan_slug` and `status` columns on `plans`
-    /// - `plan_snapshots` table for init/complete content snapshots
-    /// - All child tables (`steps`, `step_deps`, `checklist_items`, `step_artifacts`)
-    ///   remapped to use `plan_id` FK instead of `plan_path`
-    ///
-    /// The migration runs in a single EXCLUSIVE transaction for atomicity.
-    /// For each existing plan, it derives a slug from `plan_path`, constructs
-    /// `plan_id = <slug>-<hash7>-1`, reads the plan file for a snapshot if
-    /// available, then copies all child rows to new v5 tables.
-    ///
-    fn migrate_v4_to_v5(&mut self) -> Result<(), TugError> {
-        // Disable FK enforcement during migration (bundled SQLite has FKs ON by default).
-        // Must be done outside a transaction.
-        self.conn
-            .execute_batch("PRAGMA foreign_keys = OFF;")
-            .map_err(|e| TugError::StateDbOpen {
-                reason: format!("failed to disable foreign keys for v5 migration: {}", e),
-            })?;
-
-        // Collect existing plan data before the transaction so we can read files from disk.
-        // We read the plan content outside the transaction to avoid holding EXCLUSIVE lock
-        // during filesystem I/O.
-        let existing_plans: Vec<(String, String, Option<String>, String, String, String)> = {
-            let mut stmt = self
-                .conn
-                .prepare(
-                    "SELECT plan_path, plan_hash, phase_title, status, created_at, updated_at FROM plans",
-                )
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to prepare plan query for v5 migration: {}", e),
-                })?;
-
-            stmt.query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                ))
-            })
-            .map_err(|e| TugError::StateDbOpen {
-                reason: format!("failed to query plans for v5 migration: {}", e),
-            })?
-            .filter_map(|r| r.ok())
-            .collect()
-        };
-
-        // For each plan, derive slug and plan_id, and read file content for snapshot.
-        struct PlanMigrationData {
-            plan_path: String,
-            plan_id: String,
-            plan_slug: String,
-            plan_hash: String,
-            phase_title: Option<String>,
-            status: String,
-            created_at: String,
-            updated_at: String,
-            snapshot_content: Option<String>,
-        }
-
-        let mut plan_data: Vec<PlanMigrationData> = Vec::new();
-        let now = now_iso8601();
-
-        // Detect step_deps column name before entering transaction.
-        // v3+ uses 'depends_on'; v1/v2 used 'depends_on_anchor'.
-        let dep_col_name: &str = {
-            let has_depends_on: bool = self
-                .conn
-                .query_row(
-                    "SELECT COUNT(*) > 0 FROM pragma_table_info('step_deps') WHERE name = 'depends_on'",
-                    [],
-                    |row| row.get(0),
-                )
-                .unwrap_or(false);
-            if has_depends_on {
-                "depends_on"
-            } else {
-                "depends_on_anchor"
-            }
-        };
-
-        for (plan_path, plan_hash, phase_title, status, created_at, updated_at) in &existing_plans {
-            let slug = derive_plan_slug(plan_path);
-            let hash7 = if plan_hash.len() >= 7 {
-                plan_hash[..7].to_string()
-            } else {
-                plan_hash.clone()
-            };
-            let plan_id = format!("{}-{}-1", slug, hash7);
-
-            // Try to read file content for snapshot
-            let snapshot_content = std::fs::read_to_string(self.repo_root.join(plan_path)).ok();
-
-            plan_data.push(PlanMigrationData {
-                plan_path: plan_path.clone(),
-                plan_id,
-                plan_slug: slug,
-                plan_hash: plan_hash.clone(),
-                phase_title: phase_title.clone(),
-                status: status.clone(),
-                created_at: created_at.clone(),
-                updated_at: updated_at.clone(),
-                snapshot_content,
-            });
-        }
-
-        let migration_result = self.conn.execute_batch(
-            r#"
-BEGIN EXCLUSIVE;
-
--- Create v5 plans table (plan_id as PK, plan_slug added, plan_path becomes nullable)
-CREATE TABLE plans_v5 (
-    plan_id      TEXT PRIMARY KEY,
-    plan_path    TEXT,
-    plan_slug    TEXT NOT NULL,
-    plan_hash    TEXT NOT NULL,
-    phase_title  TEXT,
-    status       TEXT NOT NULL DEFAULT 'active',
-    created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
-);
-
--- Create plan_snapshots table (IF NOT EXISTS in case open() already created it)
-CREATE TABLE IF NOT EXISTS plan_snapshots (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_id      TEXT NOT NULL REFERENCES plans_v5(plan_id),
-    content      TEXT NOT NULL,
-    content_hash TEXT NOT NULL,
-    event        TEXT NOT NULL,
-    captured_at  TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_snapshots_plan ON plan_snapshots(plan_id);
-
--- Create v5 steps table (plan_id FK instead of plan_path)
-CREATE TABLE steps_v5 (
-    plan_id          TEXT NOT NULL REFERENCES plans_v5(plan_id),
-    anchor           TEXT NOT NULL,
-    step_index       INTEGER NOT NULL,
-    title            TEXT NOT NULL,
-    status           TEXT NOT NULL DEFAULT 'pending',
-    claimed_by       TEXT,
-    claimed_at       TEXT,
-    lease_expires_at TEXT,
-    heartbeat_at     TEXT,
-    started_at       TEXT,
-    completed_at     TEXT,
-    commit_hash      TEXT,
-    complete_reason  TEXT,
-    PRIMARY KEY (plan_id, anchor)
-);
-
--- Create v5 step_deps table
-CREATE TABLE step_deps_v5 (
-    plan_id      TEXT NOT NULL,
-    step_anchor  TEXT NOT NULL,
-    depends_on   TEXT NOT NULL,
-    PRIMARY KEY (plan_id, step_anchor, depends_on),
-    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps_v5(plan_id, anchor),
-    FOREIGN KEY (plan_id, depends_on) REFERENCES steps_v5(plan_id, anchor)
-);
-
--- Create v5 checklist_items table
-CREATE TABLE checklist_items_v5 (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_id      TEXT NOT NULL,
-    step_anchor  TEXT NOT NULL,
-    kind         TEXT NOT NULL,
-    ordinal      INTEGER NOT NULL,
-    text         TEXT NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'open',
-    updated_at   TEXT,
-    reason       TEXT,
-    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps_v5(plan_id, anchor)
-);
-
--- Create v5 step_artifacts table
-CREATE TABLE step_artifacts_v5 (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_id      TEXT NOT NULL,
-    step_anchor  TEXT NOT NULL,
-    kind         TEXT NOT NULL,
-    summary      TEXT NOT NULL,
-    recorded_at  TEXT NOT NULL,
-    FOREIGN KEY (plan_id, step_anchor) REFERENCES steps_v5(plan_id, anchor)
-);
-
-COMMIT;
-            "#,
-        );
-
-        if let Err(e) = migration_result {
-            // Re-enable FK enforcement before returning error
-            let _ = self.conn.execute_batch("PRAGMA foreign_keys = ON;");
-            return Err(TugError::StateDbOpen {
-                reason: format!("failed to create v5 tables: {}", e),
-            });
-        }
-
-        // Insert plan rows and snapshot data (done outside the main DDL transaction
-        // because we need to use prepared statements with per-row data).
-        let insert_result = (|| -> Result<(), TugError> {
-            let tx = self
-                .conn
-                .transaction_with_behavior(TransactionBehavior::Exclusive)
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to begin v5 data migration transaction: {}", e),
-                })?;
-
-            for pd in &plan_data {
-                // Insert into plans_v5
-                tx.execute(
-                    "INSERT INTO plans_v5 (plan_id, plan_path, plan_slug, plan_hash, phase_title, status, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    rusqlite::params![
-                        &pd.plan_id,
-                        &pd.plan_path,
-                        &pd.plan_slug,
-                        &pd.plan_hash,
-                        &pd.phase_title,
-                        &pd.status,
-                        &pd.created_at,
-                        &pd.updated_at,
-                    ],
-                )
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to insert plan {} into plans_v5: {}", pd.plan_id, e),
-                })?;
-
-                // Insert init snapshot if we have file content
-                if let Some(ref content) = pd.snapshot_content {
-                    use sha2::{Digest, Sha256};
-                    let mut hasher = Sha256::new();
-                    hasher.update(content.as_bytes());
-                    let content_hash = format!("{:x}", hasher.finalize());
-
-                    tx.execute(
-                        "INSERT INTO plan_snapshots (plan_id, content, content_hash, event, captured_at)
-                         VALUES (?1, ?2, ?3, 'init', ?4)",
-                        rusqlite::params![&pd.plan_id, content, &content_hash, &now],
-                    )
-                    .map_err(|e| TugError::StateDbOpen {
-                        reason: format!("failed to insert snapshot for {}: {}", pd.plan_id, e),
-                    })?;
-                }
-
-                // Copy steps from old table to steps_v5
-                tx.execute(
-                    "INSERT INTO steps_v5 (plan_id, anchor, step_index, title, status,
-                             claimed_by, claimed_at, lease_expires_at, heartbeat_at,
-                             started_at, completed_at, commit_hash, complete_reason)
-                     SELECT ?1, anchor, step_index, title, status,
-                            claimed_by, claimed_at, lease_expires_at, heartbeat_at,
-                            started_at, completed_at, commit_hash, complete_reason
-                     FROM steps WHERE plan_path = ?2",
-                    rusqlite::params![&pd.plan_id, &pd.plan_path],
-                )
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to copy steps for {}: {}", pd.plan_id, e),
-                })?;
-
-                // Copy step_deps — use precomputed column name to handle both v1/v2 and v3+ schemas.
-                let dep_sql = format!(
-                    "INSERT INTO step_deps_v5 (plan_id, step_anchor, depends_on)
-                     SELECT ?1, step_anchor, {} FROM step_deps WHERE plan_path = ?2",
-                    dep_col_name
-                );
-                tx.execute(&dep_sql, rusqlite::params![&pd.plan_id, &pd.plan_path])
-                    .map_err(|e| TugError::StateDbOpen {
-                        reason: format!("failed to copy step_deps for {}: {}", pd.plan_id, e),
-                    })?;
-
-                // Copy checklist_items
-                tx.execute(
-                    "INSERT INTO checklist_items_v5 (plan_id, step_anchor, kind, ordinal, text, status, updated_at, reason)
-                     SELECT ?1, step_anchor, kind, ordinal, text, status, updated_at, reason
-                     FROM checklist_items WHERE plan_path = ?2",
-                    rusqlite::params![&pd.plan_id, &pd.plan_path],
-                )
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!(
-                        "failed to copy checklist_items for {}: {}",
-                        pd.plan_id, e
-                    ),
-                })?;
-
-                // Copy step_artifacts
-                tx.execute(
-                    "INSERT INTO step_artifacts_v5 (plan_id, step_anchor, kind, summary, recorded_at)
-                     SELECT ?1, step_anchor, kind, summary, recorded_at
-                     FROM step_artifacts WHERE plan_path = ?2",
-                    rusqlite::params![&pd.plan_id, &pd.plan_path],
-                )
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!(
-                        "failed to copy step_artifacts for {}: {}",
-                        pd.plan_id, e
-                    ),
-                })?;
-            }
-
-            // Drop old tables and rename v5 tables
-            tx.execute_batch(
-                r#"
-DROP TABLE IF EXISTS step_artifacts;
-DROP TABLE IF EXISTS checklist_items;
-DROP TABLE IF EXISTS step_deps;
-DROP TABLE IF EXISTS steps;
-DROP TABLE IF EXISTS plans;
-
-ALTER TABLE step_artifacts_v5 RENAME TO step_artifacts;
-ALTER TABLE checklist_items_v5 RENAME TO checklist_items;
-ALTER TABLE step_deps_v5 RENAME TO step_deps;
-ALTER TABLE steps_v5 RENAME TO steps;
-ALTER TABLE plans_v5 RENAME TO plans;
-
-CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(plan_id, status);
-CREATE INDEX IF NOT EXISTS idx_steps_lease ON steps(plan_id, status, lease_expires_at);
-CREATE INDEX IF NOT EXISTS idx_checklist_step ON checklist_items(plan_id, step_anchor);
-CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_id, step_anchor);
-
-UPDATE schema_version SET version = 5;
-                "#,
-            )
-            .map_err(|e| TugError::StateDbOpen {
-                reason: format!("failed to finalize v5 schema migration: {}", e),
-            })?;
-
-            tx.commit().map_err(|e| TugError::StateDbOpen {
-                reason: format!("failed to commit v5 migration transaction: {}", e),
-            })
-        })();
-
-        // Re-enable FK enforcement regardless of outcome
-        self.conn
-            .execute_batch("PRAGMA foreign_keys = ON;")
-            .map_err(|e| TugError::StateDbOpen {
-                reason: format!("failed to re-enable foreign keys after v5 migration: {}", e),
-            })?;
-
-        insert_result
     }
 
     /// List all plan IDs in the database.
@@ -1590,6 +1144,7 @@ UPDATE schema_version SET version = 5;
         worktree: &str,
         kind: &str,
         summary: &str,
+        content: Option<&str>,
     ) -> Result<i64, TugError> {
         let anchor = normalize_anchor(anchor);
         // Check ownership first
@@ -1604,9 +1159,9 @@ UPDATE schema_version SET version = 5;
 
         self.conn
             .execute(
-                "INSERT INTO step_artifacts (plan_id, step_anchor, kind, summary, recorded_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![plan_id, anchor, kind, truncated_summary, &now],
+                "INSERT INTO step_artifacts (plan_id, step_anchor, kind, summary, content, recorded_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![plan_id, anchor, kind, truncated_summary, content, &now],
             )
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!("failed to record artifact: {}", e),
@@ -2081,7 +1636,7 @@ UPDATE schema_version SET version = 5;
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT kind, summary, recorded_at
+                "SELECT kind, summary, content, recorded_at
                  FROM step_artifacts WHERE plan_id = ?1 AND step_anchor = ?2
                  ORDER BY recorded_at",
             )
@@ -2095,7 +1650,8 @@ UPDATE schema_version SET version = 5;
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
                 ))
             })
             .map_err(|e| TugError::StateDbQuery {
@@ -2103,12 +1659,14 @@ UPDATE schema_version SET version = 5;
             })?;
 
         for row in rows {
-            let (kind, summary, recorded_at) = row.map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to read artifact row: {}", e),
-            })?;
+            let (kind, summary, content, recorded_at) =
+                row.map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to read artifact row: {}", e),
+                })?;
             artifacts.push(ArtifactSummary {
                 kind,
                 summary,
+                content,
                 recorded_at,
             });
         }
@@ -2646,6 +2204,8 @@ pub struct ChecklistSummary {
 pub struct ArtifactSummary {
     pub kind: String,
     pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     pub recorded_at: String,
 }
 
@@ -2751,12 +2311,12 @@ mod tests {
     }
 
     #[test]
-    fn test_open_creates_db_and_schema_version_is_5() {
+    fn test_open_creates_db_and_schema_version_is_6() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
         let db = StateDb::open(&db_path, temp.path()).expect("open should succeed");
         assert!(db_path.exists(), "state.db file should be created");
-        assert_eq!(db.schema_version().unwrap(), 5);
+        assert_eq!(db.schema_version().unwrap(), 6);
     }
 
     #[test]
@@ -2765,7 +2325,7 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let _db1 = StateDb::open(&db_path, temp.path()).expect("first open should succeed");
         let db2 = StateDb::open(&db_path, temp.path()).expect("second open should succeed");
-        assert_eq!(db2.schema_version().unwrap(), 5);
+        assert_eq!(db2.schema_version().unwrap(), 6);
     }
 
     #[test]
@@ -2813,351 +2373,12 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_migration_v2_to_v3() {
-        use rusqlite::Connection;
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-
-        // Create a v2 database manually
-        {
-            let conn = Connection::open(&db_path).unwrap();
-            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
-
-            // Create v2 schema (without reason column)
-            conn.execute_batch(
-                r#"
-                CREATE TABLE schema_version (version INTEGER NOT NULL);
-                INSERT INTO schema_version VALUES (2);
-
-                CREATE TABLE plans (
-                    plan_path    TEXT PRIMARY KEY,
-                    plan_hash    TEXT NOT NULL,
-                    phase_title  TEXT,
-                    status       TEXT NOT NULL DEFAULT 'active',
-                    created_at   TEXT NOT NULL,
-                    updated_at   TEXT NOT NULL
-                );
-
-                CREATE TABLE steps (
-                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
-                    anchor           TEXT NOT NULL,
-                    parent_anchor    TEXT,
-                    step_index       INTEGER NOT NULL,
-                    title            TEXT NOT NULL,
-                    status           TEXT NOT NULL DEFAULT 'pending',
-                    claimed_by       TEXT,
-                    claimed_at       TEXT,
-                    lease_expires_at TEXT,
-                    heartbeat_at     TEXT,
-                    started_at       TEXT,
-                    completed_at     TEXT,
-                    commit_hash      TEXT,
-                    complete_reason  TEXT,
-                    PRIMARY KEY (plan_path, anchor)
-                );
-
-                CREATE TABLE checklist_items (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    plan_path    TEXT NOT NULL,
-                    step_anchor  TEXT NOT NULL,
-                    kind         TEXT NOT NULL,
-                    ordinal      INTEGER NOT NULL,
-                    text         TEXT NOT NULL,
-                    status       TEXT NOT NULL DEFAULT 'open',
-                    updated_at   TEXT
-                );
-                "#,
-            )
-            .unwrap();
-        }
-
-        // Open with StateDb, which should trigger migration
-        let db = StateDb::open(&db_path, temp.path()).unwrap();
-
-        // Verify schema version is now 5 (v2->v3->v4->v5 migration chain)
-        assert_eq!(db.schema_version().unwrap(), 5);
-
-        // Verify reason column exists by querying schema (checklist_items in v5)
-        let has_reason: bool = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('checklist_items') WHERE name = 'reason'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(has_reason, "reason column should exist after migration");
-    }
-
-    #[test]
-    fn test_schema_migration_v1_to_v3() {
-        use rusqlite::Connection;
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-
-        // Create a v1 database manually
-        {
-            let conn = Connection::open(&db_path).unwrap();
-            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
-
-            // Create v1 schema (without reason column)
-            conn.execute_batch(
-                r#"
-                CREATE TABLE schema_version (version INTEGER NOT NULL);
-                INSERT INTO schema_version VALUES (1);
-
-                CREATE TABLE plans (
-                    plan_path    TEXT PRIMARY KEY,
-                    plan_hash    TEXT NOT NULL,
-                    phase_title  TEXT,
-                    status       TEXT NOT NULL DEFAULT 'active',
-                    created_at   TEXT NOT NULL,
-                    updated_at   TEXT NOT NULL
-                );
-
-                CREATE TABLE steps (
-                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
-                    anchor           TEXT NOT NULL,
-                    parent_anchor    TEXT,
-                    step_index       INTEGER NOT NULL,
-                    title            TEXT NOT NULL,
-                    status           TEXT NOT NULL DEFAULT 'pending',
-                    claimed_by       TEXT,
-                    claimed_at       TEXT,
-                    lease_expires_at TEXT,
-                    heartbeat_at     TEXT,
-                    started_at       TEXT,
-                    completed_at     TEXT,
-                    commit_hash      TEXT,
-                    complete_reason  TEXT,
-                    PRIMARY KEY (plan_path, anchor)
-                );
-
-                CREATE TABLE checklist_items (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    plan_path    TEXT NOT NULL,
-                    step_anchor  TEXT NOT NULL,
-                    kind         TEXT NOT NULL,
-                    ordinal      INTEGER NOT NULL,
-                    text         TEXT NOT NULL,
-                    status       TEXT NOT NULL DEFAULT 'open',
-                    updated_at   TEXT
-                );
-                "#,
-            )
-            .unwrap();
-        }
-
-        // Open with StateDb, which should trigger migration
-        let db = StateDb::open(&db_path, temp.path()).unwrap();
-
-        // Verify schema version is now 5 (v1->v3->v4->v5 migration chain)
-        assert_eq!(db.schema_version().unwrap(), 5);
-
-        // Verify reason column exists by querying schema (checklist_items in v5)
-        let has_reason: bool = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('checklist_items') WHERE name = 'reason'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(
-            has_reason,
-            "reason column should exist after migration from v1"
-        );
-    }
-
-    #[test]
-    fn test_v1_migration_end_to_end_with_show_plan() {
-        // This test simulates the actual failure scenario: a v1 database with
-        // checklist items (no reason column) that fails when state show queries
-        // for the reason column. This ensures the migration works and the actual
-        // codepaths that were failing (show_plan and get_checklist_items) work
-        // correctly after migration from v1.
-        use rusqlite::Connection;
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-
-        // Create a v1 database with actual plan and checklist data
-        {
-            let conn = Connection::open(&db_path).unwrap();
-            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
-
-            // Create v1 schema (without reason column)
-            conn.execute_batch(
-                r#"
-                CREATE TABLE schema_version (version INTEGER NOT NULL);
-                INSERT INTO schema_version VALUES (1);
-
-                CREATE TABLE plans (
-                    plan_path    TEXT PRIMARY KEY,
-                    plan_hash    TEXT NOT NULL,
-                    phase_title  TEXT,
-                    status       TEXT NOT NULL DEFAULT 'active',
-                    created_at   TEXT NOT NULL,
-                    updated_at   TEXT NOT NULL
-                );
-
-                CREATE TABLE steps (
-                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
-                    anchor           TEXT NOT NULL,
-                    parent_anchor    TEXT,
-                    step_index       INTEGER NOT NULL,
-                    title            TEXT NOT NULL,
-                    status           TEXT NOT NULL DEFAULT 'pending',
-                    claimed_by       TEXT,
-                    claimed_at       TEXT,
-                    lease_expires_at TEXT,
-                    heartbeat_at     TEXT,
-                    started_at       TEXT,
-                    completed_at     TEXT,
-                    commit_hash      TEXT,
-                    complete_reason  TEXT,
-                    PRIMARY KEY (plan_path, anchor)
-                );
-
-                CREATE TABLE step_deps (
-                    plan_path         TEXT NOT NULL,
-                    step_anchor       TEXT NOT NULL,
-                    depends_on_anchor TEXT NOT NULL,
-                    PRIMARY KEY (plan_path, step_anchor, depends_on_anchor),
-                    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
-                );
-
-                CREATE TABLE checklist_items (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    plan_path    TEXT NOT NULL,
-                    step_anchor  TEXT NOT NULL,
-                    kind         TEXT NOT NULL,
-                    ordinal      INTEGER NOT NULL,
-                    text         TEXT NOT NULL,
-                    status       TEXT NOT NULL DEFAULT 'open',
-                    updated_at   TEXT
-                );
-
-                CREATE TABLE step_artifacts (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    plan_path    TEXT NOT NULL,
-                    step_anchor  TEXT NOT NULL,
-                    kind         TEXT NOT NULL,
-                    summary      TEXT NOT NULL,
-                    recorded_at  TEXT NOT NULL,
-                    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
-                );
-                "#,
-            )
-            .unwrap();
-
-            // Insert test plan data
-            conn.execute(
-                "INSERT INTO plans (plan_path, plan_hash, phase_title, status, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, 'active', ?4, ?5)",
-                rusqlite::params![
-                    "test-plan.md",
-                    "testhash123",
-                    "Test Phase",
-                    "2024-01-01T00:00:00Z",
-                    "2024-01-01T00:00:00Z"
-                ],
-            )
-            .unwrap();
-
-            // Insert a test step
-            conn.execute(
-                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-                rusqlite::params![
-                    "test-plan.md",
-                    "step-2",
-                    Option::<String>::None,
-                    0,
-                    "Test Step"
-                ],
-            )
-            .unwrap();
-
-            // Insert checklist items WITHOUT reason column (v1 schema)
-            conn.execute(
-                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
-                rusqlite::params!["test-plan.md", "step-2", "checklist", 0, "Test item 1"],
-            )
-            .unwrap();
-
-            conn.execute(
-                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'completed')",
-                rusqlite::params!["test-plan.md", "step-2", "checklist", 1, "Test item 2"],
-            )
-            .unwrap();
-        }
-
-        // Open with StateDb, which should trigger migration (v1->v3->v4->v5)
-        let db = StateDb::open(&db_path, temp.path()).unwrap();
-
-        // Verify schema version is now 5
-        assert_eq!(db.schema_version().unwrap(), 5);
-
-        // After v5 migration, plans are keyed by plan_id. Look up the plan_id from the DB.
-        let plan_id: String = db
-            .conn
-            .query_row("SELECT plan_id FROM plans LIMIT 1", [], |row| row.get(0))
-            .expect("plan should exist after migration");
-
-        // plan_id format: <slug>-<hash7>-1 where slug is derived from plan_path "test-plan.md"
-        assert!(
-            plan_id.starts_with("test-plan-"),
-            "plan_id should start with slug"
-        );
-        assert!(plan_id.ends_with("-1"), "plan_id should end with gen 1");
-
-        // THIS IS THE KEY TEST: Call show_plan using plan_id which queries checklist_items
-        // including the reason column. This was the actual failure scenario.
-        let plan_state = db.show_plan(&plan_id).unwrap();
-        assert_eq!(plan_state.plan_id, plan_id);
-        assert_eq!(plan_state.plan_path, Some("test-plan.md".to_string()));
-        assert_eq!(plan_state.plan_hash, "testhash123");
-        assert_eq!(plan_state.phase_title, Some("Test Phase".to_string()));
-
-        // Verify the plan has steps
-        assert_eq!(plan_state.steps.len(), 1);
-        let step = &plan_state.steps[0];
-        assert_eq!(step.anchor, "step-2");
-
-        // Verify checklist items are present in the plan state (this proves
-        // show_plan's checklist query worked after migration)
-        assert_eq!(plan_state.checklist_items.len(), 2);
-
-        // THIS IS ALSO KEY: Call get_checklist_items directly which also
-        // queries the reason column
-        let checklist_items = db.get_checklist_items(&plan_id).unwrap();
-        assert_eq!(checklist_items.len(), 2);
-
-        // Verify the reason column defaults to NULL for existing rows
-        assert_eq!(checklist_items[0].text, "Test item 1");
-        assert_eq!(checklist_items[0].status, "open");
-        assert_eq!(
-            checklist_items[0].reason, None,
-            "reason should default to NULL for pre-migration data"
-        );
-
-        assert_eq!(checklist_items[1].text, "Test item 2");
-        assert_eq!(checklist_items[1].status, "completed");
-        assert_eq!(
-            checklist_items[1].reason, None,
-            "reason should default to NULL for pre-migration data"
-        );
-    }
-
-    #[test]
-    fn test_new_db_has_schema_v5() {
+    fn test_new_db_has_schema_v6() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
         let db = StateDb::open(&db_path, temp.path()).unwrap();
 
-        assert_eq!(db.schema_version().unwrap(), 5);
+        assert_eq!(db.schema_version().unwrap(), 6);
 
         // Verify reason column exists
         let has_reason: bool = db
@@ -3182,513 +2403,6 @@ mod tests {
         assert!(
             !has_parent_anchor,
             "parent_anchor column should not exist in v4 schema"
-        );
-    }
-
-    #[test]
-    fn test_schema_migration_v3_to_v4_promotes_substeps() {
-        use rusqlite::Connection;
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-
-        // Create a v3 database with substep rows (parent_anchor IS NOT NULL)
-        {
-            let conn = Connection::open(&db_path).unwrap();
-            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
-
-            // Create v3 schema (with parent_anchor column)
-            conn.execute_batch(
-                r#"
-                CREATE TABLE schema_version (version INTEGER NOT NULL);
-                INSERT INTO schema_version VALUES (3);
-
-                CREATE TABLE plans (
-                    plan_path    TEXT PRIMARY KEY,
-                    plan_hash    TEXT NOT NULL,
-                    phase_title  TEXT,
-                    status       TEXT NOT NULL DEFAULT 'active',
-                    created_at   TEXT NOT NULL,
-                    updated_at   TEXT NOT NULL
-                );
-
-                CREATE TABLE steps (
-                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
-                    anchor           TEXT NOT NULL,
-                    parent_anchor    TEXT,
-                    step_index       INTEGER NOT NULL,
-                    title            TEXT NOT NULL,
-                    status           TEXT NOT NULL DEFAULT 'pending',
-                    claimed_by       TEXT,
-                    claimed_at       TEXT,
-                    lease_expires_at TEXT,
-                    heartbeat_at     TEXT,
-                    started_at       TEXT,
-                    completed_at     TEXT,
-                    commit_hash      TEXT,
-                    complete_reason  TEXT,
-                    PRIMARY KEY (plan_path, anchor),
-                    FOREIGN KEY (plan_path, parent_anchor) REFERENCES steps(plan_path, anchor)
-                );
-
-                CREATE INDEX idx_steps_status ON steps(plan_path, status) WHERE parent_anchor IS NULL;
-                CREATE INDEX idx_steps_parent ON steps(plan_path, parent_anchor) WHERE parent_anchor IS NOT NULL;
-                CREATE INDEX idx_steps_lease ON steps(plan_path, status, lease_expires_at);
-
-                CREATE TABLE step_deps (
-                    plan_path    TEXT NOT NULL,
-                    step_anchor  TEXT NOT NULL,
-                    depends_on   TEXT NOT NULL,
-                    PRIMARY KEY (plan_path, step_anchor, depends_on),
-                    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor),
-                    FOREIGN KEY (plan_path, depends_on) REFERENCES steps(plan_path, anchor)
-                );
-
-                CREATE TABLE checklist_items (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    plan_path    TEXT NOT NULL,
-                    step_anchor  TEXT NOT NULL,
-                    kind         TEXT NOT NULL,
-                    ordinal      INTEGER NOT NULL,
-                    text         TEXT NOT NULL,
-                    status       TEXT NOT NULL DEFAULT 'open',
-                    updated_at   TEXT,
-                    reason       TEXT
-                );
-
-                CREATE TABLE step_artifacts (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    plan_path    TEXT NOT NULL,
-                    step_anchor  TEXT NOT NULL,
-                    kind         TEXT NOT NULL,
-                    summary      TEXT NOT NULL,
-                    recorded_at  TEXT NOT NULL
-                );
-                "#,
-            )
-            .unwrap();
-
-            // Insert a test plan
-            conn.execute(
-                "INSERT INTO plans (plan_path, plan_hash, status, created_at, updated_at) VALUES (?1, ?2, 'active', ?3, ?4)",
-                rusqlite::params!["test.md", "hash123", "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"],
-            )
-            .unwrap();
-
-            // Insert top-level step-1 (no parent)
-            conn.execute(
-                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-                rusqlite::params!["test.md", "step-1", Option::<String>::None, 0, "Step One"],
-            )
-            .unwrap();
-
-            // Insert container parent step-2 (no parent, no checklist items) - should be deleted
-            conn.execute(
-                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-                rusqlite::params!["test.md", "step-2", Option::<String>::None, 1, "Step Two (parent container)"],
-            )
-            .unwrap();
-
-            // Insert substep step-2-1 (child of step-2, has checklist items) - should be promoted
-            conn.execute(
-                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-                rusqlite::params!["test.md", "step-2-1", "step-2", 2, "Substep 2.1"],
-            )
-            .unwrap();
-
-            // Insert substep step-2-2 (child of step-2, has checklist items) - should be promoted
-            conn.execute(
-                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-                rusqlite::params!["test.md", "step-2-2", "step-2", 3, "Substep 2.2"],
-            )
-            .unwrap();
-
-            // Insert step-3 (top-level)
-            conn.execute(
-                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-                rusqlite::params!["test.md", "step-3", Option::<String>::None, 4, "Step Three"],
-            )
-            .unwrap();
-
-            // Add checklist items for substeps (so they are NOT pure containers)
-            conn.execute(
-                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status) VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
-                rusqlite::params!["test.md", "step-2-1", "task", 0, "Substep 2.1 task"],
-            )
-            .unwrap();
-
-            conn.execute(
-                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status) VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
-                rusqlite::params!["test.md", "step-2-2", "task", 0, "Substep 2.2 task"],
-            )
-            .unwrap();
-
-            // Add checklist items for step-1 (not a container)
-            conn.execute(
-                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status) VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
-                rusqlite::params!["test.md", "step-1", "task", 0, "Step 1 task"],
-            )
-            .unwrap();
-        }
-
-        // Open with StateDb, which should trigger v3-to-v4-to-v5 migration
-        let db = StateDb::open(&db_path, temp.path()).unwrap();
-
-        // Verify schema version is now 5
-        assert_eq!(db.schema_version().unwrap(), 5);
-
-        // Verify parent_anchor column does NOT exist after migration
-        let has_parent_anchor: bool = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('steps') WHERE name = 'parent_anchor'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(
-            !has_parent_anchor,
-            "parent_anchor column should not exist after v5 migration"
-        );
-
-        // Look up the plan_id that was assigned during v5 migration
-        let plan_id: String = db
-            .conn
-            .query_row("SELECT plan_id FROM plans LIMIT 1", [], |row| row.get(0))
-            .expect("plan should exist after migration");
-
-        // Collect all remaining steps with their step_index values ordered by step_index
-        let mut stmt = db
-            .conn
-            .prepare("SELECT anchor, step_index FROM steps WHERE plan_id = ?1 ORDER BY step_index")
-            .unwrap();
-        let rows: Vec<(String, i32)> = stmt
-            .query_map(rusqlite::params![&plan_id], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
-
-        let anchors: Vec<&str> = rows.iter().map(|(a, _)| a.as_str()).collect();
-        let indices: Vec<i32> = rows.iter().map(|(_, i)| *i).collect();
-
-        // step-2 (pure container parent with no checklist items) should be deleted
-        assert!(
-            !anchors.contains(&"step-2"),
-            "pure container parent step-2 should be deleted after migration"
-        );
-
-        // step-2-1 and step-2-2 (substeps with checklist items) should be promoted to top-level
-        assert!(
-            anchors.contains(&"step-2-1"),
-            "substep step-2-1 should be promoted to top-level"
-        );
-        assert!(
-            anchors.contains(&"step-2-2"),
-            "substep step-2-2 should be promoted to top-level"
-        );
-
-        // Top-level steps should still be present
-        assert!(anchors.contains(&"step-1"), "step-1 should remain");
-        assert!(anchors.contains(&"step-3"), "step-3 should remain");
-
-        // step_index values must be sequential starting at 0 with no gaps
-        // Original indices were: step-1=0, step-2=1(deleted), step-2-1=2, step-2-2=3, step-3=4
-        // After deleting step-2 and renumbering: step-1=0, step-2-1=1, step-2-2=2, step-3=3
-        assert_eq!(
-            indices,
-            vec![0, 1, 2, 3],
-            "step_index values should be renumbered sequentially 0..N-1 after migration"
-        );
-
-        // Verify checklist items for promoted substeps are still accessible
-        let checklist_count: i64 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM checklist_items WHERE plan_id = ?1",
-                rusqlite::params![&plan_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(
-            checklist_count, 3,
-            "all checklist items (step-1, step-2-1, step-2-2) should be preserved"
-        );
-    }
-
-    /// Build a minimal v4 database with one plan and its steps for migration tests.
-    fn build_v4_db_with_plan(db_path: &std::path::Path, plan_path_str: &str, plan_hash: &str) {
-        use rusqlite::Connection;
-        let conn = Connection::open(db_path).unwrap();
-        conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
-
-        conn.execute_batch(
-            r#"
-            CREATE TABLE schema_version (version INTEGER NOT NULL);
-            INSERT INTO schema_version VALUES (4);
-
-            CREATE TABLE plans (
-                plan_path    TEXT PRIMARY KEY,
-                plan_hash    TEXT NOT NULL,
-                phase_title  TEXT,
-                status       TEXT NOT NULL DEFAULT 'active',
-                created_at   TEXT NOT NULL,
-                updated_at   TEXT NOT NULL
-            );
-
-            CREATE TABLE steps (
-                plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
-                anchor           TEXT NOT NULL,
-                step_index       INTEGER NOT NULL,
-                title            TEXT NOT NULL,
-                status           TEXT NOT NULL DEFAULT 'pending',
-                claimed_by       TEXT,
-                claimed_at       TEXT,
-                lease_expires_at TEXT,
-                heartbeat_at     TEXT,
-                started_at       TEXT,
-                completed_at     TEXT,
-                commit_hash      TEXT,
-                complete_reason  TEXT,
-                PRIMARY KEY (plan_path, anchor)
-            );
-
-            CREATE TABLE step_deps (
-                plan_path    TEXT NOT NULL,
-                step_anchor  TEXT NOT NULL,
-                depends_on   TEXT NOT NULL,
-                PRIMARY KEY (plan_path, step_anchor, depends_on)
-            );
-
-            CREATE TABLE checklist_items (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_path    TEXT NOT NULL,
-                step_anchor  TEXT NOT NULL,
-                kind         TEXT NOT NULL,
-                ordinal      INTEGER NOT NULL,
-                text         TEXT NOT NULL,
-                status       TEXT NOT NULL DEFAULT 'open',
-                updated_at   TEXT,
-                reason       TEXT
-            );
-
-            CREATE TABLE step_artifacts (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_path    TEXT NOT NULL,
-                step_anchor  TEXT NOT NULL,
-                kind         TEXT NOT NULL,
-                summary      TEXT NOT NULL,
-                recorded_at  TEXT NOT NULL
-            );
-
-            CREATE TABLE dashes (
-                name        TEXT PRIMARY KEY,
-                description TEXT,
-                branch      TEXT NOT NULL,
-                worktree    TEXT NOT NULL,
-                base_branch TEXT NOT NULL DEFAULT 'main',
-                status      TEXT NOT NULL DEFAULT 'active',
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL
-            );
-
-            CREATE TABLE dash_rounds (
-                id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                dash_name      TEXT NOT NULL REFERENCES dashes(name),
-                instruction    TEXT,
-                summary        TEXT,
-                files_created  TEXT,
-                files_modified TEXT,
-                commit_hash    TEXT,
-                started_at     TEXT NOT NULL,
-                completed_at   TEXT
-            );
-            "#,
-        )
-        .unwrap();
-
-        conn.execute(
-            "INSERT INTO plans (plan_path, plan_hash, phase_title, status, created_at, updated_at)
-             VALUES (?1, ?2, 'Phase 1', 'active', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
-            rusqlite::params![plan_path_str, plan_hash],
-        )
-        .unwrap();
-
-        conn.execute(
-            "INSERT INTO steps (plan_path, anchor, step_index, title, status)
-             VALUES (?1, 'step-1', 0, 'Step One', 'pending')",
-            rusqlite::params![plan_path_str],
-        )
-        .unwrap();
-
-        conn.execute(
-            "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
-             VALUES (?1, 'step-1', 'task', 0, 'Do the thing', 'open')",
-            rusqlite::params![plan_path_str],
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn test_migrate_v4_to_v5_with_file_on_disk() {
-        // Setup: create a v4 DB with one plan whose file exists on disk.
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-
-        // Write the plan file to disk inside the temp dir
-        let plan_path_str = ".tugtool/tugplan-my-feature.md";
-        let plan_dir = temp.path().join(".tugtool");
-        fs::create_dir_all(&plan_dir).unwrap();
-        let plan_file = temp.path().join(plan_path_str);
-        fs::write(&plan_file, "# My feature plan content\n\nStep 1 details.").unwrap();
-
-        // Compute hash for the plan file
-        let plan_hash = compute_plan_hash(&plan_file).unwrap();
-
-        build_v4_db_with_plan(&db_path, plan_path_str, &plan_hash);
-
-        // Manually call migrate_v4_to_v5 (since migrate_schema does not auto-call it yet)
-        let mut db = StateDb {
-            conn: rusqlite::Connection::open(&db_path).unwrap(),
-            repo_root: temp.path().to_path_buf(),
-        };
-        db.migrate_v4_to_v5().unwrap();
-
-        // Verify schema version is now 5
-        assert_eq!(db.schema_version().unwrap(), 5);
-
-        // Verify plans_v5 was renamed to plans and has plan_id column
-        let plan_id: String = db
-            .conn
-            .query_row("SELECT plan_id FROM plans LIMIT 1", [], |row| row.get(0))
-            .expect("plans table should have plan_id column");
-
-        // plan_id should be <slug>-<hash7>-1
-        let expected_slug = "my-feature";
-        let hash7 = &plan_hash[..7];
-        let expected_id = format!("{}-{}-1", expected_slug, hash7);
-        assert_eq!(plan_id, expected_id, "plan_id should be slug-hash7-1");
-
-        // Verify plan_slug is set
-        let plan_slug: String = db
-            .conn
-            .query_row("SELECT plan_slug FROM plans LIMIT 1", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(plan_slug, expected_slug);
-
-        // Verify plan_path is preserved
-        let stored_plan_path: String = db
-            .conn
-            .query_row("SELECT plan_path FROM plans LIMIT 1", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(stored_plan_path, plan_path_str);
-
-        // Verify a snapshot was created (file was readable)
-        let snapshot_count: i64 = db
-            .conn
-            .query_row("SELECT COUNT(*) FROM plan_snapshots", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(
-            snapshot_count, 1,
-            "one init snapshot should have been created"
-        );
-
-        let snapshot_event: String = db
-            .conn
-            .query_row(
-                "SELECT event FROM plan_snapshots WHERE plan_id = ?1",
-                rusqlite::params![&plan_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(snapshot_event, "init");
-
-        // Verify steps were migrated with plan_id FK
-        let step_count: i64 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM steps WHERE plan_id = ?1",
-                rusqlite::params![&plan_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(step_count, 1, "one step should have been migrated");
-
-        // Verify checklist items were migrated
-        let checklist_count: i64 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM checklist_items WHERE plan_id = ?1",
-                rusqlite::params![&plan_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(
-            checklist_count, 1,
-            "one checklist item should have been migrated"
-        );
-    }
-
-    #[test]
-    fn test_migrate_v4_to_v5_orphaned_plan_no_snapshot() {
-        // Setup: create a v4 DB with one plan whose file does NOT exist on disk.
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-
-        let plan_path_str = ".tugtool/tugplan-deleted-plan.md";
-        // Do NOT write the file to disk
-
-        build_v4_db_with_plan(
-            &db_path,
-            plan_path_str,
-            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-        );
-
-        // Manually call migrate_v4_to_v5
-        let mut db = StateDb {
-            conn: rusqlite::Connection::open(&db_path).unwrap(),
-            repo_root: temp.path().to_path_buf(),
-        };
-        db.migrate_v4_to_v5().unwrap();
-
-        // Verify schema version is now 5
-        assert_eq!(db.schema_version().unwrap(), 5);
-
-        // Verify plan was migrated
-        let plan_id: String = db
-            .conn
-            .query_row("SELECT plan_id FROM plans LIMIT 1", [], |row| row.get(0))
-            .expect("plan should exist after migration");
-
-        // plan_id should be <slug>-<hash7>-1
-        assert!(
-            plan_id.starts_with("deleted-plan-"),
-            "plan_id should start with slug"
-        );
-        assert!(plan_id.ends_with("-1"), "plan_id should end with gen 1");
-
-        // Verify NO snapshot was created (file was missing)
-        let snapshot_count: i64 = db
-            .conn
-            .query_row("SELECT COUNT(*) FROM plan_snapshots", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(
-            snapshot_count, 0,
-            "no snapshot should be created for missing plan file"
-        );
-
-        // Verify steps were migrated
-        let step_count: i64 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM steps WHERE plan_id = ?1",
-                rusqlite::params![&plan_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(
-            step_count, 1,
-            "step should be migrated even without snapshot"
         );
     }
 
@@ -4224,6 +2938,7 @@ mod tests {
                 "wt-a",
                 "architect_strategy",
                 "Test strategy summary",
+                None,
             )
             .unwrap();
 
@@ -4249,7 +2964,14 @@ mod tests {
         let long_summary = "a".repeat(600);
 
         let artifact_id = db
-            .record_artifact(&plan_id, "step-1", "wt-a", "auditor_summary", &long_summary)
+            .record_artifact(
+                &plan_id,
+                "step-1",
+                "wt-a",
+                "auditor_summary",
+                &long_summary,
+                None,
+            )
             .unwrap();
 
         assert!(artifact_id > 0);
@@ -5472,6 +4194,7 @@ mod tests {
             "wt-a",
             "architect_strategy",
             "Test strategy summary",
+            None,
         );
         assert!(
             result.is_ok(),
