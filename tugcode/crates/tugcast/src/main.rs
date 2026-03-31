@@ -157,10 +157,9 @@ async fn main() {
     }
 
     // Create DEFAULTS feed from the TugbankClient.
-    let defaults_rx: Option<tokio::sync::watch::Receiver<Frame>> =
-        bank_client.as_ref().map(|client| {
-            feeds::defaults::defaults_feed(Arc::clone(client))
-        });
+    let defaults_rx: Option<tokio::sync::watch::Receiver<Frame>> = bank_client
+        .as_ref()
+        .map(|client| feeds::defaults::defaults_feed(Arc::clone(client)));
 
     // Create filesystem feed and watch channel
     let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::Filesystem, vec![]));
