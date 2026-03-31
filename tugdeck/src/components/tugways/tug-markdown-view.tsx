@@ -527,6 +527,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // heightIndex, then rebuilds the visible window. Called for first region,
   // middle-region updates, or any change that invalidates the entire block order.
   function lexParseAndRender(engine: MarkdownEngineState, text: string) {
+    // Capture scroll position BEFORE clearing the DOM. Once block nodes and
+    // spacers are removed, the browser clamps scrollTop to 0 because the
+    // content height drops to zero. We restore it after rebuilding.
+    const savedScrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+
     // Reset block window while height index is empty — forces exit of stale range.
     engine.heightIndex.clear();
     engine.blockWindow.update(0);
@@ -565,8 +570,14 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
     onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
+    // Restore scroll position, clamped to new content height.
+    const maxScrollTop = engine.heightIndex.totalHeight - (scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
+    const scrollTop = Math.max(0, Math.min(savedScrollTop, maxScrollTop));
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollTop;
+    }
+
     // Enter visible blocks into DOM
-    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
     engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
     const update = engine.blockWindow.update(scrollTop);
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
