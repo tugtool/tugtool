@@ -255,17 +255,16 @@ export function GalleryMarkdownView() {
   const handleStream = useCallback(() => {
     if (streamIntervalRef.current) return;
 
-    // Generate fresh chunks for the selected size
+    // Generate fresh chunks for the selected size and append to existing stream content.
+    // The accumulated text carries over — each Stream click adds more content
+    // to the same "stream" region rather than clearing it.
     const chunks = generateChunks(sizeToBytes(selectedSize));
     streamChunksRef.current = chunks;
     streamChunkIndexRef.current = 0;
-    streamAccumulatedRef.current = "";
-    streamingStore.set("text", "", "gallery");
     setIsStreaming(true);
     setDiagnostics((prev) => ({
       ...prev,
       streamProgress: "streaming...",
-      totalBlocks: 0,
       lexMs: null,
       parseMs: null,
     }));
