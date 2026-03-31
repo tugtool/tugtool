@@ -65,7 +65,7 @@ function GalleryAlertInner() {
       title: "Discard unsaved changes?",
       message: 'You\'ve made changes to \u201cHomepage Copy\u201d that haven\'t been saved. Leaving now will discard them.',
       confirmLabel: "Discard",
-      confirmRole: "caution",
+      confirmRole: "danger",
       icon: "TriangleAlert",
     });
     setCautionResult(confirmed ? "confirmed" : "cancelled");

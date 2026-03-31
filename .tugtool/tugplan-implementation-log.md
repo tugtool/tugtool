@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-31T23:11:47Z
+---
+
+## step-5: Added DEFAULTS: 0x50 to FeedId in tugdeck protocol.ts. Fixed 8 pre-existing TypeScript errors in tugways components. tsc --noEmit passes clean.
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
 step: step-4
 date: 2025-03-31T22:43:30Z
 ---
