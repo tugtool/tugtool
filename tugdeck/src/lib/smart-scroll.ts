@@ -87,7 +87,7 @@ const DEFAULT_NEAR_BOTTOM_THRESHOLD = 60;
  * All scroll key codes that initiate user scroll without pointer input.
  * The scroll container needs tabindex="0" for keydown to fire on it.
  */
-const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown']);
+const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'Space']);
 
 /**
  * Scroll-up key codes that should disengage follow-bottom.
@@ -429,32 +429,20 @@ export class SmartScroll {
 
   private _handleKeyDown(e: KeyboardEvent): void {
     if (this._disposed) return;
-
-    const isScrollUpKey =
-      SCROLL_UP_KEYS.has(e.code) ||
-      (e.code === 'Space' && e.shiftKey);
-
-    const isScrollDownKey =
-      e.code === 'PageDown' ||
-      e.code === 'End' ||
-      e.code === 'ArrowDown' ||
-      (e.code === 'Space' && !e.shiftKey);
-
-    const isScrollKey = isScrollUpKey || isScrollDownKey || SCROLL_KEYS.has(e.code);
-
-    if (!isScrollKey) return;
+    if (!SCROLL_KEYS.has(e.code)) return;
 
     // All scroll keys enter DRAGGING directly (keyboard has no pointer).
     if (this._phase !== 'dragging') {
       this._enterDragging();
     }
 
-    // Start/restart scrollend fallback timer (Issue 4).
+    // Start/restart scrollend fallback timer.
     if (!this._supportsScrollEnd) {
       this._restartScrollEndTimer();
     }
 
     // Only disengage follow-bottom for scroll-up keys.
+    const isScrollUpKey = SCROLL_UP_KEYS.has(e.code) || (e.code === 'Space' && e.shiftKey);
     if (isScrollUpKey && this._isFollowingBottom) {
       this._setFollowingBottom(false);
     }
