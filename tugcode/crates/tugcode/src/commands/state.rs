@@ -878,9 +878,9 @@ pub fn run_state_show(
         }
     } else {
         // Show all plans
-        let plan_paths = db.list_plan_paths().map_err(|e| e.to_string())?;
+        let plan_ids = db.list_plan_ids().map_err(|e| e.to_string())?;
 
-        if plan_paths.is_empty() {
+        if plan_ids.is_empty() {
             if !quiet && !json {
                 println!("No plans initialized in state database.");
             }
@@ -889,8 +889,8 @@ pub fn run_state_show(
 
         // Collect plan states
         let mut plan_states = Vec::new();
-        for plan_path in &plan_paths {
-            let plan_state = db.show_plan(plan_path).map_err(|e| e.to_string())?;
+        for plan_id in &plan_ids {
+            let plan_state = db.show_plan(plan_id).map_err(|e| e.to_string())?;
             plan_states.push(plan_state);
         }
 

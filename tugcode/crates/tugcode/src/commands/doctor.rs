@@ -700,10 +700,10 @@ fn check_state_health_at(db_path: &Path, plan_root: &Path) -> HealthCheck {
         }
     }
 
-    // Check for orphaned plans (plan_path in DB but file missing on disk)
-    // list_plan_paths() returns plan_id values; look up each plan's file path
+    // Check for orphaned plans (plan_id in DB but file missing on disk)
+    // list_plan_ids() returns plan_id values; look up each plan's file path
     // to check for orphans.
-    match db.list_plan_paths() {
+    match db.list_plan_ids() {
         Ok(plan_ids) => {
             let mut orphaned: Vec<String> = Vec::new();
             for plan_id in &plan_ids {

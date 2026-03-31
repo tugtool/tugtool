@@ -732,12 +732,8 @@ UPDATE schema_version SET version = 5;
 
     /// List all plan IDs in the database.
     ///
-    /// Used by the doctor health check. Returns plan_id values
-    /// under the historical name `list_plan_paths` — rename to `list_plan_ids` deferred
-    /// to Step 10 alongside caller updates.
-    ///
-    /// TRANSITION: returns plan_id values (not plan_path) until Step 10 renames this.
-    pub fn list_plan_paths(&self) -> Result<Vec<String>, TugError> {
+    /// Used by the doctor health check.
+    pub fn list_plan_ids(&self) -> Result<Vec<String>, TugError> {
         let mut stmt = self
             .conn
             .prepare("SELECT plan_id FROM plans ORDER BY plan_id")
@@ -760,8 +756,6 @@ UPDATE schema_version SET version = 5;
     ///
     /// Populates plans, steps, step_deps, and checklist_items tables in a single
     /// transaction. Returns `already_initialized: true` if the plan already exists.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn init_plan(
         &mut self,
         plan_path: &str,
@@ -1089,10 +1083,7 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Count the number of completed steps for a plan.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
-    pub fn count_completed_steps(&self, plan_path: &str) -> Result<usize, TugError> {
-        let plan_id = plan_path;
+    pub fn count_completed_steps(&self, plan_id: &str) -> Result<usize, TugError> {
         let count: i64 = self
             .conn
             .query_row(
@@ -1107,10 +1098,7 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Verify that the plan hash matches the stored hash in the database.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
-    pub fn verify_plan_hash(&self, plan_path: &str, current_hash: &str) -> Result<(), TugError> {
-        let plan_id = plan_path;
+    pub fn verify_plan_hash(&self, plan_id: &str, current_hash: &str) -> Result<(), TugError> {
         let stored_hash: String = self
             .conn
             .query_row(
@@ -1124,7 +1112,7 @@ UPDATE schema_version SET version = 5;
 
         if stored_hash != current_hash {
             return Err(TugError::StatePlanHashMismatch {
-                plan_id: plan_path.to_string(),
+                plan_id: plan_id.to_string(),
             });
         }
 
@@ -1132,20 +1120,16 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Claim the next available step for execution.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn claim_step(
         &mut self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         worktree: &str,
         lease_duration_secs: u64,
         current_hash: &str,
         force: bool,
     ) -> Result<ClaimResult, TugError> {
-        let plan_id = plan_path;
-
         // Verify plan hash
-        self.verify_plan_hash(plan_path, current_hash)?;
+        self.verify_plan_hash(plan_id, current_hash)?;
 
         // Begin exclusive transaction
         let tx = self
@@ -1305,15 +1289,12 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Check if the given worktree owns the step.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn check_ownership(
         &self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         anchor: &str,
         worktree: &str,
     ) -> Result<(), TugError> {
-        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let result: Option<String> = self
             .conn
@@ -1342,15 +1323,12 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Start a claimed step, transitioning it from 'claimed' to 'in_progress'.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn start_step(
         &self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         anchor: &str,
         worktree: &str,
     ) -> Result<(), TugError> {
-        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let now = now_iso8601();
         let rows_affected = self
@@ -1366,7 +1344,7 @@ UPDATE schema_version SET version = 5;
 
         if rows_affected == 0 {
             // Check ownership
-            self.check_ownership(plan_path, anchor, worktree)?;
+            self.check_ownership(plan_id, anchor, worktree)?;
             // If ownership is fine, step is not in claimed status
             return Err(TugError::StateStepNotClaimed {
                 anchor: anchor.to_string(),
@@ -1378,16 +1356,13 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Renew the lease on a step via heartbeat.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn heartbeat_step(
         &self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         anchor: &str,
         worktree: &str,
         lease_duration_secs: u64,
     ) -> Result<String, TugError> {
-        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let now = now_iso8601();
         let lease_expires = iso8601_after_secs(lease_duration_secs);
@@ -1405,7 +1380,7 @@ UPDATE schema_version SET version = 5;
 
         if rows_affected == 0 {
             // Check ownership
-            self.check_ownership(plan_path, anchor, worktree)?;
+            self.check_ownership(plan_id, anchor, worktree)?;
             return Err(TugError::StateStepNotClaimed {
                 anchor: anchor.to_string(),
                 current_status: "not claimed or in progress".to_string(),
@@ -1424,10 +1399,9 @@ UPDATE schema_version SET version = 5;
     /// UPDATE marks all remaining open items as completed. The empty-array guard is also skipped
     /// when `complete_remaining` is true, allowing an empty batch to mean "complete everything."
     ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn batch_update_checklist<T>(
         &mut self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         anchor: &str,
         worktree: &str,
         entries: &[T],
@@ -1436,10 +1410,9 @@ UPDATE schema_version SET version = 5;
     where
         T: BatchEntry,
     {
-        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         // Check ownership first
-        self.check_ownership(plan_path, anchor, worktree)?;
+        self.check_ownership(plan_id, anchor, worktree)?;
 
         // Begin transaction
         let tx = self
@@ -1615,20 +1588,17 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Record an artifact breadcrumb for a step.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn record_artifact(
         &self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         anchor: &str,
         worktree: &str,
         kind: &str,
         summary: &str,
     ) -> Result<i64, TugError> {
-        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         // Check ownership first
-        self.check_ownership(plan_path, anchor, worktree)?;
+        self.check_ownership(plan_id, anchor, worktree)?;
 
         let now = now_iso8601();
         let truncated_summary = if summary.len() > 500 {
@@ -1651,17 +1621,14 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Complete a step, optionally forcing completion despite incomplete items.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn complete_step(
         &mut self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         anchor: &str,
         worktree: &str,
         force: bool,
         force_reason: Option<&str>,
     ) -> Result<CompleteResult, TugError> {
-        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         // Begin exclusive transaction
         let tx = self
@@ -1670,7 +1637,7 @@ UPDATE schema_version SET version = 5;
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!(
                     "failed to begin transaction for plan={} anchor={}: {}",
-                    plan_path, anchor, e
+                    plan_id, anchor, e
                 ),
             })?;
 
@@ -1687,7 +1654,7 @@ UPDATE schema_version SET version = 5;
 
         if !step_exists {
             return Err(TugError::StateStepNotFound {
-                plan_id: plan_path.to_string(),
+                plan_id: plan_id.to_string(),
                 anchor: anchor.to_string(),
             });
         }
@@ -1743,7 +1710,7 @@ UPDATE schema_version SET version = 5;
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!(
                     "failed to force-complete checklist items for plan={} anchor={}: {}",
-                    plan_path, anchor, e
+                    plan_id, anchor, e
                 ),
             })?;
         }
@@ -1764,7 +1731,7 @@ UPDATE schema_version SET version = 5;
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!(
                     "failed to complete step for plan={} anchor={}: {}",
-                    plan_path, anchor, e
+                    plan_id, anchor, e
                 ),
             })?;
 
@@ -1774,7 +1741,7 @@ UPDATE schema_version SET version = 5;
                 anchor: anchor.to_string(),
                 current_status: format!(
                     "not claimed by worktree {} for plan={}",
-                    worktree, plan_path
+                    worktree, plan_id
                 ),
             });
         }
@@ -1800,7 +1767,7 @@ UPDATE schema_version SET version = 5;
                 .map_err(|e| TugError::StateDbQuery {
                     reason: format!(
                         "failed to update plan timestamp for plan={} anchor={}: {}",
-                        plan_path, anchor, e
+                        plan_id, anchor, e
                     ),
                 })?;
                 all_completed = true;
@@ -1810,7 +1777,7 @@ UPDATE schema_version SET version = 5;
         tx.commit().map_err(|e| TugError::StateDbQuery {
             reason: format!(
                 "failed to commit completion transaction for plan={} anchor={}: {}",
-                plan_path, anchor, e
+                plan_id, anchor, e
             ),
         })?;
 
@@ -1864,10 +1831,7 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Query plan state for show command
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
-    pub fn show_plan(&self, plan_path: &str) -> Result<PlanState, TugError> {
-        let plan_id = plan_path;
+    pub fn show_plan(&self, plan_id: &str) -> Result<PlanState, TugError> {
 
         // Query plan metadata
         let (plan_path_stored, plan_hash, phase_title, status, created_at, updated_at): (
@@ -2035,13 +1999,10 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Get all checklist items for a plan with full details
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn get_checklist_items(
         &self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
     ) -> Result<Vec<ChecklistItemDetail>, TugError> {
-        let plan_id = plan_path;
         let mut stmt = self
             .conn
             .prepare(
@@ -2165,10 +2126,7 @@ UPDATE schema_version SET version = 5;
     }
 
     /// List ready steps for claiming
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
-    pub fn ready_steps(&self, plan_path: &str) -> Result<ReadyResult, TugError> {
-        let plan_id = plan_path;
+    pub fn ready_steps(&self, plan_id: &str) -> Result<ReadyResult, TugError> {
         let now = now_iso8601();
 
         // Query all top-level steps with their dependency status
@@ -2255,10 +2213,7 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Reset a step to pending status
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
-    pub fn reset_step(&mut self, plan_path: &str, anchor: &str) -> Result<(), TugError> {
-        let plan_id = plan_path;
+    pub fn reset_step(&mut self, plan_id: &str, anchor: &str) -> Result<(), TugError> {
         let anchor = normalize_anchor(anchor);
         let tx = self
             .conn
@@ -2320,16 +2275,13 @@ UPDATE schema_version SET version = 5;
     /// This allows explicitly dropping a claim before lease expiry. When `worktree` is
     /// provided, ownership is verified. When `force` is true, ownership check is skipped.
     /// Completed steps cannot be released.
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn release_step(
         &mut self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         anchor: &str,
         worktree: Option<&str>,
         force: bool,
     ) -> Result<ReleaseResult, TugError> {
-        let plan_id = plan_path;
         let anchor = normalize_anchor(anchor);
         let tx = self
             .conn
@@ -2414,15 +2366,12 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Reconcile state from git trailers
-    ///
-    /// TRANSITION: parameter named `plan_path` but carries plan_id value until Step 10 renames.
     pub fn reconcile(
         &mut self,
-        plan_path: &str, // TRANSITION: carries plan_id value until Step 10 renames
+        plan_id: &str,
         entries: &[ReconcileEntry],
         force: bool,
     ) -> Result<ReconcileResult, TugError> {
-        let plan_id = plan_path;
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Exclusive)
