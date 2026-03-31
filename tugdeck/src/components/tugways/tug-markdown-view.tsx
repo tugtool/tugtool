@@ -492,8 +492,13 @@ export function TugMarkdownView({
   // Used by the static rendering path.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const lexParseAndRender = useCallback((engine: MarkdownEngineState, text: string) => {
-    // Clear previous state
+    // Clear previous state.
+    // Reset the block window BEFORE clearing the height index — blockWindow.update()
+    // with count=0 exits the old range and resets internal [startIndex, endIndex) to
+    // [0, 0). Without this, the window retains stale range from previous content and
+    // the next update() returns empty enter ranges (it thinks blocks are already rendered).
     engine.heightIndex.clear();
+    engine.blockWindow.update(0); // forces exit of stale range while count=0
     engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
     for (const [, el] of engine.blockNodes) {
       resizeObserverRef.current?.unobserve(el);
