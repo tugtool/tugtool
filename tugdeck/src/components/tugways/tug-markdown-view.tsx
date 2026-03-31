@@ -29,8 +29,10 @@
  *   data-slot="tug-markdown-view", file pair (tsx + css).
  * - [L22] Streaming DOM updates observe the PropertyStore directly via
  *   useLayoutEffect — no React round-trip between data change and DOM write.
- * - [D93] SmartScroll handles auto-scroll via ResizeObserver + wheel + filtered
- *   scroll events. The component does not manage scroll position directly.
+ * - [D93] SmartScroll six-phase state machine (idle/tracking/dragging/settling/
+ *   decelerating/programmatic). Controller-driven: doSetRegion calls
+ *   scrollToBottom() after content settles, not SmartScroll reacting to
+ *   ResizeObserver.
  *
  * Design decisions:
  * - [D03] HTML cache (Map<number, string>, never evicted, all blocks pre-parsed)
@@ -481,14 +483,16 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     });
     resizeObs.observe(scrollContainerRef.current);
     return () => resizeObs.disconnect();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally empty:
+    // This effect only accesses refs at call time (scrollContainerRef, engineRef).
+    // Re-running on ref changes would disconnect/reconnect the observer unnecessarily.
+  }, []);
 
   // ---- SmartScroll instance [D93] ----
   useLayoutEffect(() => {
     if (!scrollContainerRef.current || !blockContainerRef.current) return;
     const smartScroll = new SmartScroll({
       scrollContainer: scrollContainerRef.current,
-      contentElement: blockContainerRef.current,
       callbacks: {
         onScroll: () => {
           scrollDirtyRef.current = true;
@@ -512,7 +516,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       smartScroll.dispose();
       smartScrollRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally empty:
+    // SmartScroll is created once on mount and disposed on unmount. It accesses
+    // refs at call time (scrollContainerRef, blockContainerRef, scrollDirtyRef,
+    // scrollRafRef, engineRef). Re-running would dispose and recreate unnecessarily.
+  }, []);
 
   // ---- Shared lex+parse+render helper ----
   // Full rebuild: re-lexes the entire text, clears and repopulates htmlCache and
@@ -687,7 +695,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       }
     },
     clear: doClear,
-  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally empty:
+    // doSetRegion, doRemoveRegion (via removeRegion closure), and doClear only
+    // access refs (engineRef, scrollContainerRef, smartScrollRef, resizeObserverRef)
+    // at call time. The handle is stable for the component lifetime.
+  }), []);
 
   // ---- Streaming rendering path [L22: direct store observer, no React round-trip] ----
   useLayoutEffect(() => {
@@ -698,7 +710,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       doSetRegion('stream', text);
     });
     return unsubscribe;
-  }, [streamingStore, streamingPath]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are correct:
+    // streamingStore and streamingPath are the only values that should trigger
+    // re-subscription. doSetRegion accesses refs at call time and does not need
+    // to be listed as a dependency.
+  }, [streamingStore, streamingPath]);
 
   return (
     <div
