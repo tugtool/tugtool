@@ -263,21 +263,18 @@ This is how tugapp could react to a theme change written by tugdeck, or how tugd
 
 ## Implementation Order
 
-### Phase 1: Rust `TugbankClient` in `tugbank-core`
+### Phase 1: Rust `TugbankClient` in `tugbank-core` (DONE)
 
-Add `TugbankClient` to `tugbank-core`:
-- In-memory domain snapshots backed by `DefaultsStore`
-- `PRAGMA data_version` polling for external change detection
-- Domain change callbacks
-- Thread-safe (`Send + Sync` via `Arc` internals)
+Completed in tugplan-tugbank-in-process-clients (PR #158):
+- `TugbankClient` in `tugbank-core` with in-memory domain snapshots, `PRAGMA data_version` polling, domain change callbacks, `Send + Sync`
+- tugcast migrated from raw `DefaultsStore` to `TugbankClient` for HTTP handlers
+- `FeedId::Defaults = 0x50` added to tugcast-core protocol
+- DEFAULTS feed implemented in tugcast (`feeds/defaults.rs`) — aggregated domain snapshots pushed via WebSocket watch channel
+- `DEFAULTS: 0x50` added to tugdeck `protocol.ts`
 
-Update tugcast to use `TugbankClient` instead of raw `DefaultsStore`. Verify existing HTTP endpoints work unchanged.
+### Phase 2: `tugbank-ffi` crate
 
-### Phase 2: `tugbank-ffi` crate + DEFAULTS feed
-
-Two parallel tracks:
-
-**FFI crate**: New `tugbank-ffi` crate exposing `extern "C"` functions:
+New `tugbank-ffi` crate exposing `extern "C"` functions:
 - `tugbank_open(path) → handle`
 - `tugbank_get(handle, domain, key) → tagged value`
 - `tugbank_set(handle, domain, key, tagged_value)`
@@ -289,10 +286,7 @@ Build as a static library (`.a`) for linking into the Swift app.
 
 **FFI memory management**: Values cross the boundary as JSON-serialized byte buffers. `tugbank_get` and `tugbank_read_domain` return a Rust-allocated C string (`*mut c_char`) containing the JSON-encoded tagged value or snapshot. The caller must free it via `tugbank_free_string(ptr)`. String parameters (`domain`, `key`) are borrowed `*const c_char` — Rust reads them, caller retains ownership. This keeps the FFI surface simple and avoids exposing Rust's `Value` enum layout to C.
 
-**DEFAULTS feed**: Add `DEFAULTS` feed ID (`0x50`) to the existing WebSocket protocol:
-- On client connect: push full snapshot for every populated domain, then a sync-complete sentinel
-- On domain change: push full updated snapshot to all connected clients
-- Payload format: `{"domain":"...","generation":N,"entries":{...}}`
+Note: The DEFAULTS feed work originally planned for Phase 2 was completed as part of Phase 1.
 
 ### Phase 3: TypeScript `TugbankClient` in tugdeck
 
