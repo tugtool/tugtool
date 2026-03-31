@@ -170,7 +170,7 @@ SOFTWARE.
 
 **Source:** https://github.com/stackblitz-labs/use-stick-to-bottom
 **What was adopted:** ResizeObserver-driven auto-scroll architecture; `ignoreScrollToTop` pattern for filtering programmatic scroll events; `wheel` event `deltaY < 0` for detecting user scroll-up intent; `resizeDifference` flag for ignoring scroll events caused by content resize; near-bottom threshold concept (50-70px) for re-engagement detection.
-**Used in:** `tugdeck/src/components/tugways/tug-markdown-view.tsx` (Phase 3A.6 smart auto-scroll)
+**Used in:** `tugdeck/src/lib/smart-scroll.ts` (ResizeObserver-driven auto-scroll with user-intent detection)
 
 ```
 MIT License

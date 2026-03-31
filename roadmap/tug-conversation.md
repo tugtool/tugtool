@@ -1471,31 +1471,62 @@ On scroll event:
 
 #### Reusability: this pattern applies to all scrolling components
 
-The ResizeObserver + wheel + filtered-scroll pattern is not specific to TugMarkdownView. It's a general solution for any scrolling container that adds content dynamically. When Phase 5 (Conversation Wiring) builds the full conversation scroll view, the same pattern applies. Consider extracting it into a reusable hook or utility:
+The ResizeObserver + wheel + filtered-scroll pattern is not specific to TugMarkdownView. It's a general solution for any scrolling container that adds content dynamically — conversation views, terminal output, log panels, any streaming content display. Implement it as a standalone module from the start:
+
+**New file: `tugdeck/src/lib/smart-scroll.ts`**
+
+A plain class (not a React hook) that takes a scroll container element and a content element, manages the three listeners, and exposes a minimal API:
 
 ```typescript
-// Future: reusable hook
-function useSmartScroll(scrollRef: RefObject<HTMLElement>, contentRef: RefObject<HTMLElement>) {
-  // Returns: { isAtBottom: boolean, scrollToBottom(): void }
-  // Manages: ResizeObserver, wheel listener, filtered scroll listener
+/**
+ * SmartScroll — auto-scroll manager for dynamic content containers.
+ *
+ * Follows the bottom when content grows and the user is at/near the bottom.
+ * Disengages when the user scrolls up. Re-engages when the user scrolls
+ * back to the bottom. Uses ResizeObserver as the scroll trigger (not scroll
+ * events), wheel events for user-intent detection, and filtered scroll
+ * events for re-engagement only. See [D93] for the design rationale.
+ *
+ * Not a React hook — a plain class that manages DOM listeners directly.
+ * Callers create an instance, attach it to a scroll container, and dispose
+ * when done. Works with any framework or no framework.
+ */
+export class SmartScroll {
+  constructor(scrollContainer: HTMLElement, contentElement: HTMLElement);
+  /** Whether auto-scroll is currently engaged. */
+  get isAtBottom(): boolean;
+  /** Programmatically scroll to the bottom and engage auto-scroll. */
+  scrollToBottom(): void;
+  /** Programmatically disengage auto-scroll (e.g., user clicked "scroll up" button). */
+  disengage(): void;
+  /** Clean up all listeners. Call on unmount. */
+  dispose(): void;
 }
 ```
 
-This extraction is deferred — implement it inline in TugMarkdownView first, extract when a second consumer needs it.
+TugMarkdownView creates a `SmartScroll` instance in a `useLayoutEffect` and calls `dispose()` on cleanup. The component no longer manages scroll state directly — SmartScroll owns it.
 
 #### Steps
 
-**Step 1: Implement smart auto-scroll in TugMarkdownView.**
-- Add ResizeObserver on block container for content height changes.
-- Add passive `wheel` listener for user scroll-up detection.
-- Update scroll handler with `ignoreScrollToTop` and `resizeDifference` filtering.
-- Add `isAtBottom` ref (starts true) and supporting refs.
-- Remove auto-scroll from `doSetRegion`.
-- Auto-scroll triggers in ResizeObserver when `isAtBottom` is true and content grew.
+**Step 1: Implement SmartScroll as a standalone module.**
+New file `tugdeck/src/lib/smart-scroll.ts`. The `SmartScroll` class with:
+- Constructor takes scroll container + content element, sets up ResizeObserver, wheel listener, scroll listener.
+- `isAtBottom` getter.
+- `scrollToBottom()` and `disengage()` methods.
+- `dispose()` cleans up all listeners.
+- Unit tests in `tugdeck/src/__tests__/smart-scroll.test.ts` (to the extent possible without a real browser — test the state machine logic, mock the DOM APIs).
 
-Verify: streaming auto-scrolls. Scrolling up during streaming disengages. Scrolling back to bottom re-engages. Static content addition doesn't auto-scroll (user is already at top of new content).
+Verify: `bun test` passes. `bun run build` succeeds.
 
-**Step 2: Verify and test.**
+**Step 2: Wire SmartScroll into TugMarkdownView.**
+- Create a SmartScroll instance in a `useLayoutEffect` (scroll container ref + block container ref). Dispose on cleanup.
+- Remove the auto-scroll code from `doSetRegion` (the `isStreamingRef.current` block).
+- Remove the `isStreaming` prop if it's no longer needed for auto-scroll (keep if gallery card still uses it for UI state like the Stop button).
+- SmartScroll handles all auto-scroll decisions internally.
+
+Verify: streaming auto-scrolls. Scrolling up during streaming disengages. Scrolling back to bottom re-engages.
+
+**Step 3: Verify in browser.**
 - Gallery card: start streaming, let it run, scroll up mid-stream — content should keep arriving but scroll should stay put. Scroll back to bottom — auto-scroll re-engages.
 - Gallery card: click Static 1MB — no auto-scroll (content appears at top).
 - Gallery card: click Static 1MB, scroll to bottom, then click Static 50KB — auto-scrolls to new content because user was at bottom.
