@@ -7,13 +7,16 @@
  *
  * Laws compliance:
  * - [L02] External state enters React through useSyncExternalStore only.
- *   Streaming text buffer uses PropertyStore + useSyncExternalStore.
+ *   The streamingText hook is kept unconditional (hooks must not be conditional)
+ *   but its value is suppressed — streaming DOM updates go through L22 instead.
  * - [L05] RAF is used ONLY for the scroll position write during auto-scroll.
  *   Never used to commit React state.
  * - [L06] Appearance changes via CSS and DOM, never React state. Spacer heights
  *   and block visibility are managed by direct DOM writes, not React state.
  * - [L19] Component authoring guide: module docstring, exported props interface,
  *   data-slot="markdown-view", file pair (tsx + css).
+ * - [L22] Streaming DOM updates observe the PropertyStore directly via
+ *   useLayoutEffect — no React round-trip between data change and DOM write.
  *
  * Design decisions:
  * - [D03] HTML cache replaces pre-rendering (Map<number, string>, never evicted)
@@ -315,9 +318,11 @@ export function TugMarkdownView({
     return (streamingStore.get(streamingPath) as string) ?? "";
   }, [streamingStore, streamingPath]);
 
-  // This call is always made (hooks must not be conditional), but it only has
-  // effect when streamingStore is provided.
+  // This call is always made (hooks must not be conditional), but streaming DOM
+  // updates go through the L22 store observer below — not through React renders.
+  // Suppress the unused value to satisfy the linter.
   const streamingText = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  void streamingText;
 
   // ---- Apply spacer heights to DOM ----
   function applySpacers(topHeight: number, bottomHeight: number) {
@@ -484,7 +489,7 @@ export function TugMarkdownView({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Shared lex+parse+render helper ----
-  // Used by static, streaming, and finalization paths to avoid code duplication.
+  // Used by the static rendering path.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const lexParseAndRender = useCallback((engine: MarkdownEngineState, text: string) => {
     // Clear previous state
@@ -557,93 +562,79 @@ export function TugMarkdownView({
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Streaming rendering path (incremental) ----
-  // Re-lex the full accumulated text on each delta (cheap: <1ms for typical streaming sizes),
-  // but only mutate the DOM for blocks that changed or are new. This avoids destroying and
-  // rebuilding the entire block list on every chunk, which caused visible flicker.
-  useEffect(() => {
-    if (!streamingStore || !streamingText) return;
+  // ---- Streaming rendering path [L22: direct store observer, no React round-trip] ----
+  useLayoutEffect(() => {
+    if (!streamingStore) return;
     const engine = getEngine();
-    engine.accumulatedText = streamingText;
-    engine.contentText = streamingText;
 
-    // Re-lex full text — cheap, always correct
-    const packed = lex_blocks(streamingText);
-    const newBlocks = decodeBlocks(packed);
-    const byteToChar = buildByteToCharMap(streamingText);
-    const newStarts = newBlocks.map(b => byteToChar[b.start] ?? b.start);
-    const newEnds = newBlocks.map(b => byteToChar[b.end] ?? b.end);
+    const unsubscribe = streamingStore.observe(streamingPath, () => {
+      const text = (streamingStore.get(streamingPath) as string) ?? "";
+      if (!text) return;
 
-    const oldCount = engine.blockCount;
-    const newCount = newBlocks.length;
+      engine.accumulatedText = text;
+      engine.contentText = text;
 
-    // Update changed existing blocks (typically just the last one — it was incomplete)
-    for (let i = 0; i < Math.min(oldCount, newCount); i++) {
-      if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
-        const raw = streamingText.slice(newStarts[i], newEnds[i]);
-        const html = parse_to_html(raw);
-        engine.htmlCache.set(i, html);
-        engine.heightIndex.setHeight(i, estimateBlockHeight(newBlocks[i]));
-        const existingEl = engine.blockNodes.get(i);
-        if (existingEl) {
-          existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+      const packed = lex_blocks(text);
+      const newBlocks = decodeBlocks(packed);
+      const byteToChar = buildByteToCharMap(text);
+      const newStarts = newBlocks.map(b => byteToChar[b.start] ?? b.start);
+      const newEnds = newBlocks.map(b => byteToChar[b.end] ?? b.end);
+
+      const oldCount = engine.blockCount;
+      const newCount = newBlocks.length;
+
+      // Update changed existing blocks
+      for (let i = 0; i < Math.min(oldCount, newCount); i++) {
+        if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
+          const raw = text.slice(newStarts[i], newEnds[i]);
+          const html = parse_to_html(raw);
+          engine.htmlCache.set(i, html);
+          engine.heightIndex.setHeight(i, estimateBlockHeight(newBlocks[i]));
+          const existingEl = engine.blockNodes.get(i);
+          if (existingEl) {
+            existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+          }
         }
       }
-    }
 
-    // Handle block count decrease (rare during streaming but possible)
-    if (newCount < oldCount) {
-      for (let i = newCount; i < oldCount; i++) {
-        removeBlockNode(engine, i);
-        engine.htmlCache.delete(i);
+      // Handle block count decrease
+      if (newCount < oldCount) {
+        for (let i = newCount; i < oldCount; i++) {
+          removeBlockNode(engine, i);
+          engine.htmlCache.delete(i);
+        }
+        engine.heightIndex.clear();
+        for (let i = 0; i < newCount; i++) {
+          engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
+        }
       }
-      // BlockHeightIndex has no shrink method — rebuild it from scratch
-      engine.heightIndex.clear();
-      for (let i = 0; i < newCount; i++) {
+
+      // Append new blocks
+      for (let i = oldCount; i < newCount; i++) {
         engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
+        const raw = text.slice(newStarts[i], newEnds[i]);
+        engine.htmlCache.set(i, parse_to_html(raw));
       }
-    }
 
-    // Append new blocks
-    for (let i = oldCount; i < newCount; i++) {
-      engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
-      const raw = streamingText.slice(newStarts[i], newEnds[i]);
-      engine.htmlCache.set(i, parse_to_html(raw));
-    }
+      engine.blockStarts = newStarts;
+      engine.blockEnds = newEnds;
+      engine.blockCount = newCount;
 
-    // Update engine state
-    engine.blockStarts = newStarts;
-    engine.blockEnds = newEnds;
-    engine.blockCount = newCount;
+      engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
+      const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+      const update = engine.blockWindow.update(scrollTop);
+      applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
 
-    // Update viewport and render new/changed blocks
-    engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
-    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
-    const update = engine.blockWindow.update(scrollTop);
-    applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+      // Auto-scroll to tail [L06: direct DOM write]
+      if (isStreaming && scrollContainerRef.current) {
+        const totalHeight = engine.heightIndex.getTotalHeight();
+        const viewportHeight = scrollContainerRef.current.clientHeight;
+        scrollContainerRef.current.scrollTop = Math.max(0, totalHeight - viewportHeight);
+      }
+    });
 
-    // Auto-scroll to tail while streaming [L06: direct DOM write, no RAF]
-    if (isStreaming && scrollContainerRef.current) {
-      const totalHeight = engine.heightIndex.getTotalHeight();
-      const viewportHeight = scrollContainerRef.current.clientHeight;
-      scrollContainerRef.current.scrollTop = Math.max(0, totalHeight - viewportHeight);
-    }
-  }, [streamingText, streamingStore]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---- Finalization pass on turn_complete ----
-  // When isStreaming transitions from true to false, do one final full lex+parse
-  // to ensure block boundaries are correct after the final delta.
-  const prevIsStreamingRef = useRef(isStreaming);
-  useEffect(() => {
-    const wasStreaming = prevIsStreamingRef.current;
-    prevIsStreamingRef.current = isStreaming;
-
-    if (wasStreaming && !isStreaming && streamingStore) {
-      const engine = engineRef.current;
-      if (!engine || !engine.accumulatedText) return;
-      lexParseAndRender(engine, engine.accumulatedText);
-    }
-  }, [isStreaming, streamingStore, streamingPath, lexParseAndRender]); // eslint-disable-line react-hooks/exhaustive-deps
+    return unsubscribe;
+  }, [streamingStore, streamingPath, isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
