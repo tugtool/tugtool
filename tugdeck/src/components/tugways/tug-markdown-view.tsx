@@ -319,9 +319,6 @@ export function TugMarkdownView({
   // effect when streamingStore is provided.
   const streamingText = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  // Suppress unused warning until lex/parse wired in Phase 3B.
-  void streamingText;
-
   // ---- Apply spacer heights to DOM ----
   function applySpacers(topHeight: number, bottomHeight: number) {
     if (topSpacerRef.current) {
@@ -486,11 +483,10 @@ export function TugMarkdownView({
     return () => resizeObs.disconnect();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Static rendering path ----
-  useEffect(() => {
-    if (content === undefined) return;
-    const engine = getEngine();
-
+  // ---- Shared lex+parse+render helper ----
+  // Used by static, streaming, and finalization paths to avoid code duplication.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lexParseAndRender = useCallback((engine: MarkdownEngineState, text: string) => {
     // Clear previous state
     engine.heightIndex.clear();
     engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
@@ -502,21 +498,17 @@ export function TugMarkdownView({
     engine.htmlCache.clear();
     engine.blockStarts = [];
     engine.blockEnds = [];
-    engine.byteToCharMap = null;
     engine.blockCount = 0;
-    engine.contentText = content;
+    engine.contentText = text;
     applySpacers(0, 0);
 
     // Lex: synchronous WASM call
-    const packed = lex_blocks(content);
+    const packed = lex_blocks(text);
     const blocks = decodeBlocks(packed);
+    const byteToChar = buildByteToCharMap(text);
     engine.blockCount = blocks.length;
-    engine.blockStarts = blocks.map(b => b.start);
-    engine.blockEnds = blocks.map(b => b.end);
-
-    // Build byte→char map once for this content string [Bug 2 fix].
-    // pulldown-cmark returns UTF-8 byte offsets; JS String.slice() needs char indices.
-    engine.byteToCharMap = buildByteToCharMap(content);
+    engine.blockStarts = blocks.map(b => byteToChar[b.start] ?? b.start);
+    engine.blockEnds = blocks.map(b => byteToChar[b.end] ?? b.end);
 
     // Populate height index with estimates
     for (const block of blocks) {
@@ -531,16 +523,21 @@ export function TugMarkdownView({
     engine.blockWindow.setViewportHeight(viewportHeight);
 
     for (let i = 0; i < blocks.length; i++) {
-      const charStart = engine.byteToCharMap[engine.blockStarts[i]];
-      const charEnd = engine.byteToCharMap[engine.blockEnds[i]];
-      const raw = content.slice(charStart, charEnd);
+      const raw = text.slice(engine.blockStarts[i], engine.blockEnds[i]);
       engine.htmlCache.set(i, parse_to_html(raw));
     }
 
     // Enter visible blocks into DOM
     const update = engine.blockWindow.update(scrollTop);
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-  }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Static rendering path ----
+  useEffect(() => {
+    if (content === undefined) return;
+    const engine = getEngine();
+    lexParseAndRender(engine, content);
+  }, [content, lexParseAndRender]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- RAF-coalesced scroll handler [D02, L05] ----
   const handleScroll = useCallback(() => {
@@ -560,22 +557,36 @@ export function TugMarkdownView({
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Streaming rendering path — TODO: wire lex/parse in Phase 3B ----
+  // ---- Streaming rendering path ----
+  // On each streamingText update, do a full re-lex + re-parse.
+  // For typical streaming content <100KB, full re-lex is <1ms — simple and correct.
   useEffect(() => {
-    if (!streamingStore) return;
-    // TODO: Phase 3B — implement incremental tail lex/parse for streaming
+    if (!streamingStore || !streamingText) return;
+    const engine = getEngine();
+    engine.accumulatedText = streamingText;
+    lexParseAndRender(engine, streamingText);
+    // Auto-scroll to tail while streaming [L06: direct DOM write, no RAF]
+    if (isStreaming && scrollContainerRef.current) {
+      const totalHeight = engine.heightIndex.getTotalHeight();
+      const viewportHeight = scrollContainerRef.current.clientHeight;
+      scrollContainerRef.current.scrollTop = Math.max(0, totalHeight - viewportHeight);
+    }
   }, [streamingText, streamingStore]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Finalization pass on turn_complete — TODO: wire in Phase 3B ----
+  // ---- Finalization pass on turn_complete ----
+  // When isStreaming transitions from true to false, do one final full lex+parse
+  // to ensure block boundaries are correct after the final delta.
   const prevIsStreamingRef = useRef(isStreaming);
   useEffect(() => {
     const wasStreaming = prevIsStreamingRef.current;
     prevIsStreamingRef.current = isStreaming;
 
     if (wasStreaming && !isStreaming && streamingStore) {
-      // TODO: Phase 3B — finalization lex pass on full accumulated text
+      const engine = engineRef.current;
+      if (!engine || !engine.accumulatedText) return;
+      lexParseAndRender(engine, engine.accumulatedText);
     }
-  }, [isStreaming, streamingStore, streamingPath]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isStreaming, streamingStore, streamingPath, lexParseAndRender]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
