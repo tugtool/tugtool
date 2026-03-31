@@ -1382,7 +1382,7 @@ Verify: all content types work. Regions accumulate. Clear resets. Scrolling smoo
 
 ### Phase 3A.6: SmartScroll — Scroll State Machine {#smart-auto-scroll}
 
-**Status:** In progress (Step 1 done, Step 2 done — being rewritten with complete design).
+**Status:** Done.
 
 **Goal:** Build a proper scroll management abstraction modeled after UIScrollView/UIScrollViewDelegate. SmartScroll is a standalone class (not a React hook) that manages a scroll container element, tracks scroll phases (idle, tracking, dragging, decelerating, programmatic), provides programmatic scroll methods, fires lifecycle callbacks, and includes auto-follow-bottom as a built-in feature. It is the foundation for all scrolling behavior in tugdeck.
 
@@ -1407,31 +1407,36 @@ None of these gaps affect auto-follow-bottom, the state machine, programmatic sc
 
 #### The scroll state machine
 
-Five mutually exclusive phases, detected using web events:
+Six mutually exclusive phases, detected using web events:
 
 ```
 IDLE
-  │── pointerdown/touchstart ──────────────→ TRACKING
-  │── our scrollTo(animated) ──────────────→ PROGRAMMATIC_SCROLLING
+  │── pointerdown ────────────────────→ TRACKING
+  │── wheel event ────────────────────→ DRAGGING (+ start scrollend timer)
+  │── scroll key ─────────────────────→ DRAGGING (+ start scrollend timer)
+  │── our scrollTo(animated) ─────────→ PROGRAMMATIC
 
 TRACKING
-  │── first scroll event ─────────────────→ DRAGGING
-  │── wheel event (scroll input) ─────────→ DRAGGING
-  │── scroll-up keydown ──────────────────→ DRAGGING
-  │── pointerup (no scroll occurred) ─────→ IDLE
+  │── first scroll event ─────────────→ DRAGGING
+  │── pointerup (no scroll) ──────────→ IDLE
 
 DRAGGING
-  │── pointerup/touchend ─────────────────→ check: scroll events continue?
-  │   │── yes (within 50ms) ──────────────→ DECELERATING
-  │   │── no ─────────────────────────────→ IDLE
+  │── pointerup ──────────────────────→ SETTLING (50ms window)
+  │── scrollend event ────────────────→ IDLE (drag ended, no momentum)
+  │── scrollend fallback timer ───────→ IDLE (drag ended, no momentum)
+
+SETTLING
+  │── scrolls arrived within 50ms ────→ DECELERATING
+  │── no scrolls within 50ms ─────────→ IDLE
 
 DECELERATING
-  │── scrollend event ────────────────────→ IDLE
-  │── 150ms no scroll (fallback) ─────────→ IDLE
+  │── scrollend event ────────────────→ IDLE
+  │── scrollend fallback timer ───────→ IDLE
+  │── pointerdown (interrupt) ────────→ TRACKING
 
-PROGRAMMATIC_SCROLLING
-  │── scrollend event ────────────────────→ IDLE
-  │── target reached (non-animated) ──────→ IDLE
+PROGRAMMATIC
+  │── scrollend event ────────────────→ IDLE
+  │── target reached (non-animated) ──→ IDLE
 ```
 
 **Key rule from UIScrollView:** Programmatic scrolls NEVER fire drag/deceleration callbacks. `onWillBeginDragging` fires only for user input. The state machine enforces this — programmatic scrolling is a separate phase.
@@ -1442,13 +1447,14 @@ Every way a user can scroll must be detected for disengagement:
 
 | Input Method | Event | Detection |
 |---|---|---|
-| Trackpad/wheel up | `wheel` deltaY < 0 | Immediate, unambiguous |
-| Keyboard Page Up/Home/Arrow Up/Shift+Space | `keydown` | Immediate, unambiguous |
-| Scrollbar thumb drag up | `pointerdown` + `scroll` scrollTop decrease | Phase is DRAGGING (pointer is down) |
-| Scrollbar track click up | `pointerdown` + `scroll` scrollTop decrease | Phase is DRAGGING (pointer is down) |
-| Touch scroll up | `touchstart` + `scroll` scrollTop decrease | Phase is DRAGGING |
-| Momentum/inertial up | scroll events continue after pointerup | Phase is DECELERATING, scrollTop decreasing |
-| Accessibility (VoiceOver) | `scroll` scrollTop decrease | Treated as user scroll (no pointer/wheel) |
+| Trackpad/wheel (any direction) | `wheel` | Immediate, unambiguous; deltaY < 0 disengages follow-bottom |
+| Keyboard scroll keys (all) | `keydown` | PageUp, PageDown, Home, End, ArrowUp, ArrowDown, Space — all enter DRAGGING |
+| Keyboard scroll-up keys | `keydown` | PageUp, Home, ArrowUp, Shift+Space — additionally disengage follow-bottom |
+| Scrollbar thumb drag | `pointerdown` + `scroll` | Phase is DRAGGING (pointer is down) |
+| Scrollbar track click | `pointerdown` + `scroll` | Phase is DRAGGING (pointer is down) |
+| Touch scroll | `touchstart` + `scroll` | Phase is DRAGGING |
+| Momentum/inertial | scroll events continue after pointerup | Phase is DECELERATING |
+| Accessibility (VoiceOver) | `scroll` | Treated as user scroll (no pointer/wheel) |
 
 Every non-user scroll must be filtered:
 
@@ -1464,16 +1470,16 @@ Every non-user scroll must be filtered:
 
 Built on the state machine, not alongside it:
 
-- **Content grows** (ResizeObserver) + `isFollowingBottom` + phase is IDLE → enter PROGRAMMATIC_SCROLLING, auto-scroll to bottom
+- **Controller (doSetRegion)** checks `isFollowingBottom` and calls `scrollToBottom()` after content settles — no ResizeObserver auto-scroll in SmartScroll.
 - **Phase enters DRAGGING** and scroll direction is up → disengage `isFollowingBottom`
 - **Phase enters IDLE** and `isNearBottom` → re-engage `isFollowingBottom`
-- **`scrollToBottom()` called** → engage `isFollowingBottom`, enter PROGRAMMATIC_SCROLLING
+- **`scrollToBottom()` called** → engage `isFollowingBottom`, enter PROGRAMMATIC
 
 #### API
 
 ```typescript
 /** Scroll phase — mutually exclusive states. */
-export type ScrollPhase = 'idle' | 'tracking' | 'dragging' | 'decelerating' | 'programmatic';
+export type ScrollPhase = 'idle' | 'tracking' | 'dragging' | 'settling' | 'decelerating' | 'programmatic';
 
 /** Lifecycle callbacks — modeled after UIScrollViewDelegate. */
 export interface SmartScrollCallbacks {
@@ -1503,7 +1509,6 @@ export interface SmartScrollCallbacks {
 /** Constructor options. */
 export interface SmartScrollOptions {
   scrollContainer: HTMLElement;
-  contentElement: HTMLElement;
   callbacks?: SmartScrollCallbacks;
   nearBottomThreshold?: number;     // Default: 60px
   followBottom?: boolean;           // Default: true
@@ -1519,7 +1524,7 @@ export class SmartScroll {
   get clientHeight(): number;
   get isAtBottom(): boolean;          // Geometric: within threshold of bottom
   get isAtTop(): boolean;             // scrollTop === 0
-  get isUserScrolling(): boolean;     // phase is dragging or decelerating
+  get isUserScrolling(): boolean;     // phase is dragging, settling, or decelerating
   get isFollowingBottom(): boolean;   // Auto-follow engaged
 
   // --- Programmatic scrolling ---
@@ -1539,15 +1544,14 @@ export class SmartScroll {
 
 #### Internal listeners
 
-Seven DOM listeners, each with a clear job:
+Six DOM listeners, each with a clear job:
 
 1. **`scroll` on container** — fires `onScroll` callback, updates `lastScrollTop`, drives phase transitions and re-engagement check.
 2. **`scrollend` on container** — terminal signal for deceleration and programmatic animation. Feature-detected at construction; timer fallback (150ms since last `scroll` event) for browsers without it.
 3. **`pointerdown` on container** — enters TRACKING phase. Safari fires `pointerdown` on scrollbar clicks (WebKit bug 25811 was about `mouseup`, not `mousedown` — fixed in 2013). This means the state machine correctly enters TRACKING → DRAGGING for scrollbar interaction.
-4. **`pointerup` / `pointercancel` on document** — exits DRAGGING, determines if deceleration follows. Listened on `document` (not container) because the pointer may move outside the container during drag. **Known edge case:** Safari's `pointerup` on scrollbar release has been historically unreliable. For scrollbar drag (which has no momentum), the `scrollend` event or timer fallback handles the DRAGGING → IDLE transition regardless.
-5. **`wheel` on container** — skips TRACKING, enters DRAGGING immediately (no pointer involved). Disengage follow-bottom on `deltaY < 0`.
-6. **`keydown` on container** — Page Up/Home/Arrow Up/Shift+Space → skips TRACKING, enters DRAGGING immediately. **Note:** requires the scroll container to have `tabindex` for focus. TugMarkdownView should set `tabindex="0"` on its scroll container div.
-7. **`ResizeObserver` on contentElement** — content growth trigger for follow-bottom auto-scroll. When content grows and `isFollowingBottom` is true, enters PROGRAMMATIC_SCROLLING and writes `scrollTop`.
+4. **`pointerup` / `pointercancel` on document** — exits DRAGGING, enters SETTLING (50ms window to detect momentum). Listened on `document` (not container) because the pointer may move outside the container during drag. **Known edge case:** Safari's `pointerup` on scrollbar release has been historically unreliable. For scrollbar drag (which has no momentum), the `scrollend` event or timer fallback handles the DRAGGING → IDLE transition regardless.
+5. **`wheel` on container** — skips TRACKING, enters DRAGGING immediately (no pointer involved). Starts scrollend fallback timer. Disengage follow-bottom on `deltaY < 0`.
+6. **`keydown` on container** — all scroll keys (PageUp, PageDown, Home, End, ArrowUp, ArrowDown, Space) → skips TRACKING, enters DRAGGING immediately. Starts scrollend fallback timer. Only scroll-up keys disengage follow-bottom. **Note:** requires the scroll container to have `tabindex` for focus. TugMarkdownView should set `tabindex="0"` on its scroll container div.
 
 All event listeners use `{ passive: true }`. All registered in constructor, all removed in `dispose()`.
 
@@ -1579,7 +1583,7 @@ Research confirmed:
 
 **Step 1: Rewrite SmartScroll with complete state machine.**
 Replace the current `tugdeck/src/lib/smart-scroll.ts` entirely. The new class implements:
-- The five-phase state machine with transitions from pointer/wheel/key/scroll/scrollend events
+- The six-phase state machine with transitions from pointer/wheel/key/scroll/scrollend events
 - Lifecycle callbacks (SmartScrollCallbacks)
 - Programmatic scroll methods (scrollTo, scrollToTop, scrollToBottom, scrollToElement)
 - Follow-bottom with content growth detection (ResizeObserver)
@@ -1612,7 +1616,7 @@ Verify in browser:
 
 #### Exit criteria
 
-- SmartScroll implements the five-phase state machine.
+- SmartScroll implements the six-phase state machine (idle, tracking, dragging, settling, decelerating, programmatic).
 - All user scroll input methods (wheel, scrollbar drag, keyboard, touch) detected for disengagement.
 - Programmatic and DOM-manipulation scrolls correctly filtered via phase state (not timing hacks).
 - Lifecycle callbacks fire at correct phase transitions.
@@ -1627,7 +1631,7 @@ Verify in browser:
 
 ### Phase 3A.7: SmartScroll Hardening {#smart-scroll-hardening}
 
-**Status:** Not started.
+**Status:** Done.
 
 **Goal:** Fix eight issues identified during holistic review of the SmartScroll implementation. The state machine is architecturally sound, but has phase gaps, orphaned states, dead code, and incomplete key coverage that must be resolved before moving on.
 
