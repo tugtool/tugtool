@@ -26,6 +26,8 @@
 
 **L07. Every action handler must access current state through refs or stable singletons, never stale closures.** `useResponder` registers actions once at mount. If a handler reads a value that changes over time, it must go through a ref. [D09, D11]
 
+**L22. When external state drives direct DOM updates, observe the store directly — don't round-trip through React's render cycle.** If a store update produces DOM writes (not React state changes), subscribe via the store's observer API in a `useLayoutEffect` and update the DOM in the callback. Do not use `useSyncExternalStore` to pull the value into React and then escape via `useEffect` to write to the DOM — that injects React's scheduling (re-render → paint → effect) between the data change and the DOM update, causing frame delays and stale-closure bugs. `useSyncExternalStore` (L02) is for state that React components *render*. Store observers are for state that drives *direct DOM mutations* (L06).
+
 **L08. Live preview is appearance-zone only; commit crosses zone boundaries.** During mutation transactions, all preview mutations are CSS/DOM. The commit handler may write to stores or React state. Never mix preview with state changes. [D64, D65]
 
 ---
