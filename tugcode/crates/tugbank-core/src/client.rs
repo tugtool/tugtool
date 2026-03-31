@@ -486,7 +486,10 @@ mod tests {
             }
         }
 
-        assert!(callback_fired, "on_domain_changed callback should have fired");
+        assert!(
+            callback_fired,
+            "on_domain_changed callback should have fired"
+        );
     }
 
     // ── test_shutdown_stops_polling ───────────────────────────────────────────

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-31T22:34:17Z
+---
+
+## step-3: Created feeds/defaults.rs with defaults_feed function that builds aggregated DEFAULTS frames from TugbankClient. Wired into main.rs with watch channel. 206 tests pass.
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
 step: step-2
 date: 2025-03-31T22:23:35Z
 ---
