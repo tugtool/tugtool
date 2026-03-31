@@ -450,18 +450,13 @@ export class SmartScroll {
   // -------------------------------------------------------------------------
 
   private _handleResize(): void {
-    if (this._disposed) return;
-
-    // Only auto-scroll when following bottom and not currently user-scrolling.
-    if (!this._isFollowingBottom) return;
-    if (this._phase !== 'idle') return;
-
-    const target = this._container.scrollHeight - this._container.clientHeight;
-    if (target <= 0) return;
-
-    this._enterProgrammatic();
-    this._container.scrollTop = target;
-    this._exitProgrammaticImmediate();
+    // ResizeObserver does NOT auto-scroll. The controller (the component)
+    // decides when to scroll by calling scrollToBottom() after content
+    // changes settle. This follows the UIScrollView model: the scroll view
+    // provides the method and the state; the controller decides when to use them.
+    //
+    // The ResizeObserver is retained for future use (content-change detection
+    // for callbacks) but does not write scrollTop.
   }
 
   // -------------------------------------------------------------------------

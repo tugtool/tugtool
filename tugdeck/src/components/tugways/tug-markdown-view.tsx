@@ -647,6 +647,13 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     } else {
       incrementalUpdate(engine, fullText);
     }
+
+    // After content settles, scroll to bottom if SmartScroll is following.
+    // This is the UIScrollView model: the controller decides when to scroll,
+    // not the scroll view reacting to content changes via ResizeObserver.
+    if (smartScrollRef.current?.isFollowingBottom) {
+      smartScrollRef.current.scrollToBottom();
+    }
   }
 
   // ---- Clear all regions and reset DOM ----
