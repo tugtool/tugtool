@@ -112,7 +112,8 @@ Phase 3A: Markdown Rendering Core    — virtualization, prefix sum, two-path re
 Phase 3A.1: TugWorkerPool             — typed worker pool for parallel computation across cores — DONE (superseded)
 Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-only rendering — DONE (superseded)
 Phase 3A.3: Worker Pipeline Remediation — partial fixes applied — DONE (superseded)
-Phase 3A.4: WASM Markdown Pipeline   — replace worker infra with pulldown-cmark WASM, simplify architecture
+Phase 3A.4: WASM Markdown Pipeline   — replace worker infra with pulldown-cmark WASM, simplify architecture — DONE
+Phase 3A.5: Imperative API           — setContent/appendContent/clear handle, gallery card rework
 Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
 Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
@@ -1168,6 +1169,118 @@ const [layout, theme, focusedCardId] = await Promise.all([
 After the `await`, `lex_blocks()` and `parse_to_html()` are synchronous function calls. Every component is guaranteed WASM is ready because `DeckManager` construction happens after the `await`. No ready flag, no fallback, no conditional checks. If WASM init fails, the `await` throws and the app doesn't start — same as any other critical init failure.
 
 **Laws compliance:** L01 is preserved — `root.render()` still happens exactly once, after all init completes. Components call WASM functions synchronously; no async gap bridging into React's commit cycle (L05). No external state entering React (L02 not involved).
+
+---
+
+### Phase 3A.5: Imperative API and Gallery Card Rework {#imperative-api}
+
+**Status:** Not started.
+
+**Goal:** Replace TugMarkdownView's prop-driven rendering with an imperative handle API (`setContent`, `appendContent`, `clear`). Rework the gallery card to use action buttons that append content instead of mode-switching buttons that unmount/remount the component. This makes the component easy to compose and change — callers control content through direct method calls, not through React prop changes and effect scheduling.
+
+**Inputs:** Phase 3A.4 TugMarkdownView (WASM pipeline, virtual scroll, laws-compliant). Gallery card with three modes.
+
+#### Why imperative
+
+The current component accepts `content` as a React prop. When `content` changes, a `useLayoutEffect` fires, clears everything, and rebuilds. This works but ties content management to React's rendering cycle:
+
+- Switching from 1MB to 10MB content requires a prop change → React re-render → effect fires → full rebuild. The component can't distinguish "replace" from "append" because it only sees the new prop value.
+- The gallery card uses conditional rendering (`mode === "streaming" && ...`) to switch between static and streaming TugMarkdownView instances. Mode switches unmount one instance and mount another, losing all engine state.
+- Adding "append" behavior requires the caller to accumulate content in its own state and pass the growing string as a prop — duplicating the engine's internal `contentText` and triggering full re-lex+parse on every append.
+
+The imperative API eliminates all of this. The component mounts once. Callers call methods on a ref handle. Each method goes straight to the engine — no React re-render, no effect scheduling, no prop diffing. Pure L06 DOM manipulation driven by the caller.
+
+#### API design
+
+```typescript
+/** Imperative handle for TugMarkdownView. */
+export interface TugMarkdownViewHandle {
+  /** Replace all content. Clears existing blocks and renders the new text. */
+  setContent(text: string): void;
+  /** Append text to the end of the current content. Incrementally updates blocks. */
+  appendContent(text: string): void;
+  /** Clear all content and reset the view. */
+  clear(): void;
+}
+```
+
+The component uses `React.forwardRef` + `useImperativeHandle` to expose the handle. Internally:
+
+- **`setContent(text)`** — calls `lexParseAndRender(engine, text)`. Same as the current static `useLayoutEffect` body. Full clear + lex + parse + render.
+- **`appendContent(text)`** — concatenates `engine.contentText + text`, then does the incremental update (same logic as the streaming observer): re-lex the full concatenated string, diff against existing blocks, update changed blocks in-place, append new blocks. No full rebuild.
+- **`clear()`** — resets the engine: clear height index, remove all DOM nodes, clear caches, reset block count. Empty view.
+
+All three methods are synchronous, direct DOM manipulation per L06. No promises, no effects, no React state. The caller can call them from event handlers, store observers, or anywhere else — the methods work the same regardless of call context.
+
+**Laws compliance:**
+
+- **L06:** `setContent`, `appendContent`, `clear` are direct DOM writes. No React state changes.
+- **L07:** The handle methods access engine state through `engineRef.current`. No stale closures — the ref is always current.
+- **L22:** The streaming PropertyStore observer calls `appendContent` (or the incremental logic directly). Still a direct store observer → DOM write path, no React round-trip.
+- **L03:** `useImperativeHandle` runs in `useLayoutEffect` timing — the handle is available before events fire.
+
+#### What changes
+
+**TugMarkdownView:**
+- Add `React.forwardRef` wrapper.
+- Add `useImperativeHandle` exposing `{ setContent, appendContent, clear }`.
+- The `content` prop becomes optional convenience: if provided, `setContent(content)` is called in a `useLayoutEffect` on mount and when `content` changes. This preserves backward compatibility — existing callers that pass `content` as a prop continue to work unchanged.
+- The streaming `useLayoutEffect` observer continues to work as-is. It can internally use the same incremental logic that `appendContent` uses, or call through the handle.
+- Extract the incremental update logic (currently duplicated between the streaming observer and what `appendContent` needs) into a shared `incrementalUpdate(engine, newText)` function.
+
+**Gallery card:**
+- Remove the `mode` state and conditional rendering. Mount ONE TugMarkdownView instance with a ref.
+- Replace mode buttons with action buttons:
+  - **Streaming** — starts the streaming simulation. The PropertyStore observer in TugMarkdownView handles the incremental updates. A `Start Stream` button begins the simulation, which writes to the store.
+  - **Static 1MB** — calls `ref.current.appendContent(STATIC_1MB_CONTENT)`. Appends 1MB of generated content.
+  - **Static 10MB** — calls `ref.current.appendContent(generate10MB())`. Appends 10MB of generated content.
+  - **Clear** — calls `ref.current.clear()`. Always visible.
+- Button order: `Streaming | Static 1MB | Static 10MB | Clear`
+- The streaming button starts/stops the streaming simulation. The static buttons append content immediately. Clear resets everything.
+- Remove all mode-switching logic, conditional rendering, stop/reset streaming handlers tied to mode changes.
+
+#### Steps
+
+**Step 1: Add imperative handle to TugMarkdownView.**
+- Wrap component with `React.forwardRef`.
+- Add `useImperativeHandle` with `setContent`, `appendContent`, `clear`.
+- Extract incremental update logic from the streaming observer into a shared function.
+- `setContent` calls `lexParseAndRender`. `appendContent` concatenates and calls the incremental logic. `clear` resets the engine.
+- Keep the `content` prop working via `useLayoutEffect` that calls `setContent` — backward compatible.
+- Keep the streaming observer working — it uses the same incremental logic.
+
+Verify: `bun test` passes. `bun run build` succeeds. Existing gallery card still works (it still passes `content` prop).
+
+**Step 2: Rework gallery card.**
+- Remove `mode` state, conditional rendering, mode-switching logic.
+- Mount one TugMarkdownView with `ref`.
+- Wire buttons: Streaming starts/stops the simulation. Static 1MB/10MB call `appendContent`. Clear calls `clear`.
+- Button order: `Streaming | Static 1MB | Static 10MB | Clear`.
+- Rename "Stress 10MB" → "Static 10MB".
+- Keep diagnostic overlay (DOM nodes, blocks, lex/parse timing, streaming progress).
+
+Verify: all three content types work. Streaming appends to existing content. Static buttons append. Clear resets. Scrolling is smooth. No console errors.
+
+#### Checkpoints
+
+- `bun test` passes.
+- `bun run build` succeeds.
+- Gallery card: Static 1MB appends content when clicked.
+- Gallery card: Static 10MB appends content when clicked.
+- Gallery card: Streaming appends incrementally.
+- Gallery card: Clear resets the view.
+- Gallery card: clicking Static 1MB after Streaming appends to the streamed content.
+- No `useState` for mode selection in gallery card.
+- Zero law violations in TugMarkdownView.
+
+#### Exit criteria
+
+- TugMarkdownView exposes `TugMarkdownViewHandle` via `forwardRef`.
+- `setContent`, `appendContent`, `clear` all work as direct method calls.
+- The `content` prop still works for backward compatibility.
+- Gallery card uses action buttons, not mode switches.
+- Single TugMarkdownView instance — no conditional rendering, no unmount/remount on mode change.
+- Full Laws of Tug compliance verified.
 
 ---
 
