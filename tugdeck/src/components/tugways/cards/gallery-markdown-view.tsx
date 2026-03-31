@@ -333,23 +333,9 @@ export function GalleryMarkdownView() {
     };
   }, []);
 
-  // Determine content for static modes
-  const staticContent = mode === "static-1mb"
-    ? STATIC_1MB_CONTENT
-    : mode === "stress-10mb"
-    ? undefined // generated lazily below
-    : undefined;
-
-  const stress10mbContent = useRef<string | null>(null);
-  if (mode === "stress-10mb" && !stress10mbContent.current) {
-    stress10mbContent.current = generateMarkdown(10 * 1024 * 1024);
-  }
-
-  const resolvedContent = mode === "static-1mb"
-    ? STATIC_1MB_CONTENT
-    : mode === "stress-10mb"
-    ? (stress10mbContent.current ?? "")
-    : undefined;
+  // NOTE: Static content wiring removed in Phase 3A.5 Step 2.
+  // The content prop no longer exists; TugMarkdownView is now imperative only.
+  // Step 3 will wire the gallery card via the ref handle (setRegion).
 
   return (
     <div className="cg-content" data-testid="gallery-markdown-view" style={{ padding: 0, gap: 0, overflow: "hidden", height: "100%" }}>
@@ -427,7 +413,6 @@ export function GalleryMarkdownView() {
       <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
         {(mode === "static-1mb" || mode === "stress-10mb") && (
           <TugMarkdownView
-            content={resolvedContent}
             onBlockMeasured={handleBlockMeasured}
             onTiming={handleTiming}
             className="gallery-md-view"

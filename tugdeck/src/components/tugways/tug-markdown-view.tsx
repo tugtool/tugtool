@@ -9,6 +9,14 @@
  * All blocks are lexed and parsed synchronously on content load (~29ms for 1MB).
  * Scroll handling is pure DOM window management — zero WASM calls during scroll.
  *
+ * API: imperative handle (forwardRef). Callers obtain a ref and call:
+ *   ref.current.setRegion(key, text)   — insert or update a named region
+ *   ref.current.removeRegion(key)      — remove a named region
+ *   ref.current.clear()                — clear all regions and reset DOM
+ *
+ * The streaming path (streamingStore + streamingPath) calls setRegion internally
+ * with the key 'stream', so streaming and imperative usage are mutually exclusive.
+ *
  * Laws compliance:
  * - [L03] useLayoutEffect for static and streaming paths — block DOM and height
  *   index must be ready before scroll events fire.
@@ -31,11 +39,12 @@
 
 import "./tug-markdown-view.css";
 
-import React, { useCallback, useLayoutEffect, useRef } from "react";
+import React, { useCallback, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import DOMPurifyModule from "dompurify";
 import { cn } from "@/lib/utils";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
+import { RegionMap } from "@/lib/region-map";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
@@ -165,6 +174,20 @@ function estimateBlockHeight(block: BlockMeta): number {
 }
 
 // ---------------------------------------------------------------------------
+// TugMarkdownViewHandle
+// ---------------------------------------------------------------------------
+
+/** Imperative handle exposed via forwardRef. */
+export interface TugMarkdownViewHandle {
+  /** Insert or update a named region. Appends at end if key is new. */
+  setRegion(key: string, text: string): void;
+  /** Remove a named region. Triggers full rebuild or clear as appropriate. */
+  removeRegion(key: string): void;
+  /** Clear all regions and reset the DOM. */
+  clear(): void;
+}
+
+// ---------------------------------------------------------------------------
 // TugMarkdownViewProps
 // ---------------------------------------------------------------------------
 
@@ -179,8 +202,6 @@ export interface TugMarkdownTimingMetrics {
 }
 
 export interface TugMarkdownViewProps {
-  /** Full markdown content for static rendering. Mutually exclusive with streaming mode. */
-  content?: string;
   /** PropertyStore for streaming text. When set, component enters streaming mode. */
   streamingStore?: PropertyStore;
   /** PropertyStore path key for the streaming text value. Default: "text". */
@@ -200,8 +221,8 @@ export interface TugMarkdownViewProps {
 // ---------------------------------------------------------------------------
 
 interface MarkdownEngineState {
-  /** The source text (static content or accumulated streaming text). */
-  contentText: string;
+  /** Ordered, keyed content regions. The source of truth for document text. */
+  regionMap: RegionMap;
   /** Char-mapped start offsets per block. blockStarts[i] = JS char index. */
   blockStarts: number[];
   /** Char-mapped end offsets per block. blockEnds[i] = JS char index. */
@@ -241,8 +262,12 @@ const DEFAULT_VIEWPORT_HEIGHT = 600;
  * the visible viewport (plus overscan) in the DOM.
  *
  * @example
- * // Static rendering:
- * <TugMarkdownView content={largeMarkdownString} />
+ * // Imperative rendering via ref handle:
+ * const ref = useRef<TugMarkdownViewHandle>(null);
+ * <TugMarkdownView ref={ref} />
+ * ref.current?.setRegion('msg-1', markdownString);
+ * ref.current?.removeRegion('msg-1');
+ * ref.current?.clear();
  *
  * // Streaming rendering:
  * <TugMarkdownView
@@ -251,15 +276,15 @@ const DEFAULT_VIEWPORT_HEIGHT = 600;
  *   isStreaming={true}
  * />
  */
-export function TugMarkdownView({
-  content,
-  streamingStore,
-  streamingPath = "text",
-  isStreaming = false,
-  onBlockMeasured,
-  onTiming,
-  className,
-}: TugMarkdownViewProps) {
+export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdownViewProps>(
+  function TugMarkdownView({
+    streamingStore,
+    streamingPath = "text",
+    isStreaming = false,
+    onBlockMeasured,
+    onTiming,
+    className,
+  }, ref) {
   // ---- DOM refs ----
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const topSpacerRef = useRef<HTMLDivElement>(null);
@@ -284,7 +309,7 @@ export function TugMarkdownView({
       const heightIndex = new BlockHeightIndex(1024);
       const blockWindow = new RenderedBlockWindow(heightIndex, DEFAULT_VIEWPORT_HEIGHT, 2);
       engineRef.current = {
-        contentText: "",
+        regionMap: new RegionMap(),
         blockStarts: [],
         blockEnds: [],
         heightIndex,
@@ -463,7 +488,9 @@ export function TugMarkdownView({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Shared lex+parse+render helper ----
-  // Plain function — reads from refs only [L07]. Used by static path.
+  // Full rebuild: re-lexes the entire text, clears and repopulates htmlCache and
+  // heightIndex, then rebuilds the visible window. Called for first region,
+  // middle-region updates, or any change that invalidates the entire block order.
   function lexParseAndRender(engine: MarkdownEngineState, text: string) {
     // Reset block window while height index is empty — forces exit of stale range.
     engine.heightIndex.clear();
@@ -478,7 +505,6 @@ export function TugMarkdownView({
     engine.blockStarts = [];
     engine.blockEnds = [];
     engine.blockCount = 0;
-    engine.contentText = text;
     applySpacers(0, 0);
 
     // Lex + parse: synchronous WASM calls (~29ms for 1MB)
@@ -511,12 +537,130 @@ export function TugMarkdownView({
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
   }
 
-  // ---- Static rendering path [L03: useLayoutEffect so DOM is ready before scroll events] ----
-  useLayoutEffect(() => {
-    if (content === undefined) return;
+  // ---- Incremental tail update ----
+  // Re-lexes the full text but only updates changed existing blocks and appends
+  // new ones. Used when the update is to (or appended at) the last region, so
+  // the prefix of blocks is stable and only the tail changes.
+  function incrementalUpdate(engine: MarkdownEngineState, text: string) {
+    const lexStart = performance.now();
+    const packed = lex_blocks(text);
+    const lexMs = performance.now() - lexStart;
+    const newBlocks = decodeBlocks(packed);
+    const byteToChar = buildByteToCharMap(text);
+    const newStarts = newBlocks.map(b => byteToChar[b.start] ?? b.start);
+    const newEnds = newBlocks.map(b => byteToChar[b.end] ?? b.end);
+
+    const oldCount = engine.blockCount;
+    const newCount = newBlocks.length;
+    let parseMs = 0;
+
+    // Update changed existing blocks
+    for (let i = 0; i < Math.min(oldCount, newCount); i++) {
+      if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
+        const raw = text.slice(newStarts[i], newEnds[i]);
+        const parseStart = performance.now();
+        const html = parse_to_html(raw);
+        parseMs += performance.now() - parseStart;
+        engine.htmlCache.set(i, html);
+        engine.heightIndex.setHeight(i, estimateBlockHeight(newBlocks[i]));
+        const existingEl = engine.blockNodes.get(i);
+        if (existingEl) {
+          existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+        }
+      }
+    }
+
+    // Handle block count decrease
+    if (newCount < oldCount) {
+      for (let i = newCount; i < oldCount; i++) {
+        removeBlockNode(engine, i);
+        engine.htmlCache.delete(i);
+      }
+      engine.heightIndex.clear();
+      for (let i = 0; i < newCount; i++) {
+        engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
+      }
+    }
+
+    // Append new blocks
+    for (let i = oldCount; i < newCount; i++) {
+      engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
+      const raw = text.slice(newStarts[i], newEnds[i]);
+      const parseStart = performance.now();
+      engine.htmlCache.set(i, parse_to_html(raw));
+      parseMs += performance.now() - parseStart;
+    }
+
+    engine.blockStarts = newStarts;
+    engine.blockEnds = newEnds;
+    engine.blockCount = newCount;
+
+    onTimingRef.current?.({ lexMs, parseMs, blockCount: newCount });
+
+    engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
+    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+    const update = engine.blockWindow.update(scrollTop);
+    applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+  }
+
+  // ---- Core region update logic ----
+  // Called by both the imperative handle and the streaming observer.
+  // Uses incremental update when the key is (or becomes) the last region,
+  // full rebuild otherwise (middle/first region changes).
+  function doSetRegion(key: string, text: string): void {
     const engine = getEngine();
-    lexParseAndRender(engine, content);
-  }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
+    const wasEmpty = engine.regionMap.regionCount === 0;
+
+    engine.regionMap.setRegion(key, text);
+    const fullText = engine.regionMap.text;
+    const isLast = engine.regionMap.keys[engine.regionMap.keys.length - 1] === key;
+
+    if (wasEmpty || !isLast) {
+      lexParseAndRender(engine, fullText);
+    } else {
+      incrementalUpdate(engine, fullText);
+    }
+
+    // Auto-scroll if streaming [L06: direct DOM write, L07: ref for current prop]
+    if (isStreamingRef.current && scrollContainerRef.current) {
+      const totalHeight = engine.heightIndex.getTotalHeight();
+      const viewportHeight = scrollContainerRef.current.clientHeight;
+      scrollContainerRef.current.scrollTop = Math.max(0, totalHeight - viewportHeight);
+    }
+  }
+
+  // ---- Clear all regions and reset DOM ----
+  function doClear(): void {
+    const engine = getEngine();
+    engine.regionMap.clear();
+    engine.heightIndex.clear();
+    engine.blockWindow.update(0);
+    for (const [, el] of engine.blockNodes) {
+      resizeObserverRef.current?.unobserve(el);
+      el.remove();
+    }
+    engine.blockNodes.clear();
+    engine.htmlCache.clear();
+    engine.blockStarts = [];
+    engine.blockEnds = [];
+    engine.blockCount = 0;
+    applySpacers(0, 0);
+  }
+
+  // ---- Imperative handle [L03: useLayoutEffect so handle is ready before events] ----
+  useImperativeHandle(ref, () => ({
+    setRegion: doSetRegion,
+    removeRegion(key: string) {
+      const engine = getEngine();
+      engine.regionMap.removeRegion(key);
+      if (engine.regionMap.regionCount === 0) {
+        doClear();
+      } else {
+        lexParseAndRender(engine, engine.regionMap.text);
+      }
+    },
+    clear: doClear,
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- RAF-coalesced scroll handler [D02, L05] ----
   const handleScroll = useCallback(() => {
@@ -539,82 +683,11 @@ export function TugMarkdownView({
   // ---- Streaming rendering path [L22: direct store observer, no React round-trip] ----
   useLayoutEffect(() => {
     if (!streamingStore) return;
-    const engine = getEngine();
-
     const unsubscribe = streamingStore.observe(streamingPath, () => {
-      const text = (streamingStore.get(streamingPath) as string) ?? "";
+      const text = (streamingStore.get(streamingPath) as string) ?? '';
       if (!text) return;
-
-      engine.contentText = text;
-
-      const lexStart = performance.now();
-      const packed = lex_blocks(text);
-      const lexMs = performance.now() - lexStart;
-      const newBlocks = decodeBlocks(packed);
-      const byteToChar = buildByteToCharMap(text);
-      const newStarts = newBlocks.map(b => byteToChar[b.start] ?? b.start);
-      const newEnds = newBlocks.map(b => byteToChar[b.end] ?? b.end);
-
-      const oldCount = engine.blockCount;
-      const newCount = newBlocks.length;
-      let parseMs = 0;
-
-      // Update changed existing blocks
-      for (let i = 0; i < Math.min(oldCount, newCount); i++) {
-        if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
-          const raw = text.slice(newStarts[i], newEnds[i]);
-          const parseStart = performance.now();
-          const html = parse_to_html(raw);
-          parseMs += performance.now() - parseStart;
-          engine.htmlCache.set(i, html);
-          engine.heightIndex.setHeight(i, estimateBlockHeight(newBlocks[i]));
-          const existingEl = engine.blockNodes.get(i);
-          if (existingEl) {
-            existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
-          }
-        }
-      }
-
-      // Handle block count decrease
-      if (newCount < oldCount) {
-        for (let i = newCount; i < oldCount; i++) {
-          removeBlockNode(engine, i);
-          engine.htmlCache.delete(i);
-        }
-        engine.heightIndex.clear();
-        for (let i = 0; i < newCount; i++) {
-          engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
-        }
-      }
-
-      // Append new blocks
-      for (let i = oldCount; i < newCount; i++) {
-        engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
-        const raw = text.slice(newStarts[i], newEnds[i]);
-        const parseStart = performance.now();
-        engine.htmlCache.set(i, parse_to_html(raw));
-        parseMs += performance.now() - parseStart;
-      }
-
-      engine.blockStarts = newStarts;
-      engine.blockEnds = newEnds;
-      engine.blockCount = newCount;
-
-      onTimingRef.current?.({ lexMs, parseMs, blockCount: newCount });
-
-      engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
-      const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
-      const update = engine.blockWindow.update(scrollTop);
-      applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-
-      // Auto-scroll to tail [L06: direct DOM write, L07: ref for current prop]
-      if (isStreamingRef.current && scrollContainerRef.current) {
-        const totalHeight = engine.heightIndex.getTotalHeight();
-        const viewportHeight = scrollContainerRef.current.clientHeight;
-        scrollContainerRef.current.scrollTop = Math.max(0, totalHeight - viewportHeight);
-      }
+      doSetRegion('stream', text);
     });
-
     return unsubscribe;
   }, [streamingStore, streamingPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -630,4 +703,4 @@ export function TugMarkdownView({
       <div ref={bottomSpacerRef} className="tugx-md-spacer tugx-md-spacer--bottom" aria-hidden="true" />
     </div>
   );
-}
+});
