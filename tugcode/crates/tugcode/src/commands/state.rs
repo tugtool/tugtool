@@ -9,10 +9,7 @@ use serde::Deserialize;
 /// 1. Exact plan_id match
 /// 2. Slug prefix match
 /// 3. File path match (for backward compatibility with existing callers)
-fn resolve_plan_id(
-    db: &tugtool_core::StateDb,
-    input: &str,
-) -> Result<String, String> {
+fn resolve_plan_id(db: &tugtool_core::StateDb, input: &str) -> Result<String, String> {
     if let Ok(Some(id)) = db.lookup_plan_by_id_or_slug(input) {
         return Ok(id);
     }
@@ -20,10 +17,7 @@ fn resolve_plan_id(
     if let Ok(Some(id)) = db.lookup_plan_id_by_path(input) {
         return Ok(id);
     }
-    Err(format!(
-        "Plan not found in state database: {}",
-        input
-    ))
+    Err(format!("Plan not found in state database: {}", input))
 }
 
 /// Batch update entry for stdin JSON input
@@ -374,10 +368,7 @@ pub fn run_state_reinit(plan: String, json: bool, quiet: bool) -> Result<i32, St
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
 
     // Capture existing plan_id before reinit (it will be archived)
-    let archived_plan_id = db
-        .lookup_plan_id_by_path(&plan_rel_str)
-        .ok()
-        .flatten();
+    let archived_plan_id = db.lookup_plan_id_by_path(&plan_rel_str).ok().flatten();
 
     let result = db
         .reinit_plan(&plan_rel_str, &parsed, Some(&plan_hash))
@@ -933,7 +924,10 @@ pub fn run_state_show(
 
 /// Helper function to print plan state in text format
 fn print_plan_state(plan: &tugtool_core::PlanState) {
-    println!("Plan: {}", plan.plan_path.as_deref().unwrap_or(&plan.plan_id));
+    println!(
+        "Plan: {}",
+        plan.plan_path.as_deref().unwrap_or(&plan.plan_id)
+    );
     if let Some(title) = &plan.phase_title {
         println!("Title: {}", title);
     }
@@ -1211,8 +1205,7 @@ pub fn run_state_reset(plan: String, step: String, json: bool, quiet: bool) -> R
     let plan_id = resolve_plan_id(&db, &plan)?;
 
     // 4. Reset step
-    db.reset_step(&plan_id, &step)
-        .map_err(|e| e.to_string())?;
+    db.reset_step(&plan_id, &step).map_err(|e| e.to_string())?;
 
     // 5. Output
     if json {
@@ -1424,7 +1417,7 @@ pub fn run_state_list(all: bool, json: bool, quiet: bool) -> Result<i32, String>
             println!("No plans tracked.");
         } else {
             println!(
-                "{:<40} {:<12} {:<10} {:<12} {}",
+                "{:<40} {:<12} {:<10} {:<12} {:<12}",
                 "PLAN", "STATUS", "STEPS", "CREATED", "UPDATED"
             );
             for p in &plans {
@@ -1448,7 +1441,11 @@ pub fn run_state_list(all: bool, json: bool, quiet: bool) -> Result<i32, String>
                 };
                 println!(
                     "{:<40} {:<12} {}/{:<8} {:<12} {}",
-                    p.plan_id, display_status, p.steps_completed, p.steps_total, created_short,
+                    p.plan_id,
+                    display_status,
+                    p.steps_completed,
+                    p.steps_total,
+                    created_short,
                     updated_short
                 );
             }
@@ -1522,10 +1519,7 @@ fn scan_git_trailers(
     // either the plan_id or the file path depending on when the commit was made).
     let filtered: Vec<_> = entries
         .into_iter()
-        .filter(|e| {
-            e.plan_path == plan_id
-                || plan_file_path.is_some_and(|fp| e.plan_path == fp)
-        })
+        .filter(|e| e.plan_path == plan_id || plan_file_path.is_some_and(|fp| e.plan_path == fp))
         .collect();
 
     Ok(filtered)

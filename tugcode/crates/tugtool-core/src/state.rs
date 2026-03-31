@@ -463,7 +463,11 @@ COMMIT;
                     |row| row.get(0),
                 )
                 .unwrap_or(false);
-            if has_depends_on { "depends_on" } else { "depends_on_anchor" }
+            if has_depends_on {
+                "depends_on"
+            } else {
+                "depends_on_anchor"
+            }
         };
 
         for (plan_path, plan_hash, phase_title, status, created_at, updated_at) in &existing_plans {
@@ -651,13 +655,10 @@ COMMIT;
                      SELECT ?1, step_anchor, {} FROM step_deps WHERE plan_path = ?2",
                     dep_col_name
                 );
-                tx.execute(
-                    &dep_sql,
-                    rusqlite::params![&pd.plan_id, &pd.plan_path],
-                )
-                .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to copy step_deps for {}: {}", pd.plan_id, e),
-                })?;
+                tx.execute(&dep_sql, rusqlite::params![&pd.plan_id, &pd.plan_path])
+                    .map_err(|e| TugError::StateDbOpen {
+                        reason: format!("failed to copy step_deps for {}: {}", pd.plan_id, e),
+                    })?;
 
                 // Copy checklist_items
                 tx.execute(
@@ -781,9 +782,10 @@ UPDATE schema_version SET version = 5;
             (h.to_string(), content)
         } else {
             // Production path: read file, compute hash
-            let content = std::fs::read_to_string(&file_path).map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to read plan file {}: {}", plan_path, e),
-            })?;
+            let content =
+                std::fs::read_to_string(&file_path).map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to read plan file {}: {}", plan_path, e),
+                })?;
             use sha2::{Digest, Sha256};
             let hash = format!("{:x}", Sha256::digest(content.as_bytes()));
             (hash, Some(content))
@@ -949,9 +951,7 @@ UPDATE schema_version SET version = 5;
                 reason: format!("failed to prepare slug lookup: {}", e),
             })?;
 
-        let result: Option<String> = stmt
-            .query_row([&like_pattern], |row| row.get(0))
-            .ok();
+        let result: Option<String> = stmt.query_row([&like_pattern], |row| row.get(0)).ok();
 
         Ok(result)
     }
@@ -1323,12 +1323,7 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Start a claimed step, transitioning it from 'claimed' to 'in_progress'.
-    pub fn start_step(
-        &self,
-        plan_id: &str,
-        anchor: &str,
-        worktree: &str,
-    ) -> Result<(), TugError> {
+    pub fn start_step(&self, plan_id: &str, anchor: &str, worktree: &str) -> Result<(), TugError> {
         let anchor = normalize_anchor(anchor);
         let now = now_iso8601();
         let rows_affected = self
@@ -1832,7 +1827,6 @@ UPDATE schema_version SET version = 5;
 
     /// Query plan state for show command
     pub fn show_plan(&self, plan_id: &str) -> Result<PlanState, TugError> {
-
         // Query plan metadata
         let (plan_path_stored, plan_hash, phase_title, status, created_at, updated_at): (
             Option<String>,
@@ -1931,7 +1925,8 @@ UPDATE schema_version SET version = 5;
         let checklist_items = self.get_checklist_items(plan_id)?;
 
         // Fetch most recent snapshot content
-        let content: Option<String> = self.conn
+        let content: Option<String> = self
+            .conn
             .query_row(
                 "SELECT content FROM plan_snapshots WHERE plan_id = ?1
                  ORDER BY captured_at DESC LIMIT 1",
@@ -1968,9 +1963,12 @@ UPDATE schema_version SET version = 5;
              FROM plans p WHERE p.status != 'archived' ORDER BY p.updated_at DESC"
         };
 
-        let mut stmt = self.conn.prepare(query).map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to prepare list_plans query: {}", e),
-        })?;
+        let mut stmt = self
+            .conn
+            .prepare(query)
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare list_plans query: {}", e),
+            })?;
 
         let entries = stmt
             .query_map([], |row| {
@@ -1995,10 +1993,7 @@ UPDATE schema_version SET version = 5;
     }
 
     /// Get all checklist items for a plan with full details
-    pub fn get_checklist_items(
-        &self,
-        plan_id: &str,
-    ) -> Result<Vec<ChecklistItemDetail>, TugError> {
+    pub fn get_checklist_items(&self, plan_id: &str) -> Result<Vec<ChecklistItemDetail>, TugError> {
         let mut stmt = self
             .conn
             .prepare(
@@ -2617,12 +2612,8 @@ pub fn derive_plan_slug(plan_path: &str) -> String {
         .unwrap_or(plan_path);
 
     // Strip tugplan- prefix and .md suffix
-    let without_prefix = filename
-        .strip_prefix("tugplan-")
-        .unwrap_or(filename);
-    let without_suffix = without_prefix
-        .strip_suffix(".md")
-        .unwrap_or(without_prefix);
+    let without_prefix = filename.strip_prefix("tugplan-").unwrap_or(filename);
+    let without_suffix = without_prefix.strip_suffix(".md").unwrap_or(without_prefix);
 
     without_suffix.to_string()
 }
@@ -3368,12 +3359,12 @@ mod tests {
         // Collect all remaining steps with their step_index values ordered by step_index
         let mut stmt = db
             .conn
-            .prepare(
-                "SELECT anchor, step_index FROM steps WHERE plan_id = ?1 ORDER BY step_index",
-            )
+            .prepare("SELECT anchor, step_index FROM steps WHERE plan_id = ?1 ORDER BY step_index")
             .unwrap();
         let rows: Vec<(String, i32)> = stmt
-            .query_map(rusqlite::params![&plan_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map(rusqlite::params![&plan_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .unwrap()
             .filter_map(|r| r.ok())
             .collect();
@@ -3426,11 +3417,7 @@ mod tests {
     }
 
     /// Build a minimal v4 database with one plan and its steps for migration tests.
-    fn build_v4_db_with_plan(
-        db_path: &std::path::Path,
-        plan_path_str: &str,
-        plan_hash: &str,
-    ) {
+    fn build_v4_db_with_plan(db_path: &std::path::Path, plan_path_str: &str, plan_hash: &str) {
         use rusqlite::Connection;
         let conn = Connection::open(db_path).unwrap();
         conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
@@ -3601,7 +3588,10 @@ mod tests {
             .conn
             .query_row("SELECT COUNT(*) FROM plan_snapshots", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(snapshot_count, 1, "one init snapshot should have been created");
+        assert_eq!(
+            snapshot_count, 1,
+            "one init snapshot should have been created"
+        );
 
         let snapshot_event: String = db
             .conn
@@ -3633,7 +3623,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(checklist_count, 1, "one checklist item should have been migrated");
+        assert_eq!(
+            checklist_count, 1,
+            "one checklist item should have been migrated"
+        );
     }
 
     #[test]
@@ -3645,7 +3638,11 @@ mod tests {
         let plan_path_str = ".tugtool/tugplan-deleted-plan.md";
         // Do NOT write the file to disk
 
-        build_v4_db_with_plan(&db_path, plan_path_str, "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+        build_v4_db_with_plan(
+            &db_path,
+            plan_path_str,
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+        );
 
         // Manually call migrate_v4_to_v5
         let mut db = StateDb {
@@ -3664,7 +3661,10 @@ mod tests {
             .expect("plan should exist after migration");
 
         // plan_id should be <slug>-<hash7>-1
-        assert!(plan_id.starts_with("deleted-plan-"), "plan_id should start with slug");
+        assert!(
+            plan_id.starts_with("deleted-plan-"),
+            "plan_id should start with slug"
+        );
         assert!(plan_id.ends_with("-1"), "plan_id should end with gen 1");
 
         // Verify NO snapshot was created (file was missing)
@@ -3672,7 +3672,10 @@ mod tests {
             .conn
             .query_row("SELECT COUNT(*) FROM plan_snapshots", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(snapshot_count, 0, "no snapshot should be created for missing plan file");
+        assert_eq!(
+            snapshot_count, 0,
+            "no snapshot should be created for missing plan file"
+        );
 
         // Verify steps were migrated
         let step_count: i64 = db
@@ -3683,7 +3686,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(step_count, 1, "step should be migrated even without snapshot");
+        assert_eq!(
+            step_count, 1,
+            "step should be migrated even without snapshot"
+        );
     }
 
     #[test]
@@ -3829,8 +3835,14 @@ mod tests {
         let r2 = db
             .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
-        assert!(!r2.already_initialized, "new generation is not already_initialized");
-        assert_ne!(r2.plan_id, plan_id_1, "second init should get a different plan_id");
+        assert!(
+            !r2.already_initialized,
+            "new generation is not already_initialized"
+        );
+        assert_ne!(
+            r2.plan_id, plan_id_1,
+            "second init should get a different plan_id"
+        );
         assert!(r2.plan_id.ends_with("-2"), "second init should be gen 2");
         assert_eq!(r2.step_count, 3); // new plan gets all steps
     }
@@ -3842,21 +3854,18 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let result = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let result = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = result.plan_id;
 
         // Query step_index values (in v5 schema, steps are keyed by plan_id)
         let mut stmt = db
             .conn
-            .prepare(
-                "SELECT anchor, step_index FROM steps WHERE plan_id = ?1 ORDER BY step_index",
-            )
+            .prepare("SELECT anchor, step_index FROM steps WHERE plan_id = ?1 ORDER BY step_index")
             .unwrap();
         let rows: Vec<(String, i32)> = stmt
-            .query_map([&plan_id], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            .query_map([&plan_id], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
             .filter_map(|r| r.ok())
             .collect();
@@ -3879,18 +3888,13 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         let result = db
-            .claim_step(
-                &plan_id,
-                "wt-a",
-                7200,
-                "abc123hash",
-                false,
-            )
+            .claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
 
         match result {
@@ -3909,32 +3913,21 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1
         let result = db
-            .claim_step(
-                &plan_id,
-                "wt-a",
-                7200,
-                "abc123hash",
-                false,
-            )
+            .claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
         assert!(matches!(result, ClaimResult::Claimed { .. }));
 
         // Try to claim again - step-2 depends on step-1 which is still claimed
         // step-3 depends on step-2, so neither should be available
         let result2 = db
-            .claim_step(
-                &plan_id,
-                "wt-b",
-                7200,
-                "abc123hash",
-                false,
-            )
+            .claim_step(&plan_id, "wt-b", 7200, "abc123hash", false)
             .unwrap();
 
         match result2 {
@@ -3954,19 +3947,14 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 as wt-a
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
+            .unwrap();
 
         // Manually set lease to expired (past timestamp)
         db.conn
@@ -3978,13 +3966,7 @@ mod tests {
 
         // Reclaim as wt-b
         let result = db
-            .claim_step(
-                &plan_id,
-                "wt-b",
-                7200,
-                "abc123hash",
-                false,
-            )
+            .claim_step(&plan_id, "wt-b", 7200, "abc123hash", false)
             .unwrap();
 
         match result {
@@ -4016,7 +3998,8 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
@@ -4027,13 +4010,7 @@ mod tests {
 
         // Try to claim - should return AllCompleted
         let result = db
-            .claim_step(
-                &plan_id,
-                "wt-a",
-                7200,
-                "abc123hash",
-                false,
-            )
+            .claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
 
         assert!(matches!(result, ClaimResult::AllCompleted));
@@ -4046,18 +4023,13 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Try to claim with wrong hash
-        let result = db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "wrong-hash",
-            false,
-        );
+        let result = db.claim_step(&plan_id, "wt-a", 7200, "wrong-hash", false);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -4073,19 +4045,14 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
+            .unwrap();
 
         // Start it
         let result = db.start_step(&plan_id, "step-1", "wt-a");
@@ -4110,19 +4077,14 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 as wt-a
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
+            .unwrap();
 
         // Try to start as wt-b
         let result = db.start_step(&plan_id, "step-1", "wt-b");
@@ -4141,7 +4103,8 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
@@ -4162,21 +4125,15 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim and start step-1
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-1", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
+        db.start_step(&plan_id, "step-1", "wt-a").unwrap();
 
         // Get original lease
         let original_lease: String = db
@@ -4192,9 +4149,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         // Send heartbeat
-        let new_lease = db
-            .heartbeat_step(&plan_id, "step-1", "wt-a", 7200)
-            .unwrap();
+        let new_lease = db.heartbeat_step(&plan_id, "step-1", "wt-a", 7200).unwrap();
 
         // Verify lease was extended (new lease should be different from original)
         assert_ne!(new_lease, original_lease);
@@ -4218,21 +4173,15 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim and start step-1 as wt-a
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-1", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
+        db.start_step(&plan_id, "step-1", "wt-a").unwrap();
 
         // Try to heartbeat as wt-b
         let result = db.heartbeat_step(&plan_id, "step-1", "wt-b", 7200);
@@ -4251,21 +4200,15 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let result = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let result = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = result.plan_id;
 
         // Claim and start step-1
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-1", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
+        db.start_step(&plan_id, "step-1", "wt-a").unwrap();
 
         (temp, db, plan_id)
     }
@@ -4306,13 +4249,7 @@ mod tests {
         let long_summary = "a".repeat(600);
 
         let artifact_id = db
-            .record_artifact(
-                &plan_id,
-                "step-1",
-                "wt-a",
-                "auditor_summary",
-                &long_summary,
-            )
+            .record_artifact(&plan_id, "step-1", "wt-a", "auditor_summary", &long_summary)
             .unwrap();
 
         assert!(artifact_id > 0);
@@ -4386,13 +4323,7 @@ mod tests {
 
         // Force complete without completing checklist items
         let result = db
-            .complete_step(
-                &plan_id,
-                "step-1",
-                "wt-a",
-                true,
-                Some("testing force mode"),
-            )
+            .complete_step(&plan_id, "step-1", "wt-a", true, Some("testing force mode"))
             .unwrap();
 
         assert!(result.completed);
@@ -4479,16 +4410,9 @@ mod tests {
             .unwrap();
 
         // Claim, start, and complete step-3 (the last step)
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-3", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
+        db.start_step(&plan_id, "step-3", "wt-a").unwrap();
         db.conn
             .execute(
                 "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-3'",
@@ -4535,17 +4459,14 @@ mod tests {
         let (_temp, mut db, plan_id) = setup_claimed_plan();
 
         // Attempt to complete a step anchor that does not exist in the DB
-        let result = db.complete_step(
-            &plan_id,
-            "step-nonexistent",
-            "wt-a",
-            false,
-            None,
-        );
+        let result = db.complete_step(&plan_id, "step-nonexistent", "wt-a", false, None);
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            TugError::StateStepNotFound { plan_id: pid, anchor } => {
+            TugError::StateStepNotFound {
+                plan_id: pid,
+                anchor,
+            } => {
                 assert_eq!(pid, plan_id);
                 assert_eq!(anchor, "step-nonexistent");
             }
@@ -4612,16 +4533,9 @@ mod tests {
             .unwrap();
 
         // Claim and start step-3 (last step), complete all its checklist items, then complete it
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-3", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
+        db.start_step(&plan_id, "step-3", "wt-a").unwrap();
         db.conn
             .execute(
                 "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-3'",
@@ -4659,11 +4573,8 @@ mod tests {
             .unwrap();
 
         let result = db.complete_step(
-            &plan_id,
-            "step-1",
-            "wt-b", // wrong worktree -- step is claimed by wt-a
-            false,
-            None,
+            &plan_id, "step-1", "wt-b", // wrong worktree -- step is claimed by wt-a
+            false, None,
         );
 
         assert!(result.is_err());
@@ -4685,7 +4596,8 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
@@ -4708,29 +4620,17 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim, start, and force-complete step-1
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-1", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
-        db.complete_step(
-            &plan_id,
-            "step-1",
-            "wt-a",
-            true,
-            Some("testing force mode"),
-        )
-        .unwrap();
+        db.start_step(&plan_id, "step-1", "wt-a").unwrap();
+        db.complete_step(&plan_id, "step-1", "wt-a", true, Some("testing force mode"))
+            .unwrap();
 
         let plan_state = db.show_plan(&plan_id).unwrap();
 
@@ -4748,7 +4648,8 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
@@ -4772,19 +4673,14 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
+            .unwrap();
 
         // Manually expire the lease
         db.conn
@@ -4808,21 +4704,15 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim and start step-1
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-1", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
+        db.start_step(&plan_id, "step-1", "wt-a").unwrap();
 
         // Reset step-1
         db.reset_step(&plan_id, "step-1").unwrap();
@@ -4848,7 +4738,8 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
@@ -4872,7 +4763,8 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
@@ -4890,9 +4782,7 @@ mod tests {
             },
         ];
 
-        let result = db
-            .reconcile(&plan_id, &entries, false)
-            .unwrap();
+        let result = db.reconcile(&plan_id, &entries, false).unwrap();
 
         assert_eq!(result.reconciled_count, 2);
         assert_eq!(result.skipped_count, 0);
@@ -4916,7 +4806,8 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
@@ -4935,9 +4826,7 @@ mod tests {
             commit_hash: "new_hash".to_string(),
         }];
 
-        let result = db
-            .reconcile(&plan_id, &entries, false)
-            .unwrap();
+        let result = db.reconcile(&plan_id, &entries, false).unwrap();
 
         assert_eq!(result.reconciled_count, 0);
         assert_eq!(result.skipped_count, 1);
@@ -4954,7 +4843,8 @@ mod tests {
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
 
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
@@ -4973,9 +4863,7 @@ mod tests {
             commit_hash: "new_hash".to_string(),
         }];
 
-        let result = db
-            .reconcile(&plan_id, &entries, true)
-            .unwrap();
+        let result = db.reconcile(&plan_id, &entries, true).unwrap();
 
         assert_eq!(result.reconciled_count, 1);
         assert_eq!(result.skipped_count, 0);
@@ -5004,14 +4892,11 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        let result = db
-            .claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        let result = db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
         match result {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
@@ -5023,9 +4908,7 @@ mod tests {
         }
 
         // Re-claim from the same worktree without waiting for lease expiry
-        let result = db
-            .claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        let result = db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
         match result {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
@@ -5049,18 +4932,14 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
 
         // Attempt to claim from a different worktree before lease expiry
-        let result = db
-            .claim_step(&plan_id, "wt-b", 7200, &hash, false)
-            .unwrap();
+        let result = db.claim_step(&plan_id, "wt-b", 7200, &hash, false).unwrap();
         match result {
             ClaimResult::NoReadySteps { blocked, .. } => {
                 // The test plan has 3 steps total: step-1, step-2, step-3
@@ -5086,13 +4965,11 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
 
         // Mark a checklist item as completed (simulate partial progress)
         // Get the first checklist item ID
@@ -5113,8 +4990,7 @@ mod tests {
             .unwrap();
 
         // Auto-reclaim from same worktree
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
 
         // Verify that non-completed checklist items for reclaimed steps are reset.
         // This test verifies the existing reclaim behavior is preserved.
@@ -5144,13 +5020,11 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
 
         // Release with correct worktree
         let result = db
@@ -5183,13 +5057,11 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
 
         // Attempt to release with wrong worktree
         let result = db.release_step(&plan_id, "step-1", Some("wt-b"), false);
@@ -5211,13 +5083,11 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
 
         // Release with force (wrong worktree should be ignored)
         let result = db
@@ -5250,13 +5120,11 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim and complete step-1
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
         db.complete_step(&plan_id, "step-1", "wt-a", true, None)
             .unwrap();
 
@@ -5282,8 +5150,7 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Attempt to release pending (unclaimed) step
@@ -5308,18 +5175,14 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
 
         // Force-claim from a different worktree (bypasses lease check)
-        let result = db
-            .claim_step(&plan_id, "wt-b", 7200, &hash, true)
-            .unwrap();
+        let result = db.claim_step(&plan_id, "wt-b", 7200, &hash, true).unwrap();
         match result {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
@@ -5357,14 +5220,11 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Attempt to force-claim step-2 (depends on step-1 which is pending)
-        let result = db
-            .claim_step(&plan_id, "wt-a", 7200, &hash, true)
-            .unwrap();
+        let result = db.claim_step(&plan_id, "wt-a", 7200, &hash, true).unwrap();
         match result {
             ClaimResult::Claimed { anchor, .. } => {
                 // Should claim step-1, not step-2
@@ -5389,14 +5249,11 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Force-claim a pending step (should work same as normal claim)
-        let result = db
-            .claim_step(&plan_id, "wt-a", 7200, &hash, true)
-            .unwrap();
+        let result = db.claim_step(&plan_id, "wt-a", 7200, &hash, true).unwrap();
         match result {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
@@ -5423,20 +5280,16 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim and complete step-1
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
         db.complete_step(&plan_id, "step-1", "wt-a", true, None)
             .unwrap();
 
         // Force-claim should get step-2, not step-1
-        let result = db
-            .claim_step(&plan_id, "wt-b", 7200, &hash, true)
-            .unwrap();
+        let result = db.claim_step(&plan_id, "wt-b", 7200, &hash, true).unwrap();
         match result {
             ClaimResult::Claimed { anchor, .. } => {
                 assert_eq!(
@@ -5460,18 +5313,14 @@ mod tests {
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
         fs::write(&plan_file, "# Test plan\n").unwrap();
         let hash = compute_plan_hash(&plan_file).unwrap();
-        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash))
-            .unwrap();
+        let init = db.init_plan("test-abc123h-1", &plan, Some(&hash)).unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 with worktree wt-a (non-force)
-        db.claim_step(&plan_id, "wt-a", 7200, &hash, false)
-            .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, &hash, false).unwrap();
 
         // Attempt to claim from different worktree (non-force) - should be blocked
-        let result = db
-            .claim_step(&plan_id, "wt-b", 7200, &hash, false)
-            .unwrap();
+        let result = db.claim_step(&plan_id, "wt-b", 7200, &hash, false).unwrap();
         match result {
             ClaimResult::NoReadySteps { blocked, .. } => {
                 assert!(
@@ -5503,19 +5352,14 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 (stores bare "step-1" in DB)
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
+            .unwrap();
 
         // start_step with hash-prefixed anchor — should succeed via normalization
         let result = db.start_step(&plan_id, "#step-1", "wt-a");
@@ -5539,33 +5383,21 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim and start step-1 (bare anchor)
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-1", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
+        db.start_step(&plan_id, "step-1", "wt-a").unwrap();
 
         // Mark all checklist items complete so strict mode succeeds
         // Use batch_update_checklist with complete_remaining=true and empty entries
         let no_deferrals: &[NoopBatchEntry] = &[];
-        db.batch_update_checklist(
-            &plan_id,
-            "step-1",
-            "wt-a",
-            no_deferrals,
-            true,
-        )
-        .unwrap();
+        db.batch_update_checklist(&plan_id, "step-1", "wt-a", no_deferrals, true)
+            .unwrap();
 
         // complete_step with hash-prefixed anchor — should succeed via normalization
         let result = db.complete_step(&plan_id, "#step-1", "wt-a", false, None);
@@ -5589,21 +5421,15 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim and start step-1 (bare anchor)
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(&plan_id, "step-1", "wt-a")
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
             .unwrap();
+        db.start_step(&plan_id, "step-1", "wt-a").unwrap();
 
         // heartbeat_step with hash-prefixed anchor — should return a lease expiry string
         let result = db.heartbeat_step(&plan_id, "#step-1", "wt-a", 7200);
@@ -5618,19 +5444,14 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
         // Claim step-1 (bare anchor stored in DB)
-        db.claim_step(
-            &plan_id,
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
+        db.claim_step(&plan_id, "wt-a", 7200, "abc123hash", false)
+            .unwrap();
 
         // check_ownership with hash-prefixed anchor — should succeed via normalization
         let result = db.check_ownership(&plan_id, "#step-1", "wt-a");
@@ -5746,13 +5567,7 @@ mod tests {
         }];
 
         // batch_update_checklist with hash-prefixed anchor — should succeed via normalization
-        let result = db.batch_update_checklist(
-            &plan_id,
-            "#step-1",
-            "wt-a",
-            &entries,
-            false,
-        );
+        let result = db.batch_update_checklist(&plan_id, "#step-1", "wt-a", &entries, false);
         assert!(
             result.is_ok(),
             "batch_update_checklist with #step-1 should succeed"
@@ -5777,7 +5592,8 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let mut db = StateDb::open(&db_path, temp.path()).unwrap();
         let plan = make_test_plan();
-        let init = db.init_plan("test-abc123h-1", &plan, Some("abc123hash"))
+        let init = db
+            .init_plan("test-abc123h-1", &plan, Some("abc123hash"))
             .unwrap();
         let plan_id = init.plan_id;
 
