@@ -1,10 +1,17 @@
 /**
  * GalleryMarkdownView -- TugMarkdownView visual and performance verification card.
  *
- * Demonstrates TugMarkdownView in three modes:
- *   1. Static 1MB: large markdown string with smooth scrolling verification
- *   2. Streaming: simulated assistant_text deltas via PropertyStore + auto-scroll
- *   3. Stress 10MB: DOM node count verification (<500 nodes)
+ * Mounts a single TugMarkdownView with an imperative ref handle. Four action
+ * buttons drive the content:
+ *
+ *   Streaming   -- simulated assistant_text deltas via PropertyStore + auto-scroll.
+ *                  Shows "Start Stream" when idle, "Stop" while streaming.
+ *   Static 1MB  -- calls markdownRef.current.setRegion() with a unique key so
+ *                  multiple clicks accumulate regions.
+ *   Static 10MB -- same as Static 1MB but with a 10MB document (generated lazily
+ *                  on first click).
+ *   Clear       -- calls markdownRef.current.clear(), stops streaming, resets the
+ *                  PropertyStore.
  *
  * The diagnostic overlay shows:
  *   - DOM node count in the scroll container
@@ -21,7 +28,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownView } from "@/components/tugways/tug-markdown-view";
-import type { TugMarkdownTimingMetrics } from "@/components/tugways/tug-markdown-view";
+import type { TugMarkdownViewHandle, TugMarkdownTimingMetrics } from "@/components/tugways/tug-markdown-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 
 // ---------------------------------------------------------------------------
@@ -94,8 +101,7 @@ class BlockHeightIndex {
   return parts.join('');
 }
 
-// Pre-generate content at module scope so it is not regenerated on re-render.
-// 1MB static content for the default demo
+// Pre-generate 1MB content at module scope so it is not regenerated on re-render.
 const STATIC_1MB_CONTENT = generateMarkdown(1024 * 1024);
 
 // Streaming simulation: chunks of ~200 characters of realistic prose
@@ -187,16 +193,11 @@ interface DiagnosticInfo {
 /**
  * GalleryMarkdownView -- TugMarkdownView visual and performance verification card.
  *
- * Provides three demo modes:
- * - Static 1MB: standard static content demo
- * - Streaming: simulated assistant_text deltas at 40ms intervals
- * - Stress 10MB: stress test for DOM node count verification
+ * A single TugMarkdownView is always mounted. Four action buttons drive content
+ * through the imperative handle: Streaming, Static 1MB, Static 10MB, and Clear.
  */
 export function GalleryMarkdownView() {
-  type DemoMode = "static-1mb" | "streaming" | "stress-10mb";
-  const [mode, setMode] = useState<DemoMode>("static-1mb");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [streamDone, setStreamDone] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DiagnosticInfo>({
     domNodeCount: 0,
     windowStart: 0,
@@ -207,7 +208,10 @@ export function GalleryMarkdownView() {
     parseMs: null,
   });
 
-  // Streaming store — Spec S04
+  // Imperative ref to TugMarkdownView
+  const markdownRef = useRef<TugMarkdownViewHandle>(null);
+
+  // Streaming store
   const streamingStoreRef = useRef<PropertyStore | null>(null);
   if (!streamingStoreRef.current) {
     streamingStoreRef.current = new PropertyStore({
@@ -225,12 +229,14 @@ export function GalleryMarkdownView() {
   // Scroll container ref for diagnostic DOM count
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // 10MB content — generated lazily on first click
+  const static10MbContentRef = useRef<string | null>(null);
+
   // Diagnostic polling
   useEffect(() => {
     const pollDiagnostics = () => {
       const container = scrollContainerRef.current;
       if (!container) return;
-      // Count .tugx-md-block elements inside the scroll container
       const blockNodes = container.querySelectorAll(".tugx-md-block");
       setDiagnostics((prev) => ({
         ...prev,
@@ -244,7 +250,6 @@ export function GalleryMarkdownView() {
 
   // Update diagnostic from onBlockMeasured callback
   const handleBlockMeasured = useCallback((_index: number, _height: number) => {
-    // Increment block count in diagnostics
     setDiagnostics((prev) => ({
       ...prev,
       totalBlocks: Math.max(prev.totalBlocks, _index + 1),
@@ -261,14 +266,22 @@ export function GalleryMarkdownView() {
     }));
   }, []);
 
-  // Start streaming simulation
-  const startStreaming = useCallback(() => {
+  // Stop streaming helper (does not clear content)
+  const stopStreamingOnly = useCallback(() => {
+    if (streamIntervalRef.current) {
+      clearInterval(streamIntervalRef.current);
+      streamIntervalRef.current = null;
+    }
+    setIsStreaming(false);
+  }, []);
+
+  // ---- Action: Streaming ----
+  const handleStartStream = useCallback(() => {
     if (streamIntervalRef.current) return;
     streamChunkIndexRef.current = 0;
     streamAccumulatedRef.current = "";
     streamingStore.set("text", "", "gallery");
     setIsStreaming(true);
-    setStreamDone(false);
     setDiagnostics((prev) => ({
       ...prev,
       streamProgress: "streaming...",
@@ -280,11 +293,9 @@ export function GalleryMarkdownView() {
     streamIntervalRef.current = setInterval(() => {
       const idx = streamChunkIndexRef.current;
       if (idx >= STREAMING_CHUNKS.length) {
-        // Done
         clearInterval(streamIntervalRef.current!);
         streamIntervalRef.current = null;
         setIsStreaming(false);
-        setStreamDone(true);
         setDiagnostics((prev) => ({
           ...prev,
           streamProgress: `complete (${STREAMING_CHUNKS.length} chunks)`,
@@ -301,20 +312,30 @@ export function GalleryMarkdownView() {
     }, 40); // ~25 chunks/s, realistic delta rate
   }, [streamingStore]);
 
-  const stopStreaming = useCallback(() => {
-    if (streamIntervalRef.current) {
-      clearInterval(streamIntervalRef.current);
-      streamIntervalRef.current = null;
-    }
-    setIsStreaming(false);
+  const handleStopStream = useCallback(() => {
+    stopStreamingOnly();
+  }, [stopStreamingOnly]);
+
+  // ---- Action: Static 1MB ----
+  const handleStatic1MB = useCallback(() => {
+    markdownRef.current?.setRegion('static-1mb-' + Date.now(), STATIC_1MB_CONTENT);
   }, []);
 
-  const resetStreaming = useCallback(() => {
-    stopStreaming();
+  // ---- Action: Static 10MB ----
+  const handleStatic10MB = useCallback(() => {
+    if (!static10MbContentRef.current) {
+      static10MbContentRef.current = generateMarkdown(10 * 1024 * 1024);
+    }
+    markdownRef.current?.setRegion('static-10mb-' + Date.now(), static10MbContentRef.current);
+  }, []);
+
+  // ---- Action: Clear ----
+  const handleClear = useCallback(() => {
+    stopStreamingOnly();
     streamAccumulatedRef.current = "";
     streamChunkIndexRef.current = 0;
     streamingStore.set("text", "", "gallery");
-    setStreamDone(false);
+    markdownRef.current?.clear();
     setDiagnostics((prev) => ({
       ...prev,
       streamProgress: "idle",
@@ -322,7 +343,7 @@ export function GalleryMarkdownView() {
       lexMs: null,
       parseMs: null,
     }));
-  }, [stopStreaming, streamingStore]);
+  }, [stopStreamingOnly, streamingStore]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -333,60 +354,32 @@ export function GalleryMarkdownView() {
     };
   }, []);
 
-  // NOTE: Static content wiring removed in Phase 3A.5 Step 2.
-  // The content prop no longer exists; TugMarkdownView is now imperative only.
-  // Step 3 will wire the gallery card via the ref handle (setRegion).
-
   return (
     <div className="cg-content" data-testid="gallery-markdown-view" style={{ padding: 0, gap: 0, overflow: "hidden", height: "100%" }}>
-      {/* ---- Mode selector and controls ---- */}
+      {/* ---- Action buttons and diagnostics ---- */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--tug7-element-global-border-normal-default-rest)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        <span className="cg-section-title" style={{ margin: 0 }}>Mode:</span>
-        <TugPushButton
-          emphasis={mode === "static-1mb" ? "filled" : "outlined"}
-          role="action"
-          size="sm"
-          onClick={() => { stopStreaming(); setMode("static-1mb"); }}
-        >
+        {/* Streaming button: Start Stream / Stop */}
+        {!isStreaming ? (
+          <TugPushButton emphasis="outlined" role="accent" size="sm" onClick={handleStartStream}>
+            Start Stream
+          </TugPushButton>
+        ) : (
+          <TugPushButton emphasis="outlined" role="danger" size="sm" onClick={handleStopStream}>
+            Stop
+          </TugPushButton>
+        )}
+
+        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic1MB}>
           Static 1MB
         </TugPushButton>
-        <TugPushButton
-          emphasis={mode === "streaming" ? "filled" : "outlined"}
-          role="action"
-          size="sm"
-          onClick={() => { setMode("streaming"); resetStreaming(); }}
-        >
-          Streaming
-        </TugPushButton>
-        <TugPushButton
-          emphasis={mode === "stress-10mb" ? "filled" : "outlined"}
-          role="action"
-          size="sm"
-          onClick={() => { stopStreaming(); setMode("stress-10mb"); }}
-        >
-          Stress 10MB
+
+        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic10MB}>
+          Static 10MB
         </TugPushButton>
 
-        {mode === "streaming" && (
-          <>
-            <div style={{ width: 1, height: 20, background: "var(--tug7-element-global-border-normal-default-rest)" }} />
-            {!isStreaming && !streamDone && (
-              <TugPushButton emphasis="filled" role="accent" size="sm" onClick={startStreaming}>
-                Start Stream
-              </TugPushButton>
-            )}
-            {isStreaming && (
-              <TugPushButton emphasis="outlined" role="danger" size="sm" onClick={stopStreaming}>
-                Stop
-              </TugPushButton>
-            )}
-            {streamDone && (
-              <TugPushButton emphasis="outlined" role="action" size="sm" onClick={resetStreaming}>
-                Reset
-              </TugPushButton>
-            )}
-          </>
-        )}
+        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleClear}>
+          Clear
+        </TugPushButton>
 
         {/* Diagnostic overlay */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center", fontSize: 11, fontFamily: "var(--tugx-md-mono-font, ui-monospace, monospace)", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
@@ -398,36 +391,21 @@ export function GalleryMarkdownView() {
           {diagnostics.parseMs !== null && (
             <span>Parse: <strong>{diagnostics.parseMs.toFixed(1)}ms</strong></span>
           )}
-          {mode === "streaming" && (
-            <span>Progress: <strong>{diagnostics.streamProgress}</strong></span>
-          )}
-          {mode === "stress-10mb" && (
-            <span style={{ color: diagnostics.domNodeCount > 500 ? "var(--tug7-element-global-fill-normal-danger-rest, red)" : "inherit" }}>
-              {diagnostics.domNodeCount <= 500 ? "PASS" : "FAIL"} (&lt;500 nodes)
-            </span>
-          )}
+          <span>Progress: <strong>{diagnostics.streamProgress}</strong></span>
         </div>
       </div>
 
-      {/* ---- Markdown view ---- */}
+      {/* ---- Single always-mounted TugMarkdownView ---- */}
       <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
-        {(mode === "static-1mb" || mode === "stress-10mb") && (
-          <TugMarkdownView
-            onBlockMeasured={handleBlockMeasured}
-            onTiming={handleTiming}
-            className="gallery-md-view"
-          />
-        )}
-        {mode === "streaming" && (
-          <TugMarkdownView
-            streamingStore={streamingStore}
-            streamingPath="text"
-            isStreaming={isStreaming}
-            onBlockMeasured={handleBlockMeasured}
-            onTiming={handleTiming}
-            className="gallery-md-view"
-          />
-        )}
+        <TugMarkdownView
+          ref={markdownRef}
+          streamingStore={streamingStore}
+          streamingPath="text"
+          isStreaming={isStreaming}
+          onBlockMeasured={handleBlockMeasured}
+          onTiming={handleTiming}
+          className="gallery-md-view"
+        />
       </div>
     </div>
   );
