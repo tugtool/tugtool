@@ -935,7 +935,6 @@ pub fn run_worktree_cleanup_with_root(
     }
 }
 
-
 /// Discard a plan implementation: archive state, remove worktree, delete branch.
 pub fn run_worktree_discard(
     target: String,
@@ -1033,10 +1032,7 @@ pub fn run_worktree_discard(
                     },
                     Ok(None) => {
                         if !quiet && !json_output {
-                            eprintln!(
-                                "warning: no plan found in state DB for slug: {}",
-                                plan_slug
-                            );
+                            eprintln!("warning: no plan found in state DB for slug: {}", plan_slug);
                         }
                         (None, false, false)
                     }
