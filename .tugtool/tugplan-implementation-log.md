@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-31T22:23:35Z
+---
+
+## step-2: Created TugbankClient in tugbank-core wrapping DefaultsStore with in-memory domain snapshot cache, PRAGMA data_version polling thread, and callback registry. 5 new tests, 72 total pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugbank-in-process-clients.md
+
+---
+
+---
 step: step-1
 date: 2025-03-31T22:11:44Z
 ---

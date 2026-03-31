@@ -95,12 +95,14 @@
 //! });
 //! ```
 
+mod client;
 mod domain;
 mod error;
 mod schema;
 mod store;
 mod value;
 
+pub use client::{CallbackHandle, DomainSnapshot, TugbankClient};
 pub use domain::{DomainHandle, DomainTxn, SetOutcome};
 pub use error::Error;
 pub use store::DefaultsStore;
