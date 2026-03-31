@@ -1,0 +1,19 @@
+[package]
+name = "tugbank-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "C ABI FFI wrappers around TugbankClient for use by Swift and other languages"
+
+[lib]
+name = "tugbank_ffi"
+path = "src/lib.rs"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+tugbank-core.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
