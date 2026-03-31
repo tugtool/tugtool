@@ -1930,19 +1930,15 @@ UPDATE schema_version SET version = 5;
         // Get all checklist items for JSON output
         let checklist_items = self.get_checklist_items(plan_id)?;
 
-        // For archived plans, fetch most recent snapshot content
-        let content = if status == "archived" {
-            self.conn
-                .query_row(
-                    "SELECT content FROM plan_snapshots WHERE plan_id = ?1
-                     ORDER BY captured_at DESC LIMIT 1",
-                    [plan_id],
-                    |row| row.get(0),
-                )
-                .ok()
-        } else {
-            None
-        };
+        // Fetch most recent snapshot content
+        let content: Option<String> = self.conn
+            .query_row(
+                "SELECT content FROM plan_snapshots WHERE plan_id = ?1
+                 ORDER BY captured_at DESC LIMIT 1",
+                [plan_id],
+                |row| row.get(0),
+            )
+            .ok();
 
         Ok(PlanState {
             plan_id: plan_id.to_string(),
