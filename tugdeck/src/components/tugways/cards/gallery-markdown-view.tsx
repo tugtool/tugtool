@@ -101,6 +101,8 @@ class BlockHeightIndex {
 }
 
 // Pre-generate static content at module scope so it is not regenerated on re-render.
+const STATIC_1KB_CONTENT = generateMarkdown(1024);
+const STATIC_10KB_CONTENT = generateMarkdown(10 * 1024);
 const STATIC_50KB_CONTENT = generateMarkdown(50 * 1024);
 const STATIC_1MB_CONTENT = generateMarkdown(1024 * 1024);
 
@@ -132,10 +134,12 @@ function generateChunks(targetBytes: number): string[] {
 // Size selector type
 // ---------------------------------------------------------------------------
 
-type SizeKey = '50kb' | '1mb' | '10mb';
+type SizeKey = '1kb' | '10kb' | '50kb' | '1mb' | '10mb';
 
 function sizeToBytes(size: SizeKey): number {
   switch (size) {
+    case '1kb': return 1024;
+    case '10kb': return 10 * 1024;
     case '50kb': return 50 * 1024;
     case '1mb': return 1024 * 1024;
     case '10mb': return 10 * 1024 * 1024;
@@ -298,16 +302,17 @@ export function GalleryMarkdownView() {
   const handleStatic = useCallback(() => {
     const targetBytes = sizeToBytes(selectedSize);
     let content: string;
-    if (selectedSize === '50kb') {
-      content = STATIC_50KB_CONTENT;
-    } else if (selectedSize === '1mb') {
-      content = STATIC_1MB_CONTENT;
-    } else {
-      // 10MB: generate lazily, reuse on subsequent clicks
-      if (!static10MbContentRef.current) {
-        static10MbContentRef.current = generateMarkdown(targetBytes);
-      }
-      content = static10MbContentRef.current;
+    switch (selectedSize) {
+      case '1kb': content = STATIC_1KB_CONTENT; break;
+      case '10kb': content = STATIC_10KB_CONTENT; break;
+      case '50kb': content = STATIC_50KB_CONTENT; break;
+      case '1mb': content = STATIC_1MB_CONTENT; break;
+      case '10mb':
+        if (!static10MbContentRef.current) {
+          static10MbContentRef.current = generateMarkdown(targetBytes);
+        }
+        content = static10MbContentRef.current;
+        break;
     }
     markdownRef.current?.setRegion('static-' + Date.now(), content);
   }, [selectedSize]);
@@ -342,32 +347,19 @@ export function GalleryMarkdownView() {
       {/* ---- Controls and diagnostics ---- */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--tug7-element-global-border-normal-default-rest)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
 
-        {/* Size selector: 50KB | 1MB | 10MB */}
+        {/* Size selector */}
         <div style={{ display: "flex", gap: 4 }}>
-          <TugPushButton
-            emphasis={selectedSize === '50kb' ? 'filled' : 'outlined'}
-            role="action"
-            size="sm"
-            onClick={() => setSelectedSize('50kb')}
-          >
-            50KB
-          </TugPushButton>
-          <TugPushButton
-            emphasis={selectedSize === '1mb' ? 'filled' : 'outlined'}
-            role="action"
-            size="sm"
-            onClick={() => setSelectedSize('1mb')}
-          >
-            1MB
-          </TugPushButton>
-          <TugPushButton
-            emphasis={selectedSize === '10mb' ? 'filled' : 'outlined'}
-            role="action"
-            size="sm"
-            onClick={() => setSelectedSize('10mb')}
-          >
-            10MB
-          </TugPushButton>
+          {(['1kb', '10kb', '50kb', '1mb', '10mb'] as const).map((size) => (
+            <TugPushButton
+              key={size}
+              emphasis={selectedSize === size ? 'filled' : 'outlined'}
+              role="action"
+              size="sm"
+              onClick={() => setSelectedSize(size)}
+            >
+              {size.toUpperCase()}
+            </TugPushButton>
+          ))}
         </div>
 
         {/* Divider */}
