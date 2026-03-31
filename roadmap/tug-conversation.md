@@ -1538,29 +1538,41 @@ export class SmartScroll {
 
 #### Internal listeners
 
-Six DOM listeners, each with a clear job:
+Seven DOM listeners, each with a clear job:
 
-1. **`scroll` on container** — fires `onScroll`, updates `lastScrollTop`, drives re-engagement check
-2. **`scrollend` on container** — terminal signal for deceleration and programmatic animation. Feature-detected; timer fallback (150ms) for browsers without it.
-3. **`pointerdown` on container** — enters TRACKING phase
-4. **`pointerup` / `pointercancel` on document** — exits DRAGGING, determines if deceleration follows
-5. **`wheel` on container** — immediate DRAGGING entry + disengage signal for follow-bottom (deltaY < 0)
-6. **`keydown` on container** — Page Up/Home/Arrow Up/Shift+Space → immediate DRAGGING entry + disengage
-7. **`ResizeObserver` on contentElement** — content growth trigger for follow-bottom auto-scroll
+1. **`scroll` on container** — fires `onScroll` callback, updates `lastScrollTop`, drives phase transitions and re-engagement check.
+2. **`scrollend` on container** — terminal signal for deceleration and programmatic animation. Feature-detected at construction; timer fallback (150ms since last `scroll` event) for browsers without it.
+3. **`pointerdown` on container** — enters TRACKING phase. Safari fires `pointerdown` on scrollbar clicks (WebKit bug 25811 was about `mouseup`, not `mousedown` — fixed in 2013). This means the state machine correctly enters TRACKING → DRAGGING for scrollbar interaction.
+4. **`pointerup` / `pointercancel` on document** — exits DRAGGING, determines if deceleration follows. Listened on `document` (not container) because the pointer may move outside the container during drag. **Known edge case:** Safari's `pointerup` on scrollbar release has been historically unreliable. For scrollbar drag (which has no momentum), the `scrollend` event or timer fallback handles the DRAGGING → IDLE transition regardless.
+5. **`wheel` on container** — skips TRACKING, enters DRAGGING immediately (no pointer involved). Disengage follow-bottom on `deltaY < 0`.
+6. **`keydown` on container** — Page Up/Home/Arrow Up/Shift+Space → skips TRACKING, enters DRAGGING immediately. **Note:** requires the scroll container to have `tabindex` for focus. TugMarkdownView should set `tabindex="0"` on its scroll container div.
+7. **`ResizeObserver` on contentElement** — content growth trigger for follow-bottom auto-scroll. When content grows and `isFollowingBottom` is true, enters PROGRAMMATIC_SCROLLING and writes `scrollTop`.
 
-All listeners use `{ passive: true }` where applicable. All registered in constructor, all removed in `dispose()`.
+All event listeners use `{ passive: true }`. All registered in constructor, all removed in `dispose()`.
 
-**Laws compliance:**
-- **L03:** Callers register SmartScroll in `useLayoutEffect` — ready before events fire.
-- **L06:** All state is internal to the class (plain properties, not React state). `scrollTop` writes are direct DOM mutations.
-- **L07:** No closures over changing state. The class owns its own state as instance properties.
-- **D93:** The ResizeObserver + wheel + scroll architecture is documented as design decision D93.
+#### Coalescing and the `onScroll` callback
+
+SmartScroll fires `onScroll` synchronously on every `scroll` event — it does not coalesce internally. This is correct: the state machine must see every scroll event to track phases accurately.
+
+The **consumer** decides whether to coalesce DOM-heavy work. TugMarkdownView's virtual window management (blockWindow.update + applyWindowUpdate) should be RAF-coalesced by the component, not by SmartScroll. The component receives `onScroll`, sets a dirty flag, and its existing RAF handler processes the virtual window update once per frame.
+
+This is not an L05 violation. L05 prohibits RAF for operations that depend on **React state commits**. The virtual window update is a pure DOM operation (L06) triggered by a DOM event (`scroll`). RAF coalescing of DOM-event-driven DOM operations is standard and correct.
+
+SmartScroll provides the state; the consumer decides the rendering strategy.
+
+#### Scrollbar interaction — verified for Safari/WKWebView
+
+Research confirmed:
+- **Safari fires `pointerdown`** on scrollbar clicks. The state machine's IDLE → TRACKING → DRAGGING path works.
+- **Safari's `pointerup` on scrollbar release** has been historically unreliable (WebKit bug 25811, fixed for `mouseup` in 2013, but `pointerup` edge cases may remain). However, scrollbar drag produces no momentum — when the user releases the thumb, scrolling stops. The `scrollend` event (Safari 26.2+) or timer fallback handles DRAGGING → IDLE.
+- **macOS overlay scrollbars** (the default) are thin and transient. Users rarely grab them — most macOS scrolling is trackpad (wheel events) or keyboard. The scrollbar drag path is real but uncommon in practice. It works correctly through the state machine.
+- The `offsetWidth - clientWidth` technique for detecting pointer-in-scrollbar-region does not work with overlay scrollbars (zero gutter width). The state machine approach (pointerdown → TRACKING → DRAGGING) is more reliable.
 
 #### Known web limitations (from UIScrollView study)
 
-1. **No release velocity or deceleration target.** Cannot read momentum velocity at finger-lift. Cannot modify where momentum scroll will land. Impact: none for follow-bottom or state machine.
-2. **No deceleration rate control.** Browser decides momentum physics. Impact: none.
-3. **No momentum vs active input distinction in wheel events.** macOS `NSEvent.momentumPhase` is not exposed. Impact: none for disengagement (both active and momentum wheel-up should disengage).
+1. **No release velocity or deceleration target.** Cannot read momentum velocity at finger-lift. Cannot modify where momentum scroll will land. UIScrollView's `scrollViewWillEndDragging(_:withVelocity:targetContentOffset:)` provides this. Impact: none for follow-bottom or state machine.
+2. **No deceleration rate control.** Browser decides momentum physics. UIScrollView has `.normal`/`.fast` presets. Impact: none.
+3. **No momentum vs active input distinction in wheel events.** macOS `NSEvent.momentumPhase` distinguishes active trackpad contact from inertial coast. The web doesn't expose this. Impact: none for disengagement (both active and momentum wheel-up should disengage).
 
 #### Steps
 
@@ -1577,9 +1589,11 @@ Verify: `bun test` passes. `bun run build` succeeds.
 
 **Step 2: Wire new SmartScroll into TugMarkdownView.**
 - Replace the current SmartScroll instance creation with the new options-based constructor.
-- Remove the existing `handleScroll` RAF-coalesced scroll handler from the component — SmartScroll's `onScroll` callback replaces it for virtual window management.
-- Connect SmartScroll's `onScroll` to the virtual window update logic (blockWindow.update + applyWindowUpdate).
-- The component becomes a consumer of SmartScroll callbacks, not a direct scroll event listener.
+- Add `tabindex="0"` to the scroll container div (required for `keydown` listener to receive keyboard events).
+- Remove the `onScroll={handleScroll}` JSX prop — SmartScroll owns the scroll listener now.
+- Keep the RAF-coalesced virtual window update logic in the component, but trigger it from SmartScroll's `onScroll` callback instead of a direct scroll event. The `onScroll` callback sets a dirty flag; the existing RAF handler processes it.
+- Remove the `handleScroll` `useCallback` — replaced by SmartScroll's callback.
+- The component is a consumer of SmartScroll's state and callbacks, not a direct scroll event listener.
 
 Verify: `bun test` passes. `bun run build` succeeds.
 
