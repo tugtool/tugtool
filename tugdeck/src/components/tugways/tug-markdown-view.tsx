@@ -70,6 +70,47 @@ function getDOMPurify(): ReturnType<typeof DOMPurifyModule> {
 const STRIDE = 4;
 const BLOCK_TYPES = ['?','heading','paragraph','code','blockquote','list','table','hr','html','other'];
 
+// ---------------------------------------------------------------------------
+// UTF-8 byte offset → JS string char index conversion
+//
+// pulldown-cmark returns BYTE offsets into the UTF-8 encoding of the input.
+// JS String.slice() uses UTF-16 code unit indices. For ASCII they coincide,
+// but any multi-byte codepoint (e.g. em-dash, emoji) would produce a wrong
+// slice without this conversion.
+//
+// We build the map once per content string and reuse it for all block slices.
+// ---------------------------------------------------------------------------
+
+const _encoder = new TextEncoder();
+
+/**
+ * Build a Uint32Array mapping UTF-8 byte index → JS string char index.
+ * Index i holds the JS char index that starts at UTF-8 byte i.
+ * The array length is byteLength + 1 (last entry = string.length).
+ */
+function buildByteToCharMap(text: string): Uint32Array {
+  const encoded = _encoder.encode(text);
+  const byteLen = encoded.length;
+  const map = new Uint32Array(byteLen + 1);
+  let bytePos = 0;
+  let charPos = 0;
+  while (charPos < text.length) {
+    map[bytePos] = charPos;
+    const cp = text.codePointAt(charPos)!;
+    // UTF-8 byte width of this codepoint
+    const byteWidth = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    // UTF-16 code unit width (surrogate pair = 2 units)
+    const charWidth = cp >= 0x10000 ? 2 : 1;
+    for (let b = 0; b < byteWidth; b++) {
+      map[bytePos + b] = charPos;
+    }
+    bytePos += byteWidth;
+    charPos += charWidth;
+  }
+  map[byteLen] = charPos;
+  return map;
+}
+
 interface BlockMeta {
   type: string;
   start: number;
@@ -158,14 +199,21 @@ interface MarkdownEngineState {
    */
   contentText: string;
   /**
-   * Start character offsets per block from lex_blocks() response.
-   * blockStarts[i] = character position where block i begins.
+   * UTF-8 byte offset → JS string char index map for contentText.
+   * Built once after each content assignment. Allows correct slicing when
+   * pulldown-cmark returns byte offsets for non-ASCII content.
+   */
+  byteToCharMap: Uint32Array | null;
+  /**
+   * Start BYTE offsets per block from lex_blocks() response.
+   * blockStarts[i] = UTF-8 byte position where block i begins.
+   * Use byteToCharMap to convert to char index before String.slice().
    */
   blockStarts: number[];
   /**
-   * End character offsets per block from lex_blocks() response.
-   * blockEnds[i] = character position where block i ends.
-   * To extract block i's raw: contentText.slice(blockStarts[i], blockEnds[i])
+   * End BYTE offsets per block from lex_blocks() response.
+   * blockEnds[i] = UTF-8 byte position where block i ends.
+   * Use byteToCharMap to convert to char index before String.slice().
    */
   blockEnds: number[];
   /**
@@ -248,6 +296,7 @@ export function TugMarkdownView({
       const blockWindow = new RenderedBlockWindow(heightIndex, DEFAULT_VIEWPORT_HEIGHT, 2);
       engineRef.current = {
         contentText: "",
+        byteToCharMap: null,
         blockStarts: [],
         blockEnds: [],
         accumulatedText: "",
@@ -301,6 +350,13 @@ export function TugMarkdownView({
   // ---- Add a single block DOM node ----
   // Cache stores unsanitized HTML; DOMPurify runs here [D04].
   // If the block is not yet in the HTML cache, skip it (no placeholder).
+  //
+  // Blocks are always inserted in ascending block index order so the document
+  // order matches the logical block order. When a block re-enters the viewport
+  // on scroll-up, we must not use appendChild (which would place it after any
+  // already-present higher-index blocks). Instead, find the first existing child
+  // with a higher data-block-index and insertBefore it. If none exists, pass
+  // null to insertBefore which is equivalent to appendChild [Bug 1 fix].
   function addBlockNode(engine: MarkdownEngineState, index: number) {
     if (!blockContainerRef.current) return;
     if (engine.blockNodes.has(index)) return;
@@ -318,7 +374,20 @@ export function TugMarkdownView({
     el.className = "tugx-md-block";
     el.dataset.blockIndex = String(index);
     el.innerHTML = sanitized;
-    blockContainerRef.current.appendChild(el);
+
+    // Find the first child with a higher block index to insert before it.
+    // This preserves ascending document order regardless of insertion sequence.
+    const container = blockContainerRef.current;
+    let referenceNode: ChildNode | null = null;
+    for (let i = 0; i < container.childNodes.length; i++) {
+      const child = container.childNodes[i] as HTMLElement;
+      const childIndex = parseInt(child.dataset?.blockIndex ?? "", 10);
+      if (!isNaN(childIndex) && childIndex > index) {
+        referenceNode = child;
+        break;
+      }
+    }
+    container.insertBefore(el, referenceNode);
     engine.blockNodes.set(index, el);
 
     // Observe for height measurement.
@@ -463,6 +532,7 @@ export function TugMarkdownView({
     engine.cacheMisses = 0;
     engine.blockStarts = [];
     engine.blockEnds = [];
+    engine.byteToCharMap = null;
     engine.blockCount = 0;
     engine.contentText = content;
     applySpacers(0, 0);
@@ -474,20 +544,38 @@ export function TugMarkdownView({
     engine.blockStarts = blocks.map(b => b.start);
     engine.blockEnds = blocks.map(b => b.end);
 
+    // Build byte→char map once for this content string [Bug 2 fix].
+    // pulldown-cmark returns UTF-8 byte offsets; JS String.slice() needs char indices.
+    engine.byteToCharMap = buildByteToCharMap(content);
+
     // Populate height index with estimates
     for (const block of blocks) {
       engine.heightIndex.appendBlock(estimateBlockHeight(block));
     }
 
-    // Parse visible + overscan blocks and populate HTML cache
+    // Parse ONLY the visible + overscan range — not all blocks [Bug 3 partial fix].
+    // For 10MB content with 80,000+ blocks, parsing all blocks synchronously
+    // would freeze the main thread. Remaining blocks are parsed on-demand in
+    // the scroll handler.
     const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
     const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
     engine.blockWindow.setViewportHeight(viewportHeight);
     const range = computeOverscanRange(engine, scrollTop);
+
+    let firstCodeBlockLogged = false;
     for (let i = range.startIndex; i < range.endIndex; i++) {
       if (!engine.htmlCache.has(i)) {
-        const raw = content.slice(engine.blockStarts[i], engine.blockEnds[i]);
-        engine.htmlCache.set(i, parse_to_html(raw));
+        const charStart = engine.byteToCharMap[engine.blockStarts[i]];
+        const charEnd = engine.byteToCharMap[engine.blockEnds[i]];
+        const raw = content.slice(charStart, charEnd);
+        const html = parse_to_html(raw);
+        engine.htmlCache.set(i, html);
+        // Diagnostic: log the first code block's raw slice and HTML output [Bug 2 debug].
+        if (!firstCodeBlockLogged && blocks[i]?.type === 'code') {
+          console.log('[TugMarkdownView] first code block raw slice:', JSON.stringify(raw.slice(0, 200)));
+          console.log('[TugMarkdownView] first code block parse_to_html:', html.slice(0, 200));
+          firstCodeBlockLogged = true;
+        }
       }
     }
 
@@ -519,7 +607,12 @@ export function TugMarkdownView({
       let anyNew = false;
       for (let i = newRange.startIndex; i < newRange.endIndex; i++) {
         if (!engine.htmlCache.has(i) && engine.blockStarts[i] !== undefined) {
-          const raw = engine.contentText.slice(engine.blockStarts[i], engine.blockEnds[i]);
+          // Use byteToCharMap if available to convert UTF-8 byte offsets to char indices [Bug 2 fix].
+          const byteStart = engine.blockStarts[i];
+          const byteEnd = engine.blockEnds[i];
+          const charStart = engine.byteToCharMap ? engine.byteToCharMap[byteStart] : byteStart;
+          const charEnd = engine.byteToCharMap ? engine.byteToCharMap[byteEnd] : byteEnd;
+          const raw = engine.contentText.slice(charStart, charEnd);
           engine.htmlCache.set(i, parse_to_html(raw));
           anyNew = true;
         }

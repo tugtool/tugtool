@@ -86,14 +86,16 @@ class BlockHeightIndex {
 
 `;
 
-  const unitLen = UNIT.length;
-  const repeats = Math.ceil(targetBytes / unitLen);
-  let result = `# Virtualized Markdown Rendering Engine\n\n`;
-  result += `Generated: ${new Date().toISOString()} | Target: ${(targetBytes / 1024 / 1024).toFixed(1)}MB\n\n`;
+  // Use array + join instead of += to avoid O(n²) string concatenation [Bug 3 fix].
+  const parts: string[] = [
+    '# Virtualized Markdown Rendering Engine\n\n',
+    `Generated: ${new Date().toISOString()} | Target: ${(targetBytes / 1024 / 1024).toFixed(1)}MB\n\n`,
+  ];
+  const repeats = Math.ceil(targetBytes / UNIT.length);
   for (let i = 0; i < repeats; i++) {
-    result += UNIT.replace("## Section Heading", `## Section ${i + 1}`);
+    parts.push(UNIT.replace("## Section Heading", `## Section ${i + 1}`));
   }
-  return result;
+  return parts.join('');
 }
 
 // Pre-generate content at module scope so it is not regenerated on re-render.
