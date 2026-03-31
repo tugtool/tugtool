@@ -284,8 +284,6 @@ pub struct HealthCheck {
 pub enum StateFailureReason {
     /// complete_step failed because open checklist items remain
     OpenItems,
-    /// Plan file has been modified since state was initialized
-    Drift,
     /// Step ownership check failed or step not in expected status
     Ownership,
     /// Could not open state.db, query failed, or other infrastructure error
@@ -472,7 +470,6 @@ mod tests {
     fn test_state_failure_reason_serde_roundtrip() {
         let cases = [
             (StateFailureReason::OpenItems, "\"open_items\""),
-            (StateFailureReason::Drift, "\"drift\""),
             (StateFailureReason::Ownership, "\"ownership\""),
             (StateFailureReason::DbError, "\"db_error\""),
         ];

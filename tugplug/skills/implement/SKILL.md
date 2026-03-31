@@ -617,8 +617,6 @@ tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_pa
 
 `state complete-checklist` marks all open checklist items (tasks, tests, and checkpoints) as completed. When deferral JSON is piped via stdin, those items get `deferred` status first; all remaining open items are then marked completed. When no stdin is piped (TTY or empty), all open items are marked completed. This eliminates fragile ordinal counting — the CLI is the single source of truth for item counts.
 
-**Note:** The implement skill does NOT pass `--allow-drift`. If the plan has drifted since state init, `complete-checklist` will fail and `state_failure_reason` will be `"drift"`. The recovery loop (section 3f) escalates drift immediately without retrying.
-
 **3e-retry (REVISE loop):**
 
 Increment `reviewer_attempts`. If `reviewer_attempts >= 3`, ESCALATE to user.
@@ -728,12 +726,6 @@ If `aborted == true`: output failure message with reason and HALT.
 **State recovery loop:**
 
 Read `state_failure_reason` from the committer JSON output. Switch on its value:
-
-- `"drift"`: Escalate immediately.
-  ```
-  AskUserQuestion: "State complete-checklist failed due to plan drift. The git commit succeeded. Manual recovery: re-run tugcode state init for the plan file, then: tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}"
-  ```
-  HALT after escalation.
 
 - `"ownership"`: Escalate immediately.
   ```

@@ -47,50 +47,6 @@ impl tugtool_core::BatchEntry for BatchUpdateEntry {
     }
 }
 
-/// Drift information for plan hash comparison
-struct DriftInfo {
-    stored_hash: String,
-    current_hash: String,
-}
-
-/// Check if plan file has drifted from stored hash
-fn check_plan_drift(
-    repo_root: &std::path::Path,
-    db: &tugtool_core::StateDb,
-    plan_id: &str,
-) -> Result<Option<DriftInfo>, String> {
-    // Get stored plan state to retrieve hash and file path
-    let plan_state = db.show_plan(plan_id).map_err(|e| e.to_string())?;
-    let stored_hash = plan_state.plan_hash;
-
-    // Need plan_path to read the current file for drift check
-    let Some(plan_path) = plan_state.plan_path else {
-        return Ok(None); // archived plan, no file to drift against
-    };
-
-    let plan_abs = repo_root.join(&plan_path);
-    let current_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
-
-    if stored_hash != current_hash {
-        Ok(Some(DriftInfo {
-            stored_hash,
-            current_hash,
-        }))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Format drift warning message with truncated hashes
-fn format_drift_message(drift: &DriftInfo) -> String {
-    let stored_short = &drift.stored_hash[..8];
-    let current_short = &drift.current_hash[..8];
-    format!(
-        "Plan file has been modified since state was initialized (stored: {}..., current: {}...)",
-        stored_short, current_short
-    )
-}
-
 /// State subcommands
 #[derive(Subcommand, Debug)]
 pub enum StateCommands {
@@ -167,9 +123,6 @@ pub enum StateCommands {
         /// Reason for forcing completion
         #[arg(long, value_name = "TEXT")]
         reason: Option<String>,
-        /// Allow operation even if plan file has been modified since state was initialized
-        #[arg(long)]
-        allow_drift: bool,
     },
     /// Show plan progress and status
     Show {
@@ -227,9 +180,6 @@ pub enum StateCommands {
         /// Worktree path (ownership check)
         #[arg(long, value_name = "PATH")]
         worktree: String,
-        /// Allow operation even if plan file has been modified since state was initialized
-        #[arg(long)]
-        allow_drift: bool,
     },
     /// Drop all state for a plan and reinitialize from current plan file
     Reinit {
@@ -419,15 +369,6 @@ pub fn run_state_claim(
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
-
-    // 3a. Check for plan drift (reject if plan file was modified since init)
-    if let Some(drift) = check_plan_drift(&repo_root, &db, &plan_id)? {
-        return Err(format!(
-            "Plan file has been modified since state was initialized (stored hash: {}..., current: {}...). Re-initialize with `tug state init` to update.",
-            &drift.stored_hash[..8],
-            &drift.current_hash[..8],
-        ));
-    }
 
     // 4. Get stored hash from DB for claim_step verification
     let plan_state = db.show_plan(&plan_id).map_err(|e| e.to_string())?;
@@ -634,7 +575,6 @@ pub fn run_state_complete_checklist(
     plan: String,
     step: String,
     worktree: String,
-    allow_drift: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -650,17 +590,7 @@ pub fn run_state_complete_checklist(
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
 
-    // 4. Check for plan drift
-    if let Some(drift) = check_plan_drift(&repo_root, &db, &plan_id)? {
-        if !allow_drift {
-            return Err(format!(
-                "{}. Use --allow-drift to proceed.",
-                format_drift_message(&drift)
-            ));
-        }
-    }
-
-    // 5. Determine deferral entries from stdin (TTY-aware with EOF tolerance)
+    // 4. Determine deferral entries from stdin (TTY-aware with EOF tolerance)
     let entries: Vec<BatchUpdateEntry> = if std::io::stdin().is_terminal() {
         // Interactive invocation: no deferrals
         Vec::new()
@@ -788,7 +718,6 @@ pub fn run_state_complete(
     worktree: String,
     force: bool,
     reason: Option<String>,
-    allow_drift: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -802,17 +731,7 @@ pub fn run_state_complete(
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
 
-    // 4. Check for plan drift
-    if let Some(drift) = check_plan_drift(&repo_root, &db, &plan_id)? {
-        if !allow_drift {
-            return Err(format!(
-                "{}. Use --allow-drift to proceed.",
-                format_drift_message(&drift)
-            ));
-        }
-    }
-
-    // 5. Complete step
+    // 4. Complete step
     let result = db
         .complete_step(&plan_id, &step, &worktree, force, reason.as_deref())
         .map_err(|e| e.to_string())?;
@@ -865,11 +784,6 @@ pub fn run_state_show(
         // Show specific plan
         let plan_id = resolve_plan_id(&db, &plan)?;
         let plan_state = db.show_plan(&plan_id).map_err(|e| e.to_string())?;
-
-        // Check for plan drift and warn (non-blocking)
-        if let Some(drift) = check_plan_drift(&repo_root, &db, &plan_id)? {
-            eprintln!("Warning: {}", format_drift_message(&drift));
-        }
 
         if json {
             use crate::output::{JsonResponse, StateShowData};

@@ -91,16 +91,8 @@ fn main() -> ExitCode {
                 worktree,
                 force,
                 reason,
-                allow_drift,
             } => commands::run_state_complete(
-                plan,
-                step,
-                worktree,
-                force,
-                reason,
-                allow_drift,
-                cli.json,
-                cli.quiet,
+                plan, step, worktree, force, reason, cli.json, cli.quiet,
             ),
             StateCommands::Show {
                 plan,
@@ -125,15 +117,7 @@ fn main() -> ExitCode {
                 plan,
                 step,
                 worktree,
-                allow_drift,
-            } => commands::run_state_complete_checklist(
-                plan,
-                step,
-                worktree,
-                allow_drift,
-                cli.json,
-                cli.quiet,
-            ),
+            } => commands::run_state_complete_checklist(plan, step, worktree, cli.json, cli.quiet),
             StateCommands::Reinit { plan } => commands::run_state_reinit(plan, cli.json, cli.quiet),
             StateCommands::Archive { plan } => {
                 commands::run_state_archive(plan, cli.json, cli.quiet)

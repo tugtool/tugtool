@@ -14,38 +14,10 @@ use std::process::Command;
 fn classify_state_error(e: &tugtool_core::TugError) -> StateFailureReason {
     match e {
         tugtool_core::TugError::StateIncompleteChecklist { .. } => StateFailureReason::OpenItems,
-        tugtool_core::TugError::StatePlanHashMismatch { .. } => StateFailureReason::Drift,
         tugtool_core::TugError::StateOwnershipViolation { .. }
         | tugtool_core::TugError::StateStepNotClaimed { .. } => StateFailureReason::Ownership,
         tugtool_core::TugError::StateStepNotFound { .. } => StateFailureReason::DbError,
         _ => StateFailureReason::DbError,
-    }
-}
-
-/// Check if plan file has drifted from stored hash (for commit command)
-/// Returns Ok(Some(warning_msg)) if drift detected, Ok(None) if no drift
-fn check_commit_drift(
-    repo_root: &Path,
-    plan_path_str: &str,
-    db: &tugtool_core::StateDb,
-) -> Result<Option<String>, String> {
-    // Get stored plan state to retrieve hash
-    let plan_state = db.show_plan(plan_path_str).map_err(|e| e.to_string())?;
-    let stored_hash = plan_state.plan_hash;
-
-    // Compute current hash
-    let plan_abs = repo_root.join(plan_path_str);
-    let current_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
-
-    if stored_hash != current_hash {
-        let stored_short = &stored_hash[..8];
-        let current_short = &current_hash[..8];
-        Ok(Some(format!(
-            "Plan file has been modified since state was initialized (stored: {}..., current: {}...). State update skipped.",
-            stored_short, current_short
-        )))
-    } else {
-        Ok(None)
     }
 }
 
@@ -209,118 +181,78 @@ pub fn run_commit(
     } else {
         match tugtool_core::find_repo_root_from(worktree_path) {
             Ok(repo_root) => {
-                // Resolve the raw --plan argument to a repo-relative path, matching
-                // what every other state command does. Without this, absolute paths or
-                // bare filenames diverge from the relative key stored in the DB.
-                let resolved_plan = match tugtool_core::resolve_plan(&plan, &repo_root)
-                    .map_err(|e| e.to_string())
-                {
-                    Ok(tugtool_core::ResolveResult::Found { path, .. }) => path
-                        .strip_prefix(&repo_root)
-                        .unwrap_or(&path)
-                        .to_string_lossy()
-                        .into_owned(),
-                    Ok(tugtool_core::ResolveResult::NotFound) => {
-                        let msg = format!("state complete failed: plan not found: {}", plan);
-                        return Ok({
-                            let data = CommitData {
-                                committed: true,
-                                commit_hash: Some(commit_hash),
-                                log_updated: true,
-                                log_rotated: rotate_result.rotated,
-                                archived_path: rotate_result.archived_path,
-                                files_staged,
-                                state_update_failed: true,
-                                state_failure_reason: Some(StateFailureReason::DbError),
-                                warnings: vec![msg],
-                            };
-                            if json {
-                                let response = JsonResponse::ok("commit", data);
-                                println!("{}", serde_json::to_string_pretty(&response).unwrap());
-                            }
-                            0
-                        });
-                    }
-                    Ok(tugtool_core::ResolveResult::Ambiguous(candidates)) => {
-                        let candidate_strs: Vec<String> =
-                            candidates.iter().map(|p| p.display().to_string()).collect();
-                        let msg = format!(
-                            "state complete failed: ambiguous plan '{}'. Matches: {}",
-                            plan,
-                            candidate_strs.join(", ")
-                        );
-                        return Ok({
-                            let data = CommitData {
-                                committed: true,
-                                commit_hash: Some(commit_hash),
-                                log_updated: true,
-                                log_rotated: rotate_result.rotated,
-                                archived_path: rotate_result.archived_path,
-                                files_staged,
-                                state_update_failed: true,
-                                state_failure_reason: Some(StateFailureReason::DbError),
-                                warnings: vec![msg],
-                            };
-                            if json {
-                                let response = JsonResponse::ok("commit", data);
-                                println!("{}", serde_json::to_string_pretty(&response).unwrap());
-                            }
-                            0
-                        });
-                    }
-                    Err(e) => {
-                        let msg = format!("state complete failed: {}", e);
-                        return Ok({
-                            let data = CommitData {
-                                committed: true,
-                                commit_hash: Some(commit_hash),
-                                log_updated: true,
-                                log_rotated: rotate_result.rotated,
-                                archived_path: rotate_result.archived_path,
-                                files_staged,
-                                state_update_failed: true,
-                                state_failure_reason: Some(StateFailureReason::DbError),
-                                warnings: vec![msg],
-                            };
-                            if json {
-                                let response = JsonResponse::ok("commit", data);
-                                println!("{}", serde_json::to_string_pretty(&response).unwrap());
-                            }
-                            0
-                        });
-                    }
-                };
-
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugtool_core::StateDb::open(&db_path, &repo_root) {
                     Ok(mut db) => {
-                        // Check for plan drift (Path 1 and Path 3)
-                        match check_commit_drift(&repo_root, &resolved_plan, &db) {
-                            Ok(Some(drift_msg)) => {
-                                // Path 1: Drift detected before complete_step
-                                (true, Some(StateFailureReason::Drift), vec![drift_msg])
-                            }
-                            Ok(None) => {
-                                // Path 2: No drift, proceed with complete_step
-                                match db.complete_step(
-                                    &resolved_plan,
-                                    &step,
-                                    &worktree,
-                                    false, // strict mode: deferred items allowed, open items block
-                                    Some("committed via tugcode commit"),
-                                ) {
-                                    Ok(_) => (false, None, vec![]),
-                                    Err(e) => {
-                                        let reason = classify_state_error(&e);
-                                        let msg = format!("state complete failed: {}", e);
-                                        (true, Some(reason), vec![msg])
-                                    }
+                        // Resolve plan_id via database lookup (not filesystem)
+                        let plan_id = match db.lookup_plan_by_id_or_slug(&plan) {
+                            Ok(Some(id)) => id,
+                            Ok(None) => match db.lookup_plan_id_by_path(&plan) {
+                                Ok(Some(id)) => id,
+                                _ => {
+                                    let msg =
+                                        format!("state complete failed: plan not found: {}", plan);
+                                    return Ok({
+                                        let data = CommitData {
+                                            committed: true,
+                                            commit_hash: Some(commit_hash),
+                                            log_updated: true,
+                                            log_rotated: rotate_result.rotated,
+                                            archived_path: rotate_result.archived_path,
+                                            files_staged,
+                                            state_update_failed: true,
+                                            state_failure_reason: Some(StateFailureReason::DbError),
+                                            warnings: vec![msg],
+                                        };
+                                        if json {
+                                            let response = JsonResponse::ok("commit", data);
+                                            println!(
+                                                "{}",
+                                                serde_json::to_string_pretty(&response).unwrap()
+                                            );
+                                        }
+                                        0
+                                    });
                                 }
-                            }
+                            },
                             Err(e) => {
-                                // Path 3: Drift check itself failed
-                                let msg = format!("drift check failed: {}", e);
-                                (true, Some(StateFailureReason::DbError), vec![msg])
+                                let msg = format!("state complete failed: {}", e);
+                                return Ok({
+                                    let data = CommitData {
+                                        committed: true,
+                                        commit_hash: Some(commit_hash),
+                                        log_updated: true,
+                                        log_rotated: rotate_result.rotated,
+                                        archived_path: rotate_result.archived_path,
+                                        files_staged,
+                                        state_update_failed: true,
+                                        state_failure_reason: Some(StateFailureReason::DbError),
+                                        warnings: vec![msg],
+                                    };
+                                    if json {
+                                        let response = JsonResponse::ok("commit", data);
+                                        println!(
+                                            "{}",
+                                            serde_json::to_string_pretty(&response).unwrap()
+                                        );
+                                    }
+                                    0
+                                });
+                            }
+                        };
+
+                        match db.complete_step(
+                            &plan_id,
+                            &step,
+                            &worktree,
+                            false, // strict mode: deferred items allowed, open items block
+                            Some("committed via tugcode commit"),
+                        ) {
+                            Ok(_) => (false, None, vec![]),
+                            Err(e) => {
+                                let reason = classify_state_error(&e);
+                                let msg = format!("state complete failed: {}", e);
+                                (true, Some(reason), vec![msg])
                             }
                         }
                     }
@@ -476,18 +408,6 @@ mod tests {
             classify_state_error(&err),
             StateFailureReason::OpenItems,
             "StateIncompleteChecklist should map to OpenItems"
-        );
-    }
-
-    #[test]
-    fn test_classify_state_error_drift() {
-        let err = tugtool_core::TugError::StatePlanHashMismatch {
-            plan_id: "tugplan-foo-abc1234-1".to_string(),
-        };
-        assert_eq!(
-            classify_state_error(&err),
-            StateFailureReason::Drift,
-            "StatePlanHashMismatch should map to Drift"
         );
     }
 
