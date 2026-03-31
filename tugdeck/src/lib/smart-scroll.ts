@@ -11,7 +11,7 @@
  *   programmatic or DOM-manipulation-caused scrolls. No timing hacks, no
  *   rAF+setTimeout, no flags cleared after arbitrary delays.
  *
- *   Seven listeners:
+ *   Six listeners:
  *   1. scroll on container (passive) — onScroll callback, lastScrollTop update,
  *      phase transitions, follow-bottom re-engagement.
  *   2. scrollend on container — terminal signal for deceleration and programmatic
@@ -19,12 +19,11 @@
  *      browsers without it.
  *   3. pointerdown on container (passive) — enters TRACKING phase.
  *   4. pointerup/pointercancel on document (passive) — exits DRAGGING; 50ms check
- *      determines whether DECELERATING follows.
+ *      determines whether DECELERATING follows (via SETTLING phase).
  *   5. wheel on container (passive) — skips TRACKING, enters DRAGGING immediately;
  *      disengages follow-bottom on deltaY < 0.
- *   6. keydown on container — Page Up/Home/Arrow Up/Shift+Space skips TRACKING,
- *      enters DRAGGING immediately.
- *   7. ResizeObserver on contentElement — follow-bottom auto-scroll trigger.
+ *   6. keydown on container — scroll keys skip TRACKING, enter DRAGGING immediately.
+ *      Only scroll-up keys disengage follow-bottom.
  *
  * Not a React hook — a plain class that manages DOM listeners directly.
  * Callers create an instance and call dispose() when done.
@@ -41,7 +40,7 @@
 // ---------------------------------------------------------------------------
 
 /** Scroll phase — mutually exclusive states. */
-export type ScrollPhase = 'idle' | 'tracking' | 'dragging' | 'decelerating' | 'programmatic';
+export type ScrollPhase = 'idle' | 'tracking' | 'dragging' | 'settling' | 'decelerating' | 'programmatic';
 
 /** Lifecycle callbacks — modeled after UIScrollViewDelegate. */
 export interface SmartScrollCallbacks {
@@ -71,7 +70,6 @@ export interface SmartScrollCallbacks {
 /** Constructor options. */
 export interface SmartScrollOptions {
   scrollContainer: HTMLElement;
-  contentElement: HTMLElement;
   callbacks?: SmartScrollCallbacks;
   /** Default: 60px */
   nearBottomThreshold?: number;
@@ -86,8 +84,13 @@ export interface SmartScrollOptions {
 const DEFAULT_NEAR_BOTTOM_THRESHOLD = 60;
 
 /**
- * Scroll-up key codes that initiate user scroll without pointer input.
+ * All scroll key codes that initiate user scroll without pointer input.
  * The scroll container needs tabindex="0" for keydown to fire on it.
+ */
+const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown']);
+
+/**
+ * Scroll-up key codes that should disengage follow-bottom.
  */
 const SCROLL_UP_KEYS = new Set(['PageUp', 'Home', 'ArrowUp']);
 
@@ -111,7 +114,6 @@ const SCROLLEND_FALLBACK_MS = 150;
 
 export class SmartScroll {
   private readonly _container: HTMLElement;
-  private readonly _content: HTMLElement;
   private readonly _callbacks: SmartScrollCallbacks;
   private readonly _nearBottomThreshold: number;
   private readonly _supportsScrollEnd: boolean;
@@ -136,19 +138,15 @@ export class SmartScroll {
   private readonly _onWheel: (e: WheelEvent) => void;
   private readonly _onKeyDown: (e: KeyboardEvent) => void;
 
-  private readonly _resizeObserver: ResizeObserver;
-
   constructor(options: SmartScrollOptions) {
     const {
       scrollContainer,
-      contentElement,
       callbacks = {},
       nearBottomThreshold = DEFAULT_NEAR_BOTTOM_THRESHOLD,
       followBottom = true,
     } = options;
 
     this._container = scrollContainer;
-    this._content = contentElement;
     this._callbacks = callbacks;
     this._nearBottomThreshold = nearBottomThreshold;
     this._isFollowingBottom = followBottom;
@@ -177,10 +175,6 @@ export class SmartScroll {
     // keydown does not use passive:true here — that option is not universally
     // accepted for keydown and we don't call preventDefault in this handler.
     scrollContainer.addEventListener('keydown', this._onKeyDown);
-
-    // ResizeObserver for content growth detection.
-    this._resizeObserver = new ResizeObserver(this._handleResize.bind(this));
-    this._resizeObserver.observe(contentElement);
   }
 
   // -------------------------------------------------------------------------
@@ -202,10 +196,10 @@ export class SmartScroll {
     return this._container.scrollTop <= 0;
   }
 
-  /** True while the user is actively interacting (tracking, dragging, or decelerating). */
+  /** True while the user is actively interacting (tracking, dragging, settling, or decelerating). */
   get isUserScrolling(): boolean {
     const p = this._phase;
-    return p === 'tracking' || p === 'dragging' || p === 'decelerating';
+    return p === 'tracking' || p === 'dragging' || p === 'settling' || p === 'decelerating';
   }
 
   get isFollowingBottom(): boolean { return this._isFollowingBottom; }
@@ -288,8 +282,6 @@ export class SmartScroll {
     document.removeEventListener('pointercancel', this._onPointerUp);
     this._container.removeEventListener('wheel', this._onWheel);
     this._container.removeEventListener('keydown', this._onKeyDown);
-
-    this._resizeObserver.disconnect();
   }
 
   // -------------------------------------------------------------------------
@@ -306,20 +298,25 @@ export class SmartScroll {
 
     switch (this._phase) {
       case 'idle':
-        // If we're in the 50ms post-pointerup window, note that scroll arrived.
-        if (this._decelerationTimer !== null) {
-          this._scrolledAfterPointerUp = true;
-        }
         // Re-engagement: scrolled down into near-bottom while idle.
         if (!this._isFollowingBottom && scrollTop >= this._lastScrollTop && this.isAtBottom) {
           this._setFollowingBottom(true);
         }
         break;
 
+      case 'settling':
+        // During settling, a scroll event means momentum deceleration is arriving.
+        this._scrolledAfterPointerUp = true;
+        break;
+
       case 'dragging':
         // Detect user scrolling up — disengage follow-bottom.
         if (scrollTop < this._lastScrollTop && this._isFollowingBottom) {
           this._setFollowingBottom(false);
+        }
+        // Restart scrollend fallback timer (Issue 5).
+        if (!this._supportsScrollEnd) {
+          this._restartScrollEndTimer();
         }
         break;
 
@@ -357,10 +354,11 @@ export class SmartScroll {
     if (this._phase === 'idle') {
       this._phase = 'tracking';
     }
-    // If decelerating, a new pointerdown interrupts; enter tracking to
-    // capture the new gesture.
-    else if (this._phase === 'decelerating') {
+    // If decelerating or settling, a new pointerdown interrupts; enter tracking
+    // to capture the new gesture.
+    else if (this._phase === 'decelerating' || this._phase === 'settling') {
       this._clearScrollEndTimer();
+      this._clearDecelerationTimer();
       this._phase = 'tracking';
     }
   }
@@ -375,18 +373,16 @@ export class SmartScroll {
     }
 
     if (this._phase === 'dragging') {
-      // Wait 50ms to see if momentum scroll events arrive.
+      // Enter SETTLING phase: wait 50ms to see if momentum scroll events arrive.
       this._scrolledAfterPointerUp = false;
-      // Temporarily hold at idle so _handleScroll can detect incoming events
-      // via the _decelerationTimer sentinel.
-      this._phase = 'idle';
+      this._phase = 'settling';
 
       this._decelerationTimer = setTimeout(() => {
         this._decelerationTimer = null;
         if (this._disposed) return;
 
         if (this._scrolledAfterPointerUp) {
-          // Momentum is happening — enter decelerating.
+          // Momentum is happening — transition settling → decelerating.
           this._phase = 'decelerating';
           this._callbacks.onDidEndDragging?.(this, true);
           this._callbacks.onWillBeginDecelerating?.(this);
@@ -394,7 +390,8 @@ export class SmartScroll {
             this._restartScrollEndTimer();
           }
         } else {
-          // No momentum — drag ended cleanly.
+          // No momentum — drag ended cleanly, transition settling → idle.
+          this._phase = 'idle';
           this._callbacks.onDidEndDragging?.(this, false);
           this._callbacks.onDidEndScrolling?.(this);
           this._checkReEngageFollowBottom();
@@ -415,6 +412,11 @@ export class SmartScroll {
       this._enterDragging();
     }
 
+    // Start/restart scrollend fallback timer (Issue 3).
+    if (!this._supportsScrollEnd) {
+      this._restartScrollEndTimer();
+    }
+
     // Disengage follow-bottom on scroll-up.
     if (e.deltaY < 0 && this._isFollowingBottom) {
       this._setFollowingBottom(false);
@@ -432,31 +434,30 @@ export class SmartScroll {
       SCROLL_UP_KEYS.has(e.code) ||
       (e.code === 'Space' && e.shiftKey);
 
-    if (!isScrollUpKey) return;
+    const isScrollDownKey =
+      e.code === 'PageDown' ||
+      e.code === 'End' ||
+      e.code === 'ArrowDown' ||
+      (e.code === 'Space' && !e.shiftKey);
 
-    // Scroll-up keys enter DRAGGING directly (keyboard has no pointer).
+    const isScrollKey = isScrollUpKey || isScrollDownKey || SCROLL_KEYS.has(e.code);
+
+    if (!isScrollKey) return;
+
+    // All scroll keys enter DRAGGING directly (keyboard has no pointer).
     if (this._phase !== 'dragging') {
       this._enterDragging();
     }
 
-    // Disengage follow-bottom for any up-scroll key.
-    if (this._isFollowingBottom) {
+    // Start/restart scrollend fallback timer (Issue 4).
+    if (!this._supportsScrollEnd) {
+      this._restartScrollEndTimer();
+    }
+
+    // Only disengage follow-bottom for scroll-up keys.
+    if (isScrollUpKey && this._isFollowingBottom) {
       this._setFollowingBottom(false);
     }
-  }
-
-  // -------------------------------------------------------------------------
-  // Private — ResizeObserver
-  // -------------------------------------------------------------------------
-
-  private _handleResize(): void {
-    // ResizeObserver does NOT auto-scroll. The controller (the component)
-    // decides when to scroll by calling scrollToBottom() after content
-    // changes settle. This follows the UIScrollView model: the scroll view
-    // provides the method and the state; the controller decides when to use them.
-    //
-    // The ResizeObserver is retained for future use (content-change detection
-    // for callbacks) but does not write scrollTop.
   }
 
   // -------------------------------------------------------------------------
@@ -499,6 +500,13 @@ export class SmartScroll {
     } else if (previousPhase === 'programmatic') {
       this._phase = 'idle';
       this._callbacks.onDidEndScrollingAnimation?.(this);
+      this._callbacks.onDidEndScrolling?.(this);
+      this._checkReEngageFollowBottom();
+    } else if (previousPhase === 'dragging') {
+      // scrollend fired while still in DRAGGING (e.g., wheel/keyboard scroll ended
+      // without a pointerup). Treat as terminal — transition to idle.
+      this._phase = 'idle';
+      this._callbacks.onDidEndDragging?.(this, false);
       this._callbacks.onDidEndScrolling?.(this);
       this._checkReEngageFollowBottom();
     }
