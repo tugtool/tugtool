@@ -101,7 +101,8 @@ class BlockHeightIndex {
   return parts.join('');
 }
 
-// Pre-generate 1MB content at module scope so it is not regenerated on re-render.
+// Pre-generate static content at module scope so it is not regenerated on re-render.
+const STATIC_50KB_CONTENT = generateMarkdown(50 * 1024);
 const STATIC_1MB_CONTENT = generateMarkdown(1024 * 1024);
 
 // Streaming simulation: chunks of ~200 characters of realistic prose
@@ -316,6 +317,11 @@ export function GalleryMarkdownView() {
     stopStreamingOnly();
   }, [stopStreamingOnly]);
 
+  // ---- Action: Static 50KB ----
+  const handleStatic50KB = useCallback(() => {
+    markdownRef.current?.setRegion('static-50kb-' + Date.now(), STATIC_50KB_CONTENT);
+  }, []);
+
   // ---- Action: Static 1MB ----
   const handleStatic1MB = useCallback(() => {
     markdownRef.current?.setRegion('static-1mb-' + Date.now(), STATIC_1MB_CONTENT);
@@ -358,16 +364,22 @@ export function GalleryMarkdownView() {
     <div className="cg-content" data-testid="gallery-markdown-view" style={{ padding: 0, gap: 0, overflow: "hidden", height: "100%" }}>
       {/* ---- Action buttons and diagnostics ---- */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--tug7-element-global-border-normal-default-rest)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        {/* Streaming button: Start Stream / Stop */}
-        {!isStreaming ? (
-          <TugPushButton emphasis="outlined" role="accent" size="sm" onClick={handleStartStream}>
-            Start Stream
-          </TugPushButton>
-        ) : (
-          <TugPushButton emphasis="outlined" role="danger" size="sm" onClick={handleStopStream}>
-            Stop
-          </TugPushButton>
-        )}
+        {/* Streaming button: Start Stream / Stop — fixed width to prevent layout jump */}
+        <div style={{ minWidth: 110 }}>
+          {!isStreaming ? (
+            <TugPushButton emphasis="outlined" role="accent" size="sm" onClick={handleStartStream}>
+              Start Stream
+            </TugPushButton>
+          ) : (
+            <TugPushButton emphasis="outlined" role="danger" size="sm" onClick={handleStopStream}>
+              Stop
+            </TugPushButton>
+          )}
+        </div>
+
+        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic50KB}>
+          Static 50KB
+        </TugPushButton>
 
         <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic1MB}>
           Static 1MB

@@ -66,3 +66,22 @@ Note: `ResponderParentContext` in `use-responder.tsx` can keep its name — it *
 **Fix:** Rename the `parentId` field to `nextResponder` on `ResponderNode` and update all references across the implementation and tests. Update the doc comment on `ResponderNode` to clarify the semantics.
 
 **Noted:** Current session review of responder chain implementation.
+
+---
+
+## E05: TugPushButton should support stable minimum width to prevent layout jumps
+
+**Component:** `tugdeck/src/components/tugways/tug-push-button.tsx`
+
+**Issue:** When a button's label changes (e.g., "Start Stream" → "Stop"), the button resizes to fit the new text, causing a layout jump that shifts adjacent elements. This is a common problem with toggle-style buttons where the two labels have different widths.
+
+**Design idea:** TugPushButton should support a mechanism to size itself to the widest of its possible labels. Options:
+- A `minWidth` prop that the caller sets explicitly.
+- A `labels` prop (array of strings) — the button measures all labels at mount and sets `min-width` to the widest. The visible label is controlled separately.
+- An invisible "shadow" span containing the longest label, with the button's min-width derived from it.
+
+The current workaround (wrapping in a `<div style={{ minWidth }}>`) works but is a layout hack that belongs in the component itself.
+
+**Fix:** Design and implement a proper solution in TugPushButton. Consider which approach best fits the component authoring guide [L19] and token system [L15].
+
+**Noted:** Phase 3A.5 gallery card rework — streaming Start/Stop button layout jump.
