@@ -5,30 +5,33 @@
  * and RenderedBlockWindow into a React component. Only the blocks visible in
  * the viewport (plus overscan) are present in the DOM at any time.
  *
+ * Lexing and parsing use pulldown-cmark compiled to WASM (tugmark-wasm).
+ * All blocks are lexed and parsed synchronously on content load (~29ms for 1MB).
+ * Scroll handling is pure DOM window management — zero WASM calls during scroll.
+ *
  * Laws compliance:
- * - [L02] External state enters React through useSyncExternalStore only.
- *   The streamingText hook is kept unconditional (hooks must not be conditional)
- *   but its value is suppressed — streaming DOM updates go through L22 instead.
- * - [L05] RAF is used ONLY for the scroll position write during auto-scroll.
- *   Never used to commit React state.
+ * - [L03] useLayoutEffect for static and streaming paths — block DOM and height
+ *   index must be ready before scroll events fire.
+ * - [L05] RAF is used ONLY for scroll coalescing (onScroll DOM event, not React
+ *   state commit). Never used to commit React state.
  * - [L06] Appearance changes via CSS and DOM, never React state. Spacer heights
  *   and block visibility are managed by direct DOM writes, not React state.
+ * - [L07] Handlers access current state through refs, never stale closures.
  * - [L19] Component authoring guide: module docstring, exported props interface,
  *   data-slot="markdown-view", file pair (tsx + css).
  * - [L22] Streaming DOM updates observe the PropertyStore directly via
  *   useLayoutEffect — no React round-trip between data change and DOM write.
  *
  * Design decisions:
- * - [D03] HTML cache replaces pre-rendering (Map<number, string>, never evicted)
+ * - [D03] HTML cache (Map<number, string>, never evicted, all blocks pre-parsed)
  * - [D04] DOMPurify at render time only
- * - [D05] Hardcoded height constants — Phase 3B refines with theme measurement
  *
  * @module components/tugways/tug-markdown-view
  */
 
 import "./tug-markdown-view.css";
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useLayoutEffect, useRef } from "react";
 import DOMPurifyModule from "dompurify";
 import { cn } from "@/lib/utils";
 import { BlockHeightIndex } from "@/lib/block-height-index";
@@ -185,28 +188,13 @@ export interface TugMarkdownViewProps {
 // ---------------------------------------------------------------------------
 
 interface MarkdownEngineState {
-  /**
-   * The source text for static content. Main thread slices raws using offsets
-   * from Phase 1 lex response (D08).
-   */
+  /** The source text (static content or accumulated streaming text). */
   contentText: string;
-  /**
-   * UTF-8 byte offset → JS string char index map for contentText.
-   * Built once after each content assignment. Allows correct slicing when
-   * pulldown-cmark returns byte offsets for non-ASCII content.
-   */
+  /** Byte-to-char offset map for contentText (built per lex pass). */
   byteToCharMap: Uint32Array | null;
-  /**
-   * Start BYTE offsets per block from lex_blocks() response.
-   * blockStarts[i] = UTF-8 byte position where block i begins.
-   * Use byteToCharMap to convert to char index before String.slice().
-   */
+  /** Char-mapped start offsets per block. blockStarts[i] = JS char index. */
   blockStarts: number[];
-  /**
-   * End BYTE offsets per block from lex_blocks() response.
-   * blockEnds[i] = UTF-8 byte position where block i ends.
-   * Use byteToCharMap to convert to char index before String.slice().
-   */
+  /** Char-mapped end offsets per block. blockEnds[i] = JS char index. */
   blockEnds: number[];
   /**
    * The accumulated streaming text. Grows as deltas arrive.
@@ -273,6 +261,10 @@ export function TugMarkdownView({
   const bottomSpacerRef = useRef<HTMLDivElement>(null);
   const blockContainerRef = useRef<HTMLDivElement>(null);
 
+  // ---- Prop refs for stable closure access [L07] ----
+  const isStreamingRef = useRef(isStreaming);
+  isStreamingRef.current = isStreaming;
+
   // ---- ResizeObserver for measuring rendered blocks ----
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
@@ -303,26 +295,8 @@ export function TugMarkdownView({
     return engineRef.current;
   }
 
-  // ---- useSyncExternalStore for streaming path [L02] ----
-  // Subscribe/getSnapshot only used in streaming mode.
-  const subscribe = useCallback(
-    (cb: () => void) => {
-      if (!streamingStore) return () => {};
-      return streamingStore.observe(streamingPath, cb);
-    },
-    [streamingStore, streamingPath]
-  );
-
-  const getSnapshot = useCallback((): string => {
-    if (!streamingStore) return "";
-    return (streamingStore.get(streamingPath) as string) ?? "";
-  }, [streamingStore, streamingPath]);
-
-  // This call is always made (hooks must not be conditional), but streaming DOM
-  // updates go through the L22 store observer below — not through React renders.
-  // Suppress the unused value to satisfy the linter.
-  const streamingText = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  void streamingText;
+  // Streaming DOM updates go through the L22 store observer (useLayoutEffect below).
+  // No useSyncExternalStore — the store is observed directly, not through React.
 
   // ---- Apply spacer heights to DOM ----
   function applySpacers(topHeight: number, bottomHeight: number) {
@@ -422,7 +396,7 @@ export function TugMarkdownView({
   }
 
   // ---- Cleanup component-scoped resources on unmount ----
-  useEffect(() => {
+  useLayoutEffect(() => {
     return () => {
       const engine = engineRef.current;
       if (!engine) return;
@@ -489,16 +463,11 @@ export function TugMarkdownView({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Shared lex+parse+render helper ----
-  // Used by the static rendering path.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const lexParseAndRender = useCallback((engine: MarkdownEngineState, text: string) => {
-    // Clear previous state.
-    // Reset the block window BEFORE clearing the height index — blockWindow.update()
-    // with count=0 exits the old range and resets internal [startIndex, endIndex) to
-    // [0, 0). Without this, the window retains stale range from previous content and
-    // the next update() returns empty enter ranges (it thinks blocks are already rendered).
+  // Plain function — reads from refs only [L07]. Used by static path.
+  function lexParseAndRender(engine: MarkdownEngineState, text: string) {
+    // Reset block window while height index is empty — forces exit of stale range.
     engine.heightIndex.clear();
-    engine.blockWindow.update(0); // forces exit of stale range while count=0
+    engine.blockWindow.update(0);
     engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
     for (const [, el] of engine.blockNodes) {
       resizeObserverRef.current?.unobserve(el);
@@ -512,7 +481,7 @@ export function TugMarkdownView({
     engine.contentText = text;
     applySpacers(0, 0);
 
-    // Lex: synchronous WASM call
+    // Lex + parse: synchronous WASM calls (~29ms for 1MB)
     const packed = lex_blocks(text);
     const blocks = decodeBlocks(packed);
     const byteToChar = buildByteToCharMap(text);
@@ -520,17 +489,9 @@ export function TugMarkdownView({
     engine.blockStarts = blocks.map(b => byteToChar[b.start] ?? b.start);
     engine.blockEnds = blocks.map(b => byteToChar[b.end] ?? b.end);
 
-    // Populate height index with estimates
     for (const block of blocks) {
       engine.heightIndex.appendBlock(estimateBlockHeight(block));
     }
-
-    // Parse ALL blocks upfront. Benchmarks show 1MB lex+parse = ~29ms, which is
-    // fast enough to avoid jank. All blocks are cached before any DOM update or
-    // scroll event, eliminating on-demand parse paths entirely.
-    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
-    const viewportHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
-    engine.blockWindow.setViewportHeight(viewportHeight);
 
     for (let i = 0; i < blocks.length; i++) {
       const raw = text.slice(engine.blockStarts[i], engine.blockEnds[i]);
@@ -538,16 +499,18 @@ export function TugMarkdownView({
     }
 
     // Enter visible blocks into DOM
+    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+    engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
     const update = engine.blockWindow.update(scrollTop);
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
-  // ---- Static rendering path ----
-  useEffect(() => {
+  // ---- Static rendering path [L03: useLayoutEffect so DOM is ready before scroll events] ----
+  useLayoutEffect(() => {
     if (content === undefined) return;
     const engine = getEngine();
     lexParseAndRender(engine, content);
-  }, [content, lexParseAndRender]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- RAF-coalesced scroll handler [D02, L05] ----
   const handleScroll = useCallback(() => {
@@ -630,8 +593,8 @@ export function TugMarkdownView({
       const update = engine.blockWindow.update(scrollTop);
       applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
 
-      // Auto-scroll to tail [L06: direct DOM write]
-      if (isStreaming && scrollContainerRef.current) {
+      // Auto-scroll to tail [L06: direct DOM write, L07: ref for current prop]
+      if (isStreamingRef.current && scrollContainerRef.current) {
         const totalHeight = engine.heightIndex.getTotalHeight();
         const viewportHeight = scrollContainerRef.current.clientHeight;
         scrollContainerRef.current.scrollTop = Math.max(0, totalHeight - viewportHeight);
@@ -639,7 +602,7 @@ export function TugMarkdownView({
     });
 
     return unsubscribe;
-  }, [streamingStore, streamingPath, isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [streamingStore, streamingPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
