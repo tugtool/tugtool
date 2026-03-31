@@ -10,7 +10,7 @@ use tugtool_core::{
     ResolveResult, TugError, ValidationLevel, derive_tugplan_slug, resolve_plan,
     worktree::{
         CleanupMode, DiscoveredWorktree, WorktreeConfig, cleanup_worktrees, create_worktree,
-        list_worktrees, remove_worktree, resolve_worktree,
+        list_worktrees, resolve_worktree,
     },
 };
 
@@ -70,17 +70,19 @@ pub enum WorktreeCommands {
         dry_run: bool,
     },
 
-    /// Remove a specific worktree
+    /// Discard a plan implementation: archive state, remove worktree, delete branch
     ///
-    /// Removes a worktree identified by plan path, branch name, or worktree path.
+    /// The abort/discard counterpart to `tugcode merge` (the success path).
+    /// Archives the plan in the state DB (with content snapshot), removes
+    /// the worktree, and deletes the branch. All in one command.
     #[command(
-        long_about = "Remove a specific worktree.\n\nIdentifies worktree by (in resolution order):\n  1. Branch name (e.g., tugplan/14-20250209-172637)\n  2. Worktree path (e.g., /abs/path/.tugtree/tugplan__14-...)\n  3. Directory name (e.g., tugplan__14-20250209-172637)\n  4. Plan filename (e.g., .tugtool/tugplan-14.md)\n  5. Plan slug (e.g., dev-mode-notifications)\n  6. Plan prefix via resolve_plan fallback (e.g., dev)\n\nIf multiple worktrees match, an error is returned listing all\ncandidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
+        long_about = "Discard a plan implementation.\n\nArchives the plan in the state database (preserving history),\nremoves the worktree, and deletes the branch.\n\nIdentifies worktree by (in resolution order):\n  1. Branch name (e.g., tugplan/14-20250209-172637)\n  2. Worktree path (e.g., /abs/path/.tugtree/tugplan__14-...)\n  3. Directory name (e.g., tugplan__14-20250209-172637)\n  4. Plan filename (e.g., .tugtool/tugplan-14.md)\n  5. Plan slug (e.g., dev-mode-notifications)\n  6. Plan prefix via resolve_plan fallback (e.g., dev)\n\nIf multiple worktrees match, an error is returned listing all\ncandidates. Use branch name or worktree path to disambiguate.\n\nUse --force to discard worktrees with uncommitted changes."
     )]
-    Remove {
-        /// Target identifier (plan path, branch name, or worktree path)
+    Discard {
+        /// Target identifier (plan slug, plan_id, branch name, or worktree path)
         target: String,
 
-        /// Force removal of dirty worktree
+        /// Force removal of dirty worktree with uncommitted changes
         #[arg(long)]
         force: bool,
     },
@@ -130,12 +132,15 @@ pub struct CleanupData {
     pub dry_run: bool,
 }
 
-/// JSON output for remove command
+/// JSON output for discard command
 #[derive(Serialize)]
-pub struct RemoveData {
+pub struct DiscardData {
     pub worktree_path: String,
     pub branch_name: String,
-    pub plan_path: String,
+    pub plan_slug: String,
+    pub plan_id: Option<String>,
+    pub archived: bool,
+    pub snapshot_taken: bool,
 }
 
 /// Ensure the working directory is a git repo with at least one commit on the base branch.
@@ -930,38 +935,22 @@ pub fn run_worktree_cleanup_with_root(
     }
 }
 
-/// Run worktree remove command
-pub fn run_worktree_remove(
-    target: String,
-    force: bool,
-    json_output: bool,
-    quiet: bool,
-) -> Result<i32, String> {
-    run_worktree_remove_with_root(target, force, json_output, quiet, None)
-}
 
-/// Inner implementation that accepts an explicit repo root.
-pub fn run_worktree_remove_with_root(
+/// Discard a plan implementation: archive state, remove worktree, delete branch.
+pub fn run_worktree_discard(
     target: String,
     force: bool,
     json_output: bool,
     quiet: bool,
-    override_root: Option<&Path>,
 ) -> Result<i32, String> {
     use std::process::Command;
 
-    let repo_root = match override_root {
-        Some(root) => root.to_path_buf(),
-        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
-    };
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
-    // List all worktrees
+    // Resolve the target to a worktree
     let worktrees = list_worktrees(&repo_root).map_err(|e| e.to_string())?;
-
-    // Resolve target via the 5-stage cascade
     let mut matches = resolve_worktree(&target, &worktrees);
 
-    // If no matches, try resolve_plan fallback (prefix matching, etc.)
     if matches.is_empty() {
         if let Ok(ResolveResult::Found { path, .. }) = resolve_plan(&target, &repo_root) {
             let slug = derive_tugplan_slug(&path);
@@ -969,7 +958,6 @@ pub fn run_worktree_remove_with_root(
         }
     }
 
-    // Handle match count
     if matches.len() > 1 {
         if json_output {
             eprintln!(r#"{{"error": "Multiple worktrees found for {}"}}"#, target);
@@ -977,10 +965,6 @@ pub fn run_worktree_remove_with_root(
             eprintln!("Error: Multiple worktrees found for {}\n", target);
             for wt in &matches {
                 eprintln!("  {}  {}", wt.branch, wt.path.display());
-            }
-            eprintln!("\nUse branch name or worktree path to disambiguate:");
-            if let Some(first) = matches.first() {
-                eprintln!("  tug worktree remove {}", first.branch);
             }
         }
         return Ok(1);
@@ -997,12 +981,16 @@ pub fn run_worktree_remove_with_root(
         return Ok(1);
     };
 
-    // Check if worktree has uncommitted changes (unless --force)
+    let worktree_path = worktree.path.clone();
+    let branch_name = worktree.branch.clone();
+    let plan_slug = worktree.plan_slug.clone();
+
+    // Check for uncommitted changes unless --force
     if !force {
         let status_output = Command::new("git")
             .args([
                 "-C",
-                &worktree.path.to_string_lossy(),
+                &worktree_path.to_string_lossy(),
                 "status",
                 "--porcelain",
             ])
@@ -1019,67 +1007,93 @@ pub fn run_worktree_remove_with_root(
                 } else if !quiet {
                     eprintln!("error: Worktree has uncommitted changes");
                     eprintln!("Use --force to override:");
-                    eprintln!("  tug worktree remove {} --force", target);
+                    eprintln!("  tugcode worktree discard {} --force", target);
                 }
                 return Ok(1);
             }
         }
     }
 
-    // Remove the worktree
-    let worktree_path = &worktree.path;
-
-    // If --force is passed, we need to manually force-remove the worktree
-    if force {
-        // Use git worktree remove --force directly
-        let remove_output = Command::new("git")
-            .args([
-                "-C",
-                &repo_root.to_string_lossy(),
-                "worktree",
-                "remove",
-                "--force",
-                &worktree_path.to_string_lossy(),
-            ])
-            .output()
-            .map_err(|e| format!("failed to remove worktree: {}", e))?;
-
-        if !remove_output.status.success() {
-            let stderr = String::from_utf8_lossy(&remove_output.stderr);
-            if json_output {
-                eprintln!(r#"{{"error": "Failed to remove worktree: {}"}}"#, stderr);
-            } else if !quiet {
-                eprintln!("error: Failed to remove worktree: {}", stderr);
+    // Step 1: Archive the plan in state DB
+    let (plan_id, archived, snapshot_taken) = {
+        let db_path = repo_root.join(".tugtool").join("state.db");
+        match tugtool_core::StateDb::open(&db_path, &repo_root) {
+            Ok(mut db) => {
+                // Look up plan_id by slug
+                match db.lookup_plan_by_id_or_slug(&plan_slug) {
+                    Ok(Some(id)) => match db.archive_plan(&id) {
+                        Ok(result) => (Some(id), true, result.snapshot_taken),
+                        Err(e) => {
+                            // Archive failed (maybe already archived) — warn but continue
+                            if !quiet && !json_output {
+                                eprintln!("warning: failed to archive plan: {}", e);
+                            }
+                            (Some(id), false, false)
+                        }
+                    },
+                    Ok(None) => {
+                        if !quiet && !json_output {
+                            eprintln!(
+                                "warning: no plan found in state DB for slug: {}",
+                                plan_slug
+                            );
+                        }
+                        (None, false, false)
+                    }
+                    Err(e) => {
+                        if !quiet && !json_output {
+                            eprintln!("warning: state DB lookup failed: {}", e);
+                        }
+                        (None, false, false)
+                    }
+                }
             }
-            return Ok(1);
-        }
-    } else {
-        // Use the remove_worktree function which handles cleanup
-        if let Err(e) = remove_worktree(worktree_path, &repo_root) {
-            if json_output {
-                eprintln!(r#"{{"error": "{}"}}"#, e);
-            } else if !quiet {
-                eprintln!("error: {}", e);
+            Err(e) => {
+                if !quiet && !json_output {
+                    eprintln!("warning: could not open state DB: {}", e);
+                }
+                (None, false, false)
             }
-            return Ok(1);
         }
+    };
+
+    // Step 2: Force-remove the worktree
+    let remove_output = Command::new("git")
+        .args([
+            "-C",
+            &repo_root.to_string_lossy(),
+            "worktree",
+            "remove",
+            "--force",
+            &worktree_path.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|e| format!("failed to remove worktree: {}", e))?;
+
+    if !remove_output.status.success() {
+        let stderr = String::from_utf8_lossy(&remove_output.stderr);
+        if json_output {
+            eprintln!(r#"{{"error": "Failed to remove worktree: {}"}}"#, stderr);
+        } else if !quiet {
+            eprintln!("error: Failed to remove worktree: {}", stderr);
+        }
+        return Ok(1);
     }
 
-    // Delete the branch
+    // Step 3: Delete the branch
     let delete_output = Command::new("git")
         .args([
             "-C",
             &repo_root.to_string_lossy(),
             "branch",
             "-D",
-            &worktree.branch,
+            &branch_name,
         ])
         .output()
         .map_err(|e| format!("failed to delete branch: {}", e))?;
 
     if !delete_output.status.success() {
         let stderr = String::from_utf8_lossy(&delete_output.stderr);
-        // Warn but don't fail - worktree removal succeeded
         if !quiet && !json_output {
             eprintln!("warning: Failed to delete branch: {}", stderr);
         }
@@ -1090,22 +1104,34 @@ pub fn run_worktree_remove_with_root(
         .args(["-C", &repo_root.to_string_lossy(), "worktree", "prune"])
         .output();
 
+    // Report
     if json_output {
-        let plan_path = format!(".tugtool/tugplan-{}.md", worktree.plan_slug);
-        let data = RemoveData {
+        let data = DiscardData {
             worktree_path: worktree_path.display().to_string(),
-            branch_name: worktree.branch.clone(),
-            plan_path,
+            branch_name,
+            plan_slug,
+            plan_id,
+            archived,
+            snapshot_taken,
         };
         println!(
             "{}",
             serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?
         );
     } else if !quiet {
-        println!("Removed worktree:");
-        println!("  Branch: {}", worktree.branch);
-        println!("  Worktree: {}", worktree_path.display());
-        println!("  Plan slug: {}", worktree.plan_slug);
+        println!("Discarded plan implementation:");
+        println!("  Worktree: {} (removed)", worktree_path.display());
+        println!("  Branch: {} (deleted)", branch_name);
+        if archived {
+            println!(
+                "  State: archived{}",
+                if snapshot_taken {
+                    " (snapshot taken)"
+                } else {
+                    ""
+                }
+            );
+        }
     }
 
     Ok(0)
@@ -1214,20 +1240,6 @@ mod tests {
         assert!(json.contains("stale_branches_removed"));
         assert!(json.contains("skipped"));
         assert!(json.contains("dry_run"));
-    }
-
-    #[test]
-    fn test_remove_data_serialization() {
-        let data = RemoveData {
-            worktree_path: ".tugtree/tugplan__test-20260210-120000".to_string(),
-            branch_name: "tugplan/test-20260210-120000".to_string(),
-            plan_path: ".tugtool/tugplan-test.md".to_string(),
-        };
-
-        let json = serde_json::to_string(&data).expect("serialization should succeed");
-        assert!(json.contains("worktree_path"));
-        assert!(json.contains("branch_name"));
-        assert!(json.contains("plan_path"));
     }
 }
 

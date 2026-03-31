@@ -39,8 +39,8 @@ fn main() -> ExitCode {
             } => commands::run_worktree_cleanup(
                 merged, orphaned, stale, all, dry_run, cli.json, cli.quiet,
             ),
-            WorktreeCommands::Remove { target, force } => {
-                commands::run_worktree_remove(target, force, cli.json, cli.quiet)
+            WorktreeCommands::Discard { target, force } => {
+                commands::run_worktree_discard(target, force, cli.json, cli.quiet)
             }
         },
         Some(Commands::State(state_cmd)) => match state_cmd {
