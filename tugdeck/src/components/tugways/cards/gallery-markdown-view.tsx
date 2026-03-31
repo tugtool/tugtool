@@ -1,24 +1,19 @@
 /**
  * GalleryMarkdownView -- TugMarkdownView visual and performance verification card.
  *
- * Demonstrates TugMarkdownView in two modes:
- *   1. Static: large markdown string (1MB+) with smooth scrolling verification
+ * Demonstrates TugMarkdownView in three modes:
+ *   1. Static 1MB: large markdown string with smooth scrolling verification
  *   2. Streaming: simulated assistant_text deltas via PropertyStore + auto-scroll
- *
- * Also includes a 10MB stress test for DOM node count verification.
+ *   3. Stress 10MB: DOM node count verification (<500 nodes)
  *
  * The diagnostic overlay shows:
  *   - DOM node count in the scroll container
- *   - Current window range [startIndex, endIndex)
  *   - Total block count
+ *   - WASM lex time (ms) and parse time (ms) from the onTiming callback
  *   - Streaming progress
  *
- * Design decisions:
- *   [D03] Lib + component split — data structures live in lib/, component in tugways/
- *   Spec S04 — PropertyStore schema for streaming path
- *
  * Laws compliance:
- *   [L02] Streaming text buffer uses PropertyStore + useSyncExternalStore
+ *   [L22] Streaming text buffer uses PropertyStore observed directly in TugMarkdownView
  *
  * @module components/tugways/cards/gallery-markdown-view
  */
@@ -26,6 +21,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownView } from "@/components/tugways/tug-markdown-view";
+import type { TugMarkdownTimingMetrics } from "@/components/tugways/tug-markdown-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 
 // ---------------------------------------------------------------------------
@@ -106,35 +102,36 @@ const STATIC_1MB_CONTENT = generateMarkdown(1024 * 1024);
 const STREAMING_CHUNKS: string[] = (() => {
   const prose = `# Streaming Demo
 
-This content is streamed incrementally to simulate a live Claude response. Each chunk arrives at a realistic rate, exercising the incremental tail lexing path and auto-scroll behavior.
+This content is streamed incrementally to simulate a live Claude response. Each chunk arrives at a realistic rate, exercising the streaming rendering path and auto-scroll behavior.
 
 ## Architecture Overview
 
-The streaming rendering path uses PropertyStore with useSyncExternalStore [L02] to deliver strict React compliance. On each text update, the component re-lexes only from the start of the last stable block boundary — not the full accumulated text. This bounds the re-lex work to O(k) where k is the number of recently changed blocks.
+The streaming rendering path observes the PropertyStore directly via a useLayoutEffect subscription [L22]. On each text update, the component re-lexes the full accumulated text using pulldown-cmark compiled to WASM, reconciles the resulting block list against the previous one, and writes DOM changes directly — no React round-trip.
 
 ### Key Properties
 
-- **Incremental lexing**: Re-lex only from the last stable boundary
-- **Dirty tracking**: Mark blocks dirty when content changes
-- **Auto-scroll**: RAF-based scroll write [L05] on each update
-- **Finalization pass**: Re-lex full tail on turn_complete [R02]
+- **Direct store observation**: PropertyStore observer fires synchronously, DOM updates in the same call [L22]
+- **Full re-lex per update**: lex_blocks() on the full text each delta (~0.1ms for typical streaming chunks)
+- **Block reconciliation**: changed blocks update innerHTML; new blocks append to the height index
+- **Auto-scroll**: direct scrollTop write on each update [L06]
 
 \`\`\`typescript
-// On each text update, re-lex from last stable boundary:
-const tailText = newText.slice(relexFromOffset);
-const tailTokens = marked.lexer(tailText).filter(t => t.type !== "space");
+// On each store update, re-lex the full accumulated text:
+const packed = lex_blocks(text);
+const newBlocks = decodeBlocks(packed);
 
-// Reconcile tail tokens against existing blocks:
-for (let ti = 0; ti < tailTokens.length; ti++) {
-  const blockIndex = relexFromIndex + ti;
-  if (blockIndex < oldCount) {
-    // Update existing block if content changed
-    engine.tokens[blockIndex] = tailTokens[ti];
-  } else {
-    // Append new block
-    engine.tokens.push(tailTokens[ti]);
-    engine.heightIndex.appendBlock(estimateBlockHeight(tailTokens[ti]));
+// Reconcile against previous block list:
+for (let i = 0; i < Math.min(oldCount, newCount); i++) {
+  if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
+    const html = parse_to_html(text.slice(newStarts[i], newEnds[i]));
+    engine.htmlCache.set(i, html);
+    engine.blockNodes.get(i)?.setAttribute('innerHTML', sanitize(html));
   }
+}
+// Append new blocks
+for (let i = oldCount; i < newCount; i++) {
+  engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
+  engine.htmlCache.set(i, parse_to_html(text.slice(newStarts[i], newEnds[i])));
 }
 \`\`\`
 
@@ -150,7 +147,7 @@ Before blocks are measured, the scrollbar accuracy depends on the quality of hei
 
 ## Conclusion
 
-The virtualized rendering engine delivers bounded DOM node count, smooth scrolling at 60fps, and both static and streaming rendering paths. Phase 3B will add content-type-specific rendering: Shiki syntax highlighting for code blocks, thinking block display, and tool use visualization.
+The virtualized rendering engine delivers bounded DOM node count, smooth scrolling at 60fps, and both static and streaming rendering paths. Lexing and parsing use pulldown-cmark compiled to WASM (tugmark-wasm). Scroll handling is pure DOM window management — zero WASM calls during scroll.
 
 `;
   // Split into ~200-char chunks at word boundaries
@@ -179,6 +176,8 @@ interface DiagnosticInfo {
   windowEnd: number;
   totalBlocks: number;
   streamProgress: string;
+  lexMs: number | null;
+  parseMs: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +203,8 @@ export function GalleryMarkdownView() {
     windowEnd: 0,
     totalBlocks: 0,
     streamProgress: "idle",
+    lexMs: null,
+    parseMs: null,
   });
 
   // Streaming store — Spec S04
@@ -250,6 +251,16 @@ export function GalleryMarkdownView() {
     }));
   }, []);
 
+  // Update timing diagnostics from onTiming callback
+  const handleTiming = useCallback((metrics: TugMarkdownTimingMetrics) => {
+    setDiagnostics((prev) => ({
+      ...prev,
+      lexMs: metrics.lexMs,
+      parseMs: metrics.parseMs,
+      totalBlocks: metrics.blockCount > 0 ? metrics.blockCount : prev.totalBlocks,
+    }));
+  }, []);
+
   // Start streaming simulation
   const startStreaming = useCallback(() => {
     if (streamIntervalRef.current) return;
@@ -262,6 +273,8 @@ export function GalleryMarkdownView() {
       ...prev,
       streamProgress: "streaming...",
       totalBlocks: 0,
+      lexMs: null,
+      parseMs: null,
     }));
 
     streamIntervalRef.current = setInterval(() => {
@@ -306,6 +319,8 @@ export function GalleryMarkdownView() {
       ...prev,
       streamProgress: "idle",
       totalBlocks: 0,
+      lexMs: null,
+      parseMs: null,
     }));
   }, [stopStreaming, streamingStore]);
 
@@ -391,6 +406,12 @@ export function GalleryMarkdownView() {
         <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center", fontSize: 11, fontFamily: "var(--tugx-md-mono-font, ui-monospace, monospace)", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
           <span>DOM nodes: <strong>{diagnostics.domNodeCount}</strong></span>
           <span>Blocks: <strong>{diagnostics.totalBlocks}</strong></span>
+          {diagnostics.lexMs !== null && (
+            <span>Lex: <strong>{diagnostics.lexMs.toFixed(1)}ms</strong></span>
+          )}
+          {diagnostics.parseMs !== null && (
+            <span>Parse: <strong>{diagnostics.parseMs.toFixed(1)}ms</strong></span>
+          )}
           {mode === "streaming" && (
             <span>Progress: <strong>{diagnostics.streamProgress}</strong></span>
           )}
@@ -408,6 +429,7 @@ export function GalleryMarkdownView() {
           <TugMarkdownView
             content={resolvedContent}
             onBlockMeasured={handleBlockMeasured}
+            onTiming={handleTiming}
             className="gallery-md-view"
           />
         )}
@@ -417,6 +439,7 @@ export function GalleryMarkdownView() {
             streamingPath="text"
             isStreaming={isStreaming}
             onBlockMeasured={handleBlockMeasured}
+            onTiming={handleTiming}
             className="gallery-md-view"
           />
         )}

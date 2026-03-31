@@ -18,7 +18,7 @@
  *   and block visibility are managed by direct DOM writes, not React state.
  * - [L07] Handlers access current state through refs, never stale closures.
  * - [L19] Component authoring guide: module docstring, exported props interface,
- *   data-slot="markdown-view", file pair (tsx + css).
+ *   data-slot="tug-markdown-view", file pair (tsx + css).
  * - [L22] Streaming DOM updates observe the PropertyStore directly via
  *   useLayoutEffect — no React round-trip between data change and DOM write.
  *
@@ -168,6 +168,16 @@ function estimateBlockHeight(block: BlockMeta): number {
 // TugMarkdownViewProps
 // ---------------------------------------------------------------------------
 
+/** Timing metrics emitted after each lex+parse pass. */
+export interface TugMarkdownTimingMetrics {
+  /** Time in milliseconds for the lex_blocks() WASM call. */
+  lexMs: number;
+  /** Time in milliseconds for all parse_to_html() WASM calls. */
+  parseMs: number;
+  /** Total number of blocks in the document. */
+  blockCount: number;
+}
+
 export interface TugMarkdownViewProps {
   /** Full markdown content for static rendering. Mutually exclusive with streaming mode. */
   content?: string;
@@ -179,6 +189,8 @@ export interface TugMarkdownViewProps {
   isStreaming?: boolean;
   /** Callback when a block enters the viewport and is measured. */
   onBlockMeasured?: (index: number, measuredHeight: number) => void;
+  /** Callback with WASM timing metrics after each lex+parse pass. */
+  onTiming?: (metrics: TugMarkdownTimingMetrics) => void;
   /** CSS class for the scroll container. */
   className?: string;
 }
@@ -190,16 +202,10 @@ export interface TugMarkdownViewProps {
 interface MarkdownEngineState {
   /** The source text (static content or accumulated streaming text). */
   contentText: string;
-  /** Byte-to-char offset map for contentText (built per lex pass). */
-  byteToCharMap: Uint32Array | null;
   /** Char-mapped start offsets per block. blockStarts[i] = JS char index. */
   blockStarts: number[];
   /** Char-mapped end offsets per block. blockEnds[i] = JS char index. */
   blockEnds: number[];
-  /**
-   * The accumulated streaming text. Grows as deltas arrive.
-   */
-  accumulatedText: string;
   /** The BlockHeightIndex driving the virtual layout. */
   heightIndex: BlockHeightIndex;
   /** The sliding window manager. */
@@ -218,8 +224,6 @@ interface MarkdownEngineState {
   pendingScrollTop: number | null;
   /** RAF handle for scroll coalescing [D02]. */
   scrollRafHandle: number | null;
-  /** RAF handle for auto-scroll during streaming [L05]. */
-  rafHandle: number | null;
   /** Total block count from last lex response. */
   blockCount: number;
 }
@@ -253,6 +257,7 @@ export function TugMarkdownView({
   streamingPath = "text",
   isStreaming = false,
   onBlockMeasured,
+  onTiming,
   className,
 }: TugMarkdownViewProps) {
   // ---- DOM refs ----
@@ -264,6 +269,8 @@ export function TugMarkdownView({
   // ---- Prop refs for stable closure access [L07] ----
   const isStreamingRef = useRef(isStreaming);
   isStreamingRef.current = isStreaming;
+  const onTimingRef = useRef(onTiming);
+  onTimingRef.current = onTiming;
 
   // ---- ResizeObserver for measuring rendered blocks ----
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -278,17 +285,14 @@ export function TugMarkdownView({
       const blockWindow = new RenderedBlockWindow(heightIndex, DEFAULT_VIEWPORT_HEIGHT, 2);
       engineRef.current = {
         contentText: "",
-        byteToCharMap: null,
         blockStarts: [],
         blockEnds: [],
-        accumulatedText: "",
         heightIndex,
         blockWindow,
         blockNodes: new Map(),
         htmlCache: new Map(),
         pendingScrollTop: null,
         scrollRafHandle: null,
-        rafHandle: null,
         blockCount: 0,
       };
     }
@@ -404,10 +408,6 @@ export function TugMarkdownView({
         cancelAnimationFrame(engine.scrollRafHandle);
         engine.scrollRafHandle = null;
       }
-      if (engine.rafHandle !== null) {
-        cancelAnimationFrame(engine.rafHandle);
-        engine.rafHandle = null;
-      }
     };
   }, []);
 
@@ -482,7 +482,9 @@ export function TugMarkdownView({
     applySpacers(0, 0);
 
     // Lex + parse: synchronous WASM calls (~29ms for 1MB)
+    const lexStart = performance.now();
     const packed = lex_blocks(text);
+    const lexMs = performance.now() - lexStart;
     const blocks = decodeBlocks(packed);
     const byteToChar = buildByteToCharMap(text);
     engine.blockCount = blocks.length;
@@ -493,10 +495,14 @@ export function TugMarkdownView({
       engine.heightIndex.appendBlock(estimateBlockHeight(block));
     }
 
+    const parseStart = performance.now();
     for (let i = 0; i < blocks.length; i++) {
       const raw = text.slice(engine.blockStarts[i], engine.blockEnds[i]);
       engine.htmlCache.set(i, parse_to_html(raw));
     }
+    const parseMs = performance.now() - parseStart;
+
+    onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
     // Enter visible blocks into DOM
     const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
@@ -539,10 +545,11 @@ export function TugMarkdownView({
       const text = (streamingStore.get(streamingPath) as string) ?? "";
       if (!text) return;
 
-      engine.accumulatedText = text;
       engine.contentText = text;
 
+      const lexStart = performance.now();
       const packed = lex_blocks(text);
+      const lexMs = performance.now() - lexStart;
       const newBlocks = decodeBlocks(packed);
       const byteToChar = buildByteToCharMap(text);
       const newStarts = newBlocks.map(b => byteToChar[b.start] ?? b.start);
@@ -550,12 +557,15 @@ export function TugMarkdownView({
 
       const oldCount = engine.blockCount;
       const newCount = newBlocks.length;
+      let parseMs = 0;
 
       // Update changed existing blocks
       for (let i = 0; i < Math.min(oldCount, newCount); i++) {
         if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
           const raw = text.slice(newStarts[i], newEnds[i]);
+          const parseStart = performance.now();
           const html = parse_to_html(raw);
+          parseMs += performance.now() - parseStart;
           engine.htmlCache.set(i, html);
           engine.heightIndex.setHeight(i, estimateBlockHeight(newBlocks[i]));
           const existingEl = engine.blockNodes.get(i);
@@ -581,12 +591,16 @@ export function TugMarkdownView({
       for (let i = oldCount; i < newCount; i++) {
         engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
         const raw = text.slice(newStarts[i], newEnds[i]);
+        const parseStart = performance.now();
         engine.htmlCache.set(i, parse_to_html(raw));
+        parseMs += performance.now() - parseStart;
       }
 
       engine.blockStarts = newStarts;
       engine.blockEnds = newEnds;
       engine.blockCount = newCount;
+
+      onTimingRef.current?.({ lexMs, parseMs, blockCount: newCount });
 
       engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
       const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
@@ -607,7 +621,7 @@ export function TugMarkdownView({
   return (
     <div
       ref={scrollContainerRef}
-      data-slot="markdown-view"
+      data-slot="tug-markdown-view"
       className={cn("tugx-md-scroll-container", className)}
       onScroll={handleScroll}
     >

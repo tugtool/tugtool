@@ -1,3 +1,8 @@
+/* @tug-pairings: none — no fixed foreground-on-background contrast pairings.
+   Border rules use --tugx-md-* aliases that default to currentColor (blockquote,
+   hr) or a semi-transparent literal (table). All @tug-renders-on annotations are
+   present on the individual border-color rules below. */
+
 /**
  * tug-markdown-view.css — styles for TugMarkdownView virtualized renderer.
  *
@@ -13,6 +18,8 @@
  * Laws:
  * - [L06] All appearance changes go through CSS; spacer heights are set via
  *   direct style.height writes (DOM, not React state).
+ * - [L16] Every border-color rule declares its rendering surface via
+ *   @tug-renders-on annotation.
  */
 
 /* ---- Scroll container ---- */
@@ -69,12 +76,9 @@
 /* ---- Placeholder blocks ---- */
 
 /*
- * Placeholder blocks appear when a block enters the viewport before the worker
- * has delivered parsed HTML (cache miss). The placeholder holds the estimated
- * height so the virtual scroll layout remains accurate. It is invisible by
- * default; set --tugx-md-placeholder-bg to a visible color for debugging.
- *
- * No CSS transition when replaced by real content [Step 6 spec].
+ * Placeholder blocks appear on a cache miss (should not occur — all blocks are
+ * pre-parsed on content load). Invisible by default; set --tugx-md-placeholder-bg
+ * to a visible color for debugging.
  */
 .tugx-md-placeholder {
   background: var(--tugx-md-placeholder-bg, transparent);
