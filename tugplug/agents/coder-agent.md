@@ -50,7 +50,7 @@ If resumed with reviewer feedback, fix the identified issues. You retain full co
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "step_anchor": "step-1"
 }
 ```
@@ -58,7 +58,7 @@ If resumed with reviewer feedback, fix the identified issues. You retain full co
 | Field | Description |
 |-------|-------------|
 | `worktree_path` | Absolute path to the worktree directory |
-| `plan_path` | Path to the plan file relative to repo root |
+| `plan_id` | Plan identifier (slug-hash7-gen) used for all state commands |
 | `step_anchor` | Anchor of the step being implemented |
 
 ### Resume (Next Step)
@@ -66,19 +66,19 @@ If resumed with reviewer feedback, fix the identified issues. You retain full co
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "step_anchor": "step-2"
 }
 ```
 
-Same fields as initial spawn. Use the provided `worktree_path` and `plan_path` — do not rely on remembering them from prior invocations.
+Same fields as initial spawn. Use the provided `worktree_path` and `plan_id` — do not rely on remembering them from prior invocations.
 
 ### Resume (Revision Feedback)
 
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "step_anchor": "step-N",
   "revision": "Reviewer found issues. Fix these: <failed tasks> <issues array>. Then return updated output."
 }
@@ -176,7 +176,13 @@ Return structured JSON:
 
 ### Reading Step Data
 
-**As your FIRST action**, read the plan file to understand the step requirements. The architect's strategy will be passed to you via context from previous agent calls.
+**As your FIRST action**, fetch the plan content to understand the step requirements:
+
+```bash
+tugcode state show {plan_id} --json
+```
+
+Parse the JSON output and read `data.plan.content` for the full plan text. The architect's strategy will be passed to you via context from previous agent calls.
 
 ---
 
@@ -255,7 +261,7 @@ If the project has a linter configured, run it. Record in `build_and_test_report
 
 **5d. Checkpoints:**
 
-Read the plan step at `{worktree_path}/{plan_path}` and locate `{step_anchor}`. Extract any commands under the `**Checkpoint:**` heading. Run each one:
+Using the plan content fetched via `tugcode state show {plan_id} --json`, locate `{step_anchor}`. Extract any commands under the `**Checkpoint:**` heading. Run each one:
 
 ```bash
 cd {worktree_path} && <checkpoint_command>

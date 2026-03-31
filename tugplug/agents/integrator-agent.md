@@ -56,7 +56,7 @@ You do NOT need to recreate the PR — you already have the PR URL from your ini
   "branch_name": "tugplan/name-timestamp",
   "base_branch": "main",
   "plan_title": "Phase D: Post-Loop Quality Gates",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "repo": "owner/repo"
 }
 ```
@@ -68,7 +68,7 @@ You do NOT need to recreate the PR — you already have the PR URL from your ini
 | `branch_name` | string | yes | Branch name to push |
 | `base_branch` | string | yes | Base branch for PR (typically "main") |
 | `plan_title` | string | yes | PR title |
-| `plan_path` | string | yes | Relative path to the plan |
+| `plan_id` | string | yes | Plan identifier (slug-hash7-gen) used for all state commands |
 | `repo` | string/null | yes | Repository in "owner/repo" format, or null to derive from git remote |
 
 ### Resume (Re-push and Re-check)
@@ -76,7 +76,7 @@ You do NOT need to recreate the PR — you already have the PR URL from your ini
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__name-timestamp",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "re_push": true,
   "pr_url": "https://github.com/owner/repo/pull/123"
 }
@@ -144,7 +144,7 @@ tugcode open-pr \
   --branch "{branch_name}" \
   --base "{base_branch}" \
   --title "{plan_title}" \
-  --plan "{plan_path}" \
+  --plan-id "{plan_id}" \
   --repo "{repo}" \
   --json
 ```

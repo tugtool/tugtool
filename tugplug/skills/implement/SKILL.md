@@ -46,13 +46,13 @@ Follow these formats exactly.
 
 **Start (output before any tool calls):**
 ```
-**Implement** — Starting implementation of {plan_path}
+**Implement** — Starting implementation of {plan_id}
 ```
 
 **End (output after integrator passes):**
 ```
 Implementation complete
-  Plan: {plan_path}
+  Plan: {plan_id}
   PR: {pr_url}
 ```
 
@@ -193,7 +193,7 @@ For `state_update_failed` (escalation):
 **tugplug:committer-agent**(FAILED: state complete-checklist failed — escalating)
   Commit: {commit_hash} succeeded
   State: complete-checklist failed — reason: {state_failure_reason}
-  Manual recovery: tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}
+  Manual recovery: tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 ---
@@ -297,7 +297,7 @@ For `state_update_failed` (escalation):
 
 ┌──────────────────────────────────────────┐
 │         IMPLEMENTATION COMPLETE          │
-│      Plan: {plan_path}  PR: {pr_url}     │
+│      Plan: {plan_id}  PR: {pr_url}     │
 └──────────────────────────────────────────┘
 ```
 
@@ -330,7 +330,8 @@ Parse the JSON output from stdout. The output is a SetupData object with these f
 - `worktree_path`: Absolute path to the worktree
 - `branch_name`: Git branch name (e.g., "tugplan/slug-20260214-120000")
 - `base_branch`: Base branch (e.g., "main")
-- `plan_path`: Relative path to the plan file
+- `plan_path`: Relative path to the plan file (used only for `tugcode worktree setup`)
+- `plan_id`: Plan identifier (slug-hash7-gen) used for all subsequent state commands
 - `total_steps`: Total number of execution steps
 - `all_steps`: Array of all step anchors (e.g., ["step-1", "step-2"])
 - `ready_steps`: Array of step anchors ready for implementation (dependencies met, not yet complete)
@@ -353,7 +354,7 @@ Use the JSON fields directly. Do not compute or derive anything beyond what is s
 
 Output the Setup complete progress message. Immediately proceed to the step loop.
 
-Store: `worktree_path`, `branch_name`, `base_branch`, `plan_path`, `steps_to_implement`
+Store: `worktree_path`, `branch_name`, `base_branch`, `plan_id`, `steps_to_implement`
 
 Note: Step identity now comes from `tugcode state claim` response, not from a pre-built mapping.
 
@@ -376,13 +377,13 @@ Initialize for post-loop phases:
 #### Claim and Start Step
 
 ```
-Bash: tugcode state claim {plan_path} --worktree {worktree_path} --json
+Bash: tugcode state claim {plan_id} --worktree {worktree_path} --json
 ```
 
 Parse the JSON response. Extract `data.anchor` as `step_anchor` and `data.title` as `step_title`. If `data.claimed` is false or the command fails (non-zero exit), HALT.
 
 ```
-Bash: tugcode state start {plan_path} {step_anchor} --worktree {worktree_path}
+Bash: tugcode state start {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 If the command fails (non-zero exit), HALT.
@@ -398,7 +399,7 @@ Task(
   subagent_type: "tugplug:architect-agent",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "step-1",
     "all_steps": ["step-1", "step-2", ...]
   }',
@@ -416,7 +417,7 @@ Task(
   resume: "<architect_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "{step_anchor}",
     "previous_step_summary": "<step_summary>"
   }',
@@ -431,11 +432,11 @@ Output the Architect post-call message.
 **Tugstate calls:**
 
 ```
-Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
+Bash: tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 ```
-Bash: tugcode state artifact {plan_path} {step_anchor} --kind architect_strategy --summary "{first 500 chars of approach}" --worktree {worktree_path}
+Bash: tugcode state artifact {plan_id} {step_anchor} --kind architect_strategy --summary "{first 500 chars of approach}" --worktree {worktree_path}
 ```
 
 #### 3b. Coder: Implement Strategy
@@ -447,7 +448,7 @@ Task(
   subagent_type: "tugplug:coder-agent",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "step-1"
   }',
   description: "Implement step 1"
@@ -464,7 +465,7 @@ Task(
   resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "{step_anchor}"
   }',
   description: "Implement step N"
@@ -474,7 +475,7 @@ Task(
 Parse the coder's JSON output. If `success == false` and `halted_for_drift == false`, output failure message and HALT.
 
 **Context exhaustion recovery:** If the coder resume fails with "Prompt is too long", the coder's context is full. Spawn a FRESH coder with an explicit list of files already modified (from the last successful coder output). The fresh coder prompt must include:
-- Full initial spawn JSON (worktree_path, plan_path, step_anchor)
+- Full initial spawn JSON (worktree_path, plan_id, step_anchor)
 - `"continuation": true`
 - `"files_already_modified": [<files from previous coder output>]`
 - Instruction: "A previous coder modified these files but did not complete the step. Verify ALL files in expected_touch_set are addressed. Do NOT re-modify files that are already correct."
@@ -486,7 +487,7 @@ Output the Coder post-call message.
 **Tugstate call:**
 
 ```
-Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
+Bash: tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 #### 3c. Drift Check
@@ -511,7 +512,7 @@ Task(
   resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "{step_anchor}",
     "revision": "Feedback: <drift_assessment details>. Adjust your implementation to stay within expected scope."
   }',
@@ -524,7 +525,7 @@ Output the Coder post-call message.
 **Tugstate call:**
 
 ```
-Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
+Bash: tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 #### 3d. Reviewer: Verify Implementation
@@ -536,7 +537,7 @@ Task(
   subagent_type: "tugplug:reviewer-agent",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "step-1"
   }',
   description: "Verify step 1 completion"
@@ -553,7 +554,7 @@ Task(
   resume: "<reviewer_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "{step_anchor}"
   }',
   description: "Verify step N completion"
@@ -565,11 +566,11 @@ Output the Reviewer post-call message.
 **Tugstate calls:**
 
 ```
-Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
+Bash: tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 ```
-Bash: tugcode state artifact {plan_path} {step_anchor} --kind reviewer_verdict --summary "{first 500 chars of verdict}" --worktree {worktree_path}
+Bash: tugcode state artifact {plan_id} {step_anchor} --kind reviewer_verdict --summary "{first 500 chars of verdict}" --worktree {worktree_path}
 ```
 
 #### 3e. Handle Reviewer Recommendation
@@ -598,12 +599,12 @@ Reviewer approved. Committing step.
 
 If there are deferred items:
 ```
-echo '<deferred_items_json>' | tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}
+echo '<deferred_items_json>' | tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 If there are no deferred items (all checkpoints PASS):
 ```
-tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}
+tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 `state complete-checklist` marks all open checklist items (tasks, tests, and checkpoints) as completed. When deferral JSON is piped via stdin, those items get `deferred` status first; all remaining open items are then marked completed. When no stdin is piped (TTY or empty), all open items are marked completed. This eliminates fragile ordinal counting — the CLI is the single source of truth for item counts.
@@ -622,7 +623,7 @@ Task(
   resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "{step_anchor}",
     "revision": "Reviewer found issues. Fix these: <failed tasks from plan_conformance> <issues array>. Then return updated output."
   }',
@@ -635,7 +636,7 @@ Output the Coder post-call message.
 **Tugstate call:**
 
 ```
-Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
+Bash: tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 2. **Resume reviewer** for re-review:
@@ -646,7 +647,7 @@ Task(
   resume: "<reviewer_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "{step_anchor}",
     "re_review": true
   }',
@@ -659,11 +660,11 @@ Output the Reviewer post-call message.
 **Tugstate calls:**
 
 ```
-Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
+Bash: tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}
 ```
 
 ```
-Bash: tugcode state artifact {plan_path} {step_anchor} --kind reviewer_verdict --summary "{first 500 chars of verdict}" --worktree {worktree_path}
+Bash: tugcode state artifact {plan_id} {step_anchor} --kind reviewer_verdict --summary "{first 500 chars of verdict}" --worktree {worktree_path}
 ```
 
 Go back to 3e to check the new recommendation.
@@ -681,7 +682,7 @@ Task(
   prompt: '{
     "operation": "commit",
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "step_anchor": "step-N",
     "proposed_message": "feat(<scope>): <description>",
     "log_entry": {
@@ -718,7 +719,7 @@ Read `state_failure_reason` from the committer JSON output. Switch on its value:
 
 - `"drift"`: Escalate immediately.
   ```
-  AskUserQuestion: "State complete-checklist failed due to plan drift. The git commit succeeded. Manual recovery: re-run tugcode state init for {plan_path}, then: tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}"
+  AskUserQuestion: "State complete-checklist failed due to plan drift. The git commit succeeded. Manual recovery: re-run tugcode state init for the plan file, then: tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}"
   ```
   HALT after escalation.
 
@@ -730,19 +731,19 @@ Read `state_failure_reason` from the committer JSON output. Switch on its value:
 
 - `"db_error"`: Escalate immediately.
   ```
-  AskUserQuestion: "State complete-checklist failed: database error. The git commit succeeded. Warning: {warnings[0]}. Manual recovery: tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}"
+  AskUserQuestion: "State complete-checklist failed: database error. The git commit succeeded. Warning: {warnings[0]}. Manual recovery: tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}"
   ```
   HALT after escalation.
 
 - `"open_items"` (defensive fallback — this reason is unreachable after `StateIncompleteSubsteps` removal, but kept as an explicit escalation case):
   ```
-  AskUserQuestion: "State complete-checklist failed: open checklist items remain for step {step_anchor}. The git commit succeeded. Manual recovery: tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}"
+  AskUserQuestion: "State complete-checklist failed: open checklist items remain for step {step_anchor}. The git commit succeeded. Manual recovery: tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}"
   ```
   HALT after escalation.
 
 - null/missing reason (catch-all for any unrecognized failure):
   ```
-  AskUserQuestion: "State complete-checklist failed for step {step_anchor} (unknown reason). The git commit succeeded. Manual recovery: tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}"
+  AskUserQuestion: "State complete-checklist failed for step {step_anchor} (unknown reason). The git commit succeeded. Manual recovery: tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}"
   ```
   HALT after escalation.
 
@@ -762,7 +763,7 @@ Task(
   subagent_type: "tugplug:auditor-agent",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<plan_path>"
+    "plan_id": "<plan_id>"
   }',
   description: "Post-loop quality audit"
 )
@@ -804,7 +805,7 @@ Task(
   resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "revision": "Auditor found issues. Fix these: <issues array with P0/P1 priority>. Then return updated output."
   }',
   description: "Fix auditor issues"
@@ -823,7 +824,7 @@ Task(
   prompt: '{
     "operation": "fixup",
     "worktree_path": "<worktree_path>",
-    "plan_path": "<plan_path>",
+    "plan_id": "<plan_id>",
     "proposed_message": "fix(audit): <brief description>",
     "log_entry": {
       "summary": "Audit fix: <description>"
@@ -843,7 +844,7 @@ Task(
   resume: "<auditor_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<plan_path>",
+    "plan_id": "<plan_id>",
     "re_audit": true,
     "previous_issues": <issues_json>
   }',
@@ -868,7 +869,7 @@ Task(
     "branch_name": "<branch_name>",
     "base_branch": "<base_branch>",
     "plan_title": "<plan title from plan>",
-    "plan_path": "<plan_path>",
+    "plan_id": "<plan_id>",
     "repo": null
   }',
   description: "Push branch and create PR"
@@ -911,7 +912,7 @@ Task(
   resume: "<coder_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<path>",
+    "plan_id": "<plan_id>",
     "revision": "CI checks failed. Status: <ci_status>. Details: <ci_details array>. Fix the failures and return updated output."
   }',
   description: "Fix CI failures"
@@ -930,7 +931,7 @@ Task(
   prompt: '{
     "operation": "fixup",
     "worktree_path": "<worktree_path>",
-    "plan_path": "<plan_path>",
+    "plan_id": "<plan_id>",
     "proposed_message": "fix(ci): <brief description>",
     "log_entry": {
       "summary": "CI fix: <description>"
@@ -950,7 +951,7 @@ Task(
   resume: "<integrator_id>",
   prompt: '{
     "worktree_path": "<worktree_path>",
-    "plan_path": "<plan_path>",
+    "plan_id": "<plan_id>",
     "re_push": true,
     "pr_url": "<pr_url>"
   }',
@@ -968,7 +969,7 @@ Output the implementation completion message with PR URL from integrator:
 
 ```
 Implementation complete
-  Plan: {plan_path}
+  Plan: {plan_id}
   PR: {pr_url}
 ```
 
@@ -1030,11 +1031,11 @@ From coder output, evaluate `drift_assessment`:
 Tugstate tracks per-step execution state in an embedded SQLite database. The orchestrator manages all state transitions — agents never call tugstate commands directly.
 
 **Step lifecycle:**
-1. `tugcode state claim {plan_path} --worktree {worktree_path} --json` — get next ready step
-2. `tugcode state start {plan_path} {step_anchor} --worktree {worktree_path}` — transition to in_progress
-3. `tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}` — after each agent call
-4. `tugcode state artifact {plan_path} {step_anchor} --kind {kind} --summary "{summary}" --worktree {worktree_path}` — after architect (architect_strategy) and reviewer (reviewer_verdict)
-5. `tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}` — after reviewer approval; pipe non-PASS checkpoint items as deferred JSON via stdin, or invoke with no pipe to complete all items; the command auto-completes all other open items (tasks, tests, remaining checkpoints)
+1. `tugcode state claim {plan_id} --worktree {worktree_path} --json` — get next ready step
+2. `tugcode state start {plan_id} {step_anchor} --worktree {worktree_path}` — transition to in_progress
+3. `tugcode state heartbeat {plan_id} {step_anchor} --worktree {worktree_path}` — after each agent call
+4. `tugcode state artifact {plan_id} {step_anchor} --kind {kind} --summary "{summary}" --worktree {worktree_path}` — after architect (architect_strategy) and reviewer (reviewer_verdict)
+5. `tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}` — after reviewer approval; pipe non-PASS checkpoint items as deferred JSON via stdin, or invoke with no pipe to complete all items; the command auto-completes all other open items (tasks, tests, remaining checkpoints)
 6. `tugcode commit` — internally calls `state complete` (no separate orchestrator call needed)
 
 **Using `state complete-checklist`:**
@@ -1061,7 +1062,7 @@ When `state_update_failed == true` in the commit JSON, the `state_failure_reason
 **Error handling:**
 - All `tugcode state` command failures (non-zero exit) are **fatal** — halt immediately
 - If `state_update_failed == true`: read `state_failure_reason` and follow the escalation handler in section 3f (all reasons escalate immediately — no retry loop)
-- Manual recovery (escalation path only): `tugcode state complete-checklist {plan_path} {step_anchor} --worktree {worktree_path}`
+- Manual recovery (escalation path only): `tugcode state complete-checklist {plan_id} {step_anchor} --worktree {worktree_path}`
 - The orchestrator never calls `tugcode state reconcile` automatically — it is a manual recovery tool only
 
 ---

@@ -50,27 +50,27 @@ You do NOT need to re-read the entire plan or re-explore the entire codebase fro
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__name-timestamp",
-  "plan_path": ".tugtool/tugplan-<slug>.md"
+  "plan_id": "auth-a1b2c3d-001"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `worktree_path` | string | yes | Absolute path to the implementation worktree |
-| `plan_path` | string | yes | Relative path to the plan file |
+| `plan_id` | string | yes | Plan identifier (slug-hash7-gen) used for all state commands |
 
 ### Resume (Re-audit After Fixes)
 
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__name-timestamp",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "re_audit": true,
   "previous_issues": [{"description": "...", "priority": "P0"}]
 }
 ```
 
-Same fields as initial spawn, plus `re_audit` and `previous_issues`. Use the provided `worktree_path` and `plan_path` — do not rely on remembering them from prior invocations.
+Same fields as initial spawn, plus `re_audit` and `previous_issues`. Use the provided `worktree_path` and `plan_id` — do not rely on remembering them from prior invocations.
 
 **IMPORTANT: File Path Handling**
 
@@ -144,7 +144,13 @@ Capture each command's exit code and the last ~20 lines of output. Store in `bui
 
 ### Phase 2: Verify Deliverables Against #exit-criteria
 
-Read the plan at `{worktree_path}/{plan_path}` and locate the `#exit-criteria` section (typically under `### Phase Exit Criteria ("Done means...")`).
+Fetch the plan content:
+
+```bash
+tugcode state show {plan_id} --json
+```
+
+Read `data.plan.content` and locate the `#exit-criteria` section (typically under `### Phase Exit Criteria ("Done means...")`).
 
 For each exit criterion (checkbox item):
 1. Read the criterion text

@@ -34,9 +34,9 @@ If a CLI command fails, report the error in your JSON output with `"aborted": tr
 
 ## Input Contract
 
-**Commit mode**: `operation`, `worktree_path`, `plan_path`, `step_anchor`, `proposed_message`, `log_entry.summary`
+**Commit mode**: `operation`, `worktree_path`, `plan_id`, `step_anchor`, `proposed_message`, `log_entry.summary`
 
-**Fixup mode**: `operation`, `worktree_path`, `plan_path`, `proposed_message`, `log_entry.summary`
+**Fixup mode**: `operation`, `worktree_path`, `plan_id`, `proposed_message`, `log_entry.summary`
 
 ## Output Contract
 
@@ -54,7 +54,7 @@ Map input to CLI command:
 tugcode commit \
   --worktree "{worktree_path}" \
   --step "{step_anchor}" \
-  --plan "{plan_path}" \
+  --plan-id "{plan_id}" \
   --message "{proposed_message}" \
   --summary "{log_entry.summary}" \
   --json
@@ -71,7 +71,7 @@ Fixup mode handles polish commits outside the step system. Execute three steps:
 ```bash
 cd "{worktree_path}" && tugcode log prepend \
   --step audit-fix \
-  --plan "{plan_path}" \
+  --plan-id "{plan_id}" \
   --summary "{log_entry.summary}"
 ```
 

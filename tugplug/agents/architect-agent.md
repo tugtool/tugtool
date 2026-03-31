@@ -53,7 +53,7 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "step_anchor": "step-1",
   "all_steps": ["step-1", "step-2", "step-3"]
 }
@@ -62,7 +62,7 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 | Field | Description |
 |-------|-------------|
 | `worktree_path` | Absolute path to the worktree directory |
-| `plan_path` | Path to the plan file relative to repo root |
+| `plan_id` | Plan identifier (slug-hash7-gen) used for all state commands |
 | `step_anchor` | Anchor of the step to plan strategy for |
 | `all_steps` | List of all steps to be implemented this session (for context) |
 
@@ -71,20 +71,20 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "step_anchor": "step-2",
   "previous_step_summary": "<summary of what previous step accomplished>"
 }
 ```
 
-Same fields as initial spawn, plus `previous_step_summary`. Use the provided `worktree_path` and `plan_path` — do not rely on remembering them from prior invocations.
+Same fields as initial spawn, plus `previous_step_summary`. Use the provided `worktree_path` and `plan_id` — do not rely on remembering them from prior invocations.
 
 ### Resume (Revision Feedback)
 
 ```json
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
-  "plan_path": ".tugtool/tugplan-<slug>.md",
+  "plan_id": "auth-a1b2c3d-001",
   "step_anchor": "step-N",
   "revision": "<feedback about issues to address>"
 }
@@ -149,7 +149,13 @@ If drift exceeds thresholds, implementation halts. Therefore:
 
 ### Reading Step Data
 
-**As your FIRST action**, read the plan file to understand the step requirements. The step data (tasks, tests, checkpoints, artifacts, dependencies) is in the plan file at the specified step_anchor.
+**As your FIRST action**, fetch the plan content to understand the step requirements:
+
+```bash
+tugcode state show {plan_id} --json
+```
+
+Parse the JSON output and read `data.plan.content` for the full plan text. The step data (tasks, tests, checkpoints, artifacts, dependencies) is in the plan content at the specified step_anchor.
 
 ---
 
