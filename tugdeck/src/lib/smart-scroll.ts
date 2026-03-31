@@ -7,8 +7,12 @@
  *
  * Architecture [D93]:
  *   1. ResizeObserver on content element — triggers auto-scroll on content growth
- *   2. wheel event on scroll container — detects user scroll-up intent (deltaY < 0)
- *   3. scroll event on scroll container — filtered for re-engagement detection only
+ *   2. wheel event on scroll container — the ONLY disengage signal (deltaY < 0).
+ *      Scroll events cannot be used for disengagement because DOM manipulation
+ *      (virtual window adding/removing blocks) causes scrollTop changes
+ *      indistinguishable from user scrolls.
+ *   3. scroll event on scroll container — filtered for re-engagement detection only.
+ *      Never used for disengagement.
  *
  * Not a React hook — a plain class that manages DOM listeners directly.
  * Callers create an instance, attach to elements, and dispose when done.
@@ -88,12 +92,12 @@ export class SmartScroll {
       }
       this._ignoreScrollToTop = undefined;
 
+      // Re-engagement: user scrolled down to near the bottom.
+      // Disengagement is handled ONLY by the wheel event (deltaY < 0) — never
+      // by scroll position changes, which can be caused by DOM manipulation
+      // (virtual window adding/removing blocks shifts scrollTop).
       if (scrollTop > this._lastScrollTop && this._isNearBottom()) {
         this._isAtBottom = true;
-      }
-
-      if (scrollTop < this._lastScrollTop - 5 && !this._isNearBottom()) {
-        this._isAtBottom = false;
       }
 
       this._lastScrollTop = scrollTop;

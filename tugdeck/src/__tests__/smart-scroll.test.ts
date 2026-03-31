@@ -251,40 +251,26 @@ describe("SmartScroll", () => {
     });
   });
 
-  describe("scroll handler — disengage on scroll-up away from bottom", () => {
-    it("disengages when scrolling up by more than 5px away from bottom", () => {
-      // scrollHeight=500, clientHeight=300, start near bottom
-      // "near bottom" = 500-300-scrollTop <= 60 → scrollTop >= 140
-      // "not near bottom" = scrollTop < 140
+  describe("scroll handler — does NOT disengage on scroll-up", () => {
+    // Disengagement is ONLY via wheel events (deltaY < 0). Scroll events
+    // cannot be used for disengagement because DOM manipulation (virtual
+    // window adding/removing blocks) causes scrollTop changes
+    // indistinguishable from user scrolls.
+    it("does NOT disengage when scrollTop decreases (could be DOM manipulation)", () => {
       const container = makeContainer({ scrollTop: 100, scrollHeight: 500, clientHeight: 300 });
       const content = makeContent();
       const ss = new SmartScroll(container, content);
 
       const raw = container as unknown as Record<string, number>;
-      raw._scrollTop = 180; // near bottom
-      dispatchScroll(container); // lastScrollTop = 180, re-engages
+      raw._scrollTop = 180;
+      dispatchScroll(container); // lastScrollTop = 180
 
       expect(ss.isAtBottom).toBe(true);
 
-      raw._scrollTop = 50; // not near bottom (500-300-50=150 > 60)
-      dispatchScroll(container); // scrollTop(50) < lastScrollTop(180)-5 → disengage
-
-      expect(ss.isAtBottom).toBe(false);
-      ss.dispose();
-    });
-
-    it("does NOT disengage when scroll-up is <= 5px (noise)", () => {
-      const container = makeContainer({ scrollTop: 0, scrollHeight: 500, clientHeight: 300 });
-      const content = makeContent();
-      const ss = new SmartScroll(container, content);
-
-      const raw = container as unknown as Record<string, number>;
-      raw._scrollTop = 180;
-      dispatchScroll(container); // lastScrollTop = 180, re-engage
-
-      raw._scrollTop = 177; // only 3px up — within noise threshold
+      raw._scrollTop = 50; // scrollTop decreased — but this could be DOM manipulation
       dispatchScroll(container);
 
+      // Must still be true — only wheel events disengage
       expect(ss.isAtBottom).toBe(true);
       ss.dispose();
     });
