@@ -1,17 +1,16 @@
 /**
  * GalleryMarkdownView -- TugMarkdownView visual and performance verification card.
  *
- * Mounts a single TugMarkdownView with an imperative ref handle. Four action
- * buttons drive the content:
+ * Mounts a single TugMarkdownView with an imperative ref handle. A size selector
+ * (50KB | 1MB | 10MB) and four action buttons drive content:
  *
- *   Streaming   -- simulated assistant_text deltas via PropertyStore + auto-scroll.
- *                  Shows "Start Stream" when idle, "Stop" while streaming.
- *   Static 1MB  -- calls markdownRef.current.setRegion() with a unique key so
- *                  multiple clicks accumulate regions.
- *   Static 10MB -- same as Static 1MB but with a 10MB document (generated lazily
- *                  on first click).
- *   Clear       -- calls markdownRef.current.clear(), stops streaming, resets the
- *                  PropertyStore.
+ *   Size selector  -- three toggle buttons (50KB | 1MB | 10MB) that set the target
+ *                     size for Stream and Static actions. Default: 50KB.
+ *   Stream         -- visible when NOT streaming. Generates chunks for the selected
+ *                     size and streams them incrementally via PropertyStore.
+ *   Stop           -- visible WHILE streaming. Stops the stream; content stays.
+ *   Static         -- always visible. Dumps the selected size instantly via setRegion().
+ *   Clear          -- always visible. Stops streaming, resets store, calls clear().
  *
  * The diagnostic overlay shows:
  *   - DOM node count in the scroll container
@@ -105,73 +104,43 @@ class BlockHeightIndex {
 const STATIC_50KB_CONTENT = generateMarkdown(50 * 1024);
 const STATIC_1MB_CONTENT = generateMarkdown(1024 * 1024);
 
-// Streaming simulation: chunks of ~200 characters of realistic prose
-const STREAMING_CHUNKS: string[] = (() => {
-  const prose = `# Streaming Demo
+// ---------------------------------------------------------------------------
+// Dynamic chunk generation
+// ---------------------------------------------------------------------------
 
-This content is streamed incrementally to simulate a live Claude response. Each chunk arrives at a realistic rate, exercising the streaming rendering path and auto-scroll behavior.
-
-## Architecture Overview
-
-The streaming rendering path observes the PropertyStore directly via a useLayoutEffect subscription [L22]. On each text update, the component re-lexes the full accumulated text using pulldown-cmark compiled to WASM, reconciles the resulting block list against the previous one, and writes DOM changes directly — no React round-trip.
-
-### Key Properties
-
-- **Direct store observation**: PropertyStore observer fires synchronously, DOM updates in the same call [L22]
-- **Full re-lex per update**: lex_blocks() on the full text each delta (~0.1ms for typical streaming chunks)
-- **Block reconciliation**: changed blocks update innerHTML; new blocks append to the height index
-- **Auto-scroll**: direct scrollTop write on each update [L06]
-
-\`\`\`typescript
-// On each store update, re-lex the full accumulated text:
-const packed = lex_blocks(text);
-const newBlocks = decodeBlocks(packed);
-
-// Reconcile against previous block list:
-for (let i = 0; i < Math.min(oldCount, newCount); i++) {
-  if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
-    const html = parse_to_html(text.slice(newStarts[i], newEnds[i]));
-    engine.htmlCache.set(i, html);
-    engine.blockNodes.get(i)?.setAttribute('innerHTML', sanitize(html));
-  }
-}
-// Append new blocks
-for (let i = oldCount; i < newCount; i++) {
-  engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
-  engine.htmlCache.set(i, parse_to_html(text.slice(newStarts[i], newEnds[i])));
-}
-\`\`\`
-
-## Performance Characteristics
-
-The BlockHeightIndex binary search completes in under 1ms for 100K blocks because Float64Array layout is cache-friendly. The prefix sum recomputation is lazy: the watermark tracks the lowest dirty index, so setHeight() at index i costs O(n - i) — only recomputes from the dirty point forward, not from the beginning.
-
-The RenderedBlockWindow keeps DOM node count bounded regardless of content size. With 2-screen overscan at a viewport height of 600px, the maximum DOM node count is approximately 5 × (600 / estimatedBlockHeight) blocks. For typical paragraph height of ~48px, that is about 5 × 12 = 60 DOM nodes — well within the <500 target.
-
-### Scrollbar Accuracy
-
-Before blocks are measured, the scrollbar accuracy depends on the quality of height estimates. With hardcoded constants (LINE_HEIGHT = 24px, paragraph padding = 8px), a paragraph of 80 characters estimates at 32px. After ResizeObserver measurement, the actual height is used. The 5% scrollbar accuracy target means a 10MB document's total estimated height should be within 5% of the true height.
-
-## Conclusion
-
-The virtualized rendering engine delivers bounded DOM node count, smooth scrolling at 60fps, and both static and streaming rendering paths. Lexing and parsing use pulldown-cmark compiled to WASM (tugmark-wasm). Scroll handling is pure DOM window management — zero WASM calls during scroll.
-
-`;
-  // Split into ~200-char chunks at word boundaries
+/**
+ * Generates streaming chunks for the given target byte size.
+ * Splits at word boundaries into ~200-char pieces.
+ */
+function generateChunks(targetBytes: number): string[] {
+  const text = generateMarkdown(targetBytes);
   const chunks: string[] = [];
   let pos = 0;
-  while (pos < prose.length) {
-    const end = Math.min(pos + 200, prose.length);
-    // Find the next space after `end` to avoid splitting mid-word
+  while (pos < text.length) {
+    const end = Math.min(pos + 200, text.length);
     let boundary = end;
-    while (boundary < prose.length && prose[boundary] !== " " && prose[boundary] !== "\n") {
+    while (boundary < text.length && text[boundary] !== ' ' && text[boundary] !== '\n') {
       boundary++;
     }
-    chunks.push(prose.slice(pos, boundary));
+    chunks.push(text.slice(pos, boundary));
     pos = boundary;
   }
   return chunks;
-})();
+}
+
+// ---------------------------------------------------------------------------
+// Size selector type
+// ---------------------------------------------------------------------------
+
+type SizeKey = '50kb' | '1mb' | '10mb';
+
+function sizeToBytes(size: SizeKey): number {
+  switch (size) {
+    case '50kb': return 50 * 1024;
+    case '1mb': return 1024 * 1024;
+    case '10mb': return 10 * 1024 * 1024;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Diagnostic overlay hook
@@ -194,10 +163,11 @@ interface DiagnosticInfo {
 /**
  * GalleryMarkdownView -- TugMarkdownView visual and performance verification card.
  *
- * A single TugMarkdownView is always mounted. Four action buttons drive content
- * through the imperative handle: Streaming, Static 1MB, Static 10MB, and Clear.
+ * A single TugMarkdownView is always mounted. A size selector (50KB | 1MB | 10MB)
+ * controls the content size for Stream and Static actions.
  */
 export function GalleryMarkdownView() {
+  const [selectedSize, setSelectedSize] = useState<SizeKey>('50kb');
   const [isStreaming, setIsStreaming] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DiagnosticInfo>({
     domNodeCount: 0,
@@ -226,11 +196,12 @@ export function GalleryMarkdownView() {
   const streamIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamChunkIndexRef = useRef(0);
   const streamAccumulatedRef = useRef("");
+  const streamChunksRef = useRef<string[]>([]);
 
   // Scroll container ref for diagnostic DOM count
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // 10MB content — generated lazily on first click
+  // 10MB content — generated lazily on first use
   const static10MbContentRef = useRef<string | null>(null);
 
   // Diagnostic polling
@@ -276,9 +247,13 @@ export function GalleryMarkdownView() {
     setIsStreaming(false);
   }, []);
 
-  // ---- Action: Streaming ----
-  const handleStartStream = useCallback(() => {
+  // ---- Action: Stream ----
+  const handleStream = useCallback(() => {
     if (streamIntervalRef.current) return;
+
+    // Generate fresh chunks for the selected size
+    const chunks = generateChunks(sizeToBytes(selectedSize));
+    streamChunksRef.current = chunks;
     streamChunkIndexRef.current = 0;
     streamAccumulatedRef.current = "";
     streamingStore.set("text", "", "gallery");
@@ -292,48 +267,50 @@ export function GalleryMarkdownView() {
     }));
 
     streamIntervalRef.current = setInterval(() => {
+      const currentChunks = streamChunksRef.current;
       const idx = streamChunkIndexRef.current;
-      if (idx >= STREAMING_CHUNKS.length) {
+      if (idx >= currentChunks.length) {
         clearInterval(streamIntervalRef.current!);
         streamIntervalRef.current = null;
         setIsStreaming(false);
         setDiagnostics((prev) => ({
           ...prev,
-          streamProgress: `complete (${STREAMING_CHUNKS.length} chunks)`,
+          streamProgress: `complete (${currentChunks.length} chunks)`,
         }));
         return;
       }
-      streamAccumulatedRef.current += STREAMING_CHUNKS[idx];
+      streamAccumulatedRef.current += currentChunks[idx];
       streamingStore.set("text", streamAccumulatedRef.current, "transport");
       streamChunkIndexRef.current++;
       setDiagnostics((prev) => ({
         ...prev,
-        streamProgress: `chunk ${idx + 1}/${STREAMING_CHUNKS.length}`,
+        streamProgress: `chunk ${idx + 1}/${currentChunks.length}`,
       }));
     }, 40); // ~25 chunks/s, realistic delta rate
-  }, [streamingStore]);
+  }, [selectedSize, streamingStore]);
 
-  const handleStopStream = useCallback(() => {
+  // ---- Action: Stop ----
+  const handleStop = useCallback(() => {
     stopStreamingOnly();
   }, [stopStreamingOnly]);
 
-  // ---- Action: Static 50KB ----
-  const handleStatic50KB = useCallback(() => {
-    markdownRef.current?.setRegion('static-50kb-' + Date.now(), STATIC_50KB_CONTENT);
-  }, []);
-
-  // ---- Action: Static 1MB ----
-  const handleStatic1MB = useCallback(() => {
-    markdownRef.current?.setRegion('static-1mb-' + Date.now(), STATIC_1MB_CONTENT);
-  }, []);
-
-  // ---- Action: Static 10MB ----
-  const handleStatic10MB = useCallback(() => {
-    if (!static10MbContentRef.current) {
-      static10MbContentRef.current = generateMarkdown(10 * 1024 * 1024);
+  // ---- Action: Static ----
+  const handleStatic = useCallback(() => {
+    const targetBytes = sizeToBytes(selectedSize);
+    let content: string;
+    if (selectedSize === '50kb') {
+      content = STATIC_50KB_CONTENT;
+    } else if (selectedSize === '1mb') {
+      content = STATIC_1MB_CONTENT;
+    } else {
+      // 10MB: generate lazily, reuse on subsequent clicks
+      if (!static10MbContentRef.current) {
+        static10MbContentRef.current = generateMarkdown(targetBytes);
+      }
+      content = static10MbContentRef.current;
     }
-    markdownRef.current?.setRegion('static-10mb-' + Date.now(), static10MbContentRef.current);
-  }, []);
+    markdownRef.current?.setRegion('static-' + Date.now(), content);
+  }, [selectedSize]);
 
   // ---- Action: Clear ----
   const handleClear = useCallback(() => {
@@ -362,31 +339,55 @@ export function GalleryMarkdownView() {
 
   return (
     <div className="cg-content" data-testid="gallery-markdown-view" style={{ padding: 0, gap: 0, overflow: "hidden", height: "100%" }}>
-      {/* ---- Action buttons and diagnostics ---- */}
+      {/* ---- Controls and diagnostics ---- */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--tug7-element-global-border-normal-default-rest)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        {/* Streaming button: Start Stream / Stop — fixed width to prevent layout jump */}
-        <div style={{ minWidth: 110 }}>
+
+        {/* Size selector: 50KB | 1MB | 10MB */}
+        <div style={{ display: "flex", gap: 4 }}>
+          <TugPushButton
+            emphasis={selectedSize === '50kb' ? 'filled' : 'outlined'}
+            role="action"
+            size="sm"
+            onClick={() => setSelectedSize('50kb')}
+          >
+            50KB
+          </TugPushButton>
+          <TugPushButton
+            emphasis={selectedSize === '1mb' ? 'filled' : 'outlined'}
+            role="action"
+            size="sm"
+            onClick={() => setSelectedSize('1mb')}
+          >
+            1MB
+          </TugPushButton>
+          <TugPushButton
+            emphasis={selectedSize === '10mb' ? 'filled' : 'outlined'}
+            role="action"
+            size="sm"
+            onClick={() => setSelectedSize('10mb')}
+          >
+            10MB
+          </TugPushButton>
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: 1, height: 20, background: "var(--tug7-element-global-border-normal-default-rest)", flexShrink: 0 }} />
+
+        {/* Stream/Stop — fixed-width wrapper to prevent layout jump */}
+        <div style={{ minWidth: 80 }}>
           {!isStreaming ? (
-            <TugPushButton emphasis="outlined" role="accent" size="sm" onClick={handleStartStream}>
-              Start Stream
+            <TugPushButton emphasis="outlined" role="accent" size="sm" onClick={handleStream}>
+              Stream
             </TugPushButton>
           ) : (
-            <TugPushButton emphasis="outlined" role="danger" size="sm" onClick={handleStopStream}>
+            <TugPushButton emphasis="outlined" role="danger" size="sm" onClick={handleStop}>
               Stop
             </TugPushButton>
           )}
         </div>
 
-        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic50KB}>
-          Static 50KB
-        </TugPushButton>
-
-        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic1MB}>
-          Static 1MB
-        </TugPushButton>
-
-        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic10MB}>
-          Static 10MB
+        <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleStatic}>
+          Static
         </TugPushButton>
 
         <TugPushButton emphasis="outlined" role="action" size="sm" onClick={handleClear}>
