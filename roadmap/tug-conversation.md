@@ -113,7 +113,8 @@ Phase 3A.1: TugWorkerPool             — typed worker pool for parallel computa
 Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-only rendering — DONE (superseded)
 Phase 3A.3: Worker Pipeline Remediation — partial fixes applied — DONE (superseded)
 Phase 3A.4: WASM Markdown Pipeline   — replace worker infra with pulldown-cmark WASM, simplify architecture — DONE
-Phase 3A.5: Region Model + API       — addressable keyed regions, imperative handle, gallery rework
+Phase 3A.5: Region Model + API       — addressable keyed regions, imperative handle, gallery rework — DONE
+Phase 3A.6: Smart Auto-Scroll       — ResizeObserver-driven scroll-follow with user-intent detection
 Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
 Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
@@ -1375,6 +1376,140 @@ Verify: all content types work. Regions accumulate. Clear resets. Scrolling smoo
 - Gallery card: action buttons, single component instance, no mode switching.
 - Streaming: L22-compliant store observer calls setRegion.
 - Full Laws of Tug compliance: L03, L06, L07, L19, L22.
+
+---
+
+### Phase 3A.6: Smart Auto-Scroll {#smart-auto-scroll}
+
+**Status:** Not started.
+
+**Goal:** Implement reliable auto-scroll / don't-auto-scroll behavior for TugMarkdownView. When content is added and the user is at (or near) the bottom, auto-scroll to keep the bottom visible. When the user has scrolled up to read earlier content, preserve their position — don't auto-scroll. When the user scrolls back to the bottom, re-engage auto-scroll.
+
+This is the scroll behavior expected in chat and streaming UIs. UIKit provides it natively via UIScrollView. The web does not — the scroll event API makes it impossible to reliably distinguish user scrolls from programmatic scrolls. This phase implements a proven approach that avoids the scroll-event guessing game entirely.
+
+**Inputs:** Phase 3A.5 TugMarkdownView (imperative handle, region model, virtual scroll). Research into web scroll behavior and the `use-stick-to-bottom` library from StackBlitz Labs (MIT license).
+
+#### Why the scroll event approach fails
+
+The naive approach — listen for `scroll` events, check if the user scrolled up, decide whether to auto-scroll — has a fundamental flaw: **setting `scrollTop` programmatically fires a `scroll` event indistinguishable from a user-initiated scroll.** `event.isTrusted` is `true` for both. There is no web API to distinguish "the user dragged the scrollbar" from "my code wrote `scrollTop`."
+
+Other dead ends:
+- **`overflow-anchor`**: Not supported in any released Safari version. Designed for content inserted *above* the viewport, not for following the bottom.
+- **`scrollend`**: Available in Safari 26.2+ but doesn't distinguish programmatic from user scrolls.
+- **CSS `scroll-snap`**: Designed for paging/carousel behavior, not for following dynamic content.
+
+#### Architecture: ResizeObserver-driven auto-scroll with escape detection
+
+Three listeners, each with a clear job. Studied from the `use-stick-to-bottom` library (StackBlitz Labs, MIT license — see THIRD_PARTY_NOTICES.md).
+
+**1. ResizeObserver on the content div — auto-scroll trigger.**
+When the content grows (blocks added or updated), check if we're in "follow bottom" mode. If so, write `scrollTop = scrollHeight - clientHeight`. Record the value we wrote (`ignoreScrollToTop`) so we can filter the resulting scroll event. ResizeObserver fires between layout and paint — the ideal time for scroll adjustment.
+
+**2. `wheel` event on the scroll container — user scroll-up detection.**
+`wheel` with `deltaY < 0` is unambiguously "user scrolling up." No timing games, no debounce. Immediately disengage auto-scroll (`isAtBottom = false`). This is the one reliable user-intent signal the web provides.
+
+**3. `scroll` event — re-engagement detection.**
+Filtered against `ignoreScrollToTop` (skip our own programmatic scrolls) and `resizeDifference` (skip scrolls caused by content resize). Only used for: detecting when the user scrolls back down near the bottom to re-engage auto-scroll.
+
+**State (all in refs per L06/L07):**
+- `isAtBottom: boolean` — are we in "follow the bottom" mode? Starts true.
+- `ignoreScrollToTop: number | undefined` — the scrollTop value we just wrote programmatically.
+- `resizeDifference: number` — non-zero while processing a resize (cleared after rAF + setTimeout(1) to cover the resulting scroll event).
+- `previousContentHeight: number` — last known content height.
+
+**Algorithm:**
+
+```
+On content resize (ResizeObserver):
+  if content grew AND isAtBottom:
+    write scrollTop = scrollHeight - clientHeight
+    set ignoreScrollToTop = scrollTop value written
+    set resizeDifference = height delta (clear after rAF + setTimeout(1))
+  if content grew AND NOT isAtBottom:
+    do nothing (preserve user's position)
+  if content shrunk AND now near bottom:
+    set isAtBottom = true
+
+On wheel event:
+  if deltaY < 0 (scrolling up) AND container is scrollable:
+    set isAtBottom = false
+
+On scroll event:
+  if resizeDifference !== 0: ignore (scroll caused by resize)
+  if scrollTop === ignoreScrollToTop: ignore (our programmatic scroll)
+  if scrolling down AND near bottom (within 50-70px):
+    set isAtBottom = true
+  update lastScrollTop
+```
+
+**Near-bottom threshold:** 50-70px. A 0-2px threshold fails due to subpixel rendering. The `use-stick-to-bottom` library uses 70px. This means "close enough that the user probably wants to stay at the bottom."
+
+**Safari/WKWebView considerations:**
+- Rubber-band/bounce scrolling can push `scrollTop` past boundaries (negative or past `scrollHeight - clientHeight`). The near-bottom check must use `Math.abs()` or clamp.
+- `overflow-anchor` is not available. This approach does not use it.
+- `scrollend` is available (Safari 26.2+) but not needed for core logic.
+
+**Laws compliance:**
+- **L03:** All listeners registered in `useLayoutEffect` — ready before events fire.
+- **L06:** All state in refs. `scrollTop` writes are direct DOM mutations. No React state changes.
+- **L07:** Handlers read current state through refs (`isAtBottomRef`, `ignoreScrollToTopRef`, etc.). No stale closures.
+- **L22:** The streaming store observer still calls `doSetRegion` directly. Auto-scroll moves from `doSetRegion` to the ResizeObserver callback — still a synchronous DOM write, no React round-trip.
+
+#### What changes
+
+**TugMarkdownView:**
+- Remove the auto-scroll code from `doSetRegion` (the `if (isStreamingRef.current && scrollContainerRef.current)` block). Auto-scroll is now the ResizeObserver's job.
+- Add a ResizeObserver on the block container (or the content area) that fires when content height changes.
+- Add a `wheel` event listener on the scroll container (passive, registered in useLayoutEffect).
+- Update the existing scroll handler to include the `ignoreScrollToTop` and `resizeDifference` filtering, plus the near-bottom re-engagement check.
+- Add refs for `isAtBottom`, `ignoreScrollToTop`, `resizeDifference`, `previousContentHeight`.
+- The `isStreaming` prop may become unnecessary — auto-scroll behavior is determined by `isAtBottom` state, not by whether streaming is active. Any content addition (streaming or static) that grows the document while the user is at the bottom triggers auto-scroll. Keep `isStreaming` prop for now (gallery card still uses it to show/hide the Stop button), but auto-scroll no longer depends on it.
+
+**Gallery card:**
+- Remove any auto-scroll-specific logic. The component handles it internally now.
+- Verify streaming still auto-scrolls, and scrolling up during streaming disengages.
+
+#### Reusability: this pattern applies to all scrolling components
+
+The ResizeObserver + wheel + filtered-scroll pattern is not specific to TugMarkdownView. It's a general solution for any scrolling container that adds content dynamically. When Phase 5 (Conversation Wiring) builds the full conversation scroll view, the same pattern applies. Consider extracting it into a reusable hook or utility:
+
+```typescript
+// Future: reusable hook
+function useSmartScroll(scrollRef: RefObject<HTMLElement>, contentRef: RefObject<HTMLElement>) {
+  // Returns: { isAtBottom: boolean, scrollToBottom(): void }
+  // Manages: ResizeObserver, wheel listener, filtered scroll listener
+}
+```
+
+This extraction is deferred — implement it inline in TugMarkdownView first, extract when a second consumer needs it.
+
+#### Steps
+
+**Step 1: Implement smart auto-scroll in TugMarkdownView.**
+- Add ResizeObserver on block container for content height changes.
+- Add passive `wheel` listener for user scroll-up detection.
+- Update scroll handler with `ignoreScrollToTop` and `resizeDifference` filtering.
+- Add `isAtBottom` ref (starts true) and supporting refs.
+- Remove auto-scroll from `doSetRegion`.
+- Auto-scroll triggers in ResizeObserver when `isAtBottom` is true and content grew.
+
+Verify: streaming auto-scrolls. Scrolling up during streaming disengages. Scrolling back to bottom re-engages. Static content addition doesn't auto-scroll (user is already at top of new content).
+
+**Step 2: Verify and test.**
+- Gallery card: start streaming, let it run, scroll up mid-stream — content should keep arriving but scroll should stay put. Scroll back to bottom — auto-scroll re-engages.
+- Gallery card: click Static 1MB — no auto-scroll (content appears at top).
+- Gallery card: click Static 1MB, scroll to bottom, then click Static 50KB — auto-scrolls to new content because user was at bottom.
+- No console errors.
+
+#### Exit criteria
+
+- Auto-scroll engages when content grows and user is at/near bottom.
+- Auto-scroll disengages when user scrolls up (wheel `deltaY < 0`).
+- Auto-scroll re-engages when user scrolls back to near bottom.
+- Programmatic scrollTop writes do not trigger false "user scrolled" detection.
+- Content resize events do not trigger false scroll detection.
+- Full Laws of Tug compliance: L03, L06, L07, L22.
+- No dependency on `overflow-anchor` (Safari doesn't support it).
 
 ---
 

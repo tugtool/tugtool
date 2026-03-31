@@ -188,6 +188,12 @@
 
 ---
 
+## Scroll Behavior
+
+**D93.** Smart auto-scroll for dynamic content uses three listeners — not scroll-event guessing. (1) **ResizeObserver** on the content element detects content growth and triggers auto-scroll when `isAtBottom` is true; (2) **`wheel` event** with `deltaY < 0` is the only reliable signal for "user scrolling up" — immediately disengages auto-scroll; (3) **`scroll` event** filtered against `ignoreScrollToTop` (our own programmatic writes) and `resizeDifference` (scrolls caused by content resize) — only used for re-engagement when user scrolls back near the bottom. The web's scroll event API cannot distinguish user scrolls from programmatic `scrollTop` writes (`event.isTrusted` is true for both). This pattern avoids the guessing game entirely by using ResizeObserver as the auto-scroll trigger and `wheel` as the escape signal. `overflow-anchor` is not used (Safari doesn't support it). Studied from `use-stick-to-bottom` (StackBlitz Labs, MIT — see THIRD_PARTY_NOTICES.md). [L03, L06, L07]
+
+---
+
 ## Feed & Transport
 
 **D19.** Transport is tugcast binary frame protocol, not a separate HTTP server. `FeedId` enum routes frames.
