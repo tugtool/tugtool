@@ -41,7 +41,7 @@
 
 import "./tug-markdown-view.css";
 
-import React, { useCallback, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import React, { useImperativeHandle, useLayoutEffect, useRef } from "react";
 import DOMPurifyModule from "dompurify";
 import { cn } from "@/lib/utils";
 import { BlockHeightIndex } from "@/lib/block-height-index";
@@ -242,10 +242,6 @@ interface MarkdownEngineState {
    * fully populated before any scroll event fires.
    */
   htmlCache: Map<number, string>;
-  /** Pending scroll top for RAF coalescing [D02]. */
-  pendingScrollTop: number | null;
-  /** RAF handle for scroll coalescing [D02]. */
-  scrollRafHandle: number | null;
   /** Total block count from last lex response. */
   blockCount: number;
 }
@@ -297,6 +293,10 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // ---- SmartScroll instance ref ----
   const smartScrollRef = useRef<SmartScroll | null>(null);
 
+  // ---- RAF coalescing refs for scroll handler [L05] ----
+  const scrollDirtyRef = useRef(false);
+  const scrollRafRef = useRef<number | null>(null);
+
   // ---- ResizeObserver for measuring rendered blocks ----
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
@@ -316,8 +316,6 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         blockWindow,
         blockNodes: new Map(),
         htmlCache: new Map(),
-        pendingScrollTop: null,
-        scrollRafHandle: null,
         blockCount: 0,
       };
     }
@@ -427,11 +425,9 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // ---- Cleanup component-scoped resources on unmount ----
   useLayoutEffect(() => {
     return () => {
-      const engine = engineRef.current;
-      if (!engine) return;
-      if (engine.scrollRafHandle !== null) {
-        cancelAnimationFrame(engine.scrollRafHandle);
-        engine.scrollRafHandle = null;
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
       }
     };
   }, []);
@@ -490,13 +486,33 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // ---- SmartScroll instance [D93] ----
   useLayoutEffect(() => {
     if (!scrollContainerRef.current || !blockContainerRef.current) return;
-    const smartScroll = new SmartScroll(scrollContainerRef.current, blockContainerRef.current);
+    const smartScroll = new SmartScroll({
+      scrollContainer: scrollContainerRef.current,
+      contentElement: blockContainerRef.current,
+      callbacks: {
+        onScroll: () => {
+          scrollDirtyRef.current = true;
+          if (scrollRafRef.current === null) {
+            scrollRafRef.current = requestAnimationFrame(() => {
+              scrollRafRef.current = null;
+              if (!scrollDirtyRef.current) return;
+              scrollDirtyRef.current = false;
+              const engine = engineRef.current;
+              if (!engine) return;
+              const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+              const update = engine.blockWindow.update(scrollTop);
+              applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+            });
+          }
+        },
+      },
+    });
     smartScrollRef.current = smartScroll;
     return () => {
       smartScroll.dispose();
       smartScrollRef.current = null;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Shared lex+parse+render helper ----
   // Full rebuild: re-lexes the entire text, clears and repopulates htmlCache and
@@ -666,24 +682,6 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     clear: doClear,
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- RAF-coalesced scroll handler [D02, L05] ----
-  const handleScroll = useCallback(() => {
-    const engine = getEngine();
-    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
-
-    // Update pending scroll position and request RAF if not already pending.
-    engine.pendingScrollTop = scrollTop;
-    if (engine.scrollRafHandle !== null) return;
-
-    engine.scrollRafHandle = requestAnimationFrame(() => {
-      engine.scrollRafHandle = null;
-      const pendingTop = engine.pendingScrollTop ?? scrollTop;
-      engine.pendingScrollTop = null;
-      const update = engine.blockWindow.update(pendingTop);
-      applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ---- Streaming rendering path [L22: direct store observer, no React round-trip] ----
   useLayoutEffect(() => {
     if (!streamingStore) return;
@@ -700,7 +698,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       ref={scrollContainerRef}
       data-slot="tug-markdown-view"
       className={cn("tugx-md-scroll-container", className)}
-      onScroll={handleScroll}
+      tabIndex={0}
     >
       <div ref={topSpacerRef} className="tugx-md-spacer tugx-md-spacer--top" aria-hidden="true" />
       <div ref={blockContainerRef} className="tugx-md-block-container" />
