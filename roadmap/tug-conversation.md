@@ -1521,15 +1521,32 @@ Verify: `bun test` passes. `bun run build` succeeds.
 **Step 2: Wire SmartScroll into TugMarkdownView.**
 - Create a SmartScroll instance in a `useLayoutEffect` (scroll container ref + block container ref). Dispose on cleanup.
 - Remove the auto-scroll code from `doSetRegion` (the `isStreamingRef.current` block).
-- Remove the `isStreaming` prop if it's no longer needed for auto-scroll (keep if gallery card still uses it for UI state like the Stop button).
+- Remove the `isStreaming` prop — auto-scroll behavior is now determined by SmartScroll's `isAtBottom` state, not by whether streaming is active. Any content addition that grows the document while the user is at the bottom triggers auto-scroll. The gallery card tracks streaming state locally (for its own Stop button) — TugMarkdownView doesn't need to know.
+- Remove `isStreamingRef` from the component.
 - SmartScroll handles all auto-scroll decisions internally.
 
-Verify: streaming auto-scrolls. Scrolling up during streaming disengages. Scrolling back to bottom re-engages.
+Verify: `bun test` passes. `bun run build` succeeds. Streaming auto-scrolls. Scrolling up during streaming disengages. Scrolling back to bottom re-engages.
 
-**Step 3: Verify in browser.**
-- Gallery card: start streaming, let it run, scroll up mid-stream — content should keep arriving but scroll should stay put. Scroll back to bottom — auto-scroll re-engages.
-- Gallery card: click Static 1MB — no auto-scroll (content appears at top).
-- Gallery card: click Static 1MB, scroll to bottom, then click Static 50KB — auto-scrolls to new content because user was at bottom.
+**Step 3: Rework gallery card and verify.**
+Rework the gallery card controls for better testing of auto-scroll behavior:
+
+Controls:
+- **Size selector**: 50KB | 1MB | 10MB — selects how much content the next action delivers.
+- **Stream**: starts streaming content of the selected size at a visible pace (~40ms per chunk). Only visible when not streaming.
+- **Stop**: interrupts the stream. Content already delivered stays. Only visible while streaming.
+- **Static**: dumps the selected size instantly as a new region.
+- **Clear**: resets all regions and stops streaming.
+
+This replaces the current per-size buttons (Static 50KB, Static 1MB, Static 10MB) with a size selector + action pattern. The size selector can be three small TugPushButton toggles or a simple state variable. The key improvement: you can stream 50KB slowly to test auto-scroll, scroll up to disengage, then click Static to test that static additions don't auto-scroll when you're not at the bottom.
+
+Verify in browser:
+- Stream 50KB: content streams in, auto-scrolls to tail.
+- During streaming, scroll up: auto-scroll disengages, content keeps arriving below.
+- Scroll back to bottom: auto-scroll re-engages.
+- Stop mid-stream: content stays, streaming stops.
+- Static 1MB: dumps instantly. If at bottom, scrolls to new content. If scrolled up, stays put.
+- Clear: resets everything.
+- Stream 1MB then Static 50KB: both regions visible, scroll works across the full document.
 - No console errors.
 
 #### Exit criteria
