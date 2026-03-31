@@ -589,17 +589,18 @@ pub fn run_worktree_setup_with_root(
                     Ok(plan_hash) => match tugtool_core::StateDb::open(&db_path, &repo_root) {
                         Ok(mut db) => match db.init_plan(&plan, &synced_plan, Some(&plan_hash)) {
                             Ok(init_result) => {
+                                let plan_id = &init_result.plan_id;
                                 // If already initialized, check for drift
                                 let auto_reinit = if init_result.already_initialized {
                                     // Compare stored hash against current hash
                                     let stored_hash = db
-                                        .show_plan(&plan)
+                                        .show_plan(plan_id)
                                         .ok()
                                         .map(|ps| ps.plan_hash)
                                         .unwrap_or_default();
                                     if stored_hash != plan_hash {
                                         // Hashes differ: check completed steps
-                                        match db.count_completed_steps(&plan) {
+                                        match db.count_completed_steps(plan_id) {
                                             Ok(0) => {
                                                 // No completed steps: auto-reinit
                                                 match db.reinit_plan(
@@ -642,7 +643,7 @@ pub fn run_worktree_setup_with_root(
                                     false
                                 };
 
-                                let ready = match db.ready_steps(&plan) {
+                                let ready = match db.ready_steps(plan_id) {
                                     Ok(result) => Some(
                                         result.ready.iter().map(|s| s.anchor.clone()).collect(),
                                     ),
