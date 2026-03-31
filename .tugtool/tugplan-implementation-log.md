@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-31T22:43:30Z
+---
+
+## step-4: Migrated tugcast HTTP handlers (defaults.rs, server.rs) from Arc<DefaultsStore> to Arc<TugbankClient>. Consolidated main.rs to single TugbankClient for both HTTP and DEFAULTS feed. Updated integration tests. 206 tests pass.
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
 step: step-3
 date: 2025-03-31T22:34:17Z
 ---

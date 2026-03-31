@@ -17,7 +17,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-use tugbank_core::{DefaultsStore, TugbankClient};
+use tugbank_core::TugbankClient;
 use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
@@ -131,47 +131,36 @@ async fn main() {
     };
     let watch_dir = dev::resolve_symlinks(&watch_dir).unwrap_or(watch_dir);
 
-    // Open the tugbank store. On success, wrap in Arc for shared ownership between
-    // migration and the HTTP server. On failure, log a warning and continue without
-    // tugbank -- this preserves graceful degradation when the bank path is inaccessible.
-    let bank_store: Option<Arc<DefaultsStore>> = match DefaultsStore::open(&bank_path) {
-        Ok(store) => Some(Arc::new(store)),
-        Err(e) => {
-            warn!(
-                path = %bank_path.display(),
-                error = %e,
-                "failed to open tugbank database — defaults endpoints disabled"
-            );
-            None
-        }
-    };
-
-    // Run the one-time flat-file-to-tugbank migration synchronously, before the
-    // TCP listener binds, so no frontend fetch can race the migration writes [D05].
-    if let Some(ref store) = bank_store {
-        if let Err(e) = migration::migrate_settings_to_tugbank(&watch_dir, store) {
-            warn!(error = %e, "settings migration encountered an error (non-fatal)");
-        }
-    }
-
-    // Create TugbankClient for DEFAULTS feed. Open a separate connection to the
-    // same database (the HTTP handlers keep using the DefaultsStore opened above).
-    // Step 4 will migrate HTTP handlers to TugbankClient and remove this duplication.
-    let defaults_rx: Option<tokio::sync::watch::Receiver<Frame>> =
+    // Open the TugbankClient. On success, wrap in Arc for shared ownership between
+    // migration, the defaults feed, and the HTTP server. On failure, log a warning
+    // and continue without tugbank -- this preserves graceful degradation when the
+    // bank path is inaccessible.
+    let bank_client: Option<Arc<TugbankClient>> =
         match TugbankClient::open(&bank_path, std::time::Duration::from_millis(500)) {
-            Ok(client) => {
-                let client_arc = std::sync::Arc::new(client);
-                Some(feeds::defaults::defaults_feed(client_arc))
-            }
+            Ok(client) => Some(Arc::new(client)),
             Err(e) => {
                 warn!(
                     path = %bank_path.display(),
                     error = %e,
-                    "failed to open TugbankClient for defaults feed — DEFAULTS feed disabled"
+                    "failed to open TugbankClient — defaults endpoints and feed disabled"
                 );
                 None
             }
         };
+
+    // Run the one-time flat-file-to-tugbank migration synchronously, before the
+    // TCP listener binds, so no frontend fetch can race the migration writes [D05].
+    if let Some(ref client) = bank_client {
+        if let Err(e) = migration::migrate_settings_to_tugbank(&watch_dir, client.store()) {
+            warn!(error = %e, "settings migration encountered an error (non-fatal)");
+        }
+    }
+
+    // Create DEFAULTS feed from the TugbankClient.
+    let defaults_rx: Option<tokio::sync::watch::Receiver<Frame>> =
+        bank_client.as_ref().map(|client| {
+            feeds::defaults::defaults_feed(Arc::clone(client))
+        });
 
     // Create filesystem feed and watch channel
     let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::Filesystem, vec![]));
@@ -366,7 +355,7 @@ async fn main() {
         feed_router,
         shared_dev_state,
         Some(watch_dir),
-        bank_store,
+        bank_client,
     );
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())

@@ -17,7 +17,7 @@ use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
-use tugbank_core::{DefaultsStore, Error as BankError, Value};
+use tugbank_core::{Error as BankError, TugbankClient, Value};
 
 // ── Tagged wire format ─────────────────────────────────────────────────────
 
@@ -215,7 +215,7 @@ fn check_loopback(handler: &str, addr: SocketAddr) -> Option<Response> {
 /// Restricted to loopback connections.
 pub(crate) async fn get_domain(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(store): Extension<Arc<DefaultsStore>>,
+    Extension(client): Extension<Arc<TugbankClient>>,
     Path(domain): Path<String>,
 ) -> Response {
     if let Some(resp) = check_loopback("get_domain", addr) {
@@ -223,7 +223,7 @@ pub(crate) async fn get_domain(
     }
 
     let result = tokio::task::spawn_blocking(move || {
-        let handle = store.domain(&domain)?;
+        let handle = client.store().domain(&domain)?;
         let all: BTreeMap<String, Value> = handle.read_all()?;
         Ok::<_, BankError>(all)
     })
@@ -259,7 +259,7 @@ pub(crate) async fn get_domain(
 /// does not exist. Restricted to loopback connections.
 pub(crate) async fn get_key(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(store): Extension<Arc<DefaultsStore>>,
+    Extension(client): Extension<Arc<TugbankClient>>,
     Path((domain, key)): Path<(String, String)>,
 ) -> Response {
     if let Some(resp) = check_loopback("get_key", addr) {
@@ -267,7 +267,7 @@ pub(crate) async fn get_key(
     }
 
     let result = tokio::task::spawn_blocking(move || {
-        let handle = store.domain(&domain)?;
+        let handle = client.store().domain(&domain)?;
         let value = handle.get(&key)?;
         Ok::<_, BankError>(value)
     })
@@ -303,7 +303,7 @@ pub(crate) async fn get_key(
 /// success. Restricted to loopback connections.
 pub(crate) async fn put_key(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(store): Extension<Arc<DefaultsStore>>,
+    Extension(client): Extension<Arc<TugbankClient>>,
     Path((domain, key)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
@@ -336,7 +336,7 @@ pub(crate) async fn put_key(
     };
 
     let result = tokio::task::spawn_blocking(move || {
-        let handle = store.domain(&domain)?;
+        let handle = client.store().domain(&domain)?;
         handle.set(&key, value)?;
         Ok::<_, BankError>(())
     })
@@ -364,7 +364,7 @@ pub(crate) async fn put_key(
 /// connections.
 pub(crate) async fn delete_key(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(store): Extension<Arc<DefaultsStore>>,
+    Extension(client): Extension<Arc<TugbankClient>>,
     Path((domain, key)): Path<(String, String)>,
 ) -> Response {
     if let Some(resp) = check_loopback("delete_key", addr) {
@@ -372,7 +372,7 @@ pub(crate) async fn delete_key(
     }
 
     let result = tokio::task::spawn_blocking(move || {
-        let handle = store.domain(&domain)?;
+        let handle = client.store().domain(&domain)?;
         let existed = handle.remove(&key)?;
         Ok::<_, BankError>(existed)
     })
