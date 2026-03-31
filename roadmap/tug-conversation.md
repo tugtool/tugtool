@@ -113,7 +113,7 @@ Phase 3A.1: TugWorkerPool             — typed worker pool for parallel computa
 Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-only rendering — DONE (superseded)
 Phase 3A.3: Worker Pipeline Remediation — partial fixes applied — DONE (superseded)
 Phase 3A.4: WASM Markdown Pipeline   — replace worker infra with pulldown-cmark WASM, simplify architecture — DONE
-Phase 3A.5: Imperative API           — setContent/appendContent/clear handle, gallery card rework
+Phase 3A.5: Region Model + API       — addressable keyed regions, imperative handle, gallery rework
 Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
 Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
@@ -1172,115 +1172,209 @@ After the `await`, `lex_blocks()` and `parse_to_html()` are synchronous function
 
 ---
 
-### Phase 3A.5: Imperative API and Gallery Card Rework {#imperative-api}
+### Phase 3A.5: Region Model, Imperative API, and Gallery Card Rework {#region-model}
 
 **Status:** Not started.
 
-**Goal:** Replace TugMarkdownView's prop-driven rendering with an imperative handle API (`setContent`, `appendContent`, `clear`). Rework the gallery card to use action buttons that append content instead of mode-switching buttons that unmount/remount the component. This makes the component easy to compose and change — callers control content through direct method calls, not through React prop changes and effect scheduling.
+**Goal:** Add an addressable region model to TugMarkdownView — an ordered list of keyed content regions, each containing markdown text. Replace the `content` prop with an imperative handle API (`setRegion`, `removeRegion`, `clear`). Rework the gallery card to use action buttons that add content instead of mode-switching buttons. This makes the component ready for real conversation rendering, where messages arrive with IDs and are updated after initial display.
 
-**Inputs:** Phase 3A.4 TugMarkdownView (WASM pipeline, virtual scroll, laws-compliant). Gallery card with three modes.
+**Inputs:** Phase 3A.4 TugMarkdownView (WASM pipeline, virtual scroll, laws-compliant). Gallery card.
 
-#### Why imperative
+#### Why regions
 
-The current component accepts `content` as a React prop. When `content` changes, a `useLayoutEffect` fires, clears everything, and rebuilds. This works but ties content management to React's rendering cycle:
+A conversation is an ordered sequence of messages, each identified by a message ID. Messages are not static — they change after initial rendering:
 
-- Switching from 1MB to 10MB content requires a prop change → React re-render → effect fires → full rebuild. The component can't distinguish "replace" from "append" because it only sees the new prop value.
-- The gallery card uses conditional rendering (`mode === "streaming" && ...`) to switch between static and streaming TugMarkdownView instances. Mode switches unmount one instance and mount another, losing all engine state.
-- Adding "append" behavior requires the caller to accumulate content in its own state and pass the growing string as a prop — duplicating the engine's internal `contentText` and triggering full re-lex+parse on every append.
+- A streaming assistant message accumulates text delta by delta, then finalizes.
+- A thinking block starts as "Thinking..." and gets replaced with full reasoning text.
+- A tool use block shows "Running grep..." then completes with the result.
+- Messages can be edited, compacted, or removed.
 
-The imperative API eliminates all of this. The component mounts once. Callers call methods on a ref handle. Each method goes straight to the engine — no React re-render, no effect scheduling, no prop diffing. Pure L06 DOM manipulation driven by the caller.
+The component needs to accept content updates *by key* — "update the text for message X" — without touching other messages. The current `content` prop model provides no addressing: the caller passes one big string, the component lexes and renders the whole thing. Every change is a full replacement.
 
-#### API design
+The region model adds addressing. Each region has a key (a message ID, a thinking block ID, etc.) and a markdown text string. The full document is the concatenation of all regions in display order. When one region changes, only its blocks are re-parsed; other regions' blocks are untouched.
+
+#### Data structure: RegionMap
+
+Research into document model libraries (ProseMirror, Yjs, CodeMirror 6, Lexical) concluded that all are massively over-engineered for this use case. We don't need collaborative editing, character-level operations, tree structures, or CRDT semantics. We need an ordered list of keyed text blobs.
+
+The implementation is ~30 lines of code, zero dependencies:
 
 ```typescript
-/** Imperative handle for TugMarkdownView. */
+class RegionMap {
+  private _order: string[] = [];           // region keys in display order
+  private _content = new Map<string, string>(); // key → markdown text
+  private _text = "";                       // cached concatenation
+  private _regionOffsets: number[] = [];    // cumulative char offsets per region
+
+  /** Insert or update a region. If key exists, update in place. If new, append at end. */
+  setRegion(key: string, text: string): void { ... }
+
+  /** Remove a region by key. */
+  removeRegion(key: string): void { ... }
+
+  /** Clear all regions. */
+  clear(): void { ... }
+
+  /** The full concatenated text of all regions. */
+  get text(): string { return this._text; }
+
+  /** Number of regions. */
+  get regionCount(): number { return this._order.length; }
+
+  /** Given a char offset in the concatenated text, return which region key owns it. */
+  regionKeyAtOffset(offset: number): string | undefined { ... }
+
+  /** Get the char range [start, end) for a region's text within the concatenated string. */
+  regionRange(key: string): { start: number; end: number } | undefined { ... }
+}
+```
+
+- `_order` is a `string[]` — insertion order is explicit, supports insertion at position.
+- `_content` is a `Map<string, string>` — O(1) lookup by key.
+- `_text` is rebuilt on mutation by joining all region texts with a separator (double newline `\n\n` between regions, which is markdown's block separator).
+- `_regionOffsets` caches cumulative start offsets, rebuilt alongside `_text`.
+
+When a single region changes, the optimization path: only rebuild `_text` from the changed region forward (splice the old region text out, splice new in, update offsets for subsequent regions). For the common case (updating the last region — streaming), this is O(1) string concatenation.
+
+#### Imperative API
+
+```typescript
 export interface TugMarkdownViewHandle {
-  /** Replace all content. Clears existing blocks and renders the new text. */
-  setContent(text: string): void;
-  /** Append text to the end of the current content. Incrementally updates blocks. */
-  appendContent(text: string): void;
-  /** Clear all content and reset the view. */
+  /** Insert or update a content region by key. If key exists, update in place. If new, append. */
+  setRegion(key: string, text: string): void;
+  /** Remove a content region by key. */
+  removeRegion(key: string): void;
+  /** Clear all content regions and reset the view. */
   clear(): void;
 }
 ```
 
-The component uses `React.forwardRef` + `useImperativeHandle` to expose the handle. Internally:
+The component uses `React.forwardRef` + `useImperativeHandle` to expose the handle. Each method:
 
-- **`setContent(text)`** — calls `lexParseAndRender(engine, text)`. Same as the current static `useLayoutEffect` body. Full clear + lex + parse + render.
-- **`appendContent(text)`** — concatenates `engine.contentText + text`, then does the incremental update (same logic as the streaming observer): re-lex the full concatenated string, diff against existing blocks, update changed blocks in-place, append new blocks. No full rebuild.
-- **`clear()`** — resets the engine: clear height index, remove all DOM nodes, clear caches, reset block count. Empty view.
+- **`setRegion(key, text)`** — updates the RegionMap, gets the new concatenated `_text`, does lex+parse+render. For a new region or update to the last region: incremental (same logic as the streaming observer — diff blocks, update changed, append new). For an update to a middle region: full re-lex+parse (the block boundaries shift for everything after the changed region). With pulldown-cmark doing 1MB in 29ms, full re-lex is fast enough even for large documents.
+- **`removeRegion(key)`** — removes from RegionMap, full re-lex+parse of the remaining text.
+- **`clear()`** — resets RegionMap and engine. Empty view.
 
-All three methods are synchronous, direct DOM manipulation per L06. No promises, no effects, no React state. The caller can call them from event handlers, store observers, or anywhere else — the methods work the same regardless of call context.
+All methods are synchronous, direct DOM manipulation per L06. No promises, no effects, no React state.
 
 **Laws compliance:**
 
-- **L06:** `setContent`, `appendContent`, `clear` are direct DOM writes. No React state changes.
-- **L07:** The handle methods access engine state through `engineRef.current`. No stale closures — the ref is always current.
-- **L22:** The streaming PropertyStore observer calls `appendContent` (or the incremental logic directly). Still a direct store observer → DOM write path, no React round-trip.
+- **L06:** Handle methods are direct DOM writes. No React state changes.
+- **L07:** Methods access engine and RegionMap through refs. No stale closures.
+- **L22:** The streaming PropertyStore observer calls `setRegion("stream", accumulatedText)` — direct store observer → method call → DOM write, no React round-trip.
 - **L03:** `useImperativeHandle` runs in `useLayoutEffect` timing — the handle is available before events fire.
+
+#### Streaming integration
+
+The streaming `useLayoutEffect` observer remains (L22). On each store update:
+
+```typescript
+streamingStore.observe(streamingPath, () => {
+  const text = streamingStore.get(streamingPath) as string;
+  if (!text) return;
+  handle.setRegion("stream", text);  // updates the stream region incrementally
+});
+```
+
+The `setRegion` call detects that "stream" is the last region and does an incremental update (no full rebuild). Auto-scroll to tail happens inside `setRegion` when `isStreamingRef.current` is true.
+
+When streaming ends and a new static region is added, it appends after the stream region. The previous stream content stays rendered — no destruction.
 
 #### What changes
 
+**New file: `tugdeck/src/lib/region-map.ts`**
+- `RegionMap` class, ~30 lines, zero dependencies.
+- Exported for use by TugMarkdownView and tests.
+
 **TugMarkdownView:**
-- Add `React.forwardRef` wrapper.
-- Add `useImperativeHandle` exposing `{ setContent, appendContent, clear }`.
-- The `content` prop becomes optional convenience: if provided, `setContent(content)` is called in a `useLayoutEffect` on mount and when `content` changes. This preserves backward compatibility — existing callers that pass `content` as a prop continue to work unchanged.
-- The streaming `useLayoutEffect` observer continues to work as-is. It can internally use the same incremental logic that `appendContent` uses, or call through the handle.
-- Extract the incremental update logic (currently duplicated between the streaming observer and what `appendContent` needs) into a shared `incrementalUpdate(engine, newText)` function.
+- Remove the `content` prop entirely. All content goes through the imperative handle.
+- Remove the static `useLayoutEffect` that watched `content`. Content is set by the caller via `handle.setRegion()`.
+- Add `React.forwardRef` wrapper + `useImperativeHandle`.
+- Add `RegionMap` as part of engine state.
+- `lexParseAndRender` takes the concatenated text from RegionMap.
+- The streaming observer calls `setRegion("stream", text)` instead of managing `contentText` directly.
+- Extract shared incremental update logic used by both `setRegion` (for last-region updates) and the streaming observer into one function.
 
 **Gallery card:**
-- Remove the `mode` state and conditional rendering. Mount ONE TugMarkdownView instance with a ref.
-- Replace mode buttons with action buttons:
-  - **Streaming** — starts the streaming simulation. The PropertyStore observer in TugMarkdownView handles the incremental updates. A `Start Stream` button begins the simulation, which writes to the store.
-  - **Static 1MB** — calls `ref.current.appendContent(STATIC_1MB_CONTENT)`. Appends 1MB of generated content.
-  - **Static 10MB** — calls `ref.current.appendContent(generate10MB())`. Appends 10MB of generated content.
+- Remove `mode` state and conditional rendering. Mount ONE TugMarkdownView with a ref.
+- Action buttons:
+  - **Streaming** — starts/stops the streaming simulation. Writes to PropertyStore; the L22 observer calls `setRegion("stream", text)`.
+  - **Static 1MB** — calls `ref.current.setRegion("static-1mb", STATIC_1MB_CONTENT)`. Adds a 1MB region.
+  - **Static 10MB** — calls `ref.current.setRegion("static-10mb", generated10MB)`. Adds a 10MB region.
   - **Clear** — calls `ref.current.clear()`. Always visible.
-- Button order: `Streaming | Static 1MB | Static 10MB | Clear`
-- The streaming button starts/stops the streaming simulation. The static buttons append content immediately. Clear resets everything.
-- Remove all mode-switching logic, conditional rendering, stop/reset streaming handlers tied to mode changes.
+- Button order: `Streaming | Static 1MB | Static 10MB | Clear`.
+- Single TugMarkdownView instance. No conditional rendering. No unmount/remount.
+
+#### Conversation use case (future — Phase 3B+)
+
+The region model directly supports the conversation rendering pattern:
+
+```typescript
+// Assistant streaming message
+handle.setRegion("msg-abc-123", accumulatedStreamingText);
+
+// Thinking block
+handle.setRegion("thinking-def-456", "Thinking...");
+// ... later ...
+handle.setRegion("thinking-def-456", fullThinkingText);
+
+// Tool use
+handle.setRegion("tool-ghi-789", "Running `grep -r ...`");
+// ... later ...
+handle.setRegion("tool-ghi-789", "```\nresults...\n```");
+
+// User message
+handle.setRegion("msg-jkl-012", "Please explain the output.");
+```
+
+Each message is independently addressable. The region model handles ordering and concatenation. The WASM pipeline handles lexing, parsing, and rendering. The virtual scroll handles DOM node management.
 
 #### Steps
 
-**Step 1: Add imperative handle to TugMarkdownView.**
-- Wrap component with `React.forwardRef`.
-- Add `useImperativeHandle` with `setContent`, `appendContent`, `clear`.
-- Extract incremental update logic from the streaming observer into a shared function.
-- `setContent` calls `lexParseAndRender`. `appendContent` concatenates and calls the incremental logic. `clear` resets the engine.
-- Keep the `content` prop working via `useLayoutEffect` that calls `setContent` — backward compatible.
-- Keep the streaming observer working — it uses the same incremental logic.
+**Step 1: Implement RegionMap.**
+New file `tugdeck/src/lib/region-map.ts`. The class, unit tests in `tugdeck/src/__tests__/region-map.test.ts`. Test: insert, update, remove, clear, concatenation, offset computation, regionKeyAtOffset.
 
-Verify: `bun test` passes. `bun run build` succeeds. Existing gallery card still works (it still passes `content` prop).
+Verify: `bun test` passes including new tests.
 
-**Step 2: Rework gallery card.**
-- Remove `mode` state, conditional rendering, mode-switching logic.
-- Mount one TugMarkdownView with `ref`.
-- Wire buttons: Streaming starts/stops the simulation. Static 1MB/10MB call `appendContent`. Clear calls `clear`.
+**Step 2: Wire RegionMap into TugMarkdownView.**
+- Remove `content` prop.
+- Add `forwardRef` + `useImperativeHandle` with `setRegion`, `removeRegion`, `clear`.
+- Add RegionMap to engine state.
+- `setRegion` calls incremental update (for last region) or full `lexParseAndRender` (for middle region updates).
+- Streaming observer calls `setRegion("stream", text)`.
+- `clear` resets RegionMap + engine.
+
+Verify: `bun test` passes. `bun run build` succeeds.
+
+**Step 3: Rework gallery card.**
+- Remove `mode` state, conditional rendering, `content` prop usage.
+- Mount one TugMarkdownView with ref.
+- Wire buttons: Streaming (start/stop simulation → PropertyStore → L22 observer → setRegion), Static 1MB (setRegion), Static 10MB (setRegion), Clear (clear).
 - Button order: `Streaming | Static 1MB | Static 10MB | Clear`.
-- Rename "Stress 10MB" → "Static 10MB".
-- Keep diagnostic overlay (DOM nodes, blocks, lex/parse timing, streaming progress).
+- Keep diagnostic overlay.
 
-Verify: all three content types work. Streaming appends to existing content. Static buttons append. Clear resets. Scrolling is smooth. No console errors.
+Verify: all content types work. Regions accumulate. Clear resets. Scrolling smooth. No console errors.
 
 #### Checkpoints
 
-- `bun test` passes.
+- `bun test` passes including RegionMap tests.
 - `bun run build` succeeds.
-- Gallery card: Static 1MB appends content when clicked.
-- Gallery card: Static 10MB appends content when clicked.
-- Gallery card: Streaming appends incrementally.
-- Gallery card: Clear resets the view.
-- Gallery card: clicking Static 1MB after Streaming appends to the streamed content.
-- No `useState` for mode selection in gallery card.
-- Zero law violations in TugMarkdownView.
+- Gallery: Streaming adds content incrementally via setRegion.
+- Gallery: Static 1MB adds a region via setRegion.
+- Gallery: Static 10MB adds a region via setRegion.
+- Gallery: Clear resets all regions.
+- Gallery: clicking Static 1MB after Streaming adds to existing content (two regions).
+- No `content` prop on TugMarkdownView.
+- Zero law violations.
 
 #### Exit criteria
 
-- TugMarkdownView exposes `TugMarkdownViewHandle` via `forwardRef`.
-- `setContent`, `appendContent`, `clear` all work as direct method calls.
-- The `content` prop still works for backward compatibility.
-- Gallery card uses action buttons, not mode switches.
-- Single TugMarkdownView instance — no conditional rendering, no unmount/remount on mode change.
-- Full Laws of Tug compliance verified.
+- RegionMap: ordered, keyed content container with cached concatenation and offset tracking.
+- TugMarkdownView exposes `TugMarkdownViewHandle` with `setRegion`, `removeRegion`, `clear`.
+- No `content` prop — all content through the handle.
+- Gallery card: action buttons, single component instance, no mode switching.
+- Streaming: L22-compliant store observer calls setRegion.
+- Full Laws of Tug compliance: L03, L06, L07, L19, L22.
 
 ---
 
