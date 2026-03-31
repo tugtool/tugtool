@@ -571,7 +571,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
     // Restore scroll position, clamped to new content height.
-    const maxScrollTop = engine.heightIndex.totalHeight - (scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
+    const maxScrollTop = engine.heightIndex.getTotalHeight() - (scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
     const scrollTop = Math.max(0, Math.min(savedScrollTop, maxScrollTop));
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollTop;

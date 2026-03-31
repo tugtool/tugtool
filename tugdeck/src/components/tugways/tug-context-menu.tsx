@@ -69,11 +69,6 @@ export interface TugContextMenuProps {
   items: TugContextMenuEntry[];
   /** Called with the selected item's id when an item is activated. */
   onSelect?: (id: string) => void;
-  /**
-   * Controlled open state.
-   * @selector [data-state="open"] | [data-state="closed"]
-   */
-  open?: boolean;
   /** Called when the open state changes. */
   onOpenChange?: (open: boolean) => void;
   /** The right-click target area. Wrapped by Radix ContextMenu.Trigger with asChild. */
@@ -97,7 +92,6 @@ export interface TugContextMenuProps {
 export function TugContextMenu({
   items,
   onSelect,
-  open,
   onOpenChange,
   children,
 }: TugContextMenuProps) {
@@ -170,7 +164,7 @@ export function TugContextMenu({
   }
 
   return (
-    <ContextMenuPrimitive.Root open={open} onOpenChange={onOpenChange}>
+    <ContextMenuPrimitive.Root onOpenChange={onOpenChange}>
       <ContextMenuPrimitive.Trigger asChild>
         {children}
       </ContextMenuPrimitive.Trigger>

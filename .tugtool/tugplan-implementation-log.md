@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-31T23:20:10Z
+---
+
+## audit-fix: Audit fix: cargo fmt formatting fix in tugcast main.rs
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
+step: step-5
+date: 2025-03-31T23:11:47Z
+---
+
+## step-5: Added DEFAULTS: 0x50 to FeedId in tugdeck protocol.ts. Fixed 8 pre-existing TypeScript errors in tugways components. tsc --noEmit passes clean.
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
+step: step-4
+date: 2025-03-31T22:43:30Z
+---
+
+## step-4: Migrated tugcast HTTP handlers (defaults.rs, server.rs) from Arc<DefaultsStore> to Arc<TugbankClient>. Consolidated main.rs to single TugbankClient for both HTTP and DEFAULTS feed. Updated integration tests. 206 tests pass.
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
+step: step-3
+date: 2025-03-31T22:34:17Z
+---
+
+## step-3: Created feeds/defaults.rs with defaults_feed function that builds aggregated DEFAULTS frames from TugbankClient. Wired into main.rs with watch channel. 206 tests pass.
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
+step: step-2
+date: 2025-03-31T22:23:35Z
+---
+
+## step-2: Created TugbankClient in tugbank-core wrapping DefaultsStore with in-memory domain snapshot cache, PRAGMA data_version polling thread, and callback registry. 5 new tests, 72 total pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugbank-in-process-clients.md
+
+---
+
+---
+step: step-1
+date: 2025-03-31T22:11:44Z
+---
+
+## step-1: Added FeedId::Defaults = 0x50 variant to tugcast-core protocol with from_byte match arm, round-trip test, golden wire-format test, and dedicated from_byte/as_byte tests. 50 tests pass.
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
 step: step-10
 date: 2025-03-30T18:42:46Z
 ---

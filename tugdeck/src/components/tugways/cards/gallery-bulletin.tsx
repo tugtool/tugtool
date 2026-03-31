@@ -100,7 +100,7 @@ export function GalleryBulletin() {
           <TugPushButton
             emphasis="outlined"
             size="sm"
-            role="caution"
+            role="danger"
             onClick={() => bulletin.caution("Low disk space")}
           >
             Caution

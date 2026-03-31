@@ -24,7 +24,7 @@ import type { TugButtonRole } from "./internal/tug-button";
 
 /** Map confirmRole to a default Lucide icon name (PascalCase — matches lucide-react `icons` keys). */
 function defaultIconForRole(role: TugButtonRole): string {
-  if (role === "danger" || role === "caution") {
+  if (role === "danger") {
     return "TriangleAlert";
   }
   return "Info";

@@ -115,6 +115,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       style,
       "aria-label": ariaLabel,
       children,
+      dir,
       ...rest
     },
     ref,
@@ -149,6 +150,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
               : "tug-radio-group-vertical",
             className,
           )}
+          dir={dir as "ltr" | "rtl" | undefined}
           style={{ ...roleStyle, ...style }}
           {...rest}
         >

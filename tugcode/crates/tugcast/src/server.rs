@@ -20,7 +20,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::warn;
-use tugbank_core::DefaultsStore;
+use tugbank_core::TugbankClient;
 
 use crate::dev::SharedDevState;
 use crate::router::FeedRouter;
@@ -127,17 +127,17 @@ async fn tell_handler(
 /// Pass `None` for `source_tree` (e.g., in tests) to disable static file
 /// serving entirely.
 ///
-/// When `bank_store` is `Some(store)`, registers the four `/api/defaults`
-/// routes with the store as an `Extension`. When `None`, the defaults routes
+/// When `bank_store` is `Some(client)`, registers the four `/api/defaults`
+/// routes with the client as an `Extension`. When `None`, the defaults routes
 /// are not registered — this avoids a missing-Extension panic since no
 /// defaults routes are reachable in callers (e.g., tests) that do not supply
-/// a store. The store is opened externally (in `main.rs`) so that migration
+/// a client. The client is created externally (in `main.rs`) so that migration
 /// can share the same connection before the server starts accepting connections.
 pub(crate) fn build_app(
     router: FeedRouter,
     _dev_state: SharedDevState,
     source_tree: Option<PathBuf>,
-    bank_store: Option<Arc<DefaultsStore>>,
+    bank_store: Option<Arc<TugbankClient>>,
 ) -> Router {
     let mut base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
@@ -182,14 +182,14 @@ pub(crate) fn build_app(
 /// The `source_tree` path is forwarded to `build_app` to enable
 /// `ServeDir` static file serving in production mode.
 /// The `bank_store` is forwarded to `build_app` to enable the defaults
-/// endpoints backed by the tugbank SQLite database. The store is opened
+/// endpoints backed by the tugbank SQLite database. The client is created
 /// in `main.rs` before startup so migration can share the same connection.
 pub async fn run_server(
     listener: TcpListener,
     router: FeedRouter,
     dev_state: SharedDevState,
     source_tree: Option<PathBuf>,
-    bank_store: Option<Arc<DefaultsStore>>,
+    bank_store: Option<Arc<TugbankClient>>,
 ) -> Result<(), std::io::Error> {
     let app = build_app(router, dev_state, source_tree, bank_store);
 

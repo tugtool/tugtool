@@ -38,6 +38,8 @@ pub enum FeedId {
     CodeOutput = 0x40,
     /// Code input stream (tugdeck -> tugcast)
     CodeInput = 0x41,
+    /// Domain defaults snapshot (tugcast -> tugdeck)
+    Defaults = 0x50,
     /// Control commands (tugdeck -> tugcast)
     Control = 0xC0,
     /// Heartbeat/keepalive frames (bidirectional)
@@ -61,6 +63,7 @@ impl FeedId {
             0x33 => Some(FeedId::StatsBuildStatus),
             0x40 => Some(FeedId::CodeOutput),
             0x41 => Some(FeedId::CodeInput),
+            0x50 => Some(FeedId::Defaults),
             0xC0 => Some(FeedId::Control),
             0xFF => Some(FeedId::Heartbeat),
             _ => None,
@@ -468,6 +471,17 @@ mod tests {
     }
 
     #[test]
+    fn test_golden_defaults_frame() {
+        let frame = Frame::new(FeedId::Defaults, b"{}".to_vec());
+        let encoded = frame.encode();
+        // Expected wire format:
+        // [0x50] - Defaults
+        // [0x00, 0x00, 0x00, 0x02] - length 2 (big-endian)
+        // [0x7b, 0x7d] - "{}"
+        assert_eq!(encoded, vec![0x50, 0x00, 0x00, 0x00, 0x02, 0x7b, 0x7d]);
+    }
+
+    #[test]
     fn test_round_trip_code_output() {
         let original = Frame::new(
             FeedId::CodeOutput,
@@ -533,5 +547,30 @@ mod tests {
         assert_eq!(encoded[0], 0xC0);
         assert_eq!(&encoded[1..5], &[0x00, 0x00, 0x00, 0x14]); // 20 bytes
         assert_eq!(&encoded[5..], payload);
+    }
+
+    #[test]
+    fn test_feedid_defaults_from_byte() {
+        assert_eq!(FeedId::from_byte(0x50), Some(FeedId::Defaults));
+    }
+
+    #[test]
+    fn test_feedid_defaults_as_byte() {
+        assert_eq!(FeedId::Defaults.as_byte(), 0x50);
+    }
+
+    #[test]
+    fn test_round_trip_defaults() {
+        // Sample DEFAULTS payload: aggregated domain snapshot
+        let payload =
+            br#"{"domains":{"dev.tugtool.deck.theme":{"generation":7,"entries":{"active-theme":{"kind":"string","value":"brio"}}}}}"#
+                .to_vec();
+        let original = Frame::new(FeedId::Defaults, payload);
+        let encoded = original.encode();
+        // Verify wire format header
+        assert_eq!(encoded[0], 0x50);
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
     }
 }

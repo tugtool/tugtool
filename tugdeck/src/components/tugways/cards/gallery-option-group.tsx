@@ -28,14 +28,8 @@ import {
   Table,
 } from "lucide-react";
 import { TugOptionGroup } from "@/components/tugways/tug-option-group";
-import type { TugGroupRole } from "@/components/tugways/tug-option-group";
+import type { TugOptionGroupRole } from "@/components/tugways/tug-option-group";
 import { TugBox } from "@/components/tugways/tug-box";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type TugOptionGroupRole = TugGroupRole;
 
 // ---------------------------------------------------------------------------
 // Constants

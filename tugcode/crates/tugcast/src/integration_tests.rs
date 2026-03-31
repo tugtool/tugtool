@@ -11,7 +11,7 @@ use tower::ServiceExt;
 
 use std::sync::Arc;
 
-use tugbank_core::DefaultsStore;
+use tugbank_core::{DefaultsStore, TugbankClient};
 
 use crate::auth::{self, SESSION_COOKIE_NAME};
 use crate::dev;
@@ -648,7 +648,11 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
     use std::net::{IpAddr, Ipv4Addr};
 
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
-    let store = Arc::new(DefaultsStore::open(tmp.path()).expect("open test tugbank db"));
+    let store = DefaultsStore::open(tmp.path()).expect("open test tugbank db");
+    let client = Arc::new(
+        TugbankClient::from_store(store, std::time::Duration::from_millis(500))
+            .expect("create TugbankClient"),
+    );
 
     let auth = auth::new_shared_auth_state(7892);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -672,7 +676,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None, Some(store));
+    let app = build_app(feed_router, dev_state, None, Some(client));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     (app.layer(MockConnectInfo(addr)), tmp)
 }
@@ -942,7 +946,11 @@ async fn test_defaults_non_loopback_returns_403() {
     use std::net::{IpAddr, Ipv4Addr};
 
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
-    let store = Arc::new(DefaultsStore::open(tmp.path()).expect("open test tugbank db"));
+    let store = DefaultsStore::open(tmp.path()).expect("open test tugbank db");
+    let bank_client = Arc::new(
+        TugbankClient::from_store(store, std::time::Duration::from_millis(500))
+            .expect("create TugbankClient"),
+    );
 
     let auth = auth::new_shared_auth_state(7893);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -966,7 +974,7 @@ async fn test_defaults_non_loopback_returns_403() {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None, Some(store));
+    let app = build_app(feed_router, dev_state, None, Some(bank_client));
     // Apply a non-loopback address
     let non_loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 0);
     let app = app.layer(MockConnectInfo(non_loopback));
@@ -993,7 +1001,7 @@ async fn test_defaults_non_loopback_returns_403() {
 /// Build a test app + store pair backed by a temp database, returning the
 /// store separately so migration tests can call migrate_settings_to_tugbank
 /// directly before exercising the HTTP layer.
-fn build_migration_test_app(store: Arc<DefaultsStore>) -> axum::Router {
+fn build_migration_test_app(client: Arc<TugbankClient>) -> axum::Router {
     use axum::extract::connect_info::MockConnectInfo;
     use std::net::{IpAddr, Ipv4Addr};
 
@@ -1019,7 +1027,7 @@ fn build_migration_test_app(store: Arc<DefaultsStore>) -> axum::Router {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None, Some(store));
+    let app = build_app(feed_router, dev_state, None, Some(client));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     app.layer(MockConnectInfo(addr))
 }
@@ -1037,17 +1045,21 @@ fn write_flat_settings(source_tree: &std::path::Path, contents: &str) {
 async fn test_migration_writes_layout_and_theme_to_tugbank() {
     let db_tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
-    let store = Arc::new(DefaultsStore::open(db_tmp.path()).expect("open store"));
+    let store = DefaultsStore::open(db_tmp.path()).expect("open store");
+    let client = Arc::new(
+        TugbankClient::from_store(store, std::time::Duration::from_millis(500))
+            .expect("create TugbankClient"),
+    );
 
     write_flat_settings(
         tree_tmp.path(),
         r#"{"layout":{"version":5,"cards":[]},"theme":"brio"}"#,
     );
 
-    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &store)
+    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), client.store())
         .expect("migration should succeed");
 
-    let app = build_migration_test_app(Arc::clone(&store));
+    let app = build_migration_test_app(Arc::clone(&client));
 
     // Verify layout written to dev.tugtool.deck.layout/layout
     let layout_resp = app
@@ -1113,13 +1125,17 @@ async fn test_migration_deletes_flat_file() {
 async fn test_migration_noop_when_no_flat_file() {
     let db_tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
-    let store = Arc::new(DefaultsStore::open(db_tmp.path()).expect("open store"));
+    let store = DefaultsStore::open(db_tmp.path()).expect("open store");
+    let client = Arc::new(
+        TugbankClient::from_store(store, std::time::Duration::from_millis(500))
+            .expect("create TugbankClient"),
+    );
 
     // No flat file created — migration should be a no-op.
-    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &store)
+    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), client.store())
         .expect("migration no-op should return Ok");
 
-    let app = build_migration_test_app(Arc::clone(&store));
+    let app = build_migration_test_app(Arc::clone(&client));
 
     // Layout key should not exist → 404
     let layout_resp = app

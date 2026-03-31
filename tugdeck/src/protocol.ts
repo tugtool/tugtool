@@ -20,6 +20,7 @@ export const FeedId = {
   STATS_BUILD_STATUS: 0x33,
   CODE_OUTPUT: 0x40,
   CODE_INPUT: 0x41,
+  DEFAULTS: 0x50,
   CONTROL: 0xc0,
   HEARTBEAT: 0xff,
 } as const;

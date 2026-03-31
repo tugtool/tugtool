@@ -23,7 +23,7 @@ import { useTugBoxDisabled } from "./internal/tug-box-context";
 // ---- Props ----
 
 export interface TugValueInputProps
-  extends Omit<React.ComponentPropsWithoutRef<"input">, "value" | "onChange" | "defaultValue" | "type"> {
+  extends Omit<React.ComponentPropsWithoutRef<"input">, "value" | "onChange" | "defaultValue" | "type" | "size"> {
   /** Current numeric value. Display is derived from this via the formatter. */
   value: number;
   /** Called when the user commits a new value (Enter, blur, or arrow key). */
