@@ -710,6 +710,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       <div ref={topSpacerRef} className="tugx-md-spacer tugx-md-spacer--top" aria-hidden="true" />
       <div ref={blockContainerRef} className="tugx-md-block-container" />
       <div ref={bottomSpacerRef} className="tugx-md-spacer tugx-md-spacer--bottom" aria-hidden="true" />
+      <div className="tugx-md-bottom-buffer" aria-hidden="true" />
     </div>
   );
 });

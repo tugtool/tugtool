@@ -55,6 +55,19 @@
   /* Provides scroll-height padding below the last visible block. */
 }
 
+/* ---- Bottom buffer ---- */
+
+/*
+ * Clear space below all content. Ensures the last line of content is fully
+ * visible even if scroll position calculations are off by a few pixels.
+ * Height is configurable via --tugx-md-bottom-buffer.
+ */
+.tugx-md-bottom-buffer {
+  height: var(--tugx-md-bottom-buffer, 2rem);
+  width: 100%;
+  flex-shrink: 0;
+}
+
 /* ---- Block container ---- */
 
 /*
