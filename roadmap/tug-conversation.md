@@ -115,6 +115,7 @@ Phase 3A.3: Worker Pipeline Remediation — partial fixes applied — DONE (supe
 Phase 3A.4: WASM Markdown Pipeline   — replace worker infra with pulldown-cmark WASM, simplify architecture — DONE
 Phase 3A.5: Region Model + API       — addressable keyed regions, imperative handle, gallery rework — DONE
 Phase 3A.6: SmartScroll              — scroll state machine, programmatic API, follow-bottom, callbacks
+Phase 3A.7: SmartScroll Hardening    — fix phase gaps, orphaned states, dead code, all-key coverage
 Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
 Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
@@ -1621,6 +1622,193 @@ Verify in browser:
 - Full Laws of Tug compliance: L03, L06, L07, D93.
 - No `overflow-anchor` dependency.
 - No rAF+setTimeout timing hacks.
+
+---
+
+### Phase 3A.7: SmartScroll Hardening {#smart-scroll-hardening}
+
+**Status:** Not started.
+
+**Goal:** Fix eight issues identified during holistic review of the SmartScroll implementation. The state machine is architecturally sound, but has phase gaps, orphaned states, dead code, and incomplete key coverage that must be resolved before moving on.
+
+**Inputs:** Phase 3A.6 SmartScroll (five-phase state machine, 72 tests), TugMarkdownView consumer code.
+
+#### Issue 1: Dead ResizeObserver in SmartScroll
+
+**Problem:** `_handleResize` is an empty method. The ResizeObserver is created, registered, observed, and disposed — but does nothing. Speculative infrastructure with no current purpose.
+
+**Fix:** Remove `_resizeObserver`, `_handleResize`, the `contentElement` parameter from `SmartScrollOptions`, and the `_content` field. The controller-driven model (`doSetRegion` calls `scrollToBottom()`) means SmartScroll doesn't need to observe content changes. If content-change detection is needed later, add it with a clear purpose. Also eliminates one of three ResizeObservers (see Issue 6).
+
+#### Issue 2: Phase gap during deceleration detection
+
+**Problem:** During the 50ms window after pointerup, phase is set to `idle` while the timer checks for momentum scroll events. `isUserScrolling` returns false during this window — an API lie. The `_scrolledAfterPointerUp` flag and `_decelerationTimer` sentinel check in the idle handler are implicit state smuggled outside the phase model.
+
+**Fix:** Add a sixth phase: `settling`. After pointerup from dragging, enter `settling` instead of `idle`. Settling means "pointer released, waiting to determine if momentum follows." After the 50ms timer resolves:
+- Scrolls arrived → transition to `decelerating`, fire `onDidEndDragging(willDecelerate: true)` + `onWillBeginDecelerating`
+- No scrolls → transition to `idle`, fire `onDidEndDragging(willDecelerate: false)` + `onDidEndScrolling`
+
+`isUserScrolling` returns true for `settling`. The `_scrolledAfterPointerUp` field moves from an implicit flag to an explicit phase. Update the `ScrollPhase` type, the state diagram, `isUserScrolling`, and tests.
+
+#### Issues 3 & 4: Wheel and keyboard scrolls orphaned in DRAGGING
+
+**Problem:** `_handleWheel` and `_handleKeyDown` enter DRAGGING but have no pointer lifecycle to exit it. They rely entirely on `scrollend` to return to idle. If `scrollend` doesn't fire (single wheel tick with no momentum, or browser lacks support), the phase stays stuck in DRAGGING.
+
+**Fix:** After wheel or keydown enters DRAGGING, call `_restartScrollEndTimer()`. This starts/restarts a 150ms fallback timer. Continuous wheel/key events keep pushing the timer forward. When activity stops:
+- On browsers WITH `scrollend`: the native event fires first via `_handleScrollEnd`, clears the timer
+- On browsers WITHOUT `scrollend`: the timer fires `_onScrollTerminal` after 150ms of silence
+
+This ensures wheel and keyboard scrolls always have an exit path from DRAGGING, regardless of browser support.
+
+#### Issue 5: Scrollend fallback timer doesn't run for DRAGGING phase
+
+**Problem:** `_handleScroll` only restarts the scrollend fallback timer for `decelerating` and `programmatic` phases. If the phase is `dragging` (from wheel or keyboard), no fallback timer runs during scroll events. On Safari (no native `scrollend`), this means wheel/keyboard scrolling can leave the state machine stuck.
+
+**Fix:** Add `dragging` to the fallback timer restart in `_handleScroll`:
+
+```typescript
+case 'dragging':
+case 'decelerating':
+case 'programmatic':
+  if (!this._supportsScrollEnd) {
+    this._restartScrollEndTimer();
+  }
+  break;
+```
+
+And update `_onScrollTerminal` to handle `dragging` as a terminal phase — treat it as a drag that ended without momentum:
+
+```typescript
+if (previousPhase === 'dragging') {
+  this._phase = 'idle';
+  this._callbacks.onDidEndDragging?.(this, false);
+  this._callbacks.onDidEndScrolling?.(this);
+  this._checkReEngageFollowBottom();
+}
+```
+
+Combined with Issues 3 & 4, this provides complete coverage: the event handler starts the timer, scroll events keep it alive, and `_onScrollTerminal` handles the exit for all three applicable phases.
+
+#### Issue 6: Three ResizeObservers
+
+**Problem:** TugMarkdownView creates two ResizeObservers (block measurement, viewport height) and SmartScroll creates a third (dead).
+
+**Fix:** Solved by Issue 1. Removing SmartScroll's dead ResizeObserver reduces the count to two. The remaining two serve genuinely different purposes — one observes the scroll container element (viewport height changes), the other observes individual block elements (measured heights). They watch different targets and can't be merged. Two is correct.
+
+#### Issue 7: Fragile closure capture in `useImperativeHandle`
+
+**Problem:** `doSetRegion` is captured in `useImperativeHandle` with an empty dependency array. It's only safe because everything it touches is a ref. The `eslint-disable` comment hides a fragile assumption — if someone later adds non-ref state to `doSetRegion`, the stale closure bug would be silent.
+
+**Fix:** Replace the blanket `eslint-disable` comments with `eslint-disable-next-line` and an explanatory comment documenting *why* the empty dependency array is correct:
+
+```typescript
+// eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally empty:
+// doSetRegion, doRemoveRegion, doClear only access refs (.current) at call
+// time, never captured values. This handle is stable for the component lifetime.
+```
+
+Apply the same treatment to the SmartScroll useLayoutEffect and the streaming observer useLayoutEffect.
+
+#### Issue 8: Incomplete keyboard scroll coverage
+
+**Problem:** Only scroll-up keys (PageUp, Home, ArrowUp, Shift+Space) enter DRAGGING. Scroll-down keys (ArrowDown, PageDown, Space, End) produce scroll events that arrive during idle phase, bypassing the drag lifecycle entirely.
+
+**Fix:** Rename `SCROLL_UP_KEYS` to `SCROLL_KEYS`. Include all scroll keys: PageUp, PageDown, Home, End, ArrowUp, ArrowDown, Space. All keyboard-initiated scrolls enter DRAGGING. The follow-bottom disengagement check remains directional — only scroll-up keys disengage:
+
+```typescript
+const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'Space']);
+
+private _handleKeyDown(e: KeyboardEvent): void {
+  if (this._disposed) return;
+  if (!SCROLL_KEYS.has(e.code)) return;
+
+  if (this._phase !== 'dragging') {
+    this._enterDragging();
+  }
+  this._restartScrollEndTimer(); // Issue 3/4 fix
+
+  // Disengage follow-bottom only for scroll-UP keys
+  const isUpKey = e.code === 'PageUp' || e.code === 'Home'
+    || e.code === 'ArrowUp' || (e.code === 'Space' && e.shiftKey);
+  if (isUpKey && this._isFollowingBottom) {
+    this._setFollowingBottom(false);
+  }
+}
+```
+
+#### Updated state diagram
+
+After all fixes, the state machine has six phases:
+
+```
+IDLE
+  │── pointerdown ────────────────────→ TRACKING
+  │── wheel event ────────────────────→ DRAGGING (+ start scrollend timer)
+  │── scroll key ─────────────────────→ DRAGGING (+ start scrollend timer)
+  │── our scrollTo(animated) ─────────→ PROGRAMMATIC
+
+TRACKING
+  │── first scroll event ─────────────→ DRAGGING
+  │── pointerup (no scroll) ──────────→ IDLE
+
+DRAGGING
+  │── pointerup ──────────────────────→ SETTLING (50ms window)
+  │── scrollend event ────────────────→ IDLE (drag ended, no momentum)
+  │── scrollend fallback timer ───────→ IDLE (drag ended, no momentum)
+
+SETTLING
+  │── scrolls arrived within 50ms ────→ DECELERATING
+  │── no scrolls within 50ms ─────────→ IDLE
+
+DECELERATING
+  │── scrollend event ────────────────→ IDLE
+  │── scrollend fallback timer ───────→ IDLE
+  │── pointerdown (interrupt) ────────→ TRACKING
+
+PROGRAMMATIC
+  │── scrollend event ────────────────→ IDLE
+  │── target reached (non-animated) ──→ IDLE
+```
+
+#### Steps
+
+**Step 1: SmartScroll fixes (Issues 1-5, 8).**
+- Remove dead ResizeObserver and `contentElement` from SmartScroll
+- Add `settling` phase to `ScrollPhase` type
+- Implement settling transition logic (pointerup from dragging → settling → decelerate or idle)
+- Update `isUserScrolling` to include `settling`
+- Add `_restartScrollEndTimer()` calls in `_handleWheel` and `_handleKeyDown`
+- Add `dragging` to scrollend fallback restart in `_handleScroll`
+- Add `dragging` handling in `_onScrollTerminal`
+- Rename `SCROLL_UP_KEYS` to `SCROLL_KEYS`, add all scroll keys, make disengagement directional
+- Update all tests for new phase, new transitions, and timer behavior
+
+Verify: `bun test` passes. `bun run build` succeeds.
+
+**Step 2: TugMarkdownView fixes (Issues 1, 7).**
+- Remove `contentElement` from SmartScroll constructor call (now uses only `scrollContainer`)
+- Replace `eslint-disable` with `eslint-disable-next-line` + explanatory comments on all three hooks
+- Update D93 docstring comment to reflect six-phase model
+
+Verify: `bun test` passes. `bun run build` succeeds.
+
+**Step 3: Update roadmap and design decisions.**
+- Update the Phase 3A.6 state diagram to show six phases
+- Update D93 in `tuglaws/design-decisions.md` to document the settling phase and wheel/keyboard timer
+- Mark Phase 3A.6 as done, Phase 3A.7 as done
+
+Verify: State diagram and D93 match the implementation.
+
+#### Exit criteria
+
+- Six-phase state machine: idle, tracking, dragging, settling, decelerating, programmatic
+- `isUserScrolling` is always truthful — returns true during settling
+- Wheel and keyboard scrolls always exit DRAGGING (scrollend event or fallback timer)
+- Scrollend fallback timer runs for dragging, decelerating, and programmatic phases
+- No dead code (ResizeObserver removed, contentElement removed)
+- All scroll keys (up and down) enter DRAGGING; only up-keys disengage follow-bottom
+- `eslint-disable` comments replaced with `eslint-disable-next-line` + rationale
+- All existing tests pass; new tests cover settling phase, wheel/key timer exit, all-key coverage
+- `bun test` passes. `bun run build` succeeds.
 
 ---
 
