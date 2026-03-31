@@ -1100,6 +1100,7 @@ Update gallery-markdown-view.tsx:
 - Remove worker-specific diagnostics (pool size, in-flight tasks).
 - Add WASM diagnostics: lex time, parse time, block count, cache size, cache hit rate.
 - Keep DOM node count and streaming progress.
+- Remove all spike investigations and code.
 
 Run all three gallery modes and verify:
 - **Static 1MB:** Viewport visible in <50ms. Scroll jank-free. DOM nodes <500.
