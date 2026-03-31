@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-31T22:11:44Z
+---
+
+## step-1: Added FeedId::Defaults = 0x50 variant to tugcast-core protocol with from_byte match arm, round-trip test, golden wire-format test, and dedicated from_byte/as_byte tests. 50 tests pass.
+
+**Files changed:**
+- tugbank-in-process-clients-01a0862-10
+
+---
+
+---
 step: step-10
 date: 2025-03-30T18:42:46Z
 ---
