@@ -413,7 +413,6 @@ export function GalleryMarkdownView() {
           ref={markdownRef}
           streamingStore={streamingStore}
           streamingPath="text"
-          isStreaming={isStreaming}
           onBlockMeasured={handleBlockMeasured}
           onTiming={handleTiming}
           className="gallery-md-view"

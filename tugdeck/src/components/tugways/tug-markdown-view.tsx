@@ -29,6 +29,8 @@
  *   data-slot="tug-markdown-view", file pair (tsx + css).
  * - [L22] Streaming DOM updates observe the PropertyStore directly via
  *   useLayoutEffect — no React round-trip between data change and DOM write.
+ * - [D93] SmartScroll handles auto-scroll via ResizeObserver + wheel + filtered
+ *   scroll events. The component does not manage scroll position directly.
  *
  * Design decisions:
  * - [D03] HTML cache (Map<number, string>, never evicted, all blocks pre-parsed)
@@ -45,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import { RegionMap } from "@/lib/region-map";
+import { SmartScroll } from "@/lib/smart-scroll";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
@@ -206,8 +209,6 @@ export interface TugMarkdownViewProps {
   streamingStore?: PropertyStore;
   /** PropertyStore path key for the streaming text value. Default: "text". */
   streamingPath?: string;
-  /** Whether the stream is active (enables auto-scroll to tail). */
-  isStreaming?: boolean;
   /** Callback when a block enters the viewport and is measured. */
   onBlockMeasured?: (index: number, measuredHeight: number) => void;
   /** Callback with WASM timing metrics after each lex+parse pass. */
@@ -273,14 +274,12 @@ const DEFAULT_VIEWPORT_HEIGHT = 600;
  * <TugMarkdownView
  *   streamingStore={store}
  *   streamingPath="text"
- *   isStreaming={true}
  * />
  */
 export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdownViewProps>(
   function TugMarkdownView({
     streamingStore,
     streamingPath = "text",
-    isStreaming = false,
     onBlockMeasured,
     onTiming,
     className,
@@ -292,10 +291,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   const blockContainerRef = useRef<HTMLDivElement>(null);
 
   // ---- Prop refs for stable closure access [L07] ----
-  const isStreamingRef = useRef(isStreaming);
-  isStreamingRef.current = isStreaming;
   const onTimingRef = useRef(onTiming);
   onTimingRef.current = onTiming;
+
+  // ---- SmartScroll instance ref ----
+  const smartScrollRef = useRef<SmartScroll | null>(null);
 
   // ---- ResizeObserver for measuring rendered blocks ----
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -487,6 +487,17 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     return () => resizeObs.disconnect();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- SmartScroll instance [D93] ----
+  useLayoutEffect(() => {
+    if (!scrollContainerRef.current || !blockContainerRef.current) return;
+    const smartScroll = new SmartScroll(scrollContainerRef.current, blockContainerRef.current);
+    smartScrollRef.current = smartScroll;
+    return () => {
+      smartScroll.dispose();
+      smartScrollRef.current = null;
+    };
+  }, []);
+
   // ---- Shared lex+parse+render helper ----
   // Full rebuild: re-lexes the entire text, clears and repopulates htmlCache and
   // heightIndex, then rebuilds the visible window. Called for first region,
@@ -619,13 +630,6 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       lexParseAndRender(engine, fullText);
     } else {
       incrementalUpdate(engine, fullText);
-    }
-
-    // Auto-scroll if streaming [L06: direct DOM write, L07: ref for current prop]
-    if (isStreamingRef.current && scrollContainerRef.current) {
-      const totalHeight = engine.heightIndex.getTotalHeight();
-      const viewportHeight = scrollContainerRef.current.clientHeight;
-      scrollContainerRef.current.scrollTop = Math.max(0, totalHeight - viewportHeight);
     }
   }
 
