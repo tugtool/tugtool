@@ -114,7 +114,7 @@ Phase 3A.2: Worker Markdown Pipeline — move parsing off main thread, viewport-
 Phase 3A.3: Worker Pipeline Remediation — partial fixes applied — DONE (superseded)
 Phase 3A.4: WASM Markdown Pipeline   — replace worker infra with pulldown-cmark WASM, simplify architecture — DONE
 Phase 3A.5: Region Model + API       — addressable keyed regions, imperative handle, gallery rework — DONE
-Phase 3A.6: Smart Auto-Scroll       — ResizeObserver-driven scroll-follow with user-intent detection
+Phase 3A.6: SmartScroll              — scroll state machine, programmatic API, follow-bottom, callbacks
 Phase 3B: Markdown Content Types     — code blocks, thinking, tool use, streaming (U1, U5, U6, U7)
 Phase 4: Prompt Input               — input layer (U12, U13, U19)
 Phase 5: Conversation Wiring        — core conversation loop (U2, U3, U4, U8, U14, U23)
@@ -1379,185 +1379,234 @@ Verify: all content types work. Regions accumulate. Clear resets. Scrolling smoo
 
 ---
 
-### Phase 3A.6: Smart Auto-Scroll {#smart-auto-scroll}
+### Phase 3A.6: SmartScroll — Scroll State Machine {#smart-auto-scroll}
 
-**Status:** Not started.
+**Status:** In progress (Step 1 done, Step 2 done — being rewritten with complete design).
 
-**Goal:** Implement reliable auto-scroll / don't-auto-scroll behavior for TugMarkdownView. When content is added and the user is at (or near) the bottom, auto-scroll to keep the bottom visible. When the user has scrolled up to read earlier content, preserve their position — don't auto-scroll. When the user scrolls back to the bottom, re-engage auto-scroll.
+**Goal:** Build a proper scroll management abstraction modeled after UIScrollView/UIScrollViewDelegate. SmartScroll is a standalone class (not a React hook) that manages a scroll container element, tracks scroll phases (idle, tracking, dragging, decelerating, programmatic), provides programmatic scroll methods, fires lifecycle callbacks, and includes auto-follow-bottom as a built-in feature. It is the foundation for all scrolling behavior in tugdeck.
 
-This is the scroll behavior expected in chat and streaming UIs. UIKit provides it natively via UIScrollView. The web does not — the scroll event API makes it impossible to reliably distinguish user scrolls from programmatic scrolls. This phase implements a proven approach that avoids the scroll-event guessing game entirely.
+**Inputs:** Phase 3A.5 TugMarkdownView (imperative handle, region model, virtual scroll). UIScrollView/UIScrollViewDelegate API study. Research into web scroll behavior. `use-stick-to-bottom` (StackBlitz Labs, MIT — see THIRD_PARTY_NOTICES.md).
 
-**Inputs:** Phase 3A.5 TugMarkdownView (imperative handle, region model, virtual scroll). Research into web scroll behavior and the `use-stick-to-bottom` library from StackBlitz Labs (MIT license).
+#### Design reference: UIScrollView / UIScrollViewDelegate
 
-#### Why the scroll event approach fails
+SmartScroll is modeled after Apple's UIScrollView. UIScrollView provides: precise scroll state (`contentOffset`, `contentSize`, `isTracking`, `isDragging`, `isDecelerating`), programmatic scrolling (`setContentOffset(_:animated:)`, `scrollRectToVisible(_:animated:)`), and delegate callbacks at every phase transition. The auto-follow-bottom behavior that chat UIs need is trivially built on top of this foundation — it's not the whole thing.
 
-The naive approach — listen for `scroll` events, check if the user scrolled up, decide whether to auto-scroll — has a fundamental flaw: **setting `scrollTop` programmatically fires a `scroll` event indistinguishable from a user-initiated scroll.** `event.isTrusted` is `true` for both. There is no web API to distinguish "the user dragged the scrollbar" from "my code wrote `scrollTop`."
+**What UIScrollView provides that the web can replicate:**
+- Scroll position and geometry (`scrollTop`, `scrollHeight`, `clientHeight` — exact equivalents)
+- Phase state machine (idle → tracking → dragging → decelerating → idle — approximated via pointer/wheel/scroll/scrollend events)
+- Programmatic scrolling (`scrollTo`, `scrollToBottom`, `scrollToElement` — via web `scrollTo` API)
+- Lifecycle callbacks (`onScroll`, `onWillBeginDragging`, `onDidEndDragging`, `onDidEndDecelerating`, `onDidEndScrollingAnimation` — via event mapping)
 
-Other dead ends:
-- **`overflow-anchor`**: Not supported in any released Safari version. Designed for content inserted *above* the viewport, not for following the bottom.
-- **`scrollend`**: Available in Safari 26.2+ but doesn't distinguish programmatic from user scrolls.
-- **CSS `scroll-snap`**: Designed for paging/carousel behavior, not for following dynamic content.
+**Three gaps — all in momentum/deceleration, none affecting core functionality:**
+1. No access to release velocity or deceleration target. UIScrollView's `scrollViewWillEndDragging(_:withVelocity:targetContentOffset:)` gives exact velocity at finger-lift and a mutable target. The web doesn't expose this.
+2. No control over deceleration rate. UIScrollView has `.normal`/`.fast` presets. The web's momentum physics are browser-controlled.
+3. No "is this momentum or active input?" signal during wheel events. macOS `NSEvent.momentumPhase` distinguishes these; the web doesn't expose it.
 
-#### Architecture: ResizeObserver-driven auto-scroll with escape detection
+None of these gaps affect auto-follow-bottom, the state machine, programmatic scrolling, or lifecycle callbacks.
 
-Three listeners, each with a clear job. Studied from the `use-stick-to-bottom` library (StackBlitz Labs, MIT license — see THIRD_PARTY_NOTICES.md).
+#### The scroll state machine
 
-**1. ResizeObserver on the content div — auto-scroll trigger.**
-When the content grows (blocks added or updated), check if we're in "follow bottom" mode. If so, write `scrollTop = scrollHeight - clientHeight`. Record the value we wrote (`ignoreScrollToTop`) so we can filter the resulting scroll event. ResizeObserver fires between layout and paint — the ideal time for scroll adjustment.
-
-**2. `wheel` event on the scroll container — user scroll-up detection.**
-`wheel` with `deltaY < 0` is unambiguously "user scrolling up." No timing games, no debounce. Immediately disengage auto-scroll (`isAtBottom = false`). This is the one reliable user-intent signal the web provides.
-
-**3. `scroll` event — re-engagement detection.**
-Filtered against `ignoreScrollToTop` (skip our own programmatic scrolls) and `resizeDifference` (skip scrolls caused by content resize). Only used for: detecting when the user scrolls back down near the bottom to re-engage auto-scroll.
-
-**State (all in refs per L06/L07):**
-- `isAtBottom: boolean` — are we in "follow the bottom" mode? Starts true.
-- `ignoreScrollToTop: number | undefined` — the scrollTop value we just wrote programmatically.
-- `resizeDifference: number` — non-zero while processing a resize (cleared after rAF + setTimeout(1) to cover the resulting scroll event).
-- `previousContentHeight: number` — last known content height.
-
-**Algorithm:**
+Five mutually exclusive phases, detected using web events:
 
 ```
-On content resize (ResizeObserver):
-  if content grew AND isAtBottom:
-    write scrollTop = scrollHeight - clientHeight
-    set ignoreScrollToTop = scrollTop value written
-    set resizeDifference = height delta (clear after rAF + setTimeout(1))
-  if content grew AND NOT isAtBottom:
-    do nothing (preserve user's position)
-  if content shrunk AND now near bottom:
-    set isAtBottom = true
+IDLE
+  │── pointerdown/touchstart ──────────────→ TRACKING
+  │── our scrollTo(animated) ──────────────→ PROGRAMMATIC_SCROLLING
 
-On wheel event:
-  if deltaY < 0 (scrolling up) AND container is scrollable:
-    set isAtBottom = false
+TRACKING
+  │── first scroll event ─────────────────→ DRAGGING
+  │── wheel event (scroll input) ─────────→ DRAGGING
+  │── scroll-up keydown ──────────────────→ DRAGGING
+  │── pointerup (no scroll occurred) ─────→ IDLE
 
-On scroll event:
-  if resizeDifference !== 0: ignore (scroll caused by resize)
-  if scrollTop === ignoreScrollToTop: ignore (our programmatic scroll)
-  if scrolling down AND near bottom (within 50-70px):
-    set isAtBottom = true
-  update lastScrollTop
+DRAGGING
+  │── pointerup/touchend ─────────────────→ check: scroll events continue?
+  │   │── yes (within 50ms) ──────────────→ DECELERATING
+  │   │── no ─────────────────────────────→ IDLE
+
+DECELERATING
+  │── scrollend event ────────────────────→ IDLE
+  │── 150ms no scroll (fallback) ─────────→ IDLE
+
+PROGRAMMATIC_SCROLLING
+  │── scrollend event ────────────────────→ IDLE
+  │── target reached (non-animated) ──────→ IDLE
 ```
 
-**Near-bottom threshold:** 50-70px. A 0-2px threshold fails due to subpixel rendering. The `use-stick-to-bottom` library uses 70px. This means "close enough that the user probably wants to stay at the bottom."
+**Key rule from UIScrollView:** Programmatic scrolls NEVER fire drag/deceleration callbacks. `onWillBeginDragging` fires only for user input. The state machine enforces this — programmatic scrolling is a separate phase.
 
-**Safari/WKWebView considerations:**
-- Rubber-band/bounce scrolling can push `scrollTop` past boundaries (negative or past `scrollHeight - clientHeight`). The near-bottom check must use `Math.abs()` or clamp.
-- `overflow-anchor` is not available. This approach does not use it.
-- `scrollend` is available (Safari 26.2+) but not needed for core logic.
+#### User scroll detection — all input methods
 
-**Laws compliance:**
-- **L03:** All listeners registered in `useLayoutEffect` — ready before events fire.
-- **L06:** All state in refs. `scrollTop` writes are direct DOM mutations. No React state changes.
-- **L07:** Handlers read current state through refs (`isAtBottomRef`, `ignoreScrollToTopRef`, etc.). No stale closures.
-- **L22:** The streaming store observer still calls `doSetRegion` directly. Auto-scroll moves from `doSetRegion` to the ResizeObserver callback — still a synchronous DOM write, no React round-trip.
+Every way a user can scroll must be detected for disengagement:
 
-#### What changes
+| Input Method | Event | Detection |
+|---|---|---|
+| Trackpad/wheel up | `wheel` deltaY < 0 | Immediate, unambiguous |
+| Keyboard Page Up/Home/Arrow Up/Shift+Space | `keydown` | Immediate, unambiguous |
+| Scrollbar thumb drag up | `pointerdown` + `scroll` scrollTop decrease | Phase is DRAGGING (pointer is down) |
+| Scrollbar track click up | `pointerdown` + `scroll` scrollTop decrease | Phase is DRAGGING (pointer is down) |
+| Touch scroll up | `touchstart` + `scroll` scrollTop decrease | Phase is DRAGGING |
+| Momentum/inertial up | scroll events continue after pointerup | Phase is DECELERATING, scrollTop decreasing |
+| Accessibility (VoiceOver) | `scroll` scrollTop decrease | Treated as user scroll (no pointer/wheel) |
 
-**TugMarkdownView:**
-- Remove the auto-scroll code from `doSetRegion` (the `if (isStreamingRef.current && scrollContainerRef.current)` block). Auto-scroll is now the ResizeObserver's job.
-- Add a ResizeObserver on the block container (or the content area) that fires when content height changes.
-- Add a `wheel` event listener on the scroll container (passive, registered in useLayoutEffect).
-- Update the existing scroll handler to include the `ignoreScrollToTop` and `resizeDifference` filtering, plus the near-bottom re-engagement check.
-- Add refs for `isAtBottom`, `ignoreScrollToTop`, `resizeDifference`, `previousContentHeight`.
-- The `isStreaming` prop may become unnecessary — auto-scroll behavior is determined by `isAtBottom` state, not by whether streaming is active. Any content addition (streaming or static) that grows the document while the user is at the bottom triggers auto-scroll. Keep `isStreaming` prop for now (gallery card still uses it to show/hide the Stop button), but auto-scroll no longer depends on it.
+Every non-user scroll must be filtered:
 
-**Gallery card:**
-- Remove any auto-scroll-specific logic. The component handles it internally now.
-- Verify streaming still auto-scrolls, and scrolling up during streaming disengages.
+| Non-User Source | Guard |
+|---|---|
+| Our programmatic scrollTop write | Phase is PROGRAMMATIC_SCROLLING (we set it before writing) |
+| DOM manipulation shifting scrollTop | Phase is IDLE and no user input preceded the scroll event |
+| ResizeObserver-triggered auto-scroll | Phase is IDLE, we set PROGRAMMATIC_SCROLLING before writing |
 
-#### Reusability: this pattern applies to all scrolling components
+**The state machine is the guard.** If the phase is DRAGGING or DECELERATING and scrollTop decreases, a user is scrolling up — disengage follow-bottom. If the phase is IDLE or PROGRAMMATIC_SCROLLING and scrollTop changes, we caused it — ignore. No timing hacks, no rAF+setTimeout, no flags cleared after arbitrary delays.
 
-The ResizeObserver + wheel + filtered-scroll pattern is not specific to TugMarkdownView. It's a general solution for any scrolling container that adds content dynamically — conversation views, terminal output, log panels, any streaming content display. Implement it as a standalone module from the start:
+#### Follow-bottom behavior
 
-**New file: `tugdeck/src/lib/smart-scroll.ts`**
+Built on the state machine, not alongside it:
 
-A plain class (not a React hook) that takes a scroll container element and a content element, manages the three listeners, and exposes a minimal API:
+- **Content grows** (ResizeObserver) + `isFollowingBottom` + phase is IDLE → enter PROGRAMMATIC_SCROLLING, auto-scroll to bottom
+- **Phase enters DRAGGING** and scroll direction is up → disengage `isFollowingBottom`
+- **Phase enters IDLE** and `isNearBottom` → re-engage `isFollowingBottom`
+- **`scrollToBottom()` called** → engage `isFollowingBottom`, enter PROGRAMMATIC_SCROLLING
+
+#### API
 
 ```typescript
-/**
- * SmartScroll — auto-scroll manager for dynamic content containers.
- *
- * Follows the bottom when content grows and the user is at/near the bottom.
- * Disengages when the user scrolls up. Re-engages when the user scrolls
- * back to the bottom. Uses ResizeObserver as the scroll trigger (not scroll
- * events), wheel events for user-intent detection, and filtered scroll
- * events for re-engagement only. See [D93] for the design rationale.
- *
- * Not a React hook — a plain class that manages DOM listeners directly.
- * Callers create an instance, attach it to a scroll container, and dispose
- * when done. Works with any framework or no framework.
- */
+/** Scroll phase — mutually exclusive states. */
+export type ScrollPhase = 'idle' | 'tracking' | 'dragging' | 'decelerating' | 'programmatic';
+
+/** Lifecycle callbacks — modeled after UIScrollViewDelegate. */
+export interface SmartScrollCallbacks {
+  /** Fires for ALL scroll sources. Like scrollViewDidScroll. */
+  onScroll?: (scroll: SmartScroll) => void;
+
+  /** User drag started (pointer/wheel/keyboard). Like scrollViewWillBeginDragging. */
+  onWillBeginDragging?: (scroll: SmartScroll) => void;
+  /** User drag ended. Like scrollViewDidEndDragging(willDecelerate:). */
+  onDidEndDragging?: (scroll: SmartScroll, willDecelerate: boolean) => void;
+
+  /** Momentum coast started. Like scrollViewWillBeginDecelerating. */
+  onWillBeginDecelerating?: (scroll: SmartScroll) => void;
+  /** Momentum coast ended. Like scrollViewDidEndDecelerating. */
+  onDidEndDecelerating?: (scroll: SmartScroll) => void;
+
+  /** Programmatic animated scroll completed. Like scrollViewDidEndScrollingAnimation. */
+  onDidEndScrollingAnimation?: (scroll: SmartScroll) => void;
+
+  /** Any scroll sequence completed (user or programmatic). */
+  onDidEndScrolling?: (scroll: SmartScroll) => void;
+
+  /** Auto-follow-bottom state changed. */
+  onFollowBottomChanged?: (scroll: SmartScroll, following: boolean) => void;
+}
+
+/** Constructor options. */
+export interface SmartScrollOptions {
+  scrollContainer: HTMLElement;
+  contentElement: HTMLElement;
+  callbacks?: SmartScrollCallbacks;
+  nearBottomThreshold?: number;     // Default: 60px
+  followBottom?: boolean;           // Default: true
+}
+
 export class SmartScroll {
-  constructor(scrollContainer: HTMLElement, contentElement: HTMLElement);
-  /** Whether auto-scroll is currently engaged. */
-  get isAtBottom(): boolean;
-  /** Programmatically scroll to the bottom and engage auto-scroll. */
-  scrollToBottom(): void;
-  /** Programmatically disengage auto-scroll (e.g., user clicked "scroll up" button). */
-  disengage(): void;
-  /** Clean up all listeners. Call on unmount. */
+  constructor(options: SmartScrollOptions);
+
+  // --- State (read-only) ---
+  get phase(): ScrollPhase;
+  get scrollTop(): number;
+  get scrollHeight(): number;
+  get clientHeight(): number;
+  get isAtBottom(): boolean;          // Geometric: within threshold of bottom
+  get isAtTop(): boolean;             // scrollTop === 0
+  get isUserScrolling(): boolean;     // phase is dragging or decelerating
+  get isFollowingBottom(): boolean;   // Auto-follow engaged
+
+  // --- Programmatic scrolling ---
+  scrollTo(options: { top?: number; left?: number; animated?: boolean }): void;
+  scrollToTop(animated?: boolean): void;
+  scrollToBottom(animated?: boolean): void;
+  scrollToElement(element: HTMLElement, options?: { animated?: boolean; block?: ScrollLogicalPosition }): void;
+
+  // --- Follow-bottom control ---
+  engageFollowBottom(): void;
+  disengageFollowBottom(): void;
+
+  // --- Lifecycle ---
   dispose(): void;
 }
 ```
 
-TugMarkdownView creates a `SmartScroll` instance in a `useLayoutEffect` and calls `dispose()` on cleanup. The component no longer manages scroll state directly — SmartScroll owns it.
+#### Internal listeners
+
+Six DOM listeners, each with a clear job:
+
+1. **`scroll` on container** — fires `onScroll`, updates `lastScrollTop`, drives re-engagement check
+2. **`scrollend` on container** — terminal signal for deceleration and programmatic animation. Feature-detected; timer fallback (150ms) for browsers without it.
+3. **`pointerdown` on container** — enters TRACKING phase
+4. **`pointerup` / `pointercancel` on document** — exits DRAGGING, determines if deceleration follows
+5. **`wheel` on container** — immediate DRAGGING entry + disengage signal for follow-bottom (deltaY < 0)
+6. **`keydown` on container** — Page Up/Home/Arrow Up/Shift+Space → immediate DRAGGING entry + disengage
+7. **`ResizeObserver` on contentElement** — content growth trigger for follow-bottom auto-scroll
+
+All listeners use `{ passive: true }` where applicable. All registered in constructor, all removed in `dispose()`.
+
+**Laws compliance:**
+- **L03:** Callers register SmartScroll in `useLayoutEffect` — ready before events fire.
+- **L06:** All state is internal to the class (plain properties, not React state). `scrollTop` writes are direct DOM mutations.
+- **L07:** No closures over changing state. The class owns its own state as instance properties.
+- **D93:** The ResizeObserver + wheel + scroll architecture is documented as design decision D93.
+
+#### Known web limitations (from UIScrollView study)
+
+1. **No release velocity or deceleration target.** Cannot read momentum velocity at finger-lift. Cannot modify where momentum scroll will land. Impact: none for follow-bottom or state machine.
+2. **No deceleration rate control.** Browser decides momentum physics. Impact: none.
+3. **No momentum vs active input distinction in wheel events.** macOS `NSEvent.momentumPhase` is not exposed. Impact: none for disengagement (both active and momentum wheel-up should disengage).
 
 #### Steps
 
-**Step 1: Implement SmartScroll as a standalone module.**
-New file `tugdeck/src/lib/smart-scroll.ts`. The `SmartScroll` class with:
-- Constructor takes scroll container + content element, sets up ResizeObserver, wheel listener, scroll listener.
-- `isAtBottom` getter.
-- `scrollToBottom()` and `disengage()` methods.
-- `dispose()` cleans up all listeners.
-- Unit tests in `tugdeck/src/__tests__/smart-scroll.test.ts` (to the extent possible without a real browser — test the state machine logic, mock the DOM APIs).
+**Step 1: Rewrite SmartScroll with complete state machine.**
+Replace the current `tugdeck/src/lib/smart-scroll.ts` entirely. The new class implements:
+- The five-phase state machine with transitions from pointer/wheel/key/scroll/scrollend events
+- Lifecycle callbacks (SmartScrollCallbacks)
+- Programmatic scroll methods (scrollTo, scrollToTop, scrollToBottom, scrollToElement)
+- Follow-bottom with content growth detection (ResizeObserver)
+- `scrollend` feature detection with timer fallback
+- Comprehensive tests
 
 Verify: `bun test` passes. `bun run build` succeeds.
 
-**Step 2: Wire SmartScroll into TugMarkdownView.**
-- Create a SmartScroll instance in a `useLayoutEffect` (scroll container ref + block container ref). Dispose on cleanup.
-- Remove the auto-scroll code from `doSetRegion` (the `isStreamingRef.current` block).
-- Remove the `isStreaming` prop — auto-scroll behavior is now determined by SmartScroll's `isAtBottom` state, not by whether streaming is active. Any content addition that grows the document while the user is at the bottom triggers auto-scroll. The gallery card tracks streaming state locally (for its own Stop button) — TugMarkdownView doesn't need to know.
-- Remove `isStreamingRef` from the component.
-- SmartScroll handles all auto-scroll decisions internally.
+**Step 2: Wire new SmartScroll into TugMarkdownView.**
+- Replace the current SmartScroll instance creation with the new options-based constructor.
+- Remove the existing `handleScroll` RAF-coalesced scroll handler from the component — SmartScroll's `onScroll` callback replaces it for virtual window management.
+- Connect SmartScroll's `onScroll` to the virtual window update logic (blockWindow.update + applyWindowUpdate).
+- The component becomes a consumer of SmartScroll callbacks, not a direct scroll event listener.
 
-Verify: `bun test` passes. `bun run build` succeeds. Streaming auto-scrolls. Scrolling up during streaming disengages. Scrolling back to bottom re-engages.
+Verify: `bun test` passes. `bun run build` succeeds.
 
-**Step 3: Rework gallery card and verify.**
-Rework the gallery card controls for better testing of auto-scroll behavior:
-
-Controls:
-- **Size selector**: 50KB | 1MB | 10MB — selects how much content the next action delivers.
-- **Stream**: starts streaming content of the selected size at a visible pace (~40ms per chunk). Only visible when not streaming.
-- **Stop**: interrupts the stream. Content already delivered stays. Only visible while streaming.
-- **Static**: dumps the selected size instantly as a new region.
-- **Clear**: resets all regions and stops streaming.
-
-This replaces the current per-size buttons (Static 50KB, Static 1MB, Static 10MB) with a size selector + action pattern. The size selector can be three small TugPushButton toggles or a simple state variable. The key improvement: you can stream 50KB slowly to test auto-scroll, scroll up to disengage, then click Static to test that static additions don't auto-scroll when you're not at the bottom.
+**Step 3: Rework gallery card, test, and verify.**
+Rework gallery controls: size selector (50KB | 1MB | 10MB) + action buttons (Stream | Stop | Static | Clear).
 
 Verify in browser:
-- Stream 50KB: content streams in, auto-scrolls to tail.
-- During streaming, scroll up: auto-scroll disengages, content keeps arriving below.
-- Scroll back to bottom: auto-scroll re-engages.
-- Stop mid-stream: content stays, streaming stops.
-- Static 1MB: dumps instantly. If at bottom, scrolls to new content. If scrolled up, stays put.
+- Stream: auto-scrolls to tail as content arrives.
+- Scroll up during streaming (wheel, scrollbar drag, keyboard): disengages — content keeps arriving but scroll stays put.
+- Scroll back to bottom: re-engages.
+- Stop: interrupts stream, content stays.
+- Static: dumps selected size. If at bottom, auto-scrolls. If scrolled up, stays put.
 - Clear: resets everything.
-- Stream 1MB then Static 50KB: both regions visible, scroll works across the full document.
 - No console errors.
 
 #### Exit criteria
 
-- Auto-scroll engages when content grows and user is at/near bottom.
-- Auto-scroll disengages when user scrolls up (wheel `deltaY < 0`).
-- Auto-scroll re-engages when user scrolls back to near bottom.
-- Programmatic scrollTop writes do not trigger false "user scrolled" detection.
-- Content resize events do not trigger false scroll detection.
-- Full Laws of Tug compliance: L03, L06, L07, L22.
-- No dependency on `overflow-anchor` (Safari doesn't support it).
+- SmartScroll implements the five-phase state machine.
+- All user scroll input methods (wheel, scrollbar drag, keyboard, touch) detected for disengagement.
+- Programmatic and DOM-manipulation scrolls correctly filtered via phase state (not timing hacks).
+- Lifecycle callbacks fire at correct phase transitions.
+- Programmatic scroll methods work (scrollTo, scrollToTop, scrollToBottom, scrollToElement).
+- Follow-bottom engages/disengages correctly.
+- `scrollend` used where supported, timer fallback elsewhere.
+- Full Laws of Tug compliance: L03, L06, L07, D93.
+- No `overflow-anchor` dependency.
+- No rAF+setTimeout timing hacks.
 
 ---
 
