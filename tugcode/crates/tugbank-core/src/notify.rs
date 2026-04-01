@@ -36,7 +36,10 @@ pub fn broadcast_domain_changed(domain: &str) {
     let sender = match UnixDatagram::unbound() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("warning: tugbank notify: failed to create socket: {} (domain: {})", e, domain);
+            eprintln!(
+                "warning: tugbank notify: failed to create socket: {} (domain: {})",
+                e, domain
+            );
             return;
         }
     };

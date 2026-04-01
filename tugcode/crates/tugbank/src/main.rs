@@ -29,8 +29,8 @@ use std::process;
 
 use base64::Engine as _;
 use clap::{Parser, Subcommand, ValueEnum};
-use tugbank_core::{DefaultsStore, Value};
 use tugbank_core::notify::broadcast_domain_changed;
+use tugbank_core::{DefaultsStore, Value};
 
 // ── CLI structure ─────────────────────────────────────────────────────────────
 

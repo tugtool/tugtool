@@ -241,12 +241,8 @@ mod tests {
     fn test_read_domain() {
         let tmp = NamedTempFile::new().expect("temp file");
         let client = TugbankClient::open(tmp.path()).expect("open failed");
-        client
-            .set("d", "a", Value::String("one".into()))
-            .unwrap();
-        client
-            .set("d", "b", Value::I64(2))
-            .unwrap();
+        client.set("d", "a", Value::String("one".into())).unwrap();
+        client.set("d", "b", Value::I64(2)).unwrap();
         let snap = client.read_domain("d").unwrap();
         assert_eq!(snap.len(), 2);
         assert_eq!(snap.get("a"), Some(&Value::String("one".into())));
