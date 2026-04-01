@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-04-01T23:32:57Z
+---
+
+## step-7: Final integration checkpoint: verified all 7 steps. 2 lexParseAndRender call sites (cold-start, removeRegion). pinToBottom wired in doSetRegion. shiftFrom for non-tail P!=Q. Content shrink scroll recovery. CSS containment. 1966 tests pass.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
 step: step-6
 date: 2025-04-01T23:26:17Z
 ---
