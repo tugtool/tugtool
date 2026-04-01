@@ -105,9 +105,36 @@ class ProcessManager {
         return nil
     }
 
-    /// Read a string value from tugbank. Returns nil if the key doesn't exist
-    /// or tugbank is not available.
+    /// Read a string value from tugbank.
+    /// Delegates to TugbankClient.shared when available; falls back to CLI.
     static func readTugbank(domain: String, key: String) -> String? {
+        if let client = TugbankClient.shared {
+            return client.getString(domain: domain, key: key)
+        }
+        return readTugbankCLI(domain: domain, key: key)
+    }
+
+    /// Read a boolean value from tugbank. Returns true if the key exists and
+    /// its value is a bool true or the string "true" (case-insensitive).
+    static func readTugbankBool(domain: String, key: String) -> Bool {
+        if let client = TugbankClient.shared {
+            return client.getBool(domain: domain, key: key)
+        }
+        guard let value = readTugbankCLI(domain: domain, key: key) else { return false }
+        return value.caseInsensitiveCompare("true") == .orderedSame
+    }
+
+    /// Write a string value to tugbank.
+    @discardableResult
+    static func writeTugbank(domain: String, key: String, value: String) -> Bool {
+        if let client = TugbankClient.shared {
+            return client.setString(domain: domain, key: key, value: value)
+        }
+        return writeTugbankCLI(domain: domain, key: key, value: value)
+    }
+
+    /// CLI fallback for reads (used before TugbankClient.configure is called).
+    private static func readTugbankCLI(domain: String, key: String) -> String? {
         guard let tugbankPath = which("tugbank") else { return nil }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: tugbankPath)
@@ -121,7 +148,6 @@ class ProcessManager {
             guard proc.terminationStatus == 0 else { return nil }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             guard let output = String(data: data, encoding: .utf8) else { return nil }
-            // tugbank text output format: "value" (just the value, trimmed)
             let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
             return value.isEmpty ? nil : value
         } catch {
@@ -129,16 +155,9 @@ class ProcessManager {
         }
     }
 
-    /// Read a boolean value from tugbank. Returns true if the key exists and
-    /// its value is "true" (case-insensitive). Returns false otherwise.
-    static func readTugbankBool(domain: String, key: String) -> Bool {
-        guard let value = readTugbank(domain: domain, key: key) else { return false }
-        return value.caseInsensitiveCompare("true") == .orderedSame
-    }
-
-    /// Write a string value to tugbank.
+    /// CLI fallback for writes (used before TugbankClient.configure is called).
     @discardableResult
-    static func writeTugbank(domain: String, key: String, value: String) -> Bool {
+    private static func writeTugbankCLI(domain: String, key: String, value: String) -> Bool {
         guard let tugbankPath = which("tugbank") else { return false }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: tugbankPath)

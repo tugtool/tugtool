@@ -14,6 +14,7 @@
 		AA0000010000000000000005 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000007 /* main.swift */; };
 		AA0000010000000000000006 /* TugConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000008 /* TugConfig.swift */; };
 		AA0000010000000000000009 /* ControlSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000009 /* ControlSocket.swift */; };
+		AA000001000000000000000A /* TugbankClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000A /* TugbankClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		AA0000020000000000000007 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		AA0000020000000000000008 /* TugConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugConfig.swift; sourceTree = "<group>"; };
 		AA0000020000000000000009 /* ControlSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlSocket.swift; sourceTree = "<group>"; };
+		AA000002000000000000000A /* TugbankClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugbankClient.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -58,6 +60,7 @@
 				AA0000020000000000000001 /* AppDelegate.swift */,
 				AA0000020000000000000002 /* MainWindow.swift */,
 				AA0000020000000000000003 /* ProcessManager.swift */,
+				AA000002000000000000000A /* TugbankClient.swift */,
 				AA0000020000000000000008 /* TugConfig.swift */,
 				AA0000020000000000000009 /* ControlSocket.swift */,
 			);
@@ -140,6 +143,7 @@
 				AA0000010000000000000001 /* AppDelegate.swift in Sources */,
 				AA0000010000000000000002 /* MainWindow.swift in Sources */,
 				AA0000010000000000000003 /* ProcessManager.swift in Sources */,
+				AA000001000000000000000A /* TugbankClient.swift in Sources */,
 				AA0000010000000000000006 /* TugConfig.swift in Sources */,
 				AA0000010000000000000009 /* ControlSocket.swift in Sources */,
 			);
@@ -278,7 +282,17 @@
 				MARKETING_VERSION = 0.5.19;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.tugtool.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/Sources";
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../tugcode/target/debug";
+				OTHER_LDFLAGS = (
+					"-ltugbank_ffi",
+					"-lsqlite3",
+					"-liconv",
+					"-framework",
+					Security,
+				);
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Sources/Tug-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -300,7 +314,17 @@
 				MARKETING_VERSION = 0.5.19;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.tugtool.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/Sources";
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../tugcode/target/release";
+				OTHER_LDFLAGS = (
+					"-ltugbank_ffi",
+					"-lsqlite3",
+					"-liconv",
+					"-framework",
+					Security,
+				);
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Sources/Tug-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
