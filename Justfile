@@ -7,7 +7,7 @@ default:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd tugcode && cargo build -p tugcast -p tugtool -p tugcode -p tugrelaunch -p tugbank -p tugbank-ffi
+    cd tugcode && cargo build -p tugcast -p tugtool -p tugcode -p tugrelaunch -p tugbank
     cd ..
     bun build --compile tugtalk/src/main.ts --outfile tugcode/target/debug/tugtalk
     mkdir -p ~/.local/bin

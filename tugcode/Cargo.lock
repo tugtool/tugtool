@@ -2212,15 +2212,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tugbank-ffi"
-version = "0.7.48"
-dependencies = [
- "serde_json",
- "tempfile",
- "tugbank-core",
-]
-
-[[package]]
 name = "tugcast"
 version = "0.1.0"
 dependencies = [
