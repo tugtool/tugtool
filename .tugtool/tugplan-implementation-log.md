@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-04-01T23:13:49Z
+---
+
+## step-5: Added shiftFrom(startIndex, delta) to BlockHeightIndex. Uses Float64Array.copyWithin for in-place shift, invalidates prefix sum watermark. Handles capacity growth for large positive deltas. 10 tests added.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
 step: step-4
 date: 2025-04-01T23:08:45Z
 ---

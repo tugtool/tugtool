@@ -152,6 +152,57 @@ export class BlockHeightIndex {
   }
 
   /**
+   * Shift all heights from startIndex forward by delta positions.
+   *
+   * Positive delta = insert a gap (shift right): heights at [startIndex, count)
+   * move to [startIndex + delta, count + delta). The gap [startIndex, startIndex+delta)
+   * is left uninitialized; the caller must set those entries. `_count` increases by delta.
+   *
+   * Negative delta = remove entries (shift left): heights at [startIndex, count)
+   * move to [startIndex + delta, count + delta). The entries that were at
+   * [startIndex + delta, startIndex) are overwritten. `_count` decreases by |delta|.
+   *
+   * Uses Float64Array.copyWithin for efficiency. Invalidates the prefix sum from
+   * Math.min(startIndex, startIndex + delta) forward (i.e., from the shift point).
+   *
+   * Throws `RangeError` if startIndex is out of range or if delta would make
+   * count negative.
+   */
+  shiftFrom(startIndex: number, delta: number): void {
+    if (startIndex < 0 || startIndex > this._count) {
+      throw new RangeError(
+        `BlockHeightIndex.shiftFrom: startIndex ${startIndex} out of range [0, ${this._count}]`
+      );
+    }
+    if (delta === 0) return;
+
+    const newCount = this._count + delta;
+    if (newCount < 0) {
+      throw new RangeError(
+        `BlockHeightIndex.shiftFrom: delta ${delta} would make count negative (count=${this._count})`
+      );
+    }
+
+    if (delta > 0) {
+      // Shift right: grow capacity if needed, then copyWithin.
+      while (newCount > this._capacity) {
+        this._grow();
+      }
+      // Copy heights[startIndex .. count) -> heights[startIndex+delta .. count+delta)
+      // copyWithin(target, start, end) — all indices into the same array.
+      this._heights.copyWithin(startIndex + delta, startIndex, this._count);
+    } else {
+      // Shift left: copyWithin, then shrink count.
+      // Copy heights[startIndex .. count) -> heights[startIndex+delta .. count+delta)
+      this._heights.copyWithin(startIndex + delta, startIndex, this._count);
+    }
+
+    this._count = newCount;
+    // Invalidate from the lowest affected position.
+    this._invalidate(Math.min(startIndex, startIndex + delta));
+  }
+
+  /**
    * Truncate the index to `newCount` blocks.
    *
    * Discards all blocks at indices `newCount` and above. Invalidates the prefix
