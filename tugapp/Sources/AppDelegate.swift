@@ -19,20 +19,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let baseThemeName = "brio"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Configure the shared TugbankClient before anything else reads preferences.
-        // The default database path mirrors the tugbank CLI default: ~/.tugbank.db.
-        // TUGBANK_PATH env var is honoured for testing / alternate installs.
-        let dbPath: String
-        if let envPath = ProcessInfo.processInfo.environment["TUGBANK_PATH"] {
-            dbPath = envPath
-        } else {
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            dbPath = (home as NSString).appendingPathComponent(".tugbank.db")
-        }
-        if TugbankClient.configure(path: dbPath) == nil {
-            NSLog("AppDelegate: TugbankClient.configure failed for path %@; falling back to tugbank CLI", dbPath)
-        }
-
         // Check tmux availability
         if !ProcessManager.checkTmux() {
             let alert = NSAlert()
@@ -517,7 +503,24 @@ extension AppDelegate: NSMenuDelegate {
 
         // Read active theme from tugbank if not yet known.
         if activeThemeName == nil {
-            activeThemeName = ProcessManager.readTugbank(domain: TugConfig.domain, key: "theme") ?? baseThemeName
+            if let tugbankPath = ProcessManager.which("tugbank") {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: tugbankPath)
+                proc.arguments = ["read", "dev.tugtool.app", "theme"]
+                let pipe = Pipe()
+                proc.standardOutput = pipe
+                proc.standardError = FileHandle.nullDevice
+                try? proc.run()
+                proc.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !raw.isEmpty {
+                    activeThemeName = raw
+                }
+            }
+            if activeThemeName == nil {
+                activeThemeName = baseThemeName
+            }
         }
 
         // Read theme names directly from shipped CSS files on disk.
