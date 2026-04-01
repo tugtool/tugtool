@@ -9,6 +9,7 @@ import { TugbankClient } from "./lib/tugbank-client";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { readLayout, readTheme, readTabStates, readDeckState } from "./settings-api";
+import { getThemeSetter } from "./action-dispatch";
 import {
   sendCanvasColor,
   activateProductionTheme,
@@ -122,6 +123,19 @@ if (!container) {
 
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
+
+  // React to live tugbank changes pushed via the DEFAULTS WebSocket feed.
+  // When an external process writes to tugbank (e.g., `tugbank write ... theme harmony`),
+  // the TugbankClient cache updates and this callback fires.
+  tugbankClient.onDomainChanged((domain, entries) => {
+    if (domain === "dev.tugtool.app") {
+      const themeEntry = entries["theme"];
+      if (themeEntry && themeEntry.kind === "string" && typeof themeEntry.value === "string") {
+        const setter = getThemeSetter();
+        if (setter) setter(themeEntry.value);
+      }
+    }
+  });
 
   // Expose a global save-state function so the native app (Swift) can trigger
   // a synchronous save of all card states before terminating the WebView.

@@ -3,10 +3,17 @@
 default:
     @just --list
 
-# Build all Rust binaries (tugcast, tugtool, tugcode, tugrelaunch) + tugtalk
+# Build all Rust binaries + tugtalk, symlink to ~/.local/bin
 build:
-    cd tugcode && cargo build -p tugcast -p tugtool -p tugcode -p tugrelaunch -p tugbank-ffi
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd tugcode && cargo build -p tugcast -p tugtool -p tugcode -p tugrelaunch -p tugbank -p tugbank-ffi
+    cd ..
     bun build --compile tugtalk/src/main.ts --outfile tugcode/target/debug/tugtalk
+    mkdir -p ~/.local/bin
+    for bin in tugcast tugtool tugcode tugrelaunch tugbank; do
+        ln -sf "$(pwd)/tugcode/target/debug/$bin" ~/.local/bin/"$bin"
+    done
 
 # Build all binaries, then run tugtool (auto-detects source tree, activates dev mode via control socket)
 dev: build
