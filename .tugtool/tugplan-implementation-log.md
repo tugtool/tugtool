@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-04-01T23:08:45Z
+---
+
+## step-4: Integration checkpoint: verified steps 1-3 integration. pinToBottom wired in doSetRegion, MAX_SAFE_INTEGER in both scroll methods, ResizeObserver safety net, CSS containment. No code changes — verification only.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
 step: step-3
 date: 2025-04-01T23:04:41Z
 ---
