@@ -256,16 +256,54 @@ right approach: **don't destroy the state in the first place.**
 scroll thumb is mid-document. Load 1KB static. The scroll jumps to the
 top instead of staying near where it was.
 
-**Fix:** `lexParseAndRender` must not nuke the DOM. It must diff old
-blocks against new blocks and apply minimal mutations. Blocks that
-didn't change keep their DOM nodes, their measured heights, and their
-positions. Spacer heights transition smoothly from old values to new
-values. The user's scroll position is never touched unless the content
-they were looking at was removed — and even then, the position should
-be adjusted to the nearest surviving content, not reset to 0.
+**Fix:** Lift the D03 restriction from Problem 1. `incrementalTailUpdate`
+already does region-scoped lex, block splice, and fence propagation for the
+tail region. The only reason non-tail regions fall back to `lexParseAndRender`
+is decision D03: "full rebuild for non-tail region edits." That decision
+deferred the block index shift and cache remapping needed when P != Q in a
+non-tail region.
 
-This is the same principle as `incrementalTailUpdate` — which already
-does region-scoped diffing — generalized to the full rebuild case.
+To fix 2a, make `incrementalTailUpdate` work for *any* region:
+
+1. When P != Q for a non-tail region, shift all subsequent block indices
+   by `+(Q-P)`. This means:
+   - Add `shiftFrom(startIndex, delta)` to `BlockHeightIndex` (uses
+     `Float64Array.copyWithin`, invalidates prefix sum from shift point)
+   - Remap keys in `htmlCache` and `blockNodes` for indices >= S+P
+   - Update `regionBlockRanges` start values for all subsequent regions
+2. The existing fence propagation (D02 lazy propagation, already implemented)
+   handles the "maybe re-lex the next region" case.
+3. The DOM is never nuked. Blocks that didn't change keep their DOM nodes,
+   their measured heights, and their positions. Spacer heights adjust
+   smoothly. The user's scroll position is never touched.
+
+The only remaining path through `lexParseAndRender` should be the cold-start
+case: first-ever region when the engine has no prior state. Every subsequent
+`setRegion` — tail, middle, or new region at any position — goes through the
+incremental path.
+
+The invalidation boundary is always known: the region that was edited, plus
+maybe the next one or two if fences are unbalanced. Markdown blocks are a
+flat sequence within each region (blockquotes and lists are single blocks in
+the lexer output, not containers). Region boundaries are `\n\n` — hard parse
+boundaries. This is substantially simpler than HTML invalidation.
+
+**Index shift must update DOM `data-block-index` attributes.** When block
+indices shift by `+(Q-P)` after a non-tail splice, the DOM nodes for
+subsequent blocks already exist in the container. Their `data-block-index`
+attributes must be updated to reflect the new indices, because `addBlockNode`
+uses `data-block-index` for insertion sort (ascending document order). Stale
+attributes would cause new blocks to be inserted in the wrong position.
+
+**Content shrink: scroll to nearest surviving block.** When a region edit
+removes blocks, the total content height shrinks. If the user's viewport
+was positioned over blocks that no longer exist, the scroll position must
+be adjusted to the nearest surviving block *above* the old position, not
+clamped to 0 or the new bottom. This preserves the user's place as closely
+as possible per L23. The algorithm: after the splice, if `scrollTop` now
+exceeds the new total height minus `clientHeight`, find the block whose
+offset is closest to (but not exceeding) the old `scrollTop` and set
+`scrollTop` to that block's offset.
 
 **Proposed new Law:** Internal implementation operations must never
 lose, destroy, or cease to apply user-visible state. This is the
@@ -394,28 +432,41 @@ The forced layout touches only new nodes. The prefix is stable.
    }
    ```
 
-3. **Bypass RAF for follow-bottom scroll events only.** The `onScroll`
-   handler currently defers all window updates to `requestAnimationFrame`.
-   RAF coalescing is correct and must stay for *user* scrolls (dragging,
-   wheel, decelerating) — multiple scroll events per frame need coalescing.
-   But when `isFollowingBottom` is true and the scroll event was caused by
-   our own synchronous `scrollTop` assignment (i.e., the content-growth
-   follow path, not a user gesture), run the window update synchronously
-   in the same call stack. This eliminates one frame of latency between
-   content mutation and visual settle. The RAF path remains the default
-   for all user-initiated scroll phases. Note: RAF here is used for scroll
-   coalescing (DOM reads/writes), not for React state commits, so [L05]
-   is not implicated either way.
+3. **RAF deferral becomes harmless, not bypassed.**
+   The `onScroll` callback in TugMarkdownView unconditionally defers the
+   window update (`blockWindow.update` + `applyWindowUpdate`) to RAF. This
+   fires for every scroll event regardless of SmartScroll phase.
 
-4. **SmartScroll should not fight programmatic scroll.** Currently
-   `scrollToBottom()` calls `scrollTo()` which enters the `programmatic` phase
-   and eventually fires `scrollend`. During rapid streaming, this creates a
-   stream of programmatic scroll sequences that overlap with content updates.
-   For the follow-bottom case, the scrollTop assignment should be a "quiet"
-   operation that doesn't trigger phase transitions. Add a method like
-   `SmartScroll.pinToBottom()` that sets scrollTop without entering
-   `programmatic` phase — it stays in `idle` because the scroll is a
-   side-effect of content growth, not a user-initiated programmatic scroll.
+   With the synchronous measurement from item 1, the DOM is already in
+   the correct state *before* the scroll event fires — blocks are added,
+   heights are measured, spacers are set, `scrollTop` is at the bottom.
+   When the RAF-deferred window update runs next frame, it calls
+   `blockWindow.update()`, gets back no enter/exit changes (everything is
+   already correct), and does nothing visible.
+
+   The RAF callback is wasted work (a few microseconds computing "nothing
+   changed") but not harmful. No phase-checking logic in the `onScroll`
+   callback, no complication to the state machine. The RAF coalescing path
+   remains exactly as-is for user-initiated scroll sequences. [D93, L05]
+
+4. **SmartScroll `pinToBottom()` — content growth, not programmatic scroll.**
+   Currently `scrollToBottom()` calls `scrollTo()` which enters the
+   `programmatic` phase and fires `scrollend`. During rapid streaming, this
+   creates overlapping programmatic scroll sequences. This is wrong: content
+   growth is not a user-initiated programmatic scroll. It's a side-effect of
+   content arriving.
+
+   Add `SmartScroll.pinToBottom()` that sets `scrollTop` to
+   `Number.MAX_SAFE_INTEGER` while *staying in `idle` phase*. No
+   `_enterProgrammatic()`. No phase transition. The scroll event arrives
+   in `idle`, which the state machine already handles: the `idle` case in
+   `_handleScroll` checks for re-engagement (scrolling down into near-bottom)
+   and does nothing else. This is the correct model — the scroll container
+   moved because content grew, not because the user or program asked it to.
+
+   `doSetRegion` calls `pinToBottom()` instead of `scrollToBottom()` when
+   `isFollowingBottom` is true. The state machine stays coherent. No flags,
+   no hacks, no new phases. [D93]
 
 ### Why this works and why nobody else does it
 
@@ -432,7 +483,8 @@ a ResizeObserver correction layout later (two paints, visible tearing).
 
 The forced layout is also cheap in our case:
 - Only new tail blocks are dirty (the prefix hasn't changed)
-- Blocks use `contain: content` in CSS, limiting the reflow scope
+- Blocks should use `contain: content` in CSS to limit reflow scope
+  (not yet present — add to `.tugx-md-block` as part of this work)
 - Streaming chunks add 1-3 blocks at a time, not hundreds
 
 For the general case (items appearing anywhere in the list, variable content,
@@ -458,18 +510,29 @@ layout, one paint.
 
 ## Sequencing
 
-Problem 1 (O(n²)) and Problem 2 (scroll jank) are independent. Either can be
-fixed first. However:
+Problem 1 is complete (implemented and merged).
 
-- Problem 1 is the simpler change — it's contained to `incrementalUpdate` and
-  doesn't touch scroll machinery. It has the bigger performance win for large
-  documents.
+Problem 2 has three sub-problems that should be addressed together:
 
-- Problem 2 is the more user-visible fix — scroll smoothness is what people
-  feel. It touches SmartScroll, the ResizeObserver callback, and `doSetRegion`.
+- **2a (lexParseAndRender destroys user state):** Essential fix. Violates
+  L23. Lift the D03 restriction from Problem 1: make `incrementalTailUpdate`
+  work for any region, not just the tail. Requires adding `shiftFrom()` to
+  BlockHeightIndex and cache/node key remapping when P != Q in non-tail
+  regions. These were identified in Problem 1 and deferred by D03.
 
-Recommendation: fix Problem 1 first (lower risk, self-contained), then
-Problem 2 (higher impact, more touch points).
+- **2b (slam scrollTop):** Simple fix. Replace `scrollHeight - clientHeight`
+  computations with `Number.MAX_SAFE_INTEGER`. Touches SmartScroll and
+  doSetRegion.
+
+- **2c (streaming follow-bottom jank):** The double-buffer strategy plus
+  `pinToBottom()`. Touches incrementalTailUpdate, SmartScroll, and the
+  ResizeObserver callback. Depends on 2b (pinToBottom uses the slam pattern).
+
+- **CSS contain:** Add `contain: content` to `.tugx-md-block` to limit
+  reflow scope for the forced-layout measurement.
+
+Recommendation: fix 2b first (smallest, immediate improvement), then 2c
+(streaming path), then 2a (hardest, most touch points).
 
 
 ## Files affected
@@ -478,8 +541,9 @@ Problem 2 (higher impact, more touch points).
 |------|-----------|-----------|
 | `tugdeck/src/components/tugways/tug-markdown-view.tsx` | `incrementalUpdate`, engine state | `doSetRegion`, ResizeObserver callback, scroll handler |
 | `tugdeck/src/lib/smart-scroll.ts` | — | New `pinToBottom()` method |
-| `tugdeck/src/lib/block-height-index.ts` | — | — (no changes needed) |
+| `tugdeck/src/lib/block-height-index.ts` | — | `shiftFrom()` method for 2a index shift |
 | `tugdeck/src/lib/rendered-block-window.ts` | — | — (no changes needed) |
+| `tugdeck/src/components/tugways/tug-markdown-view.css` | — | Add `contain: content` to `.tugx-md-block` |
 | `tugdeck/src/components/tugways/cards/gallery-markdown-view.tsx` | — | — (gallery card is correct; the bug is in lexParseAndRender) |
 
 
@@ -507,5 +571,13 @@ add/remove. Specific law interactions:
   unchanged. The fixes make the DOM writes within its callback more atomic —
   they don't alter the observation mechanism.
 
+- **[L23]** Problem 2a is a direct L23 fix. `lexParseAndRender` destroys user
+  scroll state; the incremental path preserves it. Content shrink adjusts to
+  the nearest surviving block rather than resetting to 0.
+
 - **[L03]** SmartScroll setup and streaming observer remain in `useLayoutEffect`.
   No change to registration order or timing.
+
+- **[D93]** `pinToBottom()` works within the SmartScroll state machine. No flags,
+  no timing hacks. Stays in `idle` phase; the scroll event is handled by the
+  existing `idle` case in `_handleScroll`.
