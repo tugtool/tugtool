@@ -45,7 +45,3 @@ doc:
 # Install locally
 install:
     cargo install --path crates/tugcode
-
-# Release a new version
-release VERSION:
-    ./scripts/release.sh {{VERSION}}
