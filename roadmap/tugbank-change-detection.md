@@ -56,7 +56,7 @@ tugcast is already the long-running process that all other pieces depend on. It 
                     ▼             ▼              ▼
                ┌─────────┐ ┌─────────┐   ┌──────────┐
                │ tugdeck │ │ tugapp  │   │ tugtalk  │
-               │ (WS)    │ │ (WS/FFI)│   │ (direct) │
+               │ (WS)    │ │(SQLite) │   │ (SQLite) │
                └─────────┘ └─────────┘   └──────────┘
 ```
 
@@ -81,7 +81,7 @@ One socket. One owner (tugcast). No races.
 
 **The socket is a doorbell, not a queue.** It carries datagrams containing domain names — short strings like `dev.tugtool.app`. A datagram says "something changed in this domain, go re-read the database." If a datagram is dropped (kernel buffer full, tugcast not reading fast enough), the database still has the correct data — it just won't be pushed to clients until the next notification. This is acceptable for the use case (infrequent settings changes).
 
-**Socket path:** Computed by `tugbank_core::notify::socket_path()` → `<std::env::temp_dir()>/tugbank-notify.sock`. On macOS this resolves to `/var/folders/.../T/tugbank-notify.sock`. This function lives in `tugbank-core` so every writer (CLI, tugcast, FFI) computes the exact same path.
+**Socket path:** `<temp_dir>/tugbank-notify.sock`. On macOS this resolves to `/var/folders/.../T/tugbank-notify.sock`. Each language computes this from its native temp dir API: Rust `std::env::temp_dir()`, Swift `FileManager.default.temporaryDirectory`, TypeScript `os.tmpdir()`.
 
 **Self-notification:** When tugcast writes to tugbank via its own `TugbankClient::set()`, it broadcasts to its own socket. It receives its own notification, re-reads the domain, fires `onDomainChanged`, and the DEFAULTS feed rebuilds the frame. This is correct and necessary — it's the single code path by which the DEFAULTS feed learns about all writes, including those from tugdeck via HTTP PUT. Do not optimize this away.
 
@@ -114,7 +114,8 @@ Failure modes:
 
 Writers:
 - **tugbank CLI** — after successful `write`, `delete`, or `set_if_generation` command
-- **Rust TugbankClient::set()** — after successful DB write (covers tugcast's own writes and FFI writes from tugapp)
+- **Rust TugbankClient::set()** — after successful DB write (covers tugcast's own writes and writes from tugdeck via HTTP PUT)
+- **Swift TugbankClient.set()** — after successful SQLite write (tugapp native)
 - **tugtalk** — in `TugbankClient.set()` after successful `bun:sqlite` write
 
 ### Receive Side
@@ -137,7 +138,7 @@ This collapses bursts (e.g., a script writing 10 keys to the same domain) into a
 | **tugbank CLI** | Direct DB + sendto socket | N/A (exits after write) |
 | **tugcast** | TugbankClient::set() + sendto socket | Unix socket → cache refresh → DEFAULTS feed |
 | **tugdeck** | HTTP PUT to tugcast | WebSocket DEFAULTS feed (already works) |
-| **tugapp** | FFI → TugbankClient::set() + sendto socket | Indirectly via tugdeck bridge callbacks (see below) |
+| **tugapp** | Direct SQLite + sendto socket | Indirectly via tugdeck bridge callbacks (see below) |
 | **tugtalk** | Direct DB (bun:sqlite) + sendto socket | N/A (short-lived, reads at startup) |
 
 **tugapp change flow:** tugapp (native Swift) doesn't have its own WebSocket connection to tugcast. tugdeck (running inside tugapp's WebView) receives DEFAULTS frames via WebSocket. When tugdeck detects a theme change, it applies the CSS theme and calls `bridgeSetTheme` via the WebKit message handler, which reaches Swift `AppDelegate` to update the window background color. So the full path for a CLI theme change is: CLI → socket → tugcast → DEFAULTS feed → WebSocket → tugdeck → bridge callback → tugapp native.
@@ -163,23 +164,118 @@ If the socket isn't ready yet when a writer fires, the write still succeeds (it 
 - The `libc` dependency in tugbank-core (was added for the `select()` loop)
 - The `notify.h` bridging header import in Swift
 
-## Cleanup (DONE)
+## Delete Rust FFI
 
-All dead and broken code from the Darwin notification and per-process socket attempts has been removed:
+The tugbank-ffi approach linked the entire Rust runtime + SQLite + serde_json into the Swift app as a static library. In debug builds this bloated `Tug.debug.dylib` from 567KB to 6.2MB — an 11x increase that caused a visible app launch regression. The FFI is not needed: the Swift app's tugbank usage is simple (a few reads at startup, a few writes on user action) and can be done with direct SQLite access via the system `libsqlite3`, the same approach tugtalk uses with `bun:sqlite`.
 
-- [x] notify.rs: rewritten to `socket_path()` + `broadcast_domain_changed()` only
-- [x] client.rs: removed listener auto-start, added `refresh_domain()` method
-- [x] tugbank CLI: removed `cfg(target_os = "macos")` gate on broadcast
-- [x] Swift TugbankClient: removed `callbacks`, `onDomainChanged`, `data_version` tracking
-- [x] Swift doc comments updated
-- [x] ENOENT warning silenced (tugcast not running is normal)
-- [x] All builds pass, tests pass, app launches with cards
+### Delete checklist
 
-Open minor items (not blocking implementation):
-- `tugbank_data_version` still in FFI header/lib — harmless, could remove later
-- `TugbankClient.configure` on background thread — moving to main thread caused app hang, investigating later
+- [ ] Delete `tugcode/crates/tugbank-ffi/` (entire crate)
+- [ ] Remove `tugbank-ffi` from `tugcode/Cargo.toml` workspace members
+- [ ] Remove `-p tugbank-ffi` from `just build` in Justfile
+- [ ] Delete `tugapp/Sources/TugbankClient.swift` (FFI-based client)
+- [ ] Delete `tugapp/Sources/TugbankFFI/include/tugbank_ffi.h` (C header)
+- [ ] Delete `tugapp/Sources/Tug-Bridging-Header.h`
+- [ ] Remove TugbankClient.swift, tugbank_ffi.h, Tug-Bridging-Header.h file references from `Tug.xcodeproj/project.pbxproj`
+- [ ] Remove linker flags from Xcode project: `-ltugbank_ffi`, `-lsqlite3`, `-liconv`, `-framework Security`
+- [ ] Remove `HEADER_SEARCH_PATHS`, `LIBRARY_SEARCH_PATHS`, `SWIFT_OBJC_BRIDGING_HEADER` build settings from project.pbxproj
+- [ ] Revert `ProcessManager.swift` to direct CLI fallback (remove TugbankClient.shared delegation)
+- [ ] Revert `AppDelegate.swift` — remove `TugbankClient.configure` call
+- [ ] Verify: `just app` launches fast (Tug.debug.dylib back to ~567KB), cards load, dev mode works
 
-## Implementation
+## Implement Swift TugbankClient (native SQLite)
+
+Replace the FFI-based client with a pure Swift client that opens `~/.tugbank.db` directly via the system `libsqlite3`. Same approach as tugtalk's `bun:sqlite` client — direct database access in the native language.
+
+### Schema (from tugbank-core/src/schema.rs)
+
+```sql
+CREATE TABLE domains (
+    name        TEXT PRIMARY KEY,
+    generation  INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE entries (
+    domain       TEXT NOT NULL,
+    key          TEXT NOT NULL,
+    value_kind   INTEGER NOT NULL,
+    value_i64    INTEGER,
+    value_f64    REAL,
+    value_text   TEXT,
+    value_blob   BLOB,
+    updated_at   TEXT NOT NULL,
+    PRIMARY KEY (domain, key),
+    FOREIGN KEY (domain) REFERENCES domains(name) ON DELETE CASCADE
+);
+```
+
+### Value encoding (from tugbank-core/src/value.rs)
+
+| kind | Swift type | SQL column |
+|------|-----------|------------|
+| 0 (Null) | nil | all payload columns NULL |
+| 1 (Bool) | Bool | value_i64: 0 or 1 |
+| 2 (I64) | Int64 | value_i64 |
+| 3 (F64) | Double | value_f64 |
+| 4 (String) | String | value_text |
+| 5 (Bytes) | Data | value_blob |
+| 6 (Json) | Any (JSONSerialization) | value_text (JSON string) |
+
+### Pragmas (from tugbank-core/src/schema.rs)
+
+Applied on every open:
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 5000;
+PRAGMA synchronous = NORMAL;
+```
+
+### Write pattern (from tugbank-core/src/domain.rs)
+
+```sql
+-- In a single IMMEDIATE transaction:
+INSERT OR IGNORE INTO domains (name, generation, updated_at) VALUES (?1, 0, ?2);
+INSERT INTO entries (domain, key, value_kind, value_i64, value_f64, value_text, value_blob, updated_at)
+  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+  ON CONFLICT(domain, key) DO UPDATE SET
+    value_kind = excluded.value_kind, value_i64 = excluded.value_i64,
+    value_f64 = excluded.value_f64, value_text = excluded.value_text,
+    value_blob = excluded.value_blob, updated_at = excluded.updated_at;
+UPDATE domains SET generation = generation + 1, updated_at = ?2 WHERE name = ?1;
+```
+
+After the transaction, send a datagram to the notification socket:
+```swift
+sendto(notifySocket, domain.utf8, socketPath)
+```
+
+### Swift implementation plan
+
+- [ ] New `TugbankClient.swift` using `import SQLite3` (system library, no extra linking)
+- [ ] Open `~/.tugbank.db` with `sqlite3_open_v2`, apply pragmas
+- [ ] `TugbankValue` enum: `.null`, `.bool(Bool)`, `.i64(Int64)`, `.f64(Double)`, `.string(String)`, `.json(Any)`
+- [ ] `get(domain:key:)` → query entries table, decode value_kind
+- [ ] `set(domain:key:value:)` → IMMEDIATE transaction, upsert + generation bump, sendto notification socket
+- [ ] `getString(domain:key:)`, `getBool(domain:key:)`, `setString`, `setBool` — convenience wrappers
+- [ ] `listDomains()` → query domains table
+- [ ] Singleton `TugbankClient.shared` configured in `AppDelegate.applicationDidFinishLaunching`
+- [ ] `ProcessManager.readTugbank` / `writeTugbank` / `readTugbankBool` delegate to TugbankClient.shared
+- [ ] `deinit` calls `sqlite3_close`
+- [ ] No cache, no polling, no threads — reads go to SQLite every time (a few reads at startup, negligible cost)
+- [ ] Notification socket path: `FileManager.default.temporaryDirectory` + `tugbank-notify.sock`
+
+### Verification
+
+- [ ] `just app` launches fast (no Rust dylib/static lib in app binary)
+- [ ] `Tug.debug.dylib` size back to baseline (~567KB)
+- [ ] Cards load, dev mode works
+- [ ] `tugbank write` from CLI + `tugbank read` from CLI both work
+- [ ] ProcessManager.readTugbank/writeTugbank work through the new native client
+- [ ] No FFI references remain in tugapp/
+
+## Implementation (notification system)
 
 ### tugtalk — add broadcast
 
@@ -197,11 +293,11 @@ Open minor items (not blocking implementation):
 
 ### Verification
 
-After implementation:
+After all implementation:
 - [ ] `just ci` passes
 - [ ] `cd tugdeck && npx tsc --noEmit` passes
 - [ ] `cd tugtalk && bun test` passes
-- [ ] `just app` — app launches, cards load, dev mode works
+- [ ] `just app` — app launches fast, cards load, dev mode works
 - [ ] Manual smoke test: `tugbank write dev.tugtool.app theme harmony` while app running — app reacts
 - [ ] `tugbank write dev.tugtool.app theme brio` — app switches back
 - [ ] Both transitions work without restart
