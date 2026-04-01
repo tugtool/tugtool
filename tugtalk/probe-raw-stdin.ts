@@ -7,21 +7,18 @@
 
 import { spawn } from "bun";
 import { resolve } from "path";
+import { TugbankClient } from "./src/tugbank-client.ts";
 
 const PROJECT_DIR = resolve(import.meta.dir, "..");
 const message = Bun.argv[2] || "/cost";
 
-// Read session ID from tugbank (same as tugtalk does)
+// Read session ID from tugbank via direct bun:sqlite access.
 let sessionId: string | null = null;
 try {
-  const result = Bun.spawnSync(["tugbank", "read", "dev.tugtool.app", "session-id"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (result.exitCode === 0) {
-    const output = new TextDecoder().decode(result.stdout as Uint8Array).trim();
-    sessionId = output.length > 0 ? output : null;
-  }
+  const client = new TugbankClient();
+  const value = client.get("dev.tugtool.app", "session-id");
+  client.close();
+  sessionId = typeof value === "string" && value.length > 0 ? value : null;
   if (sessionId) {
     console.log(`Session ID: ${sessionId}`);
   } else {

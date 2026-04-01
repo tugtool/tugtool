@@ -26,6 +26,7 @@ import type {
   Attachment,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
+import { getTugbankClient } from "./tugbank-client.ts";
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -1238,38 +1239,35 @@ export class SessionManager {
   }
 
   /**
-   * Persist session ID via tugbank CLI.
-   * Uses `tugbank write dev.tugtool.app session-id <value>` so the session ID
+   * Persist session ID via direct bun:sqlite access.
+   * Writes to domain dev.tugtool.app, key session-id so the session ID
    * is stored outside the project working tree and doesn't dirty the git index.
    */
   private persistSessionId(id: string): boolean {
-    const result = Bun.spawnSync(["tugbank", "write", "dev.tugtool.app", "session-id", id], {
-      stdout: "ignore",
-      stderr: "pipe",
-    });
-    if (result.exitCode !== 0) {
-      const stderr = result.stderr ? new TextDecoder().decode(result.stderr as Uint8Array) : "";
-      console.error(`Failed to persist session ID via tugbank: ${stderr.trim()}`);
+    try {
+      getTugbankClient().set("dev.tugtool.app", "session-id", id);
+      console.log(`Persisted session ID to tugbank (dev.tugtool.app / session-id)`);
+      return true;
+    } catch (err) {
+      console.error(`Failed to persist session ID via tugbank: ${String(err)}`);
       return false;
     }
-    console.log(`Persisted session ID to tugbank (dev.tugtool.app / session-id)`);
-    return true;
   }
 
   /**
-   * Read session ID via tugbank CLI.
-   * Uses `tugbank read dev.tugtool.app session-id` and returns the trimmed output.
+   * Read session ID via direct bun:sqlite access.
+   * Reads from domain dev.tugtool.app, key session-id.
    */
   private readSessionId(): string | null {
-    const result = Bun.spawnSync(["tugbank", "read", "dev.tugtool.app", "session-id"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    if (result.exitCode !== 0) {
+    try {
+      const value = getTugbankClient().get("dev.tugtool.app", "session-id");
+      if (typeof value === "string" && value.length > 0) {
+        return value;
+      }
+      return null;
+    } catch {
       return null;
     }
-    const output = result.stdout ? new TextDecoder().decode(result.stdout as Uint8Array).trim() : "";
-    return output.length > 0 ? output : null;
   }
 
   /**
