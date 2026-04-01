@@ -5,7 +5,7 @@ default:
 
 # Build all Rust binaries (tugcast, tugtool, tugcode, tugrelaunch) + tugtalk
 build:
-    cd tugcode && cargo build -p tugcast -p tugtool -p tugcode -p tugrelaunch
+    cd tugcode && cargo build -p tugcast -p tugtool -p tugcode -p tugrelaunch -p tugbank-ffi
     bun build --compile tugtalk/src/main.ts --outfile tugcode/target/debug/tugtalk
 
 # Build all binaries, then run tugtool (auto-detects source tree, activates dev mode via control socket)
