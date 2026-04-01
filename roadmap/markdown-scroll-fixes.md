@@ -226,7 +226,78 @@ or any corruption of the tracked state. The full rebuild path
 
 ## Problem 2: Two-phase scroll update ("womp womp")
 
-### Diagnosis
+### Problem 2a: lexParseAndRender destroys user state
+
+**Principle:** The user's scroll position is *their* data. They put it
+there. It represents what they are looking at. Internal implementation
+operations — re-lex, re-parse, block index rebuild — must never be
+visible to the user. The scroll position, whether follow-bottom is
+engaged, and what content is visible must be invariant across any
+internal rebuild operation.
+
+`lexParseAndRender` violates this principle. It:
+
+1. Saves `scrollTop` (acknowledging it's about to destroy it)
+2. Clears all block nodes, sets spacers to 0 — scroll container now
+   has zero content height
+3. Re-lexes, re-parses, rebuilds blocks
+4. Attempts to restore `scrollTop` from estimated heights
+
+This is data loss with a flawed recovery path. Between step 2 and
+step 4, the scroll container has no content. The browser clamps
+`scrollTop` to 0. Scroll events may fire. SmartScroll may interpret
+the position change as user action and disengage follow-bottom. The
+restoration in step 4 uses estimated heights that don't match reality.
+
+The "save and restore" pattern is the wrong approach entirely. The
+right approach: **don't destroy the state in the first place.**
+
+**Repro:** Load 10KB static in the gallery card. Scroll up so the
+scroll thumb is mid-document. Load 1KB static. The scroll jumps to the
+top instead of staying near where it was.
+
+**Fix:** `lexParseAndRender` must not nuke the DOM. It must diff old
+blocks against new blocks and apply minimal mutations. Blocks that
+didn't change keep their DOM nodes, their measured heights, and their
+positions. Spacer heights transition smoothly from old values to new
+values. The user's scroll position is never touched unless the content
+they were looking at was removed — and even then, the position should
+be adjusted to the nearest surviving content, not reset to 0.
+
+This is the same principle as `incrementalTailUpdate` — which already
+does region-scoped diffing — generalized to the full rebuild case.
+
+**Proposed new Law:** Internal implementation operations must never
+lose, destroy, or cease to apply user-visible state. This is the
+spirit of L06 ("appearance changes go through CSS and DOM, never
+React state") extended to its logical conclusion: the DOM state the
+user sees — scroll position, selection, focus, visible content — must
+be managed as carefully as any other piece of user data. Nuking and
+rebuilding is not management; it is destruction with attempted recovery.
+
+### Problem 2b: scrollToBottom computes the target instead of just slamming it
+
+`SmartScroll.scrollToBottom()` does:
+
+    const target = this._container.scrollHeight - this._container.clientHeight;
+    this.scrollTo({ top: target, animated });
+
+This *computes* what it thinks the bottom is. But `scrollHeight` may not
+reflect the latest DOM mutations if layout hasn't been forced. And the
+computation itself is unnecessary — browsers clamp `scrollTop` to the
+maximum scrollable distance automatically. Setting:
+
+    container.scrollTop = Number.MAX_SAFE_INTEGER;
+
+...always puts you at the bottom. No estimation, no stale `scrollHeight`,
+no race between content mutation and scroll position. The browser handles
+it atomically. This is how terminals work — they don't calculate where the
+bottom is; they just say "go to the end."
+
+Every place in the codebase that sets `scrollTop` to "the bottom" using
+`scrollHeight - clientHeight` should be replaced with this pattern.
+
+### Diagnosis (streaming follow-bottom jank)
 
 When content arrives during follow-bottom, the update splits across multiple
 frames:
@@ -306,7 +377,7 @@ The forced layout touches only new nodes. The prefix is stable.
    const update = engine.blockWindow.update(scrollTop);
    applySpacers(update.topSpacerHeight, update.bottomSpacerHeight);
    if (isFollowingBottom) {
-     container.scrollTop = container.scrollHeight - container.clientHeight;
+     container.scrollTop = Number.MAX_SAFE_INTEGER;  // browser clamps to max
    }
    ```
 
@@ -319,8 +390,7 @@ The forced layout touches only new nodes. The prefix is stable.
    ```
    // In the ResizeObserver callback, after applySpacers:
    if (smartScrollRef.current?.isFollowingBottom && scrollContainerRef.current) {
-     scrollContainerRef.current.scrollTop =
-       scrollContainerRef.current.scrollHeight - scrollContainerRef.current.clientHeight;
+     scrollContainerRef.current.scrollTop = Number.MAX_SAFE_INTEGER;  // browser clamps to max
    }
    ```
 
@@ -378,7 +448,7 @@ The goal is that within a single synchronous call stack:
 1. New blocks are added to the DOM
 2. `offsetHeight` is read → forced layout (the "buffer swap")
 3. Spacer heights are set from real measurements
-4. `scrollTop` is set to the real bottom
+4. `scrollTop = Number.MAX_SAFE_INTEGER` — browser clamps to actual bottom
 5. The browser composites all changes in a single paint
 
 No requestAnimationFrame in between. No setTimeout. No ResizeObserver
@@ -410,6 +480,7 @@ Problem 2 (higher impact, more touch points).
 | `tugdeck/src/lib/smart-scroll.ts` | — | New `pinToBottom()` method |
 | `tugdeck/src/lib/block-height-index.ts` | — | — (no changes needed) |
 | `tugdeck/src/lib/rendered-block-window.ts` | — | — (no changes needed) |
+| `tugdeck/src/components/tugways/cards/gallery-markdown-view.tsx` | — | — (gallery card is correct; the bug is in lexParseAndRender) |
 
 
 ## Laws compliance

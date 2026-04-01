@@ -30,6 +30,8 @@
 
 **L08. Live preview is appearance-zone only; commit crosses zone boundaries.** During mutation transactions, all preview mutations are CSS/DOM. The commit handler may write to stores or React state. Never mix preview with state changes. [D64, D65]
 
+**L23. Internal implementation operations must never lose, destroy, or cease to apply user-visible state.** Scroll position, selection, focus, and visible content are user data — the user put them there. A re-lex, re-parse, DOM rebuild, or any other internal bookkeeping operation must preserve these invariants. "Save and restore" is not preservation; it is destruction with attempted recovery. The correct approach is to diff and mutate minimally so user-visible state is never disturbed.
+
 ---
 
 ## Component Architecture
