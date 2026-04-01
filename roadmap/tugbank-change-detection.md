@@ -116,7 +116,7 @@ Writers:
 - **tugbank CLI** — after successful `write`, `delete`, or `set_if_generation` command
 - **Rust TugbankClient::set()** — after successful DB write (covers tugcast's own writes and writes from tugdeck via HTTP PUT)
 - **Swift TugbankClient.set()** — after successful SQLite write (tugapp native)
-- **tugtalk** — in `TugbankClient.set()` after successful `bun:sqlite` write
+- **tugtalk** — deferred (only writes session-id, no broadcast needed currently)
 
 ### Receive Side
 
@@ -277,10 +277,11 @@ sendto(notifySocket, domain.utf8, socketPath)
 
 ## Implementation (notification system)
 
-### tugtalk — add broadcast
+### tugtalk — deferred
 
-- [ ] Add `sendto` to the Unix socket in `set()` after successful write
-- [ ] Compute socket path via `os.tmpdir()` + `tugbank-notify.sock`
+tugtalk's only write is `session-id`, which is driven by tugdeck, not changed unilaterally. No process needs instant notification of this write. Broadcast from tugtalk is deferred.
+
+**Open issue for the future:** Bun has no native Unix datagram socket support. If tugtalk ever needs to broadcast, the options are: (1) Bun FFI to libc `socket`/`sendto` (two syscalls, should be simple but untested), (2) route tugtalk writes through tugcast via HTTP PUT (same as tugdeck), or (3) call the `tugbank` CLI which already broadcasts. This is a known gap in the TypeScript side of the notification system.
 
 ### tugcast — bind and listen on the notification socket
 
