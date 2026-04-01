@@ -617,7 +617,136 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
   }
 
-  // ---- Incremental tail update ----
+  // ---- Region-scoped incremental tail update ----
+  // Lexes only the tail region's text instead of the full document, then splices
+  // the resulting blocks into the engine arrays. Used when the updated key is
+  // the last region so the prefix of blocks is stable and only the tail changes.
+  // Implements Spec S01 (incrementalTailUpdate procedure) and Spec S02 (on-the-fly
+  // byte offset computation).
+  function incrementalTailUpdate(engine: MarkdownEngineState, key: string, _fullText: string) {
+    const range = engine.regionBlockRanges.get(key);
+    if (range === undefined) {
+      // No entry yet — fall back to full rebuild.
+      lexParseAndRender(engine, engine.regionMap.text);
+      return;
+    }
+
+    const regionText = engine.regionMap.getRegionText(key) ?? "";
+    const regionRange = engine.regionMap.regionRange(key);
+    if (!regionRange) {
+      lexParseAndRender(engine, engine.regionMap.text);
+      return;
+    }
+    const regionCharStart = regionRange.start;
+
+    // Lex only the region text, prepending \n\n for block boundary context (D01).
+    // Subtract 2 from each byte offset to undo the prefix.
+    const lexStart = performance.now();
+    const packed = lex_blocks("\n\n" + regionText);
+    const lexMs = performance.now() - lexStart;
+
+    const rawBlocks = decodeBlocks(packed);
+    // Filter out blocks that belong to the 2-byte prefix (start < 2)
+    const newRegionBlocks = rawBlocks
+      .filter(b => b.start >= 2)
+      .map(b => ({ ...b, start: b.start - 2, end: b.end - 2 }));
+
+    // Build byte-to-char map for the region slice.
+    const byteToChar = buildByteToCharMap(regionText);
+
+    // Translate WASM byte offsets (region-local) to document-global char offsets.
+    const newStarts = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.start] ?? b.start));
+    const newEnds = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.end] ?? b.end));
+
+    const S = range.start;
+    const P = range.count;
+    const Q = newRegionBlocks.length;
+    let parseMs = 0;
+
+    // Capture old block start offsets before mutating, for fence propagation check.
+    // We capture P entries (the old count). Used after the splice to detect
+    // structural change that may indicate a fence imbalance in the next region.
+    const oldBlockStarts: number[] = new Array(P);
+    for (let i = 0; i < P; i++) {
+      oldBlockStarts[i] = engine.blockStarts[S + i];
+    }
+
+    // Update changed existing blocks (S..S+min(P,Q)-1)
+    for (let i = 0; i < Math.min(P, Q); i++) {
+      const globalIdx = S + i;
+      if (newStarts[i] !== engine.blockStarts[globalIdx] || newEnds[i] !== engine.blockEnds[globalIdx]) {
+        const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
+        const parseStart = performance.now();
+        const html = parse_to_html(raw);
+        parseMs += performance.now() - parseStart;
+        engine.htmlCache.set(globalIdx, html);
+        engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
+        const existingEl = engine.blockNodes.get(globalIdx);
+        if (existingEl) {
+          existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+        }
+        engine.blockStarts[globalIdx] = newStarts[i];
+        engine.blockEnds[globalIdx] = newEnds[i];
+      }
+    }
+
+    // Handle block count decrease (Q < P): remove excess tail blocks
+    if (Q < P) {
+      for (let i = Q; i < P; i++) {
+        const globalIdx = S + i;
+        removeBlockNode(engine, globalIdx);
+        engine.htmlCache.delete(globalIdx);
+      }
+      engine.blockStarts.splice(S + Q, P - Q);
+      engine.blockEnds.splice(S + Q, P - Q);
+      engine.heightIndex.truncate(S + Q);
+    }
+
+    // Append new blocks (Q > P): add blocks beyond the old count
+    if (Q > P) {
+      const newStartsSlice = newStarts.slice(P);
+      const newEndsSlice = newEnds.slice(P);
+      engine.blockStarts.splice(S + P, 0, ...newStartsSlice);
+      engine.blockEnds.splice(S + P, 0, ...newEndsSlice);
+      for (let i = P; i < Q; i++) {
+        engine.heightIndex.appendBlock(estimateBlockHeight(newRegionBlocks[i]));
+        const globalIdx = S + i;
+        const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
+        const parseStart = performance.now();
+        engine.htmlCache.set(globalIdx, parse_to_html(raw));
+        parseMs += performance.now() - parseStart;
+      }
+    }
+
+    // Update engine totals
+    engine.blockCount = S + Q;
+    engine.regionBlockRanges.set(key, { start: S, count: Q });
+
+    // Lazy fence propagation: if block structure changed and a next region exists,
+    // re-lex that next region. Stop when blocks stabilize. In the common streaming
+    // path the tail region is always last, so this is a no-op (D02).
+    const regionKeys = engine.regionMap.keys;
+    const keyIndex = regionKeys.indexOf(key);
+    if (keyIndex >= 0 && keyIndex < regionKeys.length - 1) {
+      // Compare old vs new block structure: count change or start offset change
+      // indicates a structural change that could affect fence balance.
+      const structureChanged = P !== Q || oldBlockStarts.some((oldStart, i) => oldStart !== newStarts[i]);
+      if (structureChanged) {
+        const nextKey = regionKeys[keyIndex + 1];
+        incrementalTailUpdate(engine, nextKey, engine.regionMap.text);
+        return; // next region's call handles timing and window update
+      }
+    }
+
+    onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
+
+    engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
+    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+    const update = engine.blockWindow.update(scrollTop);
+    applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+  }
+
+  // ---- Incremental tail update (legacy — full-document rescan) ----
   // Re-lexes the full text but only updates changed existing blocks and appends
   // new ones. Used when the update is to (or appended at) the last region, so
   // the prefix of blocks is stable and only the tail changes.
