@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-04-01T20:48:58Z
+---
+
+## step-4: Extended regionBlockRanges with types array for block type tracking. Enhanced lazy fence propagation to detect block type changes (not just count/offset). Recursive propagation stops when types stabilize. Test suite added.
+
+**Files changed:**
+- incremental-tail-lex-6474254-1
+
+---
+
+---
 step: step-3
 date: 2025-04-01T20:39:33Z
 ---

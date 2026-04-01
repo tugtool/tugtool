@@ -249,11 +249,14 @@ interface MarkdownEngineState {
   /**
    * Maps each region key to the block index range it produced.
    * `start` is the first block index for that region; `count` is the number
-   * of blocks. Populated after every full rebuild in lexParseAndRender and
-   * updated incrementally by incrementalTailUpdate. Cleared by doClear and
-   * at the start of every lexParseAndRender reset. [D04-region-block-ranges]
+   * of blocks; `types` is the block type sequence (e.g. ['paragraph','code']).
+   * The `types` array enables fence propagation to detect block type changes
+   * (step 4: lazy fence propagation via D02). Populated after every full rebuild
+   * in lexParseAndRender and updated incrementally by incrementalTailUpdate.
+   * Cleared by doClear and at the start of every lexParseAndRender reset.
+   * [D04-region-block-ranges]
    */
-  regionBlockRanges: Map<string, { start: number; count: number }>;
+  regionBlockRanges: Map<string, { start: number; count: number; types: string[] }>;
 }
 
 const DEFAULT_VIEWPORT_HEIGHT = 600;
@@ -580,25 +583,27 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
     // Populate regionBlockRanges by mapping each block to its region via char offset.
     // Iterate blocks in order; for each block, look up its region and accumulate.
+    // Also record the type sequence for each region so fence propagation can detect
+    // block type changes (D02 lazy fence propagation).
     {
       let currentKey: string | undefined = undefined;
       let rangeStart = 0;
-      let rangeCount = 0;
+      let rangeTypes: string[] = [];
       for (let i = 0; i < engine.blockStarts.length; i++) {
         const key = engine.regionMap.regionKeyAtOffset(engine.blockStarts[i]);
         if (key !== currentKey) {
           if (currentKey !== undefined) {
-            engine.regionBlockRanges.set(currentKey, { start: rangeStart, count: rangeCount });
+            engine.regionBlockRanges.set(currentKey, { start: rangeStart, count: rangeTypes.length, types: rangeTypes });
           }
           currentKey = key;
           rangeStart = i;
-          rangeCount = 1;
+          rangeTypes = [blocks[i].type];
         } else {
-          rangeCount++;
+          rangeTypes.push(blocks[i].type);
         }
       }
       if (currentKey !== undefined) {
-        engine.regionBlockRanges.set(currentKey, { start: rangeStart, count: rangeCount });
+        engine.regionBlockRanges.set(currentKey, { start: rangeStart, count: rangeTypes.length, types: rangeTypes });
       }
     }
 
@@ -663,13 +668,9 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     const Q = newRegionBlocks.length;
     let parseMs = 0;
 
-    // Capture old block start offsets before mutating, for fence propagation check.
-    // We capture P entries (the old count). Used after the splice to detect
-    // structural change that may indicate a fence imbalance in the next region.
-    const oldBlockStarts: number[] = new Array(P);
-    for (let i = 0; i < P; i++) {
-      oldBlockStarts[i] = engine.blockStarts[S + i];
-    }
+    // Capture old block types before mutating, for fence propagation comparison.
+    // We use the stored types array from regionBlockRanges (D02 lazy fence propagation).
+    const oldTypes: string[] = range.types.slice();
 
     // Update changed existing blocks (S..S+min(P,Q)-1)
     for (let i = 0; i < Math.min(P, Q); i++) {
@@ -720,18 +721,25 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
     // Update engine totals
     engine.blockCount = S + Q;
-    engine.regionBlockRanges.set(key, { start: S, count: Q });
+    const newTypes = newRegionBlocks.map(b => b.type);
+    engine.regionBlockRanges.set(key, { start: S, count: Q, types: newTypes });
 
-    // Lazy fence propagation: if block structure changed and a next region exists,
+    // Lazy fence propagation: if block type sequence changed and a next region exists,
     // re-lex that next region. Stop when blocks stabilize. In the common streaming
     // path the tail region is always last, so this is a no-op (D02).
+    //
+    // A fence imbalance necessarily changes the block types of subsequent regions
+    // (e.g. paragraph text becomes code inside an unbalanced fence). Comparing type
+    // sequences is a reliable proxy for fence balance change and avoids the need to
+    // track fence depth explicitly.
     const regionKeys = engine.regionMap.keys;
     const keyIndex = regionKeys.indexOf(key);
     if (keyIndex >= 0 && keyIndex < regionKeys.length - 1) {
-      // Compare old vs new block structure: count change or start offset change
-      // indicates a structural change that could affect fence balance.
-      const structureChanged = P !== Q || oldBlockStarts.some((oldStart, i) => oldStart !== newStarts[i]);
-      if (structureChanged) {
+      // Compare old vs new block type sequences.
+      // Count change or any type mismatch indicates structural change.
+      const typeSequenceChanged = oldTypes.length !== newTypes.length ||
+        oldTypes.some((t, i) => t !== newTypes[i]);
+      if (typeSequenceChanged) {
         const nextKey = regionKeys[keyIndex + 1];
         incrementalTailUpdate(engine, nextKey, engine.regionMap.text);
         return; // next region's call handles timing and window update
