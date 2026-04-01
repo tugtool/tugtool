@@ -68,10 +68,14 @@ start_listener():
 
 ## What Stays
 
-- Swift `notify_register_dispatch` for the Swift client (it works, it's one line, keep it)
-- Swift `notify_post` broadcast (works, keep it alongside the Unix socket broadcast)
-- tugtalk `notify_post` via bun:ffi (works, keep it alongside the Unix socket broadcast)
 - The in-memory cache, write-through cache, `onDomainChanged` callbacks, `get`/`set`/`readDomain`/`listDomains` API
+
+## What Also Gets Removed
+
+- Swift `notify_register_dispatch` listener code — replaced by Unix socket listener
+- Swift `notify_post` broadcast — replaced by Unix socket broadcast (writes go through FFI → Rust `set()` which broadcasts)
+- tugtalk `notify_post` via bun:ffi — replaced by Unix socket broadcast in tugtalk `set()`
+- All Darwin notification FFI in Rust (`notify_post`, `notify_register_file_descriptor`, `notify_cancel`)
 
 ## Implementation
 
