@@ -19,7 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let baseThemeName = "brio"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Configure TugbankClient on a background thread to avoid blocking launch.
+        // Configure TugbankClient on a background thread.
         // ProcessManager falls back to CLI for any reads before configure completes.
         DispatchQueue.global(qos: .userInitiated).async {
             let dbPath: String

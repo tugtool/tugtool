@@ -1,9 +1,12 @@
 //! TugbankClient — in-memory cached client wrapping DefaultsStore.
 //!
 //! `TugbankClient` wraps a [`DefaultsStore`] with an in-memory domain-snapshot
-//! cache. External changes are detected via Unix domain socket notifications.
-//! When a notification arrives for a cached domain, the snapshot is reloaded
-//! from the database and registered callbacks are fired.
+//! cache. All reads go through the cache (populated on first access per domain).
+//! Writes go through to the database and update the local cache, then broadcast
+//! a notification via Unix socket so other processes can react.
+//!
+//! External change detection is tugcast's responsibility — it owns the
+//! notification socket and refreshes domains when datagrams arrive.
 //!
 //! # Thread safety
 //!
@@ -13,7 +16,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crate::notify::{ListenerHandle, broadcast_domain_changed, start_listener};
+use crate::notify::broadcast_domain_changed;
 use crate::{DefaultsStore, Error, Value};
 
 /// A snapshot of all key-value pairs for a single domain.
@@ -85,12 +88,10 @@ struct Inner {
 /// In-memory cached client wrapping a [`DefaultsStore`].
 ///
 /// All reads go through an in-memory snapshot cache. The cache is populated
-/// on first access per domain and refreshed via Unix socket notifications
-/// when an external write is detected.
+/// on first access per domain. Writes update the DB, the local cache, and
+/// broadcast a notification via Unix socket.
 pub struct TugbankClient {
     inner: Arc<Inner>,
-    /// Listener handle — stops the listener thread when dropped.
-    _listener: Option<ListenerHandle>,
 }
 
 // Compile-time assertion that TugbankClient is Send + Sync.
@@ -109,8 +110,6 @@ impl TugbankClient {
     }
 
     /// Create a client from an existing [`DefaultsStore`].
-    ///
-    /// Starts a Unix socket listener for change notifications.
     pub fn from_store(store: DefaultsStore) -> Result<Self, Error> {
         let inner = Arc::new(Inner {
             store,
@@ -118,19 +117,7 @@ impl TugbankClient {
             callbacks: Arc::new(Mutex::new(CallbackRegistry::new())),
         });
 
-        // Start the notification listener.
-        let listener = {
-            let inner_clone = Arc::clone(&inner);
-            start_listener(move |domain| {
-                handle_domain_notification(domain, &inner_clone);
-            })
-            .ok()
-        };
-
-        Ok(Self {
-            inner,
-            _listener: listener,
-        })
+        Ok(Self { inner })
     }
 
     /// Access the underlying [`DefaultsStore`].
@@ -147,7 +134,8 @@ impl TugbankClient {
 
     /// Write a value to the DB and update the local cache.
     ///
-    /// Broadcasts a Unix socket notification so other processes are notified.
+    /// Broadcasts a Unix socket notification so tugcast and other
+    /// processes are notified of the change.
     pub fn set(&self, domain: &str, key: &str, value: Value) -> Result<(), Error> {
         self.inner.store.domain(domain)?.set(key, value.clone())?;
         {
@@ -182,6 +170,9 @@ impl TugbankClient {
 
     /// Register a callback that fires when any domain changes.
     ///
+    /// Callbacks are fired by tugcast's notification handler when it
+    /// receives a datagram on the Unix socket and refreshes the domain.
+    ///
     /// Returns a [`CallbackHandle`] that unregisters the callback when dropped.
     pub fn on_domain_changed<F>(&self, callback: F) -> CallbackHandle
     where
@@ -192,6 +183,24 @@ impl TugbankClient {
         CallbackHandle {
             id,
             registry: Arc::clone(&self.inner.callbacks),
+        }
+    }
+
+    /// Refresh a domain from the database and fire callbacks.
+    ///
+    /// Called by tugcast's notification handler when a datagram arrives.
+    pub fn refresh_domain(&self, domain: &str) {
+        let snapshot = match self.inner.store.domain(domain).and_then(|h| h.read_all()) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        {
+            let mut cache = self.inner.cache.lock().unwrap();
+            cache.insert(domain.to_owned(), snapshot.clone());
+        }
+        {
+            let reg = self.inner.callbacks.lock().unwrap();
+            reg.fire(domain, &snapshot);
         }
     }
 
@@ -211,39 +220,12 @@ impl TugbankClient {
     }
 }
 
-/// Handle a notification that a domain changed.
-///
-/// Re-reads the domain from the database, updates the cache, and fires
-/// registered callbacks.
-fn handle_domain_notification(domain: &str, inner: &Arc<Inner>) {
-    let snapshot = match inner.store.domain(domain).and_then(|h| h.read_all()) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    {
-        let mut cache = inner.cache.lock().unwrap();
-        cache.insert(domain.to_owned(), snapshot.clone());
-    }
-    {
-        let reg = inner.callbacks.lock().unwrap();
-        reg.fire(domain, &snapshot);
-    }
-}
-
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::Duration;
     use tempfile::NamedTempFile;
-
-    fn temp_client() -> (TugbankClient, NamedTempFile) {
-        let tmp = NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path()).expect("open failed");
-        (client, tmp)
-    }
 
     #[test]
     fn test_tugbank_client_is_send_sync() {
@@ -253,7 +235,8 @@ mod tests {
 
     #[test]
     fn test_get_set_round_trip() {
-        let (client, _tmp) = temp_client();
+        let tmp = NamedTempFile::new().expect("temp file");
+        let client = TugbankClient::open(tmp.path()).expect("open failed");
         client
             .set("test.domain", "key", Value::String("hello".into()))
             .unwrap();
@@ -262,14 +245,30 @@ mod tests {
     }
 
     #[test]
-    fn test_external_write_detected() {
+    fn test_read_domain() {
+        let tmp = NamedTempFile::new().expect("temp file");
+        let client = TugbankClient::open(tmp.path()).expect("open failed");
+        client
+            .set("d", "a", Value::String("one".into()))
+            .unwrap();
+        client
+            .set("d", "b", Value::I64(2))
+            .unwrap();
+        let snap = client.read_domain("d").unwrap();
+        assert_eq!(snap.len(), 2);
+        assert_eq!(snap.get("a"), Some(&Value::String("one".into())));
+        assert_eq!(snap.get("b"), Some(&Value::I64(2)));
+    }
+
+    #[test]
+    fn test_refresh_domain() {
         let tmp = NamedTempFile::new().expect("temp file");
         let client = TugbankClient::open(tmp.path()).expect("open failed");
 
-        // Pre-load the domain so the cache has a baseline.
+        // Pre-load the domain.
         let _ = client.read_domain("ext").unwrap();
 
-        // Write via a second independent connection.
+        // Write via a second independent connection (simulates external write).
         let external = DefaultsStore::open(tmp.path()).expect("external store open");
         external
             .domain("ext")
@@ -277,64 +276,42 @@ mod tests {
             .set("key", Value::String("external-write".into()))
             .unwrap();
 
-        // Broadcast the notification as the write side would.
-        broadcast_domain_changed("ext");
+        // Before refresh, cache is stale.
+        let val = client.get("ext", "key").unwrap();
+        assert_eq!(val, None);
 
-        // Wait for the notification to propagate.
-        let deadline = Duration::from_millis(500);
-        let start = std::time::Instant::now();
-        let mut detected = false;
-        while start.elapsed() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-            let v = client.get("ext", "key").unwrap();
-            if v == Some(Value::String("external-write".into())) {
-                detected = true;
-                break;
-            }
-        }
-
-        assert!(
-            detected,
-            "TugbankClient should detect external write via Unix socket notification"
-        );
+        // After refresh, cache is updated.
+        client.refresh_domain("ext");
+        let val = client.get("ext", "key").unwrap();
+        assert_eq!(val, Some(Value::String("external-write".into())));
     }
 
     #[test]
-    fn test_callback_fires_on_external_change() {
+    fn test_callback_fires_on_refresh() {
         let tmp = NamedTempFile::new().expect("temp file");
         let client = TugbankClient::open(tmp.path()).expect("open failed");
 
-        let fired = Arc::new(AtomicU32::new(0));
-        let fired_clone = Arc::clone(&fired);
+        let fired = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let fired_clone = fired.clone();
         let _handle = client.on_domain_changed(move |_domain, _snapshot| {
-            fired_clone.fetch_add(1, Ordering::Release);
+            fired_clone.fetch_add(1, std::sync::atomic::Ordering::Release);
         });
 
         // Pre-load the domain.
         let _ = client.read_domain("cb-test").unwrap();
 
-        // Write via external connection + broadcast.
+        // Write externally, then refresh.
         let external = DefaultsStore::open(tmp.path()).expect("external store open");
         external
             .domain("cb-test")
             .unwrap()
             .set("k", Value::Bool(true))
             .unwrap();
-        broadcast_domain_changed("cb-test");
-
-        // Wait for the callback to fire.
-        let deadline = Duration::from_millis(500);
-        let start = std::time::Instant::now();
-        while start.elapsed() < deadline {
-            if fired.load(Ordering::Acquire) > 0 {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        client.refresh_domain("cb-test");
 
         assert!(
-            fired.load(Ordering::Acquire) > 0,
-            "on_domain_changed callback should fire on external write"
+            fired.load(std::sync::atomic::Ordering::Acquire) > 0,
+            "on_domain_changed callback should fire on refresh"
         );
     }
 }

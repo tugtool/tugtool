@@ -634,7 +634,6 @@ fn cmd_write(
             process::exit(code as i32);
         }
         // No output on success (Spec S04).
-        #[cfg(target_os = "macos")]
         broadcast_domain_changed(domain);
     }
 }

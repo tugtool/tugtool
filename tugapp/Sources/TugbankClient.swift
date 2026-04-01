@@ -64,11 +64,9 @@ private struct DomainSnapshot {
 
 /// In-process tugbank client wrapping the tugbank-ffi C library.
 ///
-/// Provides the same interface as the Rust and TypeScript TugbankClients:
-/// - In-memory domain snapshot cache
-/// - Darwin notification listeners for external change detection
-/// - Domain change callbacks
-/// - get/set/readDomain/listDomains
+/// Provides an in-memory domain snapshot cache with get/set/readDomain/listDomains.
+/// External change detection is handled by tugcast (via Unix socket notifications
+/// and the WebSocket DEFAULTS feed), not by this client directly.
 final class TugbankClient {
 
     /// Shared singleton. Call `configure(path:)` once before accessing.
@@ -87,7 +85,6 @@ final class TugbankClient {
 
     private let handle: UnsafeMutableRawPointer
     private var cache: [String: DomainSnapshot] = [:]
-    private var callbacks: [(String, [String: TugbankValue]) -> Void] = []
 
     // MARK: Init / Deinit
 
@@ -147,12 +144,6 @@ final class TugbankClient {
         return arr
     }
 
-    /// Register a callback for domain changes. Fires when a Darwin notification
-    /// is received for a cached domain.
-    func onDomainChanged(_ callback: @escaping (String, [String: TugbankValue]) -> Void) {
-        callbacks.append(callback)
-    }
-
     // MARK: Convenience
 
     /// Read a String value.
@@ -185,14 +176,11 @@ final class TugbankClient {
 
     // MARK: Cache management
 
-    /// Ensure the domain is loaded into the cache and a Darwin notification
-    /// watcher is registered for it.
+    /// Ensure the domain is loaded into the cache.
     private func ensureDomainLoaded(_ domain: String) {
         guard cache[domain] == nil else { return }
         let entries = fetchDomainFromDB(domain) ?? [:]
-        let version = tugbank_data_version(handle)
-        cache[domain] = DomainSnapshot(generation: version, entries: entries)
-
+        cache[domain] = DomainSnapshot(generation: 0, entries: entries)
     }
 
     /// Fetch all entries for a domain via the FFI.
