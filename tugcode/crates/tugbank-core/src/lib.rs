@@ -98,6 +98,8 @@
 mod client;
 mod domain;
 mod error;
+#[cfg(target_os = "macos")]
+pub mod notify;
 mod schema;
 mod store;
 mod value;

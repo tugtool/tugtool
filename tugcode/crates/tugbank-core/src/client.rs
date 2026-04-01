@@ -1,35 +1,39 @@
 //! TugbankClient — in-memory cached client wrapping DefaultsStore.
 //!
 //! `TugbankClient` wraps a [`DefaultsStore`] with an in-memory domain-snapshot
-//! cache and a background `std::thread` that polls `PRAGMA data_version` every
-//! `poll_interval`. When the version changes, the polling thread discovers which
-//! domains have a higher generation, reloads their snapshots, and fires
-//! registered callbacks.
+//! cache. On macOS, external changes are detected via Darwin notifications
+//! (`notify_register_file_descriptor`). When a notification fires for a
+//! cached domain, the snapshot is reloaded from the database and registered
+//! callbacks are fired.
 //!
 //! # Thread safety
 //!
 //! `TugbankClient` is `Send + Sync` and intended to be shared via `Arc`.
 //!
-//! # Polling thread lifecycle
+//! # Notification lifecycle
 //!
-//! Construction spawns a polling thread that runs until shutdown is signalled.
-//! `Drop` signals the thread (by closing a channel sender) and joins it, so it
-//! always exits cleanly — even when the poll interval is long.
+//! On macOS, construction registers Darwin notification watchers for all
+//! initially-known domains. Watchers are also registered when a new domain is
+//! first accessed via `get`, `set`, or `read_domain`. The `NotifyToken`s are
+//! stored in the client and cancelled when the client is dropped.
+//!
+//! On non-macOS platforms, no background polling or notification mechanism is
+//! provided. The cache is populated on first access and updated only on local
+//! writes.
 //!
 //! # Design
 //!
-//! `TugbankClient` holds `Arc<Inner>` internally so the polling thread can
-//! share the same `DefaultsStore` and callback registry.
+//! `TugbankClient` holds `Arc<Inner>` internally so notification callbacks
+//! can share the same `DefaultsStore` and callback registry.
 
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
 
 use crate::{DefaultsStore, Error, Value};
+
+#[cfg(target_os = "macos")]
+use crate::notify::{NotifyToken, broadcast_domain_changed, register_domain_watcher};
 
 /// A snapshot of all key-value pairs for a single domain.
 pub type DomainSnapshot = BTreeMap<String, Value>;
@@ -100,14 +104,14 @@ struct Inner {
 /// In-memory cached client wrapping a [`DefaultsStore`].
 ///
 /// All reads go through an in-memory snapshot cache. The cache is populated
-/// on first access per domain and refreshed by the background polling thread
-/// when an external write is detected via `PRAGMA data_version`.
+/// on first access per domain and refreshed via Darwin notifications (macOS)
+/// when an external write is detected.
 pub struct TugbankClient {
     inner: Arc<Inner>,
-    /// Taking this sender and dropping it closes the channel, waking the
-    /// polling thread so it exits immediately.
-    shutdown_tx: Mutex<Option<mpsc::SyncSender<()>>>,
-    poll_thread: Mutex<Option<JoinHandle<()>>>,
+    /// Darwin notification tokens. Dropping these cancels the registrations.
+    /// Wrapped in a Mutex so we can add tokens after construction.
+    #[cfg(target_os = "macos")]
+    notify_tokens: Mutex<Vec<NotifyToken>>,
 }
 
 // Compile-time assertion that TugbankClient is Send + Sync.
@@ -121,40 +125,42 @@ const _: () = {
 impl TugbankClient {
     /// Open a new client backed by the database at `path`.
     ///
-    /// Opens a [`DefaultsStore`] and spawns the background polling thread.
-    pub fn open(path: impl AsRef<Path>, poll_interval: Duration) -> Result<Self, Error> {
+    /// The `poll_interval` parameter is accepted for API compatibility but
+    /// ignored on macOS, where Darwin notifications replace polling.
+    pub fn open(path: impl AsRef<Path>, _poll_interval: std::time::Duration) -> Result<Self, Error> {
         let store = DefaultsStore::open(path)?;
-        Self::from_store(store, poll_interval)
+        Self::from_store(store)
     }
 
     /// Create a client from an existing [`DefaultsStore`].
     ///
-    /// Reads `PRAGMA data_version` to establish the baseline, then spawns the
-    /// background polling thread.
-    pub fn from_store(store: DefaultsStore, poll_interval: Duration) -> Result<Self, Error> {
+    /// On macOS, registers Darwin notification watchers for all domains that
+    /// currently exist in the database.
+    pub fn from_store(store: DefaultsStore) -> Result<Self, Error> {
         let inner = Arc::new(Inner {
             store,
             cache: Mutex::new(HashMap::new()),
             callbacks: Arc::new(Mutex::new(CallbackRegistry::new())),
         });
 
-        let baseline = read_data_version(&inner.store)?;
-
-        // A zero-capacity sync channel: the polling thread calls `recv_timeout`
-        // to implement an interruptible sleep. When the sender is dropped
-        // (on shutdown or Drop), `recv_timeout` returns `Err(RecvTimeoutError::Disconnected)`.
-        let (shutdown_tx, shutdown_rx) = mpsc::sync_channel::<()>(0);
-
-        let inner_clone = Arc::clone(&inner);
-
-        let handle = thread::spawn(move || {
-            polling_thread(inner_clone, shutdown_rx, poll_interval, baseline);
-        });
+        #[cfg(target_os = "macos")]
+        let notify_tokens = {
+            let tokens = Mutex::new(Vec::new());
+            // Register watchers for all domains that already exist.
+            if let Ok(domains) = inner.store.list_domains() {
+                let mut toks = tokens.lock().unwrap();
+                for domain in domains {
+                    let tok = register_watcher_for_domain(&domain, &inner);
+                    toks.push(tok);
+                }
+            }
+            tokens
+        };
 
         Ok(Self {
             inner,
-            shutdown_tx: Mutex::new(Some(shutdown_tx)),
-            poll_thread: Mutex::new(Some(handle)),
+            #[cfg(target_os = "macos")]
+            notify_tokens,
         })
     }
 
@@ -173,13 +179,20 @@ impl TugbankClient {
     }
 
     /// Write a value to the DB and update the local cache atomically.
+    ///
+    /// On macOS, also broadcasts a Darwin notification so other processes
+    /// (and other `TugbankClient` instances in this process) are notified.
     pub fn set(&self, domain: &str, key: &str, value: Value) -> Result<(), Error> {
         self.inner.store.domain(domain)?.set(key, value.clone())?;
-        let mut cache = self.inner.cache.lock().unwrap();
-        cache
-            .entry(domain.to_owned())
-            .or_default()
-            .insert(key.to_owned(), value);
+        {
+            let mut cache = self.inner.cache.lock().unwrap();
+            cache
+                .entry(domain.to_owned())
+                .or_default()
+                .insert(key.to_owned(), value);
+        }
+        #[cfg(target_os = "macos")]
+        broadcast_domain_changed(domain);
         Ok(())
     }
 
@@ -215,22 +228,12 @@ impl TugbankClient {
         }
     }
 
-    /// Stop the polling thread. Called automatically on `Drop`.
+    /// No-op for API compatibility. Notification cleanup happens on Drop.
     ///
-    /// Calling `shutdown` more than once is safe — the second call is a no-op.
+    /// On macOS, the polling thread no longer exists; this method is kept so
+    /// existing call sites compile without changes.
     pub fn shutdown(&self) {
-        // Drop the sender first to close the channel. This causes the polling
-        // thread's `recv_timeout` to return `Disconnected` and exit immediately,
-        // even if the poll interval is long.
-        if let Ok(mut tx_guard) = self.shutdown_tx.lock() {
-            tx_guard.take(); // drops the SyncSender, closing the channel
-        }
-        // Then join the thread.
-        if let Ok(mut guard) = self.poll_thread.lock() {
-            if let Some(handle) = guard.take() {
-                let _ = handle.join();
-            }
-        }
+        // Nothing to do — Darwin notification tokens are cancelled on Drop.
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -242,10 +245,19 @@ impl TugbankClient {
         };
         if !already_loaded {
             let snapshot = self.inner.store.domain(domain)?.read_all()?;
-            let mut cache = self.inner.cache.lock().unwrap();
-            // Another thread may have populated the cache between our check and
-            // the lock re-acquisition — use `or_insert` to avoid overwriting.
-            cache.entry(domain.to_owned()).or_insert(snapshot);
+            {
+                let mut cache = self.inner.cache.lock().unwrap();
+                // Another thread may have populated the cache between our check
+                // and the lock re-acquisition — use `or_insert` to avoid
+                // overwriting a fresher snapshot.
+                cache.entry(domain.to_owned()).or_insert(snapshot);
+            }
+            // Register a Darwin notification watcher for this newly-seen domain.
+            #[cfg(target_os = "macos")]
+            {
+                let tok = register_watcher_for_domain(domain, &self.inner);
+                self.notify_tokens.lock().unwrap().push(tok);
+            }
         }
         Ok(())
     }
@@ -257,111 +269,43 @@ impl Drop for TugbankClient {
     }
 }
 
-// ── Polling helpers ───────────────────────────────────────────────────────────
+// ── Darwin watcher helper ─────────────────────────────────────────────────────
+
+/// Register a Darwin notification watcher for `domain` that reloads the
+/// domain snapshot and fires registered callbacks when a notification arrives.
+#[cfg(target_os = "macos")]
+fn register_watcher_for_domain(domain: &str, inner: &Arc<Inner>) -> NotifyToken {
+    let domain_owned = domain.to_owned();
+    let inner_clone = Arc::clone(inner);
+    register_domain_watcher(domain, move || {
+        // Re-read the domain from the database.
+        let snapshot = match inner_clone
+            .store
+            .domain(&domain_owned)
+            .and_then(|h| h.read_all())
+        {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        // Update the cache.
+        {
+            let mut cache = inner_clone.cache.lock().unwrap();
+            cache.insert(domain_owned.clone(), snapshot.clone());
+        }
+        // Fire callbacks.
+        {
+            let reg = inner_clone.callbacks.lock().unwrap();
+            reg.fire(&domain_owned, &snapshot);
+        }
+    })
+}
+
+// ── Data version helper ───────────────────────────────────────────────────────
 
 fn read_data_version(store: &DefaultsStore) -> Result<u64, Error> {
     let conn = store.conn.lock().unwrap();
     let v: i64 = conn.query_row("PRAGMA data_version", [], |row| row.get(0))?;
     Ok(v as u64)
-}
-
-fn read_domain_generation(store: &DefaultsStore, domain: &str) -> Result<u64, Error> {
-    let conn = store.conn.lock().unwrap();
-    let result = conn.query_row(
-        "SELECT generation FROM domains WHERE name = ?1",
-        rusqlite::params![domain],
-        |row| row.get::<_, i64>(0),
-    );
-    match result {
-        Ok(g) => Ok(g as u64),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
-        Err(e) => Err(Error::Sqlite(e)),
-    }
-}
-
-// ── Polling thread ────────────────────────────────────────────────────────────
-
-/// The background polling thread.
-///
-/// Uses `recv_timeout` on `shutdown_rx` to implement an interruptible sleep.
-/// When the `TugbankClient` is dropped (or `shutdown()` is called), the sender
-/// side of the channel is dropped, causing `recv_timeout` to return
-/// `Disconnected` and the loop to exit immediately.
-fn polling_thread(
-    inner: Arc<Inner>,
-    shutdown_rx: mpsc::Receiver<()>,
-    poll_interval: Duration,
-    baseline_version: u64,
-) {
-    let mut last_version = baseline_version;
-    let mut known_generations: HashMap<String, u64> = HashMap::new();
-
-    loop {
-        // Interruptible sleep: exits immediately when the channel is closed.
-        match shutdown_rx.recv_timeout(poll_interval) {
-            Ok(()) => {
-                // A message was sent — not used currently, but could be used
-                // to trigger an immediate poll.
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // Channel closed — time to exit.
-                break;
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                // Normal timeout: perform a poll cycle.
-            }
-        }
-
-        let current_version = match read_data_version(&inner.store) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        if current_version == last_version {
-            continue;
-        }
-        last_version = current_version;
-
-        let domains = match inner.store.list_domains() {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-
-        for domain in &domains {
-            let current_gen = match read_domain_generation(&inner.store, domain) {
-                Ok(g) => g,
-                Err(_) => continue,
-            };
-
-            let prev_gen = known_generations.get(domain.as_str()).copied();
-            let changed = match prev_gen {
-                None => true,
-                Some(prev) => current_gen > prev,
-            };
-
-            if changed {
-                known_generations.insert(domain.clone(), current_gen);
-
-                let snapshot = match inner.store.domain(domain) {
-                    Ok(h) => match h.read_all() {
-                        Ok(s) => s,
-                        Err(_) => continue,
-                    },
-                    Err(_) => continue,
-                };
-
-                {
-                    let mut cache = inner.cache.lock().unwrap();
-                    cache.insert(domain.clone(), snapshot.clone());
-                }
-
-                {
-                    let reg = inner.callbacks.lock().unwrap();
-                    reg.fire(domain, &snapshot);
-                }
-            }
-        }
-    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -370,11 +314,12 @@ fn polling_thread(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
     use tempfile::NamedTempFile;
 
-    fn temp_client(interval: Duration) -> (TugbankClient, NamedTempFile) {
+    fn temp_client() -> (TugbankClient, NamedTempFile) {
         let tmp = NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path(), interval).expect("open failed");
+        let client = TugbankClient::open(tmp.path(), Duration::from_secs(60)).expect("open failed");
         (client, tmp)
     }
 
@@ -391,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_set_updates_cache() {
-        let (client, _tmp) = temp_client(Duration::from_secs(60));
+        let (client, _tmp) = temp_client();
         client.set("d", "k", Value::I64(42)).unwrap();
         let v = client.get("d", "k").unwrap();
         assert_eq!(v, Some(Value::I64(42)));
@@ -402,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_get_caches_value() {
-        let (client, _tmp) = temp_client(Duration::from_secs(60));
+        let (client, _tmp) = temp_client();
         client.set("d", "k", Value::Bool(true)).unwrap();
         let v1 = client.get("d", "k").unwrap();
         let v2 = client.get("d", "k").unwrap();
@@ -412,15 +357,16 @@ mod tests {
 
     // ── test_external_write_detected ─────────────────────────────────────────
     // open two DefaultsStore connections to the same file; write via the second;
-    // assert TugbankClient detects the change within 2x poll interval
+    // assert TugbankClient detects the change via Darwin notification
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_external_write_detected() {
         let tmp = NamedTempFile::new().expect("temp file");
-        let poll = Duration::from_millis(50);
-        let client = TugbankClient::open(tmp.path(), poll).expect("open failed");
+        let client = TugbankClient::open(tmp.path(), Duration::from_secs(60)).expect("open failed");
 
-        // Pre-load the domain so the cache has a baseline entry.
+        // Pre-load the domain so the cache has a baseline entry and a
+        // Darwin notification watcher is registered.
         let _ = client.read_domain("ext").unwrap();
 
         // Write via a second independent connection.
@@ -431,12 +377,15 @@ mod tests {
             .set("key", Value::String("external-write".into()))
             .unwrap();
 
-        // Wait for at most ~200ms for the polling thread to detect the change.
+        // Broadcast the notification as the write side would.
+        crate::notify::broadcast_domain_changed("ext");
+
+        // Wait for at most 500ms for the notification to propagate.
         let deadline = Duration::from_millis(500);
         let start = std::time::Instant::now();
         let mut detected = false;
         while start.elapsed() < deadline {
-            thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(10));
             let v = client.get("ext", "key").unwrap();
             if v == Some(Value::String("external-write".into())) {
                 detected = true;
@@ -446,25 +395,28 @@ mod tests {
 
         assert!(
             detected,
-            "TugbankClient should detect external write within polling interval"
+            "TugbankClient should detect external write via Darwin notification"
         );
     }
 
     // ── test_callback_fires_on_external_change ────────────────────────────────
     // register on_domain_changed callback; write via external connection;
-    // assert callback fires
+    // assert callback fires via Darwin notification
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_callback_fires_on_external_change() {
         let tmp = NamedTempFile::new().expect("temp file");
-        let poll = Duration::from_millis(50);
-        let client = TugbankClient::open(tmp.path(), poll).expect("open failed");
+        let client = TugbankClient::open(tmp.path(), Duration::from_secs(60)).expect("open failed");
 
         let fired = Arc::new(AtomicU32::new(0));
         let fired_clone = Arc::clone(&fired);
         let _handle = client.on_domain_changed(move |_domain, _snapshot| {
             fired_clone.fetch_add(1, Ordering::Release);
         });
+
+        // Pre-load the domain so a watcher is registered.
+        let _ = client.read_domain("cb-domain").unwrap();
 
         // Write via a second independent connection.
         let external = DefaultsStore::open(tmp.path()).expect("external store open");
@@ -474,12 +426,15 @@ mod tests {
             .set("key", Value::I64(1))
             .unwrap();
 
-        // Wait for the callback to fire within ~200ms.
+        // Broadcast as the write side would.
+        crate::notify::broadcast_domain_changed("cb-domain");
+
+        // Wait for the callback to fire within 500ms.
         let deadline = Duration::from_millis(500);
         let start = std::time::Instant::now();
         let mut callback_fired = false;
         while start.elapsed() < deadline {
-            thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(10));
             if fired.load(Ordering::Acquire) > 0 {
                 callback_fired = true;
                 break;
@@ -488,18 +443,17 @@ mod tests {
 
         assert!(
             callback_fired,
-            "on_domain_changed callback should have fired"
+            "on_domain_changed callback should have fired via Darwin notification"
         );
     }
 
-    // ── test_shutdown_stops_polling ───────────────────────────────────────────
-    // after shutdown(), the polling thread exits cleanly
+    // ── test_shutdown_is_noop ─────────────────────────────────────────────────
+    // shutdown() is a no-op and can be called multiple times safely
 
     #[test]
-    fn test_shutdown_stops_polling() {
-        let (client, _tmp) = temp_client(Duration::from_millis(10));
+    fn test_shutdown_is_noop() {
+        let (client, _tmp) = temp_client();
         client.shutdown();
-        // A second call must be a no-op.
         client.shutdown();
     }
 }

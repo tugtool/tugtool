@@ -30,6 +30,8 @@ use std::process;
 use base64::Engine as _;
 use clap::{Parser, Subcommand, ValueEnum};
 use tugbank_core::{DefaultsStore, Value};
+#[cfg(target_os = "macos")]
+use tugbank_core::notify::broadcast_domain_changed;
 
 // ── CLI structure ─────────────────────────────────────────────────────────────
 
@@ -598,6 +600,8 @@ fn cmd_write(
         match handle.set_if_generation(key, value, expected_generation) {
             Ok(tugbank_core::SetOutcome::Written) => {
                 // No output on success.
+                #[cfg(target_os = "macos")]
+                broadcast_domain_changed(domain);
             }
             Ok(tugbank_core::SetOutcome::Conflict { current_generation }) => {
                 if use_json {
@@ -632,6 +636,8 @@ fn cmd_write(
             process::exit(code as i32);
         }
         // No output on success (Spec S04).
+        #[cfg(target_os = "macos")]
+        broadcast_domain_changed(domain);
     }
 }
 

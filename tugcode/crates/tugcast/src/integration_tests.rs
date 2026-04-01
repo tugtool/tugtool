@@ -650,7 +650,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let store = DefaultsStore::open(tmp.path()).expect("open test tugbank db");
     let client = Arc::new(
-        TugbankClient::from_store(store, std::time::Duration::from_millis(500))
+        TugbankClient::from_store(store)
             .expect("create TugbankClient"),
     );
 
@@ -948,7 +948,7 @@ async fn test_defaults_non_loopback_returns_403() {
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let store = DefaultsStore::open(tmp.path()).expect("open test tugbank db");
     let bank_client = Arc::new(
-        TugbankClient::from_store(store, std::time::Duration::from_millis(500))
+        TugbankClient::from_store(store)
             .expect("create TugbankClient"),
     );
 
@@ -1047,7 +1047,7 @@ async fn test_migration_writes_layout_and_theme_to_tugbank() {
     let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
     let store = DefaultsStore::open(db_tmp.path()).expect("open store");
     let client = Arc::new(
-        TugbankClient::from_store(store, std::time::Duration::from_millis(500))
+        TugbankClient::from_store(store)
             .expect("create TugbankClient"),
     );
 
@@ -1127,7 +1127,7 @@ async fn test_migration_noop_when_no_flat_file() {
     let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
     let store = DefaultsStore::open(db_tmp.path()).expect("open store");
     let client = Arc::new(
-        TugbankClient::from_store(store, std::time::Duration::from_millis(500))
+        TugbankClient::from_store(store)
             .expect("create TugbankClient"),
     );
 

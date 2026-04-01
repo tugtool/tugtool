@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 // MARK: - TugbankValue
@@ -66,7 +67,7 @@ private struct DomainSnapshot {
 ///
 /// Provides the same interface as the Rust and TypeScript TugbankClients:
 /// - In-memory domain snapshot cache
-/// - PRAGMA data_version polling for external change detection
+/// - Darwin notification listeners for external change detection
 /// - Domain change callbacks
 /// - get/set/readDomain/listDomains
 final class TugbankClient {
@@ -87,9 +88,9 @@ final class TugbankClient {
 
     private let handle: UnsafeMutableRawPointer
     private var cache: [String: DomainSnapshot] = [:]
-    private var lastDataVersion: UInt64 = 0
-    private var pollTimer: Timer?
     private var callbacks: [(String, [String: TugbankValue]) -> Void] = []
+    /// Darwin notification tokens. Cancelling these stops the notifications.
+    private var notifyTokens: [Int32] = []
 
     // MARK: Init / Deinit
 
@@ -98,12 +99,11 @@ final class TugbankClient {
             return nil
         }
         handle = h
-        lastDataVersion = tugbank_data_version(handle)
-        startPolling()
     }
 
     deinit {
-        stopPolling()
+        // Cancel all Darwin notification registrations.
+        notifyTokens.forEach { notify_cancel($0) }
         tugbank_close(handle)
     }
 
@@ -157,7 +157,8 @@ final class TugbankClient {
         return tugbank_data_version(handle)
     }
 
-    /// Register a callback for domain changes. Fires when polling detects external writes.
+    /// Register a callback for domain changes. Fires when a Darwin notification
+    /// is received for a cached domain.
     func onDomainChanged(_ callback: @escaping (String, [String: TugbankValue]) -> Void) {
         callbacks.append(callback)
     }
@@ -194,11 +195,49 @@ final class TugbankClient {
 
     // MARK: Cache management
 
+    /// Ensure the domain is loaded into the cache and a Darwin notification
+    /// watcher is registered for it.
     private func ensureDomainLoaded(_ domain: String) {
         guard cache[domain] == nil else { return }
         let entries = fetchDomainFromDB(domain) ?? [:]
         let version = tugbank_data_version(handle)
         cache[domain] = DomainSnapshot(generation: version, entries: entries)
+
+        // Register a Darwin notification watcher for this domain.
+        registerDomainNotification(domain)
+    }
+
+    /// Register a Darwin notification listener for a domain.
+    ///
+    /// Uses `notify_register_dispatch` to deliver notifications on the main
+    /// queue. When a notification fires, re-reads the domain from the database,
+    /// updates the cache, and fires registered callbacks.
+    private func registerDomainNotification(_ domain: String) {
+        let notificationName = "dev.tugtool.tugbank.changed.\(domain)"
+        var token: Int32 = 0
+
+        notify_register_dispatch(
+            notificationName,
+            &token,
+            DispatchQueue.main
+        ) { [weak self] _ in
+            self?.onDomainNotification(domain)
+        }
+
+        notifyTokens.append(token)
+    }
+
+    /// Handle an incoming Darwin notification for a domain.
+    ///
+    /// Re-reads the domain from the database, updates the cache, and fires
+    /// registered callbacks.
+    private func onDomainNotification(_ domain: String) {
+        guard let newEntries = fetchDomainFromDB(domain) else { return }
+        cache[domain] = DomainSnapshot(generation: tugbank_data_version(handle), entries: newEntries)
+
+        for callback in callbacks {
+            callback(domain, newEntries)
+        }
     }
 
     /// Fetch all entries for a domain via the FFI.
@@ -248,58 +287,5 @@ final class TugbankClient {
         default:
             return nil
         }
-    }
-
-    // MARK: Polling
-
-    private func startPolling() {
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.pollDataVersion()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        pollTimer = timer
-    }
-
-    private func stopPolling() {
-        pollTimer?.invalidate()
-        pollTimer = nil
-    }
-
-    private func pollDataVersion() {
-        let currentVersion = tugbank_data_version(handle)
-        guard currentVersion != lastDataVersion else { return }
-        lastDataVersion = currentVersion
-
-        // Reload all cached domains and fire callbacks for changed ones
-        var changedDomains: [(String, [String: TugbankValue])] = []
-
-        for domain in cache.keys {
-            if let newEntries = fetchDomainFromDB(domain) {
-                let oldEntries = cache[domain]?.entries ?? [:]
-                cache[domain] = DomainSnapshot(generation: currentVersion, entries: newEntries)
-
-                // Simple change detection: if entry count differs or any value changed
-                if !entriesEqual(oldEntries, newEntries) {
-                    changedDomains.append((domain, newEntries))
-                }
-            }
-        }
-
-        for (domain, entries) in changedDomains {
-            for callback in callbacks {
-                callback(domain, entries)
-            }
-        }
-    }
-
-    /// Simple equality check for domain entries (by string representation).
-    private func entriesEqual(_ a: [String: TugbankValue], _ b: [String: TugbankValue]) -> Bool {
-        guard a.count == b.count else { return false }
-        for (key, aVal) in a {
-            guard let bVal = b[key] else { return false }
-            // Compare by FFI encoding — not perfect but sufficient for change detection
-            if aVal.encodeForFFI() != bVal.encodeForFFI() { return false }
-        }
-        return true
     }
 }
