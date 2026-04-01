@@ -1,91 +1,124 @@
 /**
  * Settings API client for tugcast.
  *
- * Provides domain-aware read and put functions that read through the
- * TugbankClient WebSocket cache and write through the
- * `/api/defaults/` HTTP endpoints introduced in Phase 5e3.
- *
- * Layout and theme are stored in separate tugbank domains per [D02]:
+ * Provides domain-aware fetch and put functions that read/write through the
+ * `/api/defaults/` endpoints introduced in Phase 5e3. Layout and theme are
+ * stored in separate tugbank domains per [D02]:
  *
  *   Layout    → domain `dev.tugtool.deck.layout`,   key `layout`        (Value::Json)
  *   Theme     → domain `dev.tugtool.app`,            key `theme`         (Value::String)
  *   Tab state → domain `dev.tugtool.deck.tabstate`,  key `<tabId>`       (Value::Json)
  *   Deck state→ domain `dev.tugtool.deck.state`,     key `focusedCardId` (Value::String)
  *
- * Read path: synchronous cache reads via TugbankClient after ready() resolves.
- * Write path: PUT /api/defaults/:domain/:key (unchanged).
- *
- * Wire format for writes: `{"kind":"json","value":{...}}` for layout/tab state
- * and `{"kind":"string","value":"brio"}` for theme/deck state [D04].
- * Wire format for reads (WebSocket): `{"type":"json","value":{...}}` etc.
+ * The wire format is a tagged-value object: `{"kind":"json","value":{...}}`
+ * for layout/tab state and `{"kind":"string","value":"brio"}` for theme/deck
+ * state [D04].
  *
  * Both dev and production modes proxy /api to tugcast on port 55255, so
  * relative URLs work in both environments.
  */
 
 import type { TabStateBag } from "./layout-tree";
-import type { TugbankClient } from "./lib/tugbank-client";
 
-/** Module-level TugbankClient instance, set via initTugbankClient(). */
-let _client: TugbankClient | null = null;
+const INITIAL_DELAY_MS = 100;
+const MAX_DELAY_MS = 2000;
+
+/** Resolves after `ms` milliseconds. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
- * Initialize the settings-api module with a TugbankClient instance.
+ * Fetch the deck layout from tugbank with exponential backoff.
  *
- * Must be called before any fetch* function is invoked. Callers should
- * await client.ready() before calling the read functions.
- */
-export function initTugbankClient(client: TugbankClient): void {
-  _client = client;
-}
-
-/** Return the active TugbankClient, throwing if not initialized. */
-function getClient(): TugbankClient {
-  if (_client === null) {
-    throw new Error("[settings] TugbankClient not initialized — call initTugbankClient() first");
-  }
-  return _client;
-}
-
-/**
- * Fetch the deck layout from the TugbankClient cache.
+ * Retries indefinitely on network errors or 5xx responses. Returns `null`
+ * on 404 (no layout stored yet) without retrying — that is the expected
+ * state on first launch.
  *
  * Returns the unwrapped layout object, or `null` if no layout is stored.
- *
- * Callers must await TugbankClient.ready() before calling this function.
- * The function signature remains async for backward compatibility with call
- * sites that await it, but the read itself is synchronous.
  */
 export async function fetchLayoutWithRetry(): Promise<object | null> {
-  const tagged = getClient().get("dev.tugtool.deck.layout", "layout");
-  if (tagged === undefined) {
-    return null;
+  const url = "/api/defaults/dev.tugtool.deck.layout/layout";
+  let delayMs = INITIAL_DELAY_MS;
+  let attempt = 0;
+
+  for (;;) {
+    try {
+      const response = await fetch(url);
+      if (response.status === 404) {
+        // No layout stored yet — treat as "no data", not an error.
+        return null;
+      }
+      if (response.ok) {
+        const tagged = await response.json();
+        if (tagged.kind === "json" && tagged.value !== undefined) {
+          return tagged.value as object;
+        }
+        // Unexpected format — log and return null rather than crashing.
+        console.warn("[settings] fetchLayoutWithRetry: unexpected tagged format", tagged);
+        return null;
+      }
+      // 5xx or other non-404 error: log and retry.
+      console.debug(
+        `[settings] fetchLayout attempt ${attempt + 1} got status ${response.status}, retrying in ${delayMs}ms`
+      );
+    } catch (err) {
+      // Network error (tugcast not yet ready): log and retry.
+      console.debug(
+        `[settings] fetchLayout attempt ${attempt + 1} failed (${err}), retrying in ${delayMs}ms`
+      );
+    }
+
+    await sleep(delayMs);
+    attempt++;
+    delayMs = Math.min(delayMs * 2, MAX_DELAY_MS);
   }
-  if (tagged.type === "json" && tagged.value !== undefined && tagged.value !== null) {
-    return tagged.value as object;
-  }
-  console.warn("[settings] fetchLayoutWithRetry: unexpected tagged format", tagged);
-  return null;
 }
 
 /**
- * Fetch the app theme from the TugbankClient cache.
+ * Fetch the app theme from tugbank with exponential backoff.
+ *
+ * Retries indefinitely on network errors or 5xx responses. Returns `null`
+ * on 404 (no theme stored yet) without retrying.
  *
  * Returns the unwrapped theme string, or `null` if no theme is stored.
- *
- * Callers must await TugbankClient.ready() before calling this function.
- * The function signature remains async for backward compatibility.
  */
 export async function fetchThemeWithRetry(): Promise<string | null> {
-  const tagged = getClient().get("dev.tugtool.app", "theme");
-  if (tagged === undefined) {
-    return null;
+  const url = "/api/defaults/dev.tugtool.app/theme";
+  let delayMs = INITIAL_DELAY_MS;
+  let attempt = 0;
+
+  for (;;) {
+    try {
+      const response = await fetch(url);
+      if (response.status === 404) {
+        // No theme stored yet — treat as "no data", not an error.
+        return null;
+      }
+      if (response.ok) {
+        const tagged = await response.json();
+        if (tagged.kind === "string" && typeof tagged.value === "string") {
+          return tagged.value;
+        }
+        // Unexpected format — log and return null rather than crashing.
+        console.warn("[settings] fetchThemeWithRetry: unexpected tagged format", tagged);
+        return null;
+      }
+      // 5xx or other non-404 error: log and retry.
+      console.debug(
+        `[settings] fetchTheme attempt ${attempt + 1} got status ${response.status}, retrying in ${delayMs}ms`
+      );
+    } catch (err) {
+      // Network error (tugcast not yet ready): log and retry.
+      console.debug(
+        `[settings] fetchTheme attempt ${attempt + 1} failed (${err}), retrying in ${delayMs}ms`
+      );
+    }
+
+    await sleep(delayMs);
+    attempt++;
+    delayMs = Math.min(delayMs * 2, MAX_DELAY_MS);
   }
-  if (tagged.type === "string" && typeof tagged.value === "string") {
-    return tagged.value;
-  }
-  console.warn("[settings] fetchThemeWithRetry: unexpected tagged format", tagged);
-  return null;
 }
 
 /**
@@ -129,19 +162,22 @@ export function putTheme(theme: string): void {
 // ---- Theme Generator recipe persistence ----
 
 /**
- * Fetch the Theme Generator recipe from the TugbankClient cache.
+ * Fetch the Theme Generator recipe from tugbank.
  * Returns "dark" or "light", or `null` if not stored.
  *
  * Note: the REST endpoint path remains `/api/defaults/dev.tugtool.app/generator-mode`
  * (legacy name) to preserve backward compatibility with previously persisted values.
  */
 export async function fetchGeneratorRecipe(): Promise<"dark" | "light" | null> {
-  const tagged = getClient().get("dev.tugtool.app", "generator-mode");
-  if (tagged === undefined) {
+  try {
+    const response = await fetch("/api/defaults/dev.tugtool.app/generator-mode");
+    if (!response.ok) return null;
+    const tagged = await response.json();
+    const v = tagged?.value;
+    return v === "dark" || v === "light" ? v : null;
+  } catch {
     return null;
   }
-  const v = tagged.value;
-  return v === "dark" || v === "light" ? v : null;
 }
 
 /**
@@ -163,26 +199,68 @@ export function putGeneratorRecipe(recipe: "dark" | "light"): void {
 // ---- Phase 5f: Tab state and deck state API ([D01], [D03], Spec S02) ----
 
 /**
- * Fetch all tab state bags from the TugbankClient cache for the given tab IDs.
+ * Fetch all tab state bags from tugbank for the given set of tab IDs.
+ *
+ * Fetches all tab IDs in parallel via Promise.allSettled. 404 responses are
+ * silently skipped (no saved state for that tab — expected on first launch).
+ * 5xx / network errors are retried with exponential backoff per tab.
  *
  * Returns a Map<tabId, TabStateBag> of successfully retrieved entries. Tab IDs
  * with no stored state are absent from the map.
  *
- * Callers must await TugbankClient.ready() before calling this function.
- * The function signature remains async for backward compatibility.
- *
  * Spec S02: fetchTabStatesWithRetry
  */
 export async function fetchTabStatesWithRetry(tabIds: string[]): Promise<Map<string, TabStateBag>> {
-  const client = getClient();
+  const results = await Promise.allSettled(
+    tabIds.map((tabId) => fetchSingleTabStateWithRetry(tabId))
+  );
+
   const map = new Map<string, TabStateBag>();
-  for (const tabId of tabIds) {
-    const tagged = client.get("dev.tugtool.deck.tabstate", tabId);
-    if (tagged !== undefined && tagged.type === "json" && tagged.value !== undefined && tagged.value !== null) {
-      map.set(tabId, tagged.value as TabStateBag);
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === "fulfilled" && result.value !== null) {
+      map.set(tabIds[i], result.value);
     }
   }
   return map;
+}
+
+/**
+ * Fetch a single tab state bag from tugbank with exponential backoff.
+ * Returns null on 404 (no state stored yet). Retries on 5xx / network errors.
+ */
+async function fetchSingleTabStateWithRetry(tabId: string): Promise<TabStateBag | null> {
+  const url = `/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`;
+  let delayMs = INITIAL_DELAY_MS;
+  let attempt = 0;
+
+  for (;;) {
+    try {
+      const response = await fetch(url);
+      if (response.status === 404) {
+        return null;
+      }
+      if (response.ok) {
+        const tagged = await response.json();
+        if (tagged.kind === "json" && tagged.value !== undefined) {
+          return tagged.value as TabStateBag;
+        }
+        console.warn("[settings] fetchSingleTabStateWithRetry: unexpected format for tab", tabId, tagged);
+        return null;
+      }
+      console.debug(
+        `[settings] fetchTabState(${tabId}) attempt ${attempt + 1} got status ${response.status}, retrying in ${delayMs}ms`
+      );
+    } catch (err) {
+      console.debug(
+        `[settings] fetchTabState(${tabId}) attempt ${attempt + 1} failed (${err}), retrying in ${delayMs}ms`
+      );
+    }
+
+    await sleep(delayMs);
+    attempt++;
+    delayMs = Math.min(delayMs * 2, MAX_DELAY_MS);
+  }
 }
 
 /**
@@ -231,25 +309,46 @@ export function putTabState(tabId: string, bag: TabStateBag, options?: { keepali
 }
 
 /**
- * Fetch the focused card ID from the TugbankClient cache.
+ * Fetch the focused card ID from tugbank with exponential backoff.
  *
- * Returns the string value on success, or null if no value is stored.
- *
- * Callers must await TugbankClient.ready() before calling this function.
- * The function signature remains async for backward compatibility.
+ * Reads from `/api/defaults/dev.tugtool.deck.state/focusedCardId`.
+ * Returns the string value on success, or null on 404 (no value stored yet).
+ * Retries indefinitely on 5xx / network errors.
  *
  * Spec S02: fetchDeckStateWithRetry
  */
 export async function fetchDeckStateWithRetry(): Promise<string | null> {
-  const tagged = getClient().get("dev.tugtool.deck.state", "focusedCardId");
-  if (tagged === undefined) {
-    return null;
+  const url = "/api/defaults/dev.tugtool.deck.state/focusedCardId";
+  let delayMs = INITIAL_DELAY_MS;
+  let attempt = 0;
+
+  for (;;) {
+    try {
+      const response = await fetch(url);
+      if (response.status === 404) {
+        return null;
+      }
+      if (response.ok) {
+        const tagged = await response.json();
+        if (tagged.kind === "string" && typeof tagged.value === "string") {
+          return tagged.value;
+        }
+        console.warn("[settings] fetchDeckStateWithRetry: unexpected tagged format", tagged);
+        return null;
+      }
+      console.debug(
+        `[settings] fetchDeckState attempt ${attempt + 1} got status ${response.status}, retrying in ${delayMs}ms`
+      );
+    } catch (err) {
+      console.debug(
+        `[settings] fetchDeckState attempt ${attempt + 1} failed (${err}), retrying in ${delayMs}ms`
+      );
+    }
+
+    await sleep(delayMs);
+    attempt++;
+    delayMs = Math.min(delayMs * 2, MAX_DELAY_MS);
   }
-  if (tagged.type === "string" && typeof tagged.value === "string") {
-    return tagged.value;
-  }
-  console.warn("[settings] fetchDeckStateWithRetry: unexpected tagged format", tagged);
-  return null;
 }
 
 /**
