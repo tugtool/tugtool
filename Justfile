@@ -71,6 +71,8 @@ app: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
     (cd tugdeck && bun run build)
+    # Touch Swift sources so xcodebuild detects changes on this mount.
+    find tugapp/Sources -name '*.swift' -exec touch {} +
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' build
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     MACOS_DIR="$APP_DIR/Contents/MacOS"

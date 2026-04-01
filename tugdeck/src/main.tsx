@@ -54,7 +54,7 @@ if (!container) {
   // Wait for initial DEFAULTS frame + WASM init in parallel.
   await Promise.all([
     tugbankClient.ready(),
-    initTugmark(wasmUrl),
+    initTugmark({ module_or_path: wasmUrl }),
   ]);
 
   // All domain snapshots are now in the TugbankClient cache.
@@ -127,12 +127,20 @@ if (!container) {
   // React to live tugbank changes pushed via the DEFAULTS WebSocket feed.
   // When an external process writes to tugbank (e.g., `tugbank write ... theme harmony`),
   // the TugbankClient cache updates and this callback fires.
+  //
+  // Guard: only call the setter if the theme actually changed. Without this,
+  // setTheme → putTheme → tugbank write → DEFAULTS push → onDomainChanged → setTheme
+  // creates an infinite loop of CSS HMR updates.
+  let currentTheme = initialTheme;
   tugbankClient.onDomainChanged((domain, entries) => {
     if (domain === "dev.tugtool.app") {
       const themeEntry = entries["theme"];
       if (themeEntry && themeEntry.kind === "string" && typeof themeEntry.value === "string") {
-        const setter = getThemeSetter();
-        if (setter) setter(themeEntry.value);
+        if (themeEntry.value !== currentTheme) {
+          currentTheme = themeEntry.value;
+          const setter = getThemeSetter();
+          if (setter) setter(currentTheme);
+        }
       }
     }
   });
@@ -167,8 +175,11 @@ if (!container) {
     connection.forceReconnect();
   };
 
-  // Signal frontend readiness to native app (enables menu items).
-  connection.onOpen(() => {
+  // Signal frontend readiness to native app.
+  // This fires after theme is applied, canvas color is sent, and DeckManager is
+  // constructed — so the WebView can be safely revealed without visual artifacts.
+  // Also re-fires on WebSocket reconnection (e.g. after tugcast restart).
+  const signalReady = () => {
     const webkit = (window as unknown as {
       webkit?: {
         messageHandlers?: {
@@ -177,7 +188,9 @@ if (!container) {
       };
     }).webkit;
     webkit?.messageHandlers?.frontendReady?.postMessage({});
-  });
+  };
+  signalReady();
+  connection.onOpen(signalReady);
 
   console.log("tugdeck initialized");
 })();

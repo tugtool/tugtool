@@ -20,7 +20,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let baseThemeName = "brio"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Configure TugbankClient (native SQLite, no FFI).
+        // Configure TugbankClient first — window init reads from tugbank to
+        // resolve the startup background color from the active theme.
         let dbPath: String
         if let envPath = ProcessInfo.processInfo.environment["TUGBANK_PATH"] {
             dbPath = envPath
@@ -30,21 +31,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         TugbankClient.configure(path: dbPath)
 
-        // Check tmux availability
-        if !ProcessManager.checkTmux() {
-            let alert = NSAlert()
-            alert.messageText = "tmux Required"
-            alert.informativeText = "tmux is required but was not found in PATH.\nInstall it with: brew install tmux"
-            alert.alertStyle = .critical
-            alert.runModal()
-            NSApp.terminate(nil)
-            return
-        }
-
-        // Load preferences
-        loadPreferences()
-
-        // Create main window
+        // Create and show the window immediately so the user sees the themed
+        // background color instead of the OS launch stencil. The WebView stays
+        // hidden until frontendReady fires after JS initialization completes.
+        // This MUST happen before anything that triggers ProcessManager.shellPATH
+        // (checkTmux, loadPreferences, start), which spawns a shell and blocks.
         let contentRect = NSRect(x: 100, y: 100, width: 1200, height: 800)
         window = MainWindow(
             contentRect: contentRect,
@@ -59,8 +50,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Wire bridge delegate
         window.bridgeDelegate = self
 
-        // Build menu bar
+        // Load preferences and build menu bar — these use TugbankClient (fast).
+        loadPreferences()
         buildMenuBar()
+
+        // Resolve the user's full shell PATH. This spawns a login shell and
+        // blocks for ~1s, so it runs AFTER the window is visible. Everything
+        // below this point (tmux check, process manager) needs the full PATH.
+        ProcessManager.resolveShellPATH()
+
+        // Check tmux availability
+        if !ProcessManager.checkTmux() {
+            let alert = NSAlert()
+            alert.messageText = "tmux Required"
+            alert.informativeText = "tmux is required but was not found in PATH.\nInstall it with: brew install tmux"
+            alert.alertStyle = .critical
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
 
         // Setup process manager
         processManager.onReady = { [weak self] url, port in

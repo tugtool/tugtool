@@ -22,6 +22,10 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
 
+        // Set background color IMMEDIATELY after super.init, before any other work.
+        // DEBUG: using bright red to verify this code path is running.
+        self.backgroundColor = .red
+
         self.title = "Tug"
         self.setFrameAutosaveName("MainWindow")
 
@@ -61,10 +65,9 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
         self.contentView = webView
 
-        // Set window background so there is no color mismatch while the
-        // webView is hidden during startup.
-        let savedHex = ProcessManager.readTugbank(domain: TugConfig.domain, key: TugConfig.keyWindowBackground) ?? MainWindow.defaultBackgroundHex
-        updateBackgroundColor(savedHex)
+        // Set window background from the active theme's CSS so there is no
+        // color mismatch while the webView is hidden during startup.
+        updateBackgroundColor(MainWindow.resolveStartupBackgroundHex())
     }
 
     /// Load URL in webview
@@ -91,9 +94,51 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         inspector.perform(NSSelectorFromString("show"))
     }
 
-    /// Brio canvas color — used as fallback when no saved value exists.
-    /// Matches --tug-color(violet-6, i: 2, t: 5) from tug-tokens.css --tug-base-bg-canvas.
-    static let defaultBackgroundHex = "#18191b"
+    /// Brio canvas color — final fallback when no other source is available.
+    /// Must match --tugx-host-canvas-color in tugdeck/styles/themes/brio.css.
+    static let defaultBackgroundHex = "#16181a"
+
+    /// Resolve the startup background color from the active theme's CSS file.
+    /// Reads the theme name and source tree path from tugbank, then parses
+    /// --tugx-host-canvas-color directly from the theme's CSS on disk.
+    /// Falls back to the tugbank-cached value, then to brio's hardcoded color.
+    static func resolveStartupBackgroundHex() -> String {
+        // 1. Try to derive from the theme's CSS file on disk
+        if let theme = ProcessManager.readTugbank(domain: TugConfig.domain, key: "theme"),
+           let sourceTree = ProcessManager.readTugbank(domain: TugConfig.domain, key: TugConfig.keySourceTreePath) {
+            let cssPath = (sourceTree as NSString)
+                .appendingPathComponent("tugdeck/styles/themes/\(theme).css")
+            if let css = try? String(contentsOfFile: cssPath, encoding: .utf8),
+               let color = parseHostCanvasColor(css) {
+                return color
+            }
+        }
+        // 2. Fall back to cached value from last bridge call
+        if let cached = ProcessManager.readTugbank(domain: TugConfig.domain, key: TugConfig.keyWindowBackground) {
+            return cached
+        }
+        // 3. Final fallback
+        return defaultBackgroundHex
+    }
+
+    /// Parse --tugx-host-canvas-color from a CSS string. Returns the #rrggbb value or nil.
+    /// Same logic as parseHostCanvasColor in tugdeck/vite.config.ts.
+    private static func parseHostCanvasColor(_ css: String) -> String? {
+        // Strip block comments
+        let withoutComments = css.replacingOccurrences(
+            of: "/\\*[\\s\\S]*?\\*/",
+            with: " ",
+            options: .regularExpression
+        )
+        // Match --tugx-host-canvas-color: #rrggbb;
+        let pattern = "--tugx-host-canvas-color\\s*:\\s*(#[0-9a-fA-F]{6})\\s*;"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: withoutComments, range: NSRange(withoutComments.startIndex..., in: withoutComments)),
+              let colorRange = Range(match.range(at: 1), in: withoutComments) else {
+            return nil
+        }
+        return String(withoutComments[colorRange]).lowercased()
+    }
 
     /// Update the window background color from a CSS hex string (e.g. "#1c1e22").
     func updateBackgroundColor(_ hex: String) {
@@ -161,8 +206,16 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         NSLog("MainWindow: didFinish navigation at %@", Date() as CVarArg)
-        // Flash fix: reveal the webView now that the page has finished loading.
-        // Keeping it hidden until this point eliminates the startup FOUC.
+        // WebView is NOT revealed here — we wait for frontendReady so the theme
+        // and all visual state is applied before the user sees anything.
+    }
+
+    /// Reveal the WebView. Called from frontendReady bridge message, which fires
+    /// after JS has applied the theme, sent the canvas color, and constructed the
+    /// DeckManager. This eliminates the flash of unstyled/default-themed content
+    /// that would occur if we revealed on didFinishNavigation.
+    func revealWebView() {
+        guard webView.isHidden else { return }
         webView.isHidden = false
         self.makeFirstResponder(webView)
     }
@@ -269,6 +322,7 @@ extension MainWindow: WKScriptMessageHandler {
                 }
             }
         case "frontendReady":
+            revealWebView()
             bridgeDelegate?.bridgeFrontendReady()
         case "setTheme":
             guard let body = message.body as? [String: Any],

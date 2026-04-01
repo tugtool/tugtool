@@ -37,11 +37,22 @@ class ProcessManager {
     /// Callback for dev_mode errors
     var onDevModeError: ((String) -> Void)?
 
+    /// Resolved shell PATH. Access via `resolvedShellPATH` — populated by `resolveShellPATH()`.
+    private static var _shellPATH: String?
+
+    /// The user's full shell PATH. Falls back to the app's inherited PATH until
+    /// `resolveShellPATH()` is called. Call `resolveShellPATH()` once the app
+    /// is fully launched — it spawns a login shell and blocks for ~1s.
+    static var shellPATH: String {
+        return _shellPATH ?? ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+    }
+
     /// Resolve the user's login shell PATH so child processes can find tools like tmux.
     /// Mac apps inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) — this gets the real one
     /// by launching the user's actual login shell (from /etc/passwd via dscl) in login-interactive
-    /// mode and asking it to print $PATH.
-    static let shellPATH: String = {
+    /// mode and asking it to print $PATH. Blocks for ~1s — call after the window is visible.
+    static func resolveShellPATH() {
+        _shellPATH = {
         // Step 1: Find the user's login shell via Directory Services
         var loginShell = "/bin/zsh" // sensible default
         let dscl = Process()
@@ -88,6 +99,7 @@ class ProcessManager {
         // Step 3: Last resort — use whatever the app inherited
         return ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
     }()
+    }
 
     /// Check if tmux is available using the user's shell PATH
     static func checkTmux() -> Bool {
