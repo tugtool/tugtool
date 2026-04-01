@@ -19,7 +19,7 @@ export interface TugBannerProviderProps {
 // ---- Component ----
 
 /** Delay before showing the banner, so brief jitters at launch don't flash it. */
-const SHOW_DELAY_MS = 1000;
+const SHOW_DELAY_MS = 2000;
 
 export function TugBannerProvider({ connection }: TugBannerProviderProps) {
   const [disconnectState, setDisconnectState] = useState<DisconnectState | null>(null);

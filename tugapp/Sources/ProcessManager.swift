@@ -416,6 +416,9 @@ class ProcessManager {
                 let message = msg.data["message"] as? String ?? ""
                 NSLog("ProcessManager: shutdown reason=error, message=%@, will not restart", message)
                 restartDecision = .doNotRestart
+            case "normal", "restart", "reset":
+                NSLog("ProcessManager: shutdown reason=%@, will restart", reason)
+                restartDecision = .restartWithBackoff
             default:
                 NSLog("ProcessManager: shutdown reason=%@, will not restart", reason)
                 restartDecision = .doNotRestart
