@@ -307,6 +307,81 @@ describe("clear", () => {
 });
 
 // ---------------------------------------------------------------------------
+// truncate
+
+describe("truncate", () => {
+  it("reduces count to newCount", () => {
+    const idx = buildIndex([100, 200, 300, 400, 500]);
+    idx.truncate(3);
+    expect(idx.count).toBe(3);
+  });
+
+  it("totalHeight() reflects only the first newCount blocks", () => {
+    const idx = buildIndex([100, 200, 300, 400, 500]);
+    idx.truncate(3);
+    // Only first 3 blocks: 100 + 200 + 300 = 600
+    expect(idx.getTotalHeight()).toBe(600);
+  });
+
+  it("getBlockOffset() is correct after truncate", () => {
+    const idx = buildIndex([100, 200, 300, 400, 500]);
+    idx.truncate(3);
+    expect(idx.getBlockOffset(0)).toBe(0);
+    expect(idx.getBlockOffset(1)).toBe(100);
+    expect(idx.getBlockOffset(2)).toBe(300);
+    expect(idx.getBlockOffset(3)).toBe(600);
+  });
+
+  it("can append blocks after truncate", () => {
+    const idx = buildIndex([100, 200, 300, 400, 500]);
+    idx.truncate(2);
+    idx.appendBlock(50);
+    expect(idx.count).toBe(3);
+    expect(idx.getTotalHeight()).toBe(350);
+    expect(idx.getBlockOffset(2)).toBe(300);
+  });
+
+  it("truncate to 0 behaves like clear", () => {
+    const idx = buildIndex([100, 200, 300]);
+    idx.truncate(0);
+    expect(idx.count).toBe(0);
+    expect(idx.getTotalHeight()).toBe(0);
+  });
+
+  it("truncate to same count is a no-op", () => {
+    const idx = buildIndex([100, 200, 300]);
+    idx.truncate(3);
+    expect(idx.count).toBe(3);
+    expect(idx.getTotalHeight()).toBe(600);
+  });
+
+  it("throws RangeError for newCount < 0", () => {
+    const idx = buildIndex([100, 200]);
+    expect(() => idx.truncate(-1)).toThrow(RangeError);
+  });
+
+  it("throws RangeError for newCount > count", () => {
+    const idx = buildIndex([100, 200]);
+    expect(() => idx.truncate(3)).toThrow(RangeError);
+  });
+
+  it("truncate to 5 from 10 leaves first 5 blocks intact", () => {
+    const heights = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    const idx = buildIndex(heights);
+    idx.truncate(5);
+    expect(idx.count).toBe(5);
+    // totalHeight = 10+20+30+40+50 = 150
+    expect(idx.getTotalHeight()).toBe(150);
+    // Verify each block offset is still correct
+    expect(idx.getBlockOffset(0)).toBe(0);
+    expect(idx.getBlockOffset(1)).toBe(10);
+    expect(idx.getBlockOffset(2)).toBe(30);
+    expect(idx.getBlockOffset(3)).toBe(60);
+    expect(idx.getBlockOffset(4)).toBe(100);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Array growth
 
 describe("array growth beyond initial capacity", () => {

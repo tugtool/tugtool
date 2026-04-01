@@ -151,6 +151,25 @@ export class BlockHeightIndex {
     return this._count;
   }
 
+  /**
+   * Truncate the index to `newCount` blocks.
+   *
+   * Discards all blocks at indices `newCount` and above. Invalidates the prefix
+   * sum from `newCount` onward so that subsequent reads recompute only from the
+   * new boundary. After truncation, `this.count === newCount`.
+   *
+   * Throws `RangeError` if `newCount < 0` or `newCount > this._count`.
+   */
+  truncate(newCount: number): void {
+    if (newCount < 0 || newCount > this._count) {
+      throw new RangeError(
+        `BlockHeightIndex.truncate: newCount ${newCount} out of range [0, ${this._count}]`
+      );
+    }
+    this._count = newCount;
+    this._invalidate(newCount);
+  }
+
   /** Remove all blocks (reset). */
   clear(): void {
     this._count = 0;

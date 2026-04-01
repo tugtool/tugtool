@@ -246,6 +246,17 @@ interface MarkdownEngineState {
   htmlCache: Map<number, string>;
   /** Total block count from last lex response. */
   blockCount: number;
+  /**
+   * Maps each region key to the block index range it produced.
+   * `start` is the first block index for that region; `count` is the number
+   * of blocks; `types` is the block type sequence (e.g. ['paragraph','code']).
+   * The `types` array enables fence propagation to detect block type changes
+   * (step 4: lazy fence propagation via D02). Populated after every full rebuild
+   * in lexParseAndRender and updated incrementally by incrementalTailUpdate.
+   * Cleared by doClear and at the start of every lexParseAndRender reset.
+   * [D04-region-block-ranges]
+   */
+  regionBlockRanges: Map<string, { start: number; count: number; types: string[] }>;
 }
 
 const DEFAULT_VIEWPORT_HEIGHT = 600;
@@ -319,6 +330,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         blockNodes: new Map(),
         htmlCache: new Map(),
         blockCount: 0,
+        regionBlockRanges: new Map(),
       };
     }
     return engineRef.current;
@@ -545,6 +557,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     engine.blockStarts = [];
     engine.blockEnds = [];
     engine.blockCount = 0;
+    engine.regionBlockRanges.clear();
     applySpacers(0, 0);
 
     // Lex + parse: synchronous WASM calls (~29ms for 1MB)
@@ -568,6 +581,32 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     }
     const parseMs = performance.now() - parseStart;
 
+    // Populate regionBlockRanges by mapping each block to its region via char offset.
+    // Iterate blocks in order; for each block, look up its region and accumulate.
+    // Also record the type sequence for each region so fence propagation can detect
+    // block type changes (D02 lazy fence propagation).
+    {
+      let currentKey: string | undefined = undefined;
+      let rangeStart = 0;
+      let rangeTypes: string[] = [];
+      for (let i = 0; i < engine.blockStarts.length; i++) {
+        const key = engine.regionMap.regionKeyAtOffset(engine.blockStarts[i]);
+        if (key !== currentKey) {
+          if (currentKey !== undefined) {
+            engine.regionBlockRanges.set(currentKey, { start: rangeStart, count: rangeTypes.length, types: rangeTypes });
+          }
+          currentKey = key;
+          rangeStart = i;
+          rangeTypes = [blocks[i].type];
+        } else {
+          rangeTypes.push(blocks[i].type);
+        }
+      }
+      if (currentKey !== undefined) {
+        engine.regionBlockRanges.set(currentKey, { start: rangeStart, count: rangeTypes.length, types: rangeTypes });
+      }
+    }
+
     onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
     // Restore scroll position, clamped to new content height.
@@ -583,65 +622,131 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
   }
 
-  // ---- Incremental tail update ----
-  // Re-lexes the full text but only updates changed existing blocks and appends
-  // new ones. Used when the update is to (or appended at) the last region, so
-  // the prefix of blocks is stable and only the tail changes.
-  function incrementalUpdate(engine: MarkdownEngineState, text: string) {
-    const lexStart = performance.now();
-    const packed = lex_blocks(text);
-    const lexMs = performance.now() - lexStart;
-    const newBlocks = decodeBlocks(packed);
-    const byteToChar = buildByteToCharMap(text);
-    const newStarts = newBlocks.map(b => byteToChar[b.start] ?? b.start);
-    const newEnds = newBlocks.map(b => byteToChar[b.end] ?? b.end);
+  // ---- Region-scoped incremental tail update ----
+  // Lexes only the tail region's text instead of the full document, then splices
+  // the resulting blocks into the engine arrays. Used when the updated key is
+  // the last region so the prefix of blocks is stable and only the tail changes.
+  // Implements Spec S01 (incrementalTailUpdate procedure) and Spec S02 (on-the-fly
+  // byte offset computation).
+  function incrementalTailUpdate(engine: MarkdownEngineState, key: string, _fullText: string) {
+    const range = engine.regionBlockRanges.get(key);
+    if (range === undefined) {
+      // No entry yet — fall back to full rebuild.
+      lexParseAndRender(engine, engine.regionMap.text);
+      return;
+    }
 
-    const oldCount = engine.blockCount;
-    const newCount = newBlocks.length;
+    const regionText = engine.regionMap.getRegionText(key) ?? "";
+    const regionRange = engine.regionMap.regionRange(key);
+    if (!regionRange) {
+      lexParseAndRender(engine, engine.regionMap.text);
+      return;
+    }
+    const regionCharStart = regionRange.start;
+
+    // Lex only the region text, prepending \n\n for block boundary context (D01).
+    // Subtract 2 from each byte offset to undo the prefix.
+    const lexStart = performance.now();
+    const packed = lex_blocks("\n\n" + regionText);
+    const lexMs = performance.now() - lexStart;
+
+    const rawBlocks = decodeBlocks(packed);
+    // Filter out blocks that belong to the 2-byte prefix (start < 2)
+    const newRegionBlocks = rawBlocks
+      .filter(b => b.start >= 2)
+      .map(b => ({ ...b, start: b.start - 2, end: b.end - 2 }));
+
+    // Build byte-to-char map for the region slice.
+    const byteToChar = buildByteToCharMap(regionText);
+
+    // Translate WASM byte offsets (region-local) to document-global char offsets.
+    const newStarts = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.start] ?? b.start));
+    const newEnds = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.end] ?? b.end));
+
+    const S = range.start;
+    const P = range.count;
+    const Q = newRegionBlocks.length;
     let parseMs = 0;
 
-    // Update changed existing blocks
-    for (let i = 0; i < Math.min(oldCount, newCount); i++) {
-      if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
-        const raw = text.slice(newStarts[i], newEnds[i]);
+    // Capture old block types before mutating, for fence propagation comparison.
+    // We use the stored types array from regionBlockRanges (D02 lazy fence propagation).
+    const oldTypes: string[] = range.types.slice();
+
+    // Update changed existing blocks (S..S+min(P,Q)-1)
+    for (let i = 0; i < Math.min(P, Q); i++) {
+      const globalIdx = S + i;
+      if (newStarts[i] !== engine.blockStarts[globalIdx] || newEnds[i] !== engine.blockEnds[globalIdx]) {
+        const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
         const parseStart = performance.now();
         const html = parse_to_html(raw);
         parseMs += performance.now() - parseStart;
-        engine.htmlCache.set(i, html);
-        engine.heightIndex.setHeight(i, estimateBlockHeight(newBlocks[i]));
-        const existingEl = engine.blockNodes.get(i);
+        engine.htmlCache.set(globalIdx, html);
+        engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
+        const existingEl = engine.blockNodes.get(globalIdx);
         if (existingEl) {
           existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
         }
+        engine.blockStarts[globalIdx] = newStarts[i];
+        engine.blockEnds[globalIdx] = newEnds[i];
       }
     }
 
-    // Handle block count decrease
-    if (newCount < oldCount) {
-      for (let i = newCount; i < oldCount; i++) {
-        removeBlockNode(engine, i);
-        engine.htmlCache.delete(i);
+    // Handle block count decrease (Q < P): remove excess tail blocks
+    if (Q < P) {
+      for (let i = Q; i < P; i++) {
+        const globalIdx = S + i;
+        removeBlockNode(engine, globalIdx);
+        engine.htmlCache.delete(globalIdx);
       }
-      engine.heightIndex.clear();
-      for (let i = 0; i < newCount; i++) {
-        engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
+      engine.blockStarts.splice(S + Q, P - Q);
+      engine.blockEnds.splice(S + Q, P - Q);
+      engine.heightIndex.truncate(S + Q);
+    }
+
+    // Append new blocks (Q > P): add blocks beyond the old count
+    if (Q > P) {
+      const newStartsSlice = newStarts.slice(P);
+      const newEndsSlice = newEnds.slice(P);
+      engine.blockStarts.splice(S + P, 0, ...newStartsSlice);
+      engine.blockEnds.splice(S + P, 0, ...newEndsSlice);
+      for (let i = P; i < Q; i++) {
+        engine.heightIndex.appendBlock(estimateBlockHeight(newRegionBlocks[i]));
+        const globalIdx = S + i;
+        const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
+        const parseStart = performance.now();
+        engine.htmlCache.set(globalIdx, parse_to_html(raw));
+        parseMs += performance.now() - parseStart;
       }
     }
 
-    // Append new blocks
-    for (let i = oldCount; i < newCount; i++) {
-      engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
-      const raw = text.slice(newStarts[i], newEnds[i]);
-      const parseStart = performance.now();
-      engine.htmlCache.set(i, parse_to_html(raw));
-      parseMs += performance.now() - parseStart;
+    // Update engine totals
+    engine.blockCount = S + Q;
+    const newTypes = newRegionBlocks.map(b => b.type);
+    engine.regionBlockRanges.set(key, { start: S, count: Q, types: newTypes });
+
+    // Lazy fence propagation: if block type sequence changed and a next region exists,
+    // re-lex that next region. Stop when blocks stabilize. In the common streaming
+    // path the tail region is always last, so this is a no-op (D02).
+    //
+    // A fence imbalance necessarily changes the block types of subsequent regions
+    // (e.g. paragraph text becomes code inside an unbalanced fence). Comparing type
+    // sequences is a reliable proxy for fence balance change and avoids the need to
+    // track fence depth explicitly.
+    const regionKeys = engine.regionMap.keys;
+    const keyIndex = regionKeys.indexOf(key);
+    if (keyIndex >= 0 && keyIndex < regionKeys.length - 1) {
+      // Compare old vs new block type sequences.
+      // Count change or any type mismatch indicates structural change.
+      const typeSequenceChanged = oldTypes.length !== newTypes.length ||
+        oldTypes.some((t, i) => t !== newTypes[i]);
+      if (typeSequenceChanged) {
+        const nextKey = regionKeys[keyIndex + 1];
+        incrementalTailUpdate(engine, nextKey, engine.regionMap.text);
+        return; // next region's call handles timing and window update
+      }
     }
 
-    engine.blockStarts = newStarts;
-    engine.blockEnds = newEnds;
-    engine.blockCount = newCount;
-
-    onTimingRef.current?.({ lexMs, parseMs, blockCount: newCount });
+    onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
     engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
     const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
@@ -651,8 +756,8 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
   // ---- Core region update logic ----
   // Called by both the imperative handle and the streaming observer.
-  // Uses incremental update when the key is (or becomes) the last region,
-  // full rebuild otherwise (middle/first region changes).
+  // Uses incrementalTailUpdate when the key is (or becomes) the last region,
+  // full rebuild otherwise (middle/first region changes, or first content ever).
   function doSetRegion(key: string, text: string): void {
     const engine = getEngine();
     const wasEmpty = engine.regionMap.regionCount === 0;
@@ -664,7 +769,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     if (wasEmpty || !isLast) {
       lexParseAndRender(engine, fullText);
     } else {
-      incrementalUpdate(engine, fullText);
+      incrementalTailUpdate(engine, key, fullText);
     }
 
     // After content settles, scroll to bottom if SmartScroll is following.
@@ -690,6 +795,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     engine.blockStarts = [];
     engine.blockEnds = [];
     engine.blockCount = 0;
+    engine.regionBlockRanges.clear();
     applySpacers(0, 0);
   }
 
