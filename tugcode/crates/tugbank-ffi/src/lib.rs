@@ -519,4 +519,206 @@ mod tests {
         let v = tugbank_data_version(std::ptr::null_mut());
         assert_eq!(v, 0);
     }
+
+    // ── test_round_trip_all_value_types ───────────────────────────────────
+
+    /// Verify every Value type round-trips correctly through set→get.
+    /// This is the critical test: client code depends on the tagged JSON
+    /// format being consistent.
+    #[test]
+    fn test_round_trip_all_value_types() {
+        let (handle, _tmp) = open_temp();
+        let domain = make_cstr("com.test.types");
+
+        // String value — the most common type in tugbank
+        {
+            let key = make_cstr("theme");
+            let val = make_cstr("\"brio\""); // JSON string
+            assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+
+            let result = tugbank_get(handle, domain.as_ptr(), key.as_ptr());
+            assert!(!result.is_null());
+            let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            assert_eq!(parsed["type"], "string");
+            assert_eq!(parsed["value"], "brio");
+            tugbank_free_string(result);
+        }
+
+        // Bool true
+        {
+            let key = make_cstr("no-auth");
+            let val = make_cstr("true");
+            assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+
+            let result = tugbank_get(handle, domain.as_ptr(), key.as_ptr());
+            assert!(!result.is_null());
+            let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            assert_eq!(parsed["type"], "bool");
+            assert_eq!(parsed["value"], true);
+            tugbank_free_string(result);
+        }
+
+        // Bool false
+        {
+            let key = make_cstr("debug");
+            let val = make_cstr("false");
+            assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+
+            let result = tugbank_get(handle, domain.as_ptr(), key.as_ptr());
+            assert!(!result.is_null());
+            let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            assert_eq!(parsed["type"], "bool");
+            assert_eq!(parsed["value"], false);
+            tugbank_free_string(result);
+        }
+
+        // Integer
+        {
+            let key = make_cstr("port");
+            let val = make_cstr("5173");
+            assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+
+            let result = tugbank_get(handle, domain.as_ptr(), key.as_ptr());
+            assert!(!result.is_null());
+            let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            assert_eq!(parsed["type"], "i64");
+            assert_eq!(parsed["value"], 5173);
+            tugbank_free_string(result);
+        }
+
+        // Float
+        {
+            let key = make_cstr("scale");
+            let val = make_cstr("1.5");
+            assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+
+            let result = tugbank_get(handle, domain.as_ptr(), key.as_ptr());
+            assert!(!result.is_null());
+            let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            assert_eq!(parsed["type"], "f64");
+            assert_eq!(parsed["value"], 1.5);
+            tugbank_free_string(result);
+        }
+
+        // JSON object
+        {
+            let key = make_cstr("layout");
+            let val = make_cstr(r#"{"columns":2,"spacing":10}"#);
+            assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+
+            let result = tugbank_get(handle, domain.as_ptr(), key.as_ptr());
+            assert!(!result.is_null());
+            let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            assert_eq!(parsed["type"], "json");
+            assert_eq!(parsed["value"]["columns"], 2);
+            assert_eq!(parsed["value"]["spacing"], 10);
+            tugbank_free_string(result);
+        }
+
+        // Null
+        {
+            let key = make_cstr("empty");
+            let val = make_cstr("null");
+            assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+
+            let result = tugbank_get(handle, domain.as_ptr(), key.as_ptr());
+            assert!(!result.is_null());
+            let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            assert_eq!(parsed["type"], "null");
+            tugbank_free_string(result);
+        }
+
+        // String with special characters (quotes, backslashes, unicode)
+        {
+            let key = make_cstr("path");
+            let val = make_cstr(r#""/Users/test/my \"project\"/src""#);
+            assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+
+            let result = tugbank_get(handle, domain.as_ptr(), key.as_ptr());
+            assert!(!result.is_null());
+            let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            assert_eq!(parsed["type"], "string");
+            assert_eq!(parsed["value"], "/Users/test/my \"project\"/src");
+            tugbank_free_string(result);
+        }
+
+        tugbank_close(handle);
+    }
+
+    // ── test_read_domain_tagged_format ────────────────────────────────────
+
+    /// Verify read_domain returns properly tagged values for mixed types.
+    #[test]
+    fn test_read_domain_tagged_format() {
+        let (handle, _tmp) = open_temp();
+        let domain = make_cstr("dev.tugtool.app");
+
+        // Set values matching real app data
+        let pairs = [
+            ("source-tree-path", r#""/u/src/tugtool""#),
+            ("theme", r#""brio""#),
+            ("no-auth", "true"),
+        ];
+        for (k, v) in &pairs {
+            let key = make_cstr(k);
+            let val = make_cstr(v);
+            tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr());
+        }
+
+        let result = tugbank_read_domain(handle, domain.as_ptr());
+        assert!(!result.is_null());
+        let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+        let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+
+        // Verify each entry is tagged correctly
+        assert_eq!(parsed["source-tree-path"]["type"], "string");
+        assert_eq!(parsed["source-tree-path"]["value"], "/u/src/tugtool");
+
+        assert_eq!(parsed["theme"]["type"], "string");
+        assert_eq!(parsed["theme"]["value"], "brio");
+
+        assert_eq!(parsed["no-auth"]["type"], "bool");
+        assert_eq!(parsed["no-auth"]["value"], true);
+
+        tugbank_free_string(result);
+        tugbank_close(handle);
+    }
+
+    // ── test_set_string_get_via_cli_format ────────────────────────────────
+
+    /// Verify that values written through the FFI can be read back correctly,
+    /// matching the format the tugbank CLI would produce.
+    #[test]
+    fn test_write_then_read_via_separate_store() {
+        let tmp = NamedTempFile::new().expect("temp file");
+        let path = make_cstr(tmp.path().to_str().expect("path to str"));
+
+        // Write via FFI
+        let handle = tugbank_open(path.as_ptr());
+        assert!(!handle.is_null());
+
+        let domain = make_cstr("test.domain");
+        let key = make_cstr("greeting");
+        let val = make_cstr(r#""hello world""#);
+        assert_eq!(tugbank_set(handle, domain.as_ptr(), key.as_ptr(), val.as_ptr()), 0);
+        tugbank_close(handle);
+
+        // Read via a fresh DefaultsStore (simulating what the CLI does)
+        let store = tugbank_core::DefaultsStore::open(tmp.path()).expect("open store");
+        let dom = store.domain("test.domain").expect("domain");
+        let value = dom.read_all().expect("read_all");
+        let greeting = value.get("greeting").expect("key exists");
+        match greeting {
+            Value::String(s) => assert_eq!(s, "hello world"),
+            other => panic!("expected String, got {:?}", other),
+        }
+    }
 }
