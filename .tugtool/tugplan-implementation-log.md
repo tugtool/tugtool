@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-04-01T22:58:17Z
+---
+
+## step-2: Added pinToBottom() to SmartScroll: sets scrollTop=MAX_SAFE_INTEGER without entering programmatic phase. Stays in idle per D93 state machine. Two tests added.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
 step: step-1
 date: 2025-04-01T22:51:08Z
 ---

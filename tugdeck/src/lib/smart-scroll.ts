@@ -235,6 +235,13 @@ export class SmartScroll {
     this.scrollTo({ top: Number.MAX_SAFE_INTEGER, animated });
   }
 
+  /** Slam scrollTop to bottom without entering programmatic phase.
+   *  Used for content growth while following bottom. Stays in idle. */
+  pinToBottom(): void {
+    if (this._disposed) return;
+    this._container.scrollTop = Number.MAX_SAFE_INTEGER;
+  }
+
   scrollToElement(
     element: HTMLElement,
     options: { animated?: boolean; block?: ScrollLogicalPosition } = {},

@@ -474,6 +474,21 @@ describe("SmartScroll", () => {
       ss.dispose();
     });
 
+    it("pinToBottom when idle leaves phase as idle", () => {
+      const { ss } = makeSmartScroll({ scrollHeight: 500, clientHeight: 300 });
+      expect(ss.phase).toBe<ScrollPhase>('idle');
+      ss.pinToBottom();
+      expect(ss.phase).toBe<ScrollPhase>('idle');
+      ss.dispose();
+    });
+
+    it("pinToBottom sets scrollTop to max scrollable distance", () => {
+      const { ss, container } = makeSmartScroll({ scrollHeight: 500, clientHeight: 300 });
+      ss.pinToBottom();
+      expect(container.scrollTop).toBe(200); // clamped to 500 - 300
+      ss.dispose();
+    });
+
     it("scrollTo with no 'top' does nothing", () => {
       const { ss, container } = makeSmartScroll({ scrollTop: 50, scrollHeight: 500, clientHeight: 300 });
       ss.scrollTo({});
