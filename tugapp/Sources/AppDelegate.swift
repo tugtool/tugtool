@@ -19,6 +19,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let baseThemeName = "brio"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Configure TugbankClient (native SQLite, no FFI).
+        let dbPath: String
+        if let envPath = ProcessInfo.processInfo.environment["TUGBANK_PATH"] {
+            dbPath = envPath
+        } else {
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            dbPath = (home as NSString).appendingPathComponent(".tugbank.db")
+        }
+        TugbankClient.configure(path: dbPath)
+
         // Check tmux availability
         if !ProcessManager.checkTmux() {
             let alert = NSAlert()
