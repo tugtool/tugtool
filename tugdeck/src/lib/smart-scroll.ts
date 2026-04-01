@@ -232,8 +232,7 @@ export class SmartScroll {
   scrollToBottom(animated = false): void {
     if (this._disposed) return;
     this._setFollowingBottom(true);
-    const target = this._container.scrollHeight - this._container.clientHeight;
-    this.scrollTo({ top: target, animated });
+    this.scrollTo({ top: Number.MAX_SAFE_INTEGER, animated });
   }
 
   scrollToElement(

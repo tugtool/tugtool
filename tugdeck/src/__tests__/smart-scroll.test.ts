@@ -67,7 +67,8 @@ function makeContainer(opts: {
   Object.defineProperty(el, "scrollTop", {
     get: () => (el as unknown as Record<string, number>)._scrollTop ?? 0,
     set: (v: number) => {
-      (el as unknown as Record<string, number>)._scrollTop = v;
+      const raw = el as unknown as Record<string, number>;
+      raw._scrollTop = Math.min(v, raw._scrollHeight - raw._clientHeight);
     },
     configurable: true,
   });

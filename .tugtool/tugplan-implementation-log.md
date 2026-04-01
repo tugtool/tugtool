@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-04-01T22:51:08Z
+---
+
+## step-1: Replaced scrollHeight-clientHeight computation in scrollToBottom() with Number.MAX_SAFE_INTEGER. Browser clamps to actual max. Updated test mock to mimic browser clamping.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
 step: step-5
 date: 2025-04-01T21:06:26Z
 ---
