@@ -266,17 +266,14 @@ pub(crate) async fn handle_relaunch(
     client_action_tx: broadcast::Sender<Frame>,
     shutdown_tx: mpsc::Sender<u8>,
 ) {
-    // 1. Read source_tree from shared_dev_state
-    let source_tree = {
+    // 1. Verify dev mode is enabled
+    {
         let guard = shared_dev_state.load();
-        match guard.as_ref() {
-            Some(state) => state.source_tree.clone(),
-            None => {
-                info!("relaunch: dev mode not enabled, ignoring");
-                return;
-            }
+        if guard.is_none() {
+            info!("relaunch: dev mode not enabled, ignoring");
+            return;
         }
-    };
+    }
 
     // 2. Determine app-bundle path from current executable
     let app_bundle = match resolve_app_bundle() {
@@ -306,14 +303,12 @@ pub(crate) async fn handle_relaunch(
 
     // 6. Spawn tugrelaunch
     let mut child = match tokio::process::Command::new(&tugrelaunch_bin)
-        .arg("--source-tree")
-        .arg(&source_tree)
         .arg("--app-bundle")
         .arg(&app_bundle)
-        .arg("--progress-socket")
-        .arg(&progress_socket)
         .arg("--pid")
         .arg(tug_app_pid.to_string())
+        .arg("--progress-socket")
+        .arg(&progress_socket)
         .spawn()
     {
         Ok(c) => c,

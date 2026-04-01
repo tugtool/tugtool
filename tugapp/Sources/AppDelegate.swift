@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sourceTreePath: String?
     private var lastAuthURL: String?
     private var vitePort: Int = TugConfig.defaultVitePort
+    private var initialLoadComplete = false
     private var developerMenu: NSMenuItem!
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
@@ -79,6 +80,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Extract the auth token from the ready URL so both paths can construct their load URL.
             let token = url.components(separatedBy: "token=").dropFirst().first?.components(separatedBy: "&").first ?? ""
 
+            if self.initialLoadComplete {
+                // Tugcast restarted — silently re-authenticate without a full page reload.
+                // The fetch sets the new session cookie; the WebSocket reconnection loop
+                // in connection.ts will pick it up on its next attempt.
+                NSLog("AppDelegate: tugcast restarted, re-authenticating silently (no page reload)")
+                self.window.evaluateJavaScript("fetch('/auth?token=\(token)',{credentials:'include'}).then(function(){window.__tugdeckReconnect?.()}).catch(function(){})")
+                self.processManager.sendDevMode(
+                    enabled: self.devModeEnabled,
+                    sourceTree: path,
+                    vitePort: self.vitePort
+                )
+                return
+            }
+            self.initialLoadComplete = true
+
             if self.devModeEnabled {
                 // Dev mode: spawn Vite (HMR), wait for it, then load from the Vite port.
                 // The duplication guard inside spawnViteServer prevents re-spawning on tugcast restarts.
@@ -113,21 +129,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // Tell the WebView to save all card states (scroll, selection, content)
-        // to tugbank before we tear down. WKWebView does not fire visibilitychange
-        // or beforeunload on app quit, so this is the only save trigger on exit.
-        NSLog("AppDelegate: applicationShouldTerminate — calling __tugdeckSaveState")
-        window.evaluateJavaScript("window.__tugdeckSaveState?.()") { result, error in
-            if let error = error {
-                NSLog("AppDelegate: __tugdeckSaveState error: %@", error.localizedDescription)
-            } else {
-                NSLog("AppDelegate: __tugdeckSaveState completed successfully")
+        // Freeze the WebView with a snapshot overlay so the user never sees
+        // teardown artifacts (disconnect banners, theme flashes, blank screens).
+        // The snapshot covers the WebView while save + cleanup run underneath.
+        window.freezeForShutdown { [weak self] in
+            guard let self = self else { return }
+
+            // Tell the WebView to save all card states (scroll, selection, content)
+            // to tugbank before we tear down. WKWebView does not fire visibilitychange
+            // or beforeunload on app quit, so this is the only save trigger on exit.
+            NSLog("AppDelegate: applicationShouldTerminate — calling __tugdeckSaveState")
+            self.window.evaluateJavaScript("window.__tugdeckSaveState?.()") { result, error in
+                if let error = error {
+                    NSLog("AppDelegate: __tugdeckSaveState error: %@", error.localizedDescription)
+                } else {
+                    NSLog("AppDelegate: __tugdeckSaveState completed successfully")
+                }
+                // JS used synchronous XHR, so all writes to tugbank are confirmed
+                // by the time this completion handler runs. Safe to tear down.
+                self.window.cleanupBridge()
+                self.processManager.stop()
+                NSApp.reply(toApplicationShouldTerminate: true)
             }
-            // JS used synchronous XHR, so all writes to tugbank are confirmed
-            // by the time this completion handler runs. Safe to tear down.
-            self.window.cleanupBridge()
-            self.processManager.stop()
-            NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
     }

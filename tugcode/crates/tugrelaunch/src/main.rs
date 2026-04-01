@@ -1,15 +1,11 @@
-//! Build-replace-relaunch helper for Tug.app development
+//! Orderly relaunch helper for Tug.app
 //!
-//! This binary orchestrates the full development cycle for the macOS Tug.app:
-//! 1. BUILD: cargo build, bun build, xcodebuild
-//! 2. SIGNAL: Send SIGTERM to running Tug.app
-//! 3. WAIT: kqueue wait for process exit (with SIGKILL fallback)
-//! 4. COPY: Replace binaries in app bundle
-//! 5. RELAUNCH: Open app bundle and write status
+//! 1. SIGNAL: Send SIGTERM to running Tug.app
+//! 2. WAIT: kqueue wait for process exit (with SIGKILL fallback)
+//! 3. RELAUNCH: Open app bundle (with retry for Launch Services -600)
 
 use clap::Parser;
 use serde_json::json;
-use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -23,23 +19,19 @@ use tokio::time::timeout;
 #[derive(Parser, Debug)]
 #[command(name = "tugrelaunch")]
 #[command(version)]
-#[command(about = "Build-replace-relaunch helper for Tug.app development")]
+#[command(about = "Orderly relaunch helper for Tug.app")]
 struct Cli {
-    /// Path to the tugtool source tree root
-    #[arg(long)]
-    source_tree: PathBuf,
-
     /// Path to the Tug.app bundle
     #[arg(long)]
     app_bundle: PathBuf,
 
-    /// Path for the UDS progress listener
-    #[arg(long)]
-    progress_socket: PathBuf,
-
-    /// PID of the Tug.app process to signal during SIGNAL phase
+    /// PID of the Tug.app process to signal
     #[arg(long)]
     pid: u32,
+
+    /// Optional UDS socket path for progress reporting
+    #[arg(long)]
+    progress_socket: Option<PathBuf>,
 }
 
 // ============================================================================
@@ -52,6 +44,10 @@ struct ProgressWriter {
 }
 
 impl ProgressWriter {
+    fn noop() -> Self {
+        Self { stream: None }
+    }
+
     async fn send(&mut self, stage: &str, status: &str, error: Option<&str>) {
         if let Some(stream) = &mut self.stream {
             let msg = progress_json(stage, status, error);
@@ -109,80 +105,6 @@ async fn setup_progress_socket(socket_path: &PathBuf) -> ProgressWriter {
 
 fn cleanup_socket(socket_path: &PathBuf) {
     let _ = std::fs::remove_file(socket_path);
-}
-
-// ============================================================================
-// Build Orchestration
-// ============================================================================
-
-async fn run_builds(cli: &Cli, progress: &mut ProgressWriter) -> Result<(), String> {
-    // Phase 1.1: cargo build
-    progress.send("cargo", "building", None).await;
-    let cargo_dir = cli.source_tree.join("tugcode");
-    let cargo_output = tokio::process::Command::new("cargo")
-        .arg("build")
-        .arg("-p")
-        .arg("tugcast")
-        .arg("-p")
-        .arg("tugtool")
-        .arg("-p")
-        .arg("tugcode")
-        .current_dir(&cargo_dir)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn cargo: {}", e))?;
-
-    if !cargo_output.status.success() {
-        let stderr = String::from_utf8_lossy(&cargo_output.stderr);
-        let error_msg = format!("cargo build failed: {}", stderr);
-        progress.send("cargo", "failed", Some(&error_msg)).await;
-        return Err(error_msg);
-    }
-    progress.send("cargo", "done", None).await;
-
-    // Phase 1.2: bun build
-    progress.send("bun", "building", None).await;
-    let bun_dir = cli.source_tree.join("tugdeck");
-    let bun_output = tokio::process::Command::new("bun")
-        .arg("run")
-        .arg("build")
-        .current_dir(&bun_dir)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn bun: {}", e))?;
-
-    if !bun_output.status.success() {
-        let stderr = String::from_utf8_lossy(&bun_output.stderr);
-        let error_msg = format!("bun build failed: {}", stderr);
-        progress.send("bun", "failed", Some(&error_msg)).await;
-        return Err(error_msg);
-    }
-    progress.send("bun", "done", None).await;
-
-    // Phase 1.3: xcodebuild
-    progress.send("xcode", "building", None).await;
-    let xcode_output = tokio::process::Command::new("xcodebuild")
-        .arg("-project")
-        .arg("tugapp/Tug.xcodeproj")
-        .arg("-scheme")
-        .arg("Tug")
-        .arg("-configuration")
-        .arg("Debug")
-        .arg("build")
-        .current_dir(&cli.source_tree)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn xcodebuild: {}", e))?;
-
-    if !xcode_output.status.success() {
-        let stderr = String::from_utf8_lossy(&xcode_output.stderr);
-        let error_msg = format!("xcodebuild failed: {}", stderr);
-        progress.send("xcode", "failed", Some(&error_msg)).await;
-        return Err(error_msg);
-    }
-    progress.send("xcode", "done", None).await;
-
-    Ok(())
 }
 
 // ============================================================================
@@ -263,39 +185,6 @@ fn wait_for_exit(_pid: u32) {
 }
 
 // ============================================================================
-// Copy Phase
-// ============================================================================
-
-fn copy_binaries(cli: &Cli) -> Result<(), String> {
-    let macos_dir = cli.app_bundle.join("Contents/MacOS");
-    if !macos_dir.exists() {
-        return Err(format!("MacOS directory does not exist: {:?}", macos_dir));
-    }
-
-    let binaries = vec!["tugcast", "tugtool", "tugcode", "tugrelaunch"];
-    let target_dir = cli.source_tree.join("tugcode/target/debug");
-
-    for binary in binaries {
-        let src = target_dir.join(binary);
-        let dest = macos_dir.join(binary);
-
-        if !src.exists() {
-            return Err(format!("Source binary does not exist: {:?}", src));
-        }
-
-        // Try atomic rename first (same filesystem)
-        if std::fs::rename(&src, &dest).is_err() {
-            // Fall back to copy+remove for cross-device
-            std::fs::copy(&src, &dest).map_err(|e| format!("Failed to copy {}: {}", binary, e))?;
-            std::fs::remove_file(&src)
-                .map_err(|e| format!("Failed to remove source {}: {}", binary, e))?;
-        }
-    }
-
-    Ok(())
-}
-
-// ============================================================================
 // Relaunch Phase
 // ============================================================================
 
@@ -320,68 +209,41 @@ fn relaunch_app(app_bundle: &PathBuf) -> Result<(), String> {
     Err("open failed after 5 attempts".to_string())
 }
 
-fn write_status_file() -> Result<(), String> {
-    let status = json!({
-        "status": "success",
-        "timestamp": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-    });
-
-    let mut file = std::fs::File::create("/tmp/tugrelaunch-status.json")
-        .map_err(|e| format!("Failed to create status file: {}", e))?;
-
-    file.write_all(status.to_string().as_bytes())
-        .map_err(|e| format!("Failed to write status file: {}", e))?;
-
-    Ok(())
-}
-
 // ============================================================================
-// Main Orchestrator
+// Main
 // ============================================================================
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
-    // Set up progress socket (UDS listener)
-    let mut progress = setup_progress_socket(&cli.progress_socket).await;
+    // Set up progress socket if requested
+    let mut progress = if let Some(ref socket_path) = cli.progress_socket {
+        setup_progress_socket(socket_path).await
+    } else {
+        ProgressWriter::noop()
+    };
 
-    // Phase 1: BUILD
-    if let Err(e) = run_builds(&cli, &mut progress).await {
-        eprintln!("tugrelaunch: build failed: {}", e);
-        cleanup_socket(&cli.progress_socket);
-        std::process::exit(1);
-    }
-
-    // Phase 2: SIGNAL
+    // Phase 1: SIGNAL
     progress.send("relaunch", "quitting", None).await;
     signal_process(cli.pid);
 
-    // Phase 3: WAIT
+    // Phase 2: WAIT
     wait_for_exit(cli.pid);
 
-    // Phase 4: COPY
-    if let Err(e) = copy_binaries(&cli) {
-        // Log but don't fail -- old binaries stay, app still launches
-        eprintln!("tugrelaunch: warning: copy failed: {}", e);
-    }
-
-    // Phase 5: RELAUNCH
+    // Phase 3: RELAUNCH
     if let Err(e) = relaunch_app(&cli.app_bundle) {
         eprintln!("tugrelaunch: error: relaunch failed: {}", e);
-        cleanup_socket(&cli.progress_socket);
+        if let Some(ref socket_path) = cli.progress_socket {
+            cleanup_socket(socket_path);
+        }
         std::process::exit(1);
     }
 
-    if let Err(e) = write_status_file() {
-        eprintln!("tugrelaunch: warning: status file write failed: {}", e);
-    }
-
     progress.send("relaunch", "done", None).await;
-    cleanup_socket(&cli.progress_socket);
+    if let Some(ref socket_path) = cli.progress_socket {
+        cleanup_socket(socket_path);
+    }
 }
 
 // ============================================================================
@@ -392,176 +254,95 @@ async fn main() {
 mod tests {
     use super::*;
 
-    // ========================================================================
-    // Section 5.1: CLI + Progress
-    // ========================================================================
-
     #[test]
-    fn test_cli_parsing_accepts_all_required_arguments() {
+    fn test_cli_parsing_accepts_required_arguments() {
         let cli = Cli::try_parse_from([
             "tugrelaunch",
-            "--source-tree",
-            "/path/to/source",
             "--app-bundle",
             "/path/to/app",
-            "--progress-socket",
-            "/tmp/progress.sock",
             "--pid",
             "12345",
         ]);
 
         assert!(cli.is_ok());
         let cli = cli.unwrap();
-        assert_eq!(cli.source_tree, PathBuf::from("/path/to/source"));
         assert_eq!(cli.app_bundle, PathBuf::from("/path/to/app"));
-        assert_eq!(cli.progress_socket, PathBuf::from("/tmp/progress.sock"));
         assert_eq!(cli.pid, 12345);
+        assert!(cli.progress_socket.is_none());
+    }
+
+    #[test]
+    fn test_cli_parsing_accepts_optional_progress_socket() {
+        let cli = Cli::try_parse_from([
+            "tugrelaunch",
+            "--app-bundle",
+            "/path/to/app",
+            "--pid",
+            "12345",
+            "--progress-socket",
+            "/tmp/progress.sock",
+        ]);
+
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        assert_eq!(
+            cli.progress_socket,
+            Some(PathBuf::from("/tmp/progress.sock"))
+        );
     }
 
     #[test]
     fn test_cli_parsing_fails_on_missing_arguments() {
         let result = Cli::try_parse_from(["tugrelaunch"]);
         assert!(result.is_err());
-
-        let result = Cli::try_parse_from([
-            "tugrelaunch",
-            "--source-tree",
-            "/path/to/source",
-            "--app-bundle",
-            "/path/to/app",
-        ]);
-        assert!(result.is_err()); // Missing progress-socket and pid
     }
 
     #[test]
     fn test_progress_message_serialization_stage_and_status() {
-        let msg = progress_json("cargo", "building", None);
+        let msg = progress_json("relaunch", "quitting", None);
         let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
 
-        assert_eq!(parsed["stage"], "cargo");
-        assert_eq!(parsed["status"], "building");
+        assert_eq!(parsed["stage"], "relaunch");
+        assert_eq!(parsed["status"], "quitting");
         assert!(parsed["error"].is_null());
     }
 
     #[test]
     fn test_progress_message_serialization_with_error() {
-        let msg = progress_json("cargo", "failed", Some("build error"));
+        let msg = progress_json("relaunch", "failed", Some("open failed"));
         let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
 
-        assert_eq!(parsed["stage"], "cargo");
+        assert_eq!(parsed["stage"], "relaunch");
         assert_eq!(parsed["status"], "failed");
-        assert_eq!(parsed["error"], "build error");
-    }
-
-    // ========================================================================
-    // Section 5.2: Build orchestration
-    // ========================================================================
-
-    #[test]
-    fn test_build_phase_returns_error_for_invalid_source_tree() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async {
-            let cli = Cli {
-                source_tree: PathBuf::from("/nonexistent/path"),
-                app_bundle: PathBuf::from("/tmp/app"),
-                progress_socket: PathBuf::from("/tmp/sock"),
-                pid: 1,
-            };
-            let mut progress = ProgressWriter { stream: None };
-
-            let result = run_builds(&cli, &mut progress).await;
-            assert!(result.is_err());
-        });
-    }
-
-    // ========================================================================
-    // Section 5.3: Signal/Wait/Copy/Relaunch
-    // ========================================================================
-
-    #[test]
-    fn test_binary_copy_to_target_directory() {
-        use tempfile::TempDir;
-
-        // Create temp directories
-        let temp_dir = TempDir::new().unwrap();
-        let source_dir = temp_dir.path().join("tugcode/target/debug");
-        let app_dir = temp_dir.path().join("Tug.app/Contents/MacOS");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::fs::create_dir_all(&app_dir).unwrap();
-
-        // Create dummy binaries
-        let binaries = vec!["tugcast", "tugtool", "tugcode", "tugrelaunch"];
-        for binary in &binaries {
-            let path = source_dir.join(binary);
-            std::fs::write(&path, "dummy binary content").unwrap();
-        }
-
-        // Run copy
-        let cli = Cli {
-            source_tree: temp_dir.path().to_path_buf(),
-            app_bundle: temp_dir.path().join("Tug.app"),
-            progress_socket: PathBuf::from("/tmp/sock"),
-            pid: 1,
-        };
-
-        let result = copy_binaries(&cli);
-        assert!(result.is_ok());
-
-        // Verify files copied
-        for binary in &binaries {
-            let dest = app_dir.join(binary);
-            assert!(dest.exists());
-            let content = std::fs::read_to_string(&dest).unwrap();
-            assert_eq!(content, "dummy binary content");
-        }
-    }
-
-    #[test]
-    fn test_status_file_is_written_correctly() {
-        let result = write_status_file();
-        assert!(result.is_ok());
-
-        let content = std::fs::read_to_string("/tmp/tugrelaunch-status.json").unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-        assert_eq!(parsed["status"], "success");
-        assert!(parsed["timestamp"].is_number());
+        assert_eq!(parsed["error"], "open failed");
     }
 
     #[test]
     #[cfg(target_os = "macos")]
     fn test_signal_sending_to_child_process() {
-        // Spawn a child process that sleeps
         let mut child = std::process::Command::new("sleep")
             .arg("10")
             .spawn()
             .unwrap();
 
         let pid = child.id();
-
-        // Send SIGTERM
         signal_process(pid);
 
-        // Wait for child to exit
         let status = child.wait().unwrap();
-        assert!(!status.success()); // SIGTERM causes non-zero exit
+        assert!(!status.success());
     }
 
     #[test]
     #[cfg(target_os = "macos")]
     fn test_kqueue_wait_for_short_lived_process() {
-        // Spawn a child that exits quickly
         let mut child = std::process::Command::new("sleep")
             .arg("0.1")
             .spawn()
             .unwrap();
 
         let pid = child.id();
-
-        // Wait should complete successfully
         wait_for_exit(pid);
 
-        // Child should be exited
         let result = child.try_wait().unwrap();
         assert!(result.is_some());
     }

@@ -80,12 +80,15 @@ app: build wasm
     cp tugcode/target/debug/tugrelaunch "$MACOS_DIR/"
     cp tugcode/target/debug/tugtalk "$MACOS_DIR/"
     echo "==> Launching Tug.app"
-    pkill -x Tug 2>/dev/null || true
-    pkill -x tugcast 2>/dev/null || true
-    sleep 0.5
     # Tell the app where the source tree is so tugcast can find tugtalk, tugdeck, etc.
     tugbank write dev.tugtool.app source-tree-path "$(pwd)"
-    open "$APP_DIR"
+    TUG_PID=$(pgrep -x Tug 2>/dev/null || true)
+    if [ -n "$TUG_PID" ]; then
+        # App is running — orderly signal/wait/relaunch via tugrelaunch.
+        tugcode/target/debug/tugrelaunch --app-bundle "$APP_DIR" --pid "$TUG_PID"
+    else
+        open "$APP_DIR"
+    fi
 
 # Build unsigned DMG
 dmg:

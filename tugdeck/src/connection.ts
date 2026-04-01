@@ -283,6 +283,29 @@ export class TugConnection {
   }
 
   /**
+   * Cancel any pending reconnection timer and attempt to connect immediately.
+   * Called after silent re-authentication when tugcast restarts, so the
+   * WebSocket reconnects without waiting for the backoff timer.
+   */
+  forceReconnect(): void {
+    // Only act if we're disconnected/reconnecting — don't disrupt a live connection.
+    if (this.state === ConnectionState.CONNECTED) return;
+
+    // Cancel pending timers
+    if (this.retryTimer !== null) {
+      window.clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    this.clearCountdownTimer();
+
+    // Reset backoff so the next failure doesn't start from a high delay
+    this.retryDelay = INITIAL_RETRY_DELAY_MS;
+
+    // Connect now
+    this.reconnect();
+  }
+
+  /**
    * Close the WebSocket connection
    */
   close(): void {

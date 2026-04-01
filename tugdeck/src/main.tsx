@@ -161,6 +161,12 @@ if (!container) {
     selectionGuard.activateApp();
   };
 
+  // Expose a reconnect trigger so the native app can force an immediate
+  // WebSocket reconnection after silent re-authentication on tugcast restart.
+  (window as unknown as Record<string, unknown>).__tugdeckReconnect = () => {
+    connection.forceReconnect();
+  };
+
   // Signal frontend readiness to native app (enables menu items).
   connection.onOpen(() => {
     const webkit = (window as unknown as {

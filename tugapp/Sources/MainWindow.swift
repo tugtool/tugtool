@@ -100,6 +100,30 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         self.backgroundColor = NSColor(hexString: hex) ?? NSColor(hexString: MainWindow.defaultBackgroundHex)!
     }
 
+    /// Capture the current WebView content as a static snapshot and overlay it,
+    /// so the user sees a frozen frame during shutdown instead of disconnect
+    /// banners, theme flashes, or blank screens. The WebView stays alive
+    /// underneath for __tugdeckSaveState to execute.
+    func freezeForShutdown(completion: @escaping () -> Void) {
+        webView.takeSnapshot(with: nil) { [weak self] image, error in
+            guard let self = self else {
+                completion()
+                return
+            }
+            if let image = image {
+                let overlay = NSImageView(frame: self.webView.bounds)
+                overlay.image = image
+                overlay.imageScaling = .scaleNone
+                overlay.autoresizingMask = [.width, .height]
+                self.webView.addSubview(overlay)
+            } else {
+                // Snapshot failed — fall back to hiding the WebView.
+                self.webView.isHidden = true
+            }
+            completion()
+        }
+    }
+
     /// Clean up WKScriptMessageHandler registrations to break retain cycle
     func cleanupBridge() {
         guard !bridgeCleaned else { return }
