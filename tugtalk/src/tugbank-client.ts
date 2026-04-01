@@ -5,6 +5,35 @@ import { Database } from "bun:sqlite";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+// ── Darwin notification FFI (macOS) ──────────────────────────────────────────
+
+let notifyPost: ((name: string) => void) | null = null;
+
+try {
+  const { dlopen, FFIType } = await import("bun:ffi");
+  const lib = dlopen("libSystem.B.dylib", {
+    notify_post: {
+      args: [FFIType.cstring],
+      returns: FFIType.u32,
+    },
+  });
+  notifyPost = (name: string) => {
+    // bun:ffi cstring args accept Buffer directly — must be null-terminated
+    const buf = Buffer.from(name + "\0");
+    lib.symbols.notify_post(buf);
+  };
+} catch {
+  // Not on macOS or bun:ffi unavailable — skip Darwin notifications.
+}
+
+/**
+ * Broadcast a Darwin notification that a tugbank domain changed.
+ * Fire-and-forget. Silent no-op if not on macOS.
+ */
+function broadcastDomainChanged(domain: string): void {
+  notifyPost?.(`dev.tugtool.tugbank.changed.${domain}`);
+}
+
 // ── Value kind discriminators (must match tugbank-core/src/value.rs) ─────────
 
 const KIND_NULL = 0;
@@ -95,17 +124,15 @@ function nowRfc3339(): string {
  * Direct bun:sqlite client for the tugbank defaults store at ~/.tugbank.db.
  *
  * Provides get/set/readDomain/listDomains with an in-memory domain cache.
- * The cache is invalidated by polling PRAGMA data_version every 500 ms so
- * changes written by other processes (e.g. the tugbank CLI) are picked up
- * automatically.
+ * Broadcasts Darwin notifications on write so other processes can react.
+ * No polling — tugtalk is a session-scoped process that reads at startup
+ * and writes during the session.
  *
- * Call close() to release the database connection and stop the poll timer.
+ * Call close() to release the database connection.
  */
 export class TugbankClient {
   private readonly db: Database;
   private readonly domainCache = new Map<string, Record<string, TugbankValue>>();
-  private lastDataVersion: number = -1;
-  private readonly pollTimer: ReturnType<typeof setInterval>;
 
   constructor(dbPath?: string) {
     const path = dbPath ?? join(homedir(), ".tugbank.db");
@@ -116,19 +143,6 @@ export class TugbankClient {
     this.db.run("PRAGMA foreign_keys = ON");
     this.db.run("PRAGMA busy_timeout = 5000");
     this.db.run("PRAGMA synchronous = NORMAL");
-
-    // Initialise our baseline data_version.
-    this.lastDataVersion = this.readDataVersion();
-
-    // Poll for external changes every 500 ms.
-    this.pollTimer = setInterval(() => {
-      this.checkForChanges();
-    }, 500);
-
-    // Don't let the timer prevent process exit.
-    if (this.pollTimer.unref) {
-      this.pollTimer.unref();
-    }
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -150,6 +164,7 @@ export class TugbankClient {
   /**
    * Write a single key/value pair to a domain.
    * Creates the domain row if it does not exist and bumps the generation.
+   * Broadcasts a Darwin notification so other processes can react.
    */
   set(domain: string, key: string, value: TugbankValue): void {
     const enc = encodeValue(value);
@@ -184,11 +199,14 @@ export class TugbankClient {
 
     // Invalidate cache for this domain.
     this.domainCache.delete(domain);
+
+    // Broadcast change to other processes.
+    broadcastDomainChanged(domain);
   }
 
   /**
    * Read all key/value pairs for a domain as a plain object.
-   * Returns a cached snapshot; cache is refreshed when data_version changes.
+   * Returns a cached snapshot on subsequent calls for the same domain.
    */
   readDomain(domain: string): Record<string, TugbankValue> {
     const cached = this.domainCache.get(domain);
@@ -221,30 +239,10 @@ export class TugbankClient {
   }
 
   /**
-   * Release the database connection and stop the poll timer.
+   * Release the database connection.
    */
   close(): void {
-    clearInterval(this.pollTimer);
     this.db.close();
-  }
-
-  // ── Private helpers ─────────────────────────────────────────────────────────
-
-  private readDataVersion(): number {
-    const row = this.db.prepare<{ data_version: number }, []>("PRAGMA data_version").get();
-    return row?.data_version ?? 0;
-  }
-
-  private checkForChanges(): void {
-    try {
-      const current = this.readDataVersion();
-      if (current !== this.lastDataVersion) {
-        this.lastDataVersion = current;
-        this.domainCache.clear();
-      }
-    } catch {
-      // Ignore errors during poll (db may be closing).
-    }
   }
 }
 
