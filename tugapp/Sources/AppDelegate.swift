@@ -20,8 +20,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let baseThemeName = "brio"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Configure TugbankClient first — window init reads from tugbank to
-        // resolve the startup background color from the active theme.
+        let t0 = CFAbsoluteTimeGetCurrent()
+        func lap(_ label: String) {
+            let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            NSLog("LAUNCH [%6.1fms] %@", ms, label)
+        }
+
+        lap("start")
+
         let dbPath: String
         if let envPath = ProcessInfo.processInfo.environment["TUGBANK_PATH"] {
             dbPath = envPath
@@ -30,12 +36,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             dbPath = (home as NSString).appendingPathComponent(".tugbank.db")
         }
         TugbankClient.configure(path: dbPath)
+        lap("TugbankClient.configure")
 
-        // Create and show the window immediately so the user sees the themed
-        // background color instead of the OS launch stencil. The WebView stays
-        // hidden until frontendReady fires after JS initialization completes.
-        // This MUST happen before anything that triggers ProcessManager.shellPATH
-        // (checkTmux, loadPreferences, start), which spawns a shell and blocks.
         let contentRect = NSRect(x: 100, y: 100, width: 1200, height: 800)
         window = MainWindow(
             contentRect: contentRect,
@@ -43,23 +45,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
+        lap("MainWindow init")
+
+        let bgHex = MainWindow.resolveStartupBackgroundHex()
+        lap("resolveStartupBackgroundHex → \(bgHex)")
+
+        window.updateBackgroundColor(bgHex)
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        lap("window visible")
 
-        // Wire bridge delegate
         window.bridgeDelegate = self
-
-        // Load preferences and build menu bar — these use TugbankClient (fast).
         loadPreferences()
+        lap("loadPreferences")
+
         buildMenuBar()
+        lap("buildMenuBar")
 
-        // Resolve the user's full shell PATH. This spawns a login shell and
-        // blocks for ~1s, so it runs AFTER the window is visible. Everything
-        // below this point (tmux check, process manager) needs the full PATH.
         ProcessManager.resolveShellPATH()
+        lap("resolveShellPATH")
 
-        // Check tmux availability
         if !ProcessManager.checkTmux() {
             let alert = NSAlert()
             alert.messageText = "tmux Required"
@@ -73,6 +79,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup process manager
         processManager.onReady = { [weak self] url, port in
             guard let self = self else { return }
+            lap("onReady (tugcast port=\(port))")
             self.lastAuthURL = url
 
             guard let path = self.sourceTreePath else {
@@ -134,6 +141,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Start tugcast
         processManager.start(sourceTree: sourceTreePath)
+        lap("processManager.start returned")
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

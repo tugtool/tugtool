@@ -22,10 +22,6 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
 
-        // Set background color IMMEDIATELY after super.init, before any other work.
-        // DEBUG: using bright red to verify this code path is running.
-        self.backgroundColor = .red
-
         self.title = "Tug"
         self.setFrameAutosaveName("MainWindow")
 
@@ -56,18 +52,13 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
             webView.isInspectable = true
         }
 
-        // Flash fix: suppress WKWebView's default white background so it does not flash
-        // before the page finishes rendering. The webView starts hidden and is revealed
-        // once didFinishNavigation fires, eliminating the startup FOUC.
-        // drawsBackground = false is the supported KVC way to make WKWebView transparent.
+        // Suppress WKWebView's default white background. The webView starts
+        // hidden and is revealed by frontendReady after JS applies the theme.
         webView.setValue(false, forKey: "drawsBackground")
         webView.isHidden = true
 
         self.contentView = webView
-
-        // Set window background from the active theme's CSS so there is no
-        // color mismatch while the webView is hidden during startup.
-        updateBackgroundColor(MainWindow.resolveStartupBackgroundHex())
+        // Background color is set by AppDelegate after init, not here.
     }
 
     /// Load URL in webview
@@ -215,9 +206,25 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     /// DeckManager. This eliminates the flash of unstyled/default-themed content
     /// that would occur if we revealed on didFinishNavigation.
     func revealWebView() {
+        NSLog("MainWindow: revealWebView called (isHidden=%d)", webView.isHidden ? 1 : 0)
         guard webView.isHidden else { return }
+        webView.wantsLayer = true
+        webView.layer?.opacity = 0
         webView.isHidden = false
-        self.makeFirstResponder(webView)
+
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = 0
+        anim.toValue = 1
+        anim.duration = 0.2
+        anim.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        anim.isRemovedOnCompletion = false
+        anim.fillMode = .forwards
+        webView.layer?.add(anim, forKey: "revealFade")
+        webView.layer?.opacity = 1
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.makeFirstResponder(self.webView)
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

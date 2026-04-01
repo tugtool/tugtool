@@ -347,15 +347,9 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // The overlay is removed from the DOM after the TugAnimator animation completes.
   // The `if (!overlay) return` guard handles rapid HMR reloads where the overlay
   // may already be absent. [D02, Spec S03, Phase 7c]
-  useLayoutEffect(() => {
-    const overlay = document.getElementById("deck-startup-overlay");
-    if (!overlay) return;
-    const anim = animate(overlay, { opacity: [1, 0] }, {
-      duration: "--tug-motion-duration-slow",
-      easing: "cubic-bezier(0, 0, 0, 1)",
-    });
-    anim.finished.then(() => overlay.remove());
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Startup overlay removed — the native window background (set from tugbank)
+  // provides visual continuity while the WebView is hidden. The WebView is
+  // revealed by frontendReady after the theme and layout are fully applied.
 
   // Sync SelectionGuard highlight state whenever the focused card changes.
   //
