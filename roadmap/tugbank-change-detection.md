@@ -176,6 +176,52 @@ Implement the cross-platform notification tier alongside Darwin notifications. B
 - Test on macOS to confirm it works correctly
 - The runtime selects Darwin notifications on macOS; the Unix socket path is available for other platforms
 
+## Testing Regime
+
+Every dash must pass all of these before joining. No exceptions.
+
+### Automated checks
+
+1. **`just ci`** — Rust build + clippy + fmt + all tests
+2. **`cd tugdeck && npx tsc --noEmit`** — TypeScript type check
+3. **`cd tugtalk && bun test`** — tugtalk tests
+4. **`just app`** — app launches, cards load, dev mode works, no launch hitch
+
+### Manual smoke test
+
+5. With the app running, from a separate terminal:
+   - `tugbank write dev.tugtool.app theme harmony` — app must react (theme changes)
+   - `tugbank write dev.tugtool.app theme brio` — app switches back
+   - Both transitions must work without restart
+
+### Per-dash verification
+
+**Dash 1 (Darwin notifications for Rust + Swift):**
+- All automated checks pass
+- Manual smoke test: CLI writes propagate to running app via Darwin notifications
+- Verify no polling threads or timers remain in Rust or Swift clients
+
+**Dash 2 (tugtalk):**
+- `bun test` passes
+- Manual: `tugbank write dev.tugtool.app session-id test-123`, verify tugtalk picks it up
+- Verify no `setInterval` polling remains
+
+**Dash 3 (Unix socket):**
+- Same smoke tests as Dash 1, but force the Unix socket tier (env var or flag to select)
+- Confirm the socket is created, receives notifications, and cleans up on exit
+
+**Dash 4 (audit):**
+- All automated checks pass
+- Manual smoke test passes
+- Grep for dead code patterns — zero hits required:
+  - `setInterval.*data_version`
+  - `pollTimer`
+  - `polling_thread`
+  - `recv_timeout`
+  - `poll_interval`
+  - `startPolling`
+  - `PRAGMA data_version` (outside of the notification confirmation path)
+
 ### Dash 4: Audit and cleanup
 
 Sweep the codebase for dead code, leftover polling machinery, and bad patterns from the iterative development process:
