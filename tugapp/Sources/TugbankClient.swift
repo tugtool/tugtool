@@ -151,11 +151,6 @@ final class TugbankClient {
         return arr
     }
 
-    /// Return the current PRAGMA data_version.
-    func dataVersion() -> UInt64 {
-        return tugbank_data_version(handle)
-    }
-
     /// Register a callback for domain changes. Fires when a Darwin notification
     /// is received for a cached domain.
     func onDomainChanged(_ callback: @escaping (String, [String: TugbankValue]) -> Void) {

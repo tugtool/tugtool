@@ -124,10 +124,7 @@ const _: () = {
 
 impl TugbankClient {
     /// Open a new client backed by the database at `path`.
-    ///
-    /// The `poll_interval` parameter is accepted for API compatibility but
-    /// ignored on macOS, where Darwin notifications replace polling.
-    pub fn open(path: impl AsRef<Path>, _poll_interval: std::time::Duration) -> Result<Self, Error> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let store = DefaultsStore::open(path)?;
         Self::from_store(store)
     }
@@ -319,7 +316,7 @@ mod tests {
 
     fn temp_client() -> (TugbankClient, NamedTempFile) {
         let tmp = NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path(), Duration::from_secs(60)).expect("open failed");
+        let client = TugbankClient::open(tmp.path()).expect("open failed");
         (client, tmp)
     }
 
@@ -363,7 +360,7 @@ mod tests {
     #[test]
     fn test_external_write_detected() {
         let tmp = NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path(), Duration::from_secs(60)).expect("open failed");
+        let client = TugbankClient::open(tmp.path()).expect("open failed");
 
         // Pre-load the domain so the cache has a baseline entry and a
         // Darwin notification watcher is registered.
@@ -407,7 +404,7 @@ mod tests {
     #[test]
     fn test_callback_fires_on_external_change() {
         let tmp = NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path(), Duration::from_secs(60)).expect("open failed");
+        let client = TugbankClient::open(tmp.path()).expect("open failed");
 
         let fired = Arc::new(AtomicU32::new(0));
         let fired_clone = Arc::clone(&fired);

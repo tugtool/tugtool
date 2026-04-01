@@ -157,7 +157,6 @@ pub fn defaults_feed(client: Arc<TugbankClient>) -> watch::Receiver<Frame> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use tempfile::NamedTempFile;
     use tugbank_core::{TugbankClient, Value};
 
@@ -168,7 +167,7 @@ mod tests {
     #[tokio::test]
     async fn test_defaults_feed_aggregates_all_domains() {
         let tmp = NamedTempFile::new().expect("temp file");
-        let client = TugbankClient::open(tmp.path(), Duration::from_secs(60)).expect("open failed");
+        let client = TugbankClient::open(tmp.path()).expect("open failed");
 
         // Write two domains.
         client

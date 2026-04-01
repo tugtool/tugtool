@@ -22,8 +22,6 @@
 //! thread is using it.
 
 use std::ffi::{CStr, CString, c_char, c_void};
-use std::time::Duration;
-
 use tugbank_core::{TugbankClient, Value};
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -107,7 +105,7 @@ pub extern "C" fn tugbank_open(path: *const c_char) -> *mut c_void {
             Err(_) => return std::ptr::null_mut(),
         }
     };
-    match TugbankClient::open(path_str, Duration::from_millis(500)) {
+    match TugbankClient::open(path_str) {
         Ok(client) => Box::into_raw(Box::new(client)) as *mut c_void,
         Err(_) => std::ptr::null_mut(),
     }

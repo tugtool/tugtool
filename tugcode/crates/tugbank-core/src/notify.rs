@@ -254,7 +254,11 @@ fn watcher_thread(state: Arc<Mutex<WatcherState>>, wake_read: RawFd) {
             drain_fd(wake_read);
         }
 
-        // Check each notification fd.
+        // Check each notification fd and collect callbacks to fire.
+        // We must NOT call callbacks while holding the state lock — callbacks
+        // may trigger ensure_domain_loaded → register_watcher_for_domain,
+        // which re-acquires the lock and would deadlock.
+        let mut fds_to_fire: Vec<RawFd> = Vec::new();
         for fd in &notify_fds {
             if unsafe { libc::FD_ISSET(*fd, &readfds) } {
                 // Read the 4-byte token value written by the Darwin API.
@@ -266,28 +270,29 @@ fn watcher_thread(state: Arc<Mutex<WatcherState>>, wake_read: RawFd) {
                         4,
                     );
                 }
+                fds_to_fire.push(*fd);
+            }
+        }
 
-                // Look up and fire the callback.
-                let callback = {
-                    let s = state.lock().unwrap();
-                    // We can't call the callback while holding the lock, so
-                    // we check if the fd still exists and get a reference.
-                    // Since callbacks are `dyn Fn()`, we can't easily clone
-                    // them, so we'll call while holding the lock briefly.
-                    // The callback must not try to re-acquire WATCHER or
-                    // state — it only accesses Inner (a separate mutex).
-                    if let Some((_tok, cb)) = s.entries.get(fd) {
-                        // SAFETY: The callback is stored in the Arc<Mutex<WatcherState>>
-                        // and won't be freed while we hold the lock.
-                        // We call it while holding state lock, which is fine as
-                        // long as callbacks don't re-enter the watcher.
-                        cb();
-                        true
-                    } else {
-                        false
-                    }
-                };
-                let _ = callback;
+        // Fire callbacks outside the lock.
+        for fd in fds_to_fire {
+            let cb = {
+                let s = state.lock().unwrap();
+                s.entries.get(&fd).map(|(_, cb)| {
+                    // SAFETY: We need a reference to the callback that outlives
+                    // the lock. The callback is behind Arc<Mutex<WatcherState>>
+                    // which won't be freed while we have a reference to `state`.
+                    // We use a raw pointer to call it after releasing the lock.
+                    cb as *const (dyn Fn() + Send + 'static)
+                })
+            };
+            if let Some(cb_ptr) = cb {
+                // SAFETY: The callback pointer is valid because:
+                // 1. WatcherState is behind Arc — not freed while we hold a clone
+                // 2. Entries are only removed when NotifyToken is dropped, which
+                //    requires the caller to have exclusive ownership
+                // 3. We're the only thread that reads fds and fires callbacks
+                unsafe { (*cb_ptr)(); }
             }
         }
     }

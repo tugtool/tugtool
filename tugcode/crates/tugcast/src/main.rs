@@ -136,7 +136,7 @@ async fn main() {
     // and continue without tugbank -- this preserves graceful degradation when the
     // bank path is inaccessible.
     let bank_client: Option<Arc<TugbankClient>> =
-        match TugbankClient::open(&bank_path, std::time::Duration::from_millis(500)) {
+        match TugbankClient::open(&bank_path) {
             Ok(client) => Some(Arc::new(client)),
             Err(e) => {
                 warn!(
