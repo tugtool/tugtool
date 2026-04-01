@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-04-01T21:06:26Z
+---
+
+## step-5: Integration test suite: 5000-chunk streaming throughput (<2ms/chunk at 1MB), regionBlockRanges consistency across full-rebuild and incremental paths, middle-region full rebuild correctness, mixed emoji/CJK/fence content, interleaved streaming and imperative updates. 1768 tests pass.
+
+**Files changed:**
+- incremental-tail-lex-6474254-1
+
+---
+
+---
 step: step-4
 date: 2025-04-01T20:48:58Z
 ---
