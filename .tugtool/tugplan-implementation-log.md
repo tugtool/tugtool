@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-04-01T23:26:17Z
+---
+
+## step-6: Generalized incrementalTailUpdate for non-tail regions via shiftFrom + key remapping. Removed !isLast gate in doSetRegion. lexParseAndRender now only on cold-start and removeRegion. Content shrink scroll recovery via getBlockAtOffset. Replaced fallback lexParseAndRender calls with console.warn + early return.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
 step: step-5
 date: 2025-04-01T23:13:49Z
 ---
