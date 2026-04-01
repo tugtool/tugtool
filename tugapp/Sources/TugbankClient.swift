@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 // MARK: - TugbankValue
@@ -220,7 +219,7 @@ final class TugbankClient {
             notificationName,
             &token,
             DispatchQueue.main
-        ) { [weak self] _ in
+        ) { [weak self] (_: Int32) in
             self?.onDomainNotification(domain)
         }
 
