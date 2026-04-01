@@ -5,9 +5,10 @@ import "./css-imports";
 import initTugmark from "../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 import wasmUrl from "../crates/tugmark-wasm/pkg/tugmark_wasm_bg.wasm?url";
 import { TugConnection } from "./connection";
+import { TugbankClient } from "./lib/tugbank-client";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
-import { fetchLayoutWithRetry, fetchThemeWithRetry, fetchTabStatesWithRetry, fetchDeckStateWithRetry } from "./settings-api";
+import { initTugbankClient, fetchLayoutWithRetry, fetchThemeWithRetry, fetchTabStatesWithRetry, fetchDeckStateWithRetry } from "./settings-api";
 import {
   sendCanvasColor,
   activateProductionTheme,
@@ -27,6 +28,12 @@ const wsUrl = `ws://${window.location.host}/ws`;
 // Create connection (module scope — must be synchronous)
 const connection = new TugConnection(wsUrl);
 
+// Create TugbankClient and register it with settings-api before connect().
+// The frame handler is registered here so no DEFAULTS frames are missed once
+// the WebSocket opens.
+const tugbankClient = new TugbankClient(connection);
+initTugbankClient(tugbankClient);
+
 // Get the deck container from the DOM (module scope — must be synchronous)
 const container = document.getElementById("deck-container");
 if (!container) {
@@ -37,20 +44,27 @@ if (!container) {
 // layout and theme are applied before React renders.
 //
 // Phase 5f two-phase initialization:
-//   Phase 1: Fetch layout, theme, and deck state (focusedCardId) in parallel.
-//            These three are independent of each other.
-//   Phase 2: Deserialize the layout to extract all tab IDs, then fetch tab
-//            states in parallel via fetchTabStatesWithRetry(tabIds).
-//            Tab state fetch depends on tab IDs from the deserialized layout,
-//            so it cannot be parallelized with the layout fetch itself.
+//   Phase 1: Await TugbankClient.ready() (first DEFAULTS frame), WASM init,
+//            then read layout, theme, and deck state synchronously from cache.
+//   Phase 2: Deserialize the layout to extract all tab IDs, then read tab
+//            states from cache.
 (async () => {
-  // Phase 1: parallel fetch of layout, theme, focused card ID, and WASM init.
+  // Connect to the server early so the DEFAULTS frame can arrive while WASM
+  // is initialising. We await ready() + WASM init in parallel below.
+  connection.connect();
+
+  // Phase 1: wait for the TugbankClient cache to be warm and WASM to init.
   // WASM must complete before DeckManager construction (before root.render() — L01).
+  await Promise.all([
+    tugbankClient.ready(),
+    initTugmark(wasmUrl),
+  ]);
+
+  // All settings reads are now synchronous from the warm cache.
   const [layout, theme, focusedCardId] = await Promise.all([
     fetchLayoutWithRetry(),
     fetchThemeWithRetry(),
     fetchDeckStateWithRetry(),
-    initTugmark(wasmUrl),
   ]);
 
   const initialTheme = (theme as string) ?? BASE_THEME_NAME;
@@ -155,9 +169,6 @@ if (!container) {
     }).webkit;
     webkit?.messageHandlers?.frontendReady?.postMessage({});
   });
-
-  // Connect to the server.
-  connection.connect();
 
   console.log("tugdeck initialized");
 })();
