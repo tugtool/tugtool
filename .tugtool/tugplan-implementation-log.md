@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-04-01T23:04:41Z
+---
+
+## step-3: Wired synchronous offsetHeight measurement in incrementalTailUpdate after applyWindowUpdate. Replaced scrollToBottom with pinToBottom in doSetRegion. Added ResizeObserver safety-net slam when following bottom. Added contain:content to .tugx-md-block.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
 step: step-2
 date: 2025-04-01T22:58:17Z
 ---

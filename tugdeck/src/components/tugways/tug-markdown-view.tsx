@@ -471,6 +471,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
         const update = engine.blockWindow.update(scrollTop);
         applySpacers(update.topSpacerHeight, update.bottomSpacerHeight);
+        // Safety net: if following bottom, re-slam scrollTop so any height
+        // corrections from ResizeObserver don't leave us short of the bottom [D03].
+        if (smartScrollRef.current?.isFollowingBottom && scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = Number.MAX_SAFE_INTEGER;
+        }
       }
     });
     resizeObserverRef.current = observer;
@@ -752,6 +757,29 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
     const update = engine.blockWindow.update(scrollTop);
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+
+    // Synchronous measurement for newly-appended blocks [D03].
+    // After addBlockNode inserts new DOM nodes, read their real offsetHeight and
+    // replace the estimate. This eliminates the estimate-then-ResizeObserver bounce
+    // during streaming. Only for Q > P (new tail blocks added).
+    if (Q > P) {
+      let anyMeasured = false;
+      for (let i = P; i < Q; i++) {
+        const globalIdx = S + i;
+        const el = engine.blockNodes.get(globalIdx);
+        if (el) {
+          const realHeight = el.offsetHeight; // forced layout — cheap for 1-3 blocks
+          engine.heightIndex.setHeight(globalIdx, realHeight);
+          anyMeasured = true;
+        }
+      }
+      if (anyMeasured) {
+        // Recompute spacers with real heights before pinToBottom fires.
+        const scrollTop2 = scrollContainerRef.current?.scrollTop ?? 0;
+        const update2 = engine.blockWindow.update(scrollTop2);
+        applySpacers(update2.topSpacerHeight, update2.bottomSpacerHeight);
+      }
+    }
   }
 
   // ---- Core region update logic ----
@@ -772,11 +800,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       incrementalTailUpdate(engine, key, fullText);
     }
 
-    // After content settles, scroll to bottom if SmartScroll is following.
-    // This is the UIScrollView model: the controller decides when to scroll,
-    // not the scroll view reacting to content changes via ResizeObserver.
+    // After content settles, pin to bottom if SmartScroll is following.
+    // Use pinToBottom() (stays in idle phase) instead of scrollToBottom() to
+    // avoid overlapping programmatic scroll sequences during rapid streaming [D04].
     if (smartScrollRef.current?.isFollowingBottom) {
-      smartScrollRef.current.scrollToBottom();
+      smartScrollRef.current.pinToBottom();
     }
   }
 
