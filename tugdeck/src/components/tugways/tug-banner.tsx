@@ -68,6 +68,7 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
   ) {
     const rootRef = React.useRef<HTMLDivElement | null>(null);
     const scrimRef = React.useRef<HTMLDivElement | null>(null);
+    const hasBeenVisibleRef = React.useRef(false);
 
     // Combine forwarded ref with our internal ref
     const setRef = React.useCallback(
@@ -104,6 +105,8 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
       }
 
       if (visible) {
+        hasBeenVisibleRef.current = true;
+
         // Set inert immediately — banner blocks interaction as it enters.
         if (canvas) canvas.setAttribute("inert", "");
 
@@ -118,7 +121,10 @@ export const TugBanner = React.forwardRef<HTMLDivElement, TugBannerProps>(
             duration: "--tug-motion-duration-moderate",
           });
         }
-      } else {
+      } else if (hasBeenVisibleRef.current) {
+        // Only run exit animation if the banner was previously shown.
+        // Skipping on initial mount prevents a flash: the exit animation starts
+        // from translateY(0) which would briefly show the banner before hiding it.
         const exitAnim = animate(root, [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], {
           key: "banner-root",
           duration: "--tug-motion-duration-moderate",

@@ -18,17 +18,50 @@ export interface TugBannerProviderProps {
 
 // ---- Component ----
 
+/** Delay before showing the banner, so brief jitters at launch don't flash it. */
+const SHOW_DELAY_MS = 1000;
+
 export function TugBannerProvider({ connection }: TugBannerProviderProps) {
   const [disconnectState, setDisconnectState] = useState<DisconnectState | null>(null);
 
   useEffect(() => {
     if (!connection || typeof connection.onDisconnectState !== "function") return;
 
+    let showTimer: number | null = null;
+    let latestDisconnectedState: DisconnectState | null = null;
+
     const unsubscribe = connection.onDisconnectState((state) => {
-      setDisconnectState(state);
+      if (state.disconnected) {
+        // Stash the latest disconnect state so the timer always applies current info.
+        latestDisconnectedState = state;
+
+        // Start a single delay timer on first disconnect. The timer stays active
+        // for the entire disconnect period — subsequent callbacks just update
+        // latestDisconnectedState above. This prevents stale timers from
+        // overwriting a reconnected state.
+        if (showTimer === null) {
+          showTimer = window.setTimeout(() => {
+            showTimer = null;
+            if (latestDisconnectedState) {
+              setDisconnectState(latestDisconnectedState);
+            }
+          }, SHOW_DELAY_MS);
+        }
+      } else {
+        // Reconnected — cancel pending show and update immediately.
+        latestDisconnectedState = null;
+        if (showTimer !== null) {
+          window.clearTimeout(showTimer);
+          showTimer = null;
+        }
+        setDisconnectState(state);
+      }
     });
 
-    return unsubscribe;
+    return () => {
+      if (showTimer !== null) window.clearTimeout(showTimer);
+      unsubscribe();
+    };
   }, [connection]);
 
   const isVisible = Boolean(disconnectState?.disconnected);
