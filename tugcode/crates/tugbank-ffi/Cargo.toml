@@ -9,7 +9,7 @@ description = "C ABI FFI wrappers around TugbankClient for use by Swift and othe
 [lib]
 name = "tugbank_ffi"
 path = "src/lib.rs"
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["staticlib"]
 
 [dependencies]
 tugbank-core.workspace = true

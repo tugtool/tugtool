@@ -163,69 +163,45 @@ If the socket isn't ready yet when a writer fires, the write still succeeds (it 
 - The `libc` dependency in tugbank-core (was added for the `select()` loop)
 - The `notify.h` bridging header import in Swift
 
-## Cleanup Checklist (before implementing)
+## Cleanup (DONE)
 
-The codebase has layers of dead and broken code from the Darwin notification and per-process socket attempts. All of this must be cleaned out before implementing the new design.
+All dead and broken code from the Darwin notification and per-process socket attempts has been removed:
 
-### notify.rs — full rewrite needed
+- [x] notify.rs: rewritten to `socket_path()` + `broadcast_domain_changed()` only
+- [x] client.rs: removed listener auto-start, added `refresh_domain()` method
+- [x] tugbank CLI: removed `cfg(target_os = "macos")` gate on broadcast
+- [x] Swift TugbankClient: removed `callbacks`, `onDomainChanged`, `data_version` tracking
+- [x] Swift doc comments updated
+- [x] ENOENT warning silenced (tugcast not running is normal)
+- [x] All builds pass, tests pass, app launches with cards
 
-Current state: abandoned per-process socket design (`~/.tugbank/notify/<pid>.sock`, directory iteration broadcast). Wrong socket path (`~/.tugbank/notify/` instead of per-user runtime dir). Wrong architecture (every TugbankClient spawns its own listener thread, instead of tugcast-only).
+Open minor items (not blocking implementation):
+- `tugbank_data_version` still in FFI header/lib — harmless, could remove later
+- `TugbankClient.configure` on background thread — moving to main thread caused app hang, investigating later
 
-- [ ] Rewrite `socket_path()` to use `std::env::temp_dir()` → `<temp_dir>/tugbank-notify.sock`
-- [ ] Rewrite `broadcast_domain_changed()` to `sendto` one well-known socket path (no directory iteration)
-- [ ] Remove `start_listener()` and `ListenerHandle` from tugbank-core — listener is tugcast's responsibility, not the library's
-- [ ] Remove `notify_dir()` helper (no longer needed)
-- [ ] Add stderr warnings on `sendto` failure (per roadmap write-side design)
-- [ ] Remove all tests that test the per-process listener pattern
+## Implementation
 
-### client.rs — remove listener auto-start
+### tugtalk — add broadcast
 
-Current state: `from_store()` auto-starts a Unix socket listener for every TugbankClient instance. This is wrong — only tugcast should listen. The CLI, the FFI handle, tugtalk all create TugbankClients that spawn unwanted listener threads.
+- [ ] Add `sendto` to the Unix socket in `set()` after successful write
+- [ ] Compute socket path via `os.tmpdir()` + `tugbank-notify.sock`
 
-- [ ] Remove `_listener: Option<ListenerHandle>` field from TugbankClient
-- [ ] Remove `start_listener` call from `from_store()`
-- [ ] Remove `use crate::notify::{ListenerHandle, start_listener}` — keep `broadcast_domain_changed`
-- [ ] Keep `on_domain_changed` callback infrastructure (tugcast's defaults feed uses it)
-- [ ] Keep `data_version()` (FFI exposes it, Swift client uses it for snapshot generation)
+### tugcast — bind and listen on the notification socket
 
-### tugbank CLI main.rs — remove dead cfg gate
-
-- [ ] Remove `#[cfg(target_os = "macos")]` on line 637 — Unix sockets are cross-platform
-
-### Swift TugbankClient.swift — remove dead code
-
-- [ ] Remove `callbacks` array and `onDomainChanged` method — nothing registers callbacks, the Swift client gets changes via tugdeck bridge, not direct notification
-- [ ] Remove `tugbank_data_version(handle)` call in `ensureDomainLoaded` (line 193) — generation tracking via data_version is a polling-era leftover; the cache is populated on first access and updated on write
-- [ ] Update doc comment (line 70) — references "domain change callbacks" which are being removed
-- [ ] Move `TugbankClient.configure` back to main thread in AppDelegate — the background-thread dispatch was a workaround for the Darwin notification thread spawn latency, which no longer exists
-
-### tugbank_ffi.h — check for dead declarations
-
-- [ ] Verify `tugbank_data_version` is still needed — it's used by `ensureDomainLoaded` in Swift which is being changed. If no Swift caller remains, remove from header and from FFI lib.rs
-
-### tugtalk tugbank-client.ts — add broadcast
-
-- [ ] Add `sendto` to the Unix socket in `set()` after successful write (per roadmap)
-- [ ] Needs `socket_path()` equivalent in TypeScript — compute `<os.tmpdir()>/tugbank-notify.sock`
-
-### tugcast — wire up the new listener
-
-This is new implementation, not cleanup, but listed for completeness:
-
-- [ ] Add Unix datagram socket bind in main.rs startup (after TCP bind, before TugbankClient open)
+- [ ] Bind Unix datagram socket in main.rs startup (after TCP bind, before TugbankClient open)
+- [ ] Unlink stale socket file before binding (safe — TCP bind already proved we're the only instance)
 - [ ] Add receive loop in a tokio task with 50ms per-domain debounce
-- [ ] On notification: call TugbankClient to refresh domain + fire callbacks
-- [ ] Unlink socket on shutdown
-- [ ] Add `--force` flag for TCP port + socket reclaim
+- [ ] On notification: call `TugbankClient::refresh_domain()` to reload cache + fire callbacks
+- [ ] Unlink socket on clean shutdown
+- [ ] Add `--force` flag for TCP port reclaim (kill holder, then bind)
 
 ### Verification
 
-After cleanup, before new implementation:
+After implementation:
 - [ ] `just ci` passes
 - [ ] `cd tugdeck && npx tsc --noEmit` passes
 - [ ] `cd tugtalk && bun test` passes
 - [ ] `just app` — app launches, cards load, dev mode works
-- [ ] No `start_listener` or `ListenerHandle` in client.rs
-- [ ] No `cfg(target_os = "macos")` in tugbank CLI
-- [ ] No `callbacks` array in Swift TugbankClient
-- [ ] `notify.rs` exports only `socket_path()` and `broadcast_domain_changed()`
+- [ ] Manual smoke test: `tugbank write dev.tugtool.app theme harmony` while app running — app reacts
+- [ ] `tugbank write dev.tugtool.app theme brio` — app switches back
+- [ ] Both transitions work without restart
