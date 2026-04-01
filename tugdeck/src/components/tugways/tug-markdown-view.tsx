@@ -746,76 +746,10 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
   }
 
-  // ---- Incremental tail update (legacy — full-document rescan) ----
-  // Re-lexes the full text but only updates changed existing blocks and appends
-  // new ones. Used when the update is to (or appended at) the last region, so
-  // the prefix of blocks is stable and only the tail changes.
-  function incrementalUpdate(engine: MarkdownEngineState, text: string) {
-    const lexStart = performance.now();
-    const packed = lex_blocks(text);
-    const lexMs = performance.now() - lexStart;
-    const newBlocks = decodeBlocks(packed);
-    const byteToChar = buildByteToCharMap(text);
-    const newStarts = newBlocks.map(b => byteToChar[b.start] ?? b.start);
-    const newEnds = newBlocks.map(b => byteToChar[b.end] ?? b.end);
-
-    const oldCount = engine.blockCount;
-    const newCount = newBlocks.length;
-    let parseMs = 0;
-
-    // Update changed existing blocks
-    for (let i = 0; i < Math.min(oldCount, newCount); i++) {
-      if (newStarts[i] !== engine.blockStarts[i] || newEnds[i] !== engine.blockEnds[i]) {
-        const raw = text.slice(newStarts[i], newEnds[i]);
-        const parseStart = performance.now();
-        const html = parse_to_html(raw);
-        parseMs += performance.now() - parseStart;
-        engine.htmlCache.set(i, html);
-        engine.heightIndex.setHeight(i, estimateBlockHeight(newBlocks[i]));
-        const existingEl = engine.blockNodes.get(i);
-        if (existingEl) {
-          existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
-        }
-      }
-    }
-
-    // Handle block count decrease
-    if (newCount < oldCount) {
-      for (let i = newCount; i < oldCount; i++) {
-        removeBlockNode(engine, i);
-        engine.htmlCache.delete(i);
-      }
-      engine.heightIndex.clear();
-      for (let i = 0; i < newCount; i++) {
-        engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
-      }
-    }
-
-    // Append new blocks
-    for (let i = oldCount; i < newCount; i++) {
-      engine.heightIndex.appendBlock(estimateBlockHeight(newBlocks[i]));
-      const raw = text.slice(newStarts[i], newEnds[i]);
-      const parseStart = performance.now();
-      engine.htmlCache.set(i, parse_to_html(raw));
-      parseMs += performance.now() - parseStart;
-    }
-
-    engine.blockStarts = newStarts;
-    engine.blockEnds = newEnds;
-    engine.blockCount = newCount;
-
-    onTimingRef.current?.({ lexMs, parseMs, blockCount: newCount });
-
-    engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
-    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
-    const update = engine.blockWindow.update(scrollTop);
-    applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-  }
-
   // ---- Core region update logic ----
   // Called by both the imperative handle and the streaming observer.
-  // Uses incremental update when the key is (or becomes) the last region,
-  // full rebuild otherwise (middle/first region changes).
+  // Uses incrementalTailUpdate when the key is (or becomes) the last region,
+  // full rebuild otherwise (middle/first region changes, or first content ever).
   function doSetRegion(key: string, text: string): void {
     const engine = getEngine();
     const wasEmpty = engine.regionMap.regionCount === 0;
@@ -827,7 +761,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     if (wasEmpty || !isLast) {
       lexParseAndRender(engine, fullText);
     } else {
-      incrementalUpdate(engine, fullText);
+      incrementalTailUpdate(engine, key, fullText);
     }
 
     // After content settles, scroll to bottom if SmartScroll is following.

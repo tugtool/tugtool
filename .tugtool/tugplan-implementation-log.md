@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-04-01T20:39:33Z
+---
+
+## step-3: Replaced incrementalUpdate with incrementalTailUpdate in doSetRegion's isLast branch. Deleted old incrementalUpdate function (-69 lines). wasEmpty and !isLast branches unchanged (lexParseAndRender). Wiring test suite added.
+
+**Files changed:**
+- incremental-tail-lex-6474254-1
+
+---
+
+---
 step: step-2
 date: 2025-04-01T20:32:11Z
 ---
