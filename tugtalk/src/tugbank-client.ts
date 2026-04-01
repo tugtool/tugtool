@@ -5,34 +5,6 @@ import { Database } from "bun:sqlite";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// ── Darwin notification FFI (macOS) ──────────────────────────────────────────
-
-let notifyPost: ((name: string) => void) | null = null;
-
-try {
-  const { dlopen, FFIType } = await import("bun:ffi");
-  const lib = dlopen("libSystem.B.dylib", {
-    notify_post: {
-      args: [FFIType.cstring],
-      returns: FFIType.u32,
-    },
-  });
-  notifyPost = (name: string) => {
-    // bun:ffi cstring args accept Buffer directly — must be null-terminated
-    const buf = Buffer.from(name + "\0");
-    lib.symbols.notify_post(buf);
-  };
-} catch {
-  // Not on macOS or bun:ffi unavailable — skip Darwin notifications.
-}
-
-/**
- * Broadcast a Darwin notification that a tugbank domain changed.
- * Fire-and-forget. Silent no-op if not on macOS.
- */
-function broadcastDomainChanged(domain: string): void {
-  notifyPost?.(`dev.tugtool.tugbank.changed.${domain}`);
-}
 
 // ── Value kind discriminators (must match tugbank-core/src/value.rs) ─────────
 
@@ -199,9 +171,6 @@ export class TugbankClient {
 
     // Invalidate cache for this domain.
     this.domainCache.delete(domain);
-
-    // Broadcast change to other processes.
-    broadcastDomainChanged(domain);
   }
 
   /**

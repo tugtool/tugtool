@@ -88,8 +88,6 @@ final class TugbankClient {
     private let handle: UnsafeMutableRawPointer
     private var cache: [String: DomainSnapshot] = [:]
     private var callbacks: [(String, [String: TugbankValue]) -> Void] = []
-    /// Darwin notification tokens. Cancelling these stops the notifications.
-    private var notifyTokens: [Int32] = []
 
     // MARK: Init / Deinit
 
@@ -101,8 +99,6 @@ final class TugbankClient {
     }
 
     deinit {
-        // Cancel all Darwin notification registrations.
-        notifyTokens.forEach { notify_cancel($0) }
         tugbank_close(handle)
     }
 
@@ -197,41 +193,6 @@ final class TugbankClient {
         let version = tugbank_data_version(handle)
         cache[domain] = DomainSnapshot(generation: version, entries: entries)
 
-        // Register a Darwin notification watcher for this domain.
-        registerDomainNotification(domain)
-    }
-
-    /// Register a Darwin notification listener for a domain.
-    ///
-    /// Uses `notify_register_dispatch` to deliver notifications on the main
-    /// queue. When a notification fires, re-reads the domain from the database,
-    /// updates the cache, and fires registered callbacks.
-    private func registerDomainNotification(_ domain: String) {
-        let notificationName = "dev.tugtool.tugbank.changed.\(domain)"
-        var token: Int32 = 0
-
-        notify_register_dispatch(
-            notificationName,
-            &token,
-            DispatchQueue.main
-        ) { [weak self] (_: Int32) in
-            self?.onDomainNotification(domain)
-        }
-
-        notifyTokens.append(token)
-    }
-
-    /// Handle an incoming Darwin notification for a domain.
-    ///
-    /// Re-reads the domain from the database, updates the cache, and fires
-    /// registered callbacks.
-    private func onDomainNotification(_ domain: String) {
-        guard let newEntries = fetchDomainFromDB(domain) else { return }
-        cache[domain] = DomainSnapshot(generation: tugbank_data_version(handle), entries: newEntries)
-
-        for callback in callbacks {
-            callback(domain, newEntries)
-        }
     }
 
     /// Fetch all entries for a domain via the FFI.

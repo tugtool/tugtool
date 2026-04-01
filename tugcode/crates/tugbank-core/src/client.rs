@@ -1,44 +1,25 @@
 //! TugbankClient — in-memory cached client wrapping DefaultsStore.
 //!
 //! `TugbankClient` wraps a [`DefaultsStore`] with an in-memory domain-snapshot
-//! cache. On macOS, external changes are detected via Darwin notifications
-//! (`notify_register_file_descriptor`). When a notification fires for a
-//! cached domain, the snapshot is reloaded from the database and registered
-//! callbacks are fired.
+//! cache. External changes are detected via Unix domain socket notifications.
+//! When a notification arrives for a cached domain, the snapshot is reloaded
+//! from the database and registered callbacks are fired.
 //!
 //! # Thread safety
 //!
 //! `TugbankClient` is `Send + Sync` and intended to be shared via `Arc`.
-//!
-//! # Notification lifecycle
-//!
-//! On macOS, construction registers Darwin notification watchers for all
-//! initially-known domains. Watchers are also registered when a new domain is
-//! first accessed via `get`, `set`, or `read_domain`. The `NotifyToken`s are
-//! stored in the client and cancelled when the client is dropped.
-//!
-//! On non-macOS platforms, no background polling or notification mechanism is
-//! provided. The cache is populated on first access and updated only on local
-//! writes.
-//!
-//! # Design
-//!
-//! `TugbankClient` holds `Arc<Inner>` internally so notification callbacks
-//! can share the same `DefaultsStore` and callback registry.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use crate::notify::{ListenerHandle, broadcast_domain_changed, start_listener};
 use crate::{DefaultsStore, Error, Value};
-
-#[cfg(target_os = "macos")]
-use crate::notify::{NotifyToken, broadcast_domain_changed, register_domain_watcher};
 
 /// A snapshot of all key-value pairs for a single domain.
 pub type DomainSnapshot = BTreeMap<String, Value>;
 
-// ── Callback registry ─────────────────────────────────────────────────────────
+// ── Callback registry ────────────────────────────────────────────────────────
 
 type Callback = Box<dyn Fn(&str, &DomainSnapshot) + Send + 'static>;
 
@@ -73,7 +54,7 @@ impl CallbackRegistry {
     }
 }
 
-// ── CallbackHandle ────────────────────────────────────────────────────────────
+// ── CallbackHandle ───────────────────────────────────────────────────────────
 
 /// Returned by [`TugbankClient::on_domain_changed`].
 ///
@@ -91,7 +72,7 @@ impl Drop for CallbackHandle {
     }
 }
 
-// ── Internal shared state ─────────────────────────────────────────────────────
+// ── Internal shared state ────────────────────────────────────────────────────
 
 struct Inner {
     store: DefaultsStore,
@@ -99,19 +80,17 @@ struct Inner {
     callbacks: Arc<Mutex<CallbackRegistry>>,
 }
 
-// ── TugbankClient ─────────────────────────────────────────────────────────────
+// ── TugbankClient ────────────────────────────────────────────────────────────
 
 /// In-memory cached client wrapping a [`DefaultsStore`].
 ///
 /// All reads go through an in-memory snapshot cache. The cache is populated
-/// on first access per domain and refreshed via Darwin notifications (macOS)
+/// on first access per domain and refreshed via Unix socket notifications
 /// when an external write is detected.
 pub struct TugbankClient {
     inner: Arc<Inner>,
-    /// Darwin notification tokens. Dropping these cancels the registrations.
-    /// Wrapped in a Mutex so we can add tokens after construction.
-    #[cfg(target_os = "macos")]
-    notify_tokens: Mutex<Vec<NotifyToken>>,
+    /// Listener handle — stops the listener thread when dropped.
+    _listener: Option<ListenerHandle>,
 }
 
 // Compile-time assertion that TugbankClient is Send + Sync.
@@ -131,8 +110,7 @@ impl TugbankClient {
 
     /// Create a client from an existing [`DefaultsStore`].
     ///
-    /// On macOS, registers Darwin notification watchers for all domains that
-    /// currently exist in the database.
+    /// Starts a Unix socket listener for change notifications.
     pub fn from_store(store: DefaultsStore) -> Result<Self, Error> {
         let inner = Arc::new(Inner {
             store,
@@ -140,30 +118,22 @@ impl TugbankClient {
             callbacks: Arc::new(Mutex::new(CallbackRegistry::new())),
         });
 
-        #[cfg(target_os = "macos")]
-        let notify_tokens = {
-            let tokens = Mutex::new(Vec::new());
-            // Register watchers for all domains that already exist.
-            if let Ok(domains) = inner.store.list_domains() {
-                let mut toks = tokens.lock().unwrap();
-                for domain in domains {
-                    let tok = register_watcher_for_domain(&domain, &inner);
-                    toks.push(tok);
-                }
-            }
-            tokens
+        // Start the notification listener.
+        let listener = {
+            let inner_clone = Arc::clone(&inner);
+            start_listener(move |domain| {
+                handle_domain_notification(domain, &inner_clone);
+            })
+            .ok()
         };
 
         Ok(Self {
             inner,
-            #[cfg(target_os = "macos")]
-            notify_tokens,
+            _listener: listener,
         })
     }
 
     /// Access the underlying [`DefaultsStore`].
-    ///
-    /// Used by HTTP handlers during migration from `Arc<DefaultsStore>`.
     pub fn store(&self) -> &DefaultsStore {
         &self.inner.store
     }
@@ -175,10 +145,9 @@ impl TugbankClient {
         Ok(cache.get(domain).and_then(|snap| snap.get(key)).cloned())
     }
 
-    /// Write a value to the DB and update the local cache atomically.
+    /// Write a value to the DB and update the local cache.
     ///
-    /// On macOS, also broadcasts a Darwin notification so other processes
-    /// (and other `TugbankClient` instances in this process) are notified.
+    /// Broadcasts a Unix socket notification so other processes are notified.
     pub fn set(&self, domain: &str, key: &str, value: Value) -> Result<(), Error> {
         self.inner.store.domain(domain)?.set(key, value.clone())?;
         {
@@ -188,7 +157,6 @@ impl TugbankClient {
                 .or_default()
                 .insert(key.to_owned(), value);
         }
-        #[cfg(target_os = "macos")]
         broadcast_domain_changed(domain);
         Ok(())
     }
@@ -202,7 +170,9 @@ impl TugbankClient {
 
     /// Read `PRAGMA data_version` from the underlying connection.
     pub fn data_version(&self) -> Result<u64, Error> {
-        read_data_version(&self.inner.store)
+        let conn = self.inner.store.conn.lock().unwrap();
+        let v: i64 = conn.query_row("PRAGMA data_version", [], |row| row.get(0))?;
+        Ok(v as u64)
     }
 
     /// List all domain names in the database.
@@ -225,15 +195,7 @@ impl TugbankClient {
         }
     }
 
-    /// No-op for API compatibility. Notification cleanup happens on Drop.
-    ///
-    /// On macOS, the polling thread no longer exists; this method is kept so
-    /// existing call sites compile without changes.
-    pub fn shutdown(&self) {
-        // Nothing to do — Darwin notification tokens are cancelled on Drop.
-    }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // ── Private helpers ──────────────────────────────────────────────────────
 
     fn ensure_domain_loaded(&self, domain: &str) -> Result<(), Error> {
         let already_loaded = {
@@ -242,70 +204,33 @@ impl TugbankClient {
         };
         if !already_loaded {
             let snapshot = self.inner.store.domain(domain)?.read_all()?;
-            {
-                let mut cache = self.inner.cache.lock().unwrap();
-                // Another thread may have populated the cache between our check
-                // and the lock re-acquisition — use `or_insert` to avoid
-                // overwriting a fresher snapshot.
-                cache.entry(domain.to_owned()).or_insert(snapshot);
-            }
-            // Register a Darwin notification watcher for this newly-seen domain.
-            #[cfg(target_os = "macos")]
-            {
-                let tok = register_watcher_for_domain(domain, &self.inner);
-                self.notify_tokens.lock().unwrap().push(tok);
-            }
+            let mut cache = self.inner.cache.lock().unwrap();
+            cache.entry(domain.to_owned()).or_insert(snapshot);
         }
         Ok(())
     }
 }
 
-impl Drop for TugbankClient {
-    fn drop(&mut self) {
-        self.shutdown();
+/// Handle a notification that a domain changed.
+///
+/// Re-reads the domain from the database, updates the cache, and fires
+/// registered callbacks.
+fn handle_domain_notification(domain: &str, inner: &Arc<Inner>) {
+    let snapshot = match inner.store.domain(domain).and_then(|h| h.read_all()) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    {
+        let mut cache = inner.cache.lock().unwrap();
+        cache.insert(domain.to_owned(), snapshot.clone());
+    }
+    {
+        let reg = inner.callbacks.lock().unwrap();
+        reg.fire(domain, &snapshot);
     }
 }
 
-// ── Darwin watcher helper ─────────────────────────────────────────────────────
-
-/// Register a Darwin notification watcher for `domain` that reloads the
-/// domain snapshot and fires registered callbacks when a notification arrives.
-#[cfg(target_os = "macos")]
-fn register_watcher_for_domain(domain: &str, inner: &Arc<Inner>) -> NotifyToken {
-    let domain_owned = domain.to_owned();
-    let inner_clone = Arc::clone(inner);
-    register_domain_watcher(domain, move || {
-        // Re-read the domain from the database.
-        let snapshot = match inner_clone
-            .store
-            .domain(&domain_owned)
-            .and_then(|h| h.read_all())
-        {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        // Update the cache.
-        {
-            let mut cache = inner_clone.cache.lock().unwrap();
-            cache.insert(domain_owned.clone(), snapshot.clone());
-        }
-        // Fire callbacks.
-        {
-            let reg = inner_clone.callbacks.lock().unwrap();
-            reg.fire(&domain_owned, &snapshot);
-        }
-    })
-}
-
-// ── Data version helper ───────────────────────────────────────────────────────
-
-fn read_data_version(store: &DefaultsStore) -> Result<u64, Error> {
-    let conn = store.conn.lock().unwrap();
-    let v: i64 = conn.query_row("PRAGMA data_version", [], |row| row.get(0))?;
-    Ok(v as u64)
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -320,50 +245,28 @@ mod tests {
         (client, tmp)
     }
 
-    // ── Compile-time: TugbankClient is Send + Sync ────────────────────────────
-
     #[test]
     fn test_tugbank_client_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<TugbankClient>();
     }
 
-    // ── test_set_updates_cache ────────────────────────────────────────────────
-    // set() followed by get() returns the new value immediately (no poll needed)
-
     #[test]
-    fn test_set_updates_cache() {
+    fn test_get_set_round_trip() {
         let (client, _tmp) = temp_client();
-        client.set("d", "k", Value::I64(42)).unwrap();
-        let v = client.get("d", "k").unwrap();
-        assert_eq!(v, Some(Value::I64(42)));
+        client
+            .set("test.domain", "key", Value::String("hello".into()))
+            .unwrap();
+        let val = client.get("test.domain", "key").unwrap();
+        assert_eq!(val, Some(Value::String("hello".into())));
     }
 
-    // ── test_get_caches_value ─────────────────────────────────────────────────
-    // after set + get, a second get returns the cached value without DB access
-
-    #[test]
-    fn test_get_caches_value() {
-        let (client, _tmp) = temp_client();
-        client.set("d", "k", Value::Bool(true)).unwrap();
-        let v1 = client.get("d", "k").unwrap();
-        let v2 = client.get("d", "k").unwrap();
-        assert_eq!(v1, v2);
-        assert_eq!(v1, Some(Value::Bool(true)));
-    }
-
-    // ── test_external_write_detected ─────────────────────────────────────────
-    // open two DefaultsStore connections to the same file; write via the second;
-    // assert TugbankClient detects the change via Darwin notification
-
-    #[cfg(target_os = "macos")]
     #[test]
     fn test_external_write_detected() {
         let tmp = NamedTempFile::new().expect("temp file");
         let client = TugbankClient::open(tmp.path()).expect("open failed");
 
-        // Pre-load the domain so the cache has a baseline entry and a
-        // Darwin notification watcher is registered.
+        // Pre-load the domain so the cache has a baseline.
         let _ = client.read_domain("ext").unwrap();
 
         // Write via a second independent connection.
@@ -375,9 +278,9 @@ mod tests {
             .unwrap();
 
         // Broadcast the notification as the write side would.
-        crate::notify::broadcast_domain_changed("ext");
+        broadcast_domain_changed("ext");
 
-        // Wait for at most 500ms for the notification to propagate.
+        // Wait for the notification to propagate.
         let deadline = Duration::from_millis(500);
         let start = std::time::Instant::now();
         let mut detected = false;
@@ -392,15 +295,10 @@ mod tests {
 
         assert!(
             detected,
-            "TugbankClient should detect external write via Darwin notification"
+            "TugbankClient should detect external write via Unix socket notification"
         );
     }
 
-    // ── test_callback_fires_on_external_change ────────────────────────────────
-    // register on_domain_changed callback; write via external connection;
-    // assert callback fires via Darwin notification
-
-    #[cfg(target_os = "macos")]
     #[test]
     fn test_callback_fires_on_external_change() {
         let tmp = NamedTempFile::new().expect("temp file");
@@ -412,45 +310,31 @@ mod tests {
             fired_clone.fetch_add(1, Ordering::Release);
         });
 
-        // Pre-load the domain so a watcher is registered.
-        let _ = client.read_domain("cb-domain").unwrap();
+        // Pre-load the domain.
+        let _ = client.read_domain("cb-test").unwrap();
 
-        // Write via a second independent connection.
+        // Write via external connection + broadcast.
         let external = DefaultsStore::open(tmp.path()).expect("external store open");
         external
-            .domain("cb-domain")
+            .domain("cb-test")
             .unwrap()
-            .set("key", Value::I64(1))
+            .set("k", Value::Bool(true))
             .unwrap();
+        broadcast_domain_changed("cb-test");
 
-        // Broadcast as the write side would.
-        crate::notify::broadcast_domain_changed("cb-domain");
-
-        // Wait for the callback to fire within 500ms.
+        // Wait for the callback to fire.
         let deadline = Duration::from_millis(500);
         let start = std::time::Instant::now();
-        let mut callback_fired = false;
         while start.elapsed() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
             if fired.load(Ordering::Acquire) > 0 {
-                callback_fired = true;
                 break;
             }
+            std::thread::sleep(Duration::from_millis(10));
         }
 
         assert!(
-            callback_fired,
-            "on_domain_changed callback should have fired via Darwin notification"
+            fired.load(Ordering::Acquire) > 0,
+            "on_domain_changed callback should fire on external write"
         );
-    }
-
-    // ── test_shutdown_is_noop ─────────────────────────────────────────────────
-    // shutdown() is a no-op and can be called multiple times safely
-
-    #[test]
-    fn test_shutdown_is_noop() {
-        let (client, _tmp) = temp_client();
-        client.shutdown();
-        client.shutdown();
     }
 }
