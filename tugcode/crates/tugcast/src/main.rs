@@ -143,18 +143,17 @@ async fn main() {
     // migration, the defaults feed, and the HTTP server. On failure, log a warning
     // and continue without tugbank -- this preserves graceful degradation when the
     // bank path is inaccessible.
-    let bank_client: Option<Arc<TugbankClient>> =
-        match TugbankClient::open(&bank_path) {
-            Ok(client) => Some(Arc::new(client)),
-            Err(e) => {
-                warn!(
-                    path = %bank_path.display(),
-                    error = %e,
-                    "failed to open TugbankClient — defaults endpoints and feed disabled"
-                );
-                None
-            }
-        };
+    let bank_client: Option<Arc<TugbankClient>> = match TugbankClient::open(&bank_path) {
+        Ok(client) => Some(Arc::new(client)),
+        Err(e) => {
+            warn!(
+                path = %bank_path.display(),
+                error = %e,
+                "failed to open TugbankClient — defaults endpoints and feed disabled"
+            );
+            None
+        }
+    };
 
     // Run the one-time flat-file-to-tugbank migration synchronously, before the
     // TCP listener binds, so no frontend fetch can race the migration writes [D05].
@@ -455,11 +454,7 @@ async fn main() {
 ///
 /// Binds a Unix datagram socket at `path`, receives domain names as datagrams,
 /// and calls `client.refresh_domain()` with 50ms per-domain debounce.
-async fn run_notify_listener(
-    path: PathBuf,
-    client: Arc<TugbankClient>,
-    cancel: CancellationToken,
-) {
+async fn run_notify_listener(path: PathBuf, client: Arc<TugbankClient>, cancel: CancellationToken) {
     // Remove stale socket from a previous run.
     let _ = std::fs::remove_file(&path);
 
@@ -544,15 +539,16 @@ fn force_kill_port_holder(port: u16) {
         .output();
 
     let pids = match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).trim().to_string()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => return, // No process holding the port, or lsof not available.
     };
 
     for pid_str in pids.lines() {
         if let Ok(pid) = pid_str.trim().parse::<i32>() {
-            eprintln!("tugcast: --force: killing PID {} holding port {}", pid, port);
+            eprintln!(
+                "tugcast: --force: killing PID {} holding port {}",
+                pid, port
+            );
             unsafe {
                 libc::kill(pid, libc::SIGKILL);
             }

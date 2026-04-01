@@ -1,23 +1,24 @@
 /**
- * settings-api unit tests — Phase 5f Step 2.
+ * settings-api unit tests.
  *
  * Tests cover:
  * - putTabState sends correct URL and body format (mock fetch)
- * - fetchDeckStateWithRetry returns null on 404
- * - fetchDeckStateWithRetry returns the string value on 200
+ * - readDeckState returns null when not cached
+ * - readDeckState returns the string value from cache
  * - putFocusedCardId sends correct URL and body format (mock fetch)
- * - fetchTabStatesWithRetry returns populated Map for known tab IDs
- * - fetchTabStatesWithRetry skips 404 entries (tab not yet saved)
+ * - readTabStates returns populated Map for known tab IDs
+ * - readTabStates skips missing entries
  */
 
 import { describe, test, expect, mock, afterEach } from "bun:test";
 import {
   putTabState,
-  fetchDeckStateWithRetry,
+  readDeckState,
   putFocusedCardId,
-  fetchTabStatesWithRetry,
+  readTabStates,
 } from "../settings-api";
 import type { TabStateBag } from "../layout-tree";
+import type { TugbankClient, TaggedValue } from "../lib/tugbank-client";
 
 // ---------------------------------------------------------------------------
 // fetch mock helpers
@@ -33,10 +34,28 @@ function makeResponse(status: number, body: unknown): Response {
 }
 
 // ---------------------------------------------------------------------------
+// TugbankClient mock helpers
+// ---------------------------------------------------------------------------
+
+/** Create a minimal TugbankClient mock with a backing store. */
+function makeMockClient(
+  store: Record<string, Record<string, TaggedValue>> = {}
+): TugbankClient {
+  return {
+    get(domain: string, key: string): TaggedValue | undefined {
+      return store[domain]?.[key];
+    },
+    readDomain(domain: string): Record<string, TaggedValue> | undefined {
+      return store[domain];
+    },
+  } as TugbankClient;
+}
+
+// ---------------------------------------------------------------------------
 // putTabState
 // ---------------------------------------------------------------------------
 
-describe("putTabState (Phase 5f Step 2)", () => {
+describe("putTabState", () => {
   afterEach(() => {
     mock.restore();
   });
@@ -91,7 +110,7 @@ describe("putTabState (Phase 5f Step 2)", () => {
 // putFocusedCardId
 // ---------------------------------------------------------------------------
 
-describe("putFocusedCardId (Phase 5f Step 2)", () => {
+describe("putFocusedCardId", () => {
   afterEach(() => {
     mock.restore();
   });
@@ -118,110 +137,76 @@ describe("putFocusedCardId (Phase 5f Step 2)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// fetchDeckStateWithRetry
+// readDeckState
 // ---------------------------------------------------------------------------
 
-describe("fetchDeckStateWithRetry (Phase 5f Step 2)", () => {
-  afterEach(() => {
-    mock.restore();
+describe("readDeckState", () => {
+  test("returns null when domain is not cached", () => {
+    const client = makeMockClient();
+    expect(readDeckState(client)).toBeNull();
   });
 
-  test("returns null on 404 (no focused card stored yet)", async () => {
-    globalThis.fetch = async () => makeResponse(404, {});
-
-    const result = await fetchDeckStateWithRetry();
-    expect(result).toBeNull();
-  });
-
-  test("returns the string value on 200 with correct wire format", async () => {
+  test("returns the string value from cache", () => {
     const cardId = "card-focused-789";
-    globalThis.fetch = async () =>
-      makeResponse(200, { kind: "string", value: cardId });
-
-    const result = await fetchDeckStateWithRetry();
-    expect(result).toBe(cardId);
+    const client = makeMockClient({
+      "dev.tugtool.deck.state": {
+        focusedCardId: { kind: "string", value: cardId },
+      },
+    });
+    expect(readDeckState(client)).toBe(cardId);
   });
 
-  test("returns null when response has unexpected tagged format", async () => {
-    globalThis.fetch = async () =>
-      makeResponse(200, { kind: "json", value: { not: "a string" } });
-
-    const result = await fetchDeckStateWithRetry();
-    expect(result).toBeNull();
-  });
-
-  test("fetches from correct URL", async () => {
-    const urls: string[] = [];
-    globalThis.fetch = async (url: string | URL | Request) => {
-      urls.push(url as string);
-      return makeResponse(404, {});
-    };
-
-    await fetchDeckStateWithRetry();
-    expect(urls[0]).toBe("/api/defaults/dev.tugtool.deck.state/focusedCardId");
+  test("returns null when entry has unexpected tagged format", () => {
+    const client = makeMockClient({
+      "dev.tugtool.deck.state": {
+        focusedCardId: { kind: "json", value: { not: "a string" } },
+      },
+    });
+    expect(readDeckState(client)).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// fetchTabStatesWithRetry
+// readTabStates
 // ---------------------------------------------------------------------------
 
-describe("fetchTabStatesWithRetry (Phase 5f Step 2)", () => {
-  afterEach(() => {
-    mock.restore();
-  });
-
-  test("returns empty Map when tabIds array is empty", async () => {
-    globalThis.fetch = async () => makeResponse(404, {});
-
-    const result = await fetchTabStatesWithRetry([]);
+describe("readTabStates", () => {
+  test("returns empty Map when tabIds array is empty", () => {
+    const client = makeMockClient();
+    const result = readTabStates(client, []);
     expect(result.size).toBe(0);
   });
 
-  test("returns populated Map for tabs with stored state", async () => {
+  test("returns populated Map for tabs with stored state", () => {
     const bag1: TabStateBag = { scroll: { x: 0, y: 100 } };
     const bag2: TabStateBag = { scroll: { x: 20, y: 30 }, content: "hello" };
 
-    globalThis.fetch = async (url: string | URL | Request) => {
-      const u = url as string;
-      if (u.includes("tab-1")) return makeResponse(200, { kind: "json", value: bag1 });
-      if (u.includes("tab-2")) return makeResponse(200, { kind: "json", value: bag2 });
-      return makeResponse(404, {});
-    };
+    const client = makeMockClient({
+      "dev.tugtool.deck.tabstate": {
+        "tab-1": { kind: "json", value: bag1 },
+        "tab-2": { kind: "json", value: bag2 },
+      },
+    });
 
-    const result = await fetchTabStatesWithRetry(["tab-1", "tab-2"]);
+    const result = readTabStates(client, ["tab-1", "tab-2"]);
     expect(result.size).toBe(2);
     expect(result.get("tab-1")?.scroll?.y).toBe(100);
     expect(result.get("tab-2")?.scroll?.x).toBe(20);
     expect(result.get("tab-2")?.content).toBe("hello");
   });
 
-  test("skips 404 entries — absent tabs are not in the returned Map", async () => {
+  test("skips missing entries — absent tabs are not in the returned Map", () => {
     const bag: TabStateBag = { scroll: { x: 5, y: 10 } };
 
-    globalThis.fetch = async (url: string | URL | Request) => {
-      const u = url as string;
-      if (u.includes("tab-present")) return makeResponse(200, { kind: "json", value: bag });
-      return makeResponse(404, {});
-    };
+    const client = makeMockClient({
+      "dev.tugtool.deck.tabstate": {
+        "tab-present": { kind: "json", value: bag },
+      },
+    });
 
-    const result = await fetchTabStatesWithRetry(["tab-present", "tab-missing"]);
+    const result = readTabStates(client, ["tab-present", "tab-missing"]);
     expect(result.size).toBe(1);
     expect(result.has("tab-present")).toBe(true);
     expect(result.has("tab-missing")).toBe(false);
-  });
-
-  test("fetches each tab ID from the correct URL", async () => {
-    const urls: string[] = [];
-    globalThis.fetch = async (url: string | URL | Request) => {
-      urls.push(url as string);
-      return makeResponse(404, {});
-    };
-
-    await fetchTabStatesWithRetry(["tab-alpha", "tab-beta"]);
-
-    expect(urls.some((u) => u.includes("tab-alpha"))).toBe(true);
-    expect(urls.some((u) => u.includes("tab-beta"))).toBe(true);
-    expect(urls.every((u) => u.startsWith("/api/defaults/dev.tugtool.deck.tabstate/"))).toBe(true);
   });
 });

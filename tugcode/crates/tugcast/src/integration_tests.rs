@@ -649,10 +649,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
 
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let store = DefaultsStore::open(tmp.path()).expect("open test tugbank db");
-    let client = Arc::new(
-        TugbankClient::from_store(store)
-            .expect("create TugbankClient"),
-    );
+    let client = Arc::new(TugbankClient::from_store(store).expect("create TugbankClient"));
 
     let auth = auth::new_shared_auth_state(7892);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -947,10 +944,7 @@ async fn test_defaults_non_loopback_returns_403() {
 
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let store = DefaultsStore::open(tmp.path()).expect("open test tugbank db");
-    let bank_client = Arc::new(
-        TugbankClient::from_store(store)
-            .expect("create TugbankClient"),
-    );
+    let bank_client = Arc::new(TugbankClient::from_store(store).expect("create TugbankClient"));
 
     let auth = auth::new_shared_auth_state(7893);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -1046,10 +1040,7 @@ async fn test_migration_writes_layout_and_theme_to_tugbank() {
     let db_tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
     let store = DefaultsStore::open(db_tmp.path()).expect("open store");
-    let client = Arc::new(
-        TugbankClient::from_store(store)
-            .expect("create TugbankClient"),
-    );
+    let client = Arc::new(TugbankClient::from_store(store).expect("create TugbankClient"));
 
     write_flat_settings(
         tree_tmp.path(),
@@ -1126,10 +1117,7 @@ async fn test_migration_noop_when_no_flat_file() {
     let db_tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
     let store = DefaultsStore::open(db_tmp.path()).expect("open store");
-    let client = Arc::new(
-        TugbankClient::from_store(store)
-            .expect("create TugbankClient"),
-    );
+    let client = Arc::new(TugbankClient::from_store(store).expect("create TugbankClient"));
 
     // No flat file created — migration should be a no-op.
     crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), client.store())
