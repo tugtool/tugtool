@@ -246,6 +246,14 @@ interface MarkdownEngineState {
   htmlCache: Map<number, string>;
   /** Total block count from last lex response. */
   blockCount: number;
+  /**
+   * Maps each region key to the block index range it produced.
+   * `start` is the first block index for that region; `count` is the number
+   * of blocks. Populated after every full rebuild in lexParseAndRender and
+   * updated incrementally by incrementalTailUpdate. Cleared by doClear and
+   * at the start of every lexParseAndRender reset. [D04-region-block-ranges]
+   */
+  regionBlockRanges: Map<string, { start: number; count: number }>;
 }
 
 const DEFAULT_VIEWPORT_HEIGHT = 600;
@@ -319,6 +327,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         blockNodes: new Map(),
         htmlCache: new Map(),
         blockCount: 0,
+        regionBlockRanges: new Map(),
       };
     }
     return engineRef.current;
@@ -545,6 +554,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     engine.blockStarts = [];
     engine.blockEnds = [];
     engine.blockCount = 0;
+    engine.regionBlockRanges.clear();
     applySpacers(0, 0);
 
     // Lex + parse: synchronous WASM calls (~29ms for 1MB)
@@ -567,6 +577,30 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       engine.htmlCache.set(i, parse_to_html(raw));
     }
     const parseMs = performance.now() - parseStart;
+
+    // Populate regionBlockRanges by mapping each block to its region via char offset.
+    // Iterate blocks in order; for each block, look up its region and accumulate.
+    {
+      let currentKey: string | undefined = undefined;
+      let rangeStart = 0;
+      let rangeCount = 0;
+      for (let i = 0; i < engine.blockStarts.length; i++) {
+        const key = engine.regionMap.regionKeyAtOffset(engine.blockStarts[i]);
+        if (key !== currentKey) {
+          if (currentKey !== undefined) {
+            engine.regionBlockRanges.set(currentKey, { start: rangeStart, count: rangeCount });
+          }
+          currentKey = key;
+          rangeStart = i;
+          rangeCount = 1;
+        } else {
+          rangeCount++;
+        }
+      }
+      if (currentKey !== undefined) {
+        engine.regionBlockRanges.set(currentKey, { start: rangeStart, count: rangeCount });
+      }
+    }
 
     onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
@@ -690,6 +724,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     engine.blockStarts = [];
     engine.blockEnds = [];
     engine.blockCount = 0;
+    engine.regionBlockRanges.clear();
     applySpacers(0, 0);
   }
 

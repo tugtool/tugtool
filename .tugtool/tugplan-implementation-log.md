@@ -8,3 +8,15 @@ Entries are sorted newest-first.
 
 ---
 
+---
+step: step-1
+date: 2025-04-01T20:21:37Z
+---
+
+## step-1: Added regionBlockRanges Map to MarkdownEngineState, populated after lex-parse cycle via regionKeyAtOffset. Cleared in doClear and lexParseAndRender reset. Test suite added.
+
+**Files changed:**
+- incremental-tail-lex-6474254-1
+
+---
+
