@@ -136,7 +136,6 @@ export class TugbankClient {
   /**
    * Write a single key/value pair to a domain.
    * Creates the domain row if it does not exist and bumps the generation.
-   * Broadcasts a Darwin notification so other processes can react.
    */
   set(domain: string, key: string, value: TugbankValue): void {
     const enc = encodeValue(value);

@@ -39,6 +39,11 @@ pub struct Cli {
     /// in production.
     #[arg(long)]
     pub no_auth: bool,
+
+    /// Kill any existing tugcast process holding the TCP port before binding.
+    /// Useful when a zombie tugcast is holding the port after a crash.
+    #[arg(long)]
+    pub force: bool,
 }
 
 impl Cli {

@@ -156,13 +156,6 @@ impl TugbankClient {
         Ok(cache.get(domain).cloned().unwrap_or_default())
     }
 
-    /// Read `PRAGMA data_version` from the underlying connection.
-    pub fn data_version(&self) -> Result<u64, Error> {
-        let conn = self.inner.store.conn.lock().unwrap();
-        let v: i64 = conn.query_row("PRAGMA data_version", [], |row| row.get(0))?;
-        Ok(v as u64)
-    }
-
     /// List all domain names in the database.
     pub fn list_domains(&self) -> Result<Vec<String>, Error> {
         self.inner.store.list_domains()

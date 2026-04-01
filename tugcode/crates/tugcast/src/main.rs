@@ -12,12 +12,18 @@ mod server;
 #[cfg(test)]
 mod integration_tests;
 
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use tugbank_core::TugbankClient;
+use tugbank_core::notify as tugbank_notify;
 use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
@@ -28,9 +34,6 @@ use crate::feeds::stats::{
 };
 use crate::feeds::terminal::{self, TerminalFeed};
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
 
 #[tokio::main]
 async fn main() {
@@ -49,6 +52,11 @@ async fn main() {
 
     // Parse CLI arguments
     let cli = cli::Cli::parse();
+
+    // --force: kill any existing process holding the TCP port before we try to bind.
+    if cli.force {
+        force_kill_port_holder(cli.port);
+    }
 
     // Resolve bank path: use --bank-path if provided, otherwise default to ~/.tugbank.db
     let bank_path: PathBuf = cli.bank_path.clone().unwrap_or_else(|| {
@@ -156,6 +164,8 @@ async fn main() {
         }
     }
 
+    let notify_socket_path = tugbank_notify::socket_path();
+
     // Create DEFAULTS feed from the TugbankClient.
     let defaults_rx: Option<tokio::sync::watch::Receiver<Frame>> = bank_client
         .as_ref()
@@ -217,6 +227,17 @@ async fn main() {
     tokio::spawn(async move {
         feed.run(terminal_tx, feed_cancel).await;
     });
+
+    // Start the tugbank notification socket listener.
+    // Receives domain-change datagrams and calls refresh_domain() with debounce.
+    if let Some(ref client) = bank_client {
+        let notify_client = Arc::clone(client);
+        let notify_cancel = cancel.clone();
+        let notify_path = notify_socket_path.clone();
+        tokio::spawn(async move {
+            run_notify_listener(notify_path, notify_client, notify_cancel).await;
+        });
+    }
 
     // Resolve tugtalk path and start agent bridge
     let tugtalk_path =
@@ -407,6 +428,13 @@ async fn main() {
         drop(tx); // Close channel -- draining task exits after writing
     }
 
+    // Clean up the notification socket before shutting down tasks.
+    if let Err(e) = std::fs::remove_file(&notify_socket_path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            warn!(error = %e, "failed to remove notification socket");
+        }
+    }
+
     // Signal shutdown for background tasks
     cancel.cancel();
 
@@ -421,6 +449,118 @@ async fn main() {
 
     info!("tugcast shut down");
     std::process::exit(exit_code);
+}
+
+/// Run the tugbank notification socket listener.
+///
+/// Binds a Unix datagram socket at `path`, receives domain names as datagrams,
+/// and calls `client.refresh_domain()` with 50ms per-domain debounce.
+async fn run_notify_listener(
+    path: PathBuf,
+    client: Arc<TugbankClient>,
+    cancel: CancellationToken,
+) {
+    // Remove stale socket from a previous run.
+    let _ = std::fs::remove_file(&path);
+
+    // Bind the socket (std UnixDatagram, then wrap for tokio).
+    let std_sock = match std::os::unix::net::UnixDatagram::bind(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(error = %e, path = %path.display(), "failed to bind notification socket");
+            return;
+        }
+    };
+    std_sock.set_nonblocking(true).unwrap();
+    let sock = match tokio::net::UnixDatagram::from_std(std_sock) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(error = %e, "failed to convert notification socket to tokio");
+            return;
+        }
+    };
+
+    info!(path = %path.display(), "tugbank notification socket listening");
+
+    let mut buf = [0u8; 512];
+    let debounce_ms = Duration::from_millis(50);
+    let mut pending: HashMap<String, tokio::time::Instant> = HashMap::new();
+
+    loop {
+        // Wait for the next datagram or a debounce timer to fire.
+        let next_deadline = pending.values().copied().min();
+
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                info!("notification listener shutting down");
+                break;
+            }
+            result = sock.recv(&mut buf) => {
+                match result {
+                    Ok(n) => {
+                        if let Ok(domain) = std::str::from_utf8(&buf[..n]) {
+                            let domain = domain.to_owned();
+                            // Reset the debounce timer for this domain.
+                            pending.insert(domain, tokio::time::Instant::now() + debounce_ms);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "notification socket recv error");
+                    }
+                }
+            }
+            _ = async {
+                match next_deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                // At least one debounce timer has fired. Drain all ready domains.
+            }
+        }
+
+        // Drain any domains whose debounce timer has expired.
+        let now = tokio::time::Instant::now();
+        let ready: Vec<String> = pending
+            .iter()
+            .filter(|(_, deadline)| **deadline <= now)
+            .map(|(domain, _)| domain.clone())
+            .collect();
+        for domain in ready {
+            pending.remove(&domain);
+            info!(domain = %domain, "tugbank domain changed — refreshing");
+            client.refresh_domain(&domain);
+        }
+    }
+}
+
+/// Kill any process currently holding the TCP port.
+///
+/// Uses lsof to find the PID, then sends SIGKILL. Waits briefly for
+/// the port to become available.
+fn force_kill_port_holder(port: u16) {
+    let output = std::process::Command::new("lsof")
+        .args(["-ti", &format!("tcp:{}", port)])
+        .output();
+
+    let pids = match output {
+        Ok(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        }
+        _ => return, // No process holding the port, or lsof not available.
+    };
+
+    for pid_str in pids.lines() {
+        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+            eprintln!("tugcast: --force: killing PID {} holding port {}", pid, port);
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+            }
+        }
+    }
+
+    // Brief wait for the port to be released.
+    std::thread::sleep(Duration::from_millis(100));
 }
 
 /// Map exit code to shutdown reason string
