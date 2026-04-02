@@ -505,7 +505,13 @@ fn detect_merge_conflicts(repo_root: &Path, target_ref: &str) -> Vec<String> {
     let probe = Command::new("git")
         .arg("-C")
         .arg(repo_root)
-        .args(["merge-tree", "--write-tree", "--no-messages", target_ref, "main"])
+        .args([
+            "merge-tree",
+            "--write-tree",
+            "--no-messages",
+            target_ref,
+            "main",
+        ])
         .output();
 
     let output = match probe {
@@ -525,7 +531,14 @@ fn detect_merge_conflicts(repo_root: &Path, target_ref: &str) -> Vec<String> {
     let name_only = Command::new("git")
         .arg("-C")
         .arg(repo_root)
-        .args(["merge-tree", "--write-tree", "--no-messages", "--name-only", target_ref, "main"])
+        .args([
+            "merge-tree",
+            "--write-tree",
+            "--no-messages",
+            "--name-only",
+            target_ref,
+            "main",
+        ])
         .output();
 
     match name_only {
@@ -874,7 +887,11 @@ fn run_merge_in(
     let mut p4_conflicting_files: Option<Vec<String>> = None;
 
     if effective_mode == "remote" {
-        let pr_branch_for_sync = if pr_info.is_some() { Some(branch.as_str()) } else { None };
+        let pr_branch_for_sync = if pr_info.is_some() {
+            Some(branch.as_str())
+        } else {
+            None
+        };
         match check_main_sync(&repo_root, pr_branch_for_sync) {
             Err(e) => {
                 let data = MergeData {
