@@ -10,13 +10,86 @@
 
 ## Vision
 
+### Why now
+
+The command line traces its lineage to 19th-century teleprinters. The modern reimagining is the DEC VT100 — a 1978 terminal that could address cursor positions on a character grid. Typing clipped text commands and getting minimally-formatted text responses was the outside limit of what the hardware could do. Over time, this `tty` model became a standard so successful and so durable that every Linux, Mac, and Unix-like computer still offers pseudo-terminals (`pty`) as a primary interface, and millions of people use shells like Bash and Zsh to get work done every day.
+
+Anthropic took the curious step of adopting the terminal as the user interface for Claude Code — and this turned out to be a brilliant choice. The terminal is all about text, and so are LLMs. Text-only usage patterns and conventions proved to be an excellent way to bring AI assistance to complex software development work.
+
+Two things converged that didn't exist five years ago. First, LLMs made "talk to your computer in natural language" a genuine daily workflow. Claude Code proved that a text-based command interface can orchestrate sophisticated multi-step work — reading files, editing code, running builds, managing git — over a structured protocol that happens to run inside a terminal but doesn't need one. Second, the commands developers actually run have quietly grown structured output capabilities. `git status --porcelain` has existed for years. `cargo --message-format=json` shipped in 2017. Docker, kubectl, npm, aws CLI — all speak JSON now. The ecosystem moved toward machine-readable output because CI/CD pipelines need it. But nobody built a *human-facing* surface that takes advantage of this.
+
+A structured AI protocol on one side. Structured command output on the other. Both being flattened through a 1978 display device.
+
+But the terminal bundles two things we don't typically separate in our minds: the **rendering surface** (the tty/pty/VT100 character grid) and the **command interpreter** (the shell or tool that accepts commands and produces output). The rendering surface is the part stuck in 1978. The command interpreters — shells, compilers, version control, AI assistants — have evolved enormously. They're held back by a display device that can only paint characters into a grid.
+
+We can divide these. Leave the tty/pty behind. Provide a graphical foundation layer for command interpreters — both the shells (Bash, Zsh) and Claude Code.
+
+### What Tide is
+
 Tide is a graphical command surface where humans and AI both issue commands and see results, rendered at the full fidelity of a graphical UI. There is no terminal pane and no AI pane — one surface, one stream of command blocks, each rendered with purpose-built graphical components.
 
-The VT100 character grid is an output device we no longer need. The pty byte stream is an encoding we no longer need. The programs people use most — git, cargo, ls, grep, curl — produce structured or line-oriented output that was only ever flattened into ANSI escape sequences because the terminal was the only display available. Tide provides a better display.
+The programs people use most — git, cargo, ls, grep, curl — produce structured or line-oriented output that was only ever flattened into ANSI escape sequences because the terminal was the only display available. Tide provides a better display. For recognized commands, it renders rich graphical components: sortable file listings, clickable commit timelines, syntax-highlighted diffs, build output with source links. For everything else, it renders styled monospace text. The VT100 character grid never appears.
 
-Claude Code already broke free of the terminal with `--output-format stream-json`. It speaks a typed protocol: structured JSON events with semantic meaning. The transport exploration (35 tests) documented this protocol. The tugcast WebSocket layer carries it to tugdeck. This is the proof of concept: a post-terminal command experience.
+Claude Code already broke free of the terminal with `--output-format stream-json`. It speaks a typed protocol: structured JSON events with semantic meaning. The transport exploration (35 tests) documented this protocol. The tugcast WebSocket layer carries it to tugdeck. This is the proof of concept — a post-terminal command experience that already works.
 
-Tide extends this to the shell. The same approach — investigate inputs/outputs, define structured events, render graphically — applied to bash, zsh, and the ~20 commands that cover 80% of developer shell usage.
+Tide extends this approach to the shell. The same method — investigate inputs and outputs, define structured events, render graphically — applied to bash, zsh, and the ~20 commands that cover 80% of developer shell usage. The adapter registry auto-detects known commands and produces structured data without the user asking for it. This is the gap nobody else fills: Nushell, PowerShell, and Jupyter all treat external commands as opaque text. Tide recognizes them and renders them richly.
+
+### Why this approach works
+
+Previous attempts at graphical shells failed because they broke compatibility. TermKit (2011) tried to replace everything at once and couldn't run real commands. Tide's approach avoids this through three design choices:
+
+**We're paying the rendering cost anyway.** The Claude Code transport exploration proved that a graphical UI must rebuild ~30 features from scratch (U1-U23, C1-C15) because terminal-only commands produce nothing in stream-json mode. That's not a bug — it's evidence that the terminal was always doing two jobs (interpreting commands *and* rendering output) and when you strip the terminal, you have to replace both. If you're building that rendering layer for Claude Code, extending it to shell commands is incremental. The marginal cost of a git status adapter is small compared to the cost of the conversation rendering engine.
+
+**The method is the same for both halves.** The Claude Code side was built by investigating the stream-json protocol — mapping every event type, documenting inputs and outputs, then building renderers for each. The shell side uses the same method: for each command we want on the surface, investigate its structured output modes, define the adapter, build the renderer. Expand the "UI Must Build" set to encompass the most-used shell commands. Do for each what we did for each Claude Code event type.
+
+**Full compatibility via hidden pty means nothing breaks.** Tide runs unmodified bash/zsh. Every command works on day one. The worst case for an unrecognized command is styled monospace text — which is already better than most terminal emulators' rendering. You can paste any command from Stack Overflow and it runs. Adapters add progressive richness without ever sacrificing compatibility.
+
+**The adapter model is incremental — focus on the fat part of the curve.** You don't need 20 adapters to ship. Git alone covers 15-25% of developer shell usage. Add cargo and you have the two tools a Rust developer uses most. Each adapter makes the surface meaningfully better for some slice of daily work, and the fallback handles everything else. The long tail of obscure commands never goes away, but the fat part under the curve — the 20 commands that cover 80% of usage — isn't daunting. The registry grows over time, and the fallback (styled monospace with SGR color mapping) is genuinely good for everything else.
+
+---
+
+## What We're Replacing
+
+Understanding the pty architecture explains why the terminal is limited and what Tide must do differently.
+
+### The pty abstraction
+
+A pty (pseudo-terminal) is a kernel-level bidirectional byte pipe with a **line discipline** in the middle. `posix_openpt()` creates a master/slave pair. The terminal emulator holds the master fd; the shell gets the slave fd as its stdin/stdout/stderr.
+
+The line discipline handles: character echo, line editing (backspace, Ctrl-U), and signal generation (Ctrl-C → SIGINT, Ctrl-Z → SIGTSTP). When a program calls `cfmakeraw()`, the discipline passes bytes through unprocessed — this is how full-screen programs (vim, htop, Claude Code's TUI) work.
+
+Data flowing master→slave: keystrokes, encoded as raw bytes or escape sequences (`\x1b[A` for arrow-up). Data flowing slave→master: UTF-8 text interleaved with ANSI/xterm escape sequences. The core sequences: `CSI n;m H` (cursor position), `CSI n m` (SGR color/style), `CSI 2 J` (clear screen), `OSC` sequences (title, hyperlinks). The terminal emulator parses these and paints pixels.
+
+### Why this is limiting
+
+**No schema, no types, no versioning.** The protocol is implicit — accreted over decades with no coordination body. Feature detection relies on the `TERM` environment variable and terminfo databases. Each terminal invents its own extensions (Kitty graphics, iTerm2's OSC 1337, sixel) with fragile detection via query-and-timeout.
+
+**Everything must serialize into one byte stream.** There's no out-of-band channel. Text, colors, cursor positioning, images, hyperlinks, clipboard access — all encoded as escape sequences interleaved with content. A program cannot send structured data alongside its output. A terminal emulator cannot ask "what kind of output is this?"
+
+**Fixed-size kernel buffer** (typically 4096 bytes on macOS). Writes block when full. This creates backpressure that affects program behavior — fast output from `cat` of a large file stalls differently than slow output from a network tool.
+
+**Terminal multiplexers (tmux, screen) are lowest-common-denominator filters.** They sit between shell and terminal, maintaining a virtual screen buffer for detach/reattach. But they must parse and re-emit escape sequences, which means advanced features (Kitty graphics, custom OSC sequences) don't pass through. Passthrough modes exist but are fragile.
+
+**Modern extensions hit the ceiling.** Kitty's graphics protocol embeds raster images via escape sequences (base64-encoded or shared memory). Sixel encodes pixels inline. These prove the desire for rich output — but they're hacks built on a text-only transport. There's no layout model, no component system, no interactivity beyond "emit bytes and hope the terminal understands."
+
+### What Claude Code already proved
+
+Claude Code's `--output-format stream-json` mode bypasses the entire pty model. It communicates via **typed JSON events over stdio** — no escape sequences, no character grid, no terminal emulation. A graphical host spawns it as a child process, reads/writes its stdio, and renders its output with full fidelity.
+
+The architectural lesson is not just that a structured protocol is *possible* — it's that it's *better*. Permission dialogs with allow/deny buttons. Tool use blocks showing name, input, output, and duration. Streaming text with delta accumulation. Cost tracking with per-turn token breakdowns. Subagent activity with nested tool calls. None of these would be possible through the pty. The terminal version of Claude Code works *despite* the terminal, not because of it. Tugtalk exists specifically to bridge Claude Code's structured protocol onto the terminal. Tide eliminates the need for that bridge — the structured protocol goes directly to a surface that can render it natively.
+
+This is the template for Tide's shell side: instead of parsing a byte stream that flattens everything into characters, communicate via typed events and render with purpose-built components.
+
+### What we keep, what we discard
+
+| Layer | Status | Rationale |
+|-------|--------|-----------|
+| **Kernel pty** | Hidden — and often bypassed | bash/zsh check `isatty()` — they need a tty to run interactively. Tugshell holds the master fd internally. But for recognized commands, the adapter doesn't even read the pty output. The git adapter runs `git status --porcelain=v2` directly. The ls adapter calls `stat()` on directory entries. The pty exists to keep the shell happy and to capture output from *unrecognized* commands. For recognized commands, it's bypassed entirely. |
+| **Line discipline** | Active (hidden) | Signal generation (Ctrl-C → SIGINT) works through the pty. We need this. |
+| **ANSI SGR sequences** | Mapped to CSS | Bold, italic, underline, 256-color, true-color → mapped to CSS properties in the monospace fallback renderer. SGR is the one piece of the VT100 legacy that works well for our purposes — it's text style annotation, not hardware simulation. A large percentage of command output uses SGR and nothing else: `grep --color`, `git diff` with color, `cargo` warnings in yellow, errors in red. The fallback renderer that correctly maps SGR to CSS handles this output *better than most terminals render it*. The fallback is a genuine product, not a concession. |
+| **VT100 cursor addressing** | Discarded | No `CSI n;m H`, no `CSI 2 J`. Programs that rely on cursor-addressable screens (vim, htop, less) are excluded from the unified surface — available via the separate terminal card. |
+| **Terminal multiplexer** | Not needed | Tide's shell bridge (tugshell) holds the pty directly — no tmux/screen in the middle. This is simpler than the existing tugcast terminal path, which goes through tmux. No passthrough filtering, no lowest-common-denominator constraints. |
+| **Escape sequence extensions** | Discarded | No Kitty graphics, no sixel, no OSC 1337. These are heroic engineering in service of a fundamentally wrong abstraction — encoding pixels as escape sequences injected into a text stream. Tide has a real graphics layer and doesn't need them. Their existence is evidence that the terminal community wants what we're building. |
 
 ---
 
@@ -97,7 +170,9 @@ Open design questions:
 
 ## Three-Tier Command Dispatch
 
-Paralleling how shells handle built-ins:
+Shells have used a tiered dispatch model for decades: built-in commands (`cd`, `export`) are handled by the shell itself without spawning a process; functions and aliases expand within the shell; external commands fork and exec a binary. This pattern is proven and well-understood. Tide adopts the same model with three tiers — surface built-ins, Claude Code pass-through, and shell pass-through.
+
+The surface built-ins are the exact analog of shell built-ins. `cd` in bash doesn't spawn a process — it modifies the shell's own state. Tide's `:model` switcher doesn't talk to Claude Code or the shell — it modifies the surface's own state (and sends a `model_change` message as a side effect). The surface built-ins form a **stable layer that exists regardless of whether Claude Code or the shell is connected**. You can display cost, switch themes, manage sessions, and navigate history even if both backends are down. This is exactly how shell built-ins work — `cd`, `echo`, `export` all work even if PATH is empty and no external commands are available.
 
 ### Tier 1: Surface Built-Ins
 
@@ -182,6 +257,8 @@ Three adapter strategies:
 | **Raw passthrough** | Unknown command or unstable output | Emit format="text" with raw stdout |
 
 Some adapters bypass the pty entirely. The git adapter can run `git status --porcelain=v2` directly and produce structured data without ever looking at what the pty captured. The pty output is a fallback, not the primary source.
+
+**Design principle: prefer structured invocation over pty parsing.** Parsing pty output is fragile — column positions shift between versions, ANSI color codes confuse parsers, locale settings change number and date formatting, and wide characters break column alignment. Structured invocation is reliable: JSON is JSON, porcelain format is a stable contract. Where a command offers a machine-readable output mode, the adapter should use it rather than parsing the human-readable output. The user typed `git status`; the adapter fulfills that *intent* by running `git status --porcelain=v2`. The raw command is the intent; the adapter chooses the best means to produce structured data from it.
 
 **Fallback behavior**: Unknown commands get their stdout rendered as styled monospace text. Simple ANSI SGR sequences (bold, colors) are mapped to CSS styles. No VT100 cursor addressing, no character grid, no terminal emulation. Expandable and revisable as we learn.
 
@@ -315,7 +392,7 @@ Full sequence honored via login interactive launch:
 
 ### Claude Code Environment Sync
 
-Shell environment changes (cd, export) propagate to Claude Code's context. The surface tracks shell cwd and passes it to tugtalk, which sets Claude Code's working directory. Environment variables exported in the shell are available to Claude Code's Bash tool calls (since tugshell can pass the current environment snapshot).
+The shell and Claude Code environments are **parallel but synchronized** — not unified. They are separate OS processes, each with their own environment, and they can't share memory. The surface keeps them in sync: shell `cd` → surface updates its cwd → Claude Code's next turn inherits the new cwd. Environment variables exported in the shell are available to Claude Code's Bash tool calls (tugshell can snapshot the current environment and pass it through). This is the pragmatic model — full fidelity for each process, with the surface as the synchronization point.
 
 ---
 
@@ -339,6 +416,92 @@ These conventions are so deeply ingrained that violating them would make the sur
 4. **The environment is sacred.** PATH, HOME, direnv mutations, nvm, conda — all must work.
 5. **Output is a stream.** Even though we render richly, raw text must remain accessible for copy-paste.
 6. **Failure is normal.** Non-zero exit codes are information, not errors to hide.
+
+---
+
+## Research Findings
+
+These findings are from five research threads conducted during the initial Tide design conversation. They are the evidence base for the design decisions above. The Research Agenda (later in this document) tracks what still needs to be verified in practice.
+
+### Shell integration hooks
+
+**zsh** provides `preexec(command, fullcommand, fullcommand_expanded)` — called before each command execution. The three arguments give: the command collapsed to one line, the full multi-line text, and the alias-expanded version. For `ls | grep foo`, you get the literal string `"ls | grep foo"`. There is no parsed argv array. `precmd()` fires after the command completes — `$?` holds the exit code, `$PWD` is the current directory. `chpwd()` fires on directory changes. `$pipestatus` gives per-stage exit codes for pipelines.
+
+**bash** provides the `DEBUG` trap, which fires before **every simple command** in a pipeline — more granular than zsh's `preexec` but noisier, requiring deduplication logic. `$BASH_COMMAND` contains the current simple command text. `PROMPT_COMMAND` fires after completion (equivalent to `precmd`). Bash does **not** provide alias-expanded text.
+
+**OSC 133 markers** are the industry-standard technique for delimiting command boundaries. iTerm2, Warp, and VS Code terminal all use the same protocol: `OSC 133;A` (prompt start), `OSC 133;B` (command start), `OSC 133;C` (output start), `OSC 133;D;{exit_code}` (command finished). The shell integration scripts inject these via `precmd`/`preexec` hooks. This is a solved, battle-tested pattern.
+
+**What we get reliably:** full command line as typed, exit code (including per-stage via `pipestatus`), duration (timestamp in `preexec` vs. `precmd`), working directory before and after.
+
+**What we don't get:** a parsed AST. Detecting pipes, redirections, and subshells requires parsing the command string ourselves. This is doable for common cases (splitting on `|`, detecting `>`, `2>&1`) and gets fragile at the edges (heredocs, nested quoting, multi-line commands). The pragmatic path: parse what we can, fall back gracefully when we can't.
+
+**Zsh's `preexec` is cleaner for our model** than bash's DEBUG trap — one call per command line rather than one per pipeline stage. Zsh is the default shell on macOS, which is our primary target.
+
+### Command coverage
+
+Data from published shell history analyses (~250K histories from commands.dev, multiple GitHub repos analyzing `.bash_history`/`.zsh_history`):
+
+- **git alone is 15-25% of all commands.** Git has excellent structured output: `--porcelain`, `--format=<custom>`, and JSON-compatible formats for many subcommands. This is the highest-value adapter by far.
+- **Top 10 commands** (git, cd, ls, cat, grep, docker, npm/yarn, cargo, make, vim) cover roughly **55-65% of usage**.
+- **~19-22 commands** with structured adapters would cover **80%+ of developer shell interactions**.
+
+The commands break into categories that directly map to adapter strategy:
+
+| Category | Commands | Adapter Strategy |
+|----------|----------|-----------------|
+| **A: Native JSON** | git (some), docker, npm, cargo, kubectl, brew, aws, terraform, curl | Pass `--json` or equivalent. Lowest effort, highest fidelity. |
+| **B: Stable parseable** | git (porcelain), ls, grep/rg, find, ps, diff, wc, du/df | Parse well-known text formats, or bypass the pty entirely (ls adapter calls `stat()` directly). |
+| **C: No output** | cd, rm, cp, mv, mkdir, chmod | Show status confirmation. No output to parse. |
+| **D: Free-form text** | make, echo, python, cat, tail/head | Styled monospace fallback with SGR→CSS mapping. |
+| **E: Full-screen** | vim, htop, less, top, ssh | Excluded from unified surface. Terminal card only. |
+
+**Key insight:** We don't need to parse VT100 output for any of these. For A, we ask for JSON. For B, we parse stable text or bypass the pty. For C, there's nothing to parse. For D, we render the text with color. For E, we punt to the terminal card.
+
+**Parsing libraries (all MIT/Apache-2.0):** `serde_json` (JSON), `git2` (git structured access), `nom` (custom parsers), `csv` (columnar text), `strip-ansi-escapes` (ANSI removal), `tree-sitter` (syntax highlighting).
+
+### Structured shell precedents
+
+Four systems were studied. Each makes a different tradeoff at the external-command boundary — the seam where structured internal data meets unstructured external program output. Understanding these tradeoffs is what makes Tide's approach defensible.
+
+**Nushell** (MIT): The purest model. Every command returns typed data (`Value` enum: Bool, Int, String, Record, List, etc.). Tables are `List<Record>`. Pipelines pass structured data end-to-end. But external commands produce `ByteStream` — raw bytes with no structure. The user must explicitly convert: `^git status | lines` or `^curl url | from json`. No auto-detection. The boundary is clean but requires user action. *Lesson: the explicit `from`/`to` boundary is principled but creates friction.*
+
+**PowerShell** (MIT): Object pipeline internally. Cmdlets emit .NET objects. `Get-Process` returns `Process[]`. The formatter picks a view based on the object type — `Format-Table`, `Format-List`, `Format-Wide` — selected via declarative `.ps1xml` definitions keyed by type name. But external commands produce `[string]` — one per line, no structure. Same explicit boundary as Nushell. *Lesson: the type-to-default-view mapping is directly relevant to our renderer dispatch. If our system knows a command returns "git status" data, it selects the right renderer without user action.*
+
+**Jupyter** (BSD-3-Clause): The multi-representation pattern. A single `display_data` message carries a dict of representations: `{"text/plain": "...", "text/html": "<table>...", "image/png": "base64...", "application/json": {...}}`. The frontend picks the richest format it can render. *Lesson: this is the strongest design pattern for our output model. Command output as a bundle of typed representations lets different consumers pick the best format.*
+
+**Warp** (proprietary — concepts only, no code): Block model where each command is a discrete object with metadata (command text, exit code, timing, cwd). Shell integration scripts inject OSC 133 escape sequences around boundaries. AI agent operates on blocks — it can see structured command history, not just a text buffer. *Lesson: proves command-as-object works commercially. The OSC 133 pattern is standard.*
+
+**The gap nobody fills:** Every system treats external commands as opaque text at the boundary. Nushell requires `from json`. PowerShell requires `ConvertFrom-Json`. Jupyter requires the kernel to produce structured output. None auto-detect known external command output and produce structured data from it. Tide's adapter registry is the first to bridge this gap — recognizing `git status` and producing structured data automatically.
+
+### Pipe and redirection semantics
+
+**The hybrid approach:** Run full pipelines natively through the hidden pty. Don't intercept intermediate stages. Parse the command string from `preexec` to understand the pipeline topology — what commands are involved, what the user was trying to do. Render the final output with knowledge of the full pipeline.
+
+This preserves full Unix compatibility. Every existing pipeline works. But recognized patterns get progressive enhancement — `git log | head` can be recognized as "git log output, truncated" and rendered as a commit timeline with a note.
+
+**For redirections** (`> file.txt`, `2>&1`), detect by parsing the command string. When stdout is redirected to a file, show an annotation ("Output written to file.txt" with a link) rather than rendering nothing.
+
+**`pipestatus`/`PIPESTATUS`** gives per-stage exit codes. On pipeline failure, show which stage failed — e.g., "grep exited 1" in a `find | grep | wc` pipeline.
+
+**Subshells and command substitution** (`$(command)`, `(cmd1; cmd2)`) are handled transparently by the real shell. The graphical surface doesn't need to understand them — let the shell resolve them.
+
+**The Nushell contrast:** Nushell's structured pipeline is more powerful (structured data flows between stages) but breaks compatibility — native Unix commands need wrappers. Tide's approach is the opposite: full compatibility first, progressive richness on top. A user can paste any command from Stack Overflow and it works.
+
+### Shell concepts from decades of development
+
+**Startup file sequence** matters for correctness. Zsh loads: `/etc/zshenv` → `~/.zshenv` → `~/.zprofile` → `~/.zshrc` (for login interactive). Bash loads: `~/.bash_profile` (which typically sources `~/.bashrc`). Users put PATH modifications in `.zprofile`/`.bash_profile` and aliases/functions in `.zshrc`/`.bashrc`. If the shell bridge doesn't source the right files, users' environments are broken. The safest approach: launch as login interactive (`zsh -li`).
+
+**The alias→function→builtin→external lookup order** is how the shell resolves commands. Aliases are text substitution at parse time. Functions are proper callable units with arguments and local variables. Builtins (`cd`, `export`, `source`) must run in the shell process because they modify its state. External commands are looked up via `$PATH`. The adapter registry operates after alias expansion (using `preexec`'s third argument in zsh) to see the resolved command, not the alias.
+
+**The completion system is an untapped treasure.** Zsh's compsys and bash-completion contain machine-readable descriptions of command interfaces — argument types, subcommands, flags, file-type filters, dynamic completions (like git branch names from the repo). These specs describe what a command *accepts*. A graphical surface could use them for contextual help, argument suggestions, or structured input forms. This is richer than Fig/Amazon Q CLI specs (MIT) and it's already installed on every developer's machine.
+
+**Job control** manages foreground/background process groups. Ctrl-Z sends SIGTSTP; `fg`/`bg` resume. The `jobs` list is state users expect to see. A graphical surface could make this *visible* — showing running/stopped jobs as tiles or tabs — which would be a genuine improvement over the invisible jobs list in traditional shells.
+
+**History** is append-to-file (`~/.zsh_history`), searchable via Ctrl-R, with expansion (`!!` = last command, `!$` = last argument, `^old^new` = quick substitution). Zsh supports shared history across sessions and timestamped entries. Ctrl-R search is non-negotiable muscle memory. `!!` and `!$` are deeply ingrained. Per-directory history would be a graphical surface win that traditional shells struggle to provide.
+
+**Line editing keybindings** that must be replicated: Ctrl-A/E (home/end), Ctrl-W (delete word back), Alt-B/F (word movement), Ctrl-R (history search), Ctrl-C (interrupt). These ~15 bindings cover 99% of users. The graphical input can be richer than readline (multi-line, rich text, inline suggestions) but must not break these keybindings.
+
+**Parameter expansion** (`${var:-default}`, `${var##*/}`, `${var%.*}`) is heavily used in scripts but rarely typed interactively beyond `$VAR`. This is a scripting concern, not an interactive one — the graphical surface doesn't need to handle it specially.
 
 ---
 
@@ -695,7 +858,7 @@ History:
 
 ### Phase T8: Pipe & Redirect Support {#pipe-redirect}
 
-**Goal:** Full pipeline and redirection semantics in the unified surface.
+**Goal:** Full pipeline and redirection semantics in the unified surface. Pipes and redirects are the credibility test — the feature that determines whether experienced developers treat Tide as a real shell environment or a toy. `ls | grep foo`, `cargo build 2>&1 | tee build.log`, `git log --oneline | head -20` must work naturally and render well.
 
 **Work:**
 1. Pipeline command string parsing (split on `|`, handle quoting edge cases)
@@ -953,6 +1116,35 @@ Every forward-looking item from tug-conversation.md is accounted for in a Tide p
 
 6. **Mobile/tablet**: Is the prefix routing model usable on mobile where typing special characters is harder?
 
+7. **Tugcast vs. local for the shell bridge**: Does tugshell go through tugcast (WebSocket feeds 0x50/0x51), or should the native app (tugapp) spawn the pty directly? Tugcast adds a network hop and serialization overhead. For a local shell, direct pty may be lower latency. Claude Code goes through tugcast because tugtalk is the bridge and tugcast manages the WebSocket multiplexing. But the shell use case is different — it's latency-sensitive (users expect instant command output) and always local. The answer may be: tugcast for the web surface (tugdeck in browser), direct pty for the native app (tugapp). This would mean two tugshell implementations or an abstraction layer.
+
+---
+
+## Risks
+
+### Adapter edge cases
+
+The adapter model assumes you can reliably identify what command is running and intercept its output. For simple commands (`git status`, `cargo build`) this is straightforward. It gets harder with:
+
+- **Aliases**: `alias gst='git status'` — the adapter sees `gst`, not `git status`, unless it resolves aliases. Zsh's `preexec` third argument provides alias-expanded text, which helps. Bash does not.
+- **Pipelines**: `git status | head` — is this a git command or a head command? The adapter must parse the pipeline string and decide which stage to recognize. The pragmatic answer (recognize the *first* command in the pipeline, render the *final* output) handles most cases.
+- **Shell functions**: User-defined functions that wrap commands. The adapter sees the function name, not the underlying commands. Similar to the alias problem.
+- **Complex command lines**: Heredocs, nested quoting, subshells, command substitution — the command string from `preexec` is unparsed text, not an AST. Parsing it correctly for all edge cases is hard.
+
+**Mitigation**: Invest heavily in the fallback path. Styled monospace text with ANSI color support must be genuinely good — not an afterthought. When the adapter can't figure out what a command is, the fallback should render the output attractively and usefully. If the fallback is good, adapter edge cases are cosmetic annoyances, not broken experiences.
+
+### Scope
+
+The roadmap has 13 Tide phases plus 5 feed phases. The Claude Code side alone (T1, T3, T9-T11) is substantial. The shell side (T4-T8) is a new codebase. The unification (T12-T13) is where the magic happens but also where the integration complexity lives.
+
+**Mitigation**: The phasing is designed so that a Claude Code-only surface (T1 + T3 + T9) is shippable on its own. The shell side can come later. The full vision requires both halves, but value accrues incrementally.
+
+### Shell integration compatibility
+
+Shell hooks (preexec/precmd) must coexist with existing shell frameworks: oh-my-zsh, powerlevel10k, starship, direnv, nvm, conda. Any of these could conflict with our hook injection. The OSC 133 marker technique is battle-tested (iTerm2, Warp, VS Code all use it), but each environment adds variables.
+
+**Mitigation**: Research item R1 specifically targets this. Test with real-world shell configurations before committing to the hook injection approach.
+
 ---
 
 ## Deferred
@@ -977,7 +1169,7 @@ Every forward-looking item from tug-conversation.md is accounted for in a Tide p
 5. **WebSocket path** — Fully verified. Wire protocol documented. Issues T8-T11 fixed. (Phase 2b/2c)
 6. **Markdown performance** — pulldown-cmark WASM: 1MB in 14ms. Workers removed. (Phase 3A.4)
 7. **Scroll management** — SmartScroll: six-phase state machine, follow-bottom, all input methods. (Phase 3A.6/3A.7)
-8. **Project codename** — "Tide" for the unified command surface vision. Tugdeck remains the rendering implementation.
+8. **Project codename** — "Tide" for the unified command surface vision. Tugdeck remains the rendering implementation. Rejected alternatives: "tug-conversation" (too narrow — was right when scope was just Claude Code chat), "single surface" (describes the concept, not the thing), "graphical terminal" (contradictory — the whole point is shedding the terminal), "tugdeck" (it's a bigger concept, keep them separate — Tide is the vision, tugdeck is the implementation), "helm" (overloaded — Kubernetes), "tug-bridge" (confuses with software bridge pattern).
 
 ---
 
