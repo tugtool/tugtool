@@ -573,15 +573,15 @@ Phase 3A.7: SmartScroll Hardening        — DONE
 Phase T0: Naming Cleanup                 — rename binaries, crates, directories for Tide
 Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag recovery, extensibility
 
+─── TIDE: INPUT ───────────────────────────────────────────
+Phase T3: Prefix Router + Prompt Input   — > $ : dispatch, history, completions, queueing
+
 ─── TIDE: RENDERING ───────────────────────────────────────
 Phase T1: Content Block Types            — markdown, code, thinking, tool use, monospace
-Phase T2: Shell Command Blocks           — git, cargo, file listing, build output renderers
-
-─── TIDE: INPUT & ROUTING ─────────────────────────────────
-Phase T3: Prefix Router + Prompt Input   — > $ : dispatch, history, completions, queueing
 
 ─── TIDE: SHELL INTEGRATION ───────────────────────────────
 Phase T4: Shell Bridge (tugshell)        — spawn shell, hooks, command capture
+Phase T2: Shell Command Blocks           — git, cargo, file listing, build output renderers
 Phase T5: Adapter Registry + Fallback    — command routing, ANSI→CSS, monospace fallback
 Phase T6: Core Adapters (Tier A)         — git, cargo, docker, npm adapters
 Phase T7: Filesystem Adapters (Tier B)   — ls, grep, find, cat adapters
@@ -1103,6 +1103,39 @@ The fixes have dependencies. Organized into dashes:
 
 ---
 
+### Phase T3: Prefix Router + Prompt Input {#prefix-router-prompt-input}
+
+**Goal:** The unified command input — where every interaction begins. Combines the prompt input layer (formerly Phase 4) with the prefix routing system. Addresses U12, U13, U19 from tug-conversation.md.
+
+**Rationale for ordering:** T3 comes first because the input surface is needed to test everything downstream. Without a prompt, you can't send a `>` message to Claude Code (needed to test T1 rendering) or a `$` command to a shell (needed to test T4). T1 rendering with only mock/gallery data is synthetic; T3 makes it real.
+
+**Work:**
+
+Core input:
+- Enhanced `<textarea>`, 1 row default, grows to maxRows (8). L06.
+- Keyboard: Enter submit, Shift+Enter newline, Cmd+Enter submit. IME-safe (CJK).
+- Prefix detection: first character `>`, `$`, or `:` determines route. Visual indicator (prefix styled differently, route label).
+- Default route when no prefix: design decision TBD (context-dependent vs. require prefix).
+
+Per-route features:
+- `>` (Claude Code): slash command popup merging `system_metadata.slash_commands` + `.skills` (U12). `@` file completion (U13). Message queueing during active turn — disable send, show indicator, use `interrupt` to cancel (U19).
+- `$` (Shell): shell completion from zsh compsys / bash-completion (deferred to Phase T8 or later). Command history separate from Claude Code history.
+- `:` (Surface): auto-complete surface built-in names.
+
+History:
+- `PromptHistoryStore`: per-route, per-card. IndexedDB. `useSyncExternalStore` (L02).
+- Up/down arrows navigate history within the current route.
+
+**Exit criteria:**
+- Prefix routing works: `>`, `$`, `:` dispatch to correct handler.
+- Slash command popup works for `>` route.
+- `@` file completion works for `>` route.
+- History navigation works per-route.
+- Send disabled during active Claude Code turn.
+- CJK input works.
+
+---
+
 ### Phase T1: Content Block Types {#content-block-types}
 
 **Goal:** Rich rendering for all content types in the unified output stream. This is the block rendering engine that serves both Claude Code conversation content and shell command output. Built on the Phase 3A virtualization engine (BlockHeightIndex, RenderedBlockWindow, WASM pipeline, SmartScroll).
@@ -1137,9 +1170,33 @@ Shell content types (rendering events from tugshell — stubs until Phase T4 del
 
 ---
 
+### Phase T4: Shell Bridge (Tugshell) {#shell-bridge}
+
+**Goal:** Build tugshell — the process that bridges bash/zsh to tugcast, analogous to tugcode for Claude Code.
+
+**Work:**
+1. Shell process spawning with hidden pty, login interactive mode (`zsh -li`)
+2. Shell integration hook injection (preexec/precmd for zsh, PROMPT_COMMAND/DEBUG for bash)
+3. OSC 133 marker emission for command boundary detection
+4. Command string capture, exit code, duration, cwd tracking
+5. Raw stdout/stderr capture from pty
+6. Event emission to tugcast via new ShellOutput feed (0x60)
+7. ShellInput feed (0x61) for receiving commands from the UI
+8. Process lifecycle management (kill on tugcast shutdown, no zombies)
+
+**Exit criteria:**
+- User types a command in tugdeck, it executes in a real shell
+- `command_start` / `command_output` / `command_complete` events arrive in tugdeck with correct metadata
+- Raw stdout captured and delivered as text blocks
+- Shell environment (PATH, aliases, functions) fully loaded from user's startup files
+- cwd tracking works across cd commands
+- No orphaned shell processes on quit
+
+---
+
 ### Phase T2: Shell Command Blocks {#shell-command-blocks}
 
-**Goal:** The graphical components for the highest-value shell command adapters. These are the renderers that make `$ git status` look like a purpose-built app, not terminal text. Can be developed in parallel with Phase T4 (shell bridge) using mock data.
+**Goal:** The graphical components for the highest-value shell command adapters. These are the renderers that make `$ git status` look like a purpose-built app, not terminal text. Built after T4 delivers real shell events — until then, raw output is dumped unformatted.
 
 **Work:**
 
@@ -1163,61 +1220,6 @@ Each component:
 - Each component renders correctly with mock structured data.
 - Components are interactive where appropriate.
 - Gallery card shows all components with representative data.
-
----
-
-### Phase T3: Prefix Router + Prompt Input {#prefix-router-prompt-input}
-
-**Goal:** The unified command input — where every interaction begins. Combines the prompt input layer (formerly Phase 4) with the prefix routing system. Addresses U12, U13, U19 from tug-conversation.md.
-
-**Work:**
-
-Core input:
-- Enhanced `<textarea>`, 1 row default, grows to maxRows (8). L06.
-- Keyboard: Enter submit, Shift+Enter newline, Cmd+Enter submit. IME-safe (CJK).
-- Prefix detection: first character `>`, `$`, or `:` determines route. Visual indicator (prefix styled differently, route label).
-- Default route when no prefix: design decision TBD (context-dependent vs. require prefix).
-
-Per-route features:
-- `>` (Claude Code): slash command popup merging `system_metadata.slash_commands` + `.skills` (U12). `@` file completion (U13). Message queueing during active turn — disable send, show indicator, use `interrupt` to cancel (U19).
-- `$` (Shell): shell completion from zsh compsys / bash-completion (deferred to Phase T8 or later). Command history separate from Claude Code history.
-- `:` (Surface): auto-complete surface built-in names.
-
-History:
-- `PromptHistoryStore`: per-route, per-card. IndexedDB. `useSyncExternalStore` (L02).
-- Up/down arrows navigate history within the current route.
-
-**Exit criteria:**
-- Prefix routing works: `>`, `$`, `:` dispatch to correct handler.
-- Slash command popup works for `>` route.
-- `@` file completion works for `>` route.
-- History navigation works per-route.
-- Send disabled during active Claude Code turn.
-- CJK input works.
-
----
-
-### Phase T4: Shell Bridge (Tugshell) {#shell-bridge}
-
-**Goal:** Build tugshell — the process that bridges bash/zsh to tugcast, analogous to tugcode for Claude Code.
-
-**Work:**
-1. Shell process spawning with hidden pty, login interactive mode (`zsh -li`)
-2. Shell integration hook injection (preexec/precmd for zsh, PROMPT_COMMAND/DEBUG for bash)
-3. OSC 133 marker emission for command boundary detection
-4. Command string capture, exit code, duration, cwd tracking
-5. Raw stdout/stderr capture from pty
-6. Event emission to tugcast via new ShellOutput feed (0x60)
-7. ShellInput feed (0x61) for receiving commands from the UI
-8. Process lifecycle management (kill on tugcast shutdown, no zombies)
-
-**Exit criteria:**
-- User types a command in tugdeck, it executes in a real shell
-- `command_start` / `command_output` / `command_complete` events arrive in tugdeck with correct metadata
-- Raw stdout captured and delivered as text blocks
-- Shell environment (PATH, aliases, functions) fully loaded from user's startup files
-- cwd tracking works across cd commands
-- No orphaned shell processes on quit
 
 ---
 
