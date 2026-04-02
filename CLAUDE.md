@@ -17,7 +17,7 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 
 | Directory | Description |
 |-----------|-------------|
-| `tugcode/` | Rust CLI crates (tugcode binary + tugtool-core library) |
+| `tugrust/` | Rust crates (tugcast, tugcode CLI, tugbank, and supporting libraries) |
 | `tugplug/` | Claude Code plugin (agents and skills) |
 | `tugapp/` | Swift macOS app |
 | `tugdeck/` | Web frontend |
@@ -26,7 +26,7 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 
 ## Build Policy
 
-**WARNINGS ARE ERRORS.** The tugcode project enforces `-D warnings` via `tugcode/.cargo/config.toml`.
+**WARNINGS ARE ERRORS.** The Rust workspace enforces `-D warnings` via `tugrust/.cargo/config.toml`.
 
 - `cargo build` will fail if there are any warnings
 - `cargo nextest run` will fail if tests have any warnings
@@ -34,9 +34,9 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 
 ## Testing
 
-Run tugcode tests with:
+Run Rust tests with:
 ```bash
-cd tugcode && cargo nextest run
+cd tugrust && cargo nextest run
 ```
 
 ## Tugdeck — Theme Token Files

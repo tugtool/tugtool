@@ -119,7 +119,7 @@ pub(crate) async fn enable_dev_mode(
     let change_tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
 
     // Create compiled watcher: backend binary mtime poller.
-    let backend_path = source_tree.join("tugcode/target/debug/tugcast");
+    let backend_path = source_tree.join("tugrust/target/debug/tugcast");
     let compiled_watcher = dev_compiled_watcher(
         backend_path,
         change_tracker.clone(),
@@ -358,7 +358,7 @@ fn is_target_path(event: &notify::Event) -> bool {
 
 /// Start Rust source watcher using notify events
 ///
-/// Watches `tugcode/` recursively for `.rs` file, `Cargo.toml`, and `Cargo.lock` changes.
+/// Watches `tugrust/` recursively for `.rs` file, `Cargo.toml`, and `Cargo.lock` changes.
 /// Events from paths containing a `/target/` component are excluded to prevent build
 /// artifact changes from triggering restart notifications. Uses a quiet-period debounce
 /// (100ms silence window). On change, marks the backend tracker category and sends a
@@ -876,7 +876,7 @@ mod tests {
             kind: EventKind::Modify(notify::event::ModifyKind::Data(
                 notify::event::DataChange::Any,
             )),
-            paths: vec![PathBuf::from("tugcode/Cargo.lock")],
+            paths: vec![PathBuf::from("tugrust/Cargo.lock")],
             attrs: Default::default(),
         };
         assert!(has_rust_extension(&event));
@@ -891,7 +891,7 @@ mod tests {
             kind: EventKind::Modify(notify::event::ModifyKind::Data(
                 notify::event::DataChange::Any,
             )),
-            paths: vec![PathBuf::from("tugcode/target/debug/tugcast")],
+            paths: vec![PathBuf::from("tugrust/target/debug/tugcast")],
             attrs: Default::default(),
         };
         assert!(is_target_path(&event));
@@ -906,7 +906,7 @@ mod tests {
             kind: EventKind::Modify(notify::event::ModifyKind::Data(
                 notify::event::DataChange::Any,
             )),
-            paths: vec![PathBuf::from("tugcode/crates/tugcast/src/main.rs")],
+            paths: vec![PathBuf::from("tugrust/crates/tugcast/src/main.rs")],
             attrs: Default::default(),
         };
         assert!(!is_target_path(&event));

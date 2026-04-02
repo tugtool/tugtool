@@ -28,7 +28,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            tugcode/target/
+            tugrust/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install Bun
@@ -77,7 +77,7 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
         run: |
-          cd tugcode/scripts
+          cd tugrust/scripts
           ./build-app.sh --nightly
 
       - name: Upload to nightly release

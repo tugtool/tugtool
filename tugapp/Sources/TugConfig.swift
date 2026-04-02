@@ -30,7 +30,7 @@ enum TugConfig {
     /// to be accepted as a valid tugtool source tree.
     static let sourceTreeMarkers = [
         "tugdeck/package.json",
-        "tugcode/Cargo.toml",
+        "tugrust/Cargo.toml",
     ]
 
     /// Check whether a directory looks like the tugtool repo root.

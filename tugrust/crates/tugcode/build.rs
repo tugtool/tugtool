@@ -203,9 +203,9 @@ fn parse_canonical_json(path: &Path) -> Vec<(String, f64)> {
 /// Generate color_palette_data.rs from palette-engine.ts and tug-color-canonical.json.
 fn generate_color_palette_data() {
     // Find palette-engine.ts relative to the workspace root.
-    // build.rs runs from the crate directory (tugcode/crates/tugcode/).
+    // build.rs runs from the crate directory (tugrust/crates/tugcode/).
     // palette-engine.ts is at tugdeck/src/components/tugways/palette-engine.ts
-    // relative to the workspace root (tugcode/../tugdeck/...).
+    // relative to the workspace root (tugrust/../tugdeck/...).
     let palette_path = Path::new("../../../tugdeck/src/components/tugways/palette-engine.ts");
     let canonical_json_path = Path::new("../../../tugdeck/tug-color-canonical.json");
 

@@ -198,7 +198,7 @@ Diff the merge commit against its parent to get the list of changed files:
 git diff --name-only HEAD~1 HEAD
 ```
 
-Match each changed file path against the following lookup table. The directory to run the command in is derived from the path of the changed file (e.g., `tugcode/Cargo.toml` → run in `tugcode/`; a root-level `package.json` → run in the repo root `.`).
+Match each changed file path against the following lookup table. The directory to run the command in is derived from the path of the changed file (e.g., `tugrust/Cargo.toml` → run in `tugrust/`; a root-level `package.json` → run in the repo root `.`).
 
 **Dependency file lookup table** (extend by adding rows):
 
@@ -224,7 +224,7 @@ If dependency files were detected, present them to the user and ask for confirma
 ```
 AskUserQuestion(
   questions: [{
-    question: "Dependency files changed after the merge. Run the setup commands listed below?\n\n  tugcode/Cargo.toml → cargo build (in tugcode/)\n  tugdeck/package.json → npm install (in tugdeck/)",
+    question: "Dependency files changed after the merge. Run the setup commands listed below?\n\n  tugrust/Cargo.toml → cargo build (in tugrust/)\n  tugdeck/package.json → npm install (in tugdeck/)",
     header: "Install Dependencies",
     options: [
       { label: "Run (Recommended)", description: "Run all listed setup commands" },

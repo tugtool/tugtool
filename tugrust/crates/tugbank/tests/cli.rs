@@ -4,12 +4,11 @@
 //! verifying both text and JSON output, exit codes, and path resolution.
 
 use assert_cmd::Command;
-use assert_cmd::cargo_bin_cmd;
 use tempfile::NamedTempFile;
 
 /// Build a `tugbank` command configured to use the given temp database.
 fn cmd(db: &NamedTempFile) -> Command {
-    let mut c = cargo_bin_cmd!("tugbank");
+    let mut c = Command::cargo_bin("tugbank").expect("tugbank binary not found");
     c.arg("--path").arg(db.path());
     c
 }
@@ -18,7 +17,7 @@ fn cmd(db: &NamedTempFile) -> Command {
 
 #[test]
 fn t06_help_exits_0() {
-    let output = cargo_bin_cmd!("tugbank").arg("--help").output().unwrap();
+    let output = Command::cargo_bin("tugbank").unwrap().arg("--help").output().unwrap();
     assert!(output.status.success(), "--help should exit 0");
 }
 
@@ -89,7 +88,7 @@ fn t10_path_flag_overrides_env() {
     let db_env = NamedTempFile::new().unwrap();
 
     // Write a domain to db_flag only via --path.
-    let status = cargo_bin_cmd!("tugbank")
+    let status = Command::cargo_bin("tugbank").unwrap()
         .arg("--path")
         .arg(db_flag.path())
         .args(["write", "flag-domain", "k", "v"])
@@ -99,7 +98,7 @@ fn t10_path_flag_overrides_env() {
     assert!(status.success());
 
     // With both --path and TUGBANK_PATH set, --path must win.
-    let output = cargo_bin_cmd!("tugbank")
+    let output = Command::cargo_bin("tugbank").unwrap()
         .arg("--path")
         .arg(db_flag.path())
         .env("TUGBANK_PATH", db_env.path())
@@ -122,7 +121,7 @@ fn t10_env_overrides_default() {
     let db_env = NamedTempFile::new().unwrap();
 
     // Write to db_env via TUGBANK_PATH.
-    let status = cargo_bin_cmd!("tugbank")
+    let status = Command::cargo_bin("tugbank").unwrap()
         .env("TUGBANK_PATH", db_env.path())
         .args(["write", "env-domain", "k", "v"])
         .output()
@@ -131,7 +130,7 @@ fn t10_env_overrides_default() {
     assert!(status.success());
 
     // Read back using TUGBANK_PATH (no --path flag).
-    let output = cargo_bin_cmd!("tugbank")
+    let output = Command::cargo_bin("tugbank").unwrap()
         .env("TUGBANK_PATH", db_env.path())
         .arg("--json")
         .arg("domains")
@@ -659,7 +658,7 @@ fn t25_end_to_end_workflow() {
 #[test]
 fn t26_tugbank_path_env_overrides_default() {
     let db = NamedTempFile::new().unwrap();
-    let status = cargo_bin_cmd!("tugbank")
+    let status = Command::cargo_bin("tugbank").unwrap()
         .env("TUGBANK_PATH", db.path())
         .args(["write", "t26.domain", "key", "value"])
         .output()
@@ -667,7 +666,7 @@ fn t26_tugbank_path_env_overrides_default() {
         .status;
     assert!(status.success(), "write via TUGBANK_PATH should succeed");
 
-    let out = cargo_bin_cmd!("tugbank")
+    let out = Command::cargo_bin("tugbank").unwrap()
         .env("TUGBANK_PATH", db.path())
         .arg("--json")
         .arg("domains")
@@ -692,7 +691,7 @@ fn t27_path_flag_overrides_tugbank_path_env() {
     let db_env = NamedTempFile::new().unwrap();
 
     // Write to db_flag via --path.
-    cargo_bin_cmd!("tugbank")
+    Command::cargo_bin("tugbank").unwrap()
         .arg("--path")
         .arg(db_flag.path())
         .args(["write", "t27.domain", "key", "value"])
@@ -700,7 +699,7 @@ fn t27_path_flag_overrides_tugbank_path_env() {
         .unwrap();
 
     // Queries with both --path and TUGBANK_PATH: --path must win.
-    let out = cargo_bin_cmd!("tugbank")
+    let out = Command::cargo_bin("tugbank").unwrap()
         .arg("--path")
         .arg(db_flag.path())
         .env("TUGBANK_PATH", db_env.path())
@@ -718,7 +717,7 @@ fn t27_path_flag_overrides_tugbank_path_env() {
     );
 
     // Confirm db_env does NOT have the domain (proves --path won over env).
-    let out_env = cargo_bin_cmd!("tugbank")
+    let out_env = Command::cargo_bin("tugbank").unwrap()
         .arg("--path")
         .arg(db_env.path())
         .arg("--json")

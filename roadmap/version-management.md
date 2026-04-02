@@ -28,7 +28,7 @@ is no build number.
 
 | Binary      | Cargo.toml                        | Version | Inherits workspace? |
 |-------------|-----------------------------------|---------|---------------------|
-| tugcode     | crates/tugcode/Cargo.toml         | 0.7.48  | Yes                 |
+| tugcode     | crates/tugrust/Cargo.toml         | 0.7.48  | Yes                 |
 | tugcast     | crates/tugcast/Cargo.toml         | 0.1.0   | No                  |
 | tugbank     | crates/tugbank/Cargo.toml         | 0.7.48  | Yes                 |
 | tugtool     | crates/tugtool/Cargo.toml         | 0.7.48  | Yes                 |
@@ -95,10 +95,10 @@ For tugcode's JSON output:
 
 ### Version management script
 
-A shell script at `tugcode/scripts/version.sh` with these subcommands:
+A shell script at `tugrust/scripts/version.sh` with these subcommands:
 
     version.sh set <major.minor.patch>
-      Sets workspace.package.version in tugcode/Cargo.toml to
+      Sets workspace.package.version in tugrust/Cargo.toml to
       `<major.minor.patch>+<current_build_number>`. Preserves the
       existing build number. Runs `cargo generate-lockfile` to update
       Cargo.lock.
@@ -149,13 +149,13 @@ workspace so `version.sh set` only needs to update one place.
 
 | File | Change |
 |------|--------|
-| `tugcode/Cargo.toml` | version `0.7.48` -> `0.8.0+1` |
-| `tugcode/crates/tugcast/Cargo.toml` | hardcoded `0.1.0` -> `version.workspace = true` |
-| `tugcode/crates/tugcast-core/Cargo.toml` | hardcoded `0.1.0` -> `version.workspace = true` |
-| `tugcode/crates/tugcode/build.rs` | Parse build number from `CARGO_PKG_VERSION`, emit `TUG_BUILD_NUMBER` |
-| `tugcode/crates/tugcode/src/cli.rs` | Format VERSION to include build number |
-| `tugcode/crates/tugcode/src/commands/version.rs` | Add build number to all output formats |
-| `tugcode/crates/tugbank/src/main.rs` | Format clap version to include build number |
-| `tugcode/crates/tugtool/src/main.rs` | Format clap version to include build number |
-| `tugcode/crates/tugrelaunch/src/main.rs` | Format clap version to include build number |
-| `tugcode/scripts/version.sh` | New file, version management script |
+| `tugrust/Cargo.toml` | version `0.7.48` -> `0.8.0+1` |
+| `tugrust/crates/tugcast/Cargo.toml` | hardcoded `0.1.0` -> `version.workspace = true` |
+| `tugrust/crates/tugcast-core/Cargo.toml` | hardcoded `0.1.0` -> `version.workspace = true` |
+| `tugrust/crates/tugrust/build.rs` | Parse build number from `CARGO_PKG_VERSION`, emit `TUG_BUILD_NUMBER` |
+| `tugrust/crates/tugrust/src/cli.rs` | Format VERSION to include build number |
+| `tugrust/crates/tugrust/src/commands/version.rs` | Add build number to all output formats |
+| `tugrust/crates/tugbank/src/main.rs` | Format clap version to include build number |
+| `tugrust/crates/tugtool/src/main.rs` | Format clap version to include build number |
+| `tugrust/crates/tugrelaunch/src/main.rs` | Format clap version to include build number |
+| `tugrust/scripts/version.sh` | New file, version management script |

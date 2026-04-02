@@ -1,6 +1,6 @@
 # Rust build artifacts
 /target/
-/tugcode/target/
+/tugrust/target/
 **/*.rs.bk
 Cargo.lock
 

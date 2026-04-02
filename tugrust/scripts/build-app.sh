@@ -59,10 +59,10 @@ fi
 echo "==> Building $APP_NAME"
 echo "    Bundle ID: $BUNDLE_ID"
 
-# Find repo root (script is in tugcode/scripts/)
+# Find repo root (script is in tugrust/scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TUGCODE_DIR="$REPO_ROOT/tugcode"
+TUGCODE_DIR="$REPO_ROOT/tugrust"
 TUGDECK_DIR="$REPO_ROOT/tugdeck"
 TUGAPP_DIR="$REPO_ROOT/tugapp"
 TUGPLUG_DIR="$REPO_ROOT/tugplug"
@@ -86,7 +86,7 @@ cargo build --release -p tugcast -p tugcode -p tugtool
 # Step 1b: Build tugtalk standalone binary
 echo "==> Building tugtalk (bun compile)"
 cd "$REPO_ROOT"
-bun build --compile tugtalk/src/main.ts --outfile tugcode/target/release/tugtalk
+bun build --compile tugtalk/src/main.ts --outfile tugrust/target/release/tugtalk
 
 # Step 2: Build tugdeck frontend
 echo "==> Building tugdeck frontend"

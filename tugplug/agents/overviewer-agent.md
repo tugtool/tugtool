@@ -63,7 +63,7 @@ Return structured JSON:
       "title": "Step-1 task list has internal contradiction",
       "description": "Plan says to pass the new flag through, but also says to pass false for backward compatibility. These cannot both be true for the main batch path.",
       "code_evidence": {
-        "file": "tugcode/crates/tugtool-core/src/commit.rs",
+        "file": "tugrust/crates/tugtool-core/src/commit.rs",
         "line_start": 1,
         "line_end": 35,
         "claim": "freeform warning strings, not structured codes"
