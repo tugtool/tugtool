@@ -5,6 +5,7 @@ import "./css-imports";
 import initTugmark from "../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 import wasmUrl from "../crates/tugmark-wasm/pkg/tugmark_wasm_bg.wasm?url";
 import { TugConnection } from "./connection";
+import { setConnection } from "./lib/connection-singleton";
 import { TugbankClient } from "./lib/tugbank-client";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
@@ -17,6 +18,7 @@ import {
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
+import { registerGitCard } from "./components/tugways/cards/git-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
@@ -27,7 +29,11 @@ import { deserialize } from "./serialization";
 const wsUrl = `ws://${window.location.host}/ws`;
 
 // Create connection (module scope — must be synchronous)
-const connection = new TugConnection(wsUrl);
+export const connection = new TugConnection(wsUrl);
+
+// Register connection in the singleton so modules that cannot safely import
+// from main.tsx (due to circular dependency risk) can access it via getConnection().
+setConnection(connection);
 
 // Create TugbankClient — registers for DEFAULTS frames on this connection.
 // Must be created before connect() so it receives the initial snapshot frame.
@@ -86,6 +92,7 @@ if (!container) {
   // from the first render. Additional card types (settings, about, etc.) will be
   // registered in Phase 9.
   registerHelloWorldCard();
+  registerGitCard();
   registerGalleryCards();
 
   // Initialize the cascade inspector in dev mode only. The cleanup function is

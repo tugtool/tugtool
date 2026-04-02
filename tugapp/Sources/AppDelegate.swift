@@ -298,6 +298,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
+        devMenu.addItem(NSMenuItem(title: "Show Git Card", action: #selector(showGitCard(_:)), keyEquivalent: "2", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Add Tab To Active Card", action: #selector(addTabToActiveCard(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
@@ -370,6 +371,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showHelloWorldCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "hello"])
+    }
+
+    @objc private func showGitCard(_ sender: Any) {
+        sendControl("show-card", params: ["component": "git"])
     }
 
     @objc private func nextTheme(_ sender: Any) {

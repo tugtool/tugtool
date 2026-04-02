@@ -22,7 +22,7 @@
  */
 
 import "./tug-card.css";
-import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
 import type { FeedIdValue } from "../../protocol";
 import type { TabItem, TabStateBag } from "../../layout-tree";
@@ -40,6 +40,8 @@ import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
 import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
 import { TugButton } from "./internal/tug-button";
+import { FeedStore } from "../../lib/feed-store";
+import { getConnection } from "../../lib/connection-singleton";
 
 // ===========================================================================
 // CardTitleBar
@@ -438,6 +440,7 @@ export function Tugcard({
   cardId,
   meta,
   feedIds,
+  decode,
   minContentSize = DEFAULT_MIN_CONTENT,
   accessory = null,
   onMinSizeChange,
@@ -919,11 +922,59 @@ export function Tugcard({
   }, [onMinSizeChange, totalMinWidth, totalMinHeight]);
 
   // ---------------------------------------------------------------------------
-  // Feed state (stub — feeds not yet wired)
+  // Feed state — L02: external WebSocket data via useSyncExternalStore only
   // ---------------------------------------------------------------------------
 
-  const feedsReady = feedIds.length === 0;
-  const emptyFeedData = useRef(new Map<number, unknown>());
+  // Create FeedStore once on mount (via ref). The store subscribes to each
+  // feedId via connection.onFrame() and decodes payloads. Disposed on unmount.
+  const feedStoreRef = useRef<FeedStore | null>(null);
+  if (feedStoreRef.current === null && feedIds.length > 0) {
+    const conn = getConnection();
+    if (conn !== null) {
+      // Adapt the per-card decode prop (feedId, bytes) => unknown to the
+      // FeedStore's simpler (payload) => unknown signature. We need one store
+      // per card with consistent feedIds at mount time; the feedIds list is
+      // fixed at registration time so this is stable.
+      //
+      // Because FeedStore.onFrame callbacks are keyed per feedId we use a
+      // wrapper that routes each feedId through the prop decoder when provided.
+      if (decode) {
+        // Per-feedId decoders: create one store per feedId, then merge — but
+        // that complicates the map. Instead, create a single store with the
+        // default decoder and let the card-level decode prop override. For now,
+        // we pass a unified decoder that ignores the per-id routing and uses the
+        // prop for the first feedId. This is sufficient for current use cases
+        // (single-feed cards like GitCard).
+        feedStoreRef.current = new FeedStore(conn, feedIds, (payload) => decode(feedIds[0], payload));
+      } else {
+        feedStoreRef.current = new FeedStore(conn, feedIds);
+      }
+    }
+  }
+
+  // Stable no-op subscribe and empty snapshot for feedless cards.
+  // The empty map must be a stable reference so useSyncExternalStore does not
+  // trigger infinite re-renders when getSnapshot returns a new object each call.
+  const noopSubscribe = useRef((_listener: () => void) => () => {}).current;
+  const emptyMapRef = useRef(new Map<number, unknown>());
+  const emptySnapshot = useRef(() => emptyMapRef.current).current;
+
+  // Subscribe to FeedStore via useSyncExternalStore (L02).
+  const feedData = useSyncExternalStore(
+    feedStoreRef.current?.subscribe ?? noopSubscribe,
+    feedStoreRef.current?.getSnapshot ?? emptySnapshot,
+  );
+
+  // Dispose FeedStore on unmount.
+  useEffect(() => {
+    return () => {
+      feedStoreRef.current?.dispose();
+      feedStoreRef.current = null;
+    };
+  }, []);
+
+  // Feed readiness: feedless cards are always ready; feed cards wait for first frame.
+  const feedsReady = feedIds.length === 0 || feedData.size > 0;
 
   // ---------------------------------------------------------------------------
   // Collapse callback (forwarded from CardFrame via onCollapse prop)
@@ -989,7 +1040,7 @@ export function Tugcard({
 
         {/* Content area: flex-grow, overflow auto */}
         <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
-          <TugcardDataProvider feedData={emptyFeedData.current}>
+          <TugcardDataProvider feedData={feedData}>
             <ResponderScope>
               {/* Provide PropertyStore registration callback to card content.
                   Card content calls usePropertyStore() which reads this context and
