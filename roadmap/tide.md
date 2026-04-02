@@ -574,7 +574,13 @@ Phase T0: Naming Cleanup                 — rename binaries, crates, directorie
 Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag recovery, extensibility
 
 ─── TIDE: INPUT ───────────────────────────────────────────
-Phase T3: Prefix Router + Prompt Input   — > $ : dispatch, history, completions, queueing
+Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completions, routing, history
+  T3.0: Text Model Spike                   — textarea+overlay vs contentEditable vs hybrid
+  T3.1: tug-atom                           — inline token pill component
+  T3.2: tug-prompt-input                   — rich input with atoms, prefix detection, completions
+  T3.3: Stores                             — SessionMetadataStore + PromptHistoryStore
+  T3.4: tug-prompt-entry                   — composition surface: input + route indicator + submit
+  T3.5: Integration + Polish               — wire into Tide, end-to-end, CJK, a11y
 
 ─── TIDE: RENDERING ───────────────────────────────────────
 Phase T1: Content Block Types            — markdown, code, thinking, tool use, monospace
@@ -1105,34 +1111,239 @@ The fixes have dependencies. Organized into dashes:
 
 ### Phase T3: Prefix Router + Prompt Input {#prefix-router-prompt-input}
 
-**Goal:** The unified command input — where every interaction begins. Combines the prompt input layer (formerly Phase 4) with the prefix routing system. Addresses U12, U13, U19 from tug-conversation.md.
+**Goal:** The unified command input — where every interaction begins. A rich prompt surface with inline atoms, prefix routing, typeahead completions, and history. Combines the prompt input layer (formerly Phase 4) with the prefix routing system. Addresses U12, U13, U19 from tug-conversation.md.
 
 **Rationale for ordering:** T3 comes first because the input surface is needed to test everything downstream. Without a prompt, you can't send a `>` message to Claude Code (needed to test T1 rendering) or a `$` command to a shell (needed to test T4). T1 rendering with only mock/gallery data is synthetic; T3 makes it real.
 
+**Components built in this phase:**
+
+| Component | Kind | Description |
+|-----------|------|-------------|
+| tug-atom | Original | Inline token pill: resolved file, slash command, or doc reference. Pill with icon + label + dismiss. Deletable as unit. Draggable into prompt. |
+| tug-prompt-input | Original | Rich input field with atom support, prefix detection, typeahead/tab-completion, history navigation. The text model is mixed: runs of plain text interspersed with atom nodes. |
+| tug-prompt-entry | Composition | Composes tug-prompt-input + submit button + route indicator (tug-choice-group) + progress/disabled state. The complete "enter a prompt" experience. |
+| SessionMetadataStore | Store (L02) | Captures `system_metadata` from CODE_OUTPUT feed. Provides slash commands, skills, and model info for typeahead. |
+| PromptHistoryStore | Store (L02) | Per-route, per-card command history. IndexedDB backing. |
+
+**Design decisions:**
+
+- **D-T3-01: Route selection.** Three routes: `>` (Claude Code), `$` (Shell), `:` (Surface built-ins). Route is set by either (a) typing the prefix character as the first character of input, or (b) clicking the route indicator (tug-choice-group in tug-prompt-entry). The two are bidirectionally synced. `/` as first character is an implicit `>` (slash command mode). No "default" route — the route indicator always shows the active route, and the user explicitly selects it.
+- **D-T3-02: `@` is route-independent.** Typing `@` anywhere in any route triggers file completion. The `@` trigger may also offer doc links in the future.
+- **D-T3-03: Atoms.** Inline token pills embedded in the text stream (like Apple Mail address tokens or Cursor file references). An atom is inserted when a completion resolves (e.g., `@file` tab-completes to a file atom pill). Atoms are atomic — backspace deletes the whole pill. Atoms can be inserted via drag-and-drop (files from Finder). Atoms contribute structured data to the submitted message (file paths, slash command names) separately from the plain text.
+
+---
+
+#### T3.0: Text Model Spike {#t3-text-model-spike}
+
+**Goal:** Determine the correct implementation strategy for tug-prompt-input's mixed text+atom model. This is the load-bearing decision — everything else in T3 depends on it.
+
+**The problem:** Atoms (inline pill elements) embedded in a text input require mixing editable text with non-editable inline elements. A native `<textarea>` is plain-text only. We need a strategy that supports atoms while preserving IME composition (CJK), undo/redo, and accessibility.
+
+**Approaches to spike:**
+
+*Approach A — Textarea + overlay mirror:*
+Keep a real `<textarea>` for input capture (native IME, undo, accessibility). Render a visual mirror div on top that shows styled text + atom pills. Atom placeholders in the textarea (e.g., a fixed-width Unicode sentinel or marker string) map 1:1 to pill elements in the overlay. The textarea is hidden but focused; the overlay is visible but non-interactive.
+- **Pro:** Native IME, native undo, native accessibility. No contentEditable complexity.
+- **Con:** Spatial correspondence between placeholder text and overlay pills is fragile with proportional fonts. Cursor position mapping between textarea and overlay is complex. Selection highlighting must be faked in the overlay.
+- **Reference:** This is essentially the CodeMirror/Monaco architecture (hidden textarea + rendered view).
+
+*Approach B — Thin contentEditable:*
+Use a `contentEditable` div with `role="textbox"` and `aria-multiline="true"`. Text is plain text nodes. Atoms are inline `<span contentEditable="false">` elements. No rich formatting, no block elements — the simplest possible contentEditable surface.
+- **Pro:** Atoms live in the real DOM, cursor flows naturally around them, selection works natively.
+- **Con:** Browser undo stack breaks if we mutate DOM programmatically (atom insertion must use `document.execCommand` or careful `beforeinput` handling). IME behavior in contentEditable varies by browser. Screen readers handle inline non-editable spans inconsistently.
+- **Mitigation:** `beforeinput` events (Input Events Level 2) give us `inputType` discrimination for IME composing vs. committed input. Modern browsers (Chrome, Safari, Firefox) all support this.
+
+*Approach C — Hidden textarea + rendered div (hybrid):*
+Hidden `<textarea>` captures all keyboard input. A separate div renders the visible content (text + atoms). The textarea content is a serialized representation; the div is the visual truth. Focus is always on the textarea; clicks on the div are translated to textarea cursor positions.
+- **Pro:** Full native input handling. Complete visual freedom in the rendered div.
+- **Con:** Most complex to implement. Must maintain a bidirectional mapping between textarea offsets and rendered positions. Essentially building a mini editor.
+
+**Spike deliverables:**
+- Build a Component Gallery card ("Text Model Spike") that contains all three approach prototypes side-by-side. This runs in the real tugways environment — theme tokens, font stacks, card geometry, the actual CSS context where tug-prompt-input will live. Each prototype is a self-contained section within the card.
+- Test matrix for each approach:
+  - [ ] English typing, cursor movement, selection
+  - [ ] Atom insertion (simulate `@file` completion resolving to a pill)
+  - [ ] Backspace at atom boundary (should delete whole atom)
+  - [ ] Undo after atom insertion (should undo the atom, restoring the trigger text)
+  - [ ] IME composition: Japanese (hiragana → kanji conversion), Chinese pinyin
+  - [ ] Screen reader announcement: VoiceOver reads atom label when cursor enters it
+  - [ ] Auto-resize: input grows vertically as content wraps (1 row → maxRows)
+  - [ ] Drag-and-drop: file dragged onto input creates an atom
+- Write up findings and recommendation in `roadmap/t3-text-model-spike.md`
+- **Exit:** A chosen approach with evidence from the test matrix. This unblocks all subsequent T3 sub-phases.
+
+---
+
+#### T3.1: tug-atom Component {#t3-atom}
+
+**Goal:** Build the tug-atom component — the inline token pill.
+
+**Prerequisites:** T3.0 (text model decision informs how atoms are rendered and integrated).
+
 **Work:**
-
-Core input:
-- Enhanced `<textarea>`, 1 row default, grows to maxRows (8). L06.
-- Keyboard: Enter submit, Shift+Enter newline, Cmd+Enter submit. IME-safe (CJK).
-- Prefix detection: first character `>`, `$`, or `:` determines route. Visual indicator (prefix styled differently, route label).
-- Default route when no prefix: design decision TBD (context-dependent vs. require prefix).
-
-Per-route features:
-- `>` (Claude Code): slash command popup merging `system_metadata.slash_commands` + `.skills` (U12). `@` file completion (U13). Message queueing during active turn — disable send, show indicator, use `interrupt` to cancel (U19).
-- `$` (Shell): shell completion from zsh compsys / bash-completion (deferred to Phase T8 or later). Command history separate from Claude Code history.
-- `:` (Surface): auto-complete surface built-in names.
-
-History:
-- `PromptHistoryStore`: per-route, per-card. IndexedDB. `useSyncExternalStore` (L02).
-- Up/down arrows navigate history within the current route.
+- Atom component renders a pill: icon + label + optional dismiss button
+- Atom types: `file` (path reference), `command` (slash command), `doc` (documentation link), `image` (image attachment)
+- Visual design: rounded pill, tone-driven background, truncated label with tooltip for full path
+- Atom data model: `{ type, label, value, icon? }` — the `value` is what gets sent in the message (e.g., the full file path)
+- Dismiss interaction: click X or backspace when cursor is adjacent
+- Hover: tooltip shows full value (e.g., full file path when label is truncated)
+- Keyboard: arrow keys move cursor past atom as a unit; atom is never partially selected
+- Drag source: atom can be dragged out (future — for reordering or moving between inputs)
+- Gallery card for isolated testing
+- Follows L19 (component authoring), L15 (token-driven states), L16 (rendering surface annotations)
 
 **Exit criteria:**
-- Prefix routing works: `>`, `$`, `:` dispatch to correct handler.
-- Slash command popup works for `>` route.
-- `@` file completion works for `>` route.
-- History navigation works per-route.
-- Send disabled during active Claude Code turn.
-- CJK input works.
+- Atom renders correctly in isolation (gallery card)
+- All atom types visually distinct
+- Dismiss works via click and keyboard
+- Tooltip shows full value on hover
+- Token-compliant styling
+
+---
+
+#### T3.2: tug-prompt-input {#t3-prompt-input}
+
+**Goal:** The rich input field. The core text editing surface with atom support, prefix detection, and completions.
+
+**Prerequisites:** T3.0 (text model), T3.1 (tug-atom).
+
+**Work:**
+
+Text model integration:
+- Implement the chosen text model from T3.0
+- Auto-resize: 1 row default, grows to maxRows (8), Apple Messages style [L06]
+- Keyboard: Enter submit (dispatches action event [L11]), Shift+Enter newline, Cmd+Enter submit. IME-safe — never intercept Enter during IME composition.
+
+Prefix detection:
+- First character `>`, `$`, `:` sets the active route
+- `/` as first character implies `>` route (slash command mode)
+- Route change emits an event/callback so tug-prompt-entry can sync the route indicator
+- Visual: prefix character is styled distinctly (e.g., dimmed or colored) to indicate it's structural, not content
+
+Atom insertion:
+- `@` trigger: typing `@` opens a file completion popup. Typing further filters results. Tab or Enter resolves the selection to a tug-atom pill inserted inline. Escape cancels.
+- `/` trigger (in `>` route): opens slash command completion popup. Same tab/enter/escape behavior.
+- Drag-and-drop: files dragged from Finder onto the input create file atoms
+- Atoms in the submitted text are serialized as structured attachments, not inline text
+
+Typeahead and completion:
+- Completion popup positioned near the cursor (or at the bottom of the input area)
+- Fuzzy matching on file paths, command names
+- Tab-completion: Tab accepts the top suggestion
+- Arrow keys navigate the popup; Enter selects
+- Completion data comes from SessionMetadataStore (slash commands, skills) and a file listing source (TBD — may need a new file index)
+
+History:
+- Up/down arrows when cursor is at the start/end of input navigate history
+- History is per-route (Claude Code history separate from shell history)
+- History state comes from PromptHistoryStore
+
+**Exit criteria:**
+- Text input with atoms works per the chosen text model
+- Auto-resize works (1 row → 8 rows)
+- Prefix detection correctly identifies route from first character
+- `@` file completion works: trigger → filter → resolve to atom
+- `/` slash command completion works in `>` route
+- Drag-and-drop file → atom works
+- History navigation works
+- IME composition (Japanese, Chinese) works correctly
+- Undo works (including undo of atom insertion)
+- Gallery card for isolated testing
+
+---
+
+#### T3.3: Stores — SessionMetadataStore + PromptHistoryStore {#t3-stores}
+
+**Goal:** The data sources that feed tug-prompt-input's completions and history.
+
+**Prerequisites:** None (can be built in parallel with T3.1).
+
+**Work:**
+
+SessionMetadataStore:
+- Subscribes to CODE_OUTPUT feed via FeedStore
+- Captures `session_init` and `system_metadata` events
+- Extracts: `slash_commands[]`, `skills[]`, `model`, `session_id`, `permission_mode`
+- L02: exposes `subscribe` + `getSnapshot` for `useSyncExternalStore`
+- Merges slash commands + skills into a unified completion list (skills use `tugplug:` prefix per U12)
+
+PromptHistoryStore:
+- Per-route, per-card history
+- IndexedDB backing for persistence across sessions
+- L02: `subscribe` + `getSnapshot`
+- API: `push(route, cardId, text)`, `navigate(route, cardId, direction)`, `current(route, cardId)`
+- History entries store the raw text (not atoms — atoms are resolved references, not reproducible)
+
+**Exit criteria:**
+- SessionMetadataStore receives and stores metadata from a live CODE_OUTPUT feed
+- PromptHistoryStore persists history to IndexedDB
+- Both stores are L02 compliant
+- Unit tests for both
+
+---
+
+#### T3.4: tug-prompt-entry {#t3-prompt-entry}
+
+**Goal:** The complete prompt composition surface.
+
+**Prerequisites:** T3.2 (tug-prompt-input), T3.3 (stores).
+
+**Work:**
+
+Composition:
+- Layout: tug-prompt-input fills the width. Below (or beside) the input: route indicator (tug-choice-group with `>` `$` `:` segments), submit button, utility area
+- Route indicator bidirectionally synced with tug-prompt-input's prefix detection
+- Submit button: enabled when input is non-empty and no active turn. Disabled + spinner during active Claude Code turn (U19)
+- Interrupt: during active turn, submit button becomes "Stop" (sends `interrupt` to CODE_INPUT)
+
+Message dispatch:
+- On submit, serialize the input: plain text content + atom attachments (file paths, etc.)
+- Route to the correct feed: `>` route → CODE_INPUT as `user_message`, `$` route → SHELL_INPUT (future), `:` route → local surface command handler
+- Clear input after successful send
+- `/` commands in `>` route: may need special handling (some slash commands are local, some are remote)
+
+Turn state:
+- Observe CODE_OUTPUT for `turn_complete` / streaming indicators
+- During active turn: disable send, show progress indicator, optionally allow message queueing (U19)
+
+**Exit criteria:**
+- Complete prompt entry with route indicator, submit, and input
+- Route switching works via indicator and prefix
+- Submit dispatches to correct feed per route
+- Send disabled during active Claude Code turn
+- Interrupt (stop) works during active turn
+- End-to-end: type `> hello` → message arrives at Claude Code via CODE_INPUT
+- Gallery card + live integration test
+
+---
+
+#### T3.5: Integration + Polish {#t3-integration}
+
+**Goal:** Wire tug-prompt-entry into the live Tide UI and polish the end-to-end experience.
+
+**Prerequisites:** T3.4.
+
+**Work:**
+- Mount tug-prompt-entry in the Tide card (replacing any existing input stub)
+- End-to-end test: type a prompt → Claude Code receives it → response streams back
+- CJK end-to-end test
+- Keyboard shortcut discovery: Cmd+K or similar to focus the prompt from anywhere
+- Atom drag-and-drop from Finder end-to-end
+- Performance: ensure no jank during typeahead with large file lists
+- Accessibility audit: VoiceOver navigation through atoms, route indicator, submit button
+
+**Exit criteria (overall T3):**
+- Prefix routing works: `>`, `$`, `:` dispatch to correct handler
+- Route indicator (tug-choice-group) syncs with prefix character
+- `@` file completion works in all routes, resolves to inline atom
+- `/` slash command completion works in `>` route
+- Atoms display correctly, delete as units, support drag-and-drop
+- History navigation works per-route
+- Send disabled during active Claude Code turn; interrupt works
+- IME composition (Japanese, Chinese) works correctly
+- CJK input end-to-end verified
+- Undo works including atom insertion/deletion
+- VoiceOver reads atoms and route indicator correctly
 
 ---
 
