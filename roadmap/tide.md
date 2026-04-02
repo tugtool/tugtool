@@ -765,40 +765,101 @@ See [tug-conversation.md](tug-conversation.md) for detailed writeups. Summary of
 
 **Scope:** ~400 occurrences across ~60 non-archive files. The heaviest areas are tugplug (174 occurrences across 20 files — every skill and agent references `tugcode` CLI commands), the Rust workspace, tugapp, CI, and documentation.
 
-**Work:**
+**Approach:** Interactive, one step at a time. Each step is a self-contained rename that can be verified before moving to the next. Build and test after each step to catch breakage immediately.
 
-1. **Rename workspace directory** `tugcode/` → `tugrust/`. Update every path reference: `Cargo.toml` workspace members, justfile recipes, tugapp build scripts (`build-app.sh`, Xcode project), CI workflows (`.github/workflows/`), CLAUDE.md repository structure table, `.gitignore` if applicable.
+**Ordering rationale:** Rename the thing vacating a name before renaming the thing moving into that name. The `tugcode` name must be freed (CLI → tugutil) before it can be claimed (tugtalk → tugcode). Group each rename with all its reference updates so nothing is half-done.
 
-2. **Rename `tugcode` crate → `tugutil`**. In `tugrust/crates/tugutil/`: update `Cargo.toml` (package name, bin name), rename `src/main.rs` CLI struct, update the `--help` description to "Tug utility — project management, state tracking, and developer tools". Update all workspace crates that depend on it. Update symlink in justfile `build` recipe.
+**Note on archives:** Files in `.tugtool/archive/` (~1,250 occurrences) are historical records referencing names that were current when the work was done. Leave them as-is throughout.
 
-3. **Rename `tugtool-core` → `tugutil-core`**. In `tugrust/crates/tugutil-core/`: update `Cargo.toml` package name. Find and replace all `use tugtool_core::` → `use tugutil_core::` and all `tugtool-core` dependency declarations across the workspace.
+**Steps:**
 
-4. **Rename `tugtalk` → `tugcode`**. Rename directory `tugtalk/` → `tugcode/` (no collision since the Rust workspace is now `tugrust/`). Update `package.json` name, `bun build --compile` output, justfile build recipe, tugapp binary copy path, tugcast agent bridge spawn path.
+1. **Rename workspace directory `tugcode/` → `tugrust/`.**
+   - `git mv tugcode tugrust`
+   - Update workspace-level `tugrust/Cargo.toml` if it has self-referential paths
+   - Update justfile: every `tugcode/` path → `tugrust/`
+   - Update tugapp build scripts: `tugrust/scripts/build-app.sh`, Xcode project (`project.pbxproj`)
+   - Update CI: `.github/workflows/ci.yml`, `.github/workflows/nightly.yml`
+   - Update CLAUDE.md repository structure table
+   - **Verify:** `just build` succeeds (the binaries still have their old names — only the directory moved)
 
-5. **Fold `tugtool` launcher into `tugutil serve`**. Move the launcher logic (start tugcast, wait for port, open browser) from `tugrust/crates/tugtool/src/main.rs` into a `serve` subcommand in tugutil. Delete the `tugtool` crate from the workspace. Remove from justfile build recipe and tugapp bundle. Update justfile `dev` and `dev-watch` recipes to use `tugutil serve`.
+2. **Rename `tugcode` crate → `tugutil` and `tugtool-core` → `tugutil-core`.**
+   These are coupled — the CLI crate depends on the core library. Do them together.
+   - `git mv tugrust/crates/tugcode tugrust/crates/tugutil`
+   - `git mv tugrust/crates/tugtool-core tugrust/crates/tugutil-core`
+   - Update `tugrust/Cargo.toml` workspace members
+   - Update `tugrust/crates/tugutil/Cargo.toml`: package name → `tugutil`, bin name → `tugutil`
+   - Update `tugrust/crates/tugutil/src/main.rs`: CLI struct name, `--help` description → "Tug utility — project management, state tracking, and developer tools"
+   - Update `tugrust/crates/tugutil-core/Cargo.toml`: package name → `tugutil-core`
+   - Find and replace across the Rust workspace: `tugtool-core` → `tugutil-core` in all `Cargo.toml` dependency declarations, `use tugtool_core::` → `use tugutil_core::` in all `.rs` files
+   - Find and replace across the Rust workspace: dependency on `tugcode` → `tugutil` where other crates depend on the CLI crate (if any)
+   - Update justfile: symlink names, build references
+   - **Verify:** `cd tugrust && cargo build` succeeds. Binary is now named `tugutil`. `tugutil --help` works.
 
-6. **Update tugplug skills and agents** (174 occurrences, 20 files). Every reference to `tugcode` CLI commands in skill SKILL.md files and agent .md files must become `tugutil`. This includes:
-   - `tugplug/skills/dash/SKILL.md` — 26 occurrences: `tugcode dash` → `tugutil dash`
-   - `tugplug/skills/implement/SKILL.md` — 41 occurrences: `tugcode worktree`, `tugcode state` → `tugutil worktree`, `tugutil state`
+3. **Fold `tugtool` launcher into `tugutil serve`.**
+   - Read `tugrust/crates/tugtool/src/main.rs` — extract the launcher logic
+   - Add a `serve` subcommand to `tugrust/crates/tugutil/src/main.rs` with that logic
+   - Remove `tugtool` from `tugrust/Cargo.toml` workspace members
+   - Delete `tugrust/crates/tugtool/` directory
+   - Update justfile: `dev` and `dev-watch` recipes to use `tugutil serve` instead of `tugtool`
+   - Remove tugtool from justfile build recipe and tugapp bundle copy
+   - **Verify:** `just build` succeeds. `tugutil serve --help` works. No `tugtool` binary produced.
+
+4. **Rename `tugtalk/` → `tugcode/`.**
+   The name `tugcode` is now free (the CLI is `tugutil`). The directory name `tugcode/` is free (the workspace is `tugrust/`).
+   - `git mv tugtalk tugcode`
+   - Update `tugcode/package.json`: name → `tugcode`
+   - Update justfile: `tugtalk` → `tugcode` in build recipe (bun build --compile output name, source path)
+   - Update `tugrust/crates/tugcast/src/feeds/agent_bridge.rs`: tugtalk binary name → `tugcode` in path resolution
+   - Update tugapp: `Sources/AppDelegate.swift`, `Sources/ProcessManager.swift`, `Sources/TugConfig.swift` — tugtalk binary references → `tugcode`
+   - Update tugapp `Tug.xcodeproj/project.pbxproj` if it references tugtalk
+   - Update tugapp build script (`tugrust/scripts/build-app.sh`): tugtalk binary copy → tugcode
+   - **Verify:** `just build` succeeds. `tugcode` binary exists (the Claude Code bridge). No `tugtalk` binary produced.
+
+5. **Update tugplug skills and agents** (174 occurrences, 20 files).
+   Every reference to the CLI tool `tugcode` in skill and agent files must become `tugutil`. These are the orchestrator commands (`tugutil dash`, `tugutil worktree`, `tugutil state`, etc.) — NOT the bridge binary.
+   - `tugplug/skills/dash/SKILL.md` — 26 occurrences: `tugcode` → `tugutil`
+   - `tugplug/skills/implement/SKILL.md` — 41 occurrences: `tugcode` → `tugutil`
    - `tugplug/skills/merge/SKILL.md` — 19 occurrences
    - `tugplug/skills/plan/SKILL.md` — 4 occurrences
-   - All 12 agent files — references to `tugcode` subcommands
+   - All 12 agent .md files — references to `tugcode` subcommands → `tugutil`
    - `tugplug/hooks/ensure-init.sh` — 4 occurrences
    - `tugplug/hooks/auto-approve-tug.sh` — 1 occurrence
    - `tugplug/CLAUDE.md` — 1 occurrence
    - `tugplug/.claude-plugin/plugin.json` — 1 occurrence
+   - **Verify:** grep confirms no remaining `tugcode` references in tugplug (all CLI references are now `tugutil`).
 
-7. **Update tugapp**. `Sources/AppDelegate.swift` (8 occurrences), `Sources/ProcessManager.swift` (2), `Sources/TugConfig.swift` (4), `Info.plist` (1), `Tug.xcodeproj/project.pbxproj` (2). Binary names in process spawn code, bundle copy paths.
+6. **Update tugapp references to the renamed CLI.**
+   Step 4 handled tugtalk→tugcode. This step handles tugcode→tugutil for the CLI binary.
+   - `Sources/AppDelegate.swift`: `tugcode` CLI references → `tugutil` (careful: distinguish from the bridge binary which IS now called `tugcode`)
+   - `Sources/ProcessManager.swift`: same
+   - `Sources/TugConfig.swift`: same
+   - `Info.plist` if applicable
+   - **Verify:** `just app` builds successfully. Tug.app bundles `tugutil`, `tugcode` (bridge), `tugcast`, `tugrelaunch`, `tugbank`.
 
-8. **Update tugdeck**. `src/main.tsx` (1), `vite.config.ts` (2), archived card reference (1).
+7. **Update tugdeck.**
+   - `src/main.tsx` — any `tugtalk` or old `tugcode` references
+   - `vite.config.ts` — path references
+   - **Verify:** `cd tugdeck && bun run build` succeeds.
 
-9. **Update project-level files**. `CLAUDE.md` (6), `.tugtool/config.toml` (2), `README.md` (1), `.claude-plugin/plugin.json` (1).
+8. **Update project-level files.**
+   - `CLAUDE.md` — repository structure table, any references to old names
+   - `.tugtool/config.toml` — if it references binary names or paths
+   - `README.md` — if it references old names
+   - `.claude-plugin/plugin.json` — if applicable
+   - **Verify:** read each file, confirm no stale names.
 
-10. **Update CI**. `.github/workflows/ci.yml` (5), `.github/workflows/nightly.yml` (2).
+9. **Update CI.**
+   - `.github/workflows/ci.yml` — paths, binary names
+   - `.github/workflows/nightly.yml` — same
+   - **Verify:** read each file, confirm no stale names. (Full CI verification happens on push.)
 
-11. **Do NOT update archives**. Files in `.tugtool/archive/` (~1,250 occurrences) are historical records. They reference the names that were current when the work was done. Leave them as-is.
-
-12. **Verify everything builds and runs**. `just build` succeeds, `just test` passes, `just app` produces a working Tug.app with the renamed binaries, `just dev` launches correctly via `tugutil serve`. Run a `/tugplug:dash` and `/tugplug:implement` smoke test to verify skill SKILL.md references work.
+10. **Final verification.**
+    - `just build` — all binaries compile
+    - `just test` — all tests pass
+    - `just app` — Tug.app bundles correctly with renamed binaries
+    - `just dev` — launches via `tugutil serve`
+    - Grep entire repo (excluding archives) for stale `tugtalk`, stale `tugtool` (as binary name, not repo name), and `tugcode` references that should be `tugutil`
+    - Smoke test: `/tugplug:dash` and `/tugplug:implement` to verify skills reference the right binary
 
 **Exit criteria:**
 - `tugutil` binary exists with all current `tugcode` subcommands plus `serve`
