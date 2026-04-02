@@ -149,6 +149,23 @@ impl TugbankClient {
         Ok(())
     }
 
+    /// Remove a key from the DB and update the local cache.
+    ///
+    /// Returns `true` if the key existed and was removed, `false` if it
+    /// did not exist. Broadcasts a notification on removal.
+    pub fn delete(&self, domain: &str, key: &str) -> Result<bool, Error> {
+        let existed = self.inner.store.domain(domain)?.remove(key)?;
+        if existed {
+            let mut cache = self.inner.cache.lock().unwrap();
+            if let Some(snap) = cache.get_mut(domain) {
+                snap.remove(key);
+            }
+            drop(cache);
+            broadcast_domain_changed(domain);
+        }
+        Ok(existed)
+    }
+
     /// Return the cached snapshot for `domain`, loading it on first access.
     pub fn read_domain(&self, domain: &str) -> Result<DomainSnapshot, Error> {
         self.ensure_domain_loaded(domain)?;

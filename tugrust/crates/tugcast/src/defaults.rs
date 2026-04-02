@@ -370,12 +370,7 @@ pub(crate) async fn delete_key(
         return resp;
     }
 
-    let result = tokio::task::spawn_blocking(move || {
-        let handle = client.store().domain(&domain)?;
-        let existed = handle.remove(&key)?;
-        Ok::<_, BankError>(existed)
-    })
-    .await;
+    let result = tokio::task::spawn_blocking(move || client.delete(&domain, &key)).await;
 
     match result {
         Ok(Ok(true)) => (
