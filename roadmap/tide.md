@@ -612,7 +612,7 @@ Full exploration journals: [transport-exploration.md](transport-exploration.md) 
 
 #### Phase 1: Transport Exploration (DONE)
 
-35 tests probing Claude Code's `stream-json` protocol via probe scripts (currently in `tugtalk/`, moving to `tugcode-bridge/` in Phase T0). Key discoveries that directly inform Tide's Claude Code adapter:
+35 tests probing Claude Code's `stream-json` protocol via probe scripts (currently in `tugtalk/`, moving to `tugcode/` in Phase T0). Key discoveries that directly inform Tide's Claude Code adapter:
 
 - **Streaming model**: `assistant_text` partials are **deltas** (not accumulated). Final `complete` event has full text. UI must accumulate.
 - **Thinking**: `thinking_text` is a separate event type arriving before `assistant_text`. Same delta model. Same `msg_id`.
@@ -748,7 +748,7 @@ See [tug-conversation.md](tug-conversation.md) for detailed writeups. Summary of
 |---------|-----|------|-------------|
 | `tugcode` (Rust CLI) | **tugutil** | Binary + crate | Crate `tugcode/crates/tugcode/` → `tugrust/crates/tugutil/`. Cargo.toml `name`, `[[bin]]` target, all `use tugcode::` imports. Symlinks in `~/.local/bin/`. |
 | `tugtool-core` (Rust lib) | **tugutil-core** | Library crate | Crate `tugcode/crates/tugtool-core/` → `tugrust/crates/tugutil-core/`. Cargo.toml `name`, all `use tugtool_core::` imports across workspace. |
-| `tugtalk` (TypeScript) | **tugcode** | Binary + package | Directory `tugtalk/` → `tugcode-bridge/` (to avoid collision with workspace dir). `package.json` name. `bun build --compile` output name. Justfile build recipe. tugapp binary copy. |
+| `tugtalk` (TypeScript) | **tugcode** | Binary + package | Directory `tugtalk/` → `tugcode/`. `package.json` name. `bun build --compile` output name. Justfile build recipe. tugapp binary copy. |
 | `tugtool` (Rust launcher) | **`tugutil serve`** | Subcommand | Merge launcher logic into tugutil as `serve` subcommand. Delete `tugcode/crates/tugtool/` crate. Remove standalone binary from justfile and tugapp bundle. |
 | `tugcode/` (workspace dir) | **tugrust/** | Directory | Rename workspace directory. Update `Cargo.toml` workspace path, justfile paths, tugapp build scripts, CI config. |
 
@@ -773,7 +773,7 @@ See [tug-conversation.md](tug-conversation.md) for detailed writeups. Summary of
 
 3. **Rename `tugtool-core` → `tugutil-core`**. In `tugrust/crates/tugutil-core/`: update `Cargo.toml` package name. Find and replace all `use tugtool_core::` → `use tugutil_core::` and all `tugtool-core` dependency declarations across the workspace.
 
-4. **Rename `tugtalk` → `tugcode`**. Rename directory `tugtalk/` → `tugcode-bridge/` (the directory can't be `tugcode/` since that would collide with the old workspace dir name in git history, and the binary itself is what carries the `tugcode` name). Update `package.json` name, `bun build --compile` output, justfile build recipe, tugapp binary copy path, tugcast agent bridge spawn path.
+4. **Rename `tugtalk` → `tugcode`**. Rename directory `tugtalk/` → `tugcode/` (no collision since the Rust workspace is now `tugrust/`). Update `package.json` name, `bun build --compile` output, justfile build recipe, tugapp binary copy path, tugcast agent bridge spawn path.
 
 5. **Fold `tugtool` launcher into `tugutil serve`**. Move the launcher logic (start tugcast, wait for port, open browser) from `tugrust/crates/tugtool/src/main.rs` into a `serve` subcommand in tugutil. Delete the `tugtool` crate from the workspace. Remove from justfile build recipe and tugapp bundle. Update justfile `dev` and `dev-watch` recipes to use `tugutil serve`.
 
