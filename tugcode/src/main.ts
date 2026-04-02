@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Tugtalk: Conversation engine IPC process
+// Tugcode: Claude Code bridge — stream-json IPC between Claude Code and tugcast
 
 import { readLine, writeLine } from "./ipc.ts";
 import {

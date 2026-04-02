@@ -1,7 +1,8 @@
-//! tugcast-core: Shared types and traits for tugcast
+//! `tugcast-core` — protocol types, frame encoding, and feed traits for tugcast
 //!
-//! This crate provides the core protocol types, frame definitions, feed traits,
-//! and data structures used by the tugcast WebSocket terminal bridge.
+//! This crate provides the binary frame protocol (FeedId + length + payload),
+//! feed traits (StreamFeed for broadcast, SnapshotFeed for watch), and data
+//! structures used by the tugcast WebSocket multiplexer.
 //!
 //! ## Modules
 //!

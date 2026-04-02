@@ -1,5 +1,6 @@
 [package]
 name = "tugcast"
+description = "WebSocket multiplexer — bridges terminal, code, filesystem, git, and stats feeds to tugdeck"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"

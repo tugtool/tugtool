@@ -1,3 +1,9 @@
+//! `tugexec` — launcher for tugdeck dashboard
+//!
+//! Starts tugcast as a supervised child process, spawns the Vite dev server,
+//! waits for readiness, opens the browser, and manages the process lifecycle
+//! (restart on crash, graceful shutdown on SIGINT/SIGTERM).
+
 use clap::Parser;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;

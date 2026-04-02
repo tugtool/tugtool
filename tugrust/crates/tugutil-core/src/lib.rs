@@ -1,6 +1,7 @@
-//! tug-core: Core library for parsing, validation, and types
+//! `tugutil-core` — core library for tugutil: parsing, validation, state, and types
 //!
-//! This crate provides the foundational types and logic for the tug system.
+//! This crate provides the foundational types and logic for tugplan management,
+//! worktree operations, state tracking, and plan validation.
 
 /// Core error types for tug operations
 pub mod error;
