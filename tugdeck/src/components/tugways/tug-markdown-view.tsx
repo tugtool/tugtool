@@ -31,8 +31,11 @@
  *   useLayoutEffect — no React round-trip between data change and DOM write.
  * - [D93] SmartScroll six-phase state machine (idle/tracking/dragging/settling/
  *   decelerating/programmatic). Controller-driven: doSetRegion calls
- *   scrollToBottom() after content settles, not SmartScroll reacting to
- *   ResizeObserver.
+ *   pinToBottom() (idle phase) after content settles, not SmartScroll
+ *   reacting to ResizeObserver.
+ * - [L23] Internal operations never lose user-visible state. Scroll position
+ *   is preserved across region edits. Content shrink adjusts to nearest
+ *   surviving block. No DOM nuke on non-cold-start paths.
  *
  * Design decisions:
  * - [D03] HTML cache (Map<number, string>, never evicted, all blocks pre-parsed)
@@ -929,12 +932,15 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
     onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
-    // Render the block window. When following bottom, render at the predicted
-    // bottom (totalHeight) so the tail blocks are in the DOM *before* the
-    // measurement pass in doSetRegion. This avoids a re-render after pinToBottom.
+    // Render the block window. When following bottom AND the user is not
+    // actively scrolling, render at the predicted bottom (totalHeight) so the
+    // tail blocks are in the DOM before the measurement pass in doSetRegion.
+    // During active gestures, render at the user's current scroll position —
+    // their fingers own the viewport.
     const clientHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
     engine.blockWindow.setViewportHeight(clientHeight);
-    const renderScrollTop = smartScrollRef.current?.isFollowingBottom
+    const willPin = smartScrollRef.current?.isFollowingBottom && !smartScrollRef.current?.isUserScrolling;
+    const renderScrollTop = willPin
       ? Math.max(0, engine.heightIndex.getTotalHeight() - clientHeight)
       : (scrollContainerRef.current?.scrollTop ?? 0);
     const update = engine.blockWindow.update(renderScrollTop);
@@ -959,14 +965,17 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       incrementalTailUpdate(engine, key, fullText);
     }
 
-    // When following bottom: measure all rendered blocks (one forced layout),
-    // correct heights, recompute spacers, then pin to the real bottom.
+    // When following bottom AND the user is not actively scrolling: measure
+    // all rendered blocks, correct heights, recompute spacers, pin to bottom.
     //
-    // incrementalTailUpdate already rendered blocks at the predicted bottom
-    // (totalHeight from estimates), so the tail blocks are in the DOM. This
-    // pass replaces estimates with real offsetHeight values, then one
-    // pinToBottom lands on the true bottom. One layout, one slam, one paint.
-    if (smartScrollRef.current?.isFollowingBottom) {
+    // The isUserScrolling guard separates INTENT from ACTION:
+    //   - isFollowingBottom = intent ("user wants to follow the bottom")
+    //   - !isUserScrolling = action ("safe to take control of scroll position")
+    // During active gestures (dragging, decelerating), the flag may be set
+    // but we don't slam — the user's fingers own the scroll position.
+    // When the gesture ends (idle), the next chunk pins to the real bottom.
+    const ss = smartScrollRef.current;
+    if (ss?.isFollowingBottom && !ss.isUserScrolling) {
       const engine2 = engineRef.current;
       if (engine2 && scrollContainerRef.current) {
         // Single measurement pass: read offsetHeight for every rendered block.
@@ -991,7 +1000,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         }
       }
       // Pin to real bottom — heights are now real, spacers correct.
-      smartScrollRef.current.pinToBottom();
+      ss.pinToBottom();
     }
   }
 

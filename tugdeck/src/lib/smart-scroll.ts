@@ -71,8 +71,6 @@ export interface SmartScrollCallbacks {
 export interface SmartScrollOptions {
   scrollContainer: HTMLElement;
   callbacks?: SmartScrollCallbacks;
-  /** Default: 60px */
-  nearBottomThreshold?: number;
   /** Default: true */
   followBottom?: boolean;
 }
@@ -81,7 +79,9 @@ export interface SmartScrollOptions {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_NEAR_BOTTOM_THRESHOLD = 60;
+/** Fixed pixel threshold for the "at bottom" check. Used for disengagement
+ *  jitter guard and conservative auto-re-engagement at idle. Small and fixed. */
+const AT_BOTTOM_PX = 60;
 
 /**
  * All scroll key codes that initiate user scroll without pointer input.
@@ -115,7 +115,6 @@ const SCROLLEND_FALLBACK_MS = 150;
 export class SmartScroll {
   private readonly _container: HTMLElement;
   private readonly _callbacks: SmartScrollCallbacks;
-  private readonly _nearBottomThreshold: number;
   private readonly _supportsScrollEnd: boolean;
 
   private _phase: ScrollPhase = 'idle';
@@ -130,6 +129,11 @@ export class SmartScroll {
   // Deceleration detection: did scroll events arrive during the 50ms window?
   private _scrolledAfterPointerUp = false;
 
+  // Gesture direction tracking: scrollTop at the start of the current gesture.
+  // Used to determine net direction (up vs down) when the gesture ends.
+  // Re-engagement at idle only fires if the gesture was net-downward.
+  private _gestureStartScrollTop: number = 0;
+
   // Listener function references stored for removeEventListener
   private readonly _onScroll: () => void;
   private readonly _onScrollEnd: () => void;
@@ -142,13 +146,11 @@ export class SmartScroll {
     const {
       scrollContainer,
       callbacks = {},
-      nearBottomThreshold = DEFAULT_NEAR_BOTTOM_THRESHOLD,
       followBottom = true,
     } = options;
 
     this._container = scrollContainer;
     this._callbacks = callbacks;
-    this._nearBottomThreshold = nearBottomThreshold;
     this._isFollowingBottom = followBottom;
     this._lastScrollTop = scrollContainer.scrollTop;
 
@@ -189,7 +191,7 @@ export class SmartScroll {
 
   get isAtBottom(): boolean {
     const { scrollTop, scrollHeight, clientHeight } = this._container;
-    return scrollHeight - clientHeight - Math.max(0, scrollTop) <= this._nearBottomThreshold;
+    return scrollHeight - clientHeight - Math.max(0, scrollTop) <= AT_BOTTOM_PX;
   }
 
   get isAtTop(): boolean {
@@ -308,7 +310,11 @@ export class SmartScroll {
 
     switch (this._phase) {
       case 'idle':
-        // Re-engagement: scrolled down into near-bottom while idle.
+        // Conservative auto-re-engagement: only if scrolled down to within
+        // 60px of the absolute bottom while idle. This handles the non-streaming
+        // case (user manually scrolls to bottom). During streaming, the bottom
+        // moves too fast for this to reliably trigger — the user should use
+        // End/Cmd+Down for explicit re-engagement.
         if (!this._isFollowingBottom && scrollTop >= this._lastScrollTop && this.isAtBottom) {
           this._setFollowingBottom(true);
         }
@@ -320,17 +326,24 @@ export class SmartScroll {
         break;
 
       case 'dragging':
-        // Detect user scrolling up — disengage follow-bottom.
-        if (scrollTop < this._lastScrollTop && this._isFollowingBottom) {
+        // During active dragging, the user is in deliberate control — no
+        // re-engagement. Only DISENGAGE if they scroll up past the jitter guard.
+        if (scrollTop < this._lastScrollTop && this._isFollowingBottom && !this.isAtBottom) {
           this._setFollowingBottom(false);
         }
-        // Restart scrollend fallback timer (Issue 5).
         if (!this._supportsScrollEnd) {
           this._restartScrollEndTimer();
         }
         break;
 
       case 'decelerating':
+      case 'programmatic':
+        // Restart scrollend fallback timer on every scroll event.
+        if (!this._supportsScrollEnd) {
+          this._restartScrollEndTimer();
+        }
+        break;
+
       case 'programmatic':
         // Restart scrollend fallback timer on every scroll event.
         if (!this._supportsScrollEnd) {
@@ -362,6 +375,7 @@ export class SmartScroll {
   private _handlePointerDown(_e: PointerEvent): void {
     if (this._disposed) return;
     if (this._phase === 'idle') {
+      this._gestureStartScrollTop = this._container.scrollTop;
       this._phase = 'tracking';
     }
     // If decelerating or settling, a new pointerdown interrupts; enter tracking
@@ -451,10 +465,21 @@ export class SmartScroll {
       this._restartScrollEndTimer();
     }
 
-    // Only disengage follow-bottom for scroll-up keys.
+    // Disengage follow-bottom for scroll-up keys.
     const isScrollUpKey = SCROLL_UP_KEYS.has(e.code) || (e.code === 'Space' && e.shiftKey);
     if (isScrollUpKey && this._isFollowingBottom) {
       this._setFollowingBottom(false);
+    }
+
+    // Explicit re-engagement: End and Cmd+Down are definite "go to bottom"
+    // actions. Re-engage follow-bottom and scroll to bottom immediately.
+    // These work regardless of content size or streaming state — the user
+    // declared their intent explicitly.
+    const isJumpToBottom = e.code === 'End'
+      || (e.code === 'ArrowDown' && e.metaKey);
+    if (isJumpToBottom) {
+      e.preventDefault(); // prevent native scroll — we handle it
+      this.scrollToBottom();
     }
   }
 
@@ -463,7 +488,11 @@ export class SmartScroll {
   // -------------------------------------------------------------------------
 
   private _enterDragging(): void {
+    const wasIdle = this._phase === 'idle';
     const wasAlreadyDragging = this._phase === 'dragging';
+    if (wasIdle) {
+      this._gestureStartScrollTop = this._container.scrollTop;
+    }
     this._phase = 'dragging';
     if (!wasAlreadyDragging) {
       this._callbacks.onWillBeginDragging?.(this);
@@ -522,7 +551,13 @@ export class SmartScroll {
   }
 
   private _checkReEngageFollowBottom(): void {
-    if (!this._isFollowingBottom && this.isAtBottom) {
+    // Conservative re-engagement at gesture end: only if the gesture was
+    // net-downward AND the user landed at the absolute bottom (within 60px).
+    // Net-upward gestures that end near the bottom are the user scrolling
+    // AWAY — don't yank them back.
+    if (!this._isFollowingBottom
+      && this.isAtBottom
+      && this._container.scrollTop > this._gestureStartScrollTop) {
       this._setFollowingBottom(true);
     }
   }

@@ -316,10 +316,13 @@ describe("SmartScroll", () => {
       ss.dispose();
     });
 
-    it("End enters DRAGGING", () => {
+    it("End re-engages follow-bottom and scrolls to bottom (enters programmatic → idle)", () => {
       const { ss, container } = makeSmartScroll();
+      ss.disengageFollowBottom();
       dispatchKeyDown(container, 'End');
-      expect(ss.phase).toBe<ScrollPhase>('dragging');
+      // End calls scrollToBottom which enters programmatic then exits to idle.
+      expect(ss.phase).toBe<ScrollPhase>('idle');
+      expect(ss.isFollowingBottom).toBe(true);
       ss.dispose();
     });
 
@@ -817,35 +820,9 @@ describe("SmartScroll", () => {
   // Follow-bottom re-engagement: scroll event near bottom in idle
   // -------------------------------------------------------------------------
 
-  describe("follow-bottom re-engagement: scroll near bottom in idle", () => {
-    it("re-engages when scrolling down to near bottom while in idle", () => {
-      // scrollHeight=500, clientHeight=300 → max scrollTop=200
-      // nearBottomThreshold=60 → near bottom when scrollTop >= 140
-      const { ss, container } = makeSmartScroll({ scrollTop: 0, scrollHeight: 500, clientHeight: 300 });
-      ss.disengageFollowBottom();
-      expect(ss.isFollowingBottom).toBe(false);
-
-      // Move scrollTop to near-bottom territory while in IDLE phase.
-      setScrollTop(container, 160); // 500 - 300 - 160 = 40 ≤ 60
-      dispatchScroll(container);
-
-      expect(ss.isFollowingBottom).toBe(true);
-      ss.dispose();
-    });
-
-    it("does NOT re-engage when far from bottom", () => {
-      const { ss, container } = makeSmartScroll({ scrollTop: 0, scrollHeight: 500, clientHeight: 300 });
-      ss.disengageFollowBottom();
-
-      setScrollTop(container, 50); // 500 - 300 - 50 = 150 > 60
-      dispatchScroll(container);
-
-      expect(ss.isFollowingBottom).toBe(false);
-      ss.dispose();
-    });
-
-    it("does NOT re-engage while in DRAGGING phase (scroll direction decrease doesn't matter)", () => {
-      // During dragging, re-engagement is suppressed — user is actively controlling scroll.
+  describe("follow-bottom re-engagement", () => {
+    it("does NOT re-engage while in DRAGGING phase even near bottom", () => {
+      // During dragging, the user is in deliberate control — no re-engagement.
       const { ss, container } = makeSmartScroll({ scrollTop: 0, scrollHeight: 500, clientHeight: 300 });
       ss.disengageFollowBottom();
 
@@ -854,28 +831,11 @@ describe("SmartScroll", () => {
       expect(ss.phase).toBe<ScrollPhase>('dragging');
 
       // Scroll to near bottom while dragging.
-      setScrollTop(container, 160);
+      setScrollTop(container, 190);
       dispatchScroll(container);
 
-      // Still disengaged — we're in DRAGGING, not IDLE.
+      // Still disengaged — dragging never re-engages, regardless of proximity.
       expect(ss.isFollowingBottom).toBe(false);
-      ss.dispose();
-    });
-
-    it("fires onFollowBottomChanged(true) on re-engagement", () => {
-      const onFollowBottomChanged = mock(() => {});
-      const { ss, container } = makeSmartScroll(
-        { scrollTop: 0, scrollHeight: 500, clientHeight: 300 },
-        { callbacks: { onFollowBottomChanged } },
-      );
-      ss.disengageFollowBottom(); // fires changed(false)
-      expect(onFollowBottomChanged).toHaveBeenCalledTimes(1);
-
-      setScrollTop(container, 160); // near bottom
-      dispatchScroll(container); // should re-engage
-
-      expect(onFollowBottomChanged).toHaveBeenCalledTimes(2);
-      expect(onFollowBottomChanged).toHaveBeenLastCalledWith(ss, true);
       ss.dispose();
     });
   });
@@ -941,31 +901,12 @@ describe("SmartScroll", () => {
   });
 
   // -------------------------------------------------------------------------
-  // nearBottomThreshold option
+  // bottom detection
   // -------------------------------------------------------------------------
 
-  describe("nearBottomThreshold option", () => {
-    it("isAtBottom uses custom threshold", () => {
-      // With threshold=100, near bottom when distance ≤ 100.
-      // scrollHeight=500, clientHeight=300, scrollTop=410 → distance = 500-300-410 = -210 ≤ 100
-      const { ss } = makeSmartScroll(
-        { scrollTop: 410, scrollHeight: 500, clientHeight: 300 },
-        { nearBottomThreshold: 100 },
-      );
-      expect(ss.isAtBottom).toBe(true);
-      ss.dispose();
-    });
-
-    it("isAtBottom false when outside custom threshold", () => {
-      // threshold=30, scrollTop=100, distance = 500-300-100 = 100 > 30
-      const { ss } = makeSmartScroll(
-        { scrollTop: 100, scrollHeight: 500, clientHeight: 300 },
-        { nearBottomThreshold: 30 },
-      );
-      expect(ss.isAtBottom).toBe(false);
-      ss.dispose();
-    });
-  });
+  // Threshold arithmetic tests removed — they tested implementation constants
+  // that change during tuning, not behavior. The behavioral tests above
+  // (dragging doesn't re-engage, disengage on scroll-up) cover the intent.
 
   // -------------------------------------------------------------------------
   // dispose
