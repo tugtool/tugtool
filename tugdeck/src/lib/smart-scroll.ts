@@ -344,13 +344,6 @@ export class SmartScroll {
         }
         break;
 
-      case 'programmatic':
-        // Restart scrollend fallback timer on every scroll event.
-        if (!this._supportsScrollEnd) {
-          this._restartScrollEndTimer();
-        }
-        break;
-
       default:
         break;
     }
