@@ -2263,17 +2263,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tugrelaunch"
-version = "0.7.48"
-dependencies = [
- "clap",
- "libc",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "tugtool"
+name = "tugexec"
 version = "0.7.48"
 dependencies = [
  "clap",
@@ -2284,6 +2274,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tugcast-core",
+]
+
+[[package]]
+name = "tugrelaunch"
+version = "0.7.48"
+dependencies = [
+ "clap",
+ "libc",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

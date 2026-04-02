@@ -19,7 +19,7 @@ use std::path::PathBuf;
 fn agents_dir() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.pop(); // crates
-    path.pop(); // tugcode
+    path.pop(); // tugrust
     path.pop(); // repo root
     path.push("tugplug");
     path.push("agents");

@@ -81,7 +81,7 @@ mkdir -p "$DERIVED_DATA" "$STAGING_DIR"
 # Step 1: Build Rust binaries
 echo "==> Building Rust binaries (release mode)"
 cd "$TUGCODE_DIR"
-cargo build --release -p tugcast -p tugutil -p tugtool
+cargo build --release -p tugcast -p tugutil -p tugexec
 
 # Step 1b: Build tugtalk standalone binary
 echo "==> Building tugtalk (bun compile)"
@@ -120,7 +120,7 @@ echo "==> Copying Rust binaries to Contents/MacOS/"
 mkdir -p "$STAGING_APP/Contents/MacOS"
 cp "$TUGCODE_DIR/target/release/tugcast" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugutil" "$STAGING_APP/Contents/MacOS/"
-cp "$TUGCODE_DIR/target/release/tugtool" "$STAGING_APP/Contents/MacOS/"
+cp "$TUGCODE_DIR/target/release/tugexec" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugtalk" "$STAGING_APP/Contents/MacOS/"
 
 # Step 6: Copy tugplug to Contents/Resources/

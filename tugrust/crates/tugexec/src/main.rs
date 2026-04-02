@@ -11,11 +11,11 @@ use tokio::time::{Instant, sleep, timeout};
 use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-/// tugtool: Launcher binary for tugdeck dashboard
+/// tugexec: Launcher for tugdeck dashboard
 #[derive(Parser, Debug)]
-#[command(name = "tugtool")]
+#[command(name = "tugexec")]
 #[command(version)]
-#[command(about = "Launch tugdeck dashboard - starts tugcast and opens the browser")]
+#[command(about = "Launch tugdeck dashboard — starts tugcast, Vite, and opens browser")]
 pub struct Cli {
     /// Tmux session name to attach to (passed to tugcast)
     #[arg(long, default_value = "cc0")]
@@ -77,7 +77,7 @@ fn detect_source_tree_from(start: &std::path::Path) -> Result<PathBuf, String> {
 
 /// Spawn the Vite dev server as a child process.
 ///
-/// tugtool always runs Vite in dev mode (with HMR). The dev server persists across
+/// tugexec always runs Vite in dev mode (with HMR). The dev server persists across
 /// tugcast restarts; call this once on first spawn.
 /// Passes `--port` explicitly so the Vite port is deterministic, and `--strictPort`
 /// so Vite fails fast if the port is already occupied rather than silently binding
@@ -300,7 +300,7 @@ fn open_browser(url: &str) {
     {
         match std::process::Command::new(command).arg(url).spawn() {
             Ok(_) => info!("opened browser to {}", url),
-            Err(e) => eprintln!("tugtool: warning: failed to open browser: {}", e),
+            Err(e) => eprintln!("tugexec: warning: failed to open browser: {}", e),
         }
     }
 }
@@ -363,7 +363,7 @@ async fn supervisor_loop(
     let (listener, socket_path) = match create_control_listener(cli.port) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("tugtool: failed to create control socket: {}", e);
+            eprintln!("tugexec: failed to create control socket: {}", e);
             return 1;
         }
     };
@@ -379,7 +379,7 @@ async fn supervisor_loop(
         let mut tugcast = match spawn_tugcast(&cli.session, cli.port, &cli.dir, &socket_path) {
             Ok(child) => child,
             Err(e) => {
-                eprintln!("tugtool: failed to start tugcast: {}", e);
+                eprintln!("tugexec: failed to start tugcast: {}", e);
                 let _ = std::fs::remove_file(&socket_path);
                 return 1;
             }
@@ -392,7 +392,7 @@ async fn supervisor_loop(
             match wait_for_ready(&listener).await {
                 Ok(result) => result,
                 Err(e) => {
-                    eprintln!("tugtool: {}", e);
+                    eprintln!("tugexec: {}", e);
                     let status = tugcast.wait().await.ok();
                     let code = status.and_then(|s| s.code()).unwrap_or(1);
                     let _ = std::fs::remove_file(&socket_path);
@@ -531,7 +531,7 @@ async fn supervisor_loop(
                     let code = match status {
                         Ok(s) => s.code().unwrap_or(1),
                         Err(e) => {
-                            eprintln!("tugtool: error waiting for tugcast: {}", e);
+                            eprintln!("tugexec: error waiting for tugcast: {}", e);
                             1
                         }
                     };
@@ -623,7 +623,7 @@ async fn main() {
         session = %cli.session,
         port = cli.port,
         dir = ?cli.dir,
-        "tugtool starting"
+        "tugexec starting"
     );
 
     // Resolve source tree (required -- Vite is the only frontend server).
@@ -632,7 +632,7 @@ async fn main() {
     let source_tree: Option<PathBuf> = if let Some(ref path) = cli.source_tree {
         if !path.join("tugdeck").is_dir() {
             eprintln!(
-                "tugtool: error: No tugdeck/ directory found in {}. Is this the right source tree?",
+                "tugexec: error: No tugdeck/ directory found in {}. Is this the right source tree?",
                 path.display()
             );
             std::process::exit(1);
@@ -647,7 +647,7 @@ async fn main() {
             }
             Err(e) => {
                 eprintln!(
-                    "tugtool: error: could not find source tree: {}. Use --source-tree to specify the mono-repo root.",
+                    "tugexec: error: could not find source tree: {}. Use --source-tree to specify the mono-repo root.",
                     e
                 );
                 std::process::exit(1);
@@ -669,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_default_values() {
-        let cli = Cli::try_parse_from(["tugtool"]).unwrap();
+        let cli = Cli::try_parse_from(["tugexec"]).unwrap();
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 55255);
         assert_eq!(cli.dir, PathBuf::from("."));
@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn test_override_session() {
-        let cli = Cli::try_parse_from(["tugtool", "--session", "mySession"]).unwrap();
+        let cli = Cli::try_parse_from(["tugexec", "--session", "mySession"]).unwrap();
         assert_eq!(cli.session, "mySession");
         assert_eq!(cli.port, 55255);
         assert_eq!(cli.dir, PathBuf::from("."));
@@ -685,7 +685,7 @@ mod tests {
 
     #[test]
     fn test_override_port() {
-        let cli = Cli::try_parse_from(["tugtool", "--port", "8080"]).unwrap();
+        let cli = Cli::try_parse_from(["tugexec", "--port", "8080"]).unwrap();
         assert_eq!(cli.port, 8080);
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.dir, PathBuf::from("."));
@@ -693,7 +693,7 @@ mod tests {
 
     #[test]
     fn test_override_dir() {
-        let cli = Cli::try_parse_from(["tugtool", "--dir", "/tmp/test"]).unwrap();
+        let cli = Cli::try_parse_from(["tugexec", "--dir", "/tmp/test"]).unwrap();
         assert_eq!(cli.dir, PathBuf::from("/tmp/test"));
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 55255);
@@ -702,7 +702,7 @@ mod tests {
     #[test]
     fn test_all_overrides() {
         let cli = Cli::try_parse_from([
-            "tugtool",
+            "tugexec",
             "--session",
             "test",
             "--port",
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn test_version_flag() {
         // --version should cause an early exit with version info
-        let result = Cli::try_parse_from(["tugtool", "--version"]);
+        let result = Cli::try_parse_from(["tugexec", "--version"]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
@@ -728,7 +728,7 @@ mod tests {
     #[test]
     fn test_help_flag() {
         // --help should cause an early exit with help info
-        let result = Cli::try_parse_from(["tugtool", "--help"]);
+        let result = Cli::try_parse_from(["tugexec", "--help"]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn test_dev_flag_rejected() {
         // --dev is no longer accepted by clap; it should be rejected as an unknown argument
-        let result = Cli::try_parse_from(["tugtool", "--dev"]);
+        let result = Cli::try_parse_from(["tugexec", "--dev"]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
@@ -752,10 +752,10 @@ mod tests {
 
     #[test]
     fn test_cli_source_tree_flag() {
-        let cli = Cli::try_parse_from(["tugtool"]).unwrap();
+        let cli = Cli::try_parse_from(["tugexec"]).unwrap();
         assert_eq!(cli.source_tree, None);
 
-        let cli = Cli::try_parse_from(["tugtool", "--source-tree", "/path/to/repo"]).unwrap();
+        let cli = Cli::try_parse_from(["tugexec", "--source-tree", "/path/to/repo"]).unwrap();
         assert_eq!(cli.source_tree, Some(PathBuf::from("/path/to/repo")));
     }
 

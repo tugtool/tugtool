@@ -1601,17 +1601,17 @@ mod tests {
         let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
         fs::write(worktree_path.join("test.txt"), "test\n").unwrap();
 
-        // Build tugcode binary path
-        let tugcode_bin = std::env::current_exe()
+        // Build tugutil binary path
+        let tugutil_bin = std::env::current_exe()
             .unwrap()
             .parent()
             .unwrap()
             .parent()
             .unwrap()
-            .join("tugcode");
+            .join("tugutil");
 
         // Run commit with stdin metadata via subprocess
-        let mut child = StdCommand::new(&tugcode_bin)
+        let mut child = StdCommand::new(&tugutil_bin)
             .arg("dash")
             .arg("commit")
             .arg("test-dash")

@@ -1,13 +1,13 @@
 [package]
-name = "tugtool"
-description = "Launcher binary for tugdeck dashboard"
+name = "tugexec"
+description = "Launcher for tugdeck dashboard — starts tugcast, Vite, and opens browser"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "tugtool"
+name = "tugexec"
 path = "src/main.rs"
 
 [dependencies]
