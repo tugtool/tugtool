@@ -141,6 +141,7 @@ pub fn spawn_agent_bridge(
 /// Run the agent bridge
 ///
 /// Spawns tugcode, performs protocol handshake, relays messages, handles crashes.
+#[allow(clippy::too_many_arguments)]
 async fn run_agent_bridge(
     code_tx: broadcast::Sender<Frame>,
     project_info_tx: watch::Sender<Frame>,
