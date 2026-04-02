@@ -237,6 +237,10 @@ async fn main() {
         });
     }
 
+    // Create replay buffer for CodeOutput lag recovery (P4)
+    use crate::router::{LagPolicy, ReplayBuffer};
+    let code_replay = ReplayBuffer::new(1000);
+
     // Resolve tugcode path and start agent bridge
     let tugcode_path =
         feeds::agent_bridge::resolve_tugcode_path(cli.tugcode_path.as_deref(), &watch_dir);
@@ -254,11 +258,10 @@ async fn main() {
         tugcode_path,
         agent_watch_dir,
         agent_cancel,
+        code_replay.clone(),
     );
 
     // Build feed router with dynamic registration
-    use crate::router::LagPolicy;
-
     let mut feed_router = FeedRouter::new(
         cli.session.clone(),
         auth.clone(),
@@ -272,7 +275,11 @@ async fn main() {
         terminal_tx_for_router,
         LagPolicy::Bootstrap,
     );
-    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx.clone(), LagPolicy::Warn);
+    feed_router.register_stream(
+        FeedId::CODE_OUTPUT,
+        code_tx.clone(),
+        LagPolicy::Replay(code_replay),
+    );
     feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
 
     // Register input sinks (client → server backends)

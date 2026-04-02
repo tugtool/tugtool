@@ -113,6 +113,7 @@ pub fn spawn_agent_bridge(
     tugcode_path: PathBuf,
     project_dir: PathBuf,
     cancel: CancellationToken,
+    replay_buffer: crate::router::ReplayBuffer,
 ) -> AgentBridgeHandles {
     use tugcast_core::FeedId;
 
@@ -129,6 +130,7 @@ pub fn spawn_agent_bridge(
         tugcode_path,
         project_dir,
         cancel,
+        replay_buffer,
     ));
 
     AgentBridgeHandles {
@@ -147,6 +149,7 @@ async fn run_agent_bridge(
     tugcode_path: PathBuf,
     project_dir: PathBuf,
     cancel: CancellationToken,
+    replay_buffer: crate::router::ReplayBuffer,
 ) {
     let mut crash_budget = CrashBudget::new(3, Duration::from_secs(60));
 
@@ -264,6 +267,7 @@ async fn run_agent_bridge(
                             if line.contains("\"type\":\"session_init\"") {
                                 let _ = session_watch_tx.send(frame.clone());
                             }
+                            replay_buffer.push(frame.clone());
                             let _ = code_tx.send(frame);
                         }
                         Ok(None) => {
