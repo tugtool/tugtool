@@ -500,12 +500,12 @@ enum MainSyncState {
 /// whether a clean merge is possible. Returns a list of conflicting file paths.
 /// An empty list means a clean merge. On failure (e.g., old git version),
 /// returns an empty list (optimistic: assume clean).
-fn detect_merge_conflicts(repo_root: &Path) -> Vec<String> {
+fn detect_merge_conflicts(repo_root: &Path, target_ref: &str) -> Vec<String> {
     // First probe with --write-tree (requires Git 2.38+).
     let probe = Command::new("git")
         .arg("-C")
         .arg(repo_root)
-        .args(["merge-tree", "--write-tree", "--no-messages", "origin/main", "main"])
+        .args(["merge-tree", "--write-tree", "--no-messages", target_ref, "main"])
         .output();
 
     let output = match probe {
@@ -525,7 +525,7 @@ fn detect_merge_conflicts(repo_root: &Path) -> Vec<String> {
     let name_only = Command::new("git")
         .arg("-C")
         .arg(repo_root)
-        .args(["merge-tree", "--write-tree", "--no-messages", "--name-only", "origin/main", "main"])
+        .args(["merge-tree", "--write-tree", "--no-messages", "--name-only", target_ref, "main"])
         .output();
 
     match name_only {
@@ -544,7 +544,7 @@ fn detect_merge_conflicts(repo_root: &Path) -> Vec<String> {
 }
 
 /// Check how local main relates to origin/main
-fn check_main_sync(repo_root: &Path) -> Result<MainSyncState, String> {
+fn check_main_sync(repo_root: &Path, pr_branch: Option<&str>) -> Result<MainSyncState, String> {
     // Step 1: Fetch origin/main to get latest state
     let fetch_output = Command::new("git")
         .arg("-C")
@@ -617,7 +617,8 @@ fn check_main_sync(repo_root: &Path) -> Result<MainSyncState, String> {
             .trim()
             .parse::<u32>()
             .unwrap_or(0);
-        let conflicts = detect_merge_conflicts(repo_root);
+        let target_ref = pr_branch.unwrap_or("origin/main");
+        let conflicts = detect_merge_conflicts(repo_root, target_ref);
         return Ok(MainSyncState::Ahead {
             _local: local_hash,
             _remote: remote_hash,
@@ -676,7 +677,8 @@ fn check_main_sync(repo_root: &Path) -> Result<MainSyncState, String> {
         .parse::<u32>()
         .unwrap_or(0);
 
-    let conflicts = detect_merge_conflicts(repo_root);
+    let target_ref = pr_branch.unwrap_or("origin/main");
+    let conflicts = detect_merge_conflicts(repo_root, target_ref);
 
     Ok(MainSyncState::Diverged {
         _local: local_hash,
@@ -872,7 +874,8 @@ fn run_merge_in(
     let mut p4_conflicting_files: Option<Vec<String>> = None;
 
     if effective_mode == "remote" {
-        match check_main_sync(&repo_root) {
+        let pr_branch_for_sync = if pr_info.is_some() { Some(branch.as_str()) } else { None };
+        match check_main_sync(&repo_root, pr_branch_for_sync) {
             Err(e) => {
                 let data = MergeData {
                     status: "error".to_string(),
@@ -2619,7 +2622,7 @@ mod tests {
             .expect("git push");
 
         // Check sync — should pass since we just pushed
-        let result = check_main_sync(clone_path);
+        let result = check_main_sync(clone_path, None);
         assert!(result.is_ok(), "Expected sync check to pass: {:?}", result);
     }
 
@@ -2700,7 +2703,7 @@ mod tests {
             .expect("git commit");
 
         // Check sync — local is ahead (unpushed commit)
-        let result = check_main_sync(clone_path);
+        let result = check_main_sync(clone_path, None);
         assert!(result.is_ok(), "check_main_sync should succeed");
         match result.unwrap() {
             MainSyncState::Ahead { ahead_count, .. } => {
@@ -2800,7 +2803,7 @@ mod tests {
             .expect("git reset");
 
         // Check sync — local is behind
-        let result = check_main_sync(clone_path);
+        let result = check_main_sync(clone_path, None);
         assert!(result.is_ok(), "check_main_sync should succeed");
         match result.unwrap() {
             MainSyncState::LocalBehind { _behind_count, .. } => {
@@ -2931,7 +2934,7 @@ mod tests {
             .expect("git commit");
 
         // Check sync — should detect true divergence
-        let result = check_main_sync(clone_path);
+        let result = check_main_sync(clone_path, None);
         assert!(result.is_ok(), "check_main_sync should succeed");
         match result.unwrap() {
             MainSyncState::Diverged { .. } => {}
@@ -2950,7 +2953,7 @@ mod tests {
         make_initial_commit(temp_path);
 
         // Check sync — should fail because no origin remote
-        let result = check_main_sync(temp_path);
+        let result = check_main_sync(temp_path, None);
         assert!(
             result.is_err(),
             "Expected sync check to fail without origin"
@@ -3479,7 +3482,7 @@ mod tests {
 
         // Verify check_main_sync detects local ahead (not true divergence —
         // divergence requires both sides to have unique commits)
-        let result = check_main_sync(clone_path);
+        let result = check_main_sync(clone_path, None);
         assert!(result.is_ok(), "check_main_sync should succeed");
         match result.unwrap() {
             MainSyncState::Ahead { ahead_count, .. } => {
