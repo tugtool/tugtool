@@ -247,7 +247,7 @@ async fn test_snapshot_watch_initial_value() {
 
     // Create watch channel with pre-loaded data
     let test_payload = b"test data";
-    let initial_frame = Frame::new(FeedId::Filesystem, test_payload.to_vec());
+    let initial_frame = Frame::new(FeedId::FILESYSTEM, test_payload.to_vec());
     let (tx, rx) = tokio::sync::watch::channel(initial_frame.clone());
 
     // Clone receiver (simulates what router does per client)
@@ -255,11 +255,11 @@ async fn test_snapshot_watch_initial_value() {
 
     // Borrow initial value (simulates what handle_client does on connect)
     let frame = rx_clone.borrow().clone();
-    assert_eq!(frame.feed_id, FeedId::Filesystem);
+    assert_eq!(frame.feed_id, FeedId::FILESYSTEM);
     assert_eq!(frame.payload, test_payload);
 
     // Send update
-    let update_frame = Frame::new(FeedId::Filesystem, b"updated".to_vec());
+    let update_frame = Frame::new(FeedId::FILESYSTEM, b"updated".to_vec());
     tx.send(update_frame.clone()).unwrap();
 
     // Wait for change notification
@@ -309,35 +309,35 @@ async fn test_stats_feed_delivery() {
 
     // Create watch channels
     let (_stats_agg_tx, stats_agg_rx) =
-        tokio::sync::watch::channel(Frame::new(FeedId::Stats, stats_agg_payload.clone()));
+        tokio::sync::watch::channel(Frame::new(FeedId::STATS, stats_agg_payload.clone()));
     let (_stats_proc_tx, stats_proc_rx) = tokio::sync::watch::channel(Frame::new(
-        FeedId::StatsProcessInfo,
+        FeedId::STATS_PROCESS_INFO,
         process_info_payload.clone(),
     ));
     let (_stats_token_tx, stats_token_rx) = tokio::sync::watch::channel(Frame::new(
-        FeedId::StatsTokenUsage,
+        FeedId::STATS_TOKEN_USAGE,
         token_usage_payload.clone(),
     ));
     let (_stats_build_tx, stats_build_rx) = tokio::sync::watch::channel(Frame::new(
-        FeedId::StatsBuildStatus,
+        FeedId::STATS_BUILD_STATUS,
         build_status_payload.clone(),
     ));
 
     // Verify that watch receivers provide immediate access to initial values
     let agg_frame = stats_agg_rx.borrow().clone();
-    assert_eq!(agg_frame.feed_id, FeedId::Stats);
+    assert_eq!(agg_frame.feed_id, FeedId::STATS);
     assert_eq!(agg_frame.payload, stats_agg_payload);
 
     let proc_frame = stats_proc_rx.borrow().clone();
-    assert_eq!(proc_frame.feed_id, FeedId::StatsProcessInfo);
+    assert_eq!(proc_frame.feed_id, FeedId::STATS_PROCESS_INFO);
     assert_eq!(proc_frame.payload, process_info_payload);
 
     let token_frame = stats_token_rx.borrow().clone();
-    assert_eq!(token_frame.feed_id, FeedId::StatsTokenUsage);
+    assert_eq!(token_frame.feed_id, FeedId::STATS_TOKEN_USAGE);
     assert_eq!(token_frame.payload, token_usage_payload);
 
     let build_frame = stats_build_rx.borrow().clone();
-    assert_eq!(build_frame.feed_id, FeedId::StatsBuildStatus);
+    assert_eq!(build_frame.feed_id, FeedId::STATS_BUILD_STATUS);
     assert_eq!(build_frame.payload, build_status_payload);
 
     // Verify JSON payloads parse correctly
@@ -367,13 +367,13 @@ async fn test_reconnection_snapshot_delivery() {
 
     // Create watch channel with initial snapshot
     let initial_payload = b"initial snapshot";
-    let initial_frame = Frame::new(FeedId::Filesystem, initial_payload.to_vec());
+    let initial_frame = Frame::new(FeedId::FILESYSTEM, initial_payload.to_vec());
     let (_tx, rx) = tokio::sync::watch::channel(initial_frame.clone());
 
     // First client connects (simulated by cloning receiver)
     let rx_client1 = rx.clone();
     let frame1 = rx_client1.borrow().clone();
-    assert_eq!(frame1.feed_id, FeedId::Filesystem);
+    assert_eq!(frame1.feed_id, FeedId::FILESYSTEM);
     assert_eq!(frame1.payload, initial_payload);
 
     // Client 1 disconnects (drop receiver - no-op in this test)
@@ -384,7 +384,7 @@ async fn test_reconnection_snapshot_delivery() {
     let frame2 = rx_client2.borrow().clone();
 
     // Verify client 2 receives the same snapshot immediately
-    assert_eq!(frame2.feed_id, FeedId::Filesystem);
+    assert_eq!(frame2.feed_id, FeedId::FILESYSTEM);
     assert_eq!(frame2.payload, initial_payload);
 }
 
@@ -533,7 +533,7 @@ async fn test_tell_reload() {
     // Verify client_action_tx was broadcast
     let frame = client_action_rx.try_recv().unwrap();
     use tugcast_core::FeedId;
-    assert_eq!(frame.feed_id, FeedId::Control);
+    assert_eq!(frame.feed_id, FeedId::CONTROL);
 }
 
 #[tokio::test]
@@ -594,7 +594,7 @@ async fn test_tell_client_action_round_trip() {
     // Verify client_action_rx receives the frame
     let frame = client_action_rx.recv().await.unwrap();
     use tugcast_core::FeedId;
-    assert_eq!(frame.feed_id, FeedId::Control);
+    assert_eq!(frame.feed_id, FeedId::CONTROL);
 
     // Verify payload contains the original JSON body
     let payload_str = String::from_utf8(frame.payload.to_vec()).unwrap();

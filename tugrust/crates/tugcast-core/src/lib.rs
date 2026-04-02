@@ -15,7 +15,21 @@ pub mod protocol;
 pub mod types;
 
 pub use feed::{SnapshotFeed, StreamFeed};
-pub use protocol::{FeedId, Frame, HEADER_SIZE, MAX_PAYLOAD_SIZE, ProtocolError};
+pub use protocol::{
+    // Handshake constants
+    CLOSE_BAD_HANDSHAKE,
+    CLOSE_HANDSHAKE_TIMEOUT,
+    CLOSE_VERSION_MISMATCH,
+    FeedId,
+    Frame,
+    FrameFlags,
+    HANDSHAKE_TIMEOUT,
+    HEADER_SIZE,
+    MAX_PAYLOAD_SIZE,
+    PROTOCOL_NAME,
+    PROTOCOL_VERSION,
+    ProtocolError,
+};
 pub use types::{FileStatus, FsEvent, GitStatus, StatSnapshot};
 
 /// Default port for the Vite dev server.

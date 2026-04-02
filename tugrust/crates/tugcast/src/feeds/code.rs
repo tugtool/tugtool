@@ -10,12 +10,12 @@ pub const CODE_BROADCAST_CAPACITY: usize = 1024;
 
 /// Create a code output frame from JSON-lines data
 pub fn code_output_frame(json_line: &[u8]) -> Frame {
-    Frame::new(FeedId::CodeOutput, json_line.to_vec())
+    Frame::new(FeedId::CODE_OUTPUT, json_line.to_vec())
 }
 
 /// Extract JSON string from a CodeInput frame payload
 pub fn parse_code_input(frame: &Frame) -> Option<String> {
-    if frame.feed_id != FeedId::CodeInput {
+    if frame.feed_id != FeedId::CODE_INPUT {
         return None;
     }
     String::from_utf8(frame.payload.clone()).ok()
@@ -29,20 +29,20 @@ mod tests {
     fn test_code_output_frame() {
         let json = b"{\"type\":\"assistant_text\"}";
         let frame = code_output_frame(json);
-        assert_eq!(frame.feed_id, FeedId::CodeOutput);
+        assert_eq!(frame.feed_id, FeedId::CODE_OUTPUT);
         assert_eq!(frame.payload, json);
     }
 
     #[test]
     fn test_parse_code_input() {
-        let frame = Frame::new(FeedId::CodeInput, b"{\"type\":\"user_message\"}".to_vec());
+        let frame = Frame::new(FeedId::CODE_INPUT, b"{\"type\":\"user_message\"}".to_vec());
         let result = parse_code_input(&frame);
         assert_eq!(result, Some("{\"type\":\"user_message\"}".to_string()));
     }
 
     #[test]
     fn test_parse_code_input_wrong_feed() {
-        let frame = Frame::new(FeedId::TerminalInput, b"test".to_vec());
+        let frame = Frame::new(FeedId::TERMINAL_INPUT, b"test".to_vec());
         let result = parse_code_input(&frame);
         assert_eq!(result, None);
     }

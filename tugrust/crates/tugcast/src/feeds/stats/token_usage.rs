@@ -84,7 +84,7 @@ impl StatCollector for TokenUsageCollector {
     }
 
     fn feed_id(&self) -> FeedId {
-        FeedId::StatsTokenUsage
+        FeedId::STATS_TOKEN_USAGE
     }
 
     fn interval(&self) -> Duration {
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn test_token_usage_feed_id() {
         let collector = TokenUsageCollector::new("test".to_string());
-        assert_eq!(collector.feed_id(), FeedId::StatsTokenUsage);
+        assert_eq!(collector.feed_id(), FeedId::STATS_TOKEN_USAGE);
     }
 
     #[test]

@@ -1,80 +1,207 @@
-//! Binary WebSocket frame protocol for tugcast
+//! Tugcast Binary Protocol v1
 //!
-//! This module implements the wire protocol for tugcast WebSocket communication.
-//! Each frame consists of:
-//! - 1 byte: FeedId (identifies the data stream)
-//! - 4 bytes: Payload length (big-endian u32)
-//! - Variable: Payload data
+//! Wire format per frame:
+//! ```text
+//! [1 byte FeedId][1 byte flags][4 bytes payload length (BE u32)][payload]
+//! ```
+//!
+//! - **FeedId**: open `u8` namespace — known feeds have associated constants,
+//!   unknown values pass through without error (opaque routing).
+//! - **Flags**: bit 0 = frame kind (0 = data, 1 = control/meta).
+//!   Bits 1–7 are reserved and must be 0; receivers ignore unknown flags.
+//! - **Length**: big-endian `u32`, max [`MAX_PAYLOAD_SIZE`].
 
-/// Maximum payload size in bytes (1 MB)
-pub const MAX_PAYLOAD_SIZE: usize = 1_048_576;
+use std::fmt;
 
-/// Size of the frame header in bytes (1 byte FeedId + 4 bytes length)
-pub const HEADER_SIZE: usize = 5;
+/// Maximum payload size in bytes (16 MB)
+pub const MAX_PAYLOAD_SIZE: usize = 16 * 1024 * 1024;
 
-/// Feed identifiers for different data streams
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum FeedId {
-    /// Terminal output stream (tugcast -> tugdeck)
-    TerminalOutput = 0x00,
-    /// Terminal input stream (tugdeck -> tugcast)
-    TerminalInput = 0x01,
-    /// Terminal resize events (tugdeck -> tugcast)
-    TerminalResize = 0x02,
-    /// Filesystem events snapshot (tugcast -> tugdeck)
-    Filesystem = 0x10,
-    /// Git status snapshot (tugcast -> tugdeck)
-    Git = 0x20,
-    /// Aggregate stats snapshot (tugcast -> tugdeck)
-    Stats = 0x30,
-    /// Process info stats (tugcast -> tugdeck)
-    StatsProcessInfo = 0x31,
-    /// Token usage stats (tugcast -> tugdeck)
-    StatsTokenUsage = 0x32,
-    /// Build status stats (tugcast -> tugdeck)
-    StatsBuildStatus = 0x33,
-    /// Code output stream (tugcast -> tugdeck)
-    CodeOutput = 0x40,
-    /// Code input stream (tugdeck -> tugcast)
-    CodeInput = 0x41,
-    /// Domain defaults snapshot (tugcast -> tugdeck)
-    Defaults = 0x50,
-    /// Control commands (tugdeck -> tugcast)
-    Control = 0xC0,
-    /// Heartbeat/keepalive frames (bidirectional)
-    Heartbeat = 0xFF,
-}
+/// Size of the frame header in bytes (1 FeedId + 1 flags + 4 length)
+pub const HEADER_SIZE: usize = 6;
+
+// ---------------------------------------------------------------------------
+// FeedId — open u8 newtype
+// ---------------------------------------------------------------------------
+
+/// Identifies a data stream multiplexed over a single WebSocket connection.
+///
+/// `FeedId` is an open namespace: any `u8` value is valid on the wire.
+/// Known feeds are exposed as associated constants; unknown values are
+/// forwarded by the router without interpretation.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FeedId(pub u8);
 
 impl FeedId {
-    /// Convert a byte to a FeedId variant
-    ///
-    /// Returns None if the byte does not correspond to a known feed ID.
-    pub fn from_byte(byte: u8) -> Option<Self> {
-        match byte {
-            0x00 => Some(FeedId::TerminalOutput),
-            0x01 => Some(FeedId::TerminalInput),
-            0x02 => Some(FeedId::TerminalResize),
-            0x10 => Some(FeedId::Filesystem),
-            0x20 => Some(FeedId::Git),
-            0x30 => Some(FeedId::Stats),
-            0x31 => Some(FeedId::StatsProcessInfo),
-            0x32 => Some(FeedId::StatsTokenUsage),
-            0x33 => Some(FeedId::StatsBuildStatus),
-            0x40 => Some(FeedId::CodeOutput),
-            0x41 => Some(FeedId::CodeInput),
-            0x50 => Some(FeedId::Defaults),
-            0xC0 => Some(FeedId::Control),
-            0xFF => Some(FeedId::Heartbeat),
+    // -- Terminal --
+    /// Terminal output stream (tugcast → tugdeck)
+    pub const TERMINAL_OUTPUT: Self = Self(0x00);
+    /// Terminal input stream (tugdeck → tugcast)
+    pub const TERMINAL_INPUT: Self = Self(0x01);
+    /// Terminal resize events (tugdeck → tugcast)
+    pub const TERMINAL_RESIZE: Self = Self(0x02);
+
+    // -- Snapshot feeds --
+    /// Filesystem events snapshot (tugcast → tugdeck)
+    pub const FILESYSTEM: Self = Self(0x10);
+    /// Git status snapshot (tugcast → tugdeck)
+    pub const GIT: Self = Self(0x20);
+
+    // -- Stats --
+    /// Aggregate stats snapshot (tugcast → tugdeck)
+    pub const STATS: Self = Self(0x30);
+    /// Process info stats (tugcast → tugdeck)
+    pub const STATS_PROCESS_INFO: Self = Self(0x31);
+    /// Token usage stats (tugcast → tugdeck)
+    pub const STATS_TOKEN_USAGE: Self = Self(0x32);
+    /// Build status stats (tugcast → tugdeck)
+    pub const STATS_BUILD_STATUS: Self = Self(0x33);
+
+    // -- Code (Claude Code bridge) --
+    /// Code output stream (tugcast → tugdeck)
+    pub const CODE_OUTPUT: Self = Self(0x40);
+    /// Code input stream (tugdeck → tugcast)
+    pub const CODE_INPUT: Self = Self(0x41);
+
+    // -- Defaults --
+    /// Domain defaults snapshot (tugcast → tugdeck)
+    pub const DEFAULTS: Self = Self(0x50);
+
+    // -- Shell (reserved for Phase T2+) --
+    /// Shell command output (tugcast → tugdeck)
+    pub const SHELL_OUTPUT: Self = Self(0x60);
+    /// Shell command input (tugdeck → tugcast)
+    pub const SHELL_INPUT: Self = Self(0x61);
+
+    // -- TugFeed (reserved for Phase T3+) --
+    /// Tug surface feed (planned)
+    pub const TUG_FEED: Self = Self(0x70);
+
+    // -- Router-internal --
+    /// Control commands (tugdeck → tugcast, tugcast → tugdeck)
+    pub const CONTROL: Self = Self(0xC0);
+    /// Heartbeat/keepalive frames (bidirectional)
+    pub const HEARTBEAT: Self = Self(0xFF);
+
+    /// Return the raw byte value.
+    pub fn as_byte(self) -> u8 {
+        self.0
+    }
+
+    /// Return the human-readable name for known feeds, or `None`.
+    pub fn name(self) -> Option<&'static str> {
+        match self {
+            Self::TERMINAL_OUTPUT => Some("TerminalOutput"),
+            Self::TERMINAL_INPUT => Some("TerminalInput"),
+            Self::TERMINAL_RESIZE => Some("TerminalResize"),
+            Self::FILESYSTEM => Some("Filesystem"),
+            Self::GIT => Some("Git"),
+            Self::STATS => Some("Stats"),
+            Self::STATS_PROCESS_INFO => Some("StatsProcessInfo"),
+            Self::STATS_TOKEN_USAGE => Some("StatsTokenUsage"),
+            Self::STATS_BUILD_STATUS => Some("StatsBuildStatus"),
+            Self::CODE_OUTPUT => Some("CodeOutput"),
+            Self::CODE_INPUT => Some("CodeInput"),
+            Self::DEFAULTS => Some("Defaults"),
+            Self::SHELL_OUTPUT => Some("ShellOutput"),
+            Self::SHELL_INPUT => Some("ShellInput"),
+            Self::TUG_FEED => Some("TugFeed"),
+            Self::CONTROL => Some("Control"),
+            Self::HEARTBEAT => Some("Heartbeat"),
             _ => None,
         }
     }
+}
 
-    /// Convert this FeedId to its byte representation
-    pub fn as_byte(&self) -> u8 {
-        *self as u8
+impl fmt::Debug for FeedId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.name() {
+            Some(name) => write!(f, "FeedId::{name}(0x{:02x})", self.0),
+            None => write!(f, "FeedId(0x{:02x})", self.0),
+        }
     }
 }
+
+impl fmt::Display for FeedId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.name() {
+            Some(name) => write!(f, "{name}(0x{:02x})", self.0),
+            None => write!(f, "0x{:02x}", self.0),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FrameFlags
+// ---------------------------------------------------------------------------
+
+/// Flags byte carried in every frame header.
+///
+/// Bit 0 (`KIND`): `0` = data frame, `1` = control/meta frame about this feed.
+/// Bits 1–7: reserved, must be 0 on send, ignored on receive.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FrameFlags(pub u8);
+
+impl FrameFlags {
+    /// Normal data frame (flags = 0x00).
+    pub const DATA: Self = Self(0x00);
+    /// Control/meta frame (flags = 0x01).
+    pub const CONTROL: Self = Self(0x01);
+
+    /// Bit mask for the kind bit.
+    const KIND_BIT: u8 = 0x01;
+
+    /// Returns `true` if this is a control/meta frame.
+    pub fn is_control(self) -> bool {
+        self.0 & Self::KIND_BIT != 0
+    }
+
+    /// Returns `true` if this is a data frame.
+    pub fn is_data(self) -> bool {
+        !self.is_control()
+    }
+}
+
+impl Default for FrameFlags {
+    fn default() -> Self {
+        Self::DATA
+    }
+}
+
+impl fmt::Debug for FrameFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_control() {
+            write!(f, "FrameFlags::CONTROL(0x{:02x})", self.0)
+        } else {
+            write!(f, "FrameFlags::DATA(0x{:02x})", self.0)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Protocol handshake
+// ---------------------------------------------------------------------------
+
+/// Protocol identifier used in the WebSocket handshake.
+pub const PROTOCOL_NAME: &str = "tugcast";
+
+/// Current protocol version.
+pub const PROTOCOL_VERSION: u32 = 1;
+
+/// Handshake timeout (how long the server waits for the client's hello).
+pub const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// WebSocket close code for protocol version mismatch (4000-4999 = application-defined).
+pub const CLOSE_VERSION_MISMATCH: u16 = 4001;
+
+/// WebSocket close code for handshake timeout.
+pub const CLOSE_HANDSHAKE_TIMEOUT: u16 = 4002;
+
+/// WebSocket close code for malformed handshake.
+pub const CLOSE_BAD_HANDSHAKE: u16 = 4003;
+
+// ---------------------------------------------------------------------------
+// ProtocolError
+// ---------------------------------------------------------------------------
 
 /// Errors that can occur during frame decoding
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -83,67 +210,83 @@ pub enum ProtocolError {
     #[error("incomplete frame: need at least {needed} bytes, have {have}")]
     Incomplete { needed: usize, have: usize },
 
-    /// The feed ID byte does not match any known feed
-    #[error("invalid feed ID: 0x{0:02x}")]
-    InvalidFeedId(u8),
-
     /// The payload size exceeds the maximum allowed
     #[error("payload too large: {size} bytes exceeds maximum {max}")]
     PayloadTooLarge { size: usize, max: usize },
 }
 
-/// A WebSocket frame containing a feed ID and payload
+// ---------------------------------------------------------------------------
+// Frame
+// ---------------------------------------------------------------------------
+
+/// A WebSocket frame containing a feed ID, flags, and payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     /// The feed this frame belongs to
     pub feed_id: FeedId,
+    /// Header flags (data vs control, reserved bits)
+    pub flags: FrameFlags,
     /// The frame payload data
     pub payload: Vec<u8>,
 }
 
 impl Frame {
-    /// Create a new frame with the given feed ID and payload
+    /// Create a new data frame with the given feed ID and payload.
     pub fn new(feed_id: FeedId, payload: Vec<u8>) -> Self {
-        Frame { feed_id, payload }
+        Frame {
+            feed_id,
+            flags: FrameFlags::DATA,
+            payload,
+        }
     }
 
-    /// Create a heartbeat frame (empty payload)
+    /// Create a new control/meta frame with the given feed ID and payload.
+    pub fn control(feed_id: FeedId, payload: Vec<u8>) -> Self {
+        Frame {
+            feed_id,
+            flags: FrameFlags::CONTROL,
+            payload,
+        }
+    }
+
+    /// Create a heartbeat frame (empty payload).
     pub fn heartbeat() -> Self {
         Frame {
-            feed_id: FeedId::Heartbeat,
+            feed_id: FeedId::HEARTBEAT,
+            flags: FrameFlags::DATA,
             payload: Vec::new(),
         }
     }
 
-    /// Encode this frame into wire format bytes
+    /// Returns `true` if this is a control/meta frame.
+    pub fn is_control(&self) -> bool {
+        self.flags.is_control()
+    }
+
+    /// Encode this frame into wire format bytes.
     ///
-    /// The wire format is:
-    /// - 1 byte: feed_id
-    /// - 4 bytes: payload length (big-endian u32)
-    /// - N bytes: payload data
+    /// Wire format (v1):
+    /// ```text
+    /// [1 byte feed_id][1 byte flags][4 bytes payload length BE u32][payload]
+    /// ```
     pub fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(HEADER_SIZE + self.payload.len());
         bytes.push(self.feed_id.as_byte());
+        bytes.push(self.flags.0);
         bytes.extend_from_slice(&(self.payload.len() as u32).to_be_bytes());
         bytes.extend_from_slice(&self.payload);
         bytes
     }
 
-    /// Decode a frame from wire format bytes
+    /// Decode a frame from wire format bytes.
     ///
-    /// Returns a tuple of (Frame, bytes_consumed) on success.
-    /// The bytes_consumed value indicates how many bytes from the input
-    /// were used to construct the frame.
+    /// Returns `(Frame, bytes_consumed)` on success.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The buffer is too small to contain a complete frame header
-    /// - The buffer is too small to contain the complete payload
-    /// - The feed ID byte is not recognized
-    /// - The payload size exceeds MAX_PAYLOAD_SIZE
+    /// - [`ProtocolError::Incomplete`] if the buffer is too small
+    /// - [`ProtocolError::PayloadTooLarge`] if the payload exceeds [`MAX_PAYLOAD_SIZE`]
     pub fn decode(bytes: &[u8]) -> Result<(Frame, usize), ProtocolError> {
-        // Check if we have enough bytes for the header
         if bytes.len() < HEADER_SIZE {
             return Err(ProtocolError::Incomplete {
                 needed: HEADER_SIZE,
@@ -151,13 +294,10 @@ impl Frame {
             });
         }
 
-        // Parse feed ID
-        let feed_id = FeedId::from_byte(bytes[0]).ok_or(ProtocolError::InvalidFeedId(bytes[0]))?;
+        let feed_id = FeedId(bytes[0]);
+        let flags = FrameFlags(bytes[1]);
+        let length = u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]) as usize;
 
-        // Parse payload length (big-endian u32)
-        let length = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]) as usize;
-
-        // Check if payload size is within limits
         if length > MAX_PAYLOAD_SIZE {
             return Err(ProtocolError::PayloadTooLarge {
                 size: length,
@@ -165,7 +305,6 @@ impl Frame {
             });
         }
 
-        // Check if we have enough bytes for the complete frame
         let total_size = HEADER_SIZE + length;
         if bytes.len() < total_size {
             return Err(ProtocolError::Incomplete {
@@ -174,10 +313,16 @@ impl Frame {
             });
         }
 
-        // Extract payload
         let payload = bytes[HEADER_SIZE..total_size].to_vec();
 
-        Ok((Frame { feed_id, payload }, total_size))
+        Ok((
+            Frame {
+                feed_id,
+                flags,
+                payload,
+            },
+            total_size,
+        ))
     }
 }
 
@@ -185,135 +330,401 @@ impl Frame {
 mod tests {
     use super::*;
 
+    // ---- FeedId constants ----
+
     #[test]
-    fn test_feedid_from_byte() {
-        assert_eq!(FeedId::from_byte(0x00), Some(FeedId::TerminalOutput));
-        assert_eq!(FeedId::from_byte(0x01), Some(FeedId::TerminalInput));
-        assert_eq!(FeedId::from_byte(0x02), Some(FeedId::TerminalResize));
-        assert_eq!(FeedId::from_byte(0x10), Some(FeedId::Filesystem));
-        assert_eq!(FeedId::from_byte(0x20), Some(FeedId::Git));
-        assert_eq!(FeedId::from_byte(0x30), Some(FeedId::Stats));
-        assert_eq!(FeedId::from_byte(0x31), Some(FeedId::StatsProcessInfo));
-        assert_eq!(FeedId::from_byte(0x32), Some(FeedId::StatsTokenUsage));
-        assert_eq!(FeedId::from_byte(0x33), Some(FeedId::StatsBuildStatus));
-        assert_eq!(FeedId::from_byte(0x40), Some(FeedId::CodeOutput));
-        assert_eq!(FeedId::from_byte(0x41), Some(FeedId::CodeInput));
-        assert_eq!(FeedId::from_byte(0xC0), Some(FeedId::Control));
-        assert_eq!(FeedId::from_byte(0xFF), Some(FeedId::Heartbeat));
-        assert_eq!(FeedId::from_byte(0x03), None);
-        assert_eq!(FeedId::from_byte(0x34), None);
+    fn test_known_feedid_byte_values() {
+        assert_eq!(FeedId::TERMINAL_OUTPUT.as_byte(), 0x00);
+        assert_eq!(FeedId::TERMINAL_INPUT.as_byte(), 0x01);
+        assert_eq!(FeedId::TERMINAL_RESIZE.as_byte(), 0x02);
+        assert_eq!(FeedId::FILESYSTEM.as_byte(), 0x10);
+        assert_eq!(FeedId::GIT.as_byte(), 0x20);
+        assert_eq!(FeedId::STATS.as_byte(), 0x30);
+        assert_eq!(FeedId::STATS_PROCESS_INFO.as_byte(), 0x31);
+        assert_eq!(FeedId::STATS_TOKEN_USAGE.as_byte(), 0x32);
+        assert_eq!(FeedId::STATS_BUILD_STATUS.as_byte(), 0x33);
+        assert_eq!(FeedId::CODE_OUTPUT.as_byte(), 0x40);
+        assert_eq!(FeedId::CODE_INPUT.as_byte(), 0x41);
+        assert_eq!(FeedId::DEFAULTS.as_byte(), 0x50);
+        assert_eq!(FeedId::SHELL_OUTPUT.as_byte(), 0x60);
+        assert_eq!(FeedId::SHELL_INPUT.as_byte(), 0x61);
+        assert_eq!(FeedId::TUG_FEED.as_byte(), 0x70);
+        assert_eq!(FeedId::CONTROL.as_byte(), 0xC0);
+        assert_eq!(FeedId::HEARTBEAT.as_byte(), 0xFF);
     }
 
     #[test]
-    fn test_feedid_as_byte() {
-        assert_eq!(FeedId::TerminalOutput.as_byte(), 0x00);
-        assert_eq!(FeedId::TerminalInput.as_byte(), 0x01);
-        assert_eq!(FeedId::TerminalResize.as_byte(), 0x02);
-        assert_eq!(FeedId::Filesystem.as_byte(), 0x10);
-        assert_eq!(FeedId::Git.as_byte(), 0x20);
-        assert_eq!(FeedId::Stats.as_byte(), 0x30);
-        assert_eq!(FeedId::StatsProcessInfo.as_byte(), 0x31);
-        assert_eq!(FeedId::StatsTokenUsage.as_byte(), 0x32);
-        assert_eq!(FeedId::StatsBuildStatus.as_byte(), 0x33);
-        assert_eq!(FeedId::CodeOutput.as_byte(), 0x40);
-        assert_eq!(FeedId::CodeInput.as_byte(), 0x41);
-        assert_eq!(FeedId::Control.as_byte(), 0xC0);
-        assert_eq!(FeedId::Heartbeat.as_byte(), 0xFF);
+    fn test_feedid_is_open_any_byte_is_valid() {
+        // Any u8 value can be a FeedId — no rejection
+        for byte in 0..=255u8 {
+            let id = FeedId(byte);
+            assert_eq!(id.as_byte(), byte);
+        }
     }
+
+    #[test]
+    fn test_feedid_equality_and_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(FeedId::TERMINAL_OUTPUT);
+        set.insert(FeedId(0x00)); // Same value
+        assert_eq!(set.len(), 1);
+        set.insert(FeedId(0x99)); // Unknown feed
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_feedid_display_known() {
+        assert_eq!(
+            format!("{}", FeedId::TERMINAL_OUTPUT),
+            "TerminalOutput(0x00)"
+        );
+        assert_eq!(format!("{}", FeedId::CODE_INPUT), "CodeInput(0x41)");
+        assert_eq!(format!("{}", FeedId::HEARTBEAT), "Heartbeat(0xff)");
+    }
+
+    #[test]
+    fn test_feedid_display_unknown() {
+        assert_eq!(format!("{}", FeedId(0x99)), "0x99");
+    }
+
+    #[test]
+    fn test_feedid_debug_known() {
+        assert_eq!(format!("{:?}", FeedId::CONTROL), "FeedId::Control(0xc0)");
+    }
+
+    #[test]
+    fn test_feedid_debug_unknown() {
+        assert_eq!(format!("{:?}", FeedId(0xAB)), "FeedId(0xab)");
+    }
+
+    // ---- FrameFlags ----
+
+    #[test]
+    fn test_flags_data() {
+        assert!(FrameFlags::DATA.is_data());
+        assert!(!FrameFlags::DATA.is_control());
+    }
+
+    #[test]
+    fn test_flags_control() {
+        assert!(FrameFlags::CONTROL.is_control());
+        assert!(!FrameFlags::CONTROL.is_data());
+    }
+
+    #[test]
+    fn test_flags_default_is_data() {
+        assert_eq!(FrameFlags::default(), FrameFlags::DATA);
+    }
+
+    #[test]
+    fn test_flags_unknown_bits_ignored_for_kind() {
+        // Bits 1-7 set, but bit 0 is 0 → still data
+        let flags = FrameFlags(0xFE);
+        assert!(flags.is_data());
+        // Bits 1-7 set, bit 0 is 1 → control
+        let flags = FrameFlags(0xFF);
+        assert!(flags.is_control());
+    }
+
+    // ---- Frame construction ----
+
+    #[test]
+    fn test_frame_new_is_data() {
+        let frame = Frame::new(FeedId::TERMINAL_OUTPUT, vec![1, 2, 3]);
+        assert!(frame.flags.is_data());
+        assert!(!frame.is_control());
+    }
+
+    #[test]
+    fn test_frame_control_is_control() {
+        let frame = Frame::control(FeedId::CODE_OUTPUT, b"lag_recovery".to_vec());
+        assert!(frame.is_control());
+        assert!(frame.flags.is_control());
+    }
+
+    #[test]
+    fn test_heartbeat_convenience() {
+        let frame = Frame::heartbeat();
+        assert_eq!(frame.feed_id, FeedId::HEARTBEAT);
+        assert!(frame.flags.is_data());
+        assert!(frame.payload.is_empty());
+    }
+
+    // ---- Encode/decode round trips ----
 
     #[test]
     fn test_round_trip_terminal_output() {
-        let original = Frame::new(FeedId::TerminalOutput, b"hello world".to_vec());
+        let original = Frame::new(FeedId::TERMINAL_OUTPUT, b"hello world".to_vec());
         let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+        assert_eq!(consumed, encoded.len());
     }
 
     #[test]
     fn test_round_trip_terminal_input() {
-        let original = Frame::new(FeedId::TerminalInput, b"test input".to_vec());
+        let original = Frame::new(FeedId::TERMINAL_INPUT, b"test input".to_vec());
         let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+        assert_eq!(consumed, encoded.len());
     }
 
     #[test]
     fn test_round_trip_terminal_resize() {
         let original = Frame::new(
-            FeedId::TerminalResize,
+            FeedId::TERMINAL_RESIZE,
             b"{\"cols\": 80, \"rows\": 24}".to_vec(),
         );
         let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+        assert_eq!(consumed, encoded.len());
     }
 
     #[test]
     fn test_round_trip_heartbeat() {
         let original = Frame::heartbeat();
         let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+        assert_eq!(consumed, encoded.len());
     }
 
     #[test]
     fn test_round_trip_filesystem() {
         let original = Frame::new(
-            FeedId::Filesystem,
+            FeedId::FILESYSTEM,
             b"{\"kind\":\"Created\",\"path\":\"src/main.rs\"}".to_vec(),
         );
         let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+        assert_eq!(consumed, encoded.len());
     }
 
     #[test]
     fn test_round_trip_git() {
         let original = Frame::new(
-            FeedId::Git,
+            FeedId::GIT,
             b"{\"branch\":\"main\",\"ahead\":0,\"behind\":0}".to_vec(),
         );
         let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+        assert_eq!(consumed, encoded.len());
     }
+
+    #[test]
+    fn test_round_trip_code_output() {
+        let original = Frame::new(
+            FeedId::CODE_OUTPUT,
+            b"{\"type\":\"assistant_text\",\"msg_id\":\"123\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_code_input() {
+        let original = Frame::new(
+            FeedId::CODE_INPUT,
+            b"{\"type\":\"user_message\",\"text\":\"hello\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_control() {
+        let original = Frame::new(FeedId::CONTROL, br#"{"action":"restart"}"#.to_vec());
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_stats() {
+        let original = Frame::new(
+            FeedId::STATS,
+            b"{\"collectors\":{},\"timestamp\":\"2026-02-15T10:30:05Z\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_stats_process_info() {
+        let original = Frame::new(
+            FeedId::STATS_PROCESS_INFO,
+            b"{\"name\":\"process_info\",\"pid\":12345}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_stats_token_usage() {
+        let original = Frame::new(
+            FeedId::STATS_TOKEN_USAGE,
+            b"{\"name\":\"token_usage\",\"total_tokens\":23000}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_stats_build_status() {
+        let original = Frame::new(
+            FeedId::STATS_BUILD_STATUS,
+            b"{\"name\":\"build_status\",\"status\":\"idle\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_defaults() {
+        let payload =
+            br#"{"domains":{"dev.tugtool.deck.theme":{"generation":7,"entries":{"active-theme":{"kind":"string","value":"brio"}}}}}"#
+                .to_vec();
+        let original = Frame::new(FeedId::DEFAULTS, payload);
+        let encoded = original.encode();
+        assert_eq!(encoded[0], 0x50);
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_control_frame_flag() {
+        // A control/meta frame round-trips with the flag preserved
+        let original = Frame::control(FeedId::CODE_OUTPUT, b"{\"type\":\"lag_recovery\"}".to_vec());
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert!(decoded.is_control());
+        assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_unknown_feed_id() {
+        // Unknown FeedId 0x99 round-trips without error
+        let original = Frame::new(FeedId(0x99), b"opaque payload".to_vec());
+        let encoded = original.encode();
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(consumed, encoded.len());
+    }
+
+    // ---- Golden byte tests (wire format verification) ----
+
+    #[test]
+    fn test_golden_terminal_output_hello() {
+        let frame = Frame::new(FeedId::TERMINAL_OUTPUT, b"hello".to_vec());
+        let encoded = frame.encode();
+        // Wire format v1:
+        // [0x00] - TerminalOutput
+        // [0x00] - flags (data)
+        // [0x00, 0x00, 0x00, 0x05] - length 5 (big-endian)
+        // [0x68, 0x65, 0x6c, 0x6c, 0x6f] - "hello"
+        assert_eq!(
+            encoded,
+            vec![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f
+            ]
+        );
+    }
+
+    #[test]
+    fn test_golden_heartbeat_empty() {
+        let frame = Frame::heartbeat();
+        let encoded = frame.encode();
+        // [0xFF] - Heartbeat
+        // [0x00] - flags (data)
+        // [0x00, 0x00, 0x00, 0x00] - length 0
+        assert_eq!(encoded, vec![0xFF, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn test_golden_stats_frame() {
+        let frame = Frame::new(FeedId::STATS, b"{}".to_vec());
+        let encoded = frame.encode();
+        // [0x30] - Stats
+        // [0x00] - flags (data)
+        // [0x00, 0x00, 0x00, 0x02] - length 2
+        // [0x7b, 0x7d] - "{}"
+        assert_eq!(
+            encoded,
+            vec![0x30, 0x00, 0x00, 0x00, 0x00, 0x02, 0x7b, 0x7d]
+        );
+    }
+
+    #[test]
+    fn test_golden_defaults_frame() {
+        let frame = Frame::new(FeedId::DEFAULTS, b"{}".to_vec());
+        let encoded = frame.encode();
+        // [0x50] - Defaults
+        // [0x00] - flags (data)
+        // [0x00, 0x00, 0x00, 0x02] - length 2
+        // [0x7b, 0x7d] - "{}"
+        assert_eq!(
+            encoded,
+            vec![0x50, 0x00, 0x00, 0x00, 0x00, 0x02, 0x7b, 0x7d]
+        );
+    }
+
+    #[test]
+    fn test_golden_control_restart() {
+        let payload = br#"{"action":"restart"}"#;
+        let frame = Frame::new(FeedId::CONTROL, payload.to_vec());
+        let encoded = frame.encode();
+        assert_eq!(encoded[0], 0xC0); // Control
+        assert_eq!(encoded[1], 0x00); // flags (data)
+        assert_eq!(&encoded[2..6], &[0x00, 0x00, 0x00, 0x14]); // length 20
+        assert_eq!(&encoded[6..], payload);
+    }
+
+    #[test]
+    fn test_golden_control_meta_frame() {
+        let payload = br#"{"type":"lag_recovery"}"#;
+        let frame = Frame::control(FeedId::CODE_OUTPUT, payload.to_vec());
+        let encoded = frame.encode();
+        assert_eq!(encoded[0], 0x40); // CodeOutput
+        assert_eq!(encoded[1], 0x01); // flags (control)
+        let length = u32::from_be_bytes([encoded[2], encoded[3], encoded[4], encoded[5]]);
+        assert_eq!(length as usize, payload.len());
+        assert_eq!(&encoded[6..], payload);
+    }
+
+    // ---- Edge cases ----
 
     #[test]
     fn test_decode_empty_payload() {
-        let frame = Frame::new(FeedId::TerminalOutput, vec![]);
+        let frame = Frame::new(FeedId::TERMINAL_OUTPUT, vec![]);
         let encoded = frame.encode();
         let (decoded, _) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded.payload.len(), 0);
-        assert_eq!(decoded.feed_id, FeedId::TerminalOutput);
-    }
-
-    #[test]
-    fn test_decode_maximum_payload() {
-        let payload = vec![0u8; MAX_PAYLOAD_SIZE];
-        let frame = Frame::new(FeedId::TerminalOutput, payload.clone());
-        let encoded = frame.encode();
-        let (decoded, _) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded.payload.len(), MAX_PAYLOAD_SIZE);
-        assert_eq!(decoded.payload, payload);
-    }
-
-    #[test]
-    fn test_decode_invalid_feed_id() {
-        let mut bytes = vec![0x03, 0, 0, 0, 5];
-        bytes.extend_from_slice(b"hello");
-        let result = Frame::decode(&bytes);
-        assert_eq!(result, Err(ProtocolError::InvalidFeedId(0x03)));
+        assert!(decoded.payload.is_empty());
+        assert_eq!(decoded.feed_id, FeedId::TERMINAL_OUTPUT);
     }
 
     #[test]
     fn test_decode_truncated_header() {
-        let bytes = vec![0x00, 0, 0];
+        let bytes = vec![0x00, 0x00, 0x00];
         let result = Frame::decode(&bytes);
         assert_eq!(
             result,
@@ -326,15 +737,15 @@ mod tests {
 
     #[test]
     fn test_decode_truncated_payload() {
-        // Header says 10 bytes, but we only provide 5
-        let mut bytes = vec![0x00, 0, 0, 0, 10];
+        // Header says 10 bytes payload, but only 5 provided
+        let mut bytes = vec![0x00, 0x00, 0x00, 0x00, 0x00, 10];
         bytes.extend_from_slice(b"hello");
         let result = Frame::decode(&bytes);
         assert_eq!(
             result,
             Err(ProtocolError::Incomplete {
-                needed: 15,
-                have: 10
+                needed: HEADER_SIZE + 10,
+                have: 11
             })
         );
     }
@@ -343,7 +754,8 @@ mod tests {
     fn test_decode_oversized_payload() {
         let oversized = (MAX_PAYLOAD_SIZE + 1) as u32;
         let bytes = vec![
-            0x00,
+            0x00, // feed_id
+            0x00, // flags
             (oversized >> 24) as u8,
             (oversized >> 16) as u8,
             (oversized >> 8) as u8,
@@ -360,217 +772,75 @@ mod tests {
     }
 
     #[test]
-    fn test_golden_terminal_output_hello() {
-        let frame = Frame::new(FeedId::TerminalOutput, b"hello".to_vec());
-        let encoded = frame.encode();
-        // Expected wire format:
-        // [0x00] - TerminalOutput
-        // [0x00, 0x00, 0x00, 0x05] - length 5 (big-endian)
-        // [0x68, 0x65, 0x6c, 0x6c, 0x6f] - "hello"
-        assert_eq!(
-            encoded,
-            vec![0x00, 0x00, 0x00, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f]
-        );
-    }
-
-    #[test]
-    fn test_golden_heartbeat_empty() {
-        let frame = Frame::heartbeat();
-        let encoded = frame.encode();
-        // Expected wire format:
-        // [0xFF] - Heartbeat
-        // [0x00, 0x00, 0x00, 0x00] - length 0 (big-endian)
-        assert_eq!(encoded, vec![0xFF, 0x00, 0x00, 0x00, 0x00]);
-    }
-
-    #[test]
-    fn test_heartbeat_convenience_constructor() {
-        let frame = Frame::heartbeat();
-        assert_eq!(frame.feed_id, FeedId::Heartbeat);
-        assert_eq!(frame.payload.len(), 0);
+    fn test_decode_with_extra_bytes() {
+        let frame = Frame::new(FeedId::TERMINAL_OUTPUT, b"test".to_vec());
+        let mut encoded = frame.encode();
+        encoded.extend_from_slice(b"extra data");
+        let (decoded, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded.payload, b"test");
+        assert_eq!(consumed, HEADER_SIZE + 4);
     }
 
     #[test]
     fn test_bytes_consumed_matches_encoded_length() {
-        let frame = Frame::new(FeedId::TerminalInput, b"test data".to_vec());
+        let frame = Frame::new(FeedId::TERMINAL_INPUT, b"test data".to_vec());
         let encoded = frame.encode();
-        let (_, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(bytes_consumed, encoded.len());
-        assert_eq!(bytes_consumed, HEADER_SIZE + 9);
+        let (_, consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(consumed, encoded.len());
+        assert_eq!(consumed, HEADER_SIZE + 9);
     }
 
     #[test]
-    fn test_decode_with_extra_bytes() {
-        // Test that decode correctly handles a buffer with extra data after the frame
-        let frame = Frame::new(FeedId::TerminalOutput, b"test".to_vec());
-        let mut encoded = frame.encode();
-        encoded.extend_from_slice(b"extra data");
-
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded.payload, b"test");
-        assert_eq!(bytes_consumed, HEADER_SIZE + 4);
+    fn test_header_size_is_six() {
+        assert_eq!(HEADER_SIZE, 6);
     }
 
     #[test]
-    fn test_round_trip_stats() {
-        let original = Frame::new(
-            FeedId::Stats,
-            b"{\"collectors\":{},\"timestamp\":\"2026-02-15T10:30:05Z\"}".to_vec(),
-        );
-        let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+    fn test_max_payload_size_is_16mb() {
+        assert_eq!(MAX_PAYLOAD_SIZE, 16 * 1024 * 1024);
+    }
+
+    // ---- Handshake constants ----
+
+    #[test]
+    fn test_protocol_name() {
+        assert_eq!(PROTOCOL_NAME, "tugcast");
     }
 
     #[test]
-    fn test_round_trip_stats_process_info() {
-        let original = Frame::new(
-            FeedId::StatsProcessInfo,
-            b"{\"name\":\"process_info\",\"pid\":12345}".to_vec(),
-        );
-        let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+    fn test_protocol_version() {
+        assert_eq!(PROTOCOL_VERSION, 1);
     }
 
     #[test]
-    fn test_round_trip_stats_token_usage() {
-        let original = Frame::new(
-            FeedId::StatsTokenUsage,
-            b"{\"name\":\"token_usage\",\"total_tokens\":23000}".to_vec(),
-        );
-        let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+    fn test_close_codes_in_application_range() {
+        // WebSocket application-defined close codes must be 4000-4999
+        assert!((4000..=4999).contains(&CLOSE_VERSION_MISMATCH));
+        assert!((4000..=4999).contains(&CLOSE_HANDSHAKE_TIMEOUT));
+        assert!((4000..=4999).contains(&CLOSE_BAD_HANDSHAKE));
     }
 
     #[test]
-    fn test_round_trip_stats_build_status() {
-        let original = Frame::new(
-            FeedId::StatsBuildStatus,
-            b"{\"name\":\"build_status\",\"status\":\"idle\"}".to_vec(),
-        );
-        let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+    fn test_handshake_hello_json() {
+        // Verify the client hello message format
+        let hello = serde_json::json!({
+            "protocol": PROTOCOL_NAME,
+            "version": PROTOCOL_VERSION,
+        });
+        assert_eq!(hello["protocol"], "tugcast");
+        assert_eq!(hello["version"], 1);
     }
 
     #[test]
-    fn test_golden_stats_frame() {
-        let frame = Frame::new(FeedId::Stats, b"{}".to_vec());
-        let encoded = frame.encode();
-        // Expected wire format:
-        // [0x30] - Stats
-        // [0x00, 0x00, 0x00, 0x02] - length 2 (big-endian)
-        // [0x7b, 0x7d] - "{}"
-        assert_eq!(encoded, vec![0x30, 0x00, 0x00, 0x00, 0x02, 0x7b, 0x7d]);
-    }
-
-    #[test]
-    fn test_golden_defaults_frame() {
-        let frame = Frame::new(FeedId::Defaults, b"{}".to_vec());
-        let encoded = frame.encode();
-        // Expected wire format:
-        // [0x50] - Defaults
-        // [0x00, 0x00, 0x00, 0x02] - length 2 (big-endian)
-        // [0x7b, 0x7d] - "{}"
-        assert_eq!(encoded, vec![0x50, 0x00, 0x00, 0x00, 0x02, 0x7b, 0x7d]);
-    }
-
-    #[test]
-    fn test_round_trip_code_output() {
-        let original = Frame::new(
-            FeedId::CodeOutput,
-            b"{\"type\":\"assistant_text\",\"msg_id\":\"123\"}".to_vec(),
-        );
-        let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
-    }
-
-    #[test]
-    fn test_round_trip_code_input() {
-        let original = Frame::new(
-            FeedId::CodeInput,
-            b"{\"type\":\"user_message\",\"text\":\"hello\"}".to_vec(),
-        );
-        let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
-    }
-
-    #[test]
-    fn test_feedid_control_from_byte() {
-        assert_eq!(FeedId::from_byte(0xC0), Some(FeedId::Control));
-    }
-
-    #[test]
-    fn test_feedid_control_as_byte() {
-        assert_eq!(FeedId::Control.as_byte(), 0xC0);
-    }
-
-    #[test]
-    fn test_round_trip_control_restart() {
-        let payload = br#"{"action":"restart"}"#.to_vec();
-        let original = Frame::new(FeedId::Control, payload);
-        let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
-    }
-
-    #[test]
-    fn test_round_trip_control_reset() {
-        let payload = br#"{"action":"reset"}"#.to_vec();
-        let original = Frame::new(FeedId::Control, payload);
-        let encoded = original.encode();
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
-    }
-
-    #[test]
-    fn test_golden_control_restart() {
-        let payload = br#"{"action":"restart"}"#;
-        let frame = Frame::new(FeedId::Control, payload.to_vec());
-        let encoded = frame.encode();
-        // Expected wire format:
-        // [0xC0] - Control
-        // [0x00, 0x00, 0x00, 0x14] - length 20 (big-endian)
-        // followed by the JSON bytes
-        assert_eq!(encoded[0], 0xC0);
-        assert_eq!(&encoded[1..5], &[0x00, 0x00, 0x00, 0x14]); // 20 bytes
-        assert_eq!(&encoded[5..], payload);
-    }
-
-    #[test]
-    fn test_feedid_defaults_from_byte() {
-        assert_eq!(FeedId::from_byte(0x50), Some(FeedId::Defaults));
-    }
-
-    #[test]
-    fn test_feedid_defaults_as_byte() {
-        assert_eq!(FeedId::Defaults.as_byte(), 0x50);
-    }
-
-    #[test]
-    fn test_round_trip_defaults() {
-        // Sample DEFAULTS payload: aggregated domain snapshot
-        let payload =
-            br#"{"domains":{"dev.tugtool.deck.theme":{"generation":7,"entries":{"active-theme":{"kind":"string","value":"brio"}}}}}"#
-                .to_vec();
-        let original = Frame::new(FeedId::Defaults, payload);
-        let encoded = original.encode();
-        // Verify wire format header
-        assert_eq!(encoded[0], 0x50);
-        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
-        assert_eq!(decoded, original);
-        assert_eq!(bytes_consumed, encoded.len());
+    fn test_handshake_response_json() {
+        // Verify the server response format
+        let response = serde_json::json!({
+            "protocol": PROTOCOL_NAME,
+            "version": PROTOCOL_VERSION,
+            "capabilities": [],
+        });
+        assert_eq!(response["protocol"], "tugcast");
+        assert_eq!(response["version"], 1);
+        assert!(response["capabilities"].as_array().unwrap().is_empty());
     }
 }

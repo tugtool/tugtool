@@ -48,7 +48,7 @@ impl StatCollector for ProcessInfoCollector {
     }
 
     fn feed_id(&self) -> FeedId {
-        FeedId::StatsProcessInfo
+        FeedId::STATS_PROCESS_INFO
     }
 
     fn interval(&self) -> Duration {
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn test_process_info_feed_id() {
         let collector = ProcessInfoCollector::new();
-        assert_eq!(collector.feed_id(), FeedId::StatsProcessInfo);
+        assert_eq!(collector.feed_id(), FeedId::STATS_PROCESS_INFO);
     }
 
     #[test]

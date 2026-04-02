@@ -278,7 +278,7 @@ pub(crate) fn send_dev_notification(
         notification_type, count, timestamp
     );
 
-    let frame = Frame::new(FeedId::Control, payload);
+    let frame = Frame::new(FeedId::CONTROL, payload);
     match client_action_tx.send(frame) {
         Ok(receivers) => debug!(
             "dev: send_dev_notification sent to {} receiver(s)",
@@ -749,7 +749,7 @@ mod tests {
         send_dev_notification("restart_available", &tracker, &client_action_tx);
 
         let frame = rx.recv().await.unwrap();
-        assert_eq!(frame.feed_id, FeedId::Control);
+        assert_eq!(frame.feed_id, FeedId::CONTROL);
 
         let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
         assert_eq!(json["action"], "dev_notification");
@@ -772,7 +772,7 @@ mod tests {
         send_dev_notification("relaunch_available", &tracker, &client_action_tx);
 
         let frame = rx.recv().await.unwrap();
-        assert_eq!(frame.feed_id, FeedId::Control);
+        assert_eq!(frame.feed_id, FeedId::CONTROL);
 
         let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
         assert_eq!(json["action"], "dev_notification");
@@ -964,7 +964,7 @@ mod tests {
         // Wait for notification (100ms debounce + buffer)
         match tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
             Ok(Ok(frame)) => {
-                assert_eq!(frame.feed_id, FeedId::Control);
+                assert_eq!(frame.feed_id, FeedId::CONTROL);
                 let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
                 assert_eq!(json["action"], "dev_notification");
                 assert_eq!(json["type"], "restart_available");
@@ -1005,7 +1005,7 @@ mod tests {
         // Wait for detection (2s poll + 500ms stabilization + buffer)
         match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
             Ok(Ok(frame)) => {
-                assert_eq!(frame.feed_id, FeedId::Control);
+                assert_eq!(frame.feed_id, FeedId::CONTROL);
                 let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
                 assert_eq!(json["action"], "dev_notification");
                 assert_eq!(json["type"], "restart_available");
@@ -1047,7 +1047,7 @@ mod tests {
         // Wait for detection
         match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
             Ok(Ok(frame)) => {
-                assert_eq!(frame.feed_id, FeedId::Control);
+                assert_eq!(frame.feed_id, FeedId::CONTROL);
                 let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
                 assert_eq!(json["type"], "restart_available");
             }
@@ -1085,7 +1085,7 @@ mod tests {
         // Should receive only one notification after stabilization
         match tokio::time::timeout(Duration::from_secs(6), rx.recv()).await {
             Ok(Ok(frame)) => {
-                assert_eq!(frame.feed_id, FeedId::Control);
+                assert_eq!(frame.feed_id, FeedId::CONTROL);
                 // Verify only one notification (try_recv should fail)
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 assert!(
@@ -1120,7 +1120,7 @@ mod tests {
         // Wait for notification (100ms debounce + buffer)
         match tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
             Ok(Ok(frame)) => {
-                assert_eq!(frame.feed_id, FeedId::Control);
+                assert_eq!(frame.feed_id, FeedId::CONTROL);
                 let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
                 assert_eq!(json["action"], "dev_notification");
                 assert_eq!(json["type"], "relaunch_available");

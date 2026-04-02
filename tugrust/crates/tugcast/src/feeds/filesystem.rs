@@ -214,7 +214,7 @@ fn convert_event(event: &Event, watch_dir: &Path) -> Vec<FsEvent> {
 #[async_trait]
 impl SnapshotFeed for FilesystemFeed {
     fn feed_id(&self) -> FeedId {
-        FeedId::Filesystem
+        FeedId::FILESYSTEM
     }
 
     fn name(&self) -> &str {
@@ -311,7 +311,7 @@ impl SnapshotFeed for FilesystemFeed {
                 deduplicate_batch(&mut batch);
                 if !batch.is_empty() {
                     let json = serde_json::to_vec(&batch).unwrap_or_default();
-                    let frame = Frame::new(FeedId::Filesystem, json);
+                    let frame = Frame::new(FeedId::FILESYSTEM, json);
                     let _ = tx.send(frame);
                     debug!(count = batch.len(), "filesystem events flushed");
                     batch.clear();
@@ -461,7 +461,7 @@ mod tests {
         let feed = FilesystemFeed::new(watch_path.clone());
 
         // Create watch channel
-        let (tx, mut rx) = watch::channel(Frame::new(FeedId::Filesystem, vec![]));
+        let (tx, mut rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
 
         // Create cancellation token
         let cancel = CancellationToken::new();
@@ -498,7 +498,7 @@ mod tests {
         rx.changed().await.unwrap();
         let frame = rx.borrow_and_update().clone();
 
-        assert_eq!(frame.feed_id, FeedId::Filesystem);
+        assert_eq!(frame.feed_id, FeedId::FILESYSTEM);
 
         let events: Vec<FsEvent> = serde_json::from_slice(&frame.payload).unwrap();
 
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn test_feed_id_and_name() {
         let feed = FilesystemFeed::new(PathBuf::from("/tmp/test"));
-        assert_eq!(feed.feed_id(), FeedId::Filesystem);
+        assert_eq!(feed.feed_id(), FeedId::FILESYSTEM);
         assert_eq!(feed.name(), "filesystem");
     }
 }

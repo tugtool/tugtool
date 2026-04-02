@@ -9,6 +9,7 @@ import {
   FeedId,
   FeedIdValue,
   Frame,
+  FrameFlags,
   decodeFrame,
   encodeFrame,
   controlFrame,
@@ -31,6 +32,12 @@ export interface DisconnectState {
 
 /** Callback for disconnect state changes */
 export type DisconnectStateCallback = (state: DisconnectState) => void;
+
+/** Protocol name for handshake */
+const PROTOCOL_NAME = "tugcast";
+
+/** Protocol version for handshake */
+const PROTOCOL_VERSION = 1;
 
 /** Heartbeat interval in milliseconds (15 seconds) */
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -65,6 +72,7 @@ export class TugConnection {
   private disconnectStateCallbacks: Array<DisconnectStateCallback> = [];
   private heartbeatTimer: number | null = null;
   private url: string;
+  private handshakePending: boolean = false;
 
   // Reconnection state
   private state: ConnectionStateValue = ConnectionState.DISCONNECTED;
@@ -90,18 +98,54 @@ export class TugConnection {
     this.ws.binaryType = "arraybuffer";
 
     this.ws.onopen = () => {
-      console.log("tugdeck: WebSocket connected");
-      this.state = ConnectionState.CONNECTED;
-      this.retryDelay = INITIAL_RETRY_DELAY_MS;
-      this.clearCountdownTimer();
-      this.notifyDisconnectState(false);
-      this.startHeartbeat();
-      for (const cb of this.openCallbacks) {
-        cb();
-      }
+      console.log("tugdeck: WebSocket transport open, sending handshake");
+      // Send protocol handshake as a text frame
+      this.handshakePending = true;
+      this.ws!.send(JSON.stringify({
+        protocol: PROTOCOL_NAME,
+        version: PROTOCOL_VERSION,
+      }));
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
+      // During handshake: expect a text frame response from the server
+      if (this.handshakePending) {
+        if (typeof event.data === "string") {
+          try {
+            const response = JSON.parse(event.data);
+            if (response.protocol !== PROTOCOL_NAME) {
+              console.error("tugdeck: handshake failed: unknown protocol", response.protocol);
+              this.ws?.close();
+              return;
+            }
+            if (response.version !== PROTOCOL_VERSION) {
+              console.error("tugdeck: handshake failed: version mismatch", response.version);
+              this.ws?.close();
+              return;
+            }
+            console.log("tugdeck: handshake complete (v" + response.version + ")");
+            this.handshakePending = false;
+            // Now transition to connected
+            this.state = ConnectionState.CONNECTED;
+            this.retryDelay = INITIAL_RETRY_DELAY_MS;
+            this.clearCountdownTimer();
+            this.notifyDisconnectState(false);
+            this.startHeartbeat();
+            for (const cb of this.openCallbacks) {
+              cb();
+            }
+          } catch {
+            console.error("tugdeck: handshake failed: invalid JSON");
+            this.ws?.close();
+          }
+        } else {
+          console.error("tugdeck: handshake failed: expected text frame, got binary");
+          this.ws?.close();
+        }
+        return;
+      }
+
+      // Normal mode: binary frames
       if (event.data instanceof ArrayBuffer) {
         try {
           const frame = decodeFrame(event.data);
@@ -227,9 +271,9 @@ export class TugConnection {
   /**
    * Send a frame to the server
    */
-  send(feedId: FeedIdValue, payload: Uint8Array): void {
+  send(feedId: FeedIdValue, payload: Uint8Array, flags: number = FrameFlags.DATA): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const frame: Frame = { feedId, payload };
+      const frame: Frame = { feedId, flags, payload };
       this.ws.send(encodeFrame(frame));
     }
   }

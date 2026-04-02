@@ -116,9 +116,10 @@ pub fn spawn_agent_bridge(
 ) -> AgentBridgeHandles {
     use tugcast_core::FeedId;
 
-    let (project_info_tx, project_info_rx) = watch::channel(Frame::new(FeedId::CodeOutput, vec![]));
+    let (project_info_tx, project_info_rx) =
+        watch::channel(Frame::new(FeedId::CODE_OUTPUT, vec![]));
     let (session_watch_tx, session_watch_rx) =
-        watch::channel(Frame::new(FeedId::CodeOutput, vec![]));
+        watch::channel(Frame::new(FeedId::CODE_OUTPUT, vec![]));
 
     tokio::spawn(run_agent_bridge(
         code_tx,

@@ -184,7 +184,7 @@ async fn fetch_git_status(repo_dir: &Path) -> Option<String> {
 #[async_trait]
 impl SnapshotFeed for GitFeed {
     fn feed_id(&self) -> FeedId {
-        FeedId::Git
+        FeedId::GIT
     }
 
     fn name(&self) -> &str {
@@ -219,7 +219,7 @@ impl SnapshotFeed for GitFeed {
                     // Compare with previous -- only send if changed
                     if previous.as_ref() != Some(&status) {
                         let json = serde_json::to_vec(&status).unwrap_or_default();
-                        let frame = Frame::new(FeedId::Git, json);
+                        let frame = Frame::new(FeedId::GIT, json);
                         let _ = tx.send(frame);
                         debug!(branch = %status.branch, "git status updated");
                         previous = Some(status);
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn test_feed_id_and_name() {
         let feed = GitFeed::new(PathBuf::from("/tmp/repo"));
-        assert_eq!(feed.feed_id(), FeedId::Git);
+        assert_eq!(feed.feed_id(), FeedId::GIT);
         assert_eq!(feed.name(), "git");
     }
 
@@ -446,7 +446,7 @@ mod tests {
         let feed = GitFeed::new(repo_path.clone());
 
         // Create watch channel
-        let (tx, mut rx) = watch::channel(Frame::new(FeedId::Git, vec![]));
+        let (tx, mut rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
 
         // Create cancellation token
         let cancel = CancellationToken::new();
@@ -463,7 +463,7 @@ mod tests {
         // Check first snapshot
         rx.changed().await.unwrap();
         let frame = rx.borrow_and_update().clone();
-        assert_eq!(frame.feed_id, FeedId::Git);
+        assert_eq!(frame.feed_id, FeedId::GIT);
 
         let status: GitStatus = serde_json::from_slice(&frame.payload).unwrap();
         assert!(!status.branch.is_empty());

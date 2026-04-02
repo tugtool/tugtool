@@ -25,7 +25,7 @@ impl StatCollector for BuildStatusCollector {
     }
 
     fn feed_id(&self) -> FeedId {
-        FeedId::StatsBuildStatus
+        FeedId::STATS_BUILD_STATUS
     }
 
     fn interval(&self) -> Duration {
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn test_build_status_feed_id() {
         let collector = BuildStatusCollector::new(PathBuf::from("/tmp/test"));
-        assert_eq!(collector.feed_id(), FeedId::StatsBuildStatus);
+        assert_eq!(collector.feed_id(), FeedId::STATS_BUILD_STATUS);
     }
 
     #[test]

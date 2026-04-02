@@ -171,11 +171,11 @@ async fn main() {
         .map(|client| feeds::defaults::defaults_feed(Arc::clone(client)));
 
     // Create filesystem feed and watch channel
-    let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::Filesystem, vec![]));
+    let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
     let fs_feed = FilesystemFeed::new(watch_dir.clone());
 
     // Create git feed and watch channel
-    let (git_watch_tx, git_watch_rx) = watch::channel(Frame::new(FeedId::Git, vec![]));
+    let (git_watch_tx, git_watch_rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
     let git_feed = GitFeed::new(watch_dir.clone());
 
     // Create stats collectors
@@ -188,13 +188,13 @@ async fn main() {
         as Arc<dyn crate::feeds::stats::StatCollector>;
 
     // Create watch channels for stats feeds
-    let (stats_agg_tx, stats_agg_rx) = watch::channel(Frame::new(FeedId::Stats, vec![]));
+    let (stats_agg_tx, stats_agg_rx) = watch::channel(Frame::new(FeedId::STATS, vec![]));
     let (stats_proc_tx, stats_proc_rx) =
-        watch::channel(Frame::new(FeedId::StatsProcessInfo, vec![]));
+        watch::channel(Frame::new(FeedId::STATS_PROCESS_INFO, vec![]));
     let (stats_token_tx, stats_token_rx) =
-        watch::channel(Frame::new(FeedId::StatsTokenUsage, vec![]));
+        watch::channel(Frame::new(FeedId::STATS_TOKEN_USAGE, vec![]));
     let (stats_build_tx, stats_build_rx) =
-        watch::channel(Frame::new(FeedId::StatsBuildStatus, vec![]));
+        watch::channel(Frame::new(FeedId::STATS_BUILD_STATUS, vec![]));
 
     // Create shutdown channel for control commands
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);

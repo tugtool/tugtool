@@ -54,7 +54,7 @@ fn build_defaults_frame(client: &TugbankClient) -> Frame {
     let domains_map = build_domains_json(client);
     let payload = json!({"domains": domains_map});
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
-    Frame::new(FeedId::Defaults, bytes)
+    Frame::new(FeedId::DEFAULTS, bytes)
 }
 
 /// Serialise all domains into a `serde_json::Map` suitable for the frame payload.
@@ -182,7 +182,7 @@ mod tests {
 
         // The initial frame should contain both domains.
         let frame = rx.borrow().clone();
-        assert_eq!(frame.feed_id, FeedId::Defaults);
+        assert_eq!(frame.feed_id, FeedId::DEFAULTS);
         assert!(!frame.payload.is_empty(), "payload should not be empty");
 
         let parsed: serde_json::Value = serde_json::from_slice(&frame.payload).expect("valid JSON");

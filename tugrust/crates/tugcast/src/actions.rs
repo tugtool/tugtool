@@ -25,7 +25,7 @@ pub async fn dispatch_action(
         }
         other => {
             info!("dispatch_action: broadcasting client action: {}", other);
-            let frame = Frame::new(FeedId::Control, raw_payload.to_vec());
+            let frame = Frame::new(FeedId::CONTROL, raw_payload.to_vec());
             let _ = client_action_tx.send(frame);
         }
     }
@@ -51,7 +51,7 @@ mod tests {
         .await;
 
         let frame = client_action_rx.recv().await.unwrap();
-        assert_eq!(frame.feed_id, FeedId::Control);
+        assert_eq!(frame.feed_id, FeedId::CONTROL);
         assert_eq!(frame.payload, br#"{"action":"show-card"}"#);
     }
 }

@@ -991,6 +991,26 @@ If larger payloads are eventually needed (e.g., streaming a binary file), add fr
 
 **Scope:** tugcast-core `protocol.rs` (one constant change), tests (update boundary tests).
 
+#### P12: Flags byte in frame header (HIGH)
+
+**Problem:** The wire format is `[1 byte FeedId][4 byte BE u32 length][payload]`. Every frame is implicitly "data." But P4 and P11 introduce meta-frames (lag recovery, bootstrap requests) that ride on existing FeedIds. Without a framing-level way to distinguish data from control, receivers must parse JSON to tell whether a CodeOutput frame is real conversation data or a lag recovery signal. This is fragile and forces both Rust and TypeScript parsers to handle protocol-level concerns in application-level code.
+
+**Fix:** Expand the header from 5 bytes to 6 bytes by adding a flags byte:
+
+```
+[1 byte FeedId][1 byte flags][4 byte BE u32 length][payload]
+```
+
+Flags byte layout (v1):
+- Bit 0: frame kind — `0` = data, `1` = control (meta-frame about this feed)
+- Bits 1–7: reserved, must be 0. Receivers ignore unknown flags for forward compatibility.
+
+This means a lag recovery frame is `FeedId=0x40, flags=0x01, payload={"type":"lag_recovery"}` — the framing layer tells you it's not conversation data before you touch the JSON. Future uses for reserved bits: compression indicator, fragmentation, priority, etc.
+
+The cost is 1 extra byte per frame — negligible at any realistic throughput. The benefit is that this is the last opportunity to change the wire format cleanly before external clients exist.
+
+**Scope:** tugcast-core `protocol.rs` (Frame struct, encode/decode, HEADER_SIZE 5→6, tests), tugdeck `protocol.ts` (mirror changes), tugdeck `connection.ts` (decode path), all golden-byte tests.
+
 #### P8: Auth for remote use (LOW)
 
 **Problem:** Session cookie + origin validation for localhost only. The "remote use comes for free" architecture works at the transport level, but auth doesn't survive network deployment.
@@ -1041,31 +1061,45 @@ The router doesn't know what bootstrap means for each backend — it just broker
 
 **Work order:**
 
-The fixes have dependencies. Recommended order:
+The fixes have dependencies. Organized into dashes:
 
-1. **P1** (open FeedId) — unblocks everything, changes the core type
-2. **P7** (raise max payload) — trivial, do alongside P1
-3. **P3** (FeedId collision) — update constants after P1, update tide.md
-4. **P2** (dynamic router) — the big rewrite, depends on P1
-5. **P4** (CodeOutput lag recovery) — depends on P2's new router structure
-6. **P11** (generalized bootstrap) — depends on P2 and P4
-7. **P5** (multi-client input guard) — depends on P2
-8. **P6** (protocol version handshake) — independent, do when convenient
-9. **P8** (remote auth) — independent, do when convenient
-10. **P9** (compression) — independent, small
-11. **P10** (subscription filtering) — depends on P6 (handshake), low priority
+**Dash 1A — Protocol foundation (wire format, types, handshake):**
+
+1. **P1** (open FeedId) — newtype struct, unblocks everything
+2. **P7** (raise max payload) — trivial constant change, do alongside P1
+3. **P3** (FeedId collision) — fix slot assignments, add Shell/TugFeed constants
+4. **P12** (flags byte) — expand header 5→6 bytes, data/control bit
+5. **P6** (protocol version handshake) — document as v1, handshake on connect
+
+**Dash 1B — Dynamic router (the big rewrite):**
+
+6. **P2** (dynamic router) — `StreamMap` fan-in, `HashMap<FeedId, Sender>` input dispatch, router-internal handling for Control/Heartbeat
+
+**Dash 2 — Robustness (depends on P2):**
+
+7. **P4** (CodeOutput lag recovery) — ring buffer, replay, uses P12 flags for control frames
+8. **P11** (generalized bootstrap) — per-backend bootstrap, uses P12 flags
+9. **P5** (multi-client input guard) — single-writer-per-FeedId enforcement
+
+**Dash 3 — Polish:**
+
+10. **P9** (compression) — `permessage-deflate` WebSocket option
+11. ~~**P8** (remote auth)~~ — deferred until remote use is on the horizon
+12. ~~**P10** (subscription filtering)~~ — deferred until remote use is on the horizon
 
 **Exit criteria:**
+- Wire format is v1: `[FeedId:1][flags:1][length:4][payload:N]`, documented
 - `FeedId` is an open `u8` newtype; unknown bytes don't produce errors
+- Protocol handshake on WebSocket connect; version and capabilities negotiated
 - Router dispatches input frames via dynamic map lookup, not hardcoded fields
 - Adding a new backend is: register channel pair by FeedId, spawn bridge process. No router code changes.
 - CodeOutput lag triggers replay from ring buffer, not silent event loss
 - Multi-client input guarded: first writer claims, others get error
-- Protocol v1 documented; handshake implemented
 - Max payload raised to 16 MB
 - FeedId slot assignments corrected (Defaults=0x50, Shell=0x60/0x61, TugFeed=0x70)
 - `just build && just test` pass
 - Existing tugdeck functionality unaffected (terminal, git, filesystem, stats, code feeds all work)
+- P8 (remote auth) and P10 (subscription filtering) deferred — not needed for local Tide development path
 
 ---
 

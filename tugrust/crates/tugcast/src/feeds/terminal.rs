@@ -159,7 +159,7 @@ impl TerminalFeed {
 #[async_trait]
 impl StreamFeed for TerminalFeed {
     fn feed_id(&self) -> FeedId {
-        FeedId::TerminalOutput
+        FeedId::TERMINAL_OUTPUT
     }
 
     fn name(&self) -> &str {
@@ -231,7 +231,7 @@ impl StreamFeed for TerminalFeed {
                                 break;
                             }
                             Ok(n) => {
-                                let frame = Frame::new(FeedId::TerminalOutput, buf[..n].to_vec());
+                                let frame = Frame::new(FeedId::TERMINAL_OUTPUT, buf[..n].to_vec());
                                 if read_tx.send(frame).is_err() {
                                     debug!("no broadcast receivers");
                                 }
@@ -256,28 +256,22 @@ impl StreamFeed for TerminalFeed {
                         break;
                     }
                     Some(frame) = input_rx.recv() => {
-                        match frame.feed_id {
-                            FeedId::TerminalInput => {
-                                if let Err(e) = writer.write_all(&frame.payload).await {
-                                    error!("PTY write error: {}", e);
-                                    break;
-                                }
+                        if frame.feed_id == FeedId::TERMINAL_INPUT {
+                            if let Err(e) = writer.write_all(&frame.payload).await {
+                                error!("PTY write error: {}", e);
+                                break;
                             }
-                            FeedId::TerminalResize => {
-                                // Parse resize payload and resize PTY via ioctl
-                                // tmux detects SIGWINCH and adjusts automatically
-                                if let Ok(resize) = serde_json::from_slice::<ResizePayload>(&frame.payload) {
-                                    let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
-                                    ws.ws_col = resize.cols;
-                                    ws.ws_row = resize.rows;
-                                    unsafe { libc::ioctl(pty_fd, libc::TIOCSWINSZ, &ws) };
-                                    info!(cols = resize.cols, rows = resize.rows, "terminal resized");
-                                } else {
-                                    warn!("failed to parse resize payload");
-                                }
-                            }
-                            _ => {
-                                // Ignore other feed IDs
+                        } else if frame.feed_id == FeedId::TERMINAL_RESIZE {
+                            // Parse resize payload and resize PTY via ioctl
+                            // tmux detects SIGWINCH and adjusts automatically
+                            if let Ok(resize) = serde_json::from_slice::<ResizePayload>(&frame.payload) {
+                                let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+                                ws.ws_col = resize.cols;
+                                ws.ws_row = resize.rows;
+                                unsafe { libc::ioctl(pty_fd, libc::TIOCSWINSZ, &ws) };
+                                info!(cols = resize.cols, rows = resize.rows, "terminal resized");
+                            } else {
+                                warn!("failed to parse resize payload");
                             }
                         }
                     }
@@ -307,7 +301,7 @@ mod tests {
     #[test]
     fn test_feedid_mapping() {
         let feed = TerminalFeed::new("test-session".to_string());
-        assert_eq!(feed.feed_id(), FeedId::TerminalOutput);
+        assert_eq!(feed.feed_id(), FeedId::TERMINAL_OUTPUT);
     }
 
     #[test]

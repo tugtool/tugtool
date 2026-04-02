@@ -14,7 +14,10 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time;
 use tracing::{debug, error, info, warn};
 
-use tugcast_core::{FeedId, Frame};
+use tugcast_core::{
+    CLOSE_BAD_HANDSHAKE, CLOSE_HANDSHAKE_TIMEOUT, CLOSE_VERSION_MISMATCH, FeedId, Frame,
+    HANDSHAKE_TIMEOUT, PROTOCOL_NAME, PROTOCOL_VERSION,
+};
 
 use crate::auth::{self, SharedAuthState};
 use crate::feeds::terminal;
@@ -116,9 +119,131 @@ pub async fn ws_handler(
     ws.on_upgrade(move |socket| handle_client(socket, router))
 }
 
+/// Perform the protocol handshake at WebSocket connection open.
+///
+/// Expects the client to send a text frame `{"protocol":"tugcast","version":1}`.
+/// Responds with `{"protocol":"tugcast","version":1,"capabilities":[]}`.
+/// Returns `true` on success, `false` if the handshake failed (connection closed).
+async fn perform_handshake(socket: &mut WebSocket) -> bool {
+    // Wait for client hello with timeout
+    let hello = tokio::time::timeout(HANDSHAKE_TIMEOUT, socket.recv()).await;
+
+    let hello_text = match hello {
+        Ok(Some(Ok(Message::Text(text)))) => text,
+        Ok(Some(Ok(_))) => {
+            warn!("Handshake failed: expected text frame, got binary/other");
+            let _ = socket
+                .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                    code: CLOSE_BAD_HANDSHAKE,
+                    reason: "expected text handshake frame".into(),
+                })))
+                .await;
+            return false;
+        }
+        Ok(Some(Err(e))) => {
+            warn!("Handshake failed: WebSocket error: {}", e);
+            return false;
+        }
+        Ok(None) => {
+            info!("Client disconnected before handshake");
+            return false;
+        }
+        Err(_) => {
+            warn!("Handshake timed out");
+            let _ = socket
+                .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                    code: CLOSE_HANDSHAKE_TIMEOUT,
+                    reason: "handshake timeout".into(),
+                })))
+                .await;
+            return false;
+        }
+    };
+
+    // Parse the hello message
+    let hello_json: serde_json::Value = match serde_json::from_str(&hello_text) {
+        Ok(v) => v,
+        Err(_) => {
+            warn!("Handshake failed: invalid JSON: {}", hello_text);
+            let _ = socket
+                .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                    code: CLOSE_BAD_HANDSHAKE,
+                    reason: "invalid handshake JSON".into(),
+                })))
+                .await;
+            return false;
+        }
+    };
+
+    // Validate protocol name
+    let protocol = hello_json
+        .get("protocol")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if protocol != PROTOCOL_NAME {
+        warn!("Handshake failed: unknown protocol '{}'", protocol);
+        let _ = socket
+            .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                code: CLOSE_BAD_HANDSHAKE,
+                reason: format!("unknown protocol: {protocol}").into(),
+            })))
+            .await;
+        return false;
+    }
+
+    // Validate version
+    let version = hello_json
+        .get("version")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    if version != PROTOCOL_VERSION {
+        warn!(
+            "Handshake failed: version mismatch (client={}, server={})",
+            version, PROTOCOL_VERSION
+        );
+        let _ = socket
+            .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                code: CLOSE_VERSION_MISMATCH,
+                reason: format!(
+                    "version mismatch: server={}, client={}",
+                    PROTOCOL_VERSION, version
+                )
+                .into(),
+            })))
+            .await;
+        return false;
+    }
+
+    // Send server hello response
+    let response = serde_json::json!({
+        "protocol": PROTOCOL_NAME,
+        "version": PROTOCOL_VERSION,
+        "capabilities": []
+    });
+    if socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_err()
+    {
+        info!("Client disconnected during handshake response");
+        return false;
+    }
+
+    info!("Protocol handshake complete (v{})", PROTOCOL_VERSION);
+    true
+}
+
 /// Handle a WebSocket client connection
 async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
     info!("Client connected");
+
+    // --- Protocol handshake (v1) ---
+    // Wait for the client to send a text frame: {"protocol":"tugcast","version":1}
+    // Respond with: {"protocol":"tugcast","version":1,"capabilities":[]}
+    // If the handshake fails, close with an application-defined close code.
+    if !perform_handshake(&mut socket).await {
+        return;
+    }
 
     // Subscribe to terminal output broadcast
     let mut broadcast_rx = router.terminal_tx.subscribe();
@@ -142,7 +267,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                 // Capture terminal snapshot (for reconnection after lag)
                 match terminal::capture_pane(&router.session).await {
                     Ok(snapshot) => {
-                        let frame = Frame::new(FeedId::TerminalOutput, snapshot);
+                        let frame = Frame::new(FeedId::TERMINAL_OUTPUT, snapshot);
                         if socket
                             .send(Message::Binary(frame.encode().into()))
                             .await
@@ -293,32 +418,27 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                             match msg {
                                 Some(Ok(Message::Binary(data))) => {
                                     if let Ok((frame, _)) = Frame::decode(&data) {
-                                        match frame.feed_id {
-                                            FeedId::TerminalInput | FeedId::TerminalResize => {
-                                                let _ = router.input_tx.send(frame).await;
-                                            }
-                                            FeedId::CodeInput => {
-                                                let _ = router.code_input_tx.send(frame).await;
-                                            }
-                                            FeedId::Heartbeat => {
-                                                last_heartbeat = Instant::now();
-                                                debug!("Heartbeat received from client");
-                                            }
-                                            FeedId::Control => {
-                                                // Parse JSON payload for control action
-                                                if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
-                                                    if let Some(action) = payload.get("action").and_then(|a| a.as_str()) {
-                                                        crate::actions::dispatch_action(
-                                                            action,
-                                                            &frame.payload,
-                                                            &router.shutdown_tx,
-                                                            &router.client_action_tx,
-                                                            &router.dev_state,
-                                                        ).await;
-                                                    }
+                                        let fid = frame.feed_id;
+                                        if fid == FeedId::TERMINAL_INPUT || fid == FeedId::TERMINAL_RESIZE {
+                                            let _ = router.input_tx.send(frame).await;
+                                        } else if fid == FeedId::CODE_INPUT {
+                                            let _ = router.code_input_tx.send(frame).await;
+                                        } else if fid == FeedId::HEARTBEAT {
+                                            last_heartbeat = Instant::now();
+                                            debug!("Heartbeat received from client");
+                                        } else if fid == FeedId::CONTROL {
+                                            // Parse JSON payload for control action
+                                            if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
+                                                if let Some(action) = payload.get("action").and_then(|a| a.as_str()) {
+                                                    crate::actions::dispatch_action(
+                                                        action,
+                                                        &frame.payload,
+                                                        &router.shutdown_tx,
+                                                        &router.client_action_tx,
+                                                        &router.dev_state,
+                                                    ).await;
                                                 }
                                             }
-                                            _ => {}
                                         }
                                     }
                                 }

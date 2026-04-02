@@ -57,7 +57,7 @@ impl StatsRunner {
     ///
     /// # Arguments
     ///
-    /// * `aggregate_tx` - Watch sender for the aggregate feed (FeedId::Stats)
+    /// * `aggregate_tx` - Watch sender for the aggregate feed (FeedId::STATS)
     /// * `individual_txs` - Watch senders for individual collector feeds (must match order of collectors)
     /// * `cancel` - Cancellation token to stop all tasks
     pub async fn run(
@@ -196,7 +196,7 @@ impl StatsRunner {
                             }
                         };
 
-                        let frame = Frame::new(FeedId::Stats, payload);
+                        let frame = Frame::new(FeedId::STATS, payload);
                         if aggregate_tx.send(frame).is_err() {
                             tracing::warn!("Aggregate watch channel closed");
                             break;
@@ -262,13 +262,13 @@ mod tests {
     #[tokio::test]
     async fn test_stats_runner_integration() {
         let collectors: Vec<Arc<dyn StatCollector>> = vec![
-            Arc::new(MockCollector::new("test1", FeedId::StatsProcessInfo)),
-            Arc::new(MockCollector::new("test2", FeedId::StatsTokenUsage)),
+            Arc::new(MockCollector::new("test1", FeedId::STATS_PROCESS_INFO)),
+            Arc::new(MockCollector::new("test2", FeedId::STATS_TOKEN_USAGE)),
         ];
 
-        let (agg_tx, mut agg_rx) = watch::channel(Frame::new(FeedId::Stats, vec![]));
-        let (tx1, _rx1) = watch::channel(Frame::new(FeedId::StatsProcessInfo, vec![]));
-        let (tx2, _rx2) = watch::channel(Frame::new(FeedId::StatsTokenUsage, vec![]));
+        let (agg_tx, mut agg_rx) = watch::channel(Frame::new(FeedId::STATS, vec![]));
+        let (tx1, _rx1) = watch::channel(Frame::new(FeedId::STATS_PROCESS_INFO, vec![]));
+        let (tx2, _rx2) = watch::channel(Frame::new(FeedId::STATS_TOKEN_USAGE, vec![]));
 
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();

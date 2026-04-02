@@ -406,7 +406,7 @@ async fn relay_progress(
 
                     // Send as Control frame
                     if let Ok(bytes) = serde_json::to_vec(&progress) {
-                        let frame = Frame::new(FeedId::Control, bytes);
+                        let frame = Frame::new(FeedId::CONTROL, bytes);
                         let _ = client_action_tx.send(frame);
                     }
 
@@ -434,7 +434,7 @@ fn send_build_progress_error(client_action_tx: &broadcast::Sender<Frame>, error_
     });
 
     if let Ok(bytes) = serde_json::to_vec(&msg) {
-        let frame = Frame::new(FeedId::Control, bytes);
+        let frame = Frame::new(FeedId::CONTROL, bytes);
         let _ = client_action_tx.send(frame);
     }
 }
