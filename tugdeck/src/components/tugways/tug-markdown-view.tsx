@@ -459,13 +459,8 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const index = parseInt(indexStr, 10);
         if (isNaN(index)) continue;
         const measured = entry.contentRect.height;
-        const offsetH = el.offsetHeight;
         const current = engine.heightIndex.getHeight(index);
-        if (Math.abs(measured - offsetH) > 0.5) {
-          console.warn(`[ResizeObserver] block ${index}: contentRect.height=${measured} vs offsetHeight=${offsetH} — MISMATCH`);
-        }
         if (Math.abs(measured - current) > 0.5) {
-          console.log(`[ResizeObserver] block ${index}: ${current.toFixed(1)} → ${measured.toFixed(1)} (offsetHeight=${offsetH})`);
           engine.heightIndex.setHeight(index, measured);
           onBlockMeasured?.(index, measured);
           anyChanged = true;
@@ -711,9 +706,9 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const existingEl = engine.blockNodes.get(globalIdx);
         if (existingEl) {
           existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
-          // Read the real height now that innerHTML changed. Don't estimate —
-          // the node is in the DOM and offsetHeight gives the true value.
-          engine.heightIndex.setHeight(globalIdx, existingEl.offsetHeight);
+          // Store estimate here; real measurement happens in doSetRegion's
+          // consolidated measurement pass (one forced layout for all blocks).
+          engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
         } else {
           // Not in the DOM — estimate is the best we can do.
           engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
@@ -934,35 +929,16 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
     onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
-    engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
-    const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
-    const update = engine.blockWindow.update(scrollTop);
+    // Render the block window. When following bottom, render at the predicted
+    // bottom (totalHeight) so the tail blocks are in the DOM *before* the
+    // measurement pass in doSetRegion. This avoids a re-render after pinToBottom.
+    const clientHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+    engine.blockWindow.setViewportHeight(clientHeight);
+    const renderScrollTop = smartScrollRef.current?.isFollowingBottom
+      ? Math.max(0, engine.heightIndex.getTotalHeight() - clientHeight)
+      : (scrollContainerRef.current?.scrollTop ?? 0);
+    const update = engine.blockWindow.update(renderScrollTop);
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-
-    // Synchronous measurement for newly-added blocks [D03].
-    // After addBlockNode inserts new DOM nodes, read their real offsetHeight and
-    // replace the estimate. This eliminates the estimate-then-ResizeObserver bounce
-    // during streaming. Applies for Q > P (new blocks added to tail or non-tail region).
-    if (Q > P) {
-      let anyMeasured = false;
-      for (let i = P; i < Q; i++) {
-        const globalIdx = S + i;
-        const el = engine.blockNodes.get(globalIdx);
-        if (el) {
-          const realHeight = el.offsetHeight; // forced layout — cheap for 1-3 blocks
-          const estimated = engine.heightIndex.getHeight(globalIdx);
-          console.log(`[syncMeasure] block ${globalIdx}: estimated=${estimated.toFixed(1)} → offsetHeight=${realHeight}`);
-          engine.heightIndex.setHeight(globalIdx, realHeight);
-          anyMeasured = true;
-        }
-      }
-      if (anyMeasured) {
-        // Recompute spacers with real heights before pinToBottom fires.
-        const scrollTop2 = scrollContainerRef.current?.scrollTop ?? 0;
-        const update2 = engine.blockWindow.update(scrollTop2);
-        applySpacers(update2.topSpacerHeight, update2.bottomSpacerHeight);
-      }
-    }
   }
 
   // ---- Core region update logic ----
@@ -973,7 +949,6 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   function doSetRegion(key: string, text: string): void {
     const engine = getEngine();
     const wasEmpty = engine.regionMap.regionCount === 0;
-    console.log('[doSetRegion] key:', key, 'wasEmpty:', wasEmpty, 'regionCount:', engine.regionMap.regionCount);
 
     engine.regionMap.setRegion(key, text);
     const fullText = engine.regionMap.text;
@@ -984,29 +959,18 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       incrementalTailUpdate(engine, key, fullText);
     }
 
-    // After content settles, pin to bottom if SmartScroll is following.
-    // Use pinToBottom() (stays in idle phase) instead of scrollToBottom() to
-    // avoid overlapping programmatic scroll sequences during rapid streaming [D04].
+    // When following bottom: measure all rendered blocks (one forced layout),
+    // correct heights, recompute spacers, then pin to the real bottom.
     //
-    // After slamming scrollTop, immediately re-run the block window update so
-    // the blocks at the NEW scroll position are rendered in the same call stack.
-    // Without this, the blocks from the OLD position are in the DOM, the bottom
-    // is spacer-only, and the correct blocks don't appear until the next RAF —
-    // causing a visible one-frame dance.
+    // incrementalTailUpdate already rendered blocks at the predicted bottom
+    // (totalHeight from estimates), so the tail blocks are in the DOM. This
+    // pass replaces estimates with real offsetHeight values, then one
+    // pinToBottom lands on the true bottom. One layout, one slam, one paint.
     if (smartScrollRef.current?.isFollowingBottom) {
-      smartScrollRef.current.pinToBottom();
-      // Re-render for the new scroll position in the same synchronous pass.
-      // Then measure any newly-entered blocks and re-slam — the first slam
-      // used estimated heights; the measurement corrects them, which may
-      // shift the real bottom. One iteration is enough: after measurement,
-      // heights are real and the second slam lands on the true bottom.
       const engine2 = engineRef.current;
       if (engine2 && scrollContainerRef.current) {
-        const newScrollTop = scrollContainerRef.current.scrollTop;
-        const update = engine2.blockWindow.update(newScrollTop);
-        applyWindowUpdate(engine2, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-
-        // Measure any blocks that just entered the DOM from the re-render.
+        // Single measurement pass: read offsetHeight for every rendered block.
+        // This is the ONLY forced layout in the streaming hot path.
         let anyMeasured = false;
         for (const [idx, el] of engine2.blockNodes) {
           const stored = engine2.heightIndex.getHeight(idx);
@@ -1017,12 +981,17 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
           }
         }
         if (anyMeasured) {
-          // Spacers changed — re-slam to the corrected bottom.
-          const update2 = engine2.blockWindow.update(scrollContainerRef.current.scrollTop);
-          applySpacers(update2.topSpacerHeight, update2.bottomSpacerHeight);
-          smartScrollRef.current!.pinToBottom();
+          // Recompute window with real heights — blocks may need to enter/exit
+          // if the corrected heights shifted the visible range significantly
+          // (common after cold start where most blocks have estimated heights).
+          const correctedScrollTop = Math.max(0,
+            engine2.heightIndex.getTotalHeight() - scrollContainerRef.current.clientHeight);
+          const update = engine2.blockWindow.update(correctedScrollTop);
+          applyWindowUpdate(engine2, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
         }
       }
+      // Pin to real bottom — heights are now real, spacers correct.
+      smartScrollRef.current.pinToBottom();
     }
   }
 
