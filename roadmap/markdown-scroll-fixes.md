@@ -581,3 +581,145 @@ add/remove. Specific law interactions:
 - **[D93]** `pinToBottom()` works within the SmartScroll state machine. No flags,
   no timing hacks. Stays in `idle` phase; the scroll event is handled by the
   existing `idle` case in `_handleScroll`.
+
+
+## Addendum: Post-implementation bugs in Problem 2
+
+Problem 2 was implemented and merged. Two bugs were discovered immediately
+in manual testing. Both stem from the same root cause: the roadmap and plan
+only considered *updating existing regions* and never addressed *adding new
+regions* or the full consequences of *non-tail region length changes*.
+
+### Bug 1: New regions silently fail to render
+
+**Severity:** Critical. The most basic usage of the component is broken.
+
+**Symptom:** In the gallery card, click 10KB + Static. Scroll bar stays at
+top. Click 1KB + Static. Scroll bar jumps to top. Stream button produces
+no visible output. Console shows:
+
+    incrementalTailUpdate: no regionBlockRanges entry for key "static-1775089373014"; skipping update
+    incrementalTailUpdate: no regionBlockRanges entry for key "stream"; skipping update (x22)
+
+**Root cause:** When `setRegion` is called with a key that doesn't exist in
+`regionBlockRanges`, this is a *new region* being appended — not a
+programming error. `RegionMap.setRegion` appends new keys at the end.
+The old code (before Problem 2) had a `lexParseAndRender` fallback for
+this case. Step 6 of the plan replaced that fallback with
+`console.warn + return` to satisfy a grep checkpoint, turning the
+new-region path into a silent no-op.
+
+**Why this was missed:**
+
+1. The roadmap's Problem 2a section says "every subsequent setRegion goes
+   through the incremental path" but never defines what happens when a
+   region has no prior entry in `regionBlockRanges`.
+2. The plan's Step 6 specification assumes `S` and `P` always come from
+   an existing `regionBlockRanges` entry. No task addresses the
+   undefined-range case.
+3. The critic, overviewer, and reviewer all missed that
+   `regionBlockRanges.get(key) === undefined` is a legitimate state
+   for new regions, not an error condition.
+4. The reviewer required removing `lexParseAndRender` fallbacks to satisfy
+   a `grep -c` checkpoint, without recognizing those fallbacks handled
+   the new-region case.
+
+**Fix:** When `regionBlockRanges.get(key)` returns undefined, treat it as
+a new region being appended:
+
+- `S = engine.blockCount` (new blocks go after all existing blocks)
+- `P = 0` (no existing blocks for this region)
+- `oldTypes = []` (no prior type sequence)
+
+The normal growth path (Q > 0, P = 0) then runs: lex the region text,
+produce Q blocks, append via `appendBlock` (tail) or `shiftFrom`
+(non-tail). `regionBlockRanges` gets populated with the new entry at the
+end of the function as usual.
+
+This is not a hack or a special case. It is the correct semantics: a new
+region has zero existing blocks, and its blocks start after all existing
+blocks.
+
+### Bug 2: Stale char offsets for subsequent regions after non-tail edit
+
+**Severity:** Medium. Produces correct rendering but causes unnecessary
+re-parsing and could produce wrong text if stale offsets are read between
+edits.
+
+**Symptom:** After a non-tail region changes length, the next update to a
+subsequent region causes every block in that region to appear "changed"
+(triggering unnecessary re-parse), even if the content didn't change.
+
+**Root cause:** When Step 6 generalized `incrementalTailUpdate` for
+non-tail regions, it correctly shifts:
+
+- Height index entries (via `shiftFrom`)
+- `htmlCache` map keys
+- `blockNodes` map keys + `data-block-index` DOM attributes
+- `regionBlockRanges` start values for subsequent regions
+
+But it does NOT shift the **values** in `blockStarts[]` and
+`blockEnds[]` for subsequent blocks. These arrays hold char offsets into
+the full concatenated document text (`engine.regionMap.text`). When
+region 'a' changes from 500 chars to 600 chars, every subsequent block's
+char offset is now wrong by +100.
+
+The roadmap says "blockStarts/blockEnds arrays are handled by
+Array.prototype.splice() automatically." This is true for index
+insertion/removal (making room for new blocks or removing old ones).
+But `splice` doesn't update the *values* at later indices. The plan
+inherited this assumption uncritically.
+
+**Consequences:**
+
+1. `engine.regionMap.text.slice(blockStarts[i], blockEnds[i])` for a
+   subsequent-region block returns **wrong text** until that region is
+   re-lexed.
+2. The next update to a subsequent region compares fresh char offsets
+   against the stale ones. Every block appears changed, triggering
+   unnecessary re-parse of the entire region.
+3. The system self-corrects when the subsequent region is re-lexed (the
+   new offsets are computed fresh). So this is a performance bug and a
+   latent correctness bug, not a visible rendering error — unless code
+   reads stale offsets between edits.
+
+**Fix:** After the index splice and `shiftFrom` for a non-tail edit with
+P != Q, compute the char length delta and shift all `blockStarts` and
+`blockEnds` values for subsequent blocks:
+
+    const oldRegionCharLength = oldRegionRange.end - oldRegionRange.start;
+    const newRegionCharLength = regionText.length;
+    const charDelta = newRegionCharLength - oldRegionCharLength;
+    if (charDelta !== 0) {
+      for (let i = S + Q; i < engine.blockStarts.length; i++) {
+        engine.blockStarts[i] += charDelta;
+        engine.blockEnds[i] += charDelta;
+      }
+    }
+
+Note: the old region char length must be captured *before* `setRegion`
+updates the region text, or computed from the old `regionBlockRanges`
+entry's block offsets.
+
+### Laws compliance for the fixes
+
+Both fixes operate in the same DOM/CSS appearance zone as the rest of
+Problem 2. Specific law interactions:
+
+- **[L23]** Bug 1 is a direct L23 violation: the user's action (adding
+  content) produces no visible result. The fix ensures new regions render
+  correctly. Bug 2's stale offsets are a latent L23 risk: if stale
+  offsets were used to render content, the user would see wrong text.
+  The fix prevents staleness.
+
+- **[L06]** Both fixes are pure engine-state mutations (array values,
+  Map entries) and DOM writes. No React state involved.
+
+- **[L07]** The new-region fix reads `engine.blockCount` at call time
+  through the engine ref. The char-offset fix iterates `blockStarts`
+  and `blockEnds` arrays in the engine ref. Both access current state
+  through refs, not closures.
+
+- **[D93]** Neither fix touches SmartScroll or its state machine.
+
+- **[L05]** Neither fix changes the RAF coalescing path.
