@@ -10,14 +10,14 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 
 **Exceptions:**
 - The `/commit` skill: when the user invokes `/commit`, commit immediately without asking for confirmation.
-- The `tugcode worktree setup` command commits the tugplan file and .tugtool/ infrastructure to the worktree branch as part of worktree setup.
+- The `tugutil worktree setup` command commits the tugplan file and .tugtool/ infrastructure to the worktree branch as part of worktree setup.
 - The `committer-agent` is explicitly given the job to make commits during the implementer workflow.
 
 ## Repository Structure
 
 | Directory | Description |
 |-----------|-------------|
-| `tugrust/` | Rust crates (tugcast, tugcode CLI, tugbank, and supporting libraries) |
+| `tugrust/` | Rust crates (tugcast, tugutil, tugexec, tugbank, and supporting libraries) |
 | `tugplug/` | Claude Code plugin (agents and skills) |
 | `tugapp/` | Swift macOS app |
 | `tugdeck/` | Web frontend |
