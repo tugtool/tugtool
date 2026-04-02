@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use tracing::{info, warn};
-use tugbank_core::{DefaultsStore, Value};
+use tugbank_core::{TugbankClient, Value};
 
 /// Migrate legacy deck-settings.json to tugbank domains.
 ///
@@ -31,7 +31,7 @@ use tugbank_core::{DefaultsStore, Value};
 /// If the file does not exist, this function is a no-op.
 pub(crate) fn migrate_settings_to_tugbank(
     source_tree: &Path,
-    store: &DefaultsStore,
+    client: &TugbankClient,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let settings_path = source_tree.join(".tugtool").join("deck-settings.json");
 
@@ -70,8 +70,11 @@ pub(crate) fn migrate_settings_to_tugbank(
     // Write layout as Value::Json if present in the parsed settings.
     if let Some(layout_val) = parsed.get("layout") {
         if !layout_val.is_null() {
-            let handle = store.domain("dev.tugtool.deck.layout")?;
-            handle.set("layout", Value::Json(layout_val.clone()))?;
+            client.set(
+                "dev.tugtool.deck.layout",
+                "layout",
+                Value::Json(layout_val.clone()),
+            )?;
             layout_written = true;
         }
     }
@@ -79,8 +82,11 @@ pub(crate) fn migrate_settings_to_tugbank(
     // Write theme as Value::String if present in the parsed settings.
     if let Some(theme_val) = parsed.get("theme") {
         if let Some(theme_str) = theme_val.as_str() {
-            let handle = store.domain("dev.tugtool.app")?;
-            handle.set("theme", Value::String(theme_str.to_owned()))?;
+            client.set(
+                "dev.tugtool.app",
+                "theme",
+                Value::String(theme_str.to_owned()),
+            )?;
             theme_written = true;
         }
     }
@@ -106,11 +112,10 @@ pub(crate) fn migrate_settings_to_tugbank(
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use tugbank_core::DefaultsStore;
 
-    fn temp_store(tmp: &TempDir) -> DefaultsStore {
+    fn temp_client(tmp: &TempDir) -> TugbankClient {
         let db_path = tmp.path().join("test.db");
-        DefaultsStore::open(&db_path).expect("open store")
+        TugbankClient::open(&db_path).expect("open client")
     }
 
     fn write_settings_file(source_tree: &Path, contents: &str) {
@@ -123,20 +128,18 @@ mod tests {
         source_tree.join(".tugtool").join("deck-settings.json")
     }
 
-    // T01: Migration with both layout and theme writes both keys and deletes flat file
     #[test]
     fn test_migrate_both_layout_and_theme() {
         let tmp = TempDir::new().unwrap();
-        let store = temp_store(&tmp);
+        let client = temp_client(&tmp);
+        write_settings_file(
+            tmp.path(),
+            r#"{"layout":{"version":5,"cards":[]},"theme":"brio"}"#,
+        );
 
-        let contents = r#"{"layout":{"version":5,"cards":[]},"theme":"brio"}"#;
-        write_settings_file(tmp.path(), contents);
+        migrate_settings_to_tugbank(tmp.path(), &client).unwrap();
 
-        migrate_settings_to_tugbank(tmp.path(), &store).unwrap();
-
-        // Layout key written to dev.tugtool.deck.layout
-        let layout_handle = store.domain("dev.tugtool.deck.layout").unwrap();
-        let layout = layout_handle.get("layout").unwrap();
+        let layout = client.get("dev.tugtool.deck.layout", "layout").unwrap();
         assert!(
             matches!(layout, Some(Value::Json(_))),
             "layout should be Value::Json, got {layout:?}"
@@ -144,132 +147,104 @@ mod tests {
         if let Some(Value::Json(v)) = layout {
             assert_eq!(v["version"], 5);
         }
-
-        // Theme key written to dev.tugtool.app
-        let theme_handle = store.domain("dev.tugtool.app").unwrap();
-        let theme = theme_handle.get("theme").unwrap();
-        assert_eq!(theme, Some(Value::String("brio".to_owned())));
-
-        // Flat file deleted
+        assert_eq!(
+            client.get("dev.tugtool.app", "theme").unwrap(),
+            Some(Value::String("brio".to_owned()))
+        );
         assert!(
             !settings_file_path(tmp.path()).exists(),
             "flat file should be deleted after migration"
         );
     }
 
-    // T02: Migration with layout only writes layout key, no theme key
     #[test]
     fn test_migrate_layout_only() {
         let tmp = TempDir::new().unwrap();
-        let store = temp_store(&tmp);
+        let client = temp_client(&tmp);
+        write_settings_file(tmp.path(), r#"{"layout":{"version":5,"cards":[]}}"#);
 
-        let contents = r#"{"layout":{"version":5,"cards":[]}}"#;
-        write_settings_file(tmp.path(), contents);
+        migrate_settings_to_tugbank(tmp.path(), &client).unwrap();
 
-        migrate_settings_to_tugbank(tmp.path(), &store).unwrap();
-
-        let layout_handle = store.domain("dev.tugtool.deck.layout").unwrap();
         assert!(
-            layout_handle.get("layout").unwrap().is_some(),
+            client
+                .get("dev.tugtool.deck.layout", "layout")
+                .unwrap()
+                .is_some(),
             "layout should be written"
         );
-
-        let theme_handle = store.domain("dev.tugtool.app").unwrap();
         assert_eq!(
-            theme_handle.get("theme").unwrap(),
+            client.get("dev.tugtool.app", "theme").unwrap(),
             None,
             "theme should not be written"
         );
-
         assert!(!settings_file_path(tmp.path()).exists());
     }
 
-    // T03: Migration with theme only writes theme key, no layout key
     #[test]
     fn test_migrate_theme_only() {
         let tmp = TempDir::new().unwrap();
-        let store = temp_store(&tmp);
+        let client = temp_client(&tmp);
+        write_settings_file(tmp.path(), r#"{"theme":"bluenote"}"#);
 
-        let contents = r#"{"theme":"bluenote"}"#;
-        write_settings_file(tmp.path(), contents);
+        migrate_settings_to_tugbank(tmp.path(), &client).unwrap();
 
-        migrate_settings_to_tugbank(tmp.path(), &store).unwrap();
-
-        let layout_handle = store.domain("dev.tugtool.deck.layout").unwrap();
         assert_eq!(
-            layout_handle.get("layout").unwrap(),
-            None,
-            "layout should not be written"
+            client.get("dev.tugtool.deck.layout", "layout").unwrap(),
+            None
         );
-
-        let theme_handle = store.domain("dev.tugtool.app").unwrap();
         assert_eq!(
-            theme_handle.get("theme").unwrap(),
+            client.get("dev.tugtool.app", "theme").unwrap(),
             Some(Value::String("bluenote".to_owned()))
         );
-
         assert!(!settings_file_path(tmp.path()).exists());
     }
 
-    // T04: Migration with missing flat file is a no-op (returns Ok, no writes)
     #[test]
     fn test_migrate_missing_file_is_noop() {
         let tmp = TempDir::new().unwrap();
-        let store = temp_store(&tmp);
+        let client = temp_client(&tmp);
 
-        // No flat file created — should be a no-op
-        let result = migrate_settings_to_tugbank(tmp.path(), &store);
+        let result = migrate_settings_to_tugbank(tmp.path(), &client);
         assert!(result.is_ok());
-
-        let layout_handle = store.domain("dev.tugtool.deck.layout").unwrap();
-        assert_eq!(layout_handle.get("layout").unwrap(), None);
-
-        let theme_handle = store.domain("dev.tugtool.app").unwrap();
-        assert_eq!(theme_handle.get("theme").unwrap(), None);
+        assert_eq!(
+            client.get("dev.tugtool.deck.layout", "layout").unwrap(),
+            None
+        );
+        assert_eq!(client.get("dev.tugtool.app", "theme").unwrap(), None);
     }
 
-    // T05: Migration with corrupt/unparseable flat file logs warning, writes nothing,
-    // and still deletes the flat file
     #[test]
     fn test_migrate_corrupt_file_writes_nothing_and_deletes() {
         let tmp = TempDir::new().unwrap();
-        let store = temp_store(&tmp);
-
+        let client = temp_client(&tmp);
         write_settings_file(tmp.path(), "this is not valid json }{");
 
-        migrate_settings_to_tugbank(tmp.path(), &store).unwrap();
+        migrate_settings_to_tugbank(tmp.path(), &client).unwrap();
 
-        // Nothing written to tugbank
-        let layout_handle = store.domain("dev.tugtool.deck.layout").unwrap();
-        assert_eq!(layout_handle.get("layout").unwrap(), None);
-
-        let theme_handle = store.domain("dev.tugtool.app").unwrap();
-        assert_eq!(theme_handle.get("theme").unwrap(), None);
-
-        // Flat file still deleted
+        assert_eq!(
+            client.get("dev.tugtool.deck.layout", "layout").unwrap(),
+            None
+        );
+        assert_eq!(client.get("dev.tugtool.app", "theme").unwrap(), None);
         assert!(
             !settings_file_path(tmp.path()).exists(),
             "corrupt flat file should still be deleted"
         );
     }
 
-    // T06: Migration with empty JSON `{}` is a no-op (no keys written, file still deleted)
     #[test]
     fn test_migrate_empty_json_writes_nothing() {
         let tmp = TempDir::new().unwrap();
-        let store = temp_store(&tmp);
-
+        let client = temp_client(&tmp);
         write_settings_file(tmp.path(), "{}");
 
-        migrate_settings_to_tugbank(tmp.path(), &store).unwrap();
+        migrate_settings_to_tugbank(tmp.path(), &client).unwrap();
 
-        let layout_handle = store.domain("dev.tugtool.deck.layout").unwrap();
-        assert_eq!(layout_handle.get("layout").unwrap(), None);
-
-        let theme_handle = store.domain("dev.tugtool.app").unwrap();
-        assert_eq!(theme_handle.get("theme").unwrap(), None);
-
-        // File is still deleted even with empty JSON
+        assert_eq!(
+            client.get("dev.tugtool.deck.layout", "layout").unwrap(),
+            None
+        );
+        assert_eq!(client.get("dev.tugtool.app", "theme").unwrap(), None);
         assert!(!settings_file_path(tmp.path()).exists());
     }
 }

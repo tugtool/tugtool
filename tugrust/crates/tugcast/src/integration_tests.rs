@@ -1046,7 +1046,7 @@ async fn test_migration_writes_layout_and_theme_to_tugbank() {
         r#"{"layout":{"version":5,"cards":[]},"theme":"brio"}"#,
     );
 
-    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), client.store())
+    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &client)
         .expect("migration should succeed");
 
     let app = build_migration_test_app(Arc::clone(&client));
@@ -1090,7 +1090,8 @@ async fn test_migration_writes_layout_and_theme_to_tugbank() {
 async fn test_migration_deletes_flat_file() {
     let db_tmp = tempfile::NamedTempFile::new().expect("temp db file");
     let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
-    let store = Arc::new(DefaultsStore::open(db_tmp.path()).expect("open store"));
+    let store = DefaultsStore::open(db_tmp.path()).expect("open store");
+    let client = TugbankClient::from_store(store).expect("create TugbankClient");
 
     write_flat_settings(tree_tmp.path(), r#"{"theme":"bluenote"}"#);
 
@@ -1100,7 +1101,7 @@ async fn test_migration_deletes_flat_file() {
         "flat file should exist before migration"
     );
 
-    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &store)
+    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &client)
         .expect("migration should succeed");
 
     assert!(
@@ -1119,7 +1120,7 @@ async fn test_migration_noop_when_no_flat_file() {
     let client = Arc::new(TugbankClient::from_store(store).expect("create TugbankClient"));
 
     // No flat file created — migration should be a no-op.
-    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), client.store())
+    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &client)
         .expect("migration no-op should return Ok");
 
     let app = build_migration_test_app(Arc::clone(&client));

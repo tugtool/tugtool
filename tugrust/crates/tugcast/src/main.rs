@@ -158,7 +158,7 @@ async fn main() {
     // Run the one-time flat-file-to-tugbank migration synchronously, before the
     // TCP listener binds, so no frontend fetch can race the migration writes [D05].
     if let Some(ref client) = bank_client {
-        if let Err(e) = migration::migrate_settings_to_tugbank(&watch_dir, client.store()) {
+        if let Err(e) = migration::migrate_settings_to_tugbank(&watch_dir, client) {
             warn!(error = %e, "settings migration encountered an error (non-fatal)");
         }
     }
