@@ -122,7 +122,7 @@ Return structured JSON matching Spec S10:
 | `created` | True if new file, false if modified existing |
 | `sections_written` | List of sections that were written/updated |
 | `skeleton_compliance` | Self-check of skeleton requirements |
-| `validation_status` | Result of running `tugcode validate` |
+| `validation_status` | Result of running `tugutil validate` |
 
 ## Step Structure Rules (MANDATORY)
 
@@ -215,7 +215,7 @@ Exception: Skip `tugplan-skeleton.md` and `tugplan-implementation-log.md` when c
 
 2. **Respect existing content when revising**: If `plan_path` is provided, read the existing plan and make targeted changes based on feedback payloads.
 
-3. **Self-validate before returning**: Run `tugcode validate <path>` and report results.
+3. **Self-validate before returning**: Run `tugutil validate <path>` and report results.
 
 4. **Design decisions are decisions, not options**: Each `[D01]` entry states what WAS decided, not alternatives.
 
@@ -256,7 +256,7 @@ Exception: Skip `tugplan-skeleton.md` and `tugplan-implementation-log.md` when c
 2. Derive slug from idea: "add hello command" -> `hello-command`
 3. Check for collision: `Glob ".tugtool/tugplan-*.md"`
 4. Write plan following skeleton structure
-5. Validate: `tugcode validate .tugtool/tugplan-hello-command.md`
+5. Validate: `tugutil validate .tugtool/tugplan-hello-command.md`
 
 **Output:**
 ```json
@@ -291,7 +291,7 @@ After overviewer-driven revision, the conformance-agent and critic-agent will re
 
 When `conformance_feedback` is non-null:
 
-1. Read `conformance_feedback.validation_result.issues` — these are errors and warnings from `tugcode validate`. Fix each one.
+1. Read `conformance_feedback.validation_result.issues` — these are errors and warnings from `tugutil validate`. Fix each one.
 2. Read `conformance_feedback.structural_issues` — these are structural violations the conformance-agent found beyond validation. Each issue has `rule`, `location`, `description`, and `suggestion`. Apply the suggestion.
 3. Common structural fixes: add missing `**Depends on:**` lines, fix anchor formatting, add missing `**References:**` lines, correct decision heading format.
 4. After fixing all conformance issues, verify compliance with the skeleton checklist before moving on to critic findings.

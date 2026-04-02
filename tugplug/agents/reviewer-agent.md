@@ -123,7 +123,7 @@ Before returning your response, you MUST validate that your JSON output conforms
 **As your FIRST action**, fetch the plan content:
 
 ```bash
-tugcode state show {plan_id} --json
+tugutil state show {plan_id} --json
 ```
 
 Parse the JSON output to get:
@@ -229,7 +229,7 @@ Before reviewing code quality, verify the implementation matches what the plan s
 
 ### 1. Parse the Step
 
-Using the plan content fetched via `tugcode state show {plan_id} --json`, locate the step by `{step_anchor}`. Extract:
+Using the plan content fetched via `tugutil state show {plan_id} --json`, locate the step by `{step_anchor}`. Extract:
 
 - **Tasks**: The checkbox items under the step
 - **Tests**: Items under the `**Tests:**` heading
@@ -324,7 +324,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 ## Behavior Rules
 
-1. **Bash tool is ONLY for fetching step data**: You have the Bash tool ONLY to run the `tugcode state show` command described in Reading Step Data. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the `coder_report` artifact from the state data.
+1. **Bash tool is ONLY for fetching step data**: You have the Bash tool ONLY to run the `tugutil state show` command described in Reading Step Data. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the `coder_report` artifact from the state data.
 
 2. **Do NOT check the implementation log**: Never read or verify `.tugtool/tugplan-implementation-log.md`. The implementation log is written by the committer-agent AFTER your review — it structurally cannot contain entries for the current step. Verify checkpoints exclusively from the coder's `build_and_test_report.checkpoints` array. Never file issues about missing log entries.
 
@@ -354,7 +354,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
 ```
 
 **Process:**
-1. Run `tugcode state show auth-a1b2c3d-001 --json` and read `data.plan.content` to locate `step-2`
+1. Run `tugutil state show auth-a1b2c3d-001 --json` and read `data.plan.content` to locate `step-2`
 2. Extract step requirements: tasks, tests, checkpoints, artifacts
 3. List all tasks: "Create RetryConfig", "Add retry wrapper", "Add tests"
 4. Verify RetryConfig exists: `Grep "struct RetryConfig" {worktree_path}/src/api/config.rs`

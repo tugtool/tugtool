@@ -6,7 +6,7 @@ allowed-tools: Bash, AskUserQuestion, Read
 
 ## Purpose
 
-Wraps the `tugcode merge` CLI command with a dry-run preview, user confirmation, and post-merge health checks. This is the final step in the `/tugplug:plan` → `/tugplug:implement` → `/tugplug:merge` flow.
+Wraps the `tugutil merge` CLI command with a dry-run preview, user confirmation, and post-merge health checks. This is the final step in the `/tugplug:plan` → `/tugplug:implement` → `/tugplug:merge` flow.
 
 The merge command auto-detects the mode based on whether the repository has an 'origin' remote and an open PR:
 - **Remote mode**: Has origin + open PR → squash-merge the PR via `gh pr merge`
@@ -34,7 +34,7 @@ If no plan path is provided, search for plans with `ls .tugtool/tugplan-*.md`. I
 Run the merge command in dry-run mode:
 
 ```bash
-tugcode merge <plan_path> --dry-run --json 2>&1
+tugutil merge <plan_path> --dry-run --json 2>&1
 ```
 
 Parse the JSON output. Key fields:
@@ -155,7 +155,7 @@ If user selects "Cancel", halt with: "Merge cancelled."
 Run the actual merge:
 
 ```bash
-tugcode merge <plan_path> --json 2>&1
+tugutil merge <plan_path> --json 2>&1
 ```
 
 Parse the JSON output. Key fields for the result:
@@ -177,14 +177,14 @@ If the command fails, report the error and suggest recovery.
 Run health checks **sequentially**, tolerating non-zero exit codes:
 
 ```bash
-tugcode doctor 2>&1 || true
+tugutil doctor 2>&1 || true
 ```
 
 ```bash
-tugcode worktree list 2>&1 || true
+tugutil worktree list 2>&1 || true
 ```
 
-**Important:** `tugcode doctor` exits non-zero when it finds issues, but those are informational warnings — the merge itself already succeeded. Never run these two commands in parallel; if doctor fails and kills the worktree list call, useful diagnostic output is lost. Run them sequentially, always appending `|| true` so neither blocks the flow.
+**Important:** `tugutil doctor` exits non-zero when it finds issues, but those are informational warnings — the merge itself already succeeded. Never run these two commands in parallel; if doctor fails and kills the worktree list call, useful diagnostic output is lost. Run them sequentially, always appending `|| true` so neither blocks the flow.
 
 ### 5. Post-Merge Dependency Installation
 
@@ -305,7 +305,7 @@ After archiving, the old plan path no longer exists on disk. Run state archive t
 preserve its entries in state.db with archived status:
 
 ```bash
-tugcode state archive <plan_id>
+tugutil state archive <plan_id>
 ```
 
 This transitions the plan to archived status and takes a content snapshot.
@@ -358,7 +358,7 @@ If step 3 fails, report clearly and suggest recovery. Do not retry automatically
 - **Local main diverged with conflicts** (`sync_state: diverged_conflict`): Local main has diverged from origin/main and the local commits conflict with the PR branch. The conflicting files are listed in `conflicting_files`. Resolve conflicts manually.
 
 **Non-blocking sync states** (proceed with warning):
-- **ahead_clean**: Local main has unpushed commits but a clean merge is possible. After the PR merges on GitHub, tugcode will attempt `--ff-only` first; if that fails, it will rebase local commits onto the result.
+- **ahead_clean**: Local main has unpushed commits but a clean merge is possible. After the PR merges on GitHub, tugutil will attempt `--ff-only` first; if that fails, it will rebase local commits onto the result.
 - **diverged_clean**: Local main has diverged from origin/main but a clean rebase is possible. Same recovery as above.
 
 ---

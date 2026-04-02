@@ -152,7 +152,7 @@ If drift exceeds thresholds, implementation halts. Therefore:
 **As your FIRST action**, fetch the plan content to understand the step requirements:
 
 ```bash
-tugcode state show {plan_id} --json
+tugutil state show {plan_id} --json
 ```
 
 Parse the JSON output and read `data.plan.content` for the full plan text. The step data (tasks, tests, checkpoints, artifacts, dependencies) is in the plan content at the specified step_anchor.

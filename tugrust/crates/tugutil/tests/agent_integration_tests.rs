@@ -358,10 +358,10 @@ fn test_conformance_documents_validation_workflow() {
     let path = agents_dir().join("conformance-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read conformance-agent");
 
-    // Conformance agent must document tugcode validate as its core tool
+    // Conformance agent must document tugutil validate as its core tool
     assert!(
-        content.contains("tugcode validate"),
-        "Conformance agent must document tugcode validate command"
+        content.contains("tugutil validate"),
+        "Conformance agent must document tugutil validate command"
     );
 }
 
@@ -370,12 +370,12 @@ fn test_conformance_documents_bash_restriction() {
     let path = agents_dir().join("conformance-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read conformance-agent");
 
-    // Conformance agent must document Bash restriction to only tugcode validate
+    // Conformance agent must document Bash restriction to only tugutil validate
     let lowercase_content = content.to_lowercase();
     assert!(
         (lowercase_content.contains("only") || lowercase_content.contains("restriction"))
-            && lowercase_content.contains("tugcode validate"),
-        "Conformance agent must document Bash tool restriction to tugcode validate only"
+            && lowercase_content.contains("tugutil validate"),
+        "Conformance agent must document Bash tool restriction to tugutil validate only"
     );
 }
 
@@ -477,10 +477,10 @@ fn test_critic_documents_bash_restriction() {
         "Critic must document Bash tool restriction"
     );
 
-    // Critic must NOT reference tugcode validate (that is conformance-agent's job)
+    // Critic must NOT reference tugutil validate (that is conformance-agent's job)
     assert!(
-        !content.contains("tugcode validate"),
-        "Critic must not reference tugcode validate (that is conformance-agent's job)"
+        !content.contains("tugutil validate"),
+        "Critic must not reference tugutil validate (that is conformance-agent's job)"
     );
 }
 
@@ -543,14 +543,14 @@ fn test_committer_has_bash_tool() {
 }
 
 #[test]
-fn test_committer_documents_tugcode_commit() {
+fn test_committer_documents_tugutil_commit() {
     let path = agents_dir().join("committer-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read committer-agent");
 
-    // Committer must document tugcode commit integration
+    // Committer must document tugutil commit integration
     assert!(
-        content.contains("tugcode commit"),
-        "Committer must document tugcode commit integration"
+        content.contains("tugutil commit"),
+        "Committer must document tugutil commit integration"
     );
 }
 

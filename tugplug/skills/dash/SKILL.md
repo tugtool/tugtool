@@ -8,8 +8,8 @@ hooks:
       hooks:
         - type: bash
           command: |
-            if ! echo "$BASH_COMMAND" | grep -qE '^tugcode\s'; then
-              echo "ERROR: Bash restricted to tugcode commands only in dash skill" >&2
+            if ! echo "$BASH_COMMAND" | grep -qE '^tugutil\s'; then
+              echo "ERROR: Bash restricted to tugutil commands only in dash skill" >&2
               exit 2
             fi
 ---
@@ -91,7 +91,7 @@ When a user provides an instruction for a dash that doesn't exist yet:
 
 1. Create the dash:
    ```bash
-   tugcode dash create <name> --description "<first 100 chars of instruction>" --json
+   tugutil dash create <name> --description "<first 100 chars of instruction>" --json
    ```
 
 2. Parse the JSON response. Key fields:
@@ -114,7 +114,7 @@ When a user provides an instruction for a dash that doesn't exist yet:
 
 5. Commit the round via stdin:
    ```bash
-   tugcode dash commit <name> --message "<truncate summary to 72 chars>" --json <<'EOF'
+   tugutil dash commit <name> --message "<truncate summary to 72 chars>" --json <<'EOF'
    {"instruction":"<user's instruction>","summary":"<agent summary>","files_created":[...],"files_modified":[...]}
    EOF
    ```
@@ -141,7 +141,7 @@ When a user provides an instruction for an existing active dash:
 
 1. Check if the dash exists:
    ```bash
-   tugcode dash show <name> --json
+   tugutil dash show <name> --json
    ```
 
 2. Parse the JSON response. Key fields:
@@ -173,7 +173,7 @@ When input is just `/tugplug:dash status`:
 
 1. List all active dashes:
    ```bash
-   tugcode dash list --json
+   tugutil dash list --json
    ```
 
 2. Parse the JSON response. Each dash has:
@@ -202,7 +202,7 @@ When input is `/tugplug:dash <name> status`:
 
 1. Show dash details:
    ```bash
-   tugcode dash show <name> --json
+   tugutil dash show <name> --json
    ```
 
 2. Parse the JSON response. Key fields:
@@ -235,7 +235,7 @@ When input is `/tugplug:dash <name> join [custom message...]`:
 
 1. Show dash details for context:
    ```bash
-   tugcode dash show <name> --json
+   tugutil dash show <name> --json
    ```
 
 2. Ask for confirmation:
@@ -257,7 +257,7 @@ When input is `/tugplug:dash <name> join [custom message...]`:
 
 4. Execute join:
    ```bash
-   tugcode dash join <name> --message "<message or description>" --json
+   tugutil dash join <name> --message "<message or description>" --json
    ```
 
    Where `<message>` is:
@@ -311,7 +311,7 @@ When input is `/tugplug:dash <name> release`:
 
 3. Execute release:
    ```bash
-   tugcode dash release <name> --json
+   tugutil dash release <name> --json
    ```
 
 4. Parse the JSON response (JsonResponse envelope). Key fields:
@@ -417,11 +417,11 @@ When an agent returns `build_passed: false` or `tests_passed: false`, report it 
 
 1. **Parse input first**: Determine the action (new/continue, status, join, release) before making any tool calls.
 
-2. **Always use --json flag**: All `tugcode dash` commands must use `--json` for reliable parsing.
+2. **Always use --json flag**: All `tugutil dash` commands must use `--json` for reliable parsing.
 
 3. **Track agent task IDs**: Maintain a session map of dash names to task IDs for efficient resume.
 
-4. **Pipe round metadata via stdin**: Use heredoc syntax to pass JSON to `tugcode dash commit` per the design.
+4. **Pipe round metadata via stdin**: Use heredoc syntax to pass JSON to `tugutil dash commit` per the design.
 
 5. **Confirm destructive actions**: Always use `AskUserQuestion` before join or release.
 
@@ -431,9 +431,9 @@ When an agent returns `build_passed: false` or `tests_passed: false`, report it 
 
 8. **Use truncated summary for commit message**: Truncate agent summary to 72 chars for the `--message` flag. The full summary goes in the round metadata JSON.
 
-9. **No direct file/git operations**: All work goes through `tugcode dash` commands and the dash-agent. You do NOT read, write, edit files, or run git commands directly.
+9. **No direct file/git operations**: All work goes through `tugutil dash` commands and the dash-agent. You do NOT read, write, edit files, or run git commands directly.
 
-10. **Bash restriction**: Only `tugcode` commands are allowed. The pre-hook enforces this.
+10. **Bash restriction**: Only `tugutil` commands are allowed. The pre-hook enforces this.
 
 ---
 
@@ -444,9 +444,9 @@ When an agent returns `build_passed: false` or `tests_passed: false`, report it 
 Input: `/tugplug:dash login-page add a login form`
 
 Actions:
-1. `tugcode dash create login-page --description "add a login form" --json`
+1. `tugutil dash create login-page --description "add a login form" --json`
 2. Spawn dash-agent with worktree path and instruction
-3. `tugcode dash commit login-page --message "Add a login form" --json <<'EOF' ...`
+3. `tugutil dash commit login-page --message "Add a login form" --json <<'EOF' ...`
 4. Report: Summary, files, commit hash
 
 ### Example 2: Continue Dash
@@ -454,9 +454,9 @@ Actions:
 Input: `/tugplug:dash login-page add tests for the form`
 
 Actions:
-1. `tugcode dash show login-page --json`
+1. `tugutil dash show login-page --json`
 2. Resume dash-agent (or spawn if new session)
-3. `tugcode dash commit login-page --message "Add tests for the form" --json <<'EOF' ...`
+3. `tugutil dash commit login-page --message "Add tests for the form" --json <<'EOF' ...`
 4. Report: Summary, files, commit hash
 
 ### Example 3: Status (All)
@@ -464,7 +464,7 @@ Actions:
 Input: `/tugplug:dash status`
 
 Actions:
-1. `tugcode dash list --json`
+1. `tugutil dash list --json`
 2. Report: List of active dashes with details
 
 ### Example 4: Status (Single)
@@ -472,7 +472,7 @@ Actions:
 Input: `/tugplug:dash login-page status`
 
 Actions:
-1. `tugcode dash show login-page --json`
+1. `tugutil dash show login-page --json`
 2. Report: Dash details, rounds, uncommitted changes
 
 ### Example 5: Join
@@ -480,9 +480,9 @@ Actions:
 Input: `/tugplug:dash login-page join`
 
 Actions:
-1. `tugcode dash show login-page --json`
+1. `tugutil dash show login-page --json`
 2. Confirm with user
-3. `tugcode dash join login-page --message "<description>" --json`
+3. `tugutil dash join login-page --message "<description>" --json`
 4. Report: Squash commit, cleanup status
 
 ### Example 6: Join with Custom Message
@@ -490,9 +490,9 @@ Actions:
 Input: `/tugplug:dash login-page join implement login form with validation`
 
 Actions:
-1. `tugcode dash show login-page --json`
+1. `tugutil dash show login-page --json`
 2. Confirm with user
-3. `tugcode dash join login-page --message "implement login form with validation" --json`
+3. `tugutil dash join login-page --message "implement login form with validation" --json`
 4. Report: Squash commit, cleanup status
 
 ### Example 7: Release
@@ -501,11 +501,11 @@ Input: `/tugplug:dash login-page release`
 
 Actions:
 1. Confirm with user
-2. `tugcode dash release login-page --json`
+2. `tugutil dash release login-page --json`
 3. Report: Cleanup status
 
 ---
 
 ## Summary
 
-You orchestrate the dash workflow by parsing input, calling `tugcode dash` commands, spawning/resuming the dash-agent via Task, and reporting results. You maintain agent task IDs for efficient resume within a session. All git and file operations go through the CLI and agent — you are a pure orchestrator.
+You orchestrate the dash workflow by parsing input, calling `tugutil dash` commands, spawning/resuming the dash-agent via Task, and reporting results. You maintain agent task IDs for efficient resume within a session. All git and file operations go through the CLI and agent — you are a pure orchestrator.

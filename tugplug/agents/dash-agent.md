@@ -171,7 +171,7 @@ Git worktrees do not share `node_modules` or other dependency directories with t
 
 1. **Stay within the worktree**: All file operations must be within `{worktree_path}`. Never create files in `/tmp` or any location outside the worktree. The only exception is reading global system files (e.g., documentation).
 
-2. **Never commit**: Do NOT run `git commit`. The dash skill handles all commits via `tugcode dash commit`. You may run `git status`, `git log`, and `git diff` for information.
+2. **Never commit**: Do NOT run `git commit`. The dash skill handles all commits via `tugutil dash commit`. You may run `git status`, `git log`, and `git diff` for information.
 
 3. **Use absolute paths for operations**: Always construct full paths as `{worktree_path}/{relative_path}` when using Read, Write, Edit, Bash tools.
 

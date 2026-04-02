@@ -179,7 +179,7 @@ Return structured JSON:
 **As your FIRST action**, fetch the plan content to understand the step requirements:
 
 ```bash
-tugcode state show {plan_id} --json
+tugutil state show {plan_id} --json
 ```
 
 Parse the JSON output and read `data.plan.content` for the full plan text. The architect's strategy will be passed to you via context from previous agent calls.
@@ -261,7 +261,7 @@ If the project has a linter configured, run it. Record in `build_and_test_report
 
 **5d. Checkpoints:**
 
-Using the plan content fetched via `tugcode state show {plan_id} --json`, locate `{step_anchor}`. Extract any commands under the `**Checkpoint:**` heading. Run each one:
+Using the plan content fetched via `tugutil state show {plan_id} --json`, locate `{step_anchor}`. Extract any commands under the `**Checkpoint:**` heading. Run each one:
 
 ```bash
 cd {worktree_path} && <checkpoint_command>

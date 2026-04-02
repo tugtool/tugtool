@@ -147,7 +147,7 @@ Capture each command's exit code and the last ~20 lines of output. Store in `bui
 Fetch the plan content:
 
 ```bash
-tugcode state show {plan_id} --json
+tugutil state show {plan_id} --json
 ```
 
 Read `data.plan.content` and locate the `#exit-criteria` section (typically under `### Phase Exit Criteria ("Done means...")`).
