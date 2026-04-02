@@ -111,12 +111,12 @@ This is the template for Tide's shell side: instead of parsing a byte stream tha
 │  │    Three-Tier Dispatch      │                         │
 │  │                             │                         │
 │  │  Surface built-in → handle  │                         │
-│  │  Claude Code → tugtalk      │                         │
+│  │  Claude Code → tugcode       │                         │
 │  │  Shell → tugshell           │                         │
 │  └──┬──────────┬───────────────┘                         │
 │     │          │                                         │
 │  ┌──▼────┐  ┌──▼──────────────────┐                      │
-│  │tugtalk│  │tugshell             │                      │
+│  │tugcode│  │tugshell             │                      │
 │  │       │  │                     │                      │
 │  │stream │  │hidden pty + hooks   │                      │
 │  │json   │  │command adapters     │                      │
@@ -194,7 +194,7 @@ These are the "UI Must Build" items from tug-conversation.md (U9-U11, C1-C15), r
 
 ### Tier 2: Claude Code Pass-Through
 
-Routed to Claude Code via tugtalk/tugcast stream-json protocol. Full event stream returns.
+Routed to Claude Code via tugcode/tugcast stream-json protocol. Full event stream returns.
 
 - Natural language prompts (`> fix the bug in...`)
 - Slash commands (`> /plan`, `> /implement`, `> /compact`)
@@ -215,7 +215,7 @@ Routed to bash/zsh via tugshell. Command adapters produce structured output.
 
 ## The Shell Bridge: Tugshell
 
-Tugshell is the analog of tugtalk. Tugtalk bridges Claude Code's stream-json to tugcast. Tugshell bridges bash/zsh to tugcast.
+Tugshell is the analog of tugcode. Tugcode bridges Claude Code's stream-json to tugcast. Tugshell bridges bash/zsh to tugcast.
 
 ### Layer 1: Shell Process Management
 
@@ -350,23 +350,69 @@ Available via the separate terminal card in tugdeck. Not part of Tide's unified 
 
 ---
 
-## Tugcast Integration
+## Tugcast: The Multiplexer
 
-Tugcast already multiplexes feeds over one WebSocket with binary framing. Tide adds shell feeds:
+### One pipe, one multiplexer, many backends
 
-| FeedId | Feed | Direction | Status |
-|--------|------|-----------|--------|
-| 0x00 | TerminalOutput | server → client | Existing (for terminal card) |
-| 0x10 | Filesystem | server → client | Existing |
-| 0x20 | Git | server → client | Existing |
-| 0x30-0x33 | Stats | server → client | Existing |
-| 0x40 | CodeOutput | server → client | Existing |
-| 0x41 | CodeInput | client → server | Existing |
-| **0x50** | **ShellOutput** | **server → client** | **New — shell command events** |
-| **0x51** | **ShellInput** | **client → server** | **New — commands to shell** |
-| 0x60 | TugFeed | server → client | Planned (tug-feed.md) |
+There is one WebSocket connection between tugdeck and tugcast. Every frame, in both directions, flows over that single connection. FeedIds are routing labels inside the pipe — not separate connections. This is the same pattern as HTTP/2 streams over a single TCP connection.
 
-ShellOutput carries the same JSON event types as CodeOutput — typed, structured, renderable. The graphical surface treats them as peers in the unified output stream.
+```
+                    ONE WebSocket (bidirectional)
+                    ════════════════════════════
+tugdeck ◄──────────────────────────────────────────────► tugcast
+                    
+        Outbound frames (tugdeck → tugcast):
+          [0x41] CodeInput  → routed to tugcode
+          [0x51] ShellInput → routed to tugshell
+          
+        Inbound frames (tugcast → tugdeck):
+          [0x40] CodeOutput  ← from tugcode
+          [0x50] ShellOutput ← from tugshell
+          [0x10] Filesystem  ← from file watcher
+          [0x20] Git         ← from git watcher
+          [0x30] Stats       ← from stats collector
+          [0x60] TugFeed     ← from feed capture
+          [0xFF] Heartbeat   ← from tugcast
+```
+
+Tugcast is the single point of contact for tugdeck. Behind it, tugcast manages N backend processes. Each backend is a **bridge** — a process that speaks a service-specific protocol on one side and emits/receives typed JSON events via tugcast on the other. Bridges have independent lifecycles and failure modes: if Claude Code crashes, the shell keeps working; if the shell hangs, Claude Code still responds.
+
+### Bridge naming convention
+
+Each bridge is named `tug{suffix}` where the suffix identifies the service it bridges to. The bridge speaks the service's native protocol on one side and emits/receives typed JSON events via tugcast on the other.
+
+| Bridge | Service | Protocol | FeedIds |
+|--------|---------|----------|---------|
+| **tugcode** (currently tugtalk — rename in Phase T0) | Claude Code | stream-json over stdio | 0x40/0x41 |
+| **tugshell** | bash/zsh | hidden pty + shell hooks | 0x50/0x51 |
+| *(future)* | Another LLM, service, or tool | TBD | next available pair |
+
+### Feed ID table
+
+| FeedId | Feed | Direction | Backend | Status |
+|--------|------|-----------|---------|--------|
+| 0x00 | TerminalOutput | server → client | tmux (terminal card) | Existing |
+| 0x10 | Filesystem | server → client | file watcher | Existing |
+| 0x20 | Git | server → client | git watcher | Existing |
+| 0x30-0x33 | Stats | server → client | stats collector | Existing |
+| 0x40 | CodeOutput | server → client | tugcode | Existing |
+| 0x41 | CodeInput | client → server | tugcode | Existing |
+| **0x50** | **ShellOutput** | **server → client** | **tugshell** | **New** |
+| **0x51** | **ShellInput** | **client → server** | **tugshell** | **New** |
+| 0x60 | TugFeed | server → client | feed capture | Planned |
+
+### Extensibility
+
+The FeedId namespace is an open byte range (0x00-0xFF). Adding a new backend service means:
+
+1. Write a `tug{service}` bridge process that speaks the service's protocol and emits typed JSON events
+2. Assign the next available FeedId pair
+3. Register in tugcast's router
+4. Tugdeck starts rendering events from the new FeedId — using existing block components or new ones if the service has unique event types
+
+Nothing else changes. No tugcast refactoring, no protocol changes, no tugdeck rewiring. This is what makes the architecture flexible enough to accommodate a new LLM provider (Gemini, a future model), a new developer tool, or a service that doesn't exist today. The protocol contract — binary framing with FeedId routing, typed JSON payloads — is the stable layer. What's behind each FeedId can change independently.
+
+**Critical design constraint:** Tugcast must route opaquely. It forwards frames by FeedId without interpreting the JSON payloads. Event type semantics live in tugdeck and the bridge processes, not in the multiplexer. If tugcast needs to understand payload contents to route correctly, the abstraction is leaking.
 
 ---
 
@@ -521,6 +567,9 @@ Phase 3A.5: Region Model + API           — DONE
 Phase 3A.6: SmartScroll                  — DONE
 Phase 3A.7: SmartScroll Hardening        — DONE
 
+─── TIDE: FOUNDATION ──────────────────────────────────────
+Phase T0: Naming Cleanup                 — rename binaries, crates, directories for Tide
+
 ─── TIDE: RENDERING ───────────────────────────────────────
 Phase T1: Content Block Types            — markdown, code, thinking, tool use, monospace
 Phase T2: Shell Command Blocks           — git, cargo, file listing, build output renderers
@@ -560,7 +609,7 @@ Full exploration journals: [transport-exploration.md](transport-exploration.md) 
 
 #### Phase 1: Transport Exploration (DONE)
 
-35 tests probing Claude Code's `stream-json` protocol via `tugtalk/probe.ts`. Key discoveries that directly inform Tide's Claude Code adapter:
+35 tests probing Claude Code's `stream-json` protocol via probe scripts (currently in `tugtalk/`, moving to `tugcode-bridge/` in Phase T0). Key discoveries that directly inform Tide's Claude Code adapter:
 
 - **Streaming model**: `assistant_text` partials are **deltas** (not accumulated). Final `complete` event has full text. UI must accumulate.
 - **Thinking**: `thinking_text` is a separate event type arriving before `assistant_text`. Same delta model. Same `msg_id`.
@@ -627,7 +676,7 @@ Seven fixes to make the transport production-ready. All committed:
 
 #### Phase 2b: WebSocket Verification (DONE)
 
-Probe (`tugtalk/probe-websocket.ts`) verified the full WebSocket path through tugcast. See [ws-verification.md](ws-verification.md).
+Probe (currently `tugtalk/probe-websocket.ts`, moving in Phase T0) verified the full WebSocket path through tugcast. See [ws-verification.md](ws-verification.md).
 
 **Wire protocol**: All WebSocket messages are binary frames:
 ```
@@ -681,6 +730,82 @@ See [tug-conversation.md](tug-conversation.md) for detailed writeups. Summary of
 - pulldown-cmark WASM — synchronous lex and parse
 - `SmartScroll` — scroll management with follow-bottom
 - `RegionMap` — ordered keyed content for conversation messages
+
+---
+
+### Phase T0: Naming Cleanup {#naming-cleanup}
+
+**Goal:** Rename binaries, crates, and directories to align with the Tide architecture. The current names predate the unified surface vision and create confusion — most critically, `tugcode` (the CLI utility) occupies the name that should belong to the Claude Code bridge.
+
+**Naming convention:** `tug{suffix}` where the suffix names the facility. Four-letter suffixes are the aspiration for primary binaries (`tugcast`, `tugdeck`, `tugcode`, `tugutil`, `tugbank`); longer suffixes are acceptable when clarity demands it (`tugshell`, `tugplug`).
+
+**Rename table:**
+
+| Current | New | Type | What changes |
+|---------|-----|------|-------------|
+| `tugcode` (Rust CLI) | **tugutil** | Binary + crate | Crate `tugcode/crates/tugcode/` → `tugrust/crates/tugutil/`. Cargo.toml `name`, `[[bin]]` target, all `use tugcode::` imports. Symlinks in `~/.local/bin/`. |
+| `tugtool-core` (Rust lib) | **tugutil-core** | Library crate | Crate `tugcode/crates/tugtool-core/` → `tugrust/crates/tugutil-core/`. Cargo.toml `name`, all `use tugtool_core::` imports across workspace. |
+| `tugtalk` (TypeScript) | **tugcode** | Binary + package | Directory `tugtalk/` → `tugcode-bridge/` (to avoid collision with workspace dir). `package.json` name. `bun build --compile` output name. Justfile build recipe. tugapp binary copy. |
+| `tugtool` (Rust launcher) | **`tugutil serve`** | Subcommand | Merge launcher logic into tugutil as `serve` subcommand. Delete `tugcode/crates/tugtool/` crate. Remove standalone binary from justfile and tugapp bundle. |
+| `tugcode/` (workspace dir) | **tugrust/** | Directory | Rename workspace directory. Update `Cargo.toml` workspace path, justfile paths, tugapp build scripts, CI config. |
+
+**What stays unchanged:**
+- `tugcast`, `tugcast-core` — the WebSocket multiplexer
+- `tugdeck` — the browser frontend
+- `tugbank`, `tugbank-core` — the defaults database
+- `tugrelaunch` — macOS app relaunch helper (internal, users never see it)
+- `tugapp` — macOS app (product name: "Tug")
+- `tugplug` — Claude Code plugin/agents
+- `tuglaws` — design docs
+- `tugmark-wasm` — WASM markdown module
+- `tugshell` — shell bridge (not yet built, but name is decided)
+
+**Scope:** ~400 occurrences across ~60 non-archive files. The heaviest areas are tugplug (174 occurrences across 20 files — every skill and agent references `tugcode` CLI commands), the Rust workspace, tugapp, CI, and documentation.
+
+**Work:**
+
+1. **Rename workspace directory** `tugcode/` → `tugrust/`. Update every path reference: `Cargo.toml` workspace members, justfile recipes, tugapp build scripts (`build-app.sh`, Xcode project), CI workflows (`.github/workflows/`), CLAUDE.md repository structure table, `.gitignore` if applicable.
+
+2. **Rename `tugcode` crate → `tugutil`**. In `tugrust/crates/tugutil/`: update `Cargo.toml` (package name, bin name), rename `src/main.rs` CLI struct, update the `--help` description to "Tug utility — project management, state tracking, and developer tools". Update all workspace crates that depend on it. Update symlink in justfile `build` recipe.
+
+3. **Rename `tugtool-core` → `tugutil-core`**. In `tugrust/crates/tugutil-core/`: update `Cargo.toml` package name. Find and replace all `use tugtool_core::` → `use tugutil_core::` and all `tugtool-core` dependency declarations across the workspace.
+
+4. **Rename `tugtalk` → `tugcode`**. Rename directory `tugtalk/` → `tugcode-bridge/` (the directory can't be `tugcode/` since that would collide with the old workspace dir name in git history, and the binary itself is what carries the `tugcode` name). Update `package.json` name, `bun build --compile` output, justfile build recipe, tugapp binary copy path, tugcast agent bridge spawn path.
+
+5. **Fold `tugtool` launcher into `tugutil serve`**. Move the launcher logic (start tugcast, wait for port, open browser) from `tugrust/crates/tugtool/src/main.rs` into a `serve` subcommand in tugutil. Delete the `tugtool` crate from the workspace. Remove from justfile build recipe and tugapp bundle. Update justfile `dev` and `dev-watch` recipes to use `tugutil serve`.
+
+6. **Update tugplug skills and agents** (174 occurrences, 20 files). Every reference to `tugcode` CLI commands in skill SKILL.md files and agent .md files must become `tugutil`. This includes:
+   - `tugplug/skills/dash/SKILL.md` — 26 occurrences: `tugcode dash` → `tugutil dash`
+   - `tugplug/skills/implement/SKILL.md` — 41 occurrences: `tugcode worktree`, `tugcode state` → `tugutil worktree`, `tugutil state`
+   - `tugplug/skills/merge/SKILL.md` — 19 occurrences
+   - `tugplug/skills/plan/SKILL.md` — 4 occurrences
+   - All 12 agent files — references to `tugcode` subcommands
+   - `tugplug/hooks/ensure-init.sh` — 4 occurrences
+   - `tugplug/hooks/auto-approve-tug.sh` — 1 occurrence
+   - `tugplug/CLAUDE.md` — 1 occurrence
+   - `tugplug/.claude-plugin/plugin.json` — 1 occurrence
+
+7. **Update tugapp**. `Sources/AppDelegate.swift` (8 occurrences), `Sources/ProcessManager.swift` (2), `Sources/TugConfig.swift` (4), `Info.plist` (1), `Tug.xcodeproj/project.pbxproj` (2). Binary names in process spawn code, bundle copy paths.
+
+8. **Update tugdeck**. `src/main.tsx` (1), `vite.config.ts` (2), archived card reference (1).
+
+9. **Update project-level files**. `CLAUDE.md` (6), `.tugtool/config.toml` (2), `README.md` (1), `.claude-plugin/plugin.json` (1).
+
+10. **Update CI**. `.github/workflows/ci.yml` (5), `.github/workflows/nightly.yml` (2).
+
+11. **Do NOT update archives**. Files in `.tugtool/archive/` (~1,250 occurrences) are historical records. They reference the names that were current when the work was done. Leave them as-is.
+
+12. **Verify everything builds and runs**. `just build` succeeds, `just test` passes, `just app` produces a working Tug.app with the renamed binaries, `just dev` launches correctly via `tugutil serve`. Run a `/tugplug:dash` and `/tugplug:implement` smoke test to verify skill SKILL.md references work.
+
+**Exit criteria:**
+- `tugutil` binary exists with all current `tugcode` subcommands plus `serve`
+- `tugcode` binary exists and is the Claude Code bridge (formerly tugtalk)
+- No binary named `tugtool` or `tugtalk` exists
+- Workspace directory is `tugrust/`
+- All tugplug skills and agents reference `tugutil` (not `tugcode`) for CLI commands
+- `just build && just test && just app` all succeed
+- `/tugplug:dash` and `/tugplug:implement` run without "command not found" errors
+- No stale references to old names in non-archive source code, config, or docs
 
 ---
 
@@ -780,7 +905,7 @@ History:
 
 ### Phase T4: Shell Bridge (Tugshell) {#shell-bridge}
 
-**Goal:** Build tugshell — the process that bridges bash/zsh to tugcast, analogous to tugtalk for Claude Code.
+**Goal:** Build tugshell — the process that bridges bash/zsh to tugcast, analogous to tugcode for Claude Code.
 
 **Work:**
 1. Shell process spawning with hidden pty, login interactive mode (`zsh -li`)
@@ -992,7 +1117,7 @@ See [tug-feed.md](tug-feed.md) for full architecture. These phases add structure
 |-------|------|-------|
 | F1: Hook Capture | Agent lifecycle → `raw-events.jsonl` | Shell scripts + hooks.json |
 | F2: Feed Correlation | Semantic enrichment → `feed.jsonl` | Correlation logic |
-| F3: Feed CLI + Tugcast | `tugcode feed` + browser delivery | Rust CLI + tugcast feed (0x60) |
+| F3: Feed CLI + Tugcast | `tugutil feed` + browser delivery | Rust CLI + tugcast feed (0x60) |
 | F4: Agent-Internal Events | File/command detail within agents | Agent frontmatter hooks |
 | F5: Custom Block Renderers | Rich agent output UI in Tide surface | React components |
 
@@ -1116,7 +1241,7 @@ Every forward-looking item from tug-conversation.md is accounted for in a Tide p
 
 6. **Mobile/tablet**: Is the prefix routing model usable on mobile where typing special characters is harder?
 
-7. **Tugcast vs. local for the shell bridge**: Does tugshell go through tugcast (WebSocket feeds 0x50/0x51), or should the native app (tugapp) spawn the pty directly? Tugcast adds a network hop and serialization overhead. For a local shell, direct pty may be lower latency. Claude Code goes through tugcast because tugtalk is the bridge and tugcast manages the WebSocket multiplexing. But the shell use case is different — it's latency-sensitive (users expect instant command output) and always local. The answer may be: tugcast for the web surface (tugdeck in browser), direct pty for the native app (tugapp). This would mean two tugshell implementations or an abstraction layer.
+7. ~~**Tugcast vs. local for the shell bridge**~~: **Resolved — tugcast for everything, always.** One architecture, one implementation of tugshell. The WebSocket connection between tugdeck and tugcast is already network-transparent — tugdeck doesn't know or care whether tugcast is on localhost or across the internet. If tugshell goes through tugcast the same way tugtalk does, then remote use comes for free: tugcast, tugtalk, and tugshell run on a remote machine (or cloud VM, or dev container); tugdeck in the browser connects over the network; everything works the same. The latency concern is overstated — the localhost hop (tugshell → tugcast → WebSocket → tugdeck) adds microseconds on top of commands that take tens of milliseconds. Interactive typing and tab completion are handled by the surface itself, not round-tripped through tugshell.
 
 ---
 
@@ -1170,6 +1295,9 @@ Shell hooks (preexec/precmd) must coexist with existing shell frameworks: oh-my-
 6. **Markdown performance** — pulldown-cmark WASM: 1MB in 14ms. Workers removed. (Phase 3A.4)
 7. **Scroll management** — SmartScroll: six-phase state machine, follow-bottom, all input methods. (Phase 3A.6/3A.7)
 8. **Project codename** — "Tide" for the unified command surface vision. Tugdeck remains the rendering implementation. Rejected alternatives: "tug-conversation" (too narrow — was right when scope was just Claude Code chat), "single surface" (describes the concept, not the thing), "graphical terminal" (contradictory — the whole point is shedding the terminal), "tugdeck" (it's a bigger concept, keep them separate — Tide is the vision, tugdeck is the implementation), "helm" (overloaded — Kubernetes), "tug-bridge" (confuses with software bridge pattern).
+9. **Tugcast for everything** — All backends go through tugcast. One architecture, one WebSocket. Network-transparent by default, so remote use comes for free. Localhost latency overhead is negligible.
+10. **Naming cleanup** — Rename plan finalized. tugtalk → **tugcode** (Claude Code bridge). tugcode (CLI) → **tugutil** (all-purpose utility). tugtool (launcher) → **`tugutil serve`** subcommand. tugtool-core → **tugutil-core**. Workspace directory `tugcode/` → **`tugrust/`**. Convention: `tug{suffix}` where suffix names the facility. Phase T0 tracks the work.
+11. **Tugcast routes opaquely** — Tugcast forwards frames by FeedId without interpreting JSON payloads. Event type semantics live in tugdeck and the bridge processes, not in the multiplexer. This is what makes the architecture extensible — adding a new service is a new bridge + new FeedId pair, not a tugcast change.
 
 ---
 
@@ -1177,14 +1305,16 @@ Shell hooks (preexec/precmd) must coexist with existing shell frameworks: oh-my-
 
 | Component | Role in Tide | Status |
 |-----------|-------------|--------|
-| **tugcast** | WebSocket server, binary framing, feed multiplexing | Existing, needs new FeedIds |
-| **tugtalk** | Claude Code bridge (stream-json ↔ tugcast) | Existing, proven |
+| **tugcast** | WebSocket multiplexer, binary framing, opaque feed routing | Existing, needs new FeedIds |
+| **tugcode** (currently tugtalk) | Claude Code bridge (stream-json ↔ tugcast) | Existing, proven. Rename in Phase T0. |
 | **tugshell** | Shell bridge (bash/zsh ↔ tugcast) | **New** |
+| **tugutil** (currently tugcode CLI) | All-purpose utility: state, worktree, validate, serve | Existing. Rename in Phase T0. Absorbs tugtool launcher. |
 | **tugdeck** | Graphical rendering surface | Existing, needs unified output stream |
-| **tugapp** | macOS app hosting tugdeck | Existing |
+| **tugapp** | macOS app (product name: "Tug") | Existing |
 | **tug-feed** | Agent progress event layer | Planned, integrates with Tide |
 | **tugplug** | Claude Code plugin (skills, agents) | Existing, unchanged |
-| **tugcode** | Rust CLI (state, bank, worktree) | Existing, unchanged |
+| **tugbank** | SQLite defaults database + CLI | Existing, unchanged |
+| **tugrust/** (currently tugcode/) | Rust workspace directory containing all crates | Existing. Rename in Phase T0. |
 
 ---
 
