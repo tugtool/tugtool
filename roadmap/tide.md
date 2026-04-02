@@ -857,12 +857,13 @@ See [tug-conversation.md](tug-conversation.md) for detailed writeups. Summary of
     - `just build` — all binaries compile
     - `just test` — all tests pass
     - `just app` — Tug.app bundles correctly with renamed binaries
-    - `just dev` — launches via `tugutil serve`
+    - `just dev` — launches via `tugexec`
     - Grep entire repo (excluding archives) for stale `tugtalk`, stale `tugtool` (as binary name, not repo name), and `tugcode` references that should be `tugutil`
     - Smoke test: `/tugplug:dash` and `/tugplug:implement` to verify skills reference the right binary
 
 **Exit criteria:**
-- `tugutil` binary exists with all current `tugcode` subcommands plus `serve`
+- `tugutil` binary exists with all current `tugcode` subcommands
+- `tugexec` binary exists, replacing `tugtool` to launch
 - `tugcode` binary exists and is the Claude Code bridge (formerly tugtalk)
 - No binary named `tugtool` or `tugtalk` exists
 - Workspace directory is `tugrust/`
