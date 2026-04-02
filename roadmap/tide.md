@@ -1081,25 +1081,25 @@ The fixes have dependencies. Organized into dashes:
 8. **P11** (generalized bootstrap) — per-backend bootstrap, uses P12 flags
 9. **P5** (multi-client input guard) — single-writer-per-FeedId enforcement
 
-**Dash 3 — Polish:**
+**Dash 3 — Polish (all deferred):**
 
-10. **P9** (compression) — `permessage-deflate` WebSocket option
+10. ~~**P9** (compression)~~ — deferred; `permessage-deflate` not available in tungstenite 0.28/axum 0.8 stack. Revisit when remote use is on the horizon or if tungstenite restores the feature.
 11. ~~**P8** (remote auth)~~ — deferred until remote use is on the horizon
 12. ~~**P10** (subscription filtering)~~ — deferred until remote use is on the horizon
 
 **Exit criteria:**
-- Wire format is v1: `[FeedId:1][flags:1][length:4][payload:N]`, documented
-- `FeedId` is an open `u8` newtype; unknown bytes don't produce errors
-- Protocol handshake on WebSocket connect; version and capabilities negotiated
-- Router dispatches input frames via dynamic map lookup, not hardcoded fields
-- Adding a new backend is: register channel pair by FeedId, spawn bridge process. No router code changes.
-- CodeOutput lag triggers replay from ring buffer, not silent event loss
-- Multi-client input guarded: first writer claims, others get error
-- Max payload raised to 16 MB
-- FeedId slot assignments corrected (Defaults=0x50, Shell=0x60/0x61, TugFeed=0x70)
-- `just build && just test` pass
-- Existing tugdeck functionality unaffected (terminal, git, filesystem, stats, code feeds all work)
-- P8 (remote auth) and P10 (subscription filtering) deferred — not needed for local Tide development path
+- [x] Wire format is v1: `[FeedId:1][flags:1][length:4][payload:N]`, documented
+- [x] `FeedId` is an open `u8` newtype; unknown bytes don't produce errors
+- [x] Protocol handshake on WebSocket connect; version and capabilities negotiated
+- [x] Router dispatches input frames via dynamic map lookup, not hardcoded fields
+- [x] Adding a new backend is: register channel pair by FeedId, spawn bridge process. No router code changes.
+- [x] CodeOutput lag triggers replay from ring buffer, not silent event loss
+- [x] Multi-client input guarded: first writer claims, others get error
+- [x] Max payload raised to 16 MB
+- [x] FeedId slot assignments corrected (Defaults=0x50, Shell=0x60/0x61, TugFeed=0x70)
+- [x] `cargo build && cargo nextest run` pass (912 Rust tests, 1782 TypeScript tests)
+- [ ] End-to-end verification pending (tugdeck + tugcast live session)
+- P8 (remote auth), P9 (compression), and P10 (subscription filtering) deferred — not needed for local Tide development path
 
 ---
 
