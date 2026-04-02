@@ -471,6 +471,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
         const update = engine.blockWindow.update(scrollTop);
         applySpacers(update.topSpacerHeight, update.bottomSpacerHeight);
+        // Safety net: if following bottom, re-slam scrollTop so any height
+        // corrections from ResizeObserver don't leave us short of the bottom [D03].
+        if (smartScrollRef.current?.isFollowingBottom && scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = Number.MAX_SAFE_INTEGER;
+        }
       }
     });
     resizeObserverRef.current = observer;
@@ -623,23 +628,24 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   }
 
   // ---- Region-scoped incremental tail update ----
-  // Lexes only the tail region's text instead of the full document, then splices
-  // the resulting blocks into the engine arrays. Used when the updated key is
-  // the last region so the prefix of blocks is stable and only the tail changes.
+  // Lexes only the updated region's text, then splices the resulting blocks into
+  // the engine arrays. For the tail region the prefix of blocks is stable; for
+  // non-tail regions shiftFrom() is used to shift surviving blocks in place.
   // Implements Spec S01 (incrementalTailUpdate procedure) and Spec S02 (on-the-fly
   // byte offset computation).
   function incrementalTailUpdate(engine: MarkdownEngineState, key: string, _fullText: string) {
     const range = engine.regionBlockRanges.get(key);
     if (range === undefined) {
-      // No entry yet — fall back to full rebuild.
-      lexParseAndRender(engine, engine.regionMap.text);
+      // No range entry — engine state is inconsistent (programming error). Bail out.
+      console.warn(`incrementalTailUpdate: no regionBlockRanges entry for key "${key}"; skipping update`);
       return;
     }
 
     const regionText = engine.regionMap.getRegionText(key) ?? "";
     const regionRange = engine.regionMap.regionRange(key);
     if (!regionRange) {
-      lexParseAndRender(engine, engine.regionMap.text);
+      // No regionRange — engine state is inconsistent (programming error). Bail out.
+      console.warn(`incrementalTailUpdate: no regionRange for key "${key}"; skipping update`);
       return;
     }
     const regionCharStart = regionRange.start;
@@ -672,6 +678,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     // We use the stored types array from regionBlockRanges (D02 lazy fence propagation).
     const oldTypes: string[] = range.types.slice();
 
+    // Determine if this is the last region (tail). Non-tail regions require
+    // shiftFrom() and key remapping when block count changes.
+    const regionKeys = engine.regionMap.keys;
+    const isLast = regionKeys[regionKeys.length - 1] === key;
+
     // Update changed existing blocks (S..S+min(P,Q)-1)
     for (let i = 0; i < Math.min(P, Q); i++) {
       const globalIdx = S + i;
@@ -691,36 +702,150 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       }
     }
 
-    // Handle block count decrease (Q < P): remove excess tail blocks
+    // Handle block count change (Q != P)
     if (Q < P) {
-      for (let i = Q; i < P; i++) {
-        const globalIdx = S + i;
-        removeBlockNode(engine, globalIdx);
-        engine.htmlCache.delete(globalIdx);
+      if (isLast) {
+        // Tail shrink: remove excess tail blocks using truncate (no remapping needed).
+        for (let i = Q; i < P; i++) {
+          const globalIdx = S + i;
+          removeBlockNode(engine, globalIdx);
+          engine.htmlCache.delete(globalIdx);
+        }
+        engine.blockStarts.splice(S + Q, P - Q);
+        engine.blockEnds.splice(S + Q, P - Q);
+        engine.heightIndex.truncate(S + Q);
+      } else {
+        // Non-tail shrink: capture scroll position for recovery, remove excess DOM
+        // nodes and cache entries, then shift surviving blocks left via shiftFrom.
+        const oldScrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+
+        // (1) Remove excess DOM nodes and htmlCache entries for [S+Q, S+P).
+        for (let i = Q; i < P; i++) {
+          const globalIdx = S + i;
+          removeBlockNode(engine, globalIdx);
+          engine.htmlCache.delete(globalIdx);
+        }
+        engine.blockStarts.splice(S + Q, P - Q);
+        engine.blockEnds.splice(S + Q, P - Q);
+
+        // (2) shiftFrom with negative delta to compact the height array.
+        engine.heightIndex.shiftFrom(S + P, Q - P);
+
+        // (3) Remap surviving htmlCache keys >= S+P: shift left by (P - Q).
+        const delta = Q - P; // negative
+        const htmlEntriesToRemap: [number, string][] = [];
+        for (const [k, v] of engine.htmlCache) {
+          if (k >= S + P) htmlEntriesToRemap.push([k, v]);
+        }
+        for (const [k] of htmlEntriesToRemap) engine.htmlCache.delete(k);
+        for (const [k, v] of htmlEntriesToRemap) engine.htmlCache.set(k + delta, v);
+
+        // (4) Remap surviving blockNodes keys >= S+P: shift left by (P - Q).
+        const nodeEntriesToRemap: [number, HTMLElement][] = [];
+        for (const [k, el] of engine.blockNodes) {
+          if (k >= S + P) nodeEntriesToRemap.push([k, el]);
+        }
+        for (const [k] of nodeEntriesToRemap) engine.blockNodes.delete(k);
+        for (const [k, el] of nodeEntriesToRemap) {
+          const newKey = k + delta;
+          engine.blockNodes.set(newKey, el);
+          el.dataset.blockIndex = String(newKey);
+        }
+
+        // (5) Update regionBlockRanges start for all subsequent regions.
+        const keyIndex = regionKeys.indexOf(key);
+        for (let ri = keyIndex + 1; ri < regionKeys.length; ri++) {
+          const rkey = regionKeys[ri];
+          const rrange = engine.regionBlockRanges.get(rkey);
+          if (rrange) {
+            engine.regionBlockRanges.set(rkey, { ...rrange, start: rrange.start + delta });
+          }
+        }
+
+        // Content shrink scroll recovery: if scrollTop is now past the new bottom,
+        // snap to the nearest surviving block offset above the old scroll position.
+        if (scrollContainerRef.current) {
+          const totalHeight = engine.heightIndex.getTotalHeight();
+          const clientHeight = scrollContainerRef.current.clientHeight;
+          if (oldScrollTop > totalHeight - clientHeight) {
+            const blockIndex = engine.heightIndex.getBlockAtOffset(oldScrollTop);
+            const newScrollTop = engine.heightIndex.getBlockOffset(blockIndex);
+            scrollContainerRef.current.scrollTop = newScrollTop;
+          }
+        }
       }
-      engine.blockStarts.splice(S + Q, P - Q);
-      engine.blockEnds.splice(S + Q, P - Q);
-      engine.heightIndex.truncate(S + Q);
+    } else if (Q > P) {
+      if (isLast) {
+        // Tail growth: append new blocks beyond the old count.
+        const newStartsSlice = newStarts.slice(P);
+        const newEndsSlice = newEnds.slice(P);
+        engine.blockStarts.splice(S + P, 0, ...newStartsSlice);
+        engine.blockEnds.splice(S + P, 0, ...newEndsSlice);
+        for (let i = P; i < Q; i++) {
+          engine.heightIndex.appendBlock(estimateBlockHeight(newRegionBlocks[i]));
+          const globalIdx = S + i;
+          const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
+          const parseStart = performance.now();
+          engine.htmlCache.set(globalIdx, parse_to_html(raw));
+          parseMs += performance.now() - parseStart;
+        }
+      } else {
+        // Non-tail growth: shift surviving blocks right via shiftFrom, then remap.
+        const delta = Q - P; // positive
+
+        // (1) shiftFrom with positive delta to open a gap.
+        engine.heightIndex.shiftFrom(S + P, delta);
+
+        // (2) Remap surviving htmlCache keys >= S+P: shift right by (Q - P).
+        const htmlEntriesToRemap: [number, string][] = [];
+        for (const [k, v] of engine.htmlCache) {
+          if (k >= S + P) htmlEntriesToRemap.push([k, v]);
+        }
+        for (const [k] of htmlEntriesToRemap) engine.htmlCache.delete(k);
+        for (const [k, v] of htmlEntriesToRemap) engine.htmlCache.set(k + delta, v);
+
+        // (3) Remap surviving blockNodes keys >= S+P: shift right by (Q - P).
+        const nodeEntriesToRemap: [number, HTMLElement][] = [];
+        for (const [k, el] of engine.blockNodes) {
+          if (k >= S + P) nodeEntriesToRemap.push([k, el]);
+        }
+        for (const [k] of nodeEntriesToRemap) engine.blockNodes.delete(k);
+        for (const [k, el] of nodeEntriesToRemap) {
+          const newKey = k + delta;
+          engine.blockNodes.set(newKey, el);
+          el.dataset.blockIndex = String(newKey);
+        }
+
+        // (4) Update regionBlockRanges start for all subsequent regions.
+        const keyIndex = regionKeys.indexOf(key);
+        for (let ri = keyIndex + 1; ri < regionKeys.length; ri++) {
+          const rkey = regionKeys[ri];
+          const rrange = engine.regionBlockRanges.get(rkey);
+          if (rrange) {
+            engine.regionBlockRanges.set(rkey, { ...rrange, start: rrange.start + delta });
+          }
+        }
+
+        // (5) Splice blockStarts/blockEnds for the new gap entries.
+        const newStartsSlice = newStarts.slice(P);
+        const newEndsSlice = newEnds.slice(P);
+        engine.blockStarts.splice(S + P, 0, ...newStartsSlice);
+        engine.blockEnds.splice(S + P, 0, ...newEndsSlice);
+
+        // Parse and cache the new blocks in the gap [S+P, S+Q).
+        for (let i = P; i < Q; i++) {
+          const globalIdx = S + i;
+          const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
+          const parseStart = performance.now();
+          engine.htmlCache.set(globalIdx, parse_to_html(raw));
+          parseMs += performance.now() - parseStart;
+          engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
+        }
+      }
     }
 
-    // Append new blocks (Q > P): add blocks beyond the old count
-    if (Q > P) {
-      const newStartsSlice = newStarts.slice(P);
-      const newEndsSlice = newEnds.slice(P);
-      engine.blockStarts.splice(S + P, 0, ...newStartsSlice);
-      engine.blockEnds.splice(S + P, 0, ...newEndsSlice);
-      for (let i = P; i < Q; i++) {
-        engine.heightIndex.appendBlock(estimateBlockHeight(newRegionBlocks[i]));
-        const globalIdx = S + i;
-        const raw = engine.regionMap.text.slice(newStarts[i], newEnds[i]);
-        const parseStart = performance.now();
-        engine.htmlCache.set(globalIdx, parse_to_html(raw));
-        parseMs += performance.now() - parseStart;
-      }
-    }
-
-    // Update engine totals
-    engine.blockCount = S + Q;
+    // Update engine block count accounting for the delta.
+    engine.blockCount += (Q - P);
     const newTypes = newRegionBlocks.map(b => b.type);
     engine.regionBlockRanges.set(key, { start: S, count: Q, types: newTypes });
 
@@ -732,7 +857,6 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     // (e.g. paragraph text becomes code inside an unbalanced fence). Comparing type
     // sequences is a reliable proxy for fence balance change and avoids the need to
     // track fence depth explicitly.
-    const regionKeys = engine.regionMap.keys;
     const keyIndex = regionKeys.indexOf(key);
     if (keyIndex >= 0 && keyIndex < regionKeys.length - 1) {
       // Compare old vs new block type sequences.
@@ -752,31 +876,54 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
     const update = engine.blockWindow.update(scrollTop);
     applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+
+    // Synchronous measurement for newly-added blocks [D03].
+    // After addBlockNode inserts new DOM nodes, read their real offsetHeight and
+    // replace the estimate. This eliminates the estimate-then-ResizeObserver bounce
+    // during streaming. Applies for Q > P (new blocks added to tail or non-tail region).
+    if (Q > P) {
+      let anyMeasured = false;
+      for (let i = P; i < Q; i++) {
+        const globalIdx = S + i;
+        const el = engine.blockNodes.get(globalIdx);
+        if (el) {
+          const realHeight = el.offsetHeight; // forced layout — cheap for 1-3 blocks
+          engine.heightIndex.setHeight(globalIdx, realHeight);
+          anyMeasured = true;
+        }
+      }
+      if (anyMeasured) {
+        // Recompute spacers with real heights before pinToBottom fires.
+        const scrollTop2 = scrollContainerRef.current?.scrollTop ?? 0;
+        const update2 = engine.blockWindow.update(scrollTop2);
+        applySpacers(update2.topSpacerHeight, update2.bottomSpacerHeight);
+      }
+    }
   }
 
   // ---- Core region update logic ----
   // Called by both the imperative handle and the streaming observer.
-  // Uses incrementalTailUpdate when the key is (or becomes) the last region,
-  // full rebuild otherwise (middle/first region changes, or first content ever).
+  // Uses incrementalTailUpdate for all non-cold-start updates (any region).
+  // Cold start (wasEmpty) always goes through lexParseAndRender to establish the
+  // initial block structure.
   function doSetRegion(key: string, text: string): void {
     const engine = getEngine();
     const wasEmpty = engine.regionMap.regionCount === 0;
 
     engine.regionMap.setRegion(key, text);
     const fullText = engine.regionMap.text;
-    const isLast = engine.regionMap.keys[engine.regionMap.keys.length - 1] === key;
 
-    if (wasEmpty || !isLast) {
+    if (wasEmpty) {
       lexParseAndRender(engine, fullText);
     } else {
       incrementalTailUpdate(engine, key, fullText);
     }
 
-    // After content settles, scroll to bottom if SmartScroll is following.
-    // This is the UIScrollView model: the controller decides when to scroll,
-    // not the scroll view reacting to content changes via ResizeObserver.
+    // After content settles, pin to bottom if SmartScroll is following.
+    // Use pinToBottom() (stays in idle phase) instead of scrollToBottom() to
+    // avoid overlapping programmatic scroll sequences during rapid streaming [D04].
     if (smartScrollRef.current?.isFollowingBottom) {
-      smartScrollRef.current.scrollToBottom();
+      smartScrollRef.current.pinToBottom();
     }
   }
 

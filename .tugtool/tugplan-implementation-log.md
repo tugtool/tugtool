@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-04-01T23:32:57Z
+---
+
+## step-7: Final integration checkpoint: verified all 7 steps. 2 lexParseAndRender call sites (cold-start, removeRegion). pinToBottom wired in doSetRegion. shiftFrom for non-tail P!=Q. Content shrink scroll recovery. CSS containment. 1966 tests pass.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
+step: step-6
+date: 2025-04-01T23:26:17Z
+---
+
+## step-6: Generalized incrementalTailUpdate for non-tail regions via shiftFrom + key remapping. Removed !isLast gate in doSetRegion. lexParseAndRender now only on cold-start and removeRegion. Content shrink scroll recovery via getBlockAtOffset. Replaced fallback lexParseAndRender calls with console.warn + early return.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
+step: step-5
+date: 2025-04-01T23:13:49Z
+---
+
+## step-5: Added shiftFrom(startIndex, delta) to BlockHeightIndex. Uses Float64Array.copyWithin for in-place shift, invalidates prefix sum watermark. Handles capacity growth for large positive deltas. 10 tests added.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
+step: step-4
+date: 2025-04-01T23:08:45Z
+---
+
+## step-4: Integration checkpoint: verified steps 1-3 integration. pinToBottom wired in doSetRegion, MAX_SAFE_INTEGER in both scroll methods, ResizeObserver safety net, CSS containment. No code changes — verification only.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
+step: step-3
+date: 2025-04-01T23:04:41Z
+---
+
+## step-3: Wired synchronous offsetHeight measurement in incrementalTailUpdate after applyWindowUpdate. Replaced scrollToBottom with pinToBottom in doSetRegion. Added ResizeObserver safety-net slam when following bottom. Added contain:content to .tugx-md-block.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
+step: step-2
+date: 2025-04-01T22:58:17Z
+---
+
+## step-2: Added pinToBottom() to SmartScroll: sets scrollTop=MAX_SAFE_INTEGER without entering programmatic phase. Stays in idle per D93 state machine. Two tests added.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
+step: step-1
+date: 2025-04-01T22:51:08Z
+---
+
+## step-1: Replaced scrollHeight-clientHeight computation in scrollToBottom() with Number.MAX_SAFE_INTEGER. Browser clamps to actual max. Updated test mock to mimic browser clamping.
+
+**Files changed:**
+- markdown-scroll-fixes-f492c4c-1
+
+---
+
+---
 step: step-5
 date: 2025-04-01T21:06:26Z
 ---

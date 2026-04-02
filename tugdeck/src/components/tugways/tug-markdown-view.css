@@ -84,6 +84,7 @@
   box-sizing: border-box;
   width: 100%;
   padding: 0 var(--tugx-md-block-padding-x, 1rem);
+  contain: content;
 }
 
 /* ---- Placeholder blocks ---- */

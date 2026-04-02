@@ -415,6 +415,132 @@ describe("array growth beyond initial capacity", () => {
 });
 
 // ---------------------------------------------------------------------------
+// shiftFrom
+
+describe("shiftFrom", () => {
+  it("shiftFrom right by 2 from middle — heights before shift point unchanged, heights after moved, count increased", () => {
+    // Heights: [10, 20, 30, 40, 50]  count=5
+    // shiftFrom(2, 2) opens a gap at indices 2,3; old [2..4] move to [4..6]
+    // After: count=7, heights[0]=10, heights[1]=20, heights[4]=30, heights[5]=40, heights[6]=50
+    // heights[2] and heights[3] are uninitialized (caller sets them)
+    const idx = buildIndex([10, 20, 30, 40, 50]);
+    idx.shiftFrom(2, 2);
+
+    expect(idx.count).toBe(7);
+    // Heights before shift point unchanged
+    expect(idx.getHeight(0)).toBe(10);
+    expect(idx.getHeight(1)).toBe(20);
+    // Heights after shift point moved
+    expect(idx.getHeight(4)).toBe(30);
+    expect(idx.getHeight(5)).toBe(40);
+    expect(idx.getHeight(6)).toBe(50);
+  });
+
+  it("shiftFrom right by 2 — prefix sum and offsets are correct after setting gap entries", () => {
+    const idx = buildIndex([10, 20, 30, 40, 50]);
+    idx.shiftFrom(2, 2);
+    // Fill the gap
+    idx.setHeight(2, 15);
+    idx.setHeight(3, 25);
+
+    // Heights: [10, 20, 15, 25, 30, 40, 50]
+    expect(idx.getTotalHeight()).toBe(190);
+    expect(idx.getBlockOffset(0)).toBe(0);
+    expect(idx.getBlockOffset(1)).toBe(10);
+    expect(idx.getBlockOffset(2)).toBe(30);
+    expect(idx.getBlockOffset(3)).toBe(45);
+    expect(idx.getBlockOffset(4)).toBe(70);
+    expect(idx.getBlockOffset(5)).toBe(100);
+    expect(idx.getBlockOffset(6)).toBe(140);
+    expect(idx.getBlockOffset(7)).toBe(190);
+  });
+
+  it("shiftFrom left by 1 from middle — heights compacted, count decreased", () => {
+    // Heights: [10, 20, 30, 40, 50]  count=5
+    // shiftFrom(2, -1) removes entry at index 1; old [2..4] move to [1..3]
+    // After: count=4, heights[0]=10, heights[1]=30, heights[2]=40, heights[3]=50
+    const idx = buildIndex([10, 20, 30, 40, 50]);
+    idx.shiftFrom(2, -1);
+
+    expect(idx.count).toBe(4);
+    expect(idx.getHeight(0)).toBe(10);
+    expect(idx.getHeight(1)).toBe(30);
+    expect(idx.getHeight(2)).toBe(40);
+    expect(idx.getHeight(3)).toBe(50);
+  });
+
+  it("shiftFrom left by 1 — total height correct after compaction", () => {
+    const idx = buildIndex([10, 20, 30, 40, 50]);
+    idx.shiftFrom(2, -1);
+    // Heights: [10, 30, 40, 50] — sum = 130
+    expect(idx.getTotalHeight()).toBe(130);
+    expect(idx.getBlockOffset(0)).toBe(0);
+    expect(idx.getBlockOffset(1)).toBe(10);
+    expect(idx.getBlockOffset(2)).toBe(40);
+    expect(idx.getBlockOffset(3)).toBe(80);
+    expect(idx.getBlockOffset(4)).toBe(130);
+  });
+
+  it("shiftFrom with capacity growth — handles delta > remaining capacity", () => {
+    // Start with capacity 4, fill it, then shift right by 4 to force growth
+    const idx = new BlockHeightIndex(4);
+    idx.appendBlock(10);
+    idx.appendBlock(20);
+    idx.appendBlock(30);
+    idx.appendBlock(40);
+    // count=4, capacity=4 — shiftFrom(2, 4) needs count+4=8 which exceeds capacity
+    idx.shiftFrom(2, 4);
+
+    expect(idx.count).toBe(8);
+    // Heights before shift unchanged
+    expect(idx.getHeight(0)).toBe(10);
+    expect(idx.getHeight(1)).toBe(20);
+    // Heights after shift moved: old index 2 -> new index 6, old index 3 -> new index 7
+    expect(idx.getHeight(6)).toBe(30);
+    expect(idx.getHeight(7)).toBe(40);
+  });
+
+  it("shiftFrom from index 0 right — all existing heights shifted", () => {
+    const idx = buildIndex([10, 20, 30]);
+    idx.shiftFrom(0, 2);
+    expect(idx.count).toBe(5);
+    expect(idx.getHeight(2)).toBe(10);
+    expect(idx.getHeight(3)).toBe(20);
+    expect(idx.getHeight(4)).toBe(30);
+  });
+
+  it("shiftFrom from end index — no heights moved, count changes", () => {
+    const idx = buildIndex([10, 20, 30]);
+    // startIndex == count: shift from the tail, like appending slots
+    idx.shiftFrom(3, 2);
+    expect(idx.count).toBe(5);
+    // Existing heights unchanged
+    expect(idx.getHeight(0)).toBe(10);
+    expect(idx.getHeight(1)).toBe(20);
+    expect(idx.getHeight(2)).toBe(30);
+  });
+
+  it("shiftFrom with delta 0 is a no-op", () => {
+    const idx = buildIndex([10, 20, 30]);
+    idx.shiftFrom(1, 0);
+    expect(idx.count).toBe(3);
+    expect(idx.getTotalHeight()).toBe(60);
+  });
+
+  it("shiftFrom throws RangeError for startIndex out of range", () => {
+    const idx = buildIndex([10, 20, 30]);
+    expect(() => idx.shiftFrom(-1, 1)).toThrow(RangeError);
+    expect(() => idx.shiftFrom(4, 1)).toThrow(RangeError);
+  });
+
+  it("shiftFrom throws RangeError if delta would make count negative", () => {
+    const idx = buildIndex([10, 20, 30]);
+    // shiftFrom(0, -4) would make count = 3 - 4 = -1
+    expect(() => idx.shiftFrom(0, -4)).toThrow(RangeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Binary search performance
 
 describe("binary search performance", () => {

@@ -67,7 +67,8 @@ function makeContainer(opts: {
   Object.defineProperty(el, "scrollTop", {
     get: () => (el as unknown as Record<string, number>)._scrollTop ?? 0,
     set: (v: number) => {
-      (el as unknown as Record<string, number>)._scrollTop = v;
+      const raw = el as unknown as Record<string, number>;
+      raw._scrollTop = Math.min(v, raw._scrollHeight - raw._clientHeight);
     },
     configurable: true,
   });
@@ -470,6 +471,21 @@ describe("SmartScroll", () => {
       expect(ss.isFollowingBottom).toBe(false);
       ss.scrollToBottom(false);
       expect(ss.isFollowingBottom).toBe(true);
+      ss.dispose();
+    });
+
+    it("pinToBottom when idle leaves phase as idle", () => {
+      const { ss } = makeSmartScroll({ scrollHeight: 500, clientHeight: 300 });
+      expect(ss.phase).toBe<ScrollPhase>('idle');
+      ss.pinToBottom();
+      expect(ss.phase).toBe<ScrollPhase>('idle');
+      ss.dispose();
+    });
+
+    it("pinToBottom sets scrollTop to max scrollable distance", () => {
+      const { ss, container } = makeSmartScroll({ scrollHeight: 500, clientHeight: 300 });
+      ss.pinToBottom();
+      expect(container.scrollTop).toBe(200); // clamped to 500 - 300
       ss.dispose();
     });
 
