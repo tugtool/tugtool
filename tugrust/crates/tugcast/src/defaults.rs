@@ -5,7 +5,6 @@
 //! plus four HTTP handler functions for `/api/defaults/:domain` and
 //! `/api/defaults/:domain/:key`.
 
-use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -222,12 +221,7 @@ pub(crate) async fn get_domain(
         return resp;
     }
 
-    let result = tokio::task::spawn_blocking(move || {
-        let handle = client.store().domain(&domain)?;
-        let all: BTreeMap<String, Value> = handle.read_all()?;
-        Ok::<_, BankError>(all)
-    })
-    .await;
+    let result = tokio::task::spawn_blocking(move || client.read_domain(&domain)).await;
 
     match result {
         Ok(Ok(map)) => {
@@ -266,12 +260,7 @@ pub(crate) async fn get_key(
         return resp;
     }
 
-    let result = tokio::task::spawn_blocking(move || {
-        let handle = client.store().domain(&domain)?;
-        let value = handle.get(&key)?;
-        Ok::<_, BankError>(value)
-    })
-    .await;
+    let result = tokio::task::spawn_blocking(move || client.get(&domain, &key)).await;
 
     match result {
         Ok(Ok(Some(value))) => {
