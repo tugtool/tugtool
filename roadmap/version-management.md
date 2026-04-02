@@ -11,11 +11,13 @@ is no build number.
    managed from the workspace `Cargo.toml`. Starting point: `0.8.0`.
 
 2. **Build number:** A monotonically-increasing integer that increments on
-   every build. Starting point: `1`. Stored in a file at the workspace root
-   so it survives across builds and is tracked in git.
+   every build. Starting point: `1`. Encoded as semver build metadata in
+   the workspace version (e.g., `0.8.0+1`), so it appears in cargo's
+   compile output automatically.
 
-3. **Visible in `--version`:** Every binary's `--version` output includes
-   the build number. Format: `<name> 0.8.0 (build 1)`.
+3. **Visible everywhere:** The build number appears in cargo's compile
+   output (`Compiling tugcode v0.8.0+42`) and in every binary's
+   `--version` output (`<name> 0.8.0 (build 42)`).
 
 4. **Version management script:** A shell script (or Rust script via
    `cargo xtask`) to set versions, bump versions (major/minor/patch),
@@ -47,33 +49,38 @@ workspace version where applicable. tugcast-core is at `0.1.0` like tugcast.
 
 ## Design
 
-### Build number file
+### Build number as semver build metadata
 
-A plain text file at `tugcode/BUILD_NUMBER` containing a single integer.
-Starts at `1`. Incremented by the version management script before each
-build. Checked into git so the number is shared across machines and
-branches.
+The build number lives in the workspace version string itself, using
+semver's `+` build metadata syntax: `0.8.0+42`. This means:
+
+- **Cargo shows it automatically:** `Compiling tugcode v0.8.0+42 (/path/...)`
+- **No separate file needed:** The workspace `Cargo.toml` is the single
+  source of truth for both version and build number.
+- **Semver-compatible:** Build metadata is ignored for version comparison
+  per the semver spec, so `0.8.0+1` and `0.8.0+42` are the same version
+  for dependency resolution purposes.
+
+`CARGO_PKG_VERSION` includes the build metadata (e.g., `0.8.0+42`), so
+binaries can parse it at compile time to extract both parts.
 
 ### Build-time injection
 
-Each binary's `build.rs` (or a shared workspace-level build approach)
-reads `BUILD_NUMBER` and sets a `TUG_BUILD_NUMBER` environment variable
-via `cargo::rustc-env`. Binaries that don't have a `build.rs` today will
-get a minimal one.
-
-tugcode already has a `build.rs` that sets `TUG_COMMIT`, `TUG_BUILD_DATE`,
-and `TUG_RUSTC_VERSION`. Add `TUG_BUILD_NUMBER` to that file. For other
-binaries, create a small `build.rs` that reads the build number file and
-emits the env var.
-
-Add `cargo::rerun-if-changed=../../BUILD_NUMBER` so cargo rebuilds when
-the number changes.
+tugcode's `build.rs` already sets `TUG_COMMIT`, `TUG_BUILD_DATE`, and
+`TUG_RUSTC_VERSION`. Add `TUG_BUILD_NUMBER` by parsing the `+N` suffix
+from `CARGO_PKG_VERSION`. For other binaries, the version string from
+`CARGO_PKG_VERSION` contains everything needed — no separate `build.rs`
+required.
 
 ### Version string format
 
 All binaries adopt this format for `--version`:
 
     <name> 0.8.0 (build 42)
+
+The version string is constructed by splitting `CARGO_PKG_VERSION` on
+`+`: the part before `+` is the semver version, the part after is the
+build number.
 
 For tugcode's verbose version subcommand:
 
@@ -91,18 +98,20 @@ For tugcode's JSON output:
 A shell script at `tugcode/scripts/version.sh` with these subcommands:
 
     version.sh set <major.minor.patch>
-      Sets workspace.package.version in tugcode/Cargo.toml.
-      Sets version in any crate that doesn't use `version.workspace = true`
-      (currently tugcast and tugcast-core).
-      Runs `cargo generate-lockfile` to update Cargo.lock.
+      Sets workspace.package.version in tugcode/Cargo.toml to
+      `<major.minor.patch>+<current_build_number>`. Preserves the
+      existing build number. Runs `cargo generate-lockfile` to update
+      Cargo.lock.
 
     version.sh bump major|minor|patch
       Reads current version from workspace Cargo.toml, increments the
-      specified component, then runs `set` with the new version.
+      specified component, resets lower components to 0, preserves the
+      build number. Then runs `set` with the new version.
 
     version.sh build
-      Reads tugcode/BUILD_NUMBER, increments by 1, writes it back.
-      This is intended to be called before `cargo build`.
+      Reads the `+N` suffix from the workspace version, increments by 1,
+      writes the updated version back to Cargo.toml. This is intended to
+      be called before `cargo build`.
 
     version.sh show
       Prints current version and build number.
@@ -118,23 +127,21 @@ workspace so `version.sh set` only needs to update one place.
 ## Sequencing
 
 1. **Unify versions:** Change tugcast and tugcast-core to
-   `version.workspace = true`. Set workspace version to `0.8.0`.
-   Verify `cargo build` succeeds.
+   `version.workspace = true`. Set workspace version to `0.8.0+1`.
+   Verify `cargo build` succeeds. Confirm cargo output shows
+   `Compiling tugcode v0.8.0+1`.
 
-2. **Add build number infrastructure:** Create `tugcode/BUILD_NUMBER`
-   with contents `1`. Add `TUG_BUILD_NUMBER` env var injection to
-   tugcode's `build.rs`. Create minimal `build.rs` for tugcast,
-   tugbank, tugtool, tugrelaunch.
+2. **Update `--version` output:** Add a helper (const or function) to
+   each binary that splits `CARGO_PKG_VERSION` on `+` and formats as
+   `<name> 0.8.0 (build 1)`. Update tugcode's `version` subcommand to
+   include build number in plain, verbose, and JSON output. Update
+   tugcode's `build.rs` to emit `TUG_BUILD_NUMBER` for the verbose
+   version command.
 
-3. **Update `--version` output:** Modify each binary's clap setup to
-   include the build number in the version string. Update tugcode's
-   `version` subcommand to include build number in plain, verbose,
-   and JSON output.
-
-4. **Create version.sh script:** Implement `set`, `bump`, `build`,
+3. **Create version.sh script:** Implement `set`, `bump`, `build`,
    and `show` subcommands. Verify each works correctly.
 
-5. **Verify:** Run `--version` on every binary and confirm the output
+4. **Verify:** Run `--version` on every binary and confirm the output
    matches the expected format.
 
 
@@ -142,15 +149,13 @@ workspace so `version.sh set` only needs to update one place.
 
 | File | Change |
 |------|--------|
-| `tugcode/Cargo.toml` | version `0.7.48` -> `0.8.0` |
+| `tugcode/Cargo.toml` | version `0.7.48` -> `0.8.0+1` |
 | `tugcode/crates/tugcast/Cargo.toml` | hardcoded `0.1.0` -> `version.workspace = true` |
 | `tugcode/crates/tugcast-core/Cargo.toml` | hardcoded `0.1.0` -> `version.workspace = true` |
-| `tugcode/BUILD_NUMBER` | New file, contains `1` |
-| `tugcode/crates/tugcode/build.rs` | Add `TUG_BUILD_NUMBER` env var |
-| `tugcode/crates/tugcode/src/cli.rs` | Include build number in VERSION string |
+| `tugcode/crates/tugcode/build.rs` | Parse build number from `CARGO_PKG_VERSION`, emit `TUG_BUILD_NUMBER` |
+| `tugcode/crates/tugcode/src/cli.rs` | Format VERSION to include build number |
 | `tugcode/crates/tugcode/src/commands/version.rs` | Add build number to all output formats |
-| `tugcode/crates/tugcast/build.rs` | Add build number injection (may need new or modified build.rs) |
-| `tugcode/crates/tugbank/src/main.rs` | Include build number in clap version |
-| `tugcode/crates/tugtool/src/main.rs` | Include build number in clap version |
-| `tugcode/crates/tugrelaunch/src/main.rs` | Include build number in clap version |
+| `tugcode/crates/tugbank/src/main.rs` | Format clap version to include build number |
+| `tugcode/crates/tugtool/src/main.rs` | Format clap version to include build number |
+| `tugcode/crates/tugrelaunch/src/main.rs` | Format clap version to include build number |
 | `tugcode/scripts/version.sh` | New file, version management script |
