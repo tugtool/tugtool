@@ -459,8 +459,13 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const index = parseInt(indexStr, 10);
         if (isNaN(index)) continue;
         const measured = entry.contentRect.height;
+        const offsetH = el.offsetHeight;
         const current = engine.heightIndex.getHeight(index);
+        if (Math.abs(measured - offsetH) > 0.5) {
+          console.warn(`[ResizeObserver] block ${index}: contentRect.height=${measured} vs offsetHeight=${offsetH} — MISMATCH`);
+        }
         if (Math.abs(measured - current) > 0.5) {
+          console.log(`[ResizeObserver] block ${index}: ${current.toFixed(1)} → ${measured.toFixed(1)} (offsetHeight=${offsetH})`);
           engine.heightIndex.setHeight(index, measured);
           onBlockMeasured?.(index, measured);
           anyChanged = true;
@@ -474,7 +479,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         // Safety net: if following bottom, re-slam scrollTop so any height
         // corrections from ResizeObserver don't leave us short of the bottom [D03].
         if (smartScrollRef.current?.isFollowingBottom && scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = Number.MAX_SAFE_INTEGER;
+          scrollContainerRef.current.scrollTop = 0x40000000;
         }
       }
     });
@@ -523,6 +528,12 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
               const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
               const update = engine.blockWindow.update(scrollTop);
               applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+              // If following bottom, re-slam after spacer changes so scrollTop
+              // stays at the true bottom. Without this, the spacer shift leaves
+              // scrollTop short of the new max for one paint frame.
+              if (smartScrollRef.current?.isFollowingBottom && scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTop = 0x40000000;
+              }
             });
           }
         },
@@ -697,10 +708,15 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const html = parse_to_html(raw);
         parseMs += performance.now() - parseStart;
         engine.htmlCache.set(globalIdx, html);
-        engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
         const existingEl = engine.blockNodes.get(globalIdx);
         if (existingEl) {
           existingEl.innerHTML = getDOMPurify().sanitize(html, SANITIZE_CONFIG);
+          // Read the real height now that innerHTML changed. Don't estimate —
+          // the node is in the DOM and offsetHeight gives the true value.
+          engine.heightIndex.setHeight(globalIdx, existingEl.offsetHeight);
+        } else {
+          // Not in the DOM — estimate is the best we can do.
+          engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
         }
         engine.blockStarts[globalIdx] = newStarts[i];
         engine.blockEnds[globalIdx] = newEnds[i];
@@ -934,6 +950,8 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const el = engine.blockNodes.get(globalIdx);
         if (el) {
           const realHeight = el.offsetHeight; // forced layout — cheap for 1-3 blocks
+          const estimated = engine.heightIndex.getHeight(globalIdx);
+          console.log(`[syncMeasure] block ${globalIdx}: estimated=${estimated.toFixed(1)} → offsetHeight=${realHeight}`);
           engine.heightIndex.setHeight(globalIdx, realHeight);
           anyMeasured = true;
         }
@@ -955,6 +973,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   function doSetRegion(key: string, text: string): void {
     const engine = getEngine();
     const wasEmpty = engine.regionMap.regionCount === 0;
+    console.log('[doSetRegion] key:', key, 'wasEmpty:', wasEmpty, 'regionCount:', engine.regionMap.regionCount);
 
     engine.regionMap.setRegion(key, text);
     const fullText = engine.regionMap.text;
@@ -968,8 +987,42 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     // After content settles, pin to bottom if SmartScroll is following.
     // Use pinToBottom() (stays in idle phase) instead of scrollToBottom() to
     // avoid overlapping programmatic scroll sequences during rapid streaming [D04].
+    //
+    // After slamming scrollTop, immediately re-run the block window update so
+    // the blocks at the NEW scroll position are rendered in the same call stack.
+    // Without this, the blocks from the OLD position are in the DOM, the bottom
+    // is spacer-only, and the correct blocks don't appear until the next RAF —
+    // causing a visible one-frame dance.
     if (smartScrollRef.current?.isFollowingBottom) {
       smartScrollRef.current.pinToBottom();
+      // Re-render for the new scroll position in the same synchronous pass.
+      // Then measure any newly-entered blocks and re-slam — the first slam
+      // used estimated heights; the measurement corrects them, which may
+      // shift the real bottom. One iteration is enough: after measurement,
+      // heights are real and the second slam lands on the true bottom.
+      const engine2 = engineRef.current;
+      if (engine2 && scrollContainerRef.current) {
+        const newScrollTop = scrollContainerRef.current.scrollTop;
+        const update = engine2.blockWindow.update(newScrollTop);
+        applyWindowUpdate(engine2, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
+
+        // Measure any blocks that just entered the DOM from the re-render.
+        let anyMeasured = false;
+        for (const [idx, el] of engine2.blockNodes) {
+          const stored = engine2.heightIndex.getHeight(idx);
+          const real = el.offsetHeight;
+          if (Math.abs(real - stored) > 0.5) {
+            engine2.heightIndex.setHeight(idx, real);
+            anyMeasured = true;
+          }
+        }
+        if (anyMeasured) {
+          // Spacers changed — re-slam to the corrected bottom.
+          const update2 = engine2.blockWindow.update(scrollContainerRef.current.scrollTop);
+          applySpacers(update2.topSpacerHeight, update2.bottomSpacerHeight);
+          smartScrollRef.current!.pinToBottom();
+        }
+      }
     }
   }
 

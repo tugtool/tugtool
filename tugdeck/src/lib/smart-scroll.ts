@@ -232,14 +232,18 @@ export class SmartScroll {
   scrollToBottom(animated = false): void {
     if (this._disposed) return;
     this._setFollowingBottom(true);
-    this.scrollTo({ top: Number.MAX_SAFE_INTEGER, animated });
+    // 2^30: large enough to exceed any real document height, small enough
+    // to avoid WebKit's 32-bit int overflow in C++ scroll code paths.
+    // Not scrollHeight — that's a layout read that may be stale if DOM
+    // mutations haven't reflowed yet.
+    this.scrollTo({ top: 0x40000000, animated });
   }
 
   /** Slam scrollTop to bottom without entering programmatic phase.
-   *  Used for content growth while following bottom. Stays in idle. */
+   *  Used for content growth while following bottom. Stays in idle. [D04] */
   pinToBottom(): void {
     if (this._disposed) return;
-    this._container.scrollTop = Number.MAX_SAFE_INTEGER;
+    this._container.scrollTop = 0x40000000;
   }
 
   scrollToElement(
