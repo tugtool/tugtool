@@ -111,7 +111,7 @@ This is the template for Tide's shell side: instead of parsing a byte stream tha
 │  │    Three-Tier Dispatch      │                         │
 │  │                             │                         │
 │  │  Surface built-in → handle  │                         │
-│  │  Claude Code → tugcode       │                         │
+│  │  Claude Code → tugcode      │                         │
 │  │  Shell → tugshell           │                         │
 │  └──┬──────────┬───────────────┘                         │
 │     │          │                                         │
@@ -363,15 +363,16 @@ tugdeck ◄───────────────────────
                     
         Outbound frames (tugdeck → tugcast):
           [0x41] CodeInput  → routed to tugcode
-          [0x51] ShellInput → routed to tugshell
+          [0x61] ShellInput → routed to tugshell
           
         Inbound frames (tugcast → tugdeck):
           [0x40] CodeOutput  ← from tugcode
-          [0x50] ShellOutput ← from tugshell
+          [0x60] ShellOutput ← from tugshell
           [0x10] Filesystem  ← from file watcher
           [0x20] Git         ← from git watcher
           [0x30] Stats       ← from stats collector
-          [0x60] TugFeed     ← from feed capture
+          [0x50] Defaults    ← from tugbank
+          [0x70] TugFeed     ← from feed capture
           [0xFF] Heartbeat   ← from tugcast
 ```
 
@@ -384,7 +385,7 @@ Each bridge is named `tug{suffix}` where the suffix identifies the service it br
 | Bridge | Service | Protocol | FeedIds |
 |--------|---------|----------|---------|
 | **tugcode** (currently tugtalk — rename in Phase T0) | Claude Code | stream-json over stdio | 0x40/0x41 |
-| **tugshell** | bash/zsh | hidden pty + shell hooks | 0x50/0x51 |
+| **tugshell** | bash/zsh | hidden pty + shell hooks | 0x60/0x61 |
 | *(future)* | Another LLM, service, or tool | TBD | next available pair |
 
 ### Feed ID table
@@ -397,9 +398,10 @@ Each bridge is named `tug{suffix}` where the suffix identifies the service it br
 | 0x30-0x33 | Stats | server → client | stats collector | Existing |
 | 0x40 | CodeOutput | server → client | tugcode | Existing |
 | 0x41 | CodeInput | client → server | tugcode | Existing |
-| **0x50** | **ShellOutput** | **server → client** | **tugshell** | **New** |
-| **0x51** | **ShellInput** | **client → server** | **tugshell** | **New** |
-| 0x60 | TugFeed | server → client | feed capture | Planned |
+| 0x50 | Defaults | server → client | tugbank | Existing |
+| **0x60** | **ShellOutput** | **server → client** | **tugshell** | **New** |
+| **0x61** | **ShellInput** | **client → server** | **tugshell** | **New** |
+| 0x70 | TugFeed | server → client | feed capture | Planned |
 
 ### Extensibility
 
@@ -569,6 +571,7 @@ Phase 3A.7: SmartScroll Hardening        — DONE
 
 ─── TIDE: FOUNDATION ──────────────────────────────────────
 Phase T0: Naming Cleanup                 — rename binaries, crates, directories for Tide
+Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag recovery, extensibility
 
 ─── TIDE: RENDERING ───────────────────────────────────────
 Phase T1: Content Block Types            — markdown, code, thinking, tool use, monospace
@@ -809,6 +812,201 @@ See [tug-conversation.md](tug-conversation.md) for detailed writeups. Summary of
 
 ---
 
+### Phase T0.5: Protocol Hardening {#protocol-hardening}
+
+**Goal:** Harden the tugcast WebSocket protocol and router to support Tide's requirements: multiple backends, opaque routing, extensibility, and robust event delivery. The current implementation was built for a single terminal + Claude Code bridge; Tide needs a general-purpose multiplexer.
+
+**Context:** A thorough audit of the tugcast codebase (tugcast-core protocol, router, feed system, agent bridge, auth) identified 11 issues ranging from structural blockers to future-proofing concerns. All are addressed in this phase to establish the protocol as a solid foundation before building Tide's rendering and shell layers.
+
+#### P1: Open FeedId — the extensibility gate (HIGH)
+
+**Problem:** `FeedId` is a closed Rust enum. `from_byte()` returns `None` for unknown bytes, which becomes `ProtocolError::InvalidFeedId`. Adding a new FeedId requires modifying tugcast-core and recompiling. This directly contradicts the "opaque routing" design decision — a new `tuggemini` bridge assigning itself FeedId 0x70 would be rejected.
+
+**Fix:** Make `FeedId` an open `u8` newtype with known variants as associated constants:
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FeedId(pub u8);
+
+impl FeedId {
+    pub const TERMINAL_OUTPUT: Self = Self(0x00);
+    pub const TERMINAL_INPUT: Self = Self(0x01);
+    pub const TERMINAL_RESIZE: Self = Self(0x02);
+    pub const FILESYSTEM: Self = Self(0x10);
+    pub const GIT: Self = Self(0x20);
+    // ... etc
+    pub const HEARTBEAT: Self = Self(0xFF);
+}
+```
+
+Frame decoding accepts any byte. Routing decisions move to the router, not the protocol layer. Code that matches on known FeedIds uses the constants; unknown FeedIds pass through without error.
+
+**Scope:** tugcast-core `protocol.rs`, all `match` statements on `FeedId` across tugcast (add `_ =>` arms or use if/else), tests.
+
+#### P2: Dynamic router — the multi-backend gate (HIGH)
+
+**Problem:** `FeedRouter` has hardcoded named fields (`terminal_tx`, `code_tx`, `code_input_tx`) and a hardcoded `select!` loop. Adding tugshell means adding fields, modifying the select!, modifying bootstrap logic. Every new backend is a code change in the router.
+
+**Fix:** Replace named channel fields with dynamic maps:
+
+```rust
+pub struct FeedRouter {
+    /// FeedId → broadcast::Sender for stream feeds (server→client)
+    stream_outputs: HashMap<FeedId, broadcast::Sender<Frame>>,
+    /// FeedId → mpsc::Sender for input feeds (client→server)
+    input_sinks: HashMap<FeedId, mpsc::Sender<Frame>>,
+    /// All snapshot watch receivers (sent to every client on connect)
+    snapshot_watches: Vec<watch::Receiver<Frame>>,
+    /// Shared state
+    auth: SharedAuthState,
+    dev_state: SharedDevState,
+    shutdown_tx: mpsc::Sender<u8>,
+    client_action_tx: broadcast::Sender<Frame>,
+}
+```
+
+Client input dispatch becomes a map lookup: `if let Some(tx) = self.input_sinks.get(&frame.feed_id) { tx.send(frame).await; }`. The select! loop subscribes to all `stream_outputs` receivers dynamically.
+
+Registration is: insert a channel pair keyed by FeedId. Main.rs builds the router by registering each backend's channels, not by passing named arguments.
+
+**Scope:** tugcast `router.rs` (major rewrite of `FeedRouter` and `handle_client`), `main.rs` (registration pattern), `server.rs` (if it references router fields directly).
+
+#### P3: FeedId slot collision (LOW)
+
+**Problem:** Tide.md proposed ShellOutput=0x50, ShellInput=0x51. But `Defaults = 0x50` already exists in the code. The roadmap's FeedId table is wrong.
+
+**Fix:** Update the FeedId assignments:
+
+| FeedId | Feed | Status |
+|--------|------|--------|
+| 0x50 | Defaults | Existing (keep) |
+| 0x60 | ShellOutput | New |
+| 0x61 | ShellInput | New |
+| 0x70 | TugFeed | Planned |
+
+Update tide.md's FeedId tables and all references.
+
+#### P4: CodeOutput lag recovery (MEDIUM)
+
+**Problem:** Broadcast channel capacity is 4096 frames. If a client lags behind on CodeOutput, events are silently lost — no bootstrap, no recovery. The client's conversation state corrupts (missed `assistant_text` deltas, `tool_use` blocks, or `turn_complete`).
+
+Terminal output has bootstrap via `tmux capture-pane`. CodeOutput has nothing.
+
+**Fix:** Add a CodeOutput replay buffer. The agent bridge maintains a bounded ring buffer of recent CodeOutput frames (e.g., last 1000 frames or last 60 seconds). When the router detects CodeOutput lag, it replays from the buffer instead of just logging a warning. The client receives a `lag_recovery` control frame indicating that replay is occurring, then the replayed frames, then live streaming resumes.
+
+If the lag exceeds the buffer, send a `lag_unrecoverable` control frame. The client must request a full session resync (which the UI can handle by clearing and re-requesting state).
+
+**Scope:** Agent bridge (add ring buffer), router (add CodeOutput lag handling parallel to terminal bootstrap), new control frame types.
+
+#### P5: Multi-client input guard (LOW)
+
+**Problem:** All clients' `CodeInput` frames go to the same `mpsc::Sender`. Two browser tabs sending competing `user_message` to Claude Code would interleave unpredictably.
+
+**Fix:** Enforce single-writer-per-backend. When a client sends its first input frame for a given FeedId, it claims that input channel. Subsequent clients attempting to send on the same input FeedId receive an error frame. Read-only access (receiving output) remains open to all clients.
+
+For Tide, where each backend has one active session, this is the right model. Multi-client collaboration (shared editing) would need a different design — defer that.
+
+**Scope:** Router `handle_client` input dispatch (add ownership tracking per FeedId input channel).
+
+#### P6: Protocol version documentation (LOW)
+
+**Problem:** No version field in the frame format. No negotiation mechanism.
+
+**Fix:** Don't change the wire format. Instead:
+1. Document the current format as "Tugcast Binary Protocol v1" in tugcast-core.
+2. Add a one-time handshake at WebSocket connection open: client sends a text frame `{"protocol":"tugcast","version":1}`, server responds `{"protocol":"tugcast","version":1,"capabilities":[]}`. If versions don't match, close with an appropriate WebSocket close code.
+3. The capabilities array is empty for v1 but provides the extension point for future features (compression, fragmentation, subscription filtering).
+
+**Scope:** tugcast-core (documentation), router.rs (handshake before entering feed loop), tugdeck protocol.ts (send handshake on connect).
+
+#### P7: Raise max payload size (MEDIUM)
+
+**Problem:** `MAX_PAYLOAD_SIZE` is 1 MB. `assistant_text` complete events contain full conversation text — observed at multi-MB in real sessions. Shell output from `cat large-file` could easily exceed 1 MB.
+
+**Fix:** Raise to 16 MB. This is still a safety limit — it prevents a runaway feed from consuming unbounded memory. 16 MB accommodates the largest realistic single-frame payloads (full conversation text, large file contents) while remaining bounded.
+
+If larger payloads are eventually needed (e.g., streaming a binary file), add frame fragmentation as a future protocol extension — not now.
+
+**Scope:** tugcast-core `protocol.rs` (one constant change), tests (update boundary tests).
+
+#### P8: Auth for remote use (LOW)
+
+**Problem:** Session cookie + origin validation for localhost only. The "remote use comes for free" architecture works at the transport level, but auth doesn't survive network deployment.
+
+**Fix:** Add a token-based auth mode alongside the existing cookie mode:
+1. Server generates a long-lived API token (stored in tugbank).
+2. Client sends token via `Authorization: Bearer TOKEN` header on WebSocket upgrade.
+3. Server validates token. No origin check in token mode (the token IS the credential).
+4. Cookie mode remains for local browser use. Token mode enables remote CLIs, scripts, and non-browser clients.
+
+Don't implement TLS in tugcast — run it behind a reverse proxy (nginx, caddy) for HTTPS in remote deployments. The proxy terminates TLS; tugcast sees plain HTTP.
+
+**Scope:** tugcast `auth.rs` (add token validation path), tugbank (store tokens), tugdeck (send token header when configured for remote).
+
+#### P9: Optional compression (LOW)
+
+**Problem:** JSON payloads sent raw. Not a problem on localhost. Matters for remote use.
+
+**Fix:** Add WebSocket `permessage-deflate` support. The `tokio-tungstenite` crate supports this as a configuration option on the WebSocket upgrade. No changes to the frame format — compression is transparent at the WebSocket layer.
+
+Enable by default. Disable via flag if CPU overhead is a concern on low-power devices.
+
+**Scope:** tugcast `server.rs` (WebSocket upgrade configuration). Small change.
+
+#### P10: Feed subscription filtering (LOW)
+
+**Problem:** All snapshot feeds go to all clients. No per-client filtering.
+
+**Fix:** Add an optional subscription message after the protocol handshake: `{"type":"subscribe","feeds":[0x20,0x40]}`. If sent, the router only forwards snapshots for the listed FeedIds. If not sent, all feeds are forwarded (backward compatible).
+
+This becomes useful when specialized clients (e.g., a CLI tool that only cares about CodeOutput, or a monitoring dashboard that only wants Stats) connect and don't want irrelevant traffic.
+
+**Scope:** Router `handle_client` (filter snapshot list based on subscription), protocol (new message type).
+
+#### P11: Generalized bootstrap / lag recovery (LOW)
+
+**Problem:** The BOOTSTRAP state captures tmux pane content. This is terminal-specific. Tugshell won't have a tmux pane; its "current state" is different (last command output, cwd, environment). Each backend may need its own bootstrap strategy.
+
+**Fix:** Make bootstrap a per-backend concern, not a router concern. When the router detects lag on a stream feed:
+1. Send a `lag_detected` control frame to the client with the FeedId that lagged.
+2. The client requests a bootstrap: `{"type":"bootstrap_request","feed_id":0x00}`.
+3. The router forwards the request to the backend.
+4. The backend sends its bootstrap data (terminal: captured pane; shell: last N command results; code: recent event buffer from P4).
+
+The router doesn't know what bootstrap means for each backend — it just brokers the request. The backend decides what to send.
+
+**Scope:** Router (replace terminal-specific BOOTSTRAP with generic lag_detected + bootstrap_request), agent bridge (implement code bootstrap from P4 buffer), terminal feed (refactor current bootstrap into the new pattern). Tugshell implements its own bootstrap in Phase T4.
+
+**Work order:**
+
+The fixes have dependencies. Recommended order:
+
+1. **P1** (open FeedId) — unblocks everything, changes the core type
+2. **P7** (raise max payload) — trivial, do alongside P1
+3. **P3** (FeedId collision) — update constants after P1, update tide.md
+4. **P2** (dynamic router) — the big rewrite, depends on P1
+5. **P4** (CodeOutput lag recovery) — depends on P2's new router structure
+6. **P11** (generalized bootstrap) — depends on P2 and P4
+7. **P5** (multi-client input guard) — depends on P2
+8. **P6** (protocol version handshake) — independent, do when convenient
+9. **P8** (remote auth) — independent, do when convenient
+10. **P9** (compression) — independent, small
+11. **P10** (subscription filtering) — depends on P6 (handshake), low priority
+
+**Exit criteria:**
+- `FeedId` is an open `u8` newtype; unknown bytes don't produce errors
+- Router dispatches input frames via dynamic map lookup, not hardcoded fields
+- Adding a new backend is: register channel pair by FeedId, spawn bridge process. No router code changes.
+- CodeOutput lag triggers replay from ring buffer, not silent event loss
+- Multi-client input guarded: first writer claims, others get error
+- Protocol v1 documented; handshake implemented
+- Max payload raised to 16 MB
+- FeedId slot assignments corrected (Defaults=0x50, Shell=0x60/0x61, TugFeed=0x70)
+- `just build && just test` pass
+- Existing tugdeck functionality unaffected (terminal, git, filesystem, stats, code feeds all work)
+
+---
+
 ### Phase T1: Content Block Types {#content-block-types}
 
 **Goal:** Rich rendering for all content types in the unified output stream. This is the block rendering engine that serves both Claude Code conversation content and shell command output. Built on the Phase 3A virtualization engine (BlockHeightIndex, RenderedBlockWindow, WASM pipeline, SmartScroll).
@@ -913,8 +1111,8 @@ History:
 3. OSC 133 marker emission for command boundary detection
 4. Command string capture, exit code, duration, cwd tracking
 5. Raw stdout/stderr capture from pty
-6. Event emission to tugcast via new ShellOutput feed (0x50)
-7. ShellInput feed (0x51) for receiving commands from the UI
+6. Event emission to tugcast via new ShellOutput feed (0x60)
+7. ShellInput feed (0x61) for receiving commands from the UI
 8. Process lifecycle management (kill on tugcast shutdown, no zombies)
 
 **Exit criteria:**
