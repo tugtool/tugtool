@@ -280,7 +280,7 @@ fn check_worktrees() -> HealthCheck {
             }
 
             // Check if path follows the expected pattern
-            if !tugtool_core::is_valid_worktree_path(&path) {
+            if !tugutil_core::is_valid_worktree_path(&path) {
                 invalid_paths.push(path.to_string_lossy().to_string());
             } else {
                 valid_count += 1;
@@ -320,7 +320,7 @@ fn check_stale_branches() -> HealthCheck {
     let repo_root = Path::new(".");
 
     // Get list of tug/* branches
-    let branches = match tugtool_core::list_tugplan_branches(repo_root) {
+    let branches = match tugutil_core::list_tugplan_branches(repo_root) {
         Ok(b) => b,
         Err(e) => {
             return HealthCheck {
@@ -333,7 +333,7 @@ fn check_stale_branches() -> HealthCheck {
     };
 
     // Get list of active worktrees
-    let worktrees = match tugtool_core::list_worktrees(repo_root) {
+    let worktrees = match tugutil_core::list_worktrees(repo_root) {
         Ok(w) => w,
         Err(e) => {
             return HealthCheck {
@@ -396,7 +396,7 @@ fn check_orphaned_worktrees() -> HealthCheck {
     let repo_root = Path::new(".");
 
     // Get list of active worktrees
-    let worktrees = match tugtool_core::list_worktrees(repo_root) {
+    let worktrees = match tugutil_core::list_worktrees(repo_root) {
         Ok(w) => w,
         Err(e) => {
             return HealthCheck {
@@ -519,7 +519,7 @@ fn check_closed_pr_worktrees() -> HealthCheck {
     let repo_root = Path::new(".");
 
     // Get list of active worktrees
-    let worktrees = match tugtool_core::list_worktrees(repo_root) {
+    let worktrees = match tugutil_core::list_worktrees(repo_root) {
         Ok(w) => w,
         Err(e) => {
             return HealthCheck {
@@ -565,7 +565,7 @@ fn check_closed_pr_worktrees() -> HealthCheck {
 
 /// Check for broken anchor references
 fn check_broken_refs() -> HealthCheck {
-    use tugtool_core::{Severity, parse_tugplan, validate_tugplan};
+    use tugutil_core::{Severity, parse_tugplan, validate_tugplan};
 
     let tug_dir = Path::new(".tugtool");
     if !tug_dir.exists() {
@@ -663,7 +663,7 @@ fn check_state_health_at(db_path: &Path, plan_root: &Path) -> HealthCheck {
     }
 
     // Open the database
-    let db = match tugtool_core::StateDb::open(db_path, plan_root) {
+    let db = match tugutil_core::StateDb::open(db_path, plan_root) {
         Ok(db) => db,
         Err(e) => {
             return HealthCheck {
@@ -788,10 +788,10 @@ mod tests {
         let plan_path = plan_dir.join("tugplan-test.md");
         std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 1: Test Step {#step-1}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
 
-        let mut db = tugtool_core::StateDb::open(&db_path, temp.path()).unwrap();
+        let mut db = tugutil_core::StateDb::open(&db_path, temp.path()).unwrap();
         let plan_content = std::fs::read_to_string(&plan_path).unwrap();
-        let parsed = tugtool_core::parse_tugplan(&plan_content).unwrap();
-        let hash = tugtool_core::compute_plan_hash(&plan_path).unwrap();
+        let parsed = tugutil_core::parse_tugplan(&plan_content).unwrap();
+        let hash = tugutil_core::compute_plan_hash(&plan_path).unwrap();
         db.init_plan(".tugtool/tugplan-test.md", &parsed, Some(&hash))
             .unwrap();
 
@@ -811,10 +811,10 @@ mod tests {
         let plan_path = plan_dir.join("tugplan-test.md");
         std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 1: Test Step {#step-1}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
 
-        let mut db = tugtool_core::StateDb::open(&db_path, temp.path()).unwrap();
+        let mut db = tugutil_core::StateDb::open(&db_path, temp.path()).unwrap();
         let plan_content = std::fs::read_to_string(&plan_path).unwrap();
-        let parsed = tugtool_core::parse_tugplan(&plan_content).unwrap();
-        let hash = tugtool_core::compute_plan_hash(&plan_path).unwrap();
+        let parsed = tugutil_core::parse_tugplan(&plan_content).unwrap();
+        let hash = tugutil_core::compute_plan_hash(&plan_path).unwrap();
         db.init_plan(".tugtool/tugplan-test.md", &parsed, Some(&hash))
             .unwrap();
 

@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use tugtool_core::{
+use tugutil_core::{
     TugPlan, find_project_root, find_tugplans, parse_tugplan, tugplan_name_from_path,
 };
 

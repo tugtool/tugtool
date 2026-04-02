@@ -6,13 +6,13 @@ use crate::commands::{DashCommands, LogCommands, StateCommands, WorktreeCommands
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Tug - From ideas to implementation via multi-agent orchestration
+/// Tug utility — project management, state tracking, and developer tools
 #[derive(Parser)]
-#[command(name = "tugcode")]
+#[command(name = "tugutil")]
 #[command(version = VERSION)]
-#[command(about = "From ideas to implementation via multi-agent orchestration")]
+#[command(about = "Tug utility — project management, state tracking, and developer tools")]
 #[command(
-    long_about = "Tug transforms ideas into working software through orchestrated LLM agents.\n\nA multi-agent suite collaborates to create structured plans and execute them to completion.\n\nPlanning and execution are invoked via Claude Code skills (/tugplug:plan, /tugplug:implement).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and manage state for execution tracking."
+    long_about = "Tug utility for project management, state tracking, and developer tools.\n\nManages tugplans, worktrees, state databases, and provides developer utilities.\n\nPlanning and execution are invoked via Claude Code skills (/tugplug:plan, /tugplug:implement).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and manage state."
 )]
 pub struct Cli {
     /// Increase output verbosity

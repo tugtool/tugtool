@@ -11,12 +11,12 @@ use std::process::Command;
 ///
 /// This helper is only applicable on the complete_step error path (Path 2) where
 /// a TugError is available. All other error paths set state_failure_reason directly.
-fn classify_state_error(e: &tugtool_core::TugError) -> StateFailureReason {
+fn classify_state_error(e: &tugutil_core::TugError) -> StateFailureReason {
     match e {
-        tugtool_core::TugError::StateIncompleteChecklist { .. } => StateFailureReason::OpenItems,
-        tugtool_core::TugError::StateOwnershipViolation { .. }
-        | tugtool_core::TugError::StateStepNotClaimed { .. } => StateFailureReason::Ownership,
-        tugtool_core::TugError::StateStepNotFound { .. } => StateFailureReason::DbError,
+        tugutil_core::TugError::StateIncompleteChecklist { .. } => StateFailureReason::OpenItems,
+        tugutil_core::TugError::StateOwnershipViolation { .. }
+        | tugutil_core::TugError::StateStepNotClaimed { .. } => StateFailureReason::Ownership,
+        tugutil_core::TugError::StateStepNotFound { .. } => StateFailureReason::DbError,
         _ => StateFailureReason::DbError,
     }
 }
@@ -179,10 +179,10 @@ pub fn run_commit(
     let (state_update_failed, state_failure_reason, state_warnings) = if is_plan_commit {
         (false, None, vec![])
     } else {
-        match tugtool_core::find_repo_root_from(worktree_path) {
+        match tugutil_core::find_repo_root_from(worktree_path) {
             Ok(repo_root) => {
                 let db_path = repo_root.join(".tugtool").join("state.db");
-                match tugtool_core::StateDb::open(&db_path, &repo_root) {
+                match tugutil_core::StateDb::open(&db_path, &repo_root) {
                     Ok(mut db) => {
                         // Resolve plan_id via database lookup (not filesystem)
                         let plan_id = match db.lookup_plan_by_id_or_slug(&plan) {
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_classify_state_error_open_items_incomplete_checklist() {
-        let err = tugtool_core::TugError::StateIncompleteChecklist {
+        let err = tugutil_core::TugError::StateIncompleteChecklist {
             anchor: "step-1".to_string(),
             incomplete_count: 3,
         };
@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_classify_state_error_ownership_violation() {
-        let err = tugtool_core::TugError::StateOwnershipViolation {
+        let err = tugutil_core::TugError::StateOwnershipViolation {
             anchor: "step-1".to_string(),
             claimed_by: "/tmp/wt1".to_string(),
             worktree: "/tmp/wt2".to_string(),
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_classify_state_error_step_not_claimed() {
-        let err = tugtool_core::TugError::StateStepNotClaimed {
+        let err = tugutil_core::TugError::StateStepNotClaimed {
             anchor: "step-1".to_string(),
             current_status: "pending".to_string(),
         };
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_classify_state_error_db_open() {
-        let err = tugtool_core::TugError::StateDbOpen {
+        let err = tugutil_core::TugError::StateDbOpen {
             reason: "could not open state.db".to_string(),
         };
         assert_eq!(
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_classify_state_error_db_query() {
-        let err = tugtool_core::TugError::StateDbQuery {
+        let err = tugutil_core::TugError::StateDbQuery {
             reason: "SQL error".to_string(),
         };
         assert_eq!(
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_classify_state_error_step_not_found() {
-        let err = tugtool_core::TugError::StateStepNotFound {
+        let err = tugutil_core::TugError::StateStepNotFound {
             plan_id: "tugplan-foo-abc1234-1".to_string(),
             anchor: "step-99".to_string(),
         };

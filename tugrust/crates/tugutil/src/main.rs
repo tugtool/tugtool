@@ -1,4 +1,4 @@
-//! Tug CLI - From ideas to implementation via multi-agent orchestration
+//! Tug utility — project management, state tracking, and developer tools
 
 mod cli;
 mod commands;

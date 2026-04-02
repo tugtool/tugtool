@@ -1,7 +1,7 @@
 //! Resolve command implementation
 
 use crate::output::{JsonIssue, JsonResponse, ResolveData};
-use tugtool_core::{
+use tugutil_core::{
     ResolveResult, ResolveStage, TugError, find_project_root, resolve_plan, tugplan_name_from_path,
 };
 

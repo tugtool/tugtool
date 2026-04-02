@@ -1,13 +1,13 @@
 [package]
-name = "tugtool-core"
+name = "tugutil-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Core library for tugtool: parsing, validation, and types"
+description = "Core library for tugutil: parsing, validation, and types"
 
 [lib]
-name = "tugtool_core"
+name = "tugutil_core"
 path = "src/lib.rs"
 
 [dependencies]

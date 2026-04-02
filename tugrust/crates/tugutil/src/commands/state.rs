@@ -9,7 +9,7 @@ use serde::Deserialize;
 /// 1. Exact plan_id match
 /// 2. Slug prefix match
 /// 3. File path match (for backward compatibility with existing callers)
-fn resolve_plan_id(db: &tugtool_core::StateDb, input: &str) -> Result<String, String> {
+fn resolve_plan_id(db: &tugutil_core::StateDb, input: &str) -> Result<String, String> {
     if let Ok(Some(id)) = db.lookup_plan_by_id_or_slug(input) {
         return Ok(id);
     }
@@ -29,7 +29,7 @@ struct BatchUpdateEntry {
     reason: Option<String>,
 }
 
-impl tugtool_core::BatchEntry for BatchUpdateEntry {
+impl tugutil_core::BatchEntry for BatchUpdateEntry {
     fn kind(&self) -> &str {
         &self.kind
     }
@@ -201,20 +201,20 @@ pub enum StateCommands {
 
 pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+    let resolved = tugutil_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
 
     let (plan_abs, plan_rel) = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
+        tugutil_core::ResolveResult::Found { path, .. } => {
             let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
             (path, relative_path)
         }
-        tugtool_core::ResolveResult::NotFound => {
+        tugutil_core::ResolveResult::NotFound => {
             return Err(format!("Plan not found: {}", plan));
         }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+        tugutil_core::ResolveResult::Ambiguous(candidates) => {
             let candidate_strs: Vec<String> =
                 candidates.iter().map(|p| p.display().to_string()).collect();
             return Err(format!(
@@ -228,15 +228,15 @@ pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, Stri
     // 3. Parse the plan
     let plan_content =
         std::fs::read_to_string(&plan_abs).map_err(|e| format!("Failed to read plan: {}", e))?;
-    let parsed = tugtool_core::parse_tugplan(&plan_content)
+    let parsed = tugutil_core::parse_tugplan(&plan_content)
         .map_err(|e| format!("Failed to parse plan: {}", e))?;
 
     // 4. Compute plan hash
-    let plan_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
+    let plan_hash = tugutil_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
 
     // 5. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 6. Init plan
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
@@ -277,20 +277,20 @@ pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, Stri
 
 pub fn run_state_reinit(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Resolve plan path
-    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+    let resolved = tugutil_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
 
     let (plan_abs, plan_rel) = match resolved {
-        tugtool_core::ResolveResult::Found { path, .. } => {
+        tugutil_core::ResolveResult::Found { path, .. } => {
             let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
             (path, relative_path)
         }
-        tugtool_core::ResolveResult::NotFound => {
+        tugutil_core::ResolveResult::NotFound => {
             return Err(format!("Plan not found: {}", plan));
         }
-        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+        tugutil_core::ResolveResult::Ambiguous(candidates) => {
             let candidate_strs: Vec<String> =
                 candidates.iter().map(|p| p.display().to_string()).collect();
             return Err(format!(
@@ -304,15 +304,15 @@ pub fn run_state_reinit(plan: String, json: bool, quiet: bool) -> Result<i32, St
     // 3. Parse the plan
     let plan_content =
         std::fs::read_to_string(&plan_abs).map_err(|e| format!("Failed to read plan: {}", e))?;
-    let parsed = tugtool_core::parse_tugplan(&plan_content)
+    let parsed = tugutil_core::parse_tugplan(&plan_content)
         .map_err(|e| format!("Failed to parse plan: {}", e))?;
 
     // 4. Compute plan hash
-    let plan_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
+    let plan_hash = tugutil_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
 
     // 5. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 6. Reinit plan (drop all state, then re-initialize)
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
@@ -361,11 +361,11 @@ pub fn run_state_claim(
     quiet: bool,
 ) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -382,7 +382,7 @@ pub fn run_state_claim(
     // 6. Output
     if json {
         use crate::output::{JsonResponse, StateClaimData};
-        use tugtool_core::ClaimResult;
+        use tugutil_core::ClaimResult;
 
         let plan_path_opt = plan_state.plan_path.clone();
         let data = match result {
@@ -444,7 +444,7 @@ pub fn run_state_claim(
             serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
         );
     } else if !quiet {
-        use tugtool_core::ClaimResult;
+        use tugutil_core::ClaimResult;
 
         match result {
             ClaimResult::Claimed {
@@ -492,11 +492,11 @@ pub fn run_state_start(
     quiet: bool,
 ) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -535,11 +535,11 @@ pub fn run_state_heartbeat(
     quiet: bool,
 ) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -581,11 +581,11 @@ pub fn run_state_complete_checklist(
     use std::io::IsTerminal;
 
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -649,11 +649,11 @@ pub fn run_state_artifact(
     quiet: bool,
 ) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -722,11 +722,11 @@ pub fn run_state_complete(
     quiet: bool,
 ) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -774,11 +774,11 @@ pub fn run_state_show(
     quiet: bool,
 ) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     if let Some(plan) = plan {
         // Show specific plan
@@ -828,7 +828,7 @@ pub fn run_state_show(
             use crate::output::JsonResponse;
             #[derive(serde::Serialize)]
             struct StateShowAllData {
-                plans: Vec<tugtool_core::PlanState>,
+                plans: Vec<tugutil_core::PlanState>,
             }
             let data = StateShowAllData { plans: plan_states };
             let response = JsonResponse::ok("state show", data);
@@ -862,7 +862,7 @@ pub fn run_state_show(
 }
 
 /// Helper function to print plan state in text format
-fn print_plan_state(plan: &tugtool_core::PlanState) {
+fn print_plan_state(plan: &tugutil_core::PlanState) {
     println!(
         "Plan: {}",
         plan.plan_path.as_deref().unwrap_or(&plan.plan_id)
@@ -879,7 +879,7 @@ fn print_plan_state(plan: &tugtool_core::PlanState) {
 }
 
 /// Helper function to print step state with indentation
-fn print_step_state(step: &tugtool_core::StepState, indent: usize) {
+fn print_step_state(step: &tugutil_core::StepState, indent: usize) {
     let prefix = "  ".repeat(indent);
 
     // Status indicator
@@ -964,8 +964,8 @@ fn print_progress_bar(label: &str, completed: usize, total: usize) {
 
 /// Print checklist view with per-item status markers
 fn print_checklist_view(
-    plan_state: &tugtool_core::PlanState,
-    items: &[tugtool_core::ChecklistItemDetail],
+    plan_state: &tugutil_core::PlanState,
+    items: &[tugutil_core::ChecklistItemDetail],
 ) {
     println!(
         "Plan: {}",
@@ -983,7 +983,7 @@ fn print_checklist_view(
     // Group items by step_anchor
     let mut items_by_step: std::collections::HashMap<
         String,
-        Vec<&tugtool_core::ChecklistItemDetail>,
+        Vec<&tugutil_core::ChecklistItemDetail>,
     > = std::collections::HashMap::new();
     for item in items {
         items_by_step
@@ -1000,8 +1000,8 @@ fn print_checklist_view(
 
 /// Print checklist items for a step
 fn print_step_checklist(
-    step: &tugtool_core::StepState,
-    items_by_step: &std::collections::HashMap<String, Vec<&tugtool_core::ChecklistItemDetail>>,
+    step: &tugutil_core::StepState,
+    items_by_step: &std::collections::HashMap<String, Vec<&tugutil_core::ChecklistItemDetail>>,
     indent: usize,
 ) {
     let prefix = "  ".repeat(indent);
@@ -1057,7 +1057,7 @@ fn print_step_checklist(
 }
 
 /// Print a single checklist item with status marker
-fn print_checklist_item(item: &tugtool_core::ChecklistItemDetail, indent: usize) {
+fn print_checklist_item(item: &tugutil_core::ChecklistItemDetail, indent: usize) {
     let prefix = "  ".repeat(indent);
     let marker = match item.status.as_str() {
         "completed" => "[x]",
@@ -1078,11 +1078,11 @@ fn print_checklist_item(item: &tugtool_core::ChecklistItemDetail, indent: usize)
 
 pub fn run_state_ready(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -1134,11 +1134,11 @@ pub fn run_state_ready(plan: String, json: bool, quiet: bool) -> Result<i32, Str
 
 pub fn run_state_reset(plan: String, step: String, json: bool, quiet: bool) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -1176,11 +1176,11 @@ pub fn run_state_release(
     quiet: bool,
 ) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -1222,11 +1222,11 @@ pub fn run_state_reconcile(
     quiet: bool,
 ) -> Result<i32, String> {
     // 1. Resolve repo root
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // 2. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
 
     // 3. Resolve plan_id
     let plan_id = resolve_plan_id(&db, &plan)?;
@@ -1290,9 +1290,9 @@ pub fn run_state_reconcile(
 }
 
 pub fn run_state_archive(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let mut db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let mut db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
     let plan_id = resolve_plan_id(&db, &plan)?;
     let result = db.archive_plan(&plan_id).map_err(|e| e.to_string())?;
 
@@ -1318,9 +1318,9 @@ pub fn run_state_archive(plan: String, json: bool, quiet: bool) -> Result<i32, S
 }
 
 pub fn run_state_list(all: bool, json: bool, quiet: bool) -> Result<i32, String> {
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
+    let db = tugutil_core::StateDb::open(&db_path, &repo_root).map_err(|e| e.to_string())?;
     let plans = db.list_plans(all).map_err(|e| e.to_string())?;
 
     if json {
@@ -1398,7 +1398,7 @@ fn scan_git_trailers(
     repo_root: &std::path::Path,
     plan_id: &str,
     plan_file_path: Option<&str>,
-) -> Result<Vec<tugtool_core::ReconcileEntry>, String> {
+) -> Result<Vec<tugutil_core::ReconcileEntry>, String> {
     use std::process::Command;
 
     // Run: git log --all --format="%H%n%B%n---END---" to get all commits with trailers
@@ -1431,7 +1431,7 @@ fn scan_git_trailers(
                 current_step.take(),
                 current_plan.take(),
             ) {
-                entries.push(tugtool_core::ReconcileEntry {
+                entries.push(tugutil_core::ReconcileEntry {
                     step_anchor: step,
                     plan_path: plan,
                     commit_hash: hash,

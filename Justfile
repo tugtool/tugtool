@@ -7,11 +7,11 @@ default:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd tugrust && cargo build -p tugcast -p tugtool -p tugcode -p tugrelaunch -p tugbank
+    cd tugrust && cargo build -p tugcast -p tugtool -p tugutil -p tugrelaunch -p tugbank
     cd ..
     bun build --compile tugtalk/src/main.ts --outfile tugrust/target/debug/tugtalk
     mkdir -p ~/.local/bin
-    for bin in tugcast tugtool tugcode tugrelaunch tugbank; do
+    for bin in tugcast tugtool tugutil tugrelaunch tugbank; do
         ln -sf "$(pwd)/tugrust/target/debug/$bin" ~/.local/bin/"$bin"
     done
 
@@ -77,7 +77,7 @@ app: build wasm
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     MACOS_DIR="$APP_DIR/Contents/MacOS"
     cp tugrust/target/debug/tugcast "$MACOS_DIR/"
-    cp tugrust/target/debug/tugcode "$MACOS_DIR/"
+    cp tugrust/target/debug/tugutil "$MACOS_DIR/"
     cp tugrust/target/debug/tugtool "$MACOS_DIR/"
     cp tugrust/target/debug/tugrelaunch "$MACOS_DIR/"
     cp tugrust/target/debug/tugtalk "$MACOS_DIR/"

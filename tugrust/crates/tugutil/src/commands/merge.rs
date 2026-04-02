@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::{Command, Output};
-use tugtool_core::{
+use tugutil_core::{
     ResolveResult, TugError, derive_tugplan_slug, find_worktree_by_tugplan, list_tugplan_branches,
     list_worktrees, remove_worktree, resolve_plan,
 };

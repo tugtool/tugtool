@@ -3,7 +3,7 @@
 //! These tests validate the parser and validator against fixture files.
 
 use std::fs;
-use tugtool_core::{Severity, parse_tugplan, validate_tugplan};
+use tugutil_core::{Severity, parse_tugplan, validate_tugplan};
 
 const FIXTURES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures");
 const GOLDEN_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/golden");

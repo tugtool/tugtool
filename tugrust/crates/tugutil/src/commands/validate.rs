@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tugtool_core::{
+use tugutil_core::{
     Config, ResolveResult, Severity, ValidationConfig, ValidationLevel, ValidationResult,
     find_project_root, find_tugplans, parse_tugplan, resolve_plan, tugplan_name_from_path,
     validate_tugplan_with_config,
@@ -224,7 +224,7 @@ fn validate_file(path: &Path, config: &ValidationConfig) -> ValidationResult {
         Ok(c) => c,
         Err(e) => {
             let mut result = ValidationResult::new();
-            result.add_issue(tugtool_core::ValidationIssue::new(
+            result.add_issue(tugutil_core::ValidationIssue::new(
                 "E002",
                 Severity::Error,
                 format!("failed to read file: {}", e),
@@ -241,7 +241,7 @@ fn validate_file(path: &Path, config: &ValidationConfig) -> ValidationResult {
         }
         Err(e) => {
             let mut result = ValidationResult::new();
-            result.add_issue(tugtool_core::ValidationIssue::new(
+            result.add_issue(tugutil_core::ValidationIssue::new(
                 "E001",
                 Severity::Error,
                 format!("failed to parse plan: {}", e),
@@ -400,7 +400,7 @@ fn output_text(project_root: &Path, results: &[(PathBuf, ValidationResult)]) {
 }
 
 /// Print a single diagnostic
-fn print_diagnostic(diagnostic: &tugtool_core::ParseDiagnostic) {
+fn print_diagnostic(diagnostic: &tugutil_core::ParseDiagnostic) {
     println!(
         "  warning[{}]: line {}: {}",
         diagnostic.code, diagnostic.line, diagnostic.message
@@ -411,7 +411,7 @@ fn print_diagnostic(diagnostic: &tugtool_core::ParseDiagnostic) {
 }
 
 /// Print a single issue
-fn print_issue(issue: &tugtool_core::ValidationIssue) {
+fn print_issue(issue: &tugutil_core::ValidationIssue) {
     let line_info = issue
         .line
         .map(|l| format!("Line {}: ", l))

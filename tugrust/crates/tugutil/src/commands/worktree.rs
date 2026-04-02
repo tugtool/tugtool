@@ -6,7 +6,7 @@
 use clap::Subcommand;
 use serde::Serialize;
 use std::path::Path;
-use tugtool_core::{
+use tugutil_core::{
     ResolveResult, TugError, ValidationLevel, derive_tugplan_slug, resolve_plan,
     worktree::{
         CleanupMode, DiscoveredWorktree, WorktreeConfig, cleanup_worktrees, create_worktree,
@@ -261,7 +261,7 @@ fn rollback_worktree_creation(
     worktree_path: &Path,
     branch_name: &str,
     repo_root: &Path,
-) -> Result<(), tugtool_core::error::TugError> {
+) -> Result<(), tugutil_core::error::TugError> {
     use std::process::Command;
 
     // Remove worktree directory
@@ -315,9 +315,9 @@ pub fn run_worktree_setup_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => match tugtool_core::find_repo_root() {
+        None => match tugutil_core::find_repo_root() {
             Ok(root) => root,
-            Err(tugtool_core::TugError::NotAGitRepository) => {
+            Err(tugutil_core::TugError::NotAGitRepository) => {
                 // Fresh directory — ensure_git_repo() below will initialize git
                 std::env::current_dir().map_err(|e| e.to_string())?
             }
@@ -366,7 +366,7 @@ pub fn run_worktree_setup_with_root(
             .map_err(|e| format!("Failed to read plan: {}", e))?;
 
         // Parse plan
-        let parsed_plan = match tugtool_core::parse_tugplan(&plan_content) {
+        let parsed_plan = match tugutil_core::parse_tugplan(&plan_content) {
             Ok(s) => s,
             Err(e) => {
                 if json_output {
@@ -382,11 +382,11 @@ pub fn run_worktree_setup_with_root(
         };
 
         // Validate with normal level
-        let validation_config = tugtool_core::validator::ValidationConfig {
+        let validation_config = tugutil_core::validator::ValidationConfig {
             level: ValidationLevel::Normal,
         };
         let validation_result =
-            tugtool_core::validate_tugplan_with_config(&parsed_plan, &validation_config);
+            tugutil_core::validate_tugplan_with_config(&parsed_plan, &validation_config);
 
         // Check for validation errors or diagnostics
         if !validation_result.valid || !validation_result.diagnostics.is_empty() {
@@ -524,7 +524,7 @@ pub fn run_worktree_setup_with_root(
 
             // Run tugtool init in the worktree (idempotent, creates .tugtool/ infrastructure)
             let init_result = std::env::current_exe()
-                .map_err(|e| tugtool_core::error::TugError::InitFailed {
+                .map_err(|e| tugutil_core::error::TugError::InitFailed {
                     reason: format!("failed to get current executable: {}", e),
                 })
                 .and_then(|exe| {
@@ -533,7 +533,7 @@ pub fn run_worktree_setup_with_root(
                         .arg("init")
                         .current_dir(&worktree_path)
                         .output()
-                        .map_err(|e| tugtool_core::error::TugError::InitFailed {
+                        .map_err(|e| tugutil_core::error::TugError::InitFailed {
                             reason: format!("failed to execute init: {}", e),
                         })
                 })
@@ -542,7 +542,7 @@ pub fn run_worktree_setup_with_root(
                         Ok(())
                     } else {
                         let stderr = String::from_utf8_lossy(&output.stderr);
-                        Err(tugtool_core::error::TugError::InitFailed {
+                        Err(tugutil_core::error::TugError::InitFailed {
                             reason: format!("init failed: {}", stderr),
                         })
                     }
@@ -580,7 +580,7 @@ pub fn run_worktree_setup_with_root(
             let synced_plan_path = worktree_path.join(&plan);
             let synced_plan_content = std::fs::read_to_string(&synced_plan_path)
                 .map_err(|e| format!("failed to read synced plan: {}", e))?;
-            let synced_plan = tugtool_core::parse_tugplan(&synced_plan_content)
+            let synced_plan = tugutil_core::parse_tugplan(&synced_plan_content)
                 .map_err(|e| format!("failed to parse synced plan: {}", e))?;
 
             let all_steps: Vec<String> =
@@ -590,8 +590,8 @@ pub fn run_worktree_setup_with_root(
             // Initialize tugstate for this worktree and query ready steps while db is in scope
             let (state_initialized, auto_reinitialized, state_warnings, ready_steps) = {
                 let db_path = repo_root.join(".tugtool").join("state.db");
-                match tugtool_core::compute_plan_hash(&synced_plan_path) {
-                    Ok(plan_hash) => match tugtool_core::StateDb::open(&db_path, &repo_root) {
+                match tugutil_core::compute_plan_hash(&synced_plan_path) {
+                    Ok(plan_hash) => match tugutil_core::StateDb::open(&db_path, &repo_root) {
                         Ok(mut db) => match db.init_plan(&plan, &synced_plan, Some(&plan_hash)) {
                             Ok(init_result) => {
                                 let plan_id = &init_result.plan_id;
@@ -726,11 +726,11 @@ pub fn run_worktree_setup_with_root(
         Err(e) => {
             // Map error to appropriate exit code
             let exit_code = match &e {
-                tugtool_core::error::TugError::NotAGitRepository => 5,
-                tugtool_core::error::TugError::GitVersionInsufficient => 4,
-                tugtool_core::error::TugError::BaseBranchNotFound { .. } => 6,
-                tugtool_core::error::TugError::PlanHasNoSteps => 8,
-                tugtool_core::error::TugError::WorktreeAlreadyExists => 3,
+                tugutil_core::error::TugError::NotAGitRepository => 5,
+                tugutil_core::error::TugError::GitVersionInsufficient => 4,
+                tugutil_core::error::TugError::BaseBranchNotFound { .. } => 6,
+                tugutil_core::error::TugError::PlanHasNoSteps => 8,
+                tugutil_core::error::TugError::WorktreeAlreadyExists => 3,
                 _ => 1,
             };
 
@@ -757,7 +757,7 @@ pub fn run_worktree_list_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
+        None => tugutil_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     match list_worktrees(&repo_root) {
@@ -831,7 +831,7 @@ pub fn run_worktree_cleanup_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
+        None => tugutil_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     // Determine cleanup mode
@@ -944,7 +944,7 @@ pub fn run_worktree_discard(
 ) -> Result<i32, String> {
     use std::process::Command;
 
-    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+    let repo_root = tugutil_core::find_repo_root().map_err(|e| e.to_string())?;
 
     // Resolve the target to a worktree
     let worktrees = list_worktrees(&repo_root).map_err(|e| e.to_string())?;
@@ -1016,7 +1016,7 @@ pub fn run_worktree_discard(
     // Step 1: Archive the plan in state DB
     let (plan_id, archived, snapshot_taken) = {
         let db_path = repo_root.join(".tugtool").join("state.db");
-        match tugtool_core::StateDb::open(&db_path, &repo_root) {
+        match tugutil_core::StateDb::open(&db_path, &repo_root) {
             Ok(mut db) => {
                 // Look up plan_id by slug
                 match db.lookup_plan_by_id_or_slug(&plan_slug) {

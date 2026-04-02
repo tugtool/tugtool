@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::io::{self, IsTerminal, Read};
 use std::path::Path;
 use std::process::Command;
-use tugtool_core::{
+use tugutil_core::{
     DashRoundMeta, DashStatus, StateDb, detect_default_branch, find_repo_root,
     sanitize_branch_name, validate_dash_name,
 };

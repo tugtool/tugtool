@@ -1,7 +1,7 @@
 //! JSON output formatting per Spec S05
 
 use serde::{Deserialize, Serialize};
-use tugtool_core::{Severity, ValidationIssue};
+use tugutil_core::{Severity, ValidationIssue};
 
 const SCHEMA_VERSION: &str = "1";
 
@@ -134,8 +134,8 @@ pub struct JsonDiagnostic {
     pub file: Option<String>,
 }
 
-impl From<&tugtool_core::ParseDiagnostic> for JsonDiagnostic {
-    fn from(diagnostic: &tugtool_core::ParseDiagnostic) -> Self {
+impl From<&tugutil_core::ParseDiagnostic> for JsonDiagnostic {
+    fn from(diagnostic: &tugutil_core::ParseDiagnostic) -> Self {
         Self {
             code: diagnostic.code.clone(),
             message: diagnostic.message.clone(),
@@ -657,7 +657,7 @@ pub struct StateCompleteData {
 /// Data payload for state show command
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StateShowData {
-    pub plan: tugtool_core::PlanState,
+    pub plan: tugutil_core::PlanState,
 }
 
 /// Data payload for state ready command
@@ -666,10 +666,10 @@ pub struct StateReadyData {
     pub plan_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan_path: Option<String>,
-    pub ready: Vec<tugtool_core::StepInfo>,
-    pub blocked: Vec<tugtool_core::StepInfo>,
-    pub completed: Vec<tugtool_core::StepInfo>,
-    pub expired_claim: Vec<tugtool_core::StepInfo>,
+    pub ready: Vec<tugutil_core::StepInfo>,
+    pub blocked: Vec<tugutil_core::StepInfo>,
+    pub completed: Vec<tugutil_core::StepInfo>,
+    pub expired_claim: Vec<tugutil_core::StepInfo>,
 }
 
 /// Data payload for state reset command
@@ -701,7 +701,7 @@ pub struct StateReconcileData {
     pub plan_path: Option<String>,
     pub reconciled_count: usize,
     pub skipped_count: usize,
-    pub skipped_mismatches: Vec<tugtool_core::SkippedMismatch>,
+    pub skipped_mismatches: Vec<tugutil_core::SkippedMismatch>,
 }
 
 /// Data payload for state archive command

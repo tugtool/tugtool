@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tugcode", "crates/tugtool-core", "crates/tugcast", "crates/tugcast-core", "crates/tugtool", "crates/tugrelaunch", "crates/tugbank-core", "crates/tugbank"]
+members = ["crates/tugutil", "crates/tugutil-core", "crates/tugcast", "crates/tugcast-core", "crates/tugtool", "crates/tugrelaunch", "crates/tugbank-core", "crates/tugbank"]
 
 [workspace.package]
 version = "0.7.48"
@@ -48,7 +48,7 @@ rusqlite = { version = "0.33", features = ["bundled"] }
 sha2 = "0.10"
 
 # Internal crates
-tugtool-core = { path = "crates/tugtool-core" }
+tugutil-core = { path = "crates/tugutil-core" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

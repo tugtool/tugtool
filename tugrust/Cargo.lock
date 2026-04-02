@@ -2263,24 +2263,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tugcode"
-version = "0.7.48"
-dependencies = [
- "anyhow",
- "clap",
- "dirs",
- "regex",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "thiserror 2.0.18",
- "toml",
- "tugtool-core",
- "ureq",
-]
-
-[[package]]
 name = "tugrelaunch"
 version = "0.7.48"
 dependencies = [
@@ -2305,7 +2287,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "tugtool-core"
+name = "tugutil"
+version = "0.7.48"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dirs",
+ "regex",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+ "tugutil-core",
+ "ureq",
+]
+
+[[package]]
+name = "tugutil-core"
 version = "0.7.48"
 dependencies = [
  "regex",
