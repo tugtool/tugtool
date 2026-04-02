@@ -43,6 +43,19 @@ pub struct MergeData {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Sync state: "in_sync", "behind", "ahead_clean", "ahead_conflict",
+    /// "diverged_clean", "diverged_conflict"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_state: Option<String>,
+    /// Commits local main is ahead of origin (omitted when 0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ahead_count: Option<u32>,
+    /// Commits local main is behind origin (omitted when 0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub behind_count: Option<u32>,
+    /// Files with merge conflicts (only present for conflict states)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflicting_files: Option<Vec<String>>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -65,6 +78,10 @@ impl MergeData {
             warnings: None,
             error: Some(msg),
             message: None,
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         }
     }
 }
@@ -459,10 +476,11 @@ fn squash_merge_branch(repo_root: &Path, branch: &str, message: &str) -> Result<
 #[derive(Debug)]
 enum MainSyncState {
     InSync,
-    LocalAhead {
-        local: String,
-        remote: String,
+    Ahead {
+        _local: String,
+        _remote: String,
         ahead_count: u32,
+        conflicts: Vec<String>,
     },
     LocalBehind {
         _local: String,
@@ -470,9 +488,59 @@ enum MainSyncState {
         _behind_count: u32,
     },
     Diverged {
-        local: String,
-        remote: String,
+        _local: String,
+        _remote: String,
+        ahead_count: u32,
+        behind_count: u32,
+        conflicts: Vec<String>,
     },
+}
+
+/// Run `git merge-tree --write-tree --no-messages origin/main main` to detect
+/// whether a clean merge is possible. Returns a list of conflicting file paths.
+/// An empty list means a clean merge. On failure (e.g., old git version),
+/// returns an empty list (optimistic: assume clean).
+fn detect_merge_conflicts(repo_root: &Path) -> Vec<String> {
+    // First probe with --write-tree (requires Git 2.38+).
+    let probe = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["merge-tree", "--write-tree", "--no-messages", "origin/main", "main"])
+        .output();
+
+    let output = match probe {
+        Ok(o) => o,
+        Err(_) => return Vec::new(), // git not available — assume clean
+    };
+
+    if output.status.success() {
+        // Exit 0 → clean merge possible
+        return Vec::new();
+    }
+
+    // Non-zero exit: conflicts exist. Extract filenames from the output.
+    // `git merge-tree --write-tree --no-messages` prints conflicting paths on
+    // lines that contain the path after a NUL-separated triple. The simplest
+    // portable approach: re-run with --name-only to get conflict filenames.
+    let name_only = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["merge-tree", "--write-tree", "--no-messages", "--name-only", "origin/main", "main"])
+        .output();
+
+    match name_only {
+        Ok(o) => {
+            let text = String::from_utf8_lossy(&o.stdout);
+            // The first line is the tree SHA; subsequent lines are conflict paths.
+            let mut lines = text.lines();
+            lines.next(); // skip tree SHA line
+            lines
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.trim().to_string())
+                .collect()
+        }
+        Err(_) => Vec::new(), // fallback: assume clean
+    }
 }
 
 /// Check how local main relates to origin/main
@@ -549,10 +617,12 @@ fn check_main_sync(repo_root: &Path) -> Result<MainSyncState, String> {
             .trim()
             .parse::<u32>()
             .unwrap_or(0);
-        return Ok(MainSyncState::LocalAhead {
-            local: local_hash,
-            remote: remote_hash,
+        let conflicts = detect_merge_conflicts(repo_root);
+        return Ok(MainSyncState::Ahead {
+            _local: local_hash,
+            _remote: remote_hash,
             ahead_count,
+            conflicts,
         });
     }
 
@@ -584,9 +654,36 @@ fn check_main_sync(repo_root: &Path) -> Result<MainSyncState, String> {
     }
 
     // Step 7: Neither is an ancestor of the other → diverged
+    let ahead_count_output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["rev-list", "--count", "origin/main..main"])
+        .output()
+        .map_err(|e| format!("Failed to count ahead commits for diverged: {}", e))?;
+    let ahead_count = String::from_utf8_lossy(&ahead_count_output.stdout)
+        .trim()
+        .parse::<u32>()
+        .unwrap_or(0);
+
+    let behind_count_output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["rev-list", "--count", "main..origin/main"])
+        .output()
+        .map_err(|e| format!("Failed to count behind commits for diverged: {}", e))?;
+    let behind_count = String::from_utf8_lossy(&behind_count_output.stdout)
+        .trim()
+        .parse::<u32>()
+        .unwrap_or(0);
+
+    let conflicts = detect_merge_conflicts(repo_root);
+
     Ok(MainSyncState::Diverged {
-        local: local_hash,
-        remote: remote_hash,
+        _local: local_hash,
+        _remote: remote_hash,
+        ahead_count,
+        behind_count,
+        conflicts,
     })
 }
 
@@ -765,10 +862,15 @@ fn run_merge_in(
         }
     }
 
-    // P4: Main sync check (remote mode: blocker for ahead/diverged, local mode: skip)
-    // In remote mode, merge does fetch + merge --ff-only origin/main after the PR
-    // merges on GitHub. LocalBehind is fine (ff-only handles it). LocalAhead or
-    // Diverged will cause the fast-forward to fail, so block early.
+    // P4: Main sync check (remote mode only). Three-tier response:
+    //   - InSync / LocalBehind → proceed automatically
+    //   - Ahead/Diverged with no conflicts → add warning, set sync_state, continue
+    //   - Ahead/Diverged with conflicts → block with error listing conflicting files
+    let mut p4_sync_state: Option<String> = None;
+    let mut p4_ahead_count: Option<u32> = None;
+    let mut p4_behind_count: Option<u32> = None;
+    let mut p4_conflicting_files: Option<Vec<String>> = None;
+
     if effective_mode == "remote" {
         match check_main_sync(&repo_root) {
             Err(e) => {
@@ -786,6 +888,10 @@ fn run_merge_in(
                     warnings: Some(all_warnings.clone()),
                     error: Some(e.clone()),
                     message: None,
+                    sync_state: None,
+                    ahead_count: None,
+                    behind_count: None,
+                    conflicting_files: None,
                 };
                 if json {
                     println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -794,86 +900,133 @@ fn run_merge_in(
                 }
                 return Err(e);
             }
-            Ok(MainSyncState::InSync) | Ok(MainSyncState::LocalBehind { .. }) => {
-                // InSync: nothing to do.
-                // LocalBehind: merge --ff-only will fast-forward local main after the PR
-                // merges on GitHub, so this is safe to proceed.
+            Ok(MainSyncState::InSync) => {
+                p4_sync_state = Some("in_sync".to_string());
+                // InSync: nothing to do; proceed automatically.
             }
-            Ok(MainSyncState::LocalAhead {
-                local,
-                remote,
+            Ok(MainSyncState::LocalBehind { .. }) => {
+                p4_sync_state = Some("behind".to_string());
+                // LocalBehind: ff-only will fast-forward local main; safe to proceed.
+            }
+            Ok(MainSyncState::Ahead {
                 ahead_count,
+                conflicts,
+                ..
             }) => {
-                let err_msg = format!(
-                    "Local main is {} commit(s) ahead of origin/main.\n\
-                     \n\
-                     Local:  {}\n\
-                     Remote: {}\n\
-                     \n\
-                     After the PR merges on GitHub, git merge --ff-only will fail because\n\
-                     local main has commits that origin doesn't. Push your local commits\n\
-                     first so the fast-forward succeeds:\n\
-                     \n\
-                       git push origin main",
-                    ahead_count, local, remote
-                );
-                let data = MergeData {
-                    status: "error".to_string(),
-                    merge_mode: Some("remote".to_string()),
-                    branch_name: Some(branch.clone()),
-                    worktree_path: Some(wt_path.display().to_string()),
-                    pr_url: pr_info.as_ref().map(|p| p.url.clone()),
-                    pr_number: pr_info.as_ref().map(|p| p.number),
-                    squash_commit: None,
-                    worktree_cleaned: None,
-                    dry_run,
-                    untracked_files: None,
-                    warnings: Some(all_warnings.clone()),
-                    error: Some(err_msg.clone()),
-                    message: None,
-                };
-                if json {
-                    println!("{}", serde_json::to_string_pretty(&data).unwrap());
-                } else if !quiet {
-                    eprintln!("error: {}", err_msg);
+                if conflicts.is_empty() {
+                    // ahead_clean: warn but do NOT block
+                    p4_sync_state = Some("ahead_clean".to_string());
+                    p4_ahead_count = Some(ahead_count);
+                    all_warnings.push(format!(
+                        "Local main is {} commit(s) ahead of origin/main. Will rebase after merge.",
+                        ahead_count
+                    ));
+                } else {
+                    // ahead_conflict: block
+                    p4_sync_state = Some("ahead_conflict".to_string());
+                    p4_ahead_count = Some(ahead_count);
+                    p4_conflicting_files = Some(conflicts.clone());
+                    let err_msg = format!(
+                        "Local main is {} commit(s) ahead of origin/main and has merge conflicts.\n\
+                         \n\
+                         Conflicting files:\n  {}\n\
+                         \n\
+                         Resolve these conflicts before merging.",
+                        ahead_count,
+                        conflicts.join("\n  ")
+                    );
+                    let data = MergeData {
+                        status: "error".to_string(),
+                        merge_mode: Some("remote".to_string()),
+                        branch_name: Some(branch.clone()),
+                        worktree_path: Some(wt_path.display().to_string()),
+                        pr_url: pr_info.as_ref().map(|p| p.url.clone()),
+                        pr_number: pr_info.as_ref().map(|p| p.number),
+                        squash_commit: None,
+                        worktree_cleaned: None,
+                        dry_run,
+                        untracked_files: None,
+                        warnings: if all_warnings.is_empty() {
+                            None
+                        } else {
+                            Some(all_warnings.clone())
+                        },
+                        error: Some(err_msg.clone()),
+                        message: None,
+                        sync_state: p4_sync_state.clone(),
+                        ahead_count: p4_ahead_count,
+                        behind_count: None,
+                        conflicting_files: p4_conflicting_files.clone(),
+                    };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&data).unwrap());
+                    } else if !quiet {
+                        eprintln!("error: {}", err_msg);
+                    }
+                    return Err(err_msg);
                 }
-                return Err(err_msg);
             }
-            Ok(MainSyncState::Diverged { local, remote }) => {
-                let err_msg = format!(
-                    "Local main has diverged from origin/main.\n\
-                     \n\
-                     Local:  {}\n\
-                     Remote: {}\n\
-                     \n\
-                     Local and remote have different commits that aren't ancestors of each\n\
-                     other. Reconcile before merging:\n\
-                     \n\
-                       git pull --rebase origin main\n\
-                       git push origin main",
-                    local, remote
-                );
-                let data = MergeData {
-                    status: "error".to_string(),
-                    merge_mode: Some("remote".to_string()),
-                    branch_name: Some(branch.clone()),
-                    worktree_path: Some(wt_path.display().to_string()),
-                    pr_url: pr_info.as_ref().map(|p| p.url.clone()),
-                    pr_number: pr_info.as_ref().map(|p| p.number),
-                    squash_commit: None,
-                    worktree_cleaned: None,
-                    dry_run,
-                    untracked_files: None,
-                    warnings: Some(all_warnings.clone()),
-                    error: Some(err_msg.clone()),
-                    message: None,
-                };
-                if json {
-                    println!("{}", serde_json::to_string_pretty(&data).unwrap());
-                } else if !quiet {
-                    eprintln!("error: {}", err_msg);
+            Ok(MainSyncState::Diverged {
+                ahead_count,
+                behind_count,
+                conflicts,
+                ..
+            }) => {
+                if conflicts.is_empty() {
+                    // diverged_clean: warn but do NOT block
+                    p4_sync_state = Some("diverged_clean".to_string());
+                    p4_ahead_count = Some(ahead_count);
+                    p4_behind_count = Some(behind_count);
+                    all_warnings.push(format!(
+                        "Local main has diverged from origin/main ({} ahead, {} behind). Will rebase after merge.",
+                        ahead_count, behind_count
+                    ));
+                } else {
+                    // diverged_conflict: block
+                    p4_sync_state = Some("diverged_conflict".to_string());
+                    p4_ahead_count = Some(ahead_count);
+                    p4_behind_count = Some(behind_count);
+                    p4_conflicting_files = Some(conflicts.clone());
+                    let err_msg = format!(
+                        "Local main has diverged from origin/main ({} ahead, {} behind) and has merge conflicts.\n\
+                         \n\
+                         Conflicting files:\n  {}\n\
+                         \n\
+                         Resolve these conflicts before merging.",
+                        ahead_count,
+                        behind_count,
+                        conflicts.join("\n  ")
+                    );
+                    let data = MergeData {
+                        status: "error".to_string(),
+                        merge_mode: Some("remote".to_string()),
+                        branch_name: Some(branch.clone()),
+                        worktree_path: Some(wt_path.display().to_string()),
+                        pr_url: pr_info.as_ref().map(|p| p.url.clone()),
+                        pr_number: pr_info.as_ref().map(|p| p.number),
+                        squash_commit: None,
+                        worktree_cleaned: None,
+                        dry_run,
+                        untracked_files: None,
+                        warnings: if all_warnings.is_empty() {
+                            None
+                        } else {
+                            Some(all_warnings.clone())
+                        },
+                        error: Some(err_msg.clone()),
+                        message: None,
+                        sync_state: p4_sync_state.clone(),
+                        ahead_count: p4_ahead_count,
+                        behind_count: p4_behind_count,
+                        conflicting_files: p4_conflicting_files.clone(),
+                    };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&data).unwrap());
+                    } else if !quiet {
+                        eprintln!("error: {}", err_msg);
+                    }
+                    return Err(err_msg);
                 }
-                return Err(err_msg);
             }
         }
     }
@@ -939,6 +1092,10 @@ fn run_merge_in(
                     branch
                 ),
             }),
+            sync_state: p4_sync_state.clone(),
+            ahead_count: p4_ahead_count,
+            behind_count: p4_behind_count,
+            conflicting_files: p4_conflicting_files.clone(),
         };
 
         if json {
@@ -1004,6 +1161,10 @@ fn run_merge_in(
                 warnings: preflight_warnings.clone(),
                 error: Some(err_msg.clone()),
                 message: None,
+                sync_state: p4_sync_state.clone(),
+                ahead_count: p4_ahead_count,
+                behind_count: p4_behind_count,
+                conflicting_files: p4_conflicting_files.clone(),
             };
             if json {
                 println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1011,9 +1172,10 @@ fn run_merge_in(
             return Err(err_msg);
         }
 
-        // Fetch the squash commit, then fast-forward local main.
-        // The preflight sync check guarantees local main == origin/main
-        // before the PR merge, so this is always a one-commit fast-forward.
+        // Fetch the squash commit then sync local main.
+        // Try --ff-only first (works when local == origin before the PR merged).
+        // If local had unpushed commits (ahead_clean / diverged_clean), fall back
+        // to rebase — the preflight merge-tree check confirmed no conflicts.
         let mut fetch_cmd = Command::new("git");
         fetch_cmd
             .arg("-C")
@@ -1038,6 +1200,10 @@ fn run_merge_in(
                 warnings: preflight_warnings.clone(),
                 error: Some(err_msg.clone()),
                 message: None,
+                sync_state: p4_sync_state.clone(),
+                ahead_count: p4_ahead_count,
+                behind_count: p4_behind_count,
+                conflicting_files: p4_conflicting_files.clone(),
             };
             if json {
                 println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1045,38 +1211,137 @@ fn run_merge_in(
             return Err(err_msg);
         }
 
-        let mut ff_cmd = Command::new("git");
-        ff_cmd
+        // Attempt fast-forward first.
+        let ff_output = Command::new("git")
             .arg("-C")
             .arg(&repo_root)
-            .args(["merge", "--ff-only", "origin/main"]);
-        if let Err(e) = run_cmd(&mut ff_cmd, "git merge --ff-only origin/main") {
-            let err_msg = format!(
-                "Failed to fast-forward after merge: {}. The PR was merged on GitHub but local main is not updated. Run: git merge --ff-only origin/main",
-                e
-            );
-            let data = MergeData {
-                status: "error".to_string(),
-                merge_mode: Some("remote".to_string()),
-                branch_name: Some(branch.clone()),
-                worktree_path: Some(wt_path.display().to_string()),
-                pr_url: Some(pr.url.clone()),
-                pr_number: Some(pr.number),
-                squash_commit: None,
-                worktree_cleaned: None,
-                dry_run: false,
-                untracked_files: None,
-                warnings: preflight_warnings.clone(),
-                error: Some(err_msg.clone()),
-                message: None,
-            };
-            if json {
-                println!("{}", serde_json::to_string_pretty(&data).unwrap());
-            }
-            return Err(err_msg);
-        }
+            .args(["merge", "--ff-only", "origin/main"])
+            .output()
+            .map_err(|e| format!("Failed to execute git merge --ff-only: {}", e));
 
-        if !quiet {
+        let sync_succeeded = match ff_output {
+            Ok(ref o) if o.status.success() => true,
+            Ok(_) => {
+                // ff-only failed (local had commits) — fall back to rebase.
+                if !quiet {
+                    println!("Fast-forward failed; rebasing local commits onto origin/main...");
+                }
+                let rebase_output = Command::new("git")
+                    .arg("-C")
+                    .arg(&repo_root)
+                    .args(["rebase", "origin/main"])
+                    .output()
+                    .map_err(|e| format!("Failed to execute git rebase: {}", e));
+                match rebase_output {
+                    Ok(ref ro) if ro.status.success() => true,
+                    Ok(ref ro) => {
+                        // Rebase failed — abort and report
+                        let _ = Command::new("git")
+                            .arg("-C")
+                            .arg(&repo_root)
+                            .args(["rebase", "--abort"])
+                            .output();
+                        let stderr = String::from_utf8_lossy(&ro.stderr);
+                        let err_msg = format!(
+                            "Rebase of local commits onto origin/main failed after PR merge: {}\n\
+                             The PR was merged on GitHub. To recover, run:\n\
+                               git fetch origin main\n\
+                               git rebase origin/main",
+                            stderr
+                        );
+                        let data = MergeData {
+                            status: "error".to_string(),
+                            merge_mode: Some("remote".to_string()),
+                            branch_name: Some(branch.clone()),
+                            worktree_path: Some(wt_path.display().to_string()),
+                            pr_url: Some(pr.url.clone()),
+                            pr_number: Some(pr.number),
+                            squash_commit: None,
+                            worktree_cleaned: None,
+                            dry_run: false,
+                            untracked_files: None,
+                            warnings: preflight_warnings.clone(),
+                            error: Some(err_msg.clone()),
+                            message: None,
+                            sync_state: p4_sync_state.clone(),
+                            ahead_count: p4_ahead_count,
+                            behind_count: p4_behind_count,
+                            conflicting_files: p4_conflicting_files.clone(),
+                        };
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&data).unwrap());
+                        } else if !quiet {
+                            eprintln!("error: {}", err_msg);
+                        }
+                        return Err(err_msg);
+                    }
+                    Err(e) => {
+                        let err_msg = format!(
+                            "Failed to run rebase after PR merge: {}. Run: git fetch origin main && git rebase origin/main",
+                            e
+                        );
+                        let data = MergeData {
+                            status: "error".to_string(),
+                            merge_mode: Some("remote".to_string()),
+                            branch_name: Some(branch.clone()),
+                            worktree_path: Some(wt_path.display().to_string()),
+                            pr_url: Some(pr.url.clone()),
+                            pr_number: Some(pr.number),
+                            squash_commit: None,
+                            worktree_cleaned: None,
+                            dry_run: false,
+                            untracked_files: None,
+                            warnings: preflight_warnings.clone(),
+                            error: Some(err_msg.clone()),
+                            message: None,
+                            sync_state: p4_sync_state.clone(),
+                            ahead_count: p4_ahead_count,
+                            behind_count: p4_behind_count,
+                            conflicting_files: p4_conflicting_files.clone(),
+                        };
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&data).unwrap());
+                        } else if !quiet {
+                            eprintln!("error: {}", err_msg);
+                        }
+                        return Err(err_msg);
+                    }
+                }
+            }
+            Err(e) => {
+                let err_msg = format!(
+                    "Failed to sync local main after PR merge: {}. Run: git fetch origin main && git merge --ff-only origin/main",
+                    e
+                );
+                let data = MergeData {
+                    status: "error".to_string(),
+                    merge_mode: Some("remote".to_string()),
+                    branch_name: Some(branch.clone()),
+                    worktree_path: Some(wt_path.display().to_string()),
+                    pr_url: Some(pr.url.clone()),
+                    pr_number: Some(pr.number),
+                    squash_commit: None,
+                    worktree_cleaned: None,
+                    dry_run: false,
+                    untracked_files: None,
+                    warnings: preflight_warnings.clone(),
+                    error: Some(err_msg.clone()),
+                    message: None,
+                    sync_state: p4_sync_state.clone(),
+                    ahead_count: p4_ahead_count,
+                    behind_count: p4_behind_count,
+                    conflicting_files: p4_conflicting_files.clone(),
+                };
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&data).unwrap());
+                } else if !quiet {
+                    eprintln!("error: {}", err_msg);
+                }
+                return Err(err_msg);
+            }
+        };
+
+        if sync_succeeded && !quiet {
             println!("PR #{} merged successfully", pr.number);
         }
         None
@@ -1109,6 +1374,10 @@ fn run_merge_in(
                     warnings: preflight_warnings.clone(),
                     error: Some(format!("Squash merge failed: {}", e)),
                     message: None,
+                    sync_state: None,
+                    ahead_count: None,
+                    behind_count: None,
+                    conflicting_files: None,
                 };
                 if json {
                     println!("{}", serde_json::to_string_pretty(&data).unwrap());
@@ -1195,6 +1464,10 @@ fn run_merge_in(
             ),
             _ => format!("Squash merged '{}' and cleaned up", branch),
         }),
+        sync_state: p4_sync_state,
+        ahead_count: p4_ahead_count,
+        behind_count: p4_behind_count,
+        conflicting_files: p4_conflicting_files,
     };
 
     if json {
@@ -1286,6 +1559,10 @@ mod tests {
             warnings: None,
             error: None,
             message: Some("Success".to_string()),
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(!json.contains("\"warnings\""));
@@ -1307,6 +1584,10 @@ mod tests {
             warnings: Some(vec!["warn1".to_string(), "warn2".to_string()]),
             error: None,
             message: Some("Success".to_string()),
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(json.contains("\"warnings\""));
@@ -1337,6 +1618,10 @@ mod tests {
             warnings: None,
             error: None,
             message: Some("Success".to_string()),
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(!json.contains("\"untracked_files\""));
@@ -1358,6 +1643,10 @@ mod tests {
             warnings: None,
             error: None,
             message: Some("Would merge".to_string()),
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(json.contains("\"untracked_files\""));
@@ -1381,6 +1670,10 @@ mod tests {
             warnings: None,
             error: None,
             message: Some("Would squash-merge".to_string()),
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         };
 
         let json = serde_json::to_string_pretty(&data).unwrap();
@@ -1405,6 +1698,10 @@ mod tests {
             warnings: None,
             error: None,
             message: Some("Merged PR #42".to_string()),
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         };
 
         let json = serde_json::to_string_pretty(&data).unwrap();
@@ -1430,6 +1727,10 @@ mod tests {
             warnings: None,
             error: None,
             message: Some("Squash merged".to_string()),
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         };
 
         let json = serde_json::to_string_pretty(&data).unwrap();
@@ -2137,6 +2438,10 @@ mod tests {
             ]),
             error: None,
             message: Some("Would squash-merge".to_string()),
+            sync_state: None,
+            ahead_count: None,
+            behind_count: None,
+            conflicting_files: None,
         };
 
         let json = serde_json::to_string_pretty(&data).unwrap();
@@ -2398,10 +2703,10 @@ mod tests {
         let result = check_main_sync(clone_path);
         assert!(result.is_ok(), "check_main_sync should succeed");
         match result.unwrap() {
-            MainSyncState::LocalAhead { ahead_count, .. } => {
+            MainSyncState::Ahead { ahead_count, .. } => {
                 assert_eq!(ahead_count, 1, "Should be 1 commit ahead");
             }
-            other => panic!("Expected LocalAhead, got {:?}", other),
+            other => panic!("Expected Ahead, got {:?}", other),
         }
     }
 
@@ -3177,10 +3482,10 @@ mod tests {
         let result = check_main_sync(clone_path);
         assert!(result.is_ok(), "check_main_sync should succeed");
         match result.unwrap() {
-            MainSyncState::LocalAhead { ahead_count, .. } => {
+            MainSyncState::Ahead { ahead_count, .. } => {
                 assert_eq!(ahead_count, 1, "Should be 1 commit ahead");
             }
-            other => panic!("Expected LocalAhead, got {:?}", other),
+            other => panic!("Expected Ahead, got {:?}", other),
         }
     }
 

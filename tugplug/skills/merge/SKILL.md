@@ -50,6 +50,10 @@ Parse the JSON output. Key fields:
 | `warnings` | Non-blocking preflight warnings (array of strings, omitted when empty) |
 | `error` | Error message (if status is error) |
 | `message` | Human-readable summary |
+| `sync_state` | Sync state: `"in_sync"`, `"behind"`, `"ahead_clean"`, `"ahead_conflict"`, `"diverged_clean"`, `"diverged_conflict"` |
+| `ahead_count` | Commits local main is ahead of origin (omitted when 0 or not applicable) |
+| `behind_count` | Commits local main is behind origin (omitted when 0 or not applicable) |
+| `conflicting_files` | Files with merge conflicts (only present for conflict states) |
 
 If the command fails (exit code non-zero), report the error and halt. The error message tells the user what went wrong.
 
@@ -62,8 +66,57 @@ If the dry-run output includes a `warnings` array, present each warning to the u
 - gh CLI unavailable (falling back to local mode)
 - Branch divergence details (commit count, diff stat)
 - Failing CI checks on the PR
+- Local main ahead of or diverged from origin (will rebase after merge)
 
-Present the dry-run results and ask the user to confirm:
+The sync check uses a three-tier response based on `sync_state`:
+
+#### Automatic (sync_state: in_sync, behind, or not present)
+
+Proceed directly with the normal merge confirmation below. No additional prompt is needed for sync.
+
+#### Confirm rebase (sync_state: ahead_clean or diverged_clean)
+
+Before the normal merge confirmation, ask the user to approve the rebase:
+
+```
+AskUserQuestion(
+  questions: [{
+    question: "Local main has N unpushed commit(s) that will be rebased onto the merged PR. Proceed?",
+    header: "Rebase & Merge",
+    options: [
+      { label: "Rebase and Merge (Recommended)", description: "Merge the PR, then rebase local commits onto the result" },
+      { label: "Cancel", description: "Abort without making changes" }
+    ],
+    multiSelect: false
+  }]
+)
+```
+
+Replace N with `ahead_count` from the JSON. If user selects "Cancel", halt with: "Merge cancelled."
+
+#### Block with conflicts (sync_state: ahead_conflict or diverged_conflict)
+
+The dry-run will have already returned an error and a non-zero exit code, so the flow will have halted at step 1. Present the error message listing the conflicting files and ask how to proceed:
+
+```
+AskUserQuestion(
+  questions: [{
+    question: "Local commits conflict with the PR in these files:\n  file1.rs\n  file2.rs\nHow would you like to proceed?",
+    header: "Merge Conflict",
+    options: [
+      { label: "Resolve in worktree", description: "Create a worktree to resolve conflicts and produce a patch" },
+      { label: "Stop", description: "Abort so you can resolve manually" }
+    ],
+    multiSelect: false
+  }]
+)
+```
+
+Replace the file list with the `conflicting_files` array from the JSON. If user selects "Stop", halt with: "Merge aborted due to conflicts."
+
+---
+
+Present the dry-run results and ask the user to confirm the merge:
 
 **Remote mode:**
 ```
@@ -301,8 +354,12 @@ If step 3 fails, report clearly and suggest recovery. Do not retry automatically
 **Blocking errors**:
 - **Uncommitted changes in main**: Any tracked modified files on main will block the merge. User must commit or stash these changes before merging.
 - **Dirty implementation worktree**: Uncommitted changes in the implementation worktree would be lost during cleanup. Must commit or discard before merging.
-- **Local main ahead of origin** (remote mode): Local main has unpushed commits. After the PR merges on GitHub, the fast-forward sync will fail. Push local commits first (`git push origin main`).
-- **Local main diverged from origin** (remote mode): Local main has diverged from origin/main. Local and remote have commits that aren't ancestors of each other. Reconcile with `git pull --rebase origin main` then push before merging.
+- **Local main ahead with conflicts** (`sync_state: ahead_conflict`): Local main has unpushed commits that conflict with the PR branch. The conflicting files are listed in `conflicting_files`. Resolve conflicts manually or use the "Resolve in worktree" option (step 2).
+- **Local main diverged with conflicts** (`sync_state: diverged_conflict`): Local main has diverged from origin/main and the local commits conflict with the PR branch. The conflicting files are listed in `conflicting_files`. Resolve conflicts manually.
+
+**Non-blocking sync states** (proceed with warning):
+- **ahead_clean**: Local main has unpushed commits but a clean merge is possible. After the PR merges on GitHub, tugcode will attempt `--ff-only` first; if that fails, it will rebase local commits onto the result.
+- **diverged_clean**: Local main has diverged from origin/main but a clean rebase is possible. Same recovery as above.
 
 ---
 
