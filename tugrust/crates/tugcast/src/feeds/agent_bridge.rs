@@ -1,6 +1,6 @@
 //! Agent bridge module
 //!
-//! Spawns tugtalk as a child process and relays JSON-lines IPC messages.
+//! Spawns tugcode as a child process and relays JSON-lines IPC messages.
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -57,14 +57,14 @@ impl CrashBudget {
     }
 }
 
-/// Resolve tugtalk binary path
+/// Resolve tugcode binary path
 ///
 /// Priority order:
 /// 1. CLI override if provided
 /// 2. Sibling binary (next to current executable)
 /// 3. PATH lookup
-/// 4. Bun fallback (bun run tugtalk/src/main.ts)
-pub fn resolve_tugtalk_path(cli_override: Option<&Path>, project_dir: &Path) -> PathBuf {
+/// 4. Bun fallback (bun run tugcode/src/main.ts)
+pub fn resolve_tugcode_path(cli_override: Option<&Path>, project_dir: &Path) -> PathBuf {
     // CLI override has highest priority
     if let Some(path) = cli_override {
         return path.to_path_buf();
@@ -73,9 +73,9 @@ pub fn resolve_tugtalk_path(cli_override: Option<&Path>, project_dir: &Path) -> 
     // Try sibling binary
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            let sibling = parent.join("tugtalk");
+            let sibling = parent.join("tugcode");
             if sibling.exists() {
-                info!("Found tugtalk sibling binary at {}", sibling.display());
+                info!("Found tugcode sibling binary at {}", sibling.display());
                 return sibling;
             }
         }
@@ -84,17 +84,17 @@ pub fn resolve_tugtalk_path(cli_override: Option<&Path>, project_dir: &Path) -> 
     // Try PATH lookup
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in path_var.split(':') {
-            let candidate = PathBuf::from(dir).join("tugtalk");
+            let candidate = PathBuf::from(dir).join("tugcode");
             if candidate.exists() {
-                info!("Found tugtalk in PATH at {}", candidate.display());
+                info!("Found tugcode in PATH at {}", candidate.display());
                 return candidate;
             }
         }
     }
 
     // Fallback to bun run (for development without cargo build)
-    info!("tugtalk binary not found, falling back to bun run");
-    project_dir.join("tugtalk/src/main.ts")
+    info!("tugcode binary not found, falling back to bun run");
+    project_dir.join("tugcode/src/main.ts")
 }
 
 /// Handles returned from `spawn_agent_bridge` — contains the watch receivers
@@ -110,7 +110,7 @@ pub struct AgentBridgeHandles {
 pub fn spawn_agent_bridge(
     code_tx: broadcast::Sender<Frame>,
     code_input_rx: mpsc::Receiver<Frame>,
-    tugtalk_path: PathBuf,
+    tugcode_path: PathBuf,
     project_dir: PathBuf,
     cancel: CancellationToken,
 ) -> AgentBridgeHandles {
@@ -125,7 +125,7 @@ pub fn spawn_agent_bridge(
         project_info_tx,
         session_watch_tx,
         code_input_rx,
-        tugtalk_path,
+        tugcode_path,
         project_dir,
         cancel,
     ));
@@ -137,13 +137,13 @@ pub fn spawn_agent_bridge(
 
 /// Run the agent bridge
 ///
-/// Spawns tugtalk, performs protocol handshake, relays messages, handles crashes.
+/// Spawns tugcode, performs protocol handshake, relays messages, handles crashes.
 async fn run_agent_bridge(
     code_tx: broadcast::Sender<Frame>,
     project_info_tx: watch::Sender<Frame>,
     session_watch_tx: watch::Sender<Frame>,
     mut code_input_rx: mpsc::Receiver<Frame>,
-    tugtalk_path: PathBuf,
+    tugcode_path: PathBuf,
     project_dir: PathBuf,
     cancel: CancellationToken,
 ) {
@@ -162,22 +162,22 @@ async fn run_agent_bridge(
     loop {
         if crash_budget.is_exhausted() {
             error!("Crash budget exhausted, stopping agent bridge");
-            let error_json = r#"{"type":"error","message":"tugtalk crashed too many times","recoverable":false}"#;
+            let error_json = r#"{"type":"error","message":"tugcode crashed too many times","recoverable":false}"#;
             let frame = code_output_frame(error_json.as_bytes());
             let _ = code_tx.send(frame);
             break;
         }
 
-        info!("Spawning tugtalk at {}", tugtalk_path.display());
+        info!("Spawning tugcode at {}", tugcode_path.display());
 
         // Determine command based on path
-        let (cmd, args) = if tugtalk_path.extension().and_then(|s| s.to_str()) == Some("ts") {
+        let (cmd, args) = if tugcode_path.extension().and_then(|s| s.to_str()) == Some("ts") {
             (
                 "bun",
-                vec!["run".to_string(), tugtalk_path.display().to_string()],
+                vec!["run".to_string(), tugcode_path.display().to_string()],
             )
         } else {
-            (tugtalk_path.to_str().unwrap_or("tugtalk"), vec![])
+            (tugcode_path.to_str().unwrap_or("tugcode"), vec![])
         };
 
         let mut child = match Command::new(cmd)
@@ -192,7 +192,7 @@ async fn run_agent_bridge(
         {
             Ok(child) => child,
             Err(e) => {
-                error!("Failed to spawn tugtalk: {}", e);
+                error!("Failed to spawn tugcode: {}", e);
                 crash_budget.record_crash();
                 sleep(Duration::from_secs(1)).await;
                 continue;
@@ -201,14 +201,14 @@ async fn run_agent_bridge(
 
         // stdin/stdout are guaranteed Some because we set Stdio::piped() above.
         let Some(mut stdin) = child.stdin.take() else {
-            error!("tugtalk stdin not available despite Stdio::piped()");
+            error!("tugcode stdin not available despite Stdio::piped()");
             crash_budget.record_crash();
             let _ = child.kill().await;
             sleep(Duration::from_secs(1)).await;
             continue;
         };
         let Some(stdout) = child.stdout.take() else {
-            error!("tugtalk stdout not available despite Stdio::piped()");
+            error!("tugcode stdout not available despite Stdio::piped()");
             crash_budget.record_crash();
             let _ = child.kill().await;
             sleep(Duration::from_secs(1)).await;
@@ -252,7 +252,7 @@ async fn run_agent_bridge(
         // Relay loop
         loop {
             tokio::select! {
-                // Read from tugtalk stdout
+                // Read from tugcode stdout
                 line_result = stdout_reader.next_line() => {
                     match line_result {
                         Ok(Some(line)) => {
@@ -266,24 +266,24 @@ async fn run_agent_bridge(
                             let _ = code_tx.send(frame);
                         }
                         Ok(None) => {
-                            // tugtalk stdout closed
-                            warn!("tugtalk stdout closed");
+                            // tugcode stdout closed
+                            warn!("tugcode stdout closed");
                             break;
                         }
                         Err(e) => {
-                            error!("Error reading from tugtalk stdout: {}", e);
+                            error!("Error reading from tugcode stdout: {}", e);
                             break;
                         }
                     }
                 }
 
-                // Write to tugtalk stdin
+                // Write to tugcode stdin
                 Some(frame) = code_input_rx.recv() => {
                     if let Some(json) = super::code::parse_code_input(&frame) {
                         let mut line = json;
                         line.push('\n');
                         if let Err(e) = stdin.write_all(line.as_bytes()).await {
-                            error!("Error writing to tugtalk stdin: {}", e);
+                            error!("Error writing to tugcode stdin: {}", e);
                             break;
                         }
                     }
@@ -291,7 +291,7 @@ async fn run_agent_bridge(
 
                 // Cancellation
                 _ = cancel.cancelled() => {
-                    info!("Agent bridge cancelled, killing tugtalk");
+                    info!("Agent bridge cancelled, killing tugcode");
                     let _ = child.kill().await;
                     return;
                 }
@@ -303,15 +303,15 @@ async fn run_agent_bridge(
         match status {
             Ok(status) => {
                 if status.success() {
-                    info!("tugtalk exited normally");
+                    info!("tugcode exited normally");
                     break;
                 } else {
-                    error!("tugtalk crashed with status: {}", status);
+                    error!("tugcode crashed with status: {}", status);
                     crash_budget.record_crash();
                 }
             }
             Err(e) => {
-                error!("Error waiting for tugtalk: {}", e);
+                error!("Error waiting for tugcode: {}", e);
                 crash_budget.record_crash();
             }
         }
@@ -320,7 +320,7 @@ async fn run_agent_bridge(
             break;
         }
 
-        info!("Restarting tugtalk in 1 second...");
+        info!("Restarting tugcode in 1 second...");
         sleep(Duration::from_secs(1)).await;
     }
 }
@@ -356,17 +356,23 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_tugtalk_path_cli_override() {
-        let override_path = Path::new("/custom/path/tugtalk");
-        let result = resolve_tugtalk_path(Some(override_path), Path::new("/project"));
+    fn test_resolve_cli_override_returns_exact_path() {
+        let override_path = Path::new("/custom/path/tugcode");
+        let result = resolve_tugcode_path(Some(override_path), Path::new("/project"));
         assert_eq!(result, override_path);
     }
 
     #[test]
-    fn test_resolve_tugtalk_path_fallback() {
-        // Without a real binary in PATH, should fall back to bun run
-        let result = resolve_tugtalk_path(None, Path::new("/project"));
-        assert!(result.to_str().unwrap().contains("tugtalk/src/main.ts"));
+    fn test_resolve_without_override_finds_sibling_or_falls_back() {
+        let result = resolve_tugcode_path(None, Path::new("/project"));
+        let s = result.to_str().unwrap();
+        // In test builds, the tugcode binary sits next to the test binary in target/debug/,
+        // so the sibling check succeeds. In environments without a sibling, it falls back
+        // to the bun-run path (tugcode/src/main.ts).
+        assert!(
+            s.ends_with("/tugcode") || s.contains("tugcode/src/main.ts"),
+            "Expected sibling binary or bun fallback, got: {s}"
+        );
     }
 
     #[test]

@@ -8,8 +8,8 @@
  *   [1 byte FeedId][4 bytes big-endian u32 length][N bytes payload]
  *
  * Feed IDs used:
- *   0x40  CodeOutput  — tugcast → client (JSON-lines from tugtalk)
- *   0x41  CodeInput   — client → tugcast (JSON-lines to tugtalk)
+ *   0x40  CodeOutput  — tugcast → client (JSON-lines from tugcode)
+ *   0x41  CodeInput   — client → tugcast (JSON-lines to tugcode)
  *   0xFF  Heartbeat   — bidirectional keepalive
  *
  * IMPORTANT TIMING NOTE:
@@ -18,7 +18,7 @@
  *   (polling every 100ms), minimizing the window during which session_init
  *   could be broadcast before we subscribe.
  *
- * Usage: bun run tugtalk/probe-websocket.ts
+ * Usage: bun run tugcode/probe-websocket.ts
  */
 
 import { spawn } from "bun";
@@ -237,7 +237,7 @@ function collectUntil(
         return; // non-code feeds pass through without calling onMessage
       }
 
-      // CodeOutput payload is a JSON-line from tugtalk
+      // CodeOutput payload is a JSON-line from tugcode
       let msg: { type: string; [k: string]: unknown };
       try {
         msg = JSON.parse(dec.decode(frame.payload));
@@ -294,7 +294,7 @@ async function runProbe(): Promise<void> {
   log(`Port ${PROBE_PORT} is accepting connections.`);
 
   // Step 2: connect the WebSocket immediately
-  // NOTE: tugtalk's session_init is a one-shot broadcast. We must connect
+  // NOTE: tugcode's session_init is a one-shot broadcast. We must connect
   // here as quickly as possible to subscribe before it fires.
   log("\n=== Phase 1: First WebSocket connection ===");
   let ws1: WebSocket;
@@ -307,8 +307,8 @@ async function runProbe(): Promise<void> {
     process.exit(1);
   }
 
-  // Step 3: wait for session_init from tugtalk (via CodeOutput feed)
-  // Allow up to 15s for tugtalk to start and emit session_init.
+  // Step 3: wait for session_init from tugcode (via CodeOutput feed)
+  // Allow up to 15s for tugcode to start and emit session_init.
   // If missed due to race, we proceed anyway and try to send a message.
   let sessionId: string | null = null;
   let sessionInitReceived = false;

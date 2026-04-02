@@ -21,7 +21,7 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 | `tugplug/` | Claude Code plugin (agents and skills) |
 | `tugapp/` | Swift macOS app |
 | `tugdeck/` | Web frontend |
-| `tugtalk/` | Speech interface |
+| `tugcode/` | Claude Code bridge (stream-json IPC) |
 | `docs/` | Documentation |
 
 ## Build Policy

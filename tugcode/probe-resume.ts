@@ -15,7 +15,7 @@ console.log("=== Session Resume Probe ===");
 console.log(`Marker: ${MARKER}\n`);
 
 const proc = spawn({
-  cmd: ["bun", "run", "tugtalk/src/main.ts", "--dir", PROJECT_DIR],
+  cmd: ["bun", "run", "tugcode/src/main.ts", "--dir", PROJECT_DIR],
   cwd: PROJECT_DIR,
   stdin: "pipe",
   stdout: "pipe",

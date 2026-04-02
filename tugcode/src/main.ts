@@ -21,13 +21,13 @@ const originalWarn = console.warn;
 const originalError = console.error;
 
 console.log = (...args: unknown[]) => {
-  originalError("[tugtalk]", ...args);
+  originalError("[tugcode]", ...args);
 };
 console.warn = (...args: unknown[]) => {
-  originalError("[tugtalk WARN]", ...args);
+  originalError("[tugcode WARN]", ...args);
 };
 console.error = (...args: unknown[]) => {
-  originalError("[tugtalk ERROR]", ...args);
+  originalError("[tugcode ERROR]", ...args);
 };
 
 // Parse CLI arguments
@@ -40,7 +40,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-console.log(`Starting tugtalk (projectDir: ${projectDir})`);
+console.log(`Starting tugcode (projectDir: ${projectDir})`);
 
 // Session manager (initialized after protocol handshake)
 let sessionManager: SessionManager | null = null;

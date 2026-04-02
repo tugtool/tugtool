@@ -83,10 +83,10 @@ echo "==> Building Rust binaries (release mode)"
 cd "$TUGCODE_DIR"
 cargo build --release -p tugcast -p tugutil -p tugexec
 
-# Step 1b: Build tugtalk standalone binary
-echo "==> Building tugtalk (bun compile)"
+# Step 1b: Build tugcode (Claude Code bridge) standalone binary
+echo "==> Building tugcode (bun compile)"
 cd "$REPO_ROOT"
-bun build --compile tugtalk/src/main.ts --outfile tugrust/target/release/tugtalk
+bun build --compile tugcode/src/main.ts --outfile tugrust/target/release/tugcode
 
 # Step 2: Build tugdeck frontend
 echo "==> Building tugdeck frontend"
@@ -121,7 +121,7 @@ mkdir -p "$STAGING_APP/Contents/MacOS"
 cp "$TUGCODE_DIR/target/release/tugcast" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugutil" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugexec" "$STAGING_APP/Contents/MacOS/"
-cp "$TUGCODE_DIR/target/release/tugtalk" "$STAGING_APP/Contents/MacOS/"
+cp "$TUGCODE_DIR/target/release/tugcode" "$STAGING_APP/Contents/MacOS/"
 
 # Step 6: Copy tugplug to Contents/Resources/
 echo "==> Copying tugplug to Contents/Resources/"

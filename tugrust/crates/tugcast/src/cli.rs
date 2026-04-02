@@ -22,9 +22,9 @@ pub struct Cli {
     #[arg(long, default_value = ".")]
     pub dir: PathBuf,
 
-    /// Path to tugtalk binary (overrides auto-detection)
+    /// Path to tugcode binary (overrides auto-detection)
     #[arg(long)]
-    pub tugtalk_path: Option<PathBuf>,
+    pub tugcode_path: Option<PathBuf>,
 
     /// Unix domain socket path for parent IPC
     #[arg(long)]
@@ -163,15 +163,15 @@ mod tests {
     }
 
     #[test]
-    fn test_tugtalk_path_override() {
-        let cli = Cli::try_parse_from(["tugcast", "--tugtalk-path", "/custom/tugtalk"]).unwrap();
-        assert_eq!(cli.tugtalk_path, Some(PathBuf::from("/custom/tugtalk")));
+    fn test_tugcode_path_override() {
+        let cli = Cli::try_parse_from(["tugcast", "--tugcode-path", "/custom/tugcode"]).unwrap();
+        assert_eq!(cli.tugcode_path, Some(PathBuf::from("/custom/tugcode")));
     }
 
     #[test]
-    fn test_default_tugtalk_path_none() {
+    fn test_default_tugcode_path_none() {
         let cli = Cli::try_parse_from(["tugcast"]).unwrap();
-        assert_eq!(cli.tugtalk_path, None);
+        assert_eq!(cli.tugcode_path, None);
     }
 
     #[test]

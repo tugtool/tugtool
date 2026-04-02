@@ -506,7 +506,7 @@ class ProcessManager {
             }
         }
 
-        // Kill the entire process group to clean up tugtalk and any children.
+        // Kill the entire process group to clean up tugcode and any children.
         // Tugcast calls setpgid(0,0) at startup to create its own group,
         // so this won't affect the app. We always do this — even if tugcast
         // exited gracefully — because std::process::exit in tugcast doesn't

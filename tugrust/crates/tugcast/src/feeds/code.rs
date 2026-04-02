@@ -1,6 +1,6 @@
 //! Code feed module
 //!
-//! Handles code messages between tugcast and tugtalk via JSON-lines IPC.
+//! Handles code messages between tugcast and tugcode via JSON-lines IPC.
 
 use tugcast_core::protocol::{FeedId, Frame};
 

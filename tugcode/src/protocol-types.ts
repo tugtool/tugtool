@@ -1,6 +1,6 @@
 // Protocol-level types for claude CLI stdout messages.
 // These represent the raw JSON structures emitted by the claude process,
-// distinct from the IPC types in types.ts (which tugtalk emits to tugcast).
+// distinct from the IPC types in types.ts (which tugcode emits to tugcast).
 
 // ---------------------------------------------------------------------------
 // System init message

@@ -236,7 +236,7 @@ describe("buildClaudeArgs", () => {
 
 describe("stdin message format", () => {
   test("stdin write produces correct user envelope", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-stdin-test-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-stdin-test-" + Date.now());
 
     // Inject mock with a result event so handleUserMessage terminates cleanly
     const mockStdin = injectMockSubprocess(manager, [
@@ -708,7 +708,7 @@ describe("mapStreamEvent (updated)", () => {
 
 describe("control protocol (Step 2.2)", () => {
   test("control_request with can_use_tool emits ControlRequestForward IPC", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-test-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-test-" + Date.now());
 
     // Inject mock with: a control_request event then a result event (to end the turn).
     const mockStdin = injectMockSubprocess(manager, [
@@ -733,7 +733,7 @@ describe("control protocol (Step 2.2)", () => {
   });
 
   test("control_request with AskUserQuestion emits ControlRequestForward with is_question: true", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-question-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-question-" + Date.now());
 
     const mockStdin = injectMockSubprocess(manager, [
       {
@@ -758,7 +758,7 @@ describe("control protocol (Step 2.2)", () => {
   });
 
   test("handleToolApproval allow sends correct control_response to stdin", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-allow-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-allow-" + Date.now());
 
     // Populate pendingControlRequests directly.
     const pendingCR = {
@@ -797,7 +797,7 @@ describe("control protocol (Step 2.2)", () => {
   });
 
   test("handleToolApproval deny sends correct control_response to stdin", () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-deny-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-deny-" + Date.now());
 
     const pendingCR = {
       type: "control_request",
@@ -829,7 +829,7 @@ describe("control protocol (Step 2.2)", () => {
   });
 
   test("handleQuestionAnswer sends control_response with answers nested under 'answers' key per §5b", () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-qa-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-qa-" + Date.now());
 
     const pendingCR = {
       type: "control_request",
@@ -868,7 +868,7 @@ describe("control protocol (Step 2.2)", () => {
   });
 
   test("handleInterrupt sends control_request with subtype interrupt (not SIGINT)", () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-interrupt-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-interrupt-" + Date.now());
 
     const writtenData: string[] = [];
     let killCalled = false;
@@ -893,7 +893,7 @@ describe("control protocol (Step 2.2)", () => {
   });
 
   test("control_cancel_request cancels pending permission", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-cancel-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-cancel-" + Date.now());
 
     // Inject: a control_request to populate pendingControlRequests, then a
     // control_cancel_request for the same id, then a result to end the turn.
@@ -925,7 +925,7 @@ describe("control protocol (Step 2.2)", () => {
   });
 
   test("handleModelChange sends control_request with subtype set_model", () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-model-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-model-" + Date.now());
 
     const writtenData: string[] = [];
     (manager as any).claudeProcess = {
@@ -1319,7 +1319,7 @@ describe("session management", () => {
     // handleSessionCommand("new") -> handleNewSession() -> killAndCleanup() then spawnClaude(null).
     // We verify the sessionIdPersisted flag is cleared (observable state after fork/new/continue).
     // Inject a fake process so spawnClaude is bypassed and killAndCleanup is a no-op.
-    const manager = new SessionManager("/tmp/tugtalk-session-cmd-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-session-cmd-" + Date.now());
     // Pre-set sessionIdPersisted to true to verify it is cleared.
     (manager as any).sessionIdPersisted = true;
 
@@ -1357,12 +1357,12 @@ describe("session management", () => {
   });
 
   test("shutdown completes without error when no process is attached", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-shutdown-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-shutdown-" + Date.now());
     await expect(manager.shutdown()).resolves.toBeUndefined();
   });
 
   test("stdin close (EOF) triggers graceful shutdown sequence", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-shutdown-eof-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-shutdown-eof-" + Date.now());
 
     // Record the call order so we can assert stdin.end() happens before kill().
     const callOrder: string[] = [];
@@ -1421,7 +1421,7 @@ describe("SessionManager behavioral", () => {
   });
 
   test("session ID persistence round-trip", () => {
-    const tmpDir = `/tmp/tugtalk-persist-${Date.now()}`;
+    const tmpDir = `/tmp/tugcode-persist-${Date.now()}`;
     const manager = new SessionManager(tmpDir);
 
     // persistSessionId and readSessionId are synchronous (Bun.spawnSync).
@@ -1432,13 +1432,13 @@ describe("SessionManager behavioral", () => {
   });
 
   test("handlePermissionMode updates permissionManager state", () => {
-    const manager = new SessionManager("/tmp/tugtalk-perm-mode-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-perm-mode-" + Date.now());
     manager.handlePermissionMode({ type: "permission_mode", mode: "bypassPermissions" });
     expect((manager as any).permissionManager.getMode()).toBe("bypassPermissions");
   });
 
   test("handlePermissionMode accepts all valid mode values", () => {
-    const manager = new SessionManager("/tmp/tugtalk-perm-all-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-perm-all-" + Date.now());
     const modes = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "delegate"] as const;
     for (const mode of modes) {
       manager.handlePermissionMode({ type: "permission_mode", mode });
@@ -1453,7 +1453,7 @@ describe("SessionManager behavioral", () => {
 
 describe("handleUserMessage integration", () => {
   test("full round-trip: system init -> stream deltas -> result produces correct IPC sequence", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-roundtrip-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-roundtrip-" + Date.now());
 
     const mockStdin = injectMockSubprocess(manager, [
       {
@@ -1501,7 +1501,7 @@ describe("handleUserMessage integration", () => {
   });
 
   test("session ID captured from system/init sets sessionIdPersisted flag", async () => {
-    const tmpDir = `/tmp/tugtalk-sessid-${Date.now()}`;
+    const tmpDir = `/tmp/tugcode-sessid-${Date.now()}`;
     const manager = new SessionManager(tmpDir);
 
     const mockStdin = injectMockSubprocess(manager, [
@@ -1531,7 +1531,7 @@ describe("handleUserMessage integration", () => {
   });
 
   test("stdin receives correct user envelope with image attachment", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-img-envelope-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-img-envelope-" + Date.now());
 
     const writtenData: string[] = [];
     const mockStdin = injectMockSubprocess(manager, [
@@ -1564,7 +1564,7 @@ describe("handleUserMessage integration", () => {
   });
 
   test("error_during_execution result produces turn_complete with result: error", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-err-turn-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-err-turn-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       { type: "result", subtype: "error_during_execution", result: "" },
     ]);
@@ -1579,7 +1579,7 @@ describe("handleUserMessage integration", () => {
   });
 
   test("isReplay slash command stdout extracted from replayed user message (array content)", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-replay-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-replay-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "user",
@@ -1610,7 +1610,7 @@ describe("handleUserMessage integration", () => {
   test("slash command with string content (/context flow) produces output and no empty assistant_text", async () => {
     // Simulates the exact /context protocol flow: user isReplay with string content,
     // then result with empty result text. No streaming events.
-    const manager = new SessionManager("/tmp/tugtalk-slash-str-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-str-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "user",
@@ -1650,7 +1650,7 @@ describe("handleUserMessage integration", () => {
 
 describe("ControlRequestForward blocked_path and tool_use_id (Step 6)", () => {
   test("control_request with blocked_path and tool_use_id forwards them in IPC", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-blocked-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-blocked-" + Date.now());
 
     const mockStdin = injectMockSubprocess(manager, [
       {
@@ -1679,7 +1679,7 @@ describe("ControlRequestForward blocked_path and tool_use_id (Step 6)", () => {
   });
 
   test("control_request without blocked_path/tool_use_id still produces valid forward", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-ctrl-noblocked-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ctrl-noblocked-" + Date.now());
 
     const mockStdin = injectMockSubprocess(manager, [
       {
@@ -1716,7 +1716,7 @@ describe("slash commands: all 12 from §13", () => {
   // =========================================================================
 
   test("/context success: string content with local-command-stdout", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-context-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-context-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "user",
@@ -1746,7 +1746,7 @@ describe("slash commands: all 12 from §13", () => {
   });
 
   test("/cost success: string content with cost data", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-cost-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-cost-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "user",
@@ -1774,7 +1774,7 @@ describe("slash commands: all 12 from §13", () => {
   test("/compact success: no output (just result)", async () => {
     // Per §13a: /compact has "No output if successful."
     // The CLI may emit no user message at all, just the result.
-    const manager = new SessionManager("/tmp/tugtalk-slash-compact-ok-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-compact-ok-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       { type: "result", subtype: "success", result: "" },
     ]);
@@ -1795,7 +1795,7 @@ describe("slash commands: all 12 from §13", () => {
 
   test("/compact error: string content with local-command-stderr", async () => {
     // Per §13c: even errors have result subtype "success".
-    const manager = new SessionManager("/tmp/tugtalk-slash-compact-err-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-compact-err-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "user",
@@ -1833,7 +1833,7 @@ describe("slash commands: all 12 from §13", () => {
   // =========================================================================
 
   test("/init: agent command produces streaming text + turn_complete", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-init-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-init-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-init",
@@ -1866,7 +1866,7 @@ describe("slash commands: all 12 from §13", () => {
   });
 
   test("/review: agent command with tool use (Read) works correctly", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-review-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-review-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-review",
@@ -1908,7 +1908,7 @@ describe("slash commands: all 12 from §13", () => {
   });
 
   test("/security-review: agent command streams multi-phase response", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-secreview-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-secreview-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-sec",
@@ -1932,7 +1932,7 @@ describe("slash commands: all 12 from §13", () => {
   });
 
   test("/pr-comments: agent command works like other agent commands", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-prcomm-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-prcomm-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-prc",
@@ -1956,7 +1956,7 @@ describe("slash commands: all 12 from §13", () => {
   });
 
   test("/release-notes: agent command works like other agent commands", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-relnotes-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-relnotes-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-rn",
@@ -1980,7 +1980,7 @@ describe("slash commands: all 12 from §13", () => {
   });
 
   test("/insights: agent command works like other agent commands", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-insights-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-insights-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-ins",
@@ -2011,7 +2011,7 @@ describe("slash commands: all 12 from §13", () => {
   // =========================================================================
 
   test("/commit-message: skill triggers full model turn", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-commitmsg-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-commitmsg-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-cm",
@@ -2036,7 +2036,7 @@ describe("slash commands: all 12 from §13", () => {
 
   test("/keybindings-help: skill returns empty in stream-json (just result)", async () => {
     // Per §13a: "Outputs to TUI; returns empty in stream-json."
-    const manager = new SessionManager("/tmp/tugtalk-slash-keybind-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-keybind-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       { type: "result", subtype: "success", result: "" },
     ]);
@@ -2057,7 +2057,7 @@ describe("slash commands: all 12 from §13", () => {
 
   test("/debug: skill returns empty in stream-json (just result)", async () => {
     // Per §13a: "TUI-oriented."
-    const manager = new SessionManager("/tmp/tugtalk-slash-debug-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-debug-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       { type: "result", subtype: "success", result: "" },
     ]);
@@ -2080,7 +2080,7 @@ describe("slash commands: all 12 from §13", () => {
   // =========================================================================
 
   test("hello: regular message produces streaming + complete + turn_complete", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-slash-hello-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-slash-hello-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-hello",
@@ -2118,7 +2118,7 @@ describe("slash commands: all 12 from §13", () => {
 
 describe("handlePermissionMode control_request (Step 6)", () => {
   test("handlePermissionMode sends set_permission_mode control_request to stdin", () => {
-    const manager = new SessionManager("/tmp/tugtalk-perm-ctrl-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-perm-ctrl-" + Date.now());
 
     const writtenData: string[] = [];
     (manager as any).claudeProcess = {
@@ -2142,7 +2142,7 @@ describe("handlePermissionMode control_request (Step 6)", () => {
   });
 
   test("handlePermissionMode without active process only updates local state", () => {
-    const manager = new SessionManager("/tmp/tugtalk-perm-noproc-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-perm-noproc-" + Date.now());
     // No claudeProcess set -- should not throw, just update local state
     expect(() => {
       manager.handlePermissionMode({ type: "permission_mode", mode: "plan" });
@@ -2157,7 +2157,7 @@ describe("handlePermissionMode control_request (Step 6)", () => {
 
 describe("protocol audit: §2e stop_task handler", () => {
   test("handleStopTask sends stop_task control_request to stdin per §2e", () => {
-    const manager = new SessionManager("/tmp/tugtalk-stoptask-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-stoptask-" + Date.now());
     const writtenData: string[] = [];
     (manager as any).claudeProcess = {
       stdin: {
@@ -2177,7 +2177,7 @@ describe("protocol audit: §2e stop_task handler", () => {
   });
 
   test("handleStopTask without active process does not throw", () => {
-    const manager = new SessionManager("/tmp/tugtalk-stoptask-noproc-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-stoptask-noproc-" + Date.now());
     expect(() => manager.handleStopTask("task-xyz")).not.toThrow();
   });
 });
@@ -2273,7 +2273,7 @@ describe("protocol audit: §12 cost/usage fields in result", () => {
   });
 
   test("cost_update IPC emitted with all fields", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-cost-fields-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-cost-fields-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "result",
@@ -2306,7 +2306,7 @@ describe("protocol audit: §12 cost/usage fields in result", () => {
 
 describe("protocol audit: §14 extended thinking", () => {
   test("thinking_delta stream events produce thinking_text IPC messages", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-thinking-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-thinking-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-think",
@@ -2341,7 +2341,7 @@ describe("protocol audit: §14 extended thinking", () => {
 
 describe("protocol audit: §15 parent_tool_use_id forwarding", () => {
   test("subagent events have parent_tool_use_id stamped on IPC messages", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-subagent-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-subagent-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-sub",
@@ -2378,7 +2378,7 @@ describe("protocol audit: §15 parent_tool_use_id forwarding", () => {
   });
 
   test("top-level events have no parent_tool_use_id", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-toplevel-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-toplevel-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-top",
@@ -2406,7 +2406,7 @@ describe("protocol audit: §15 parent_tool_use_id forwarding", () => {
 
 describe("protocol audit: §16 multiple parallel tool uses", () => {
   test("multiple tool_use blocks in one assistant message all produce IPC", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-parallel-tools-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-parallel-tools-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-par",
@@ -2457,7 +2457,7 @@ describe("protocol audit: §16 multiple parallel tool uses", () => {
 
 describe("protocol audit: §17 context compaction", () => {
   test("compact_boundary system event produces compact_boundary IPC", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-compact-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-compact-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-cmp",
@@ -2495,7 +2495,7 @@ describe("protocol audit: §17 context compaction", () => {
 
 describe("api_retry events forwarded through transport", () => {
   test("api_retry system events produce api_retry IPC messages", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-apiretry-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-apiretry-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-retry",
@@ -2552,7 +2552,7 @@ describe("api_retry events forwarded through transport", () => {
   });
 
   test("api_retry with rate_limit error and null status", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-ratelimit-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-ratelimit-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
         type: "system", subtype: "init", session_id: "s-rl",
@@ -2689,7 +2689,7 @@ describe("protocol audit: §9c Write tool structured result", () => {
 
 describe("protocol audit: §8 file and image attachments", () => {
   test("user message with image attachment produces base64 content block", async () => {
-    const manager = new SessionManager("/tmp/tugtalk-attach-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-attach-" + Date.now());
     const writtenData: string[] = [];
     const mockStdin = injectMockSubprocess(manager, [
       { type: "result", subtype: "success", result: "" },
@@ -2748,7 +2748,7 @@ describe("protocol audit: §11b tool errors", () => {
 
 describe("protocol audit: §2f permission response format", () => {
   test("allow response uses 'behavior' not 'decision' per §2f", () => {
-    const manager = new SessionManager("/tmp/tugtalk-perm-allow-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-perm-allow-" + Date.now());
     const pendingCR = {
       type: "control_request",
       request_id: "req-perm-1",
@@ -2785,7 +2785,7 @@ describe("protocol audit: §2f permission response format", () => {
   });
 
   test("deny response uses 'behavior' not 'decision' per §2f", () => {
-    const manager = new SessionManager("/tmp/tugtalk-perm-deny-" + Date.now());
+    const manager = new SessionManager("/tmp/tugcode-perm-deny-" + Date.now());
     const pendingCR = {
       type: "control_request",
       request_id: "req-perm-2",

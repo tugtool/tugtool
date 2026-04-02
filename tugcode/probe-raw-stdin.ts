@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Transparent proxy — spawns claude with the same args tugtalk uses,
+ * Transparent proxy — spawns claude with the same args tugcode uses,
  * but logs EVERY line of stdout before we'd process it.
  * This shows what Claude Code actually emits for slash commands.
  */

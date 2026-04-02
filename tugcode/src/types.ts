@@ -14,7 +14,7 @@ export interface QuestionDef {
   options?: Array<{ label: string; description?: string }>;
 }
 
-// Inbound message types (tugcast to tugtalk stdin) - Spec S01
+// Inbound message types (tugcast to tugcode stdin) - Spec S01
 export interface ProtocolInit {
   type: "protocol_init";
   version: number;
@@ -77,7 +77,7 @@ export type InboundMessage =
   | SessionCommand
   | StopTask;
 
-// Outbound message types (tugtalk stdout to tugcast) - Spec S02
+// Outbound message types (tugcode stdout to tugcast) - Spec S02
 // ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
 
 export interface ProtocolAck {

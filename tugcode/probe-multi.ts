@@ -3,7 +3,7 @@
  * Multi-test transport probe. Runs a sequence of tests with labeled output.
  * Tests: tool approval, multiple tools, error cases.
  *
- * Usage: bun run tugtalk/probe-multi.ts <test-name>
+ * Usage: bun run tugcode/probe-multi.ts <test-name>
  * Tests: approval, multi-tool, error, long-stream
  */
 
@@ -42,7 +42,7 @@ console.log(`=== Probe: ${testName} ===`);
 console.log(`${test.description}\n`);
 
 const proc = spawn({
-  cmd: ["bun", "run", "tugtalk/src/main.ts", "--dir", PROJECT_DIR],
+  cmd: ["bun", "run", "tugcode/src/main.ts", "--dir", PROJECT_DIR],
   cwd: PROJECT_DIR,
   stdin: "pipe",
   stdout: "pipe",

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Raw Claude Code probe — bypasses tugtalk entirely.
+ * Raw Claude Code probe — bypasses tugcode entirely.
  * Spawns claude CLI directly with stream-json and sends messages to its stdin.
  * This lets us see EXACTLY what Claude Code emits for slash commands.
  */

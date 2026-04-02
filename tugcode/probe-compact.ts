@@ -13,7 +13,7 @@ const test = Bun.argv[2] || "compact"; // "compact" or "fork"
 console.log(`=== ${test === "fork" ? "Fork" : "Compact"} Probe ===\n`);
 
 const proc = spawn({
-  cmd: ["bun", "run", "tugtalk/src/main.ts", "--dir", PROJECT_DIR],
+  cmd: ["bun", "run", "tugcode/src/main.ts", "--dir", PROJECT_DIR],
   cwd: PROJECT_DIR,
   stdin: "pipe",
   stdout: "pipe",

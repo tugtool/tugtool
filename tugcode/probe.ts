@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
- * Transport probe — spawns tugtalk directly, sends a basic message,
+ * Transport probe — spawns tugcode directly, sends a basic message,
  * and dumps every event that comes back.
  *
- * Usage: bun run tugtalk/probe.ts [message]
+ * Usage: bun run tugcode/probe.ts [message]
  * Default message: "Say hello in exactly 5 words."
  */
 
@@ -17,7 +17,7 @@ console.log("=== Tugtalk Transport Probe ===");
 console.log(`Message: "${message}"\n`);
 
 const proc = spawn({
-  cmd: ["bun", "run", "tugtalk/src/main.ts", "--dir", PROJECT_DIR],
+  cmd: ["bun", "run", "tugcode/src/main.ts", "--dir", PROJECT_DIR],
   cwd: PROJECT_DIR,
   stdin: "pipe",
   stdout: "pipe",

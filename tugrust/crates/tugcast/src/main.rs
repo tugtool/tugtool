@@ -44,7 +44,7 @@ async fn main() {
         .init();
 
     // Create own process group so the app can kill tugcast + all children
-    // (tugtalk, bun) with a single kill(-pgid, SIGTERM). Without this,
+    // (tugcode, bun) with a single kill(-pgid, SIGTERM). Without this,
     // children become orphans when the app force-kills tugcast.
     unsafe {
         libc::setpgid(0, 0);
@@ -238,13 +238,13 @@ async fn main() {
         });
     }
 
-    // Resolve tugtalk path and start agent bridge
-    let tugtalk_path =
-        feeds::agent_bridge::resolve_tugtalk_path(cli.tugtalk_path.as_deref(), &watch_dir);
-    if !tugtalk_path.exists() {
+    // Resolve tugcode path and start agent bridge
+    let tugcode_path =
+        feeds::agent_bridge::resolve_tugcode_path(cli.tugcode_path.as_deref(), &watch_dir);
+    if !tugcode_path.exists() {
         panic!(
-            "tugtalk not found at {} — tugtalk is required for tugcast to run",
-            tugtalk_path.display()
+            "tugcode not found at {} — tugcode is required for tugcast to run",
+            tugcode_path.display()
         );
     }
     let agent_cancel = cancel.clone();
@@ -252,7 +252,7 @@ async fn main() {
     let agent_handles = feeds::agent_bridge::spawn_agent_bridge(
         code_tx.clone(),
         code_input_rx,
-        tugtalk_path,
+        tugcode_path,
         agent_watch_dir,
         agent_cancel,
     );
@@ -437,7 +437,7 @@ async fn main() {
     // Signal shutdown for background tasks
     cancel.cancel();
 
-    // Kill our entire process group (tugcast + tugtalk + children).
+    // Kill our entire process group (tugcast + tugcode + children).
     // std::process::exit doesn't run destructors, so kill_on_drop and
     // async cancellation can't be relied upon. Sending SIGTERM to our
     // own process group is the only reliable way to clean up children.

@@ -97,7 +97,7 @@ function nowRfc3339(): string {
  *
  * Provides get/set/readDomain/listDomains with an in-memory domain cache.
  * Broadcasts Darwin notifications on write so other processes can react.
- * No polling — tugtalk is a session-scoped process that reads at startup
+ * No polling — tugcode is a session-scoped process that reads at startup
  * and writes during the session.
  *
  * Call close() to release the database connection.

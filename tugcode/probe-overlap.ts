@@ -12,7 +12,7 @@ const PROJECT_DIR = resolve(import.meta.dir, "..");
 console.log("=== Overlap Probe (message during turn) ===\n");
 
 const proc = spawn({
-  cmd: ["bun", "run", "tugtalk/src/main.ts", "--dir", PROJECT_DIR],
+  cmd: ["bun", "run", "tugcode/src/main.ts", "--dir", PROJECT_DIR],
   cwd: PROJECT_DIR,
   stdin: "pipe",
   stdout: "pipe",

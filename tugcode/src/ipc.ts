@@ -49,11 +49,11 @@ export function validateMessage(raw: string): InboundMessage | null {
     if (isInboundMessage(parsed)) {
       return parsed;
     } else {
-      console.error(`[tugtalk] Invalid message type: ${JSON.stringify(parsed)}`);
+      console.error(`[tugcode] Invalid message type: ${JSON.stringify(parsed)}`);
       return null;
     }
   } catch (err) {
-    console.error(`[tugtalk] JSON parse error: ${err}`);
+    console.error(`[tugcode] JSON parse error: ${err}`);
     return null;
   }
 }

@@ -15,22 +15,22 @@ fn main() {
         .parent()
         .unwrap();
 
-    // --- Build tugtalk (conversation engine binary) ---
-    let tugtalk_dir = repo_root.join("tugtalk");
+    // --- Build tugcode (Claude Code bridge binary) ---
+    let tugcode_dir = repo_root.join("tugcode");
 
     // Run bun install if node_modules doesn't exist
-    if !tugtalk_dir.join("node_modules").exists() {
+    if !tugcode_dir.join("node_modules").exists() {
         let status = Command::new("bun")
             .arg("install")
-            .current_dir(&tugtalk_dir)
+            .current_dir(&tugcode_dir)
             .status()
-            .expect("failed to run bun install for tugtalk");
+            .expect("failed to run bun install for tugcode");
         if !status.success() {
-            panic!("bun install for tugtalk failed");
+            panic!("bun install for tugcode failed");
         }
     }
 
-    // Compile tugtalk to a standalone binary using bun build --compile.
+    // Compile tugcode to a standalone binary using bun build --compile.
     // Place the binary in the cargo target profile directory (next to tugcast/tugtool).
     // OUT_DIR is: target/{profile}/build/{crate}-{hash}/out
     // We walk up to find the profile directory (debug or release).
@@ -45,28 +45,28 @@ fn main() {
         .expect("could not find target profile directory from OUT_DIR")
         .to_path_buf();
 
-    let tugtalk_binary = target_profile_dir.join("tugtalk");
+    let tugcode_binary = target_profile_dir.join("tugcode");
     let status = Command::new("bun")
         .args([
             "build",
             "--compile",
             "src/main.ts",
-            &format!("--outfile={}", tugtalk_binary.display()),
+            &format!("--outfile={}", tugcode_binary.display()),
         ])
-        .current_dir(&tugtalk_dir)
+        .current_dir(&tugcode_dir)
         .status()
-        .expect("failed to run bun build --compile for tugtalk");
+        .expect("failed to run bun build --compile for tugcode");
     if !status.success() {
-        panic!("bun build --compile for tugtalk failed");
+        panic!("bun build --compile for tugcode failed");
     }
 
     // Set rerun-if-changed for cargo caching
     println!(
         "cargo:rerun-if-changed={}",
-        repo_root.join("tugtalk/src/").display()
+        repo_root.join("tugcode/src/").display()
     );
     println!(
         "cargo:rerun-if-changed={}",
-        repo_root.join("tugtalk/package.json").display()
+        repo_root.join("tugcode/package.json").display()
     );
 }

@@ -3,10 +3,10 @@
  * Transport probe for skill invocation and permission handling.
  *
  * Usage:
- *   bun run tugtalk/probe-skill.ts "/cost"
- *   bun run tugtalk/probe-skill.ts "/status"
- *   bun run tugtalk/probe-skill.ts "/compact"
- *   bun run tugtalk/probe-skill.ts "any message"
+ *   bun run tugcode/probe-skill.ts "/cost"
+ *   bun run tugcode/probe-skill.ts "/status"
+ *   bun run tugcode/probe-skill.ts "/compact"
+ *   bun run tugcode/probe-skill.ts "any message"
  *
  * Handles control_request_forward (permission prompts) by auto-allowing.
  * Handles question events by printing and auto-answering with defaults.
@@ -25,7 +25,7 @@ console.log(`Message: "${message}"`);
 console.log(`Permission mode: ${autoDeny ? "auto-DENY" : "auto-ALLOW"}\n`);
 
 const proc = spawn({
-  cmd: ["bun", "run", "tugtalk/src/main.ts", "--dir", PROJECT_DIR],
+  cmd: ["bun", "run", "tugcode/src/main.ts", "--dir", PROJECT_DIR],
   cwd: PROJECT_DIR,
   stdin: "pipe",
   stdout: "pipe",
@@ -147,7 +147,7 @@ for await (const chunk of proc.stdout) {
             console.log(`    Full event: ${JSON.stringify(msg, null, 2)}`);
             const decision = autoDeny ? "deny" : "allow";
             console.log(`    >>> Auto-${decision.toUpperCase()}ING (request_id=${msg.request_id?.slice(0, 12)}...)`);
-            // Respond using tool_approval format (tugtalk InboundMessage type)
+            // Respond using tool_approval format (tugcode InboundMessage type)
             if (autoDeny) {
               send({
                 type: "tool_approval",

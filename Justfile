@@ -3,15 +3,15 @@
 default:
     @just --list
 
-# Build all Rust binaries + tugtalk, symlink to ~/.local/bin
+# Build all Rust binaries + tugcode (Claude Code bridge), symlink to ~/.local/bin
 build:
     #!/usr/bin/env bash
     set -euo pipefail
     cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank
     cd ..
-    bun build --compile tugtalk/src/main.ts --outfile tugrust/target/debug/tugtalk
+    bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     mkdir -p ~/.local/bin
-    for bin in tugcast tugexec tugutil tugrelaunch tugbank; do
+    for bin in tugcast tugexec tugutil tugcode tugrelaunch tugbank; do
         ln -sf "$(pwd)/tugrust/target/debug/$bin" ~/.local/bin/"$bin"
     done
 
@@ -80,9 +80,9 @@ app: build wasm
     cp tugrust/target/debug/tugutil "$MACOS_DIR/"
     cp tugrust/target/debug/tugexec "$MACOS_DIR/"
     cp tugrust/target/debug/tugrelaunch "$MACOS_DIR/"
-    cp tugrust/target/debug/tugtalk "$MACOS_DIR/"
+    cp tugrust/target/debug/tugcode "$MACOS_DIR/"
     echo "==> Launching Tug.app"
-    # Tell the app where the source tree is so tugcast can find tugtalk, tugdeck, etc.
+    # Tell the app where the source tree is so tugcast can find tugcode, tugdeck, etc.
     tugbank write dev.tugexec.app source-tree-path "$(pwd)"
     TUG_PID=$(pgrep -x Tug 2>/dev/null || true)
     if [ -n "$TUG_PID" ]; then
