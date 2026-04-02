@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 
 use crate::commands::{DashCommands, LogCommands, StateCommands, WorktreeCommands};
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"), ")");
 
 /// Tug utility — project management, state tracking, and developer tools
 #[derive(Parser)]

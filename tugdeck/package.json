@@ -1,9 +1,9 @@
 {
   "name": "tugdeck",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "private": true,
   "license": "MIT",
-  "description": "Browser frontend for tugcast terminal bridge",
+  "description": "Browser frontend for Tug — renders feeds from tugcast as interactive UI",
   "scripts": {
     "build": "vite build",
     "check": "bunx tsc --noEmit",

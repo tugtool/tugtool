@@ -1,10 +1,10 @@
 [package]
 name = "tugcast-core"
 description = "Protocol types, frame encoding, and feed traits for the tugcast WebSocket multiplexer"
-version = "0.1.0"
-edition = "2024"
-license = "MIT"
-rust-version = "1.85"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
 
 [lib]
 name = "tugcast_core"

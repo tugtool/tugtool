@@ -1,10 +1,10 @@
 [package]
 name = "tugcast"
 description = "WebSocket multiplexer — bridges terminal, code, filesystem, git, and stats feeds to tugdeck"
-version = "0.1.0"
-edition = "2024"
-license = "MIT"
-rust-version = "1.85"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
 
 [[bin]]
 name = "tugcast"

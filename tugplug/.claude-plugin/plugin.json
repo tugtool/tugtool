@@ -1,1 +1,1 @@
-{"name":"tugplug","description":"Tugtool turns ideas into working code","version":"0.3.0","author":{"name":"tugtool-team"},"repository":"https://github.com/tugtool/tugtool","license":"MIT","keywords":["planning","orchestration","agents","implementation"]}
+{"name":"tugplug","description":"Claude Code plugin — orchestration skills and agents for plan/implement/merge workflows","version":"0.8.0","author":{"name":"Ken Kocienda"},"license":"MIT","keywords":["planning","orchestration","agents","implementation"]}

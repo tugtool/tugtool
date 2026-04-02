@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/tugutil", "crates/tugutil-core", "crates/tugcast", "crates/tugcast-core", "crates/tugexec", "crates/tugrelaunch", "crates/tugbank-core", "crates/tugbank"]
 
 [workspace.package]
-version = "0.7.48"
+version = "0.8.0"
 edition = "2024"
 license = "MIT"
 rust-version = "1.85"

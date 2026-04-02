@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Tugtool transforms ideas into working software through orchestrated LLM agents. A multi-agent suite collaborates to create structured tugplans and execute them to completion—from initial idea through implementation, review, and delivery.
+Tugtool is a developer tool suite built around Tide — a unified command surface where shell commands and AI interactions coexist in one graphical UI. The suite includes tugcast (WebSocket multiplexer), tugcode (Claude Code bridge), tugutil (project management CLI), tugdeck (browser frontend), tugplug (orchestration skills and agents), and Tug.app (macOS host).
 
 ## Git Policy
 
