@@ -348,11 +348,9 @@ Tide builds on completed foundation work (Phases 1-3A.7) documented in [tug-conv
 
 ```
 ─── FOUNDATION (DONE) ─────────────────────────────────────
-See tug-conversation.md for full details on completed phases.
-
 Phase 1: Transport Exploration           — DONE (35 tests)
 Phase 2: Transport Hardening             — DONE (T1-T7)
-Phase 2b: WebSocket Verification         — DONE (4 issues found)
+Phase 2b: WebSocket Verification         — DONE (4 issues found, all fixed)
 Phase 2c: WebSocket Fixes                — DONE (T8-T11)
 Phase 3A: Markdown Rendering Core        — DONE
 Phase 3A.1-3A.4: Worker/WASM Pipeline    — DONE
@@ -390,6 +388,136 @@ Phase F3: Feed CLI + Tugcast             — tugcode feed commands, events reach
 Phase F4: Agent-Internal Events          — file/command detail from within agents
 Phase F5: Custom Block Renderers         — rich UI for agent output
 ```
+
+---
+
+### Foundation: What's Been Proved {#foundation}
+
+Full exploration journals: [transport-exploration.md](transport-exploration.md) (35 tests), [ws-verification.md](ws-verification.md) (WebSocket probe). Detailed phase writeups: [tug-conversation.md](tug-conversation.md) (Phases 1-3A.7).
+
+#### Phase 1: Transport Exploration (DONE)
+
+35 tests probing Claude Code's `stream-json` protocol via `tugtalk/probe.ts`. Key discoveries that directly inform Tide's Claude Code adapter:
+
+- **Streaming model**: `assistant_text` partials are **deltas** (not accumulated). Final `complete` event has full text. UI must accumulate.
+- **Thinking**: `thinking_text` is a separate event type arriving before `assistant_text`. Same delta model. Same `msg_id`.
+- **Tool use**: `tool_use` streams incrementally (empty input → full input). `tool_result` has text output. `tool_use_structured` has typed data (file viewer, bash stdout/stderr, etc.). Events interleave for concurrent tool calls.
+- **Permissions & questions**: Both are `control_request_forward`. Dispatch on `is_question`. Permissions respond with `tool_approval`; questions respond with `question_answer`.
+- **Interrupt**: Produces `turn_complete(result: "error")`, not `turn_cancelled`. Final `assistant_text` complete event still arrives with accumulated text.
+- **Slash commands**: ALL go through `user_message`. Skills produce full event streams. Terminal-only commands (`/status`, `/model`, `/cost`) return "Unknown skill" — the UI must build its own versions (now Tide surface built-ins, Phase T10).
+- **Message queueing**: Sending `user_message` mid-stream does NOT interrupt — it queues. Use `interrupt` to cancel.
+- **Subagents**: `tool_use: Agent` brackets subagent lifetime. Nested tool calls visible. `system:task_started/progress/completed` provide lifecycle tracking.
+- **`system_metadata`**: Sent every turn. Contains model, tools, slash_commands, skills, plugins, agents, mcp_servers, version, permissionMode. The source for all UI chrome.
+
+**Outbound events (Claude Code → UI):**
+
+| Event | When | Key Fields |
+|-------|------|-----------|
+| `protocol_ack` | After handshake | `version`, `session_id`, `ipc_version` |
+| `session_init` | After claude spawns | `session_id` (may be `"pending"`) |
+| `system_metadata` | Start of every turn | tools, model, slash_commands, skills, plugins, agents, mcp_servers, version, permissionMode |
+| `thinking_text` | Before response | `msg_id`, `seq`, `text` (delta), `is_partial`, `status` |
+| `assistant_text` | During response | `msg_id`, `seq`, `text` (delta on partial, full on complete), `is_partial`, `status` |
+| `tool_use` | Tool invoked | `msg_id`, `seq`, `tool_name`, `tool_use_id`, `input` (streams empty→full) |
+| `tool_result` | Tool completed | `tool_use_id`, `output`, `is_error` |
+| `tool_use_structured` | Tool completed | `tool_use_id`, `structured_result` (typed: file, bash, etc.) |
+| `control_request_forward` | Permission or question | `request_id`, `tool_name`, `input`, `decision_reason`, `is_question` |
+| `cost_update` | Near end of turn | `total_cost_usd`, `num_turns`, `duration_ms`, `duration_api_ms`, `usage` (input/output/cache tokens) |
+| `turn_complete` | End of turn | `msg_id`, `seq`, `result` (`"success"` or `"error"`) |
+| `error` | Error occurred | `message`, `recoverable` |
+
+**Inbound messages (UI → Claude Code):**
+
+| Type | Purpose | Key Fields |
+|------|---------|-----------|
+| `protocol_init` | Handshake | `version: 1` |
+| `user_message` | Send prompt | `text`, `attachments: []` |
+| `tool_approval` | Answer permission | `request_id`, `decision: "allow"\|"deny"`, `updatedInput?`, `message?` |
+| `question_answer` | Answer question | `request_id`, `answers: { key: value }` |
+| `interrupt` | Stop turn | *(empty)* |
+| `permission_mode` | Change mode | `mode` |
+| `model_change` | Switch model | `model` |
+| `session_command` | Session mgmt | `command: "fork"\|"continue"\|"new"` |
+| `stop_task` | Stop a task | `task_id` |
+
+**Session command behavior:**
+
+| Command | Process | `session_init` ID | Readiness | Context |
+|---------|---------|-------------------|-----------|---------|
+| `"new"` | Kill + respawn | `"pending"` | **Gap — must wait for real ID** | Fresh |
+| `"continue"` | In-place | `"pending-cont..."` | **Immediate** | Preserved |
+| `"fork"` | Kill + respawn | `"pending-fork"` | **Gap — must wait for real ID** | Preserved (copy) |
+
+#### Phase 2: Transport Hardening (DONE)
+
+Seven fixes to make the transport production-ready. All committed:
+
+| # | Fix | Commit |
+|---|-----|--------|
+| T1 | `--plugin-dir` points to `tugplug/` (skills/agents now visible) | `ec7fad06` |
+| T2 | Synthetic assistant text forwarded (`/cost`, `/compact` output) | `923a655c` |
+| T3 | `api_retry` events forwarded | `f3ac0249` |
+| T4 | Process lifecycle: process groups, parent-death watchdog, kill_on_drop | `67c22ad1` |
+| T5 | Session command readiness signaling | `314a13cc` |
+| T6 | `--no-auth` flag for tugcast (dev/testing) | `ac3cdf54` |
+| T7 | Tugtalk compiled to standalone binary (no Bun runtime dependency) | `70e8733e` |
+
+#### Phase 2b: WebSocket Verification (DONE)
+
+Probe (`tugtalk/probe-websocket.ts`) verified the full WebSocket path through tugcast. See [ws-verification.md](ws-verification.md).
+
+**Wire protocol**: All WebSocket messages are binary frames:
+```
+[1 byte: FeedId] [4 bytes: payload length, big-endian u32] [N bytes: payload]
+```
+
+**Feed IDs (current):**
+
+| FeedId | Name | Direction | Payload |
+|--------|------|-----------|---------|
+| 0x00 | TerminalOutput | server → client | raw bytes |
+| 0x10 | Filesystem | server → client | JSON |
+| 0x20 | Git | server → client | JSON |
+| 0x30 | Stats | server → client | JSON |
+| 0x31 | StatsProcessInfo | server → client | JSON |
+| 0x32 | StatsTokenUsage | server → client | JSON |
+| 0x33 | StatsBuildStatus | server → client | JSON |
+| 0x40 | CodeOutput | server → client | JSON-line |
+| 0x41 | CodeInput | client → server | JSON-line |
+| 0xFF | Heartbeat | bidirectional | empty |
+
+**Key findings:**
+- Full round-trip works: WebSocket connect → snapshot feeds → `user_message` → streamed response → `turn_complete`
+- All snapshot feeds (filesystem, git, stats, project_info) delivered immediately on connect
+- Reconnection works: fresh snapshot feeds on reconnect
+- Heartbeat frames every 15 seconds
+
+**Issues discovered and fixed in Phase 2c:**
+
+| # | Issue | Fix | Commit |
+|---|-------|-----|--------|
+| T8 | `session_init` race — broadcast before client connects, missed on fresh launch | Dedicated watch channel, delivered as snapshot on connect | `e0174373` |
+| T9 | Double delivery — snapshot feeds sent twice on connect | `borrow_and_update()` in router | `e0174373` |
+| T10 | Five touchpoints to add a watch channel | `AgentBridgeHandles` encapsulation, one-file change | `e0174373` |
+| T11 | `.tugtool/.session` dirties working tree | Session ID moved to tugbank | `e0174373` |
+
+#### Phases 3A-3A.7: Markdown Rendering (DONE)
+
+See [tug-conversation.md](tug-conversation.md) for detailed writeups. Summary of what was built:
+
+- **3A**: Virtualized markdown rendering — BlockHeightIndex (prefix sum, binary search), RenderedBlockWindow (sliding DOM window), two-path rendering (static + streaming).
+- **3A.1-3A.3**: Worker pipeline (built, then found to be unnecessary after WASM benchmarks).
+- **3A.4**: pulldown-cmark WASM pipeline — 1MB in 14ms, 10MB in 132ms on JSC. Workers removed entirely. Synchronous lex + parse, no async chains.
+- **3A.5**: Region model — ordered keyed content regions, imperative handle API (`setRegion`, `removeRegion`, `clear`). Ready for conversation rendering where messages arrive with IDs and are updated after display.
+- **3A.6**: SmartScroll — six-phase scroll state machine (idle, tracking, dragging, settling, decelerating, programmatic). Modeled after UIScrollView/UIScrollViewDelegate. Follow-bottom, all user input methods detected.
+- **3A.7**: SmartScroll hardening — settling phase, wheel/keyboard exit paths, all-key coverage, dead code removal.
+
+**What exists and is ready for Tide phases:**
+- `BlockHeightIndex` + `RenderedBlockWindow` — proven virtual scroll infrastructure
+- `TugMarkdownView` with `TugMarkdownViewHandle` (setRegion/removeRegion/clear) — the rendering surface
+- pulldown-cmark WASM — synchronous lex and parse
+- `SmartScroll` — scroll management with follow-bottom
+- `RegionMap` — ordered keyed content for conversation messages
 
 ---
 
