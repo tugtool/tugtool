@@ -276,7 +276,7 @@ final class TugbankClient {
         addr.sun_family = sa_family_t(AF_UNIX)
         let pathBytes = socketPath.utf8CString
         guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { return }
-        withUnsafeMutablePointer(to: &addr.sun_path) { sunPath in
+        _ = withUnsafeMutablePointer(to: &addr.sun_path) { sunPath in
             pathBytes.withUnsafeBufferPointer { buf in
                 memcpy(sunPath, buf.baseAddress!, buf.count)
             }
