@@ -205,9 +205,8 @@ async fn main() {
     // Create shared dev state (empty until runtime dev_mode control message)
     let shared_dev_state = dev::new_shared_dev_state();
 
-    // Clone channel senders for control socket recv loop BEFORE FeedRouter takes ownership
+    // Clone shutdown sender for control socket recv loop
     let ctl_shutdown_tx = shutdown_tx.clone();
-    let ctl_client_action_tx = client_action_tx.clone();
 
     // Split control socket into reader and writer halves
     let mut control_writer: Option<control::ControlWriter> = None;
@@ -257,7 +256,31 @@ async fn main() {
         agent_cancel,
     );
 
-    // Create feed router
+    // Build feed router with dynamic registration
+    use crate::router::LagPolicy;
+
+    let mut feed_router = FeedRouter::new(
+        cli.session.clone(),
+        auth.clone(),
+        shutdown_tx,
+        shared_dev_state.clone(),
+    );
+
+    // Register stream outputs (broadcast feeds, server → client)
+    feed_router.register_stream(
+        FeedId::TERMINAL_OUTPUT,
+        terminal_tx_for_router,
+        LagPolicy::Bootstrap,
+    );
+    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx.clone(), LagPolicy::Warn);
+    feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+
+    // Register input sinks (client → server backends)
+    feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
+    feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
+
+    // Register snapshot watches
     let mut snapshot_watches = vec![
         fs_watch_rx,
         git_watch_rx,
@@ -270,19 +293,7 @@ async fn main() {
         snapshot_watches.push(rx);
     }
     snapshot_watches.extend(agent_handles.snapshot_watches);
-
-    let feed_router = FeedRouter::new(
-        terminal_tx_for_router,
-        input_tx,
-        code_tx.clone(),
-        code_input_tx,
-        cli.session.clone(),
-        auth.clone(),
-        snapshot_watches,
-        shutdown_tx,
-        client_action_tx,
-        shared_dev_state.clone(),
-    );
+    feed_router.add_snapshot_watches(snapshot_watches);
 
     // Start filesystem feed in background task
     let fs_cancel = cancel.clone();
@@ -356,12 +367,13 @@ async fn main() {
     // Spawn control socket receive loop
     if let Some(reader) = control_reader {
         let dev_state = shared_dev_state.clone();
+        let ctl_stream_outputs = feed_router.stream_outputs.clone();
         let tx = response_tx
             .clone()
             .expect("response_tx must exist when control_reader exists");
         tokio::spawn(reader.run_recv_loop(
             ctl_shutdown_tx,
-            ctl_client_action_tx,
+            ctl_stream_outputs,
             dev_state,
             tx,
             auth.clone(),

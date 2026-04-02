@@ -15,8 +15,9 @@ use tugbank_core::{DefaultsStore, TugbankClient};
 
 use crate::auth::{self, SESSION_COOKIE_NAME};
 use crate::dev;
-use crate::router::{BROADCAST_CAPACITY, FeedRouter};
+use crate::router::{BROADCAST_CAPACITY, FeedRouter, LagPolicy};
 use crate::server::build_app;
+use tugcast_core::FeedId;
 
 /// Helper to build a test app with fresh auth state
 fn build_test_app(port: u16) -> (axum::Router, String) {
@@ -37,18 +38,18 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
+    let mut feed_router = FeedRouter::new(
         "test-dummy".to_string(),
         auth.clone(),
-        vec![], // No snapshot feeds for auth/WebSocket tests
         shutdown_tx,
-        client_action_tx,
         dev_state.clone(),
     );
+    feed_router.register_stream(FeedId::TERMINAL_OUTPUT, terminal_tx, LagPolicy::Bootstrap);
+    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn);
+    feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+    feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
+    feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
     let app = build_app(feed_router, dev_state, None, None);
     (app, token)
@@ -498,18 +499,18 @@ async fn test_tell_reload() {
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
 
     let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
+    let mut feed_router = FeedRouter::new(
         "test-dummy".to_string(),
         auth,
-        vec![],
         shutdown_tx,
-        client_action_tx,
         dev_state.clone(),
     );
+    feed_router.register_stream(FeedId::TERMINAL_OUTPUT, terminal_tx, LagPolicy::Bootstrap);
+    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn);
+    feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+    feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
+    feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
     let app = build_app(feed_router, dev_state, None, None);
 
@@ -532,7 +533,6 @@ async fn test_tell_reload() {
 
     // Verify client_action_tx was broadcast
     let frame = client_action_rx.try_recv().unwrap();
-    use tugcast_core::FeedId;
     assert_eq!(frame.feed_id, FeedId::CONTROL);
 }
 
@@ -551,18 +551,18 @@ async fn test_tell_client_action_round_trip() {
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
 
     let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
+    let mut feed_router = FeedRouter::new(
         "test-dummy".to_string(),
         auth,
-        vec![],
         shutdown_tx,
-        client_action_tx,
         dev_state.clone(),
     );
+    feed_router.register_stream(FeedId::TERMINAL_OUTPUT, terminal_tx, LagPolicy::Bootstrap);
+    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn);
+    feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+    feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
+    feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
     let app = build_app(feed_router, dev_state, None, None);
 
@@ -593,7 +593,6 @@ async fn test_tell_client_action_round_trip() {
 
     // Verify client_action_rx receives the frame
     let frame = client_action_rx.recv().await.unwrap();
-    use tugcast_core::FeedId;
     assert_eq!(frame.feed_id, FeedId::CONTROL);
 
     // Verify payload contains the original JSON body
@@ -660,18 +659,18 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
+    let mut feed_router = FeedRouter::new(
         "test-dummy".to_string(),
         auth,
-        vec![],
         shutdown_tx,
-        client_action_tx,
         dev_state.clone(),
     );
+    feed_router.register_stream(FeedId::TERMINAL_OUTPUT, terminal_tx, LagPolicy::Bootstrap);
+    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn);
+    feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+    feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
+    feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
     let app = build_app(feed_router, dev_state, None, Some(client));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
@@ -955,18 +954,18 @@ async fn test_defaults_non_loopback_returns_403() {
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
+    let mut feed_router = FeedRouter::new(
         "test-dummy".to_string(),
         auth,
-        vec![],
         shutdown_tx,
-        client_action_tx,
         dev_state.clone(),
     );
+    feed_router.register_stream(FeedId::TERMINAL_OUTPUT, terminal_tx, LagPolicy::Bootstrap);
+    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn);
+    feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+    feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
+    feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
     let app = build_app(feed_router, dev_state, None, Some(bank_client));
     // Apply a non-loopback address
@@ -1008,18 +1007,18 @@ fn build_migration_test_app(client: Arc<TugbankClient>) -> axum::Router {
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
+    let mut feed_router = FeedRouter::new(
         "test-dummy".to_string(),
         auth,
-        vec![],
         shutdown_tx,
-        client_action_tx,
         dev_state.clone(),
     );
+    feed_router.register_stream(FeedId::TERMINAL_OUTPUT, terminal_tx, LagPolicy::Bootstrap);
+    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn);
+    feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+    feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
+    feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
     let app = build_app(feed_router, dev_state, None, Some(client));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);

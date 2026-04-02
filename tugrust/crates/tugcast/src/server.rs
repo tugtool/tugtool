@@ -98,7 +98,7 @@ async fn tell_handler(
         action,
         &body,
         &router.shutdown_tx,
-        &router.client_action_tx,
+        &router.stream_outputs,
         &router.dev_state,
     )
     .await;

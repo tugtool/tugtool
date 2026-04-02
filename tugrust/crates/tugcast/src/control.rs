@@ -74,11 +74,20 @@ impl ControlReader {
     pub async fn run_recv_loop(
         mut self,
         shutdown_tx: mpsc::Sender<u8>,
-        client_action_tx: broadcast::Sender<Frame>,
+        stream_outputs: std::collections::HashMap<
+            FeedId,
+            (broadcast::Sender<Frame>, crate::router::LagPolicy),
+        >,
         shared_dev_state: crate::dev::SharedDevState,
         response_tx: mpsc::Sender<String>,
         auth: crate::auth::SharedAuthState,
     ) {
+        // Extract the CONTROL broadcast sender for use throughout the recv loop.
+        let client_action_tx = stream_outputs
+            .get(&FeedId::CONTROL)
+            .map(|(tx, _)| tx.clone())
+            .expect("CONTROL stream must be registered before starting recv loop");
+
         let mut line = String::new();
         let mut dev_runtime: Option<crate::dev::DevRuntime> = None;
 
@@ -111,7 +120,7 @@ impl ControlReader {
                                         &action,
                                         &bytes,
                                         &shutdown_tx,
-                                        &client_action_tx,
+                                        &stream_outputs,
                                         &shared_dev_state,
                                     )
                                     .await;

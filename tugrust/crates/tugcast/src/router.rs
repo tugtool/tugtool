@@ -1,17 +1,34 @@
 //! Feed router and WebSocket handler
 //!
 //! Implements the per-client BOOTSTRAP/LIVE state machine for WebSocket connections.
-//! Each client gets a snapshot on connect (BOOTSTRAP), then transitions to live
-//! streaming (LIVE). If the client falls behind, it re-enters BOOTSTRAP.
+//! Each client gets snapshot data on connect, then transitions to live streaming.
+//! If the client falls behind on a stream with `LagPolicy::Bootstrap`, it
+//! re-enters BOOTSTRAP to recover.
+//!
+//! The router uses dynamic dispatch for both output streams and input sinks:
+//! - **Stream outputs** (`StreamMap<FeedId, BroadcastStream>`) fan-in all
+//!   broadcast feeds into a single pollable source.
+//! - **Input sinks** (`HashMap<FeedId, mpsc::Sender>`) route client frames
+//!   to the correct backend by FeedId lookup.
+//! - **Snapshot watches** (`Vec<watch::Receiver>`) are merged into an mpsc
+//!   for initial delivery + change notifications.
+//!
+//! Router-internal FeedIds (Heartbeat, Control) are handled inline before
+//! the dynamic map lookup.
 
+use std::collections::HashMap;
+use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use futures::Stream;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time;
+use tokio_stream::StreamMap;
+use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, error, info, warn};
 
 use tugcast_core::{
@@ -22,7 +39,7 @@ use tugcast_core::{
 use crate::auth::{self, SharedAuthState};
 use crate::feeds::terminal;
 
-/// Broadcast channel capacity for terminal output stream
+/// Broadcast channel capacity for stream feeds
 pub const BROADCAST_CAPACITY: usize = 4096;
 
 /// Heartbeat interval (send heartbeat every 15 seconds)
@@ -31,7 +48,23 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 /// Heartbeat timeout (close connection if no heartbeat received within 45 seconds)
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(45);
 
-/// Per-client state machine
+// ---------------------------------------------------------------------------
+// LagPolicy
+// ---------------------------------------------------------------------------
+
+/// What the router should do when a client falls behind on a stream feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LagPolicy {
+    /// Re-enter BOOTSTRAP state to recover (e.g. terminal output).
+    Bootstrap,
+    /// Log a warning and continue — the client may miss frames (e.g. code output).
+    Warn,
+}
+
+// ---------------------------------------------------------------------------
+// Per-client state machine
+// ---------------------------------------------------------------------------
+
 #[derive(Debug)]
 enum ClientState {
     /// Client is receiving snapshot and buffering live output
@@ -40,56 +73,76 @@ enum ClientState {
     Live,
 }
 
-/// Feed router for managing WebSocket connections
+// ---------------------------------------------------------------------------
+// FeedRouter
+// ---------------------------------------------------------------------------
+
+/// Feed router for managing WebSocket connections.
+///
+/// Constructed in `main.rs` via `new()` + `register_stream()` / `register_input()`
+/// / `add_snapshot_watches()`. Passed to axum as shared state.
 #[derive(Clone)]
 pub struct FeedRouter {
-    terminal_tx: broadcast::Sender<Frame>,
-    input_tx: mpsc::Sender<Frame>,
-    code_tx: broadcast::Sender<Frame>,
-    code_input_tx: mpsc::Sender<Frame>,
+    /// FeedId → (broadcast::Sender, LagPolicy) for stream feeds (server → client).
+    pub(crate) stream_outputs: HashMap<FeedId, (broadcast::Sender<Frame>, LagPolicy)>,
+    /// FeedId → mpsc::Sender for input feeds (client → server).
+    input_sinks: HashMap<FeedId, mpsc::Sender<Frame>>,
+    /// Snapshot watch receivers (delivered to every client on connect).
+    snapshot_watches: Vec<watch::Receiver<Frame>>,
+
     session: String,
     auth: SharedAuthState,
-    snapshot_watches: Vec<watch::Receiver<Frame>>,
     pub(crate) shutdown_tx: mpsc::Sender<u8>,
-    pub(crate) client_action_tx: broadcast::Sender<Frame>,
     pub(crate) dev_state: crate::dev::SharedDevState,
 }
 
 impl FeedRouter {
-    /// Create a new feed router
-    // Allow many arguments: this constructor wires together all shared state channels
-    // (terminal, code, snapshot, shutdown, client_action) plus session and auth.
-    // Grouping into a config struct would add indirection without improving clarity.
-    #[allow(clippy::too_many_arguments)]
+    /// Create a new feed router with shared infrastructure channels.
+    ///
+    /// After construction, register stream outputs, input sinks, and snapshot
+    /// watches before passing to the axum server.
     pub(crate) fn new(
-        terminal_tx: broadcast::Sender<Frame>,
-        input_tx: mpsc::Sender<Frame>,
-        code_tx: broadcast::Sender<Frame>,
-        code_input_tx: mpsc::Sender<Frame>,
         session: String,
         auth: SharedAuthState,
-        snapshot_watches: Vec<watch::Receiver<Frame>>,
         shutdown_tx: mpsc::Sender<u8>,
-        client_action_tx: broadcast::Sender<Frame>,
         dev_state: crate::dev::SharedDevState,
     ) -> Self {
         Self {
-            terminal_tx,
-            input_tx,
-            code_tx,
-            code_input_tx,
+            stream_outputs: HashMap::new(),
+            input_sinks: HashMap::new(),
+            snapshot_watches: Vec::new(),
             session,
             auth,
-            snapshot_watches,
             shutdown_tx,
-            client_action_tx,
             dev_state,
         }
     }
 
-    /// Get a clone of the broadcast sender (for the terminal feed)
-    pub fn broadcast_sender(&self) -> broadcast::Sender<Frame> {
-        self.terminal_tx.clone()
+    /// Register a stream output (broadcast feed, server → client).
+    ///
+    /// Each client subscribes to this broadcast sender and receives frames
+    /// via the `StreamMap` fan-in. The `lag_policy` controls behavior when
+    /// a client falls behind.
+    pub(crate) fn register_stream(
+        &mut self,
+        feed_id: FeedId,
+        tx: broadcast::Sender<Frame>,
+        lag_policy: LagPolicy,
+    ) {
+        self.stream_outputs.insert(feed_id, (tx, lag_policy));
+    }
+
+    /// Register an input sink (client → server backend).
+    ///
+    /// Multiple FeedIds may point to the same sender (e.g. TerminalInput
+    /// and TerminalResize both route to the terminal feed's input channel).
+    pub(crate) fn register_input(&mut self, feed_id: FeedId, tx: mpsc::Sender<Frame>) {
+        self.input_sinks.insert(feed_id, tx);
+    }
+
+    /// Add snapshot watches (delivered on connect + forwarded on change).
+    pub(crate) fn add_snapshot_watches(&mut self, watches: Vec<watch::Receiver<Frame>>) {
+        self.snapshot_watches.extend(watches);
     }
 }
 
@@ -233,26 +286,46 @@ async fn perform_handshake(socket: &mut WebSocket) -> bool {
     true
 }
 
+/// Type alias for a pinned broadcast stream in the StreamMap.
+type PinnedBroadcastStream = Pin<
+    Box<
+        dyn Stream<Item = Result<Frame, tokio_stream::wrappers::errors::BroadcastStreamRecvError>>
+            + Send,
+    >,
+>;
+
+/// Build a StreamMap by subscribing to all registered stream outputs.
+///
+/// Returns the map plus a parallel Vec of (FeedId, LagPolicy) in the same
+/// insertion order, used to look up lag policy when a stream reports lag.
+fn build_stream_map(
+    stream_outputs: &HashMap<FeedId, (broadcast::Sender<Frame>, LagPolicy)>,
+) -> (
+    StreamMap<FeedId, PinnedBroadcastStream>,
+    HashMap<FeedId, LagPolicy>,
+) {
+    let mut map = StreamMap::new();
+    let mut policies = HashMap::new();
+    for (&feed_id, (tx, policy)) in stream_outputs {
+        let rx = tx.subscribe();
+        let stream: PinnedBroadcastStream = Box::pin(BroadcastStream::new(rx));
+        map.insert(feed_id, stream);
+        policies.insert(feed_id, *policy);
+    }
+    (map, policies)
+}
+
 /// Handle a WebSocket client connection
 async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
     info!("Client connected");
 
     // --- Protocol handshake (v1) ---
-    // Wait for the client to send a text frame: {"protocol":"tugcast","version":1}
-    // Respond with: {"protocol":"tugcast","version":1,"capabilities":[]}
-    // If the handshake fails, close with an application-defined close code.
     if !perform_handshake(&mut socket).await {
         return;
     }
 
-    // Subscribe to terminal output broadcast
-    let mut broadcast_rx = router.terminal_tx.subscribe();
-
-    // Subscribe to code output broadcast
-    let mut code_rx = router.code_tx.subscribe();
-
-    // Subscribe to client action broadcast
-    let mut client_action_rx = router.client_action_tx.subscribe();
+    // Build the StreamMap for output fan-in (subscribe to all broadcast feeds)
+    let (mut stream_map, lag_policies) = build_stream_map(&router.stream_outputs);
 
     // Skip BOOTSTRAP snapshot on initial connect — the client's resize frame
     // will trigger a PTY resize → tmux SIGWINCH → full screen redraw at the
@@ -284,9 +357,14 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                     }
                 }
 
-                // Drain any buffered broadcast messages
-                while let Ok(frame) = broadcast_rx.try_recv() {
-                    buffer.push(frame);
+                // Drain any buffered frames from the stream map
+                use tokio_stream::StreamExt;
+                while let Some((_feed_id, result)) =
+                    futures::FutureExt::now_or_never(stream_map.next()).flatten()
+                {
+                    if let Ok(frame) = result {
+                        buffer.push(frame);
+                    }
                 }
 
                 // Flush buffer to client
@@ -312,9 +390,6 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                 let (snap_tx, mut snap_rx) = mpsc::channel::<Frame>(16);
 
                 // Send initial snapshot and then forward updates for each watch channel.
-                // borrow_and_update() marks the value as seen so changed() won't fire
-                // immediately, preventing double delivery.
-                // Take ownership of snapshot_watches so we can move receivers into tasks.
                 let snapshot_watches = std::mem::take(&mut router.snapshot_watches);
                 for mut watch_rx in snapshot_watches {
                     let frame = watch_rx.borrow_and_update().clone();
@@ -337,10 +412,12 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                         }
                     });
                 }
-                drop(snap_tx); // Drop original sender so channel closes when tasks end
+                drop(snap_tx);
 
                 let mut heartbeat_interval = time::interval(HEARTBEAT_INTERVAL);
                 let mut last_heartbeat = Instant::now();
+
+                use tokio_stream::StreamExt;
 
                 loop {
                     tokio::select! {
@@ -352,8 +429,8 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                             }
                         }
 
-                        // Receive frame from broadcast channel
-                        result = broadcast_rx.recv() => {
+                        // Receive frame from any stream output (dynamic fan-in)
+                        Some((feed_id, result)) = stream_map.next() => {
                             match result {
                                 Ok(frame) => {
                                     if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
@@ -361,84 +438,51 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                         return;
                                     }
                                 }
-                                Err(broadcast::error::RecvError::Lagged(n)) => {
-                                    warn!("Client lagged {} messages, re-entering BOOTSTRAP", n);
-                                    state = ClientState::Bootstrap { buffer: Vec::new() };
-                                    break; // Break inner loop to re-enter outer match
-                                }
-                                Err(broadcast::error::RecvError::Closed) => {
-                                    info!("Broadcast channel closed");
-                                    return;
-                                }
-                            }
-                        }
-
-                        // Receive frame from code broadcast channel
-                        result = code_rx.recv() => {
-                            match result {
-                                Ok(frame) => {
-                                    if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
-                                        info!("Client disconnected");
-                                        return;
+                                Err(_lagged) => {
+                                    let policy = lag_policies.get(&feed_id).copied().unwrap_or(LagPolicy::Warn);
+                                    match policy {
+                                        LagPolicy::Bootstrap => {
+                                            warn!("Stream {} lagged, re-entering BOOTSTRAP", feed_id);
+                                            state = ClientState::Bootstrap { buffer: Vec::new() };
+                                            break;
+                                        }
+                                        LagPolicy::Warn => {
+                                            warn!("Stream {} lagged, frames lost", feed_id);
+                                        }
                                     }
                                 }
-                                Err(broadcast::error::RecvError::Lagged(n)) => {
-                                    warn!("Code channel lagged {} messages", n);
-                                    // For code, we don't re-bootstrap, just warn
-                                }
-                                Err(broadcast::error::RecvError::Closed) => {
-                                    info!("Code broadcast channel closed");
-                                    // Don't return - code is optional
-                                }
                             }
                         }
 
-                        // Receive frame from client action broadcast channel
-                        result = client_action_rx.recv() => {
-                            match result {
-                                Ok(frame) => {
-                                    if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
-                                        info!("Client disconnected");
-                                        return;
-                                    }
-                                }
-                                Err(broadcast::error::RecvError::Lagged(n)) => {
-                                    warn!("Client action channel lagged {} messages", n);
-                                    // For client actions, we don't re-bootstrap, just warn
-                                }
-                                Err(broadcast::error::RecvError::Closed) => {
-                                    info!("Client action broadcast channel closed");
-                                    // Continue - client actions are optional
-                                }
-                            }
-                        }
-
-                        // Receive message from client
+                        // Receive message from client (input dispatch)
                         msg = socket.recv() => {
                             match msg {
                                 Some(Ok(Message::Binary(data))) => {
                                     if let Ok((frame, _)) = Frame::decode(&data) {
                                         let fid = frame.feed_id;
-                                        if fid == FeedId::TERMINAL_INPUT || fid == FeedId::TERMINAL_RESIZE {
-                                            let _ = router.input_tx.send(frame).await;
-                                        } else if fid == FeedId::CODE_INPUT {
-                                            let _ = router.code_input_tx.send(frame).await;
-                                        } else if fid == FeedId::HEARTBEAT {
+
+                                        // Router-internal: Heartbeat
+                                        if fid == FeedId::HEARTBEAT {
                                             last_heartbeat = Instant::now();
                                             debug!("Heartbeat received from client");
-                                        } else if fid == FeedId::CONTROL {
-                                            // Parse JSON payload for control action
+                                        }
+                                        // Router-internal: Control
+                                        else if fid == FeedId::CONTROL {
                                             if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
                                                 if let Some(action) = payload.get("action").and_then(|a| a.as_str()) {
                                                     crate::actions::dispatch_action(
                                                         action,
                                                         &frame.payload,
                                                         &router.shutdown_tx,
-                                                        &router.client_action_tx,
+                                                        &router.stream_outputs,
                                                         &router.dev_state,
                                                     ).await;
                                                 }
                                             }
+                                        }
+                                        // Dynamic dispatch: look up input sink
+                                        else if let Some(tx) = router.input_sinks.get(&fid) {
+                                            let _ = tx.send(frame).await;
                                         }
                                     }
                                 }
@@ -464,7 +508,6 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                 return;
                             }
 
-                            // Check for heartbeat timeout
                             if last_heartbeat.elapsed() > HEARTBEAT_TIMEOUT {
                                 warn!("Heartbeat timeout, closing connection");
                                 return;
@@ -492,7 +535,7 @@ mod tests {
     fn test_client_state_bootstrap_to_live() {
         let state = ClientState::Bootstrap { buffer: Vec::new() };
         match state {
-            ClientState::Bootstrap { .. } => {} // Bootstrap state verified
+            ClientState::Bootstrap { .. } => {}
             ClientState::Live => panic!("Expected Bootstrap state"),
         }
     }
@@ -501,11 +544,9 @@ mod tests {
     fn test_client_state_live_to_bootstrap_on_lagged() {
         let state = ClientState::Live;
         match state {
-            ClientState::Live => {} // Live state verified
+            ClientState::Live => {}
             ClientState::Bootstrap { .. } => panic!("Expected Live state"),
         }
-
-        // Verify that we can construct Bootstrap state (transition logic)
         let _new_state = ClientState::Bootstrap { buffer: Vec::new() };
     }
 
@@ -518,5 +559,71 @@ mod tests {
     fn test_heartbeat_constants() {
         assert_eq!(HEARTBEAT_INTERVAL, Duration::from_secs(15));
         assert_eq!(HEARTBEAT_TIMEOUT, Duration::from_secs(45));
+    }
+
+    #[test]
+    fn test_register_stream() {
+        let (shutdown_tx, _) = mpsc::channel(1);
+        let auth = crate::auth::new_shared_auth_state(0);
+        let dev_state = crate::dev::new_shared_dev_state();
+        let mut router = FeedRouter::new("test".into(), auth, shutdown_tx, dev_state);
+
+        let (tx, _) = broadcast::channel(16);
+        router.register_stream(FeedId::TERMINAL_OUTPUT, tx, LagPolicy::Bootstrap);
+
+        assert!(router.stream_outputs.contains_key(&FeedId::TERMINAL_OUTPUT));
+        let (_, policy) = &router.stream_outputs[&FeedId::TERMINAL_OUTPUT];
+        assert_eq!(*policy, LagPolicy::Bootstrap);
+    }
+
+    #[test]
+    fn test_register_input() {
+        let (shutdown_tx, _) = mpsc::channel(1);
+        let auth = crate::auth::new_shared_auth_state(0);
+        let dev_state = crate::dev::new_shared_dev_state();
+        let mut router = FeedRouter::new("test".into(), auth, shutdown_tx, dev_state);
+
+        let (tx, _rx) = mpsc::channel(16);
+        router.register_input(FeedId::TERMINAL_INPUT, tx.clone());
+        router.register_input(FeedId::TERMINAL_RESIZE, tx);
+
+        assert!(router.input_sinks.contains_key(&FeedId::TERMINAL_INPUT));
+        assert!(router.input_sinks.contains_key(&FeedId::TERMINAL_RESIZE));
+    }
+
+    #[test]
+    fn test_many_to_one_input() {
+        let (shutdown_tx, _) = mpsc::channel(1);
+        let auth = crate::auth::new_shared_auth_state(0);
+        let dev_state = crate::dev::new_shared_dev_state();
+        let mut router = FeedRouter::new("test".into(), auth, shutdown_tx, dev_state);
+
+        // Both terminal input and resize go to the same channel
+        let (tx, mut rx) = mpsc::channel(16);
+        router.register_input(FeedId::TERMINAL_INPUT, tx.clone());
+        router.register_input(FeedId::TERMINAL_RESIZE, tx);
+
+        // Send via TERMINAL_INPUT
+        let input_tx = router.input_sinks.get(&FeedId::TERMINAL_INPUT).unwrap();
+        input_tx
+            .try_send(Frame::new(FeedId::TERMINAL_INPUT, b"key".to_vec()))
+            .unwrap();
+
+        // Send via TERMINAL_RESIZE
+        let resize_tx = router.input_sinks.get(&FeedId::TERMINAL_RESIZE).unwrap();
+        resize_tx
+            .try_send(Frame::new(FeedId::TERMINAL_RESIZE, b"resize".to_vec()))
+            .unwrap();
+
+        // Both arrive on the same receiver
+        let f1 = rx.try_recv().unwrap();
+        let f2 = rx.try_recv().unwrap();
+        assert_eq!(f1.feed_id, FeedId::TERMINAL_INPUT);
+        assert_eq!(f2.feed_id, FeedId::TERMINAL_RESIZE);
+    }
+
+    #[test]
+    fn test_lag_policy_values() {
+        assert_ne!(LagPolicy::Bootstrap, LagPolicy::Warn);
     }
 }

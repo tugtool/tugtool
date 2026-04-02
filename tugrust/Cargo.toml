@@ -60,6 +60,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 # Async utilities
 async-trait = "0.1"
 tokio-util = "0.7"
+tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
 
 # PTY management

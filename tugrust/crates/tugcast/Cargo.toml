@@ -39,6 +39,7 @@ tugcast-core = { path = "../tugcast-core" }
 tugbank-core = { workspace = true }
 base64 = { workspace = true }
 dirs = { workspace = true }
+tokio-stream = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true }
