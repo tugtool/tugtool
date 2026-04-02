@@ -635,11 +635,9 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
   // byte offset computation).
   function incrementalTailUpdate(engine: MarkdownEngineState, key: string, _fullText: string) {
     const range = engine.regionBlockRanges.get(key);
-    if (range === undefined) {
-      // No range entry — engine state is inconsistent (programming error). Bail out.
-      console.warn(`incrementalTailUpdate: no regionBlockRanges entry for key "${key}"; skipping update`);
-      return;
-    }
+    // range === undefined means this is a NEW region being appended (RegionMap.setRegion
+    // adds keys at the end before incrementalTailUpdate is called). Treat it as an
+    // empty existing region at the tail of the block array.
 
     const regionText = engine.regionMap.getRegionText(key) ?? "";
     const regionRange = engine.regionMap.regionRange(key);
@@ -669,19 +667,26 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     const newStarts = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.start] ?? b.start));
     const newEnds = newRegionBlocks.map(b => regionCharStart + (byteToChar[b.end] ?? b.end));
 
-    const S = range.start;
-    const P = range.count;
+    // For a new region (range === undefined): S = blockCount (append after all existing
+    // blocks), P = 0 (no prior blocks for this region), oldTypes = [] (no prior types).
+    const S = range !== undefined ? range.start : engine.blockCount;
+    const P = range !== undefined ? range.count : 0;
     const Q = newRegionBlocks.length;
     let parseMs = 0;
 
     // Capture old block types before mutating, for fence propagation comparison.
     // We use the stored types array from regionBlockRanges (D02 lazy fence propagation).
-    const oldTypes: string[] = range.types.slice();
+    const oldTypes: string[] = range !== undefined ? range.types.slice() : [];
 
     // Determine if this is the last region (tail). Non-tail regions require
     // shiftFrom() and key remapping when block count changes.
     const regionKeys = engine.regionMap.keys;
     const isLast = regionKeys[regionKeys.length - 1] === key;
+
+    // Capture old region end (char offset) before any mutations, for Bug 2 char offset shifting.
+    // For P > 0, the old region spans up to blockEnds[S + P - 1]. For P = 0 (new region),
+    // there are no prior blocks so no subsequent offsets need shifting.
+    const oldRegionEnd: number = P > 0 ? engine.blockEnds[S + P - 1] : regionCharStart;
 
     // Update changed existing blocks (S..S+min(P,Q)-1)
     for (let i = 0; i < Math.min(P, Q); i++) {
@@ -762,6 +767,20 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
           }
         }
 
+        // (6) Shift char offsets (blockStarts/blockEnds) for all subsequent blocks.
+        // The region's char content changed, so all block char offsets after this
+        // region are now stale. Compute charDelta from old vs new last-block-end.
+        if (P > 0) {
+          const newRegionEnd = Q > 0 ? newEnds[Q - 1] : regionCharStart;
+          const charDelta = newRegionEnd - oldRegionEnd;
+          if (charDelta !== 0) {
+            for (let i = S + Q; i < engine.blockStarts.length; i++) {
+              engine.blockStarts[i] += charDelta;
+              engine.blockEnds[i] += charDelta;
+            }
+          }
+        }
+
         // Content shrink scroll recovery: if scrollTop is now past the new bottom,
         // snap to the nearest surviving block offset above the old scroll position.
         if (scrollContainerRef.current) {
@@ -832,6 +851,20 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         engine.blockStarts.splice(S + P, 0, ...newStartsSlice);
         engine.blockEnds.splice(S + P, 0, ...newEndsSlice);
 
+        // (6) Shift char offsets (blockStarts/blockEnds) for all subsequent blocks.
+        // The region's char content changed, so all block char offsets after this
+        // region are now stale. Compute charDelta from old vs new last-block-end.
+        if (P > 0) {
+          const newRegionEnd = Q > 0 ? newEnds[Q - 1] : regionCharStart;
+          const charDelta = newRegionEnd - oldRegionEnd;
+          if (charDelta !== 0) {
+            for (let i = S + Q; i < engine.blockStarts.length; i++) {
+              engine.blockStarts[i] += charDelta;
+              engine.blockEnds[i] += charDelta;
+            }
+          }
+        }
+
         // Parse and cache the new blocks in the gap [S+P, S+Q).
         for (let i = P; i < Q; i++) {
           const globalIdx = S + i;
@@ -840,6 +873,19 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
           engine.htmlCache.set(globalIdx, parse_to_html(raw));
           parseMs += performance.now() - parseStart;
           engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));
+        }
+      }
+    }
+
+    // When Q == P (block count unchanged) in a non-tail region, subsequent block char
+    // offsets may still be stale if the region's text length changed. Apply charDelta.
+    if (Q === P && !isLast && P > 0) {
+      const newRegionEnd = Q > 0 ? newEnds[Q - 1] : regionCharStart;
+      const charDelta = newRegionEnd - oldRegionEnd;
+      if (charDelta !== 0) {
+        for (let i = S + Q; i < engine.blockStarts.length; i++) {
+          engine.blockStarts[i] += charDelta;
+          engine.blockEnds[i] += charDelta;
         }
       }
     }
