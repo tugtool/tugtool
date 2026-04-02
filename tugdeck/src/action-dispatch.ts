@@ -172,8 +172,9 @@ export function initActionDispatch(
       return;
     }
     reloadPending = true;
-    deckManager.prepareForReload();
-    location.reload();
+    deckManager.prepareForReload().then(() => {
+      location.reload();
+    });
   });
 
   // set-dev-mode: Call WKScriptMessageHandler bridge if available

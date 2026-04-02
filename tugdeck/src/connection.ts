@@ -67,6 +67,7 @@ const MAX_RETRY_DELAY_MS = 30000;
 export class TugConnection {
   private ws: WebSocket | null = null;
   private callbacks: Map<number, FrameCallback[]> = new Map();
+  private lastPayload: Map<number, Uint8Array> = new Map();
   private openCallbacks: Array<() => void> = [];
   private closeCallbacks: Array<() => void> = [];
   private disconnectStateCallbacks: Array<DisconnectStateCallback> = [];
@@ -324,6 +325,13 @@ export class TugConnection {
       this.callbacks.set(feedId, []);
     }
     this.callbacks.get(feedId)!.push(callback);
+    // Replay cached payload for late subscribers (e.g. cards mounted after
+    // the initial snapshot was sent). This ensures snapshot feeds deliver
+    // their current value to newly registered callbacks.
+    const cached = this.lastPayload.get(feedId);
+    if (cached) {
+      callback(cached);
+    }
   }
 
   /**
@@ -373,6 +381,8 @@ export class TugConnection {
    * Dispatch a frame to registered callbacks
    */
   private dispatch(feedId: number, payload: Uint8Array): void {
+    // Cache latest payload so late subscribers get the current value
+    this.lastPayload.set(feedId, payload);
     const cbs = this.callbacks.get(feedId);
     if (cbs) {
       for (const cb of cbs) {

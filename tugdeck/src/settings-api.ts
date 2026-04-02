@@ -76,16 +76,21 @@ export function readTabStates(client: TugbankClient, tabIds: string[]): Map<stri
 // ── Write functions (HTTP PUT, unchanged) ────────────────────────────────────
 
 /**
- * PUT the deck layout to tugbank (fire-and-forget).
+ * PUT the deck layout to tugbank.
+ *
+ * Returns the fetch Promise so callers can await it when needed (e.g. before
+ * page reload). Normal saves are fire-and-forget — the Promise is ignored.
  */
-export function putLayout(layout: object): void {
-  fetch("/api/defaults/dev.tugtool.deck.layout/layout", {
+export function putLayout(layout: object): Promise<void> {
+  return fetch("/api/defaults/dev.tugtool.deck.layout/layout", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: layout }),
-  }).catch((err) => {
-    console.warn("[settings] PUT layout failed:", err);
-  });
+  })
+    .then(() => {})
+    .catch((err) => {
+      console.warn("[settings] PUT layout failed:", err);
+    });
 }
 
 /**

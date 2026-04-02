@@ -336,8 +336,7 @@ pub(crate) async fn put_key(
     };
 
     let result = tokio::task::spawn_blocking(move || {
-        let handle = client.store().domain(&domain)?;
-        handle.set(&key, value)?;
+        client.set(&domain, &key, value)?;
         Ok::<_, BankError>(())
     })
     .await;

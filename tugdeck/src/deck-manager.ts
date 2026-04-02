@@ -123,6 +123,12 @@ export class DeckManager implements IDeckManagerStore {
    */
   private readonly handleBeforeUnload = (): void => {
     if (this.reloadPending) return;
+    // Flush any pending debounced layout save immediately
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+      this.saveLayout();
+    }
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyTabStates({ keepalive: true });
   };
@@ -593,7 +599,14 @@ export class DeckManager implements IDeckManagerStore {
    * before location.reload(). This avoids the WKWebView CORS error that occurs
    * when a keepalive fetch is dispatched during page navigation.
    */
-  prepareForReload(): void {
+  async prepareForReload(): Promise<void> {
+    // Flush any pending debounced layout save and await the PUT so tugbank
+    // has the latest layout before the page reloads and re-fetches it.
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    await this.saveLayout();
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyTabStates();
     this.reloadPending = true;
@@ -996,9 +1009,9 @@ export class DeckManager implements IDeckManagerStore {
     return this.filterRegisteredCards(state);
   }
 
-  private saveLayout(): void {
+  private saveLayout(): Promise<void> {
     const serialized = serialize(this.deckState);
-    putLayout(serialized);
+    return putLayout(serialized);
   }
 
   private scheduleSave(): void {

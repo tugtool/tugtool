@@ -22,8 +22,9 @@ function createMockDeckManager() {
       addCardCalls.push(componentId);
       return null;
     },
-    prepareForReload(): void {
+    prepareForReload(): Promise<void> {
       prepareForReloadCallCount++;
+      return Promise.resolve();
     },
     _addCardCalls: addCardCalls,
     get _prepareForReloadCallCount() { return prepareForReloadCallCount; },
@@ -134,7 +135,7 @@ describe("initActionDispatch: reload", () => {
     _resetForTest();
   });
 
-  it("calls location.reload() once", () => {
+  it("calls location.reload() once", async () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
 
@@ -150,6 +151,8 @@ describe("initActionDispatch: reload", () => {
     initActionDispatch(conn as any, deck as any);
     dispatchAction({ action: "reload" });
 
+    // location.reload() is called after the async prepareForReload() resolves
+    await Promise.resolve();
     expect(reloadCount).toBe(1);
 
     // Restore
@@ -160,7 +163,7 @@ describe("initActionDispatch: reload", () => {
     });
   });
 
-  it("calls prepareForReload() before location.reload()", () => {
+  it("calls prepareForReload() before location.reload()", async () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
 
@@ -173,10 +176,11 @@ describe("initActionDispatch: reload", () => {
     initActionDispatch(conn as any, deck as any);
     dispatchAction({ action: "reload" });
 
+    // prepareForReload is called synchronously
     expect(deck._prepareForReloadCallCount).toBe(1);
   });
 
-  it("deduplicates: second reload is ignored", () => {
+  it("deduplicates: second reload is ignored", async () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
 
@@ -191,10 +195,11 @@ describe("initActionDispatch: reload", () => {
     dispatchAction({ action: "reload" });
     dispatchAction({ action: "reload" });
 
+    await Promise.resolve();
     expect(reloadCount).toBe(1);
   });
 
-  it("deduplicates: prepareForReload called only once even when reload dispatched twice", () => {
+  it("deduplicates: prepareForReload called only once even when reload dispatched twice", async () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
 
@@ -208,6 +213,7 @@ describe("initActionDispatch: reload", () => {
     dispatchAction({ action: "reload" });
     dispatchAction({ action: "reload" });
 
+    await Promise.resolve();
     expect(deck._prepareForReloadCallCount).toBe(1);
   });
 });
