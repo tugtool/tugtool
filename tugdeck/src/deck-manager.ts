@@ -104,9 +104,10 @@ export class DeckManager implements IDeckManagerStore {
     if (document.hidden) {
       if (this.stateFlushed) return;
       this.saveCallbacks.forEach((cb) => cb());
-      // Use sync XHR — during page teardown, document.hidden fires before
-      // beforeunload. Async fetch/keepalive CORS-fails in WKWebView.
-      this.flushDirtyTabStates({ sync: true });
+      // Normal async fetch — page stays alive during app backgrounding.
+      // Reload teardown is handled by the stateFlushed guard above (Swift
+      // saves via __tugdeckSaveState before navigation starts).
+      this.flushDirtyTabStates();
     }
   };
 
@@ -125,11 +126,9 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Bound handler for the window beforeunload event.
-   * Uses keepalive: true so the browser dispatches the fetch even during
-   * page teardown (per corrected D49).
-   *
-   * Skipped when reloadPending is true because prepareForReload() already
-   * flushed without keepalive before location.reload() was called.
+   * Last-resort safety net: uses sync XHR to flush state before the
+   * page unloads. Skipped when state was already saved by a prior path
+   * (prepareForReload or __tugdeckSaveState).
    */
   private readonly handleBeforeUnload = (): void => {
     if (this.reloadPending || this.stateFlushed) return;
@@ -140,9 +139,8 @@ export class DeckManager implements IDeckManagerStore {
       this.saveLayout();
     }
     this.saveCallbacks.forEach((cb) => cb());
-    // Use sync XHR — keepalive fetch fails in WKWebView during page
-    // teardown with CORS errors. Sync XHR completes before the page
-    // unloads, same approach as saveAndFlushSync for app quit.
+    // Sync XHR — the page is being torn down. Async fetch/keepalive
+    // fails in WKWebView during navigation.
     this.flushDirtyTabStates({ sync: true });
   };
 
