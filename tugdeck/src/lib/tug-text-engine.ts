@@ -259,6 +259,20 @@ export class TugTextEngine {
     if (sel) sel.collapse(pos.node, pos.offset);
   }
 
+  /** Set selection range. If end equals start (or is omitted), collapses to cursor. */
+  setSelectedRange(start: number, end?: number): void {
+    if (end === undefined || end === start) {
+      this.restoreSelection(start);
+    } else {
+      const startPos = this.domPosition(start);
+      const endPos = this.domPosition(end);
+      if (!startPos || !endPos) return;
+      const sel = window.getSelection();
+      if (!sel) return;
+      sel.setBaseAndExtent(startPos.node, startPos.offset, endPos.node, endPos.offset);
+    }
+  }
+
   private flatFromDOM(node: Node, offset: number): number {
     // If the node is the root, offset is a child index
     if (node === this.root) {
@@ -688,6 +702,7 @@ export class TugTextEngine {
 
   private handleMutations = (records: MutationRecord[]): void => {
     if (this.reconciling) return;
+    this.onLog?.(`mutation: ${records.length} record(s) [${records.map(r => r.type).join(", ")}]`);
     let changed = false;
     for (const rec of records) {
       if (rec.type === "characterData") {
@@ -788,18 +803,26 @@ export class TugTextEngine {
 
   private onKeydownCapture = (e: KeyboardEvent): void => {
     if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+      this.onLog?.("keydown(capture): Cmd+A → stopPropagation");
       e.stopPropagation();
     }
   };
 
   private onKeydown = (e: KeyboardEvent): void => {
+    const mods = [
+      e.metaKey && "Cmd", e.ctrlKey && "Ctrl",
+      e.shiftKey && "Shift", e.altKey && "Alt",
+    ].filter(Boolean).join("+");
+    const keyDesc = mods ? `${mods}+${e.key}` : e.key;
+    this.onLog?.(`keydown: ${keyDesc} (code=${e.code})`);
+
     if (e.isComposing || this.composingIndex !== null) {
-      this.onLog?.(`keydown during composition: ${e.key} (isComposing=${e.isComposing})`);
+      this.onLog?.(`  → composing, ignored`);
       return;
     }
 
     if (e.key === "Enter" && Date.now() - this.compositionEndedAt < 100) {
-      this.onLog?.("Enter swallowed (IME acceptance)");
+      this.onLog?.("  → Enter swallowed (IME acceptance)");
       e.preventDefault();
       return;
     }
@@ -808,12 +831,13 @@ export class TugTextEngine {
     if (this.typeahead.active) {
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
+        this.onLog?.("  → typeahead accept");
         this.acceptTypeahead();
         return;
       }
-      if (e.key === "ArrowDown") { e.preventDefault(); this.typeaheadNavigate("down"); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); this.typeaheadNavigate("up"); return; }
-      if (e.key === "Escape") { e.preventDefault(); this.cancelTypeahead(); return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); this.onLog?.("  → typeahead down"); this.typeaheadNavigate("down"); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); this.onLog?.("  → typeahead up"); this.typeaheadNavigate("up"); return; }
+      if (e.key === "Escape") { e.preventDefault(); this.onLog?.("  → typeahead cancel"); this.cancelTypeahead(); return; }
     }
 
     // Clear atom highlight on any key except Backspace/Delete
@@ -824,7 +848,8 @@ export class TugTextEngine {
     // Cmd+Z / Cmd+Shift+Z
     if ((e.metaKey || e.ctrlKey) && e.key === "z") {
       e.preventDefault();
-      if (e.shiftKey) this.redo(); else this.undo();
+      if (e.shiftKey) { this.onLog?.("  → redo"); this.redo(); }
+      else { this.onLog?.("  → undo"); this.undo(); }
       return;
     }
 
@@ -838,8 +863,10 @@ export class TugTextEngine {
         : baseAction;
 
       if (action === "submit") {
+        this.onLog?.(`  → submit (${isNumpad ? "numpad" : "return"})`);
         this.onSubmit?.();
       } else {
+        this.onLog?.(`  → newline (${isNumpad ? "numpad" : "return"})`);
         this.insertText("\n");
       }
       return;
@@ -848,35 +875,45 @@ export class TugTextEngine {
     // Backspace / Delete
     if (e.key === "Backspace") {
       e.preventDefault();
+      this.onLog?.("  → deleteBackward");
       this.deleteBackward();
       return;
     }
     if (e.key === "Delete") {
       e.preventDefault();
+      this.onLog?.("  → deleteForward");
       this.deleteForward();
       return;
     }
+
+    // Arrow keys, other keys — not handled, pass to browser
+    this.onLog?.("  → not handled (browser default)");
   };
 
   private onBeforeInput = (e: InputEvent): void => {
+    this.onLog?.(`beforeinput: ${e.inputType}${e.data ? ` data="${e.data}"` : ""}`);
+
     if (this.composingIndex !== null) {
-      this.onLog?.(`beforeinput during composition: ${e.inputType}`);
+      this.onLog?.("  → composing, passthrough");
       return;
     }
 
     switch (e.inputType) {
       case "insertText":
         // Fast path: let browser mutate DOM, MutationObserver reads it back.
+        this.onLog?.("  → passthrough (MutationObserver fast path)");
         if (e.data === "@" && !this.typeahead.active) {
           requestAnimationFrame(() => this.activateTypeahead());
         }
         break;
       case "insertLineBreak":
         e.preventDefault();
+        this.onLog?.("  → insertText('\\n')");
         this.insertText("\n");
         break;
       case "insertParagraph":
         e.preventDefault();
+        this.onLog?.("  → prevented (insertParagraph)");
         break;
       case "deleteContentBackward":
       case "deleteContentForward":
@@ -887,21 +924,26 @@ export class TugTextEngine {
       case "deleteWordBackward":
       case "deleteWordForward":
         e.preventDefault();
+        this.onLog?.(`  → prevented (${e.inputType})`);
         break;
       case "historyUndo":
         e.preventDefault();
+        this.onLog?.("  → undo");
         this.undo();
         break;
       case "historyRedo":
         e.preventDefault();
+        this.onLog?.("  → redo");
         this.redo();
         break;
       case "insertFromPaste":
       case "insertFromDrop":
         e.preventDefault();
+        this.onLog?.(`  → prevented (${e.inputType})`);
         break;
       default:
         e.preventDefault();
+        this.onLog?.(`  → prevented (${e.inputType})`);
         break;
     }
   };
@@ -940,6 +982,7 @@ export class TugTextEngine {
   private onPaste = (e: ClipboardEvent): void => {
     e.preventDefault();
     const text = e.clipboardData?.getData("text/plain") ?? "";
+    this.onLog?.(`paste: "${text.slice(0, 40)}${text.length > 40 ? "..." : ""}"`);
     if (text) this.insertText(text);
   };
 
@@ -974,14 +1017,17 @@ export class TugTextEngine {
     if (atom instanceof HTMLSpanElement && this.root.contains(atom)) {
       const idx = this.domNodes.indexOf(atom);
       if (idx !== -1 && this.segments[idx].kind === "atom") {
+        this.onLog?.(`click: atom[${idx}] "${(this.segments[idx] as AtomSegment).label}"`);
         this.selectAtomAtIndex(idx);
         return;
       }
     }
+    this.onLog?.("click: clear atom selection");
     this.clearAtomSelection();
   };
 
   private onFocus = (): void => {
+    this.onLog?.("focus");
     if (this.root.childNodes.length === 0) this.reconcile();
   };
 }

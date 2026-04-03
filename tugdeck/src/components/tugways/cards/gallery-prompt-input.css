@@ -110,6 +110,52 @@
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
+/* ---------------------------------------------------------------------------
+   Test harness
+   --------------------------------------------------------------------------- */
+
+.prompt-input-test-editor {
+  margin-bottom: 8px;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.prompt-input-test-summary {
+  font-size: 12px;
+  font-weight: 500;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.prompt-input-test-pass {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-control-text-filled-success-rest);
+  font-weight: 600;
+  font-family: var(--tug-font-mono);
+  font-size: 12px;
+}
+
+.prompt-input-test-fail {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-control-text-filled-danger-rest);
+  font-weight: 600;
+  font-family: var(--tug-font-mono);
+  font-size: 12px;
+}
+
+.prompt-input-test-detail {
+  font-size: 12px;
+  line-height: 1.6;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.prompt-input-test-desc {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  margin-bottom: 4px;
+}
+
 .prompt-input-desc {
   font-size: 12px;
   /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */

@@ -46,6 +46,8 @@ export interface TugTextInputDelegate {
   // --- Selection ---
   /** Current selection as flat offsets. Null if editor is not focused. */
   getSelectedRange(): { start: number; end: number } | null;
+  /** Set the selection. If end is omitted, collapses to a cursor at start. */
+  setSelectedRange(start: number, end?: number): void;
   /** Whether an IME composition is in progress. */
   readonly hasMarkedText: boolean;
 
@@ -71,6 +73,10 @@ export interface TugTextInputDelegate {
 
   // --- Focus ---
   focus(): void;
+
+  // --- Testing ---
+  /** The contentEditable DOM element. For test harness event dispatch. */
+  getEditorElement(): HTMLDivElement | null;
 }
 
 /**
@@ -162,6 +168,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       getAtoms() { return engineRef.current?.getAtoms() ?? []; },
       isEmpty() { return engineRef.current?.isEmpty() ?? true; },
       getSelectedRange() { return engineRef.current?.getSelectedRange() ?? null; },
+      setSelectedRange(start: number, end?: number) { engineRef.current?.setSelectedRange(start, end); },
       get hasMarkedText() { return engineRef.current?.hasMarkedText ?? false; },
       insertText(text: string) { engineRef.current?.insertText(text); },
       insertAtom(atom: AtomSegment) {
@@ -177,6 +184,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       undo() { engineRef.current?.undo(); },
       redo() { engineRef.current?.redo(); },
       focus() { engineRef.current?.root.focus(); },
+      getEditorElement() { return engineRef.current?.root ?? null; },
     }), []);
 
     // Stable callback refs — engine reads these via closure over refs [L07]
