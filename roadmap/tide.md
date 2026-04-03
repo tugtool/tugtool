@@ -1146,55 +1146,77 @@ The fixes have dependencies. Organized into dashes:
 
 **Decision:** Build a proper text input engine (Approach C done right), inspired by UITextInput concepts. contentEditable is used as an **input capture surface only** — not the document model. All three reference implementations (ProseMirror, CodeMirror 6, Lexical — all MIT licensed) converge on this architecture.
 
-**Architecture:**
-1. **Document Model** — Array of segments: `TextSegment` (string) and `AtomSegment` (type + label + value). Source of truth. Never derived from DOM.
-2. **Input Capture** — contentEditable div as input device. DOM mutations intercepted, translated to model operations, DOM re-rendered from model. Browser never owns the document.
-3. **Selection/Cursor** — We own selection state: `{ anchor: DocPosition, focus: DocPosition }`. `DocPosition` = `{ segmentIndex, offset }`. Atoms have offset 0 (before) or 1 (after). Cursor rendered by us.
-4. **Composition (IME)** — Explicit marked text tracking: `markedRange | null`. During composition, marked text rendered with platform styling. Enter during active marked text → IME acceptance, not submit. Modeled on UITextInput's `markedTextRange` / `setMarkedText:selectedRange:`.
-5. **Undo** — We own the undo stack. Each operation recorded. Cmd+Z pops and re-renders. Browser undo stack not used.
-6. **Return vs Enter** — Distinguished via `e.code`: `"Enter"` (Return key) vs `"NumpadEnter"` (Enter key). Independently configurable actions.
+**Architecture** (validated by engine-based spike):
+1. **Document Model** — `segments: (TextSegment | AtomSegment)[]` with **text-atom-text invariant**: text segments always exist between atoms and at boundaries. Cursor is always in a Text node. Flat offsets as universal position type (text chars = 1, atoms = 1).
+2. **Input Capture** — contentEditable div as input device. Normal text typing flows through the browser; MutationObserver reads changes back to model ("let the browser mutate, diff afterward" — CM6 pattern). Everything else (delete, paste, undo, Enter) is intercepted in `keydown`/`beforeinput` and handled via model operations + reconcile.
+3. **Selection/Cursor** — Native browser caret. We do NOT render our own cursor. `sel.collapse(node, offset)` positions it. Selection saved/restored as flat offsets across reconciliation (L23). `selectAll` respects first responder (fixed in tug-card.tsx).
+4. **Composition (IME)** — `composingIndex` tracks which segment is being composed. Reconciler skips during composition. `compositionEndedAt` timestamp + 100ms window catches the WebKit bug where `compositionend` fires before Enter keydown. `hasMarkedText` exposed in delegate API.
+5. **Undo** — Own stack with immutable segment snapshots. `cloneSegments()` before mutations. Merge heuristic: consecutive same-type edits within 300ms. Browser `historyUndo`/`historyRedo` intercepted and redirected.
+6. **Return vs Enter** — `e.code === "Enter"` (Return) vs `"NumpadEnter"` (Enter). Independently configurable actions. Shift inverts. `hasMarkedText === true` → key goes to IME.
+7. **CSS** — `::selection` re-enabled inside editor; `::highlight(card-selection)` suppressed. `-webkit-user-modify: read-write-plaintext-only` prevents spurious composition markers.
+
+**Two-layer design:**
+- **Layer 1 (Engine):** `TugTextEngine` class — segments, reconciler, MutationObserver, composition tracking, undo. Inspired by Lexical (DecoratorNode, composition key) and CM6 (browser mutate + diff, native caret).
+- **Layer 2 (API):** `TugTextInputDelegate` interface — UITextInput-inspired: `selectedRange`, `hasMarkedText`, `insertText()`, `insertAtom()`, `deleteBackward()`, `undo()`/`redo()`, Return vs Enter. The contract between engine and component.
+
+**Spike reference:** Gallery card `gallery-text-model-spike.tsx` contains the working engine and diagnostics panel. Preserved until T3.2 replaces it.
 
 ---
 
 #### T3.1: tug-atom Component {#t3-atom}
 
-**Goal:** Build the tug-atom component — the inline token pill.
+**Goal:** Build the tug-atom component — the inline token pill. Two rendering paths: React for standalone/gallery use, DOM for engine reconciler.
 
-**Prerequisites:** T3.0 (text model decision informs how atoms are rendered and integrated).
+**Prerequisites:** T3.0 (architecture decision — atoms are `contentEditable="false"` spans built by the engine reconciler).
 
 **Work:**
-- Atom component renders a pill: icon + label + optional dismiss button
+
+Dual rendering paths:
+- **React path**: `<TugAtom type="file" label="src/main.ts" />` — standalone component, used in gallery card and anywhere React owns the DOM (e.g., atom tray, suggestion list)
+- **DOM path**: `TugAtom.createDOM(seg: AtomSegment)` — static method that builds identical DOM imperatively, used by TugTextEngine's reconciler inside contentEditable
+- Both paths produce the same DOM structure, same CSS classes (`tug-atom`), same `data-slot`, same accessibility attributes. The CSS is shared.
+
+Component features:
+- Pill renders: icon + label + optional dismiss button
 - Atom types: `file` (path reference), `command` (slash command), `doc` (documentation link), `image` (image attachment)
 - Visual design: rounded pill, tone-driven background, truncated label with tooltip for full path
-- Atom data model: `{ type, label, value, icon? }` — the `value` is what gets sent in the message (e.g., the full file path)
-- Dismiss interaction: click X or backspace when cursor is adjacent
-- Hover: tooltip shows full value (e.g., full file path when label is truncated)
-- Keyboard: arrow keys move cursor past atom as a unit; atom is never partially selected
-- Drag source: atom can be dragged out (future — for reordering or moving between inputs)
-- Gallery card for isolated testing
+- Atom data model: `AtomSegment { kind: "atom", type, label, value }` — same type used by the text engine
+- Hover: tooltip shows full `value` (e.g., full file path when label is truncated)
+- Dismiss: click X button (React path) or engine's two-step backspace/click-select (DOM path)
+- Accessibility: `role="img"`, `aria-label="${type}: ${label}"`, keyboard-selectable (engine handles navigation)
+- Gallery card for isolated testing of both rendering paths
 - Follows L19 (component authoring), L15 (token-driven states), L16 (rendering surface annotations)
 
 **Exit criteria:**
-- Atom renders correctly in isolation (gallery card)
-- All atom types visually distinct
-- Dismiss works via click and keyboard
+- `<TugAtom />` renders correctly in gallery card (React path)
+- `TugAtom.createDOM()` produces identical DOM (verified by snapshot comparison)
+- All atom types visually distinct with appropriate icons
 - Tooltip shows full value on hover
 - Token-compliant styling
+- Dismiss button works in React path
+- Accessibility: VoiceOver announces atom label
 
 ---
 
 #### T3.2: tug-prompt-input {#t3-prompt-input}
 
-**Goal:** The rich input field. The core text editing surface with atom support, prefix detection, and completions.
+**Goal:** The rich input field. A proper tugways component wrapping the TugTextEngine with atom support, prefix detection, and completions.
 
-**Prerequisites:** T3.0 (text model), T3.1 (tug-atom).
+**Prerequisites:** T3.0 (architecture validated), T3.1 (tug-atom with DOM rendering path).
 
 **Work:**
 
-Text model integration:
-- Implement the chosen text model from T3.0
+Engine extraction and integration:
+- Extract `TugTextEngine` from the spike gallery card into `lib/tug-text-engine.ts` as a standalone module
+- Define `TugTextInputDelegate` interface in `lib/tug-text-input-delegate.ts` (the UITextInput-inspired API)
+- tug-prompt-input creates the engine in `useLayoutEffect` (L01), accesses via ref (L07), all updates in DOM zone (L06)
+- Engine reconciler uses `TugAtom.createDOM()` (T3.1 DOM path) for atom rendering
+- `selectionAffinity` support for multiline: track upstream/downstream at soft line breaks
 - Auto-resize: 1 row default, grows to maxRows (8), Apple Messages style [L06]
-- Keyboard: Enter submit (dispatches action event [L11]), Shift+Enter newline, Cmd+Enter submit. IME-safe — never intercept Enter during IME composition.
+- Return vs Enter: independently configurable actions via delegate API. Shift inverts. `hasMarkedText === true` → key goes to IME.
+- `-webkit-user-modify: read-write-plaintext-only` for plain-text editing mode
+- `::selection` re-enabled, `::highlight(card-selection)` suppressed inside editor
+- `data-td-select="custom"` to exempt from SelectionGuard clipping
 
 Prefix detection:
 - First character `>`, `$`, `:` sets the active route
@@ -1205,7 +1227,7 @@ Prefix detection:
 Atom insertion:
 - `@` trigger: typing `@` opens a file completion popup. Typing further filters results. Tab or Enter resolves the selection to a tug-atom pill inserted inline. Escape cancels.
 - `/` trigger (in `>` route): opens slash command completion popup. Same tab/enter/escape behavior.
-- Drag-and-drop: files dragged from Finder onto the input create file atoms
+- Drag-and-drop: files dragged from Finder onto the input create file atoms. **Drop handler must be configurable** — accepted file types (extensions, MIME types) are set by the component consumer, not hardcoded.
 - Atoms in the submitted text are serialized as structured attachments, not inline text
 
 Typeahead and completion:
@@ -1213,7 +1235,8 @@ Typeahead and completion:
 - Fuzzy matching on file paths, command names
 - Tab-completion: Tab accepts the top suggestion
 - Arrow keys navigate the popup; Enter selects
-- Completion data comes from SessionMetadataStore (slash commands, skills) and a file listing source (TBD — may need a new file index)
+- **Completion data source is a service, not a hardcoded list.** The component accepts a completion provider (callback or interface): `(query: string) => Promise<CompletionItem[]>`. For `@` file completion, this calls a file index service (TBD — may need a new file listing API on tugcast, or a local directory scan). For `/` commands, this reads from SessionMetadataStore (slash commands + skills). The spike used a hardcoded file list; the real component must not.
+- Completion data sources: SessionMetadataStore (slash commands, skills) and a file completion service (architecture TBD — may be a new tugcast feed, a local scan, or a combination)
 
 History:
 - Up/down arrows when cursor is at the start/end of input navigate history

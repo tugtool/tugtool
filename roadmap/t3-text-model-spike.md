@@ -1,6 +1,6 @@
 # T3.0 Text Model Spike — Findings
 
-*Spike conducted 2026-04-02. Three approaches tested in the Component Gallery.*
+*Spike conducted 2026-04-02. Three approaches tested, then the engine-based approach (C-done-right) was built and validated in the Component Gallery.*
 
 ## Approaches Tested
 
@@ -14,13 +14,19 @@ Hidden `<textarea>` for input capture with transparent text. Visible mirror div 
 
 `contentEditable` div with `role="textbox"` and `aria-multiline="true"`. Plain text nodes interspersed with inline `<span contentEditable="false">` atom pill elements.
 
-**Result: Best of the three, but deeply flawed.** See detailed findings below.
+**Result: Best surface-level result, but deeply flawed.** See detailed findings below.
 
-### Approach C: Hidden Textarea + Rendered Div
+### Approach C: Hidden Textarea + Rendered Div (original)
 
 Hidden `<textarea>` captures all keyboard input. Separate visible div renders content (text + atoms). The textarea is the input device; the div is the display.
 
-**Result: Fundamentally sound architecture, but the spike implementation had no blinking insertion point.** Implementing a correct cursor requires building a document model with position ↔ pixel mapping, which is essentially building a text engine. Abandoned early — "colossal pain to implement" per user assessment. However, this is exactly what ProseMirror, CodeMirror 6, and Lexical do (all MIT licensed), and is the correct architecture.
+**Result: Correct architecture but the initial implementation had no blinking insertion point.** Abandoned early — but this is what ProseMirror, CodeMirror 6, and Lexical all do (all MIT licensed).
+
+### Approach C-Done-Right: Engine-Based contentEditable
+
+contentEditable div used as **input capture surface only**. Own document model (segment array) is the source of truth. DOM reconciled from model. MutationObserver reads browser text changes back into model. Native browser caret. Own undo stack.
+
+**Result: Working.** This is the chosen architecture. See "Engine Findings" below.
 
 ---
 
@@ -43,74 +49,197 @@ Hidden `<textarea>` captures all keyboard input. Separate visible div renders co
 
 | Issue | Severity | Root Cause |
 |-------|----------|------------|
-| **Spurious marked text** | Critical | macOS/WebKit treats contentEditable text as having an active input session. US keyboard typing appears "marked" (underlined) as if IME composition is active. This is the platform's text input system getting confused about the editing context — exactly the problem UITextInput was designed to solve. |
-| **Cmd+A selects entire page** | High | SelectionGuard and/or the card responder chain captures Cmd+A before the contentEditable's keydown handler fires. `stopPropagation()` on the keydown handler doesn't help because the event is handled at a higher level (capture phase or document listener). |
-| **Click+drag to select text doesn't work** | High | Likely related to the SelectionGuard's pointer tracking (L12). The guard intercepts pointer events for its clamping logic, interfering with native contentEditable selection gestures. |
-| **Cursor enters atom interior** | High | Despite `contentEditable="false"` on atom spans, the browser allows the caret to be placed inside the atom's child spans after `execCommand('insertHTML')`. The atom is not truly atomic from the browser's perspective. |
-| **Insertion point after atom insertion is wrong** | High | After `execCommand('insertHTML')`, the caret lands inside the atom span rather than after it. No reliable way to force caret position after execCommand — the browser's editing engine decides. |
-| **Undo repositions atoms instead of removing them** | High | `execCommand('insertHTML')` does integrate with the browser undo stack, but undo doesn't cleanly reverse the operation — it moves the atom rather than removing it. The browser's undo model doesn't match our semantic intent. |
-| **Enter during IME composition submits instead of accepting** | High | `e.isComposing` on KeyboardEvent was supposed to catch this, but macOS WebKit doesn't reliably set it for all composition states. The platform's text input system handles Enter → composition acceptance before the web event fires. UITextInput solves this with `markedTextRange` — if marked text exists, Enter goes to the input method, period. |
-| **Return and Enter are conflated** | Medium | Physically separate keys: Return (`e.code === "Enter"`) and numpad Enter (`e.code === "NumpadEnter"`). They're distinguishable via `e.code` but the spike treated them as the same key. Design requirement: Return and Enter should be independently configurable (submit vs newline). |
+| **Spurious marked text** | Critical | macOS/WebKit treats contentEditable text as having an active input session. US keyboard typing appears "marked" (underlined) as if IME composition is active. |
+| **Cmd+A selects entire page** | High | Card keybinding system has document-level capture-phase handler that fires before element-level handlers. Dispatches `selectAll` to card content area, not the editor. |
+| **Click+drag to select text doesn't work** | High | SelectionGuard's pointer tracking (L12) intercepts pointer events, interfering with contentEditable selection. |
+| **Cursor enters atom interior** | High | Despite `contentEditable="false"` on atom spans, the browser places the caret inside after `execCommand('insertHTML')`. |
+| **Insertion point after atom insertion is wrong** | High | `execCommand('insertHTML')` leaves caret inside atom span. |
+| **Undo repositions atoms instead of removing them** | High | `execCommand('insertHTML')` integrates with browser undo but undo semantics don't match our intent. |
+| **Enter during IME composition submits** | High | WebKit fires `compositionend` BEFORE the `keydown` for Enter. So when Enter arrives, `isComposing` is false and `composingIndex` is null. |
+| **Return and Enter are conflated** | Medium | `e.code === "Enter"` (Return) vs `e.code === "NumpadEnter"` (numpad Enter). Must be independently configurable. |
+| **CSS Custom Highlight paints incorrectly** | High | Card system suppresses native `::selection` and uses CSS Custom Highlight API. The Highlight API doesn't track contentEditable selection correctly, painting stale ranges. |
 
-### What Was Not Tested
+---
 
-- Chinese pinyin IME (only Japanese was tested)
-- Screen reader with atom selection/deletion flow
-- Multiple atoms adjacent (no text between them)
+## Engine Findings (Approach C-Done-Right)
+
+The engine-based implementation validated the architecture. Key findings:
+
+### What Works
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Text typing | OK | MutationObserver reads browser changes back to model (CM6 fast path) |
+| Atom insertion | OK | Model split + reconcile. Cursor lands after atom. |
+| Two-step atom delete | OK | Backspace adjacent to atom → highlights. Second press deletes. Click atom also selects. |
+| Undo/redo | OK | Immutable segment snapshots. Merge within 300ms. |
+| IME composition | OK | `composingIndex` tracks composing segment. Reconciler skips it. |
+| IME Enter acceptance | OK | `compositionEndedAt` timing window (100ms) catches WebKit ordering bug. |
+| Return vs Enter | OK | `e.code` distinguishes. Independent configuration per key. Shift inverts. |
+| Cmd+A scoped | OK | Fixed in tug-card.tsx: selectAll checks `document.activeElement` for contentEditable. |
+| Native selection | OK | Re-enabled `::selection` in editor, suppressed `::highlight(card-selection)`. |
+| Auto-resize | OK | Direct DOM height manipulation (L06). |
+| Paste as plain text | OK | Intercept paste event, insert via model. |
+| Placeholder | OK | `data-empty` attribute driven by engine, CSS `::before` pseudo-element. Clears on composition start. |
+
+### Patterns That Proved Correct
+
+1. **"Let the browser mutate, diff afterward"** for normal text typing. `beforeinput` with `insertText` type is NOT prevented. The browser inserts the character. MutationObserver reads it back. Model updated. DOM is already correct — no reconcile needed. This is the fast path.
+
+2. **Text-atom-text invariant.** Segments always alternate: text, atom, text, atom, text. Text segments exist at boundaries and between every pair of atoms. Empty text segments are allowed. This guarantees the cursor is always in a Text node — never inside an atom.
+
+3. **Native browser caret.** We do NOT render our own cursor. `sel.collapse(node, offset)` positions it. The browser renders it. This eliminates the "colossal pain" of cursor rendering from Approach C.
+
+4. **Reconciliation skips the composing node.** During IME composition (`composingIndex !== null`), the reconciler returns immediately. The browser is freely mutating the composing Text node. We pick up the result on `compositionend`.
+
+5. **Own undo stack with immutable snapshots.** `cloneSegments()` before each mutation. Merge heuristic: consecutive same-type edits within 300ms collapse. Browser undo (`historyUndo`/`historyRedo` beforeinput types) is intercepted and redirected to our stack.
+
+6. **Flat offset as universal position type.** Text characters count as 1 each, atoms count as 1 each. Selection, undo cursor restoration, and DOM position mapping all use flat offsets. `segmentPosition(flat)` converts to segment index + local offset.
+
+### Browser/Platform Bugs Fixed
+
+1. **WebKit `compositionend` before `keydown` for Enter.** Safari fires `compositionend`, then Enter keydown arrives with `isComposing=false`. Fix: `compositionEndedAt` timestamp + 100ms window. CM6 uses the same pattern.
+
+2. **CSS Custom Highlight API vs contentEditable.** The card system's `::highlight(card-selection)` paints stale/incorrect highlights inside contentEditable. Fix: re-enable native `::selection` and suppress Custom Highlight via CSS override inside the editor element.
+
+3. **Card selectAll ignores first responder.** The keybinding system dispatches `selectAll` to the card regardless of focus. Fix: tug-card.tsx `handleSelectAll` checks `document.activeElement` for contentEditable and scopes `selectAllChildren` to it.
+
+4. **Spurious composition markers on US keyboard.** `-webkit-user-modify: read-write-plaintext-only` tells WebKit the field is plain-text, preventing the macOS text input system from adding composition styling.
+
+5. **Placeholder not clearing during IME.** The model is empty during composition (hasn't committed yet), so `isEmpty()` returns true. Fix: set `data-empty="false"` on `compositionstart`.
+
+### System Changes Made During Spike
+
+| File | Change | Reason |
+|------|--------|--------|
+| `tug-card.tsx` | `handleSelectAll` respects contentEditable first responder | Cmd+A was selecting entire card content instead of editor |
+
+---
+
+## Architecture: Two-Layer Design
+
+### Layer 1: Engine (TugTextEngine)
+
+A plain TypeScript class (not a React component). Owns:
+
+- **Document model**: `segments: (TextSegment | AtomSegment)[]` with text-atom-text invariant
+- **DOM reconciler**: renders segments → DOM nodes, reuses existing nodes, skips during composition
+- **MutationObserver**: reads browser text changes back into model (fast path for typing)
+- **Composition tracker**: `composingIndex` + `compositionEndedAt`
+- **Undo stack**: immutable segment snapshots with merge heuristic
+- **Event handlers**: keydown, beforeinput, compositionstart/end, paste, click
+
+The engine attaches to a `<div contentEditable>` provided by the component.
+
+### Layer 2: API (UITextInput-inspired)
+
+```typescript
+interface TugTextInputDelegate {
+  // --- Text storage ---
+  readonly text: string;
+  readonly segments: readonly Segment[];
+
+  // --- Selection ---
+  selectedRange: { start: number; end: number } | null;
+  // selectionAffinity: future — upstream/downstream at soft line breaks
+
+  // --- Marked text (composition / IME) ---
+  hasMarkedText: boolean;
+  markedTextRange: { start: number; end: number } | null;
+
+  // --- Text mutation ---
+  insertText(text: string): void;
+  insertAtom(atom: AtomSegment): void;
+  deleteBackward(): void;
+  deleteForward(): void;
+
+  // --- Undo ---
+  undo(): void;
+  redo(): void;
+  canUndo: boolean;
+  canRedo: boolean;
+
+  // --- Key handling ---
+  returnAction: "submit" | "newline";
+  numpadEnterAction: "submit" | "newline";
+  // Shift always inverts. hasMarkedText=true → key goes to IME.
+
+  // --- Lifecycle ---
+  clear(): void;
+  selectAll(): void;
+}
+```
+
+### Component Integration
+
+The React component (tug-prompt-input) creates the engine in `useLayoutEffect` (L01) and never re-renders for text content changes. All text/atom rendering happens in the DOM zone (L06). Status updates use direct DOM writes via `onChange` callback (L22). The engine instance is accessed via ref (L07).
+
+### tug-atom: Dual Rendering Paths
+
+tug-atom is a proper tugways component (L19) with two rendering paths:
+
+1. **React path**: `<TugAtom type="file" label="src/main.ts" />` — for gallery card, standalone usage
+2. **DOM path**: `TugAtom.createDOM(seg)` — static method for engine reconciler inside contentEditable
+
+Both produce identical DOM structure, same CSS classes, same data attributes, same a11y. The engine calls the DOM path during reconciliation.
+
+---
+
+## Reference Implementations Studied (All MIT)
+
+### CodeMirror 6 (`@codemirror/view`)
+
+- contentEditable as input surface (switched from textarea in v5)
+- Let browser mutate DOM, read back via MutationObserver + DOM diffing
+- Native browser caret (no custom cursor rendering)
+- Composition: find composed Text node, tag for reuse during re-render
+- Own undo stack via transaction system
+- ~30 browser-specific workarounds (Android Chrome, iOS Safari, Firefox)
+- EditContext API for Android Chrome 126+
+
+### Lexical (`lexical`)
+
+- contentEditable as input surface with command pattern
+- "Uncontrolled fast path": normal single-char typing flows through browser, synced back via MutationObserver
+- DecoratorNode = atom equivalent (`contentEditable="false"`, keyboard-selectable)
+- `_compositionKey` tracks composing node, transforms/history skip it
+- Own undo stack with immutable editor state snapshots
+- MutationObserver as safety net to revert external DOM changes
+
+### Key Patterns Adopted
+
+| Pattern | Source | How Used |
+|---------|--------|----------|
+| Let browser mutate, diff afterward | CM6 | MutationObserver fast path for typing |
+| Native browser caret | CM6 | No custom cursor rendering |
+| DecoratorNode (atom) | Lexical | `contentEditable="false"` spans, model-enforced atomicity |
+| Composition key | Lexical | `composingIndex` tracks composing segment |
+| `compositionEndedAt` timing | CM6 | Swallow Enter within 100ms of compositionend |
+| Own undo stack | Both | Immutable snapshots, merge heuristic |
+| MutationObserver safety net | Lexical | `rebuildFromDOM()` for unexpected structural changes |
+
+---
+
+## What Was Not Tested in the Spike
+
+- Chinese pinyin IME
+- Screen reader with atom selection/deletion flow end-to-end
+- Multiple atoms adjacent (the text-atom-text invariant handles this but untested)
 - Very long text performance (scrolling + many atoms)
-- Undo across multiple operations (type → insert atom → type → undo → undo → undo)
+- Complex undo sequences across atom insertion/deletion
+- Word-level and line-level deletion (Option+Backspace, Cmd+Backspace)
+- Drag-and-drop of atoms (rearranging)
+- @-trigger typeahead (deferred to T3.2)
+- Prefix routing (`>` `$` `:` detection)
+
+These are all T3.2+ scope items.
+
+**Implementation notes for T3.2:**
+- `@` completion must use a service/provider interface (`(query: string) => Promise<CompletionItem[]>`), not a hardcoded file list. The file completion service architecture is TBD.
+- Drop handler must accept a configurable list of file types (extensions/MIME types), not accept everything.
 
 ---
 
-## Key Insights
+## Spike Gallery Card
 
-### 1. contentEditable is an Input Capture Surface, Not a Document Model
-
-All three major editor frameworks (ProseMirror, CodeMirror 6, Lexical — all MIT) use contentEditable but treat the DOM as an output channel. They maintain their own document model as source of truth and re-render the DOM from it. Our spike let the browser DOM *be* the document, which is why undo, atom positioning, and selection all broke — we were fighting the browser's editing engine instead of owning the document model.
-
-### 2. The Browser's Editing Engine is Not Controllable
-
-`document.execCommand` is the only way to integrate with the browser's undo stack, but its behavior is underspecified, browser-dependent, and produces side effects we can't predict (cursor placement, DOM mutations, undo semantics). You cannot build reliable atom/pill behavior on top of it.
-
-### 3. UITextInput Concepts Are the Right Model
-
-The spike's failures map exactly to problems UITextInput solves:
-- **Marked text** → `markedTextRange` / `setMarkedText:selectedRange:` — explicit marked text management, not browser guessing
-- **Insertion point** → `selectedTextRange` — we own cursor position, not the browser
-- **Composition vs commit** → `hasText` / `insertText:` / `markedTextRange` — clear boundary between composing and committed text
-- **Return vs Enter** → UITextInput never conflates these; they're distinct input events
-- **Atomic inline elements** → `textRange(from:to:)` treats non-text ranges as atomic units
-- **Undo** → The text input system reports operations; the app owns the undo stack
-
-### 4. Atom Atomicity Requires Document Model Ownership
-
-`contentEditable="false"` is a suggestion, not an enforcement. The browser can and does place the caret inside "non-editable" spans after certain operations. True atomicity requires a document model where atoms are opaque nodes — the cursor can be before or after an atom, never inside it. This must be enforced by *our* code, not the browser's.
-
-### 5. SelectionGuard Conflicts with contentEditable
-
-The card system's SelectionGuard (L12) intercepts pointer events and selection changes at the document level to enforce card-scoped selection. This directly conflicts with contentEditable's native selection handling. Any text input component needs to either (a) be exempted from SelectionGuard, or (b) manage its own selection entirely (which a proper text engine does anyway).
-
----
-
-## Decision: Pivot to Approach C Done Properly
-
-**The spike validates Approach C — hidden textarea + rendered view — as the correct architecture, but it must be done with a proper document model and text engine, not as a hack.**
-
-Architecture (inspired by UITextInput, informed by ProseMirror/CM6/Lexical):
-
-1. **Document Model** — Array of segments: `TextSegment` (string) and `AtomSegment` (type + label + value). The source of truth. Never derived from the DOM.
-
-2. **Input Capture** — contentEditable div as the input surface (not a hidden textarea — CM6 switched to contentEditable for better IME support). But we treat it as an input device only. All DOM mutations from user input are intercepted, translated to document model operations, and then the DOM is re-rendered from the model. The browser never "owns" the document.
-
-3. **Selection/Cursor** — We own the selection state: `{ anchor: DocPosition, focus: DocPosition }`. A `DocPosition` is `{ segmentIndex, offset }` where atoms have offset 0 (before) or 1 (after). The cursor is rendered by us as a positioned DOM element or via the browser's native caret (if we can control it reliably).
-
-4. **Composition (IME)** — Track marked text explicitly: `markedRange: { start: DocPosition, end: DocPosition } | null`. During composition, the marked text is rendered with platform-appropriate styling. Composition events (`compositionstart`, `compositionupdate`, `compositionend`) update the marked range. Enter during active marked text goes to the IME — period.
-
-5. **Undo** — We own the undo stack. Each operation (insert text, insert atom, delete, etc.) is recorded. Cmd+Z pops the stack and re-renders. The browser's undo stack is not used.
-
-6. **Return vs Enter** — Distinguished via `e.code`: `"Enter"` (Return key) vs `"NumpadEnter"` (Enter key). Independently configurable actions.
-
-**Reference implementations to study (all MIT):**
-- ProseMirror `prosemirror-view` — input handling, composition tracking, DOM ↔ model reconciliation
-- CodeMirror 6 `@codemirror/view` — input handling, contentEditable as input surface, state management
-- Lexical `lexical` — editor state, DOM reconciliation, node model (DecoratorNode is their "atom")
+The spike card (`gallery-text-model-spike.tsx`) remains in the Component Gallery as a reference implementation. It contains the working TugTextEngine class, the diagnostics panel (selectedRange, hasMarkedText, canUndo, canRedo, segments), and the Return/Enter configuration controls. It should be preserved until tug-prompt-input (T3.2) is implemented and replaces it.

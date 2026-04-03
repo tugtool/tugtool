@@ -69,6 +69,14 @@ const SAMPLE_ATOMS: AtomSegment[] = [
   { kind: "atom", type: "file", label: "src/lib/feed-store.ts", value: "/project/src/lib/feed-store.ts" },
 ];
 
+/** Fake file list for @-trigger typeahead. */
+const TYPEAHEAD_FILES = [
+  "src/main.ts", "src/main.tsx", "src/protocol.ts", "src/connection.ts",
+  "src/lib/feed-store.ts", "src/lib/connection-singleton.ts",
+  "src/deck-manager.ts", "src/settings-api.ts", "src/action-dispatch.ts",
+  "README.md", "package.json", "tsconfig.json",
+];
+
 const RETURN_CHOICES: TugChoiceItem[] = [
   { value: "submit", label: "Return submits" },
   { value: "newline", label: "Return = newline" },
@@ -152,15 +160,26 @@ class TugTextEngine {
   private lastEditType = "";
 
   // --- Key configuration (UITextInput-inspired) ---
-  /** What the Return key (main keyboard) does without Shift */
   returnAction: InputAction = "submit";
-  /** What the numpad Enter key does without Shift */
   numpadEnterAction: InputAction = "submit";
+
+  // --- Typeahead state ---
+  private typeahead: {
+    active: boolean;
+    query: string;
+    /** The text segment index and char offset of the @ character */
+    anchorSegment: number;
+    anchorOffset: number;
+    selectedIndex: number;
+    filtered: string[];
+  } = { active: false, query: "", anchorSegment: 0, anchorOffset: 0, selectedIndex: 0, filtered: [] };
 
   // --- Callbacks ---
   onChange: (() => void) | null = null;
   onSubmit: (() => void) | null = null;
   onLog: ((msg: string) => void) | null = null;
+  /** Called when typeahead state changes — component renders the popup. */
+  onTypeaheadChange: ((active: boolean, filtered: string[], selectedIndex: number) => void) | null = null;
 
   constructor(root: HTMLDivElement) {
     this.root = root;
@@ -601,6 +620,93 @@ class TugTextEngine {
   }
 
   // -----------------------------------------------------------------
+  // @-trigger typeahead
+  // -----------------------------------------------------------------
+
+  private activateTypeahead(): void {
+    const offset = this.saveSelection();
+    if (offset === null) return;
+    const pos = this.segmentPosition(offset);
+    this.typeahead = {
+      active: true,
+      query: "",
+      anchorSegment: pos.segmentIndex,
+      anchorOffset: pos.offset - 1, // offset of the @ character
+      selectedIndex: 0,
+      filtered: TYPEAHEAD_FILES.slice(0, 8),
+    };
+    this.onTypeaheadChange?.(true, this.typeahead.filtered, 0);
+    this.onLog?.("typeahead: @-trigger");
+  }
+
+  private updateTypeaheadQuery(): void {
+    if (!this.typeahead.active) return;
+    const seg = this.segments[this.typeahead.anchorSegment];
+    if (seg.kind !== "text") { this.cancelTypeahead(); return; }
+    const text = (seg as TextSegment).text;
+    // Read the query: from the char after @ to current cursor
+    const offset = this.saveSelection();
+    if (offset === null) { this.cancelTypeahead(); return; }
+    const pos = this.segmentPosition(offset);
+    if (pos.segmentIndex !== this.typeahead.anchorSegment) {
+      this.cancelTypeahead(); return;
+    }
+    const query = text.slice(this.typeahead.anchorOffset + 1, pos.offset);
+    const q = query.toLowerCase();
+    this.typeahead.query = query;
+    this.typeahead.filtered = q.length === 0
+      ? TYPEAHEAD_FILES.slice(0, 8)
+      : TYPEAHEAD_FILES.filter(f => f.toLowerCase().includes(q)).slice(0, 8);
+    this.typeahead.selectedIndex = Math.min(this.typeahead.selectedIndex, Math.max(0, this.typeahead.filtered.length - 1));
+    this.onTypeaheadChange?.(true, this.typeahead.filtered, this.typeahead.selectedIndex);
+  }
+
+  acceptTypeahead(): void {
+    if (!this.typeahead.active || this.typeahead.filtered.length === 0) return;
+    const selected = this.typeahead.filtered[this.typeahead.selectedIndex];
+    const seg = this.segments[this.typeahead.anchorSegment];
+    if (seg.kind !== "text") { this.cancelTypeahead(); return; }
+
+    // Delete the @query text from the model
+    const atOffset = this.typeahead.anchorOffset;
+    const queryEnd = atOffset + 1 + this.typeahead.query.length;
+    this.pushUndo("atom");
+    const text = (seg as TextSegment).text;
+    const before = text.slice(0, atOffset);
+    const after = text.slice(queryEnd);
+    // Replace with: [before, atom, after]
+    this.segments.splice(this.typeahead.anchorSegment, 1,
+      { kind: "text", text: before },
+      { kind: "atom", type: "file", label: selected, value: selected },
+      { kind: "text", text: after },
+    );
+    this.segments = normalizeSegments(this.segments);
+    const newOffset = this.flatOffset(this.typeahead.anchorSegment, atOffset) + 1;
+    this.cancelTypeahead();
+    this.reconcile();
+    this.restoreSelection(newOffset);
+    this.onChange?.();
+    this.onLog?.(`atom: @${selected}`);
+  }
+
+  cancelTypeahead(): void {
+    this.typeahead.active = false;
+    this.onTypeaheadChange?.(false, [], 0);
+  }
+
+  typeaheadNavigate(direction: "up" | "down"): void {
+    if (!this.typeahead.active) return;
+    if (direction === "down") {
+      this.typeahead.selectedIndex = Math.min(this.typeahead.selectedIndex + 1, this.typeahead.filtered.length - 1);
+    } else {
+      this.typeahead.selectedIndex = Math.max(this.typeahead.selectedIndex - 1, 0);
+    }
+    this.onTypeaheadChange?.(true, this.typeahead.filtered, this.typeahead.selectedIndex);
+  }
+
+  get isTypeaheadActive(): boolean { return this.typeahead.active; }
+
+  // -----------------------------------------------------------------
   // MutationObserver
   // -----------------------------------------------------------------
 
@@ -628,6 +734,7 @@ class TugTextEngine {
     if (changed) {
       this.root.dataset.empty = this.isEmpty() ? "true" : "false";
       this.autoResize();
+      if (this.typeahead.active) this.updateTypeaheadQuery();
       this.onChange?.();
     }
   };
@@ -681,6 +788,8 @@ class TugTextEngine {
     el.addEventListener("compositionstart", this.onCompositionStart);
     el.addEventListener("compositionend", this.onCompositionEnd);
     el.addEventListener("paste", this.onPaste);
+    el.addEventListener("dragover", this.onDragOver);
+    el.addEventListener("drop", this.onDrop);
     el.addEventListener("click", this.onClick);
     el.addEventListener("focus", this.onFocus);
   }
@@ -693,6 +802,8 @@ class TugTextEngine {
     el.removeEventListener("compositionstart", this.onCompositionStart);
     el.removeEventListener("compositionend", this.onCompositionEnd);
     el.removeEventListener("paste", this.onPaste);
+    el.removeEventListener("dragover", this.onDragOver);
+    el.removeEventListener("drop", this.onDrop);
     el.removeEventListener("click", this.onClick);
     el.removeEventListener("focus", this.onFocus);
     this.observer.disconnect();
@@ -730,6 +841,19 @@ class TugTextEngine {
       this.onLog?.("Enter swallowed (IME acceptance)");
       e.preventDefault();
       return;
+    }
+
+    // Typeahead navigation
+    if (this.typeahead.active) {
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        this.acceptTypeahead();
+        return;
+      }
+      if (e.key === "ArrowDown") { e.preventDefault(); this.typeaheadNavigate("down"); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); this.typeaheadNavigate("up"); return; }
+      if (e.key === "Escape") { e.preventDefault(); this.cancelTypeahead(); return; }
+      // Other keys: continue to normal handling (typing updates query via MutationObserver)
     }
 
     // Clear atom highlight on any key except Backspace/Delete
@@ -785,7 +909,11 @@ class TugTextEngine {
 
     switch (e.inputType) {
       case "insertText":
-        // Fast path: let browser mutate DOM, MutationObserver reads it back
+        // Fast path: let browser mutate DOM, MutationObserver reads it back.
+        // Detect @ trigger for typeahead after the char is inserted.
+        if (e.data === "@" && !this.typeahead.active) {
+          requestAnimationFrame(() => this.activateTypeahead());
+        }
         break;
       case "insertLineBreak":
         e.preventDefault();
@@ -860,6 +988,22 @@ class TugTextEngine {
     if (text) this.insertText(text);
   };
 
+  private onDragOver = (e: DragEvent): void => {
+    e.preventDefault();
+  };
+
+  private onDrop = (e: DragEvent): void => {
+    e.preventDefault();
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    this.root.focus();
+    for (let i = 0; i < files.length; i++) {
+      const name = files[i].name;
+      this.insertAtom({ kind: "atom", type: "file", label: name, value: name });
+      this.onLog?.(`drop: ${name}`);
+    }
+  };
+
   /** Click on an atom selects it for deletion. */
   private onClick = (e: MouseEvent): void => {
     const target = e.target as HTMLElement;
@@ -890,6 +1034,7 @@ function SpikeEditor() {
   const engineRef = useRef<TugTextEngine | null>(null);
   const diagRef = useRef<HTMLPreElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   const nextAtomIdx = useRef(0);
   const [returnAction, setReturnAction] = useState<string>("submit");
   const [enterAction, setEnterAction] = useState<string>("submit");
@@ -942,6 +1087,31 @@ function SpikeEditor() {
     const engine = new TugTextEngine(el);
     engine.onChange = updateDiagnostics;
     engine.onLog = appendLog;
+    engine.onTypeaheadChange = (active, filtered, selectedIndex) => {
+      const popup = popupRef.current;
+      if (!popup) return;
+      if (!active || filtered.length === 0) {
+        popup.style.display = "none";
+        return;
+      }
+      popup.style.display = "block";
+      popup.innerHTML = "";
+      filtered.forEach((item, i) => {
+        const div = document.createElement("div");
+        div.className = "spike-typeahead-item" + (i === selectedIndex ? " spike-typeahead-selected" : "");
+        div.textContent = item;
+        popup.appendChild(div);
+      });
+      // Position near cursor
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        const editorRect = el.getBoundingClientRect();
+        popup.style.left = `${rect.left - editorRect.left}px`;
+        popup.style.bottom = `${editorRect.bottom - rect.top + 4}px`;
+      }
+    };
     engine.onSubmit = () => {
       const text = engine.getText().trim();
       const atoms = engine.getAtoms().map(a => a.label);
@@ -1025,20 +1195,23 @@ function SpikeEditor() {
           <TugPushButton size="sm" onClick={handleInsertAtom}>Insert Atom</TugPushButton>
           <TugPushButton size="sm" emphasis="outlined" onClick={handleClear}>Clear</TugPushButton>
         </div>
-        <div
-          ref={editorRef}
-          className="spike-input spike-contenteditable"
-          contentEditable
-          role="textbox"
-          aria-multiline="true"
-          aria-label="Text model spike editor"
-          data-placeholder="Type here... Insert atoms, test backspace, undo, IME, Return vs Enter"
-          data-empty="true"
-          spellCheck={false}
-          autoCorrect="off"
-          autoCapitalize="off"
-          suppressContentEditableWarning
-        />
+        <div className="spike-editor-container">
+          <div
+            ref={editorRef}
+            className="spike-input spike-contenteditable"
+            contentEditable
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Text model spike editor"
+            data-placeholder="Type here... @ for file completion, drag files, test IME, Return vs Enter"
+            data-empty="true"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            suppressContentEditableWarning
+          />
+          <div ref={popupRef} className="spike-typeahead-popup" />
+        </div>
         <pre ref={diagRef} className="spike-diagnostics" />
       </div>
 
