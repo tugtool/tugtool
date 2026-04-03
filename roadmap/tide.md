@@ -1257,6 +1257,14 @@ History:
 - History is per-route (Claude Code history separate from shell history)
 - History state comes from PromptHistoryStore
 
+Quality and correctness regime:
+- `TugTextInputDelegate` — UITextInput-inspired API, shared by engine, component, and test harness
+- `TugTextEditingState` — serializable snapshot of complete editing state (segments, selection, marked text). Used for persistence and testing.
+- **Text Editing Operation Inventory (TEOI)** — formal catalog of every editing operation as a state machine transition: `TugTextEditingState::incoming × Operation → TugTextEditingState::outgoing`. The specification for what editing operations do.
+- **Text Editing Operation Examples (TEOE)** — concrete test cases: specific TEOI triples with real data. Exhaustive coverage of operations at every interesting boundary.
+- **Simulation ≡ Interactive** — test harness typing simulation (DOM mutation → MutationObserver) and interactive component always produce the same outgoing state for the same incoming × operation.
+- **Editing state persistence** [L23] — `TugTextEditingState` saved to tugbank on every meaningful change. Survives Reload, app quit, `just app`.
+
 **Exit criteria:**
 - Text input with atoms works per the chosen text model
 - Auto-resize works (1 row → 8 rows)
@@ -1270,6 +1278,9 @@ History:
 - Token-compliant styling: `@tug-pairings` (compact + expanded), `@tug-renders-on` on all foreground rules
 - Conforms to component authoring guide checklist
 - Gallery card for isolated testing
+- TEOI defined; TEOE test suite passes with 50+ test cases
+- Simulation and interactive produce identical results for all TEOEs
+- Editing state persists across reload and app restart [L23]
 
 ---
 

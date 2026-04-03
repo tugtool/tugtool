@@ -118,7 +118,69 @@ Wrap the working engine in `tug-prompt-input.tsx` + `tug-prompt-input.css` per t
 
 **Validation:** Gallery card demonstrates all features: typing, atoms, IME, undo, typeahead, auto-resize, Return/Enter, paste, drop.
 
-### Pass 3: Add prefix detection
+### Pass 3: Quality and correctness regime
+
+Before adding more features, establish the formal testing and state management framework that ensures the text editing system is correct and stays correct.
+
+#### 3a. Extract TugTextInputDelegate to shared location
+
+Move `TugTextInputDelegate` and associated types from `tug-prompt-input.tsx` into `lib/tug-text-engine.ts` where they can be shared by the engine, component, test harness, and future consumers.
+
+#### 3b. Define TugTextEditingState
+
+A plain serializable object that captures the complete state of an editing component:
+
+```typescript
+interface TugTextEditingState {
+  segments: Segment[];
+  selection: { start: number; end: number } | null;
+  markedText: { start: number; end: number } | null;
+}
+```
+
+No DOM, no methods. JSON round-trips cleanly. Lives alongside `TugTextInputDelegate` in the engine module.
+
+#### 3c. Persist editing state via tugbank [L23]
+
+Save `TugTextEditingState` to tugbank on every meaningful change. Restore on mount. Editing state must survive: Developer → Reload, app quit/relaunch, `just app`. This is an L23 requirement — internal operations must never lose user-visible state.
+
+#### 3d. Text Editing Operation Inventory (TEOI)
+
+A formal catalog of every editing operation as a state machine transition:
+
+```
+TugTextEditingState::incoming × Operation → TugTextEditingState::outgoing
+```
+
+Operations: `insertText`, `insertAtom`, `deleteBackward`, `deleteForward`, `selectAll`, `clear`, `undo`, `redo`, `setSelectedRange`. For every combination of incoming state and operation, the outgoing state must be predictable and correct.
+
+The TEOI is the conceptual grounding — the specification for what editing operations do.
+
+#### 3e. Text Editing Operation Examples (TEOE)
+
+Concrete instances of TEOI triples with real data. Each TEOE is a specific test case:
+
+```
+{
+  name: "deleteBackward at atom boundary — two-step highlight",
+  incoming: { segments: [text("hello"), atom(file), text("")], selection: {6, 6} },
+  operation: "deleteBackward",
+  outgoing: { segments: [text("hello"), atom(file), text("")], selection: {6, 6} },
+  note: "atom highlighted but not deleted (first step of two-step)"
+}
+```
+
+#### 3f. Simulation ≡ Interactive
+
+The test harness's typing simulation (DOM mutation → MutationObserver) and the interactive component must always produce the same `TugTextEditingState::outgoing` for the same `incoming × operation`. If they diverge, the simulation or the engine has a bug. This equivalence is what makes the test suite trustworthy.
+
+#### 3g. Exhaustive test generation
+
+Once the TEOI framework is validated, generate 50–100+ TEOEs systematically — every operation at every interesting boundary: empty document, text-only, at atom boundary, mid-text, selection spanning atom, marked text active, multiple atoms, undo after atom delete, etc. This is the payoff: the framework makes mass test generation mechanical.
+
+**Validation:** All TEOEs pass. Manual interaction matches simulation for every tested scenario.
+
+### Pass 4: Add prefix detection
 
 First-character routing (`>`, `$`, `:`, `/`). This is engine-level (the engine knows the document content) with a callback to the component. The prefix character gets styled distinctly via CSS.
 

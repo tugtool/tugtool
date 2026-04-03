@@ -54,6 +54,162 @@ export type CompletionProvider = (query: string) => CompletionItem[];
 export type DropHandler = (files: FileList) => AtomSegment[];
 
 // ===================================================================
+// TugTextInputDelegate — UITextInput-inspired API
+// ===================================================================
+
+/**
+ * TugTextInputDelegate — UITextInput-inspired imperative API.
+ *
+ * Modeled on Apple's UITextInput protocol. This is the contract between
+ * the prompt input component and its consumers (e.g., tug-prompt-entry).
+ * The interface is proven — UITextInput has been the foundation of text
+ * input on iOS/macOS since its inception.
+ */
+export interface TugTextInputDelegate {
+  // --- Document content ---
+  /** Full text content with U+FFFC for atoms. */
+  getText(): string;
+  /** All atom segments in document order. */
+  getAtoms(): AtomSegment[];
+  /** Whether the document is empty (no text, no atoms). */
+  isEmpty(): boolean;
+
+  // --- Selection ---
+  /** Current selection as flat offsets. Null if editor is not focused. */
+  getSelectedRange(): { start: number; end: number } | null;
+  /** Set the selection. If end is omitted, collapses to a cursor at start. */
+  setSelectedRange(start: number, end?: number): void;
+  /** Whether an IME composition is in progress. */
+  readonly hasMarkedText: boolean;
+
+  // --- Mutation ---
+  /** Insert plain text at the current selection. */
+  insertText(text: string): void;
+  /** Insert an atom at the current selection. */
+  insertAtom(atom: AtomSegment): void;
+  /** Delete backward from the current selection (backspace). */
+  deleteBackward(): void;
+  /** Delete forward from the current selection (forward delete). */
+  deleteForward(): void;
+  /** Select all content. */
+  selectAll(): void;
+  /** Clear all content. */
+  clear(): void;
+
+  // --- Undo ---
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  undo(): void;
+  redo(): void;
+
+  // --- Focus ---
+  focus(): void;
+
+  // --- Testing ---
+  /** The contentEditable DOM element. For test harness event dispatch. */
+  getEditorElement(): HTMLDivElement | null;
+}
+
+// ===================================================================
+// TugTextEditingState — serializable editing state snapshot
+// ===================================================================
+
+/**
+ * TugTextEditingState — complete serializable snapshot of editing state.
+ *
+ * Used for:
+ * - Persistence via tugbank (survives reload, app quit) [L23]
+ * - Test harness: incoming/outgoing state for TEOI triples
+ * - State comparison: simulation ≡ interactive verification
+ *
+ * Plain object. No DOM, no methods. JSON round-trips cleanly.
+ */
+export interface TugTextEditingState {
+  /** The document content as a segment array. */
+  segments: Segment[];
+  /** Current selection as flat offsets, or null if no selection. */
+  selection: { start: number; end: number } | null;
+  /** Active IME composition range, or null if not composing. */
+  markedText: { start: number; end: number } | null;
+}
+
+/** Capture the current editing state from a delegate. */
+export function captureEditingState(d: TugTextInputDelegate): TugTextEditingState {
+  // We need segments from the engine — access via getText/getAtoms is lossy.
+  // For now, reconstruct from getText() + getAtoms() by parsing U+FFFC positions.
+  // TODO: once the engine exposes segments directly, use that.
+  const text = d.getText();
+  const atoms = d.getAtoms();
+  const segments: Segment[] = [];
+  let atomIdx = 0;
+  let textStart = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\uFFFC") {
+      if (i > textStart) {
+        segments.push({ kind: "text", text: text.slice(textStart, i) });
+      }
+      if (atomIdx < atoms.length) {
+        segments.push({ ...atoms[atomIdx] });
+        atomIdx++;
+      }
+      textStart = i + 1;
+    }
+  }
+  if (textStart <= text.length) {
+    segments.push({ kind: "text", text: text.slice(textStart) });
+  }
+  if (segments.length === 0) {
+    segments.push({ kind: "text", text: "" });
+  }
+
+  return {
+    segments,
+    selection: d.getSelectedRange(),
+    markedText: d.hasMarkedText ? d.getSelectedRange() : null,
+  };
+}
+
+/** Compare two editing states for equality. */
+export function editingStatesEqual(a: TugTextEditingState, b: TugTextEditingState): boolean {
+  if (a.segments.length !== b.segments.length) return false;
+  for (let i = 0; i < a.segments.length; i++) {
+    const sa = a.segments[i];
+    const sb = b.segments[i];
+    if (sa.kind !== sb.kind) return false;
+    if (sa.kind === "text" && sb.kind === "text") {
+      if (sa.text !== sb.text) return false;
+    } else if (sa.kind === "atom" && sb.kind === "atom") {
+      if (sa.type !== sb.type || sa.label !== sb.label || sa.value !== sb.value) return false;
+    }
+  }
+  if (a.selection === null && b.selection !== null) return false;
+  if (a.selection !== null && b.selection === null) return false;
+  if (a.selection && b.selection) {
+    if (a.selection.start !== b.selection.start || a.selection.end !== b.selection.end) return false;
+  }
+  if (a.markedText === null && b.markedText !== null) return false;
+  if (a.markedText !== null && b.markedText === null) return false;
+  if (a.markedText && b.markedText) {
+    if (a.markedText.start !== b.markedText.start || a.markedText.end !== b.markedText.end) return false;
+  }
+  return true;
+}
+
+/** Format a TugTextEditingState for display in test output. */
+export function formatEditingState(s: TugTextEditingState): string {
+  const content = s.segments.map(seg =>
+    seg.kind === "text" ? JSON.stringify(seg.text) : `[${seg.type}:${seg.label}]`
+  ).join(" ");
+  const sel = s.selection
+    ? `sel:{${s.selection.start},${s.selection.end}}`
+    : "sel:null";
+  const marked = s.markedText
+    ? ` marked:{${s.markedText.start},${s.markedText.end}}`
+    : "";
+  return `${content} ${sel}${marked}`;
+}
+
+// ===================================================================
 // Constants
 // ===================================================================
 

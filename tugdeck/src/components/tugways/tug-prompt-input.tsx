@@ -22,62 +22,11 @@ import type {
   CompletionItem,
   CompletionProvider,
   DropHandler,
+  TugTextInputDelegate,
 } from "@/lib/tug-text-engine";
 
-// ---- Types ----
-
-/**
- * TugTextInputDelegate — UITextInput-inspired imperative API.
- *
- * Modeled on Apple's UITextInput protocol. This is the contract between
- * the prompt input component and its consumers (e.g., tug-prompt-entry).
- * The interface is proven — UITextInput has been the foundation of text
- * input on iOS/macOS since its inception.
- */
-export interface TugTextInputDelegate {
-  // --- Document content ---
-  /** Full text content with U+FFFC for atoms. */
-  getText(): string;
-  /** All atom segments in document order. */
-  getAtoms(): AtomSegment[];
-  /** Whether the document is empty (no text, no atoms). */
-  isEmpty(): boolean;
-
-  // --- Selection ---
-  /** Current selection as flat offsets. Null if editor is not focused. */
-  getSelectedRange(): { start: number; end: number } | null;
-  /** Set the selection. If end is omitted, collapses to a cursor at start. */
-  setSelectedRange(start: number, end?: number): void;
-  /** Whether an IME composition is in progress. */
-  readonly hasMarkedText: boolean;
-
-  // --- Mutation ---
-  /** Insert plain text at the current selection. */
-  insertText(text: string): void;
-  /** Insert an atom at the current selection. */
-  insertAtom(atom: AtomSegment): void;
-  /** Delete backward from the current selection (backspace). */
-  deleteBackward(): void;
-  /** Delete forward from the current selection (forward delete). */
-  deleteForward(): void;
-  /** Select all content. */
-  selectAll(): void;
-  /** Clear all content. */
-  clear(): void;
-
-  // --- Undo ---
-  readonly canUndo: boolean;
-  readonly canRedo: boolean;
-  undo(): void;
-  redo(): void;
-
-  // --- Focus ---
-  focus(): void;
-
-  // --- Testing ---
-  /** The contentEditable DOM element. For test harness event dispatch. */
-  getEditorElement(): HTMLDivElement | null;
-}
+// Re-export for consumers that import from the component module
+export type { TugTextInputDelegate } from "@/lib/tug-text-engine";
 
 /**
  * TugPromptInput props interface.
