@@ -1,0 +1,201 @@
+/* ============================================================================
+   gallery-prompt-input.css
+   ============================================================================
+   Styles for the tug-prompt-input gallery card — testing surface for the
+   TugTextEngine with tug-atom integration.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------------------
+   contentEditable input surface
+   --------------------------------------------------------------------------- */
+
+.prompt-input-editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-family: var(--tug-font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  outline: none;
+  transition: border-color 120ms ease;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-height: calc(1.5em * 8 + 12px + 2px);
+  overflow-y: hidden;
+  /* Prevent macOS from treating normal typing as IME composition */
+  -webkit-user-modify: read-write-plaintext-only;
+}
+
+.prompt-input-editor:focus {
+  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline-offset: -1px;
+}
+
+/*
+ * Re-enable native ::selection for the contentEditable.
+ * The card system suppresses ::selection globally and paints via CSS
+ * Custom Highlight API instead. But the Highlight API doesn't track
+ * contentEditable selection correctly. We restore native ::selection
+ * here and suppress the Custom Highlight to prevent double-painting.
+ */
+.prompt-input-editor ::selection,
+.prompt-input-editor::selection {
+  background-color: Highlight;
+  color: HighlightText;
+}
+.prompt-input-editor::highlight(card-selection),
+.prompt-input-editor ::highlight(card-selection) {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+.prompt-input-editor::highlight(inactive-selection),
+.prompt-input-editor ::highlight(inactive-selection) {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+/* Placeholder — uses data-empty attribute set by the engine [L06] */
+.prompt-input-editor[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Editor container (positions popup relative to editor)
+   --------------------------------------------------------------------------- */
+
+.prompt-input-container {
+  position: relative;
+}
+
+/* ---------------------------------------------------------------------------
+   @-trigger typeahead popup
+   --------------------------------------------------------------------------- */
+
+.prompt-input-typeahead-popup {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  min-width: 240px;
+  max-width: 400px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+  padding: 4px 0;
+  /* @tug-renders-on: card surface (overlay) */
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+.prompt-input-typeahead-item {
+  padding: 4px 12px;
+  font-size: 13px;
+  font-family: var(--tug-font-mono);
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-input-typeahead-item:hover {
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+}
+
+.prompt-input-typeahead-selected {
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+.prompt-input-typeahead-selected:hover {
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Diagnostics panel
+   --------------------------------------------------------------------------- */
+
+.prompt-input-diagnostics {
+  font-family: var(--tug-font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 8px 10px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  border-radius: var(--tug-radius-sm);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Toolbar and key config
+   --------------------------------------------------------------------------- */
+
+.prompt-input-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.prompt-input-key-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prompt-input-key-config-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.prompt-input-key-config-label {
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 170px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.prompt-input-desc {
+  font-size: 12px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------------------------------
+   Event log
+   --------------------------------------------------------------------------- */
+
+.prompt-input-log {
+  font-family: var(--tug-font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  min-height: 60px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  border-radius: var(--tug-radius-sm);
+}

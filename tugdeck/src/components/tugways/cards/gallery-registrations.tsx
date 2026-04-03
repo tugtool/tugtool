@@ -65,6 +65,7 @@ import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryTextModelSpike } from "./gallery-text-model-spike";
 import { GalleryAtom } from "./gallery-atom";
+import { GalleryPromptInput } from "./gallery-prompt-input";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -693,6 +694,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-atom",
     contentFactory: (_cardId) => <GalleryAtom />,
     defaultMeta: { title: "TugAtom", icon: "AtSign", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-prompt-input ----
+  // T3.2 TugTextEngine + tug-atom integration: editor, diagnostics,
+  // key config, typeahead, event log. Testing surface for the ported engine.
+  registerCard({
+    componentId: "gallery-prompt-input",
+    contentFactory: (_cardId) => <GalleryPromptInput />,
+    defaultMeta: { title: "Prompt Input", icon: "TextCursorInput", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
