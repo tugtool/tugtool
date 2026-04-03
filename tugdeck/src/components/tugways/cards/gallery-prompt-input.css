@@ -1,77 +1,12 @@
 /* ============================================================================
    gallery-prompt-input.css
    ============================================================================
-   Styles for the tug-prompt-input gallery card — testing surface for the
-   TugTextEngine with tug-atom integration.
+   Gallery-specific layout for the tug-prompt-input testing surface.
+   Editor surface styles are in tug-prompt-input.css (the component).
    ========================================================================= */
 
 /* ---------------------------------------------------------------------------
-   contentEditable input surface
-   --------------------------------------------------------------------------- */
-
-.prompt-input-editor {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 10px;
-  font-family: var(--tug-font-sans);
-  font-size: 14px;
-  line-height: 1.5;
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-  color: var(--tug7-element-global-text-normal-default-rest);
-  background-color: var(--tug7-surface-global-primary-normal-control-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
-  outline: none;
-  transition: border-color 120ms ease;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  max-height: calc(1.5em * 8 + 12px + 2px);
-  overflow-y: hidden;
-  /* Prevent macOS from treating normal typing as IME composition */
-  -webkit-user-modify: read-write-plaintext-only;
-}
-
-.prompt-input-editor:focus {
-  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
-  outline-offset: -1px;
-}
-
-/*
- * Re-enable native ::selection for the contentEditable.
- * The card system suppresses ::selection globally and paints via CSS
- * Custom Highlight API instead. But the Highlight API doesn't track
- * contentEditable selection correctly. We restore native ::selection
- * here and suppress the Custom Highlight to prevent double-painting.
- */
-.prompt-input-editor ::selection,
-.prompt-input-editor::selection {
-  background-color: Highlight;
-  color: HighlightText;
-}
-.prompt-input-editor::highlight(card-selection),
-.prompt-input-editor ::highlight(card-selection) {
-  background-color: transparent !important;
-  color: inherit !important;
-}
-.prompt-input-editor::highlight(inactive-selection),
-.prompt-input-editor ::highlight(inactive-selection) {
-  background-color: transparent !important;
-  color: inherit !important;
-}
-
-/* Placeholder — uses data-empty attribute set by the engine [L06] */
-.prompt-input-editor[data-empty="true"]::before {
-  content: attr(data-placeholder);
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  pointer-events: none;
-}
-
-/* ---------------------------------------------------------------------------
-   Editor container (positions popup relative to editor)
+   Editor container (positions typeahead popup relative to editor)
    --------------------------------------------------------------------------- */
 
 .prompt-input-container {

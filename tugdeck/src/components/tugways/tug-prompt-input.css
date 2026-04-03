@@ -1,0 +1,116 @@
+/* ============================================================================
+   tug-prompt-input.css
+   ============================================================================
+   Rich text input with inline atom support. Wraps a contentEditable div
+   managed by TugTextEngine.
+   ========================================================================= */
+
+/* @tug-pairings {
+ * --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-primary-normal-control-rest | content
+ * --tug7-element-global-border-normal-default-rest | --tug7-surface-global-primary-normal-control-rest | informational
+ * --tug7-element-global-fill-normal-accentCool-rest| --tug7-surface-global-primary-normal-control-rest | informational
+ * --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-control-rest | informational
+ * } */
+
+/**
+ * @tug-pairings
+ * | Element                                            | Surface                                              | Role          | Context                                         |
+ * |----------------------------------------------------|------------------------------------------------------|---------------|-------------------------------------------------|
+ * | --tug7-element-global-text-normal-default-rest     | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-input-editor (color)                |
+ * | --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-input-editor (border-color)          |
+ * | --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-input-editor:focus (border + outline)|
+ * | --tug7-element-global-text-normal-muted-rest       | --tug7-surface-global-primary-normal-control-rest    | informational | placeholder (color)                              |
+ */
+
+/* ---------------------------------------------------------------------------
+   Root container
+   --------------------------------------------------------------------------- */
+
+.tug-prompt-input {
+  position: relative;
+  width: 100%;
+}
+
+/* ---------------------------------------------------------------------------
+   contentEditable editor surface — rest state
+   --------------------------------------------------------------------------- */
+
+.tug-prompt-input-editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-family: var(--tug-font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  outline: none;
+  transition: border-color 120ms ease;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  overflow-y: hidden;
+  /* Prevent macOS from treating normal typing as IME composition */
+  -webkit-user-modify: read-write-plaintext-only;
+}
+
+/* ---------------------------------------------------------------------------
+   State: focus
+   --------------------------------------------------------------------------- */
+
+.tug-prompt-input-editor:focus {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline-offset: -1px;
+}
+
+/* ---------------------------------------------------------------------------
+   State: disabled
+   --------------------------------------------------------------------------- */
+
+.tug-prompt-input-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Selection overrides
+   Re-enable native ::selection for the contentEditable. The card system
+   suppresses ::selection globally and paints via CSS Custom Highlight API.
+   The Highlight API doesn't track contentEditable selection correctly.
+   We restore native ::selection and suppress the Custom Highlight.
+   --------------------------------------------------------------------------- */
+
+.tug-prompt-input-editor ::selection,
+.tug-prompt-input-editor::selection {
+  background-color: Highlight;
+  color: HighlightText;
+}
+
+.tug-prompt-input-editor::highlight(card-selection),
+.tug-prompt-input-editor ::highlight(card-selection) {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+.tug-prompt-input-editor::highlight(inactive-selection),
+.tug-prompt-input-editor ::highlight(inactive-selection) {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Placeholder — data-empty attribute driven by engine [L06]
+   --------------------------------------------------------------------------- */
+
+.tug-prompt-input-editor[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  pointer-events: none;
+}

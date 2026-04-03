@@ -1,34 +1,27 @@
 /**
- * gallery-prompt-input.tsx -- TugTextEngine + tug-atom gallery card.
+ * gallery-prompt-input.tsx -- TugPromptInput gallery card.
  *
- * Testing surface for the ported TugTextEngine with tug-atom integration.
- * Mirrors the spike's testing UI (editor, diagnostics, key config, event
- * log, insert atom, clear) but uses the real engine from lib/tug-text-engine
- * and tug-atom's createAtomDOM for atom rendering.
+ * Testing surface for the tug-prompt-input component. Exercises the
+ * component with diagnostics, key configuration, typeahead popup,
+ * and event logging.
  *
  * Laws of Tug compliance:
- *   [L01] One root.render() at mount — engine runs in DOM zone after that
- *   [L06] All text/atom rendering via direct DOM manipulation, no React state
- *   [L07] Engine is a stable ref; handlers access current state via `this`
- *   [L22] Engine is the store; DOM updates happen directly, no React cycle
+ *   [L01] One root.render() at mount — component manages engine internally
+ *   [L06] Diagnostics and log are direct DOM writes, no React state
  */
 
 import React, { useRef, useLayoutEffect, useCallback, useState } from "react";
+import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
+import type { TugPromptInputHandle } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import { TugTextEngine } from "@/lib/tug-text-engine";
 import type { TextSegment, AtomSegment, InputAction, CompletionItem } from "@/lib/tug-text-engine";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
 // Constants
 // ===================================================================
-
-const MAX_ROWS = 8;
-const LINE_HEIGHT = 21;
-const PADDING_Y = 14;
-const MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + PADDING_Y;
 
 const SAMPLE_ATOMS: AtomSegment[] = [
   { kind: "atom", type: "file", label: "src/main.ts", value: "/project/src/main.ts" },
@@ -44,7 +37,6 @@ const TYPEAHEAD_FILES = [
   "README.md", "package.json", "tsconfig.json",
 ];
 
-/** Fake completion provider for gallery testing. */
 function galleryCompletionProvider(query: string): CompletionItem[] {
   const q = query.toLowerCase();
   const files = q.length === 0
@@ -56,7 +48,6 @@ function galleryCompletionProvider(query: string): CompletionItem[] {
   }));
 }
 
-/** Fake drop handler for gallery testing. */
 function galleryDropHandler(files: FileList): AtomSegment[] {
   const atoms: AtomSegment[] = [];
   for (let i = 0; i < files.length; i++) {
@@ -77,18 +68,17 @@ const ENTER_CHOICES: TugChoiceItem[] = [
 ];
 
 // ===================================================================
-// PromptInputEditor — React wrapper [L01]
+// Gallery component
 // ===================================================================
 
-function PromptInputEditor() {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const engineRef = useRef<TugTextEngine | null>(null);
+export function GalleryPromptInput() {
+  const inputRef = useRef<TugPromptInputHandle>(null);
   const diagRef = useRef<HTMLPreElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const nextAtomIdx = useRef(0);
-  const [returnAction, setReturnAction] = useState<string>("submit");
-  const [enterAction, setEnterAction] = useState<string>("submit");
+  const [returnAction, setReturnAction] = useState<InputAction>("submit");
+  const [enterAction, setEnterAction] = useState<InputAction>("submit");
 
   // Log — direct DOM write [L06]
   const appendLog = useCallback((msg: string) => {
@@ -103,7 +93,7 @@ function PromptInputEditor() {
 
   // Diagnostics — direct DOM write [L06]
   const updateDiagnostics = useCallback(() => {
-    const engine = engineRef.current;
+    const engine = inputRef.current?.getEngine();
     const el = diagRef.current;
     if (!engine || !el) return;
 
@@ -130,99 +120,80 @@ function PromptInputEditor() {
     ].join("\n");
   }, []);
 
-  // Mount engine once [L01]
+  // Listen for selection changes to update diagnostics
   useLayoutEffect(() => {
-    const el = editorRef.current;
-    if (!el || engineRef.current) return;
-
-    const engine = new TugTextEngine(el);
-    engine.maxHeight = MAX_HEIGHT;
-    engine.completionProvider = galleryCompletionProvider;
-    engine.dropHandler = galleryDropHandler;
-    engine.onChange = updateDiagnostics;
-    engine.onLog = appendLog;
-    engine.onTypeaheadChange = (active, filtered, selectedIndex) => {
-      const popup = popupRef.current;
-      if (!popup) return;
-      if (!active || filtered.length === 0) {
-        popup.style.display = "none";
-        return;
-      }
-      popup.style.display = "block";
-      popup.innerHTML = "";
-      filtered.forEach((item, i) => {
-        const div = document.createElement("div");
-        div.className = "prompt-input-typeahead-item" +
-          (i === selectedIndex ? " prompt-input-typeahead-selected" : "");
-        div.textContent = item.label;
-        popup.appendChild(div);
-      });
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount > 0) {
-        const range = sel.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        const editorRect = el.getBoundingClientRect();
-        popup.style.left = `${rect.left - editorRect.left}px`;
-        popup.style.bottom = `${editorRect.bottom - rect.top + 4}px`;
-      }
-    };
-    engine.onSubmit = () => {
-      const text = engine.getText().trim();
-      const atoms = engine.getAtoms().map(a => a.label);
-      appendLog(`submit: "${text}" atoms=[${atoms.join(", ")}]`);
-      engine.clear();
-    };
-    engineRef.current = engine;
-
     const onSelChange = () => {
-      if (el.contains(document.activeElement)) updateDiagnostics();
+      const engine = inputRef.current?.getEngine();
+      if (engine && engine.root.contains(document.activeElement)) {
+        updateDiagnostics();
+      }
     };
     document.addEventListener("selectionchange", onSelChange);
+    return () => document.removeEventListener("selectionchange", onSelChange);
+  }, [updateDiagnostics]);
 
+  const handleSubmit = useCallback(() => {
+    const handle = inputRef.current;
+    if (!handle) return;
+    const text = handle.getText().trim();
+    const atoms = handle.getAtoms().map(a => a.label);
+    appendLog(`submit: "${text}" atoms=[${atoms.join(", ")}]`);
+    handle.clear();
+  }, [appendLog]);
+
+  const handleChange = useCallback(() => {
     updateDiagnostics();
-    return () => {
-      document.removeEventListener("selectionchange", onSelChange);
-      engine.teardown();
-      engineRef.current = null;
-    };
-  }, [updateDiagnostics, appendLog]);
+  }, [updateDiagnostics]);
 
-  // Sync key config to engine [L07]
-  useLayoutEffect(() => {
-    if (engineRef.current) {
-      engineRef.current.returnAction = returnAction as InputAction;
+  const handleTypeaheadChange = useCallback((
+    active: boolean, filtered: CompletionItem[], selectedIndex: number,
+  ) => {
+    const popup = popupRef.current;
+    const engine = inputRef.current?.getEngine();
+    if (!popup || !engine) return;
+    if (!active || filtered.length === 0) {
+      popup.style.display = "none";
+      return;
     }
-  }, [returnAction]);
-
-  useLayoutEffect(() => {
-    if (engineRef.current) {
-      engineRef.current.numpadEnterAction = enterAction as InputAction;
+    popup.style.display = "block";
+    popup.innerHTML = "";
+    filtered.forEach((item, i) => {
+      const div = document.createElement("div");
+      div.className = "prompt-input-typeahead-item" +
+        (i === selectedIndex ? " prompt-input-typeahead-selected" : "");
+      div.textContent = item.label;
+      popup.appendChild(div);
+    });
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const editorRect = engine.root.getBoundingClientRect();
+      popup.style.left = `${rect.left - editorRect.left}px`;
+      popup.style.bottom = `${editorRect.bottom - rect.top + 4}px`;
     }
-  }, [enterAction]);
+  }, []);
 
   const handleInsertAtom = useCallback(() => {
-    const engine = engineRef.current;
-    if (!engine) return;
+    const handle = inputRef.current;
+    if (!handle) return;
     const atom = SAMPLE_ATOMS[nextAtomIdx.current % SAMPLE_ATOMS.length];
     nextAtomIdx.current++;
-    engine.root.focus();
-    engine.insertAtom(atom);
+    handle.insertAtom(atom);
   }, []);
 
   const handleClear = useCallback(() => {
-    const engine = engineRef.current;
-    if (!engine) return;
-    engine.root.focus();
-    engine.clear();
+    inputRef.current?.clear();
+    inputRef.current?.focus();
   }, []);
 
   const handleReturnAction = useCallback((value: string) => {
-    setReturnAction(value);
+    setReturnAction(value as InputAction);
     appendLog(`return: ${value}, shift+return: ${value === "submit" ? "newline" : "submit"}`);
   }, [appendLog]);
 
   const handleEnterAction = useCallback((value: string) => {
-    setEnterAction(value);
+    setEnterAction(value as InputAction);
     appendLog(`numpad enter: ${value}, shift+enter: ${value === "submit" ? "newline" : "submit"}`);
   }, [appendLog]);
 
@@ -236,20 +207,18 @@ function PromptInputEditor() {
           <TugPushButton size="sm" emphasis="outlined" onClick={handleClear}>Clear</TugPushButton>
         </div>
         <div className="prompt-input-container">
-          <div
-            ref={editorRef}
-            className="prompt-input-editor"
-            contentEditable
-            role="textbox"
-            aria-multiline="true"
-            aria-label="Prompt input editor"
-            data-placeholder="Type here... @ for file completion, drag files, test IME, Return vs Enter"
-            data-empty="true"
-            data-td-select="custom"
-            spellCheck={false}
-            autoCorrect="off"
-            autoCapitalize="off"
-            suppressContentEditableWarning
+          <TugPromptInput
+            ref={inputRef}
+            placeholder="Type here... @ for file completion, drag files, test IME, Return vs Enter"
+            maxRows={8}
+            returnAction={returnAction}
+            numpadEnterAction={enterAction}
+            onSubmit={handleSubmit}
+            onChange={handleChange}
+            onLog={appendLog}
+            completionProvider={galleryCompletionProvider}
+            onTypeaheadChange={handleTypeaheadChange}
+            dropHandler={galleryDropHandler}
           />
           <div ref={popupRef} className="prompt-input-typeahead-popup" />
         </div>
@@ -284,12 +253,4 @@ function PromptInputEditor() {
 
     </div>
   );
-}
-
-// ===================================================================
-// Export
-// ===================================================================
-
-export function GalleryPromptInput() {
-  return <PromptInputEditor />;
 }
