@@ -133,11 +133,8 @@ export interface TugTextEditingState {
   markedText: { start: number; end: number } | null;
 }
 
-/** Capture the current editing state from a delegate. */
+/** Capture the current editing state from a delegate (reconstructs segments from getText/getAtoms). */
 export function captureEditingState(d: TugTextInputDelegate): TugTextEditingState {
-  // We need segments from the engine — access via getText/getAtoms is lossy.
-  // For now, reconstruct from getText() + getAtoms() by parsing U+FFFC positions.
-  // TODO: once the engine exposes segments directly, use that.
   const text = d.getText();
   const atoms = d.getAtoms();
   const segments: Segment[] = [];
@@ -764,6 +761,24 @@ export class TugTextEngine {
     this.restoreSelection(0);
     this.onChange?.();
     this.onLog?.("cleared");
+  }
+
+  /** Capture the current editing state as a serializable snapshot. */
+  captureState(): TugTextEditingState {
+    return {
+      segments: cloneSegments(this.segments),
+      selection: this.getSelectedRange(),
+      markedText: this.hasMarkedText ? this.getSelectedRange() : null,
+    };
+  }
+
+  /** Restore editing state from a snapshot. Used for persistence [L23]. */
+  restoreState(state: TugTextEditingState): void {
+    this.segments = normalizeSegments(cloneSegments(state.segments));
+    this.reconcile();
+    if (state.selection) {
+      this.setSelectedRange(state.selection.start, state.selection.end);
+    }
   }
 
   // -----------------------------------------------------------------

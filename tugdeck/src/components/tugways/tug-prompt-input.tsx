@@ -8,7 +8,8 @@
  * Laws: [L01] single mount, [L03] useLayoutEffect for registrations,
  *        [L06] appearance via CSS, [L07] stable refs,
  *        [L15] token-driven states, [L16] pairings declared,
- *        [L19] component authoring guide, [L22] direct DOM updates
+ *        [L19] component authoring guide, [L22] direct DOM updates,
+ *        [L23] editing state persists across reload/quit via tugbank
  */
 
 import "./tug-prompt-input.css";
