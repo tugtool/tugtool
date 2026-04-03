@@ -1,8 +1,7 @@
 /* ============================================================================
    gallery-text-model-spike.css
    ============================================================================
-   Styles for the T3.0 Text Model Spike gallery card.
-   Approach B: Thin contentEditable with inline atom pills.
+   Styles for the T3.0 Text Model Spike — Engine-based contentEditable.
    ========================================================================= */
 
 /**
@@ -15,12 +14,11 @@
  * | --tug7-element-global-fill-normal-accentCool-rest| --tug7-surface-global-primary-normal-default-rest | informational | .spike-input:focus (outline)         |
  * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-secondary-normal-default-rest | content    | .spike-atom (color)                  |
  * | --tug7-element-global-border-normal-default-rest | --tug7-surface-global-secondary-normal-default-rest | informational | .spike-atom (border)               |
- * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-primary-normal-control-rest | content      | .spike-typeahead-item (color)       |
- * | --tug7-element-global-fill-normal-accentCool-rest| --tug7-surface-global-primary-normal-control-rest | informational | .spike-typeahead-selected (bg)      |
+ * | --tug7-element-global-fill-normal-accentCool-rest| --tug7-surface-global-secondary-normal-default-rest | informational | .spike-atom-selected (bg)          |
  */
 
 /* ---------------------------------------------------------------------------
-   Shared spike layout
+   Layout helpers
    --------------------------------------------------------------------------- */
 
 .spike-toolbar {
@@ -56,15 +54,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Editor container (positions popup relative to editor)
-   --------------------------------------------------------------------------- */
-
-.spike-editor-container {
-  position: relative;
-}
-
-/* ---------------------------------------------------------------------------
-   contentEditable input
+   contentEditable input surface
    --------------------------------------------------------------------------- */
 
 .spike-input {
@@ -99,7 +89,8 @@
   overflow-y: hidden;
 }
 
-.spike-contenteditable:empty::before {
+/* Placeholder — uses data-empty attribute set by the engine [L06] */
+.spike-contenteditable[data-empty="true"]::before {
   content: attr(data-placeholder);
   /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -125,6 +116,7 @@
   border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-radius: 10px;
   user-select: none;
+  -webkit-user-select: none;
   white-space: nowrap;
   vertical-align: baseline;
   cursor: default;
@@ -135,60 +127,13 @@
   opacity: 0.7;
 }
 
-/* Two-step backspace: first press highlights the atom, second deletes */
+/* Two-step backspace: first press highlights atom, second deletes */
+/* @tug-renders-on: --tug7-surface-global-secondary-normal-default-rest */
 .spike-atom-selected {
   outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
   outline-offset: 1px;
   background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
   color: var(--tug7-surface-global-primary-normal-default-rest);
-}
-
-/* ---------------------------------------------------------------------------
-   Typeahead popup
-   --------------------------------------------------------------------------- */
-
-.spike-typeahead-popup {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  min-width: 240px;
-  max-width: 400px;
-  max-height: 200px;
-  overflow-y: auto;
-  margin-bottom: 4px;
-  padding: 4px 0;
-  /* @tug-renders-on: card surface (overlay) */
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 100;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.spike-typeahead-item {
-  padding: 4px 12px;
-  font-size: 13px;
-  font-family: var(--tug-font-mono);
-  color: var(--tug7-element-global-text-normal-default-rest);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.spike-typeahead-item:hover {
-  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
-}
-
-.spike-typeahead-selected {
-  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  color: var(--tug7-surface-global-primary-normal-default-rest);
-}
-
-.spike-typeahead-selected:hover {
-  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
 }
 
 /* ---------------------------------------------------------------------------
