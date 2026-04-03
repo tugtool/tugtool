@@ -1165,36 +1165,45 @@ The fixes have dependencies. Organized into dashes:
 
 #### T3.1: tug-atom Component {#t3-atom}
 
-**Goal:** Build the tug-atom component — the inline token pill. Two rendering paths: React for standalone/gallery use, DOM for engine reconciler.
+**Goal:** Build the tug-atom component — the inline token. Two rendering paths: React for standalone/gallery use, DOM for engine reconciler.
 
 **Prerequisites:** T3.0 (architecture decision — atoms are `contentEditable="false"` spans built by the engine reconciler).
+
+**Governing documents:**
+- [Component Authoring Guide](../tuglaws/component-authoring.md) — file structure, TSX/CSS conventions, `@tug-pairings`, `@tug-renders-on`, checklist
+- [Token Naming](../tuglaws/token-naming.md) — seven-slot `--tug7-` convention for atom-specific theme tokens
+- Laws: [L06] appearance via CSS, [L15] token-driven states, [L16] pairings declared, [L19] component authoring guide
 
 **Work:**
 
 Dual rendering paths:
 - **React path**: `<TugAtom type="file" label="src/main.ts" />` — standalone component, used in gallery card and anywhere React owns the DOM (e.g., atom tray, suggestion list)
-- **DOM path**: `TugAtom.createDOM(seg: AtomSegment)` — static method that builds identical DOM imperatively, used by TugTextEngine's reconciler inside contentEditable
+- **DOM path**: `createAtomDOM(seg: AtomSegment)` — exported function that builds identical DOM imperatively, used by TugTextEngine's reconciler inside contentEditable
 - Both paths produce the same DOM structure, same CSS classes (`tug-atom`), same `data-slot`, same accessibility attributes. The CSS is shared.
 
 Component features:
-- Pill renders: icon + label + optional dismiss button
-- Atom types: `file` (path reference), `command` (slash command), `doc` (documentation link), `image` (image attachment)
-- Visual design: rounded pill, tone-driven background, truncated label with tooltip for full path
+- Compact rectangular token (Apple Mail / Cursor style, not a rounded pill): icon + label
+- Atom type is an open string — known types (file, command, doc, image, link) get specific Lucide icons; unknown types get a default. The set grows over time.
+- Visual design: squared-off rectangle (`border-radius: 3px`), subtle tinted background with outline border, slightly reduced font size via `--tug-atom-font-scale` CSS custom property (default `0.85em`), baseline-aligned with surrounding text
 - Atom data model: `AtomSegment { kind: "atom", type, label, value }` — same type used by the text engine
-- Hover: tooltip shows full `value` (e.g., full file path when label is truncated)
-- Dismiss: click X button (React path) or engine's two-step backspace/click-select (DOM path)
+- Full state set: rest, hover, selected (two-step delete), highlighted (search/typeahead), disabled
+- Hover: tooltip shows full `value`; for dismissible atoms, type icon flips to X for mouse-driven deletion
+- Dismiss: icon-to-X on hover (React path) or engine's two-step backspace/click-select (DOM path)
+- Label formatting: `formatAtomLabel(value, mode)` utility — `"filename"` / `"relative"` / `"absolute"` — caller decides, component just renders
 - Accessibility: `role="img"`, `aria-label="${type}: ${label}"`, keyboard-selectable (engine handles navigation)
-- Gallery card for isolated testing of both rendering paths
-- Follows L19 (component authoring), L15 (token-driven states), L16 (rendering surface annotations)
+- Theme tokens: `--tug7-*-atom-*` tokens defined in both theme files (brio.css, harmony.css) per seven-slot convention
+- Gallery card for isolated testing of both rendering paths, click-to-select, dismissal, label modes
 
 **Exit criteria:**
 - `<TugAtom />` renders correctly in gallery card (React path)
-- `TugAtom.createDOM()` produces identical DOM (verified by snapshot comparison)
-- All atom types visually distinct with appropriate icons
+- `createAtomDOM()` produces identical DOM (verified visually in gallery)
+- All known atom types visually distinct with appropriate icons; unknown types get default icon
 - Tooltip shows full value on hover
-- Token-compliant styling
-- Dismiss button works in React path
+- All states render correctly: rest, hover, selected, highlighted, disabled
+- Dismiss icon-to-X flip works on hover in React path
+- Token-compliant styling: `@tug-pairings` (compact + expanded), `@tug-renders-on` on all foreground rules
 - Accessibility: VoiceOver announces atom label
+- Conforms to component authoring guide checklist
 
 ---
 
@@ -1203,6 +1212,11 @@ Component features:
 **Goal:** The rich input field. A proper tugways component wrapping the TugTextEngine with atom support, prefix detection, and completions.
 
 **Prerequisites:** T3.0 (architecture validated), T3.1 (tug-atom with DOM rendering path).
+
+**Governing documents:**
+- [Component Authoring Guide](../tuglaws/component-authoring.md) — file structure, TSX/CSS conventions, `@tug-pairings`, `@tug-renders-on`, input value management, checklist
+- [Token Naming](../tuglaws/token-naming.md) — seven-slot `--tug7-` convention for prompt-input theme tokens
+- Laws: [L01] single mount, [L06] appearance via CSS, [L07] stable refs, [L15] token-driven states, [L16] pairings declared, [L19] component authoring guide
 
 **Work:**
 
@@ -1253,6 +1267,8 @@ History:
 - History navigation works
 - IME composition (Japanese, Chinese) works correctly
 - Undo works (including undo of atom insertion)
+- Token-compliant styling: `@tug-pairings` (compact + expanded), `@tug-renders-on` on all foreground rules
+- Conforms to component authoring guide checklist
 - Gallery card for isolated testing
 
 ---
@@ -1293,6 +1309,11 @@ PromptHistoryStore:
 
 **Prerequisites:** T3.2 (tug-prompt-input), T3.3 (stores).
 
+**Governing documents:**
+- [Component Authoring Guide](../tuglaws/component-authoring.md) — compound composition pattern, token sovereignty [L20], `@tug-pairings`, checklist
+- [Token Naming](../tuglaws/token-naming.md) — seven-slot `--tug7-` convention for prompt-entry theme tokens
+- Laws: [L06] appearance via CSS, [L11] controls emit actions, [L15] token-driven states, [L16] pairings declared, [L19] component authoring guide, [L20] token sovereignty
+
 **Work:**
 
 Composition:
@@ -1318,6 +1339,8 @@ Turn state:
 - Send disabled during active Claude Code turn
 - Interrupt (stop) works during active turn
 - End-to-end: type `> hello` → message arrives at Claude Code via CODE_INPUT
+- Token-compliant styling: own tokens scoped to `prompt` component; no descendant restyling of composed children [L20]
+- Conforms to component authoring guide checklist
 - Gallery card + live integration test
 
 ---
@@ -1327,6 +1350,10 @@ Turn state:
 **Goal:** Wire tug-prompt-entry into the live Tide UI and polish the end-to-end experience.
 
 **Prerequisites:** T3.4.
+
+**Governing documents:**
+- [Component Authoring Guide](../tuglaws/component-authoring.md) — accessibility audit criteria, testing requirements
+- [Token Naming](../tuglaws/token-naming.md) — verify all T3 components use properly-scoped `--tug7-` tokens
 
 **Work:**
 - Mount tug-prompt-entry in the Tide card (replacing any existing input stub)
@@ -1349,6 +1376,9 @@ Turn state:
 - CJK input end-to-end verified
 - Undo works including atom insertion/deletion
 - VoiceOver reads atoms and route indicator correctly
+- All T3 components pass component authoring guide checklist
+- All T3 tokens conform to seven-slot naming convention
+- `bun run audit:tokens lint` exits 0
 
 ---
 

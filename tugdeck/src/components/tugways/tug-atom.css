@@ -6,44 +6,58 @@
    Shared by both React and DOM rendering paths.
    ========================================================================= */
 
+/* @tug-pairings {
+ * --tug7-element-atom-text-normal-default-rest        | --tug7-surface-atom-primary-normal-default-rest     | content
+ * --tug7-element-atom-border-normal-default-rest      | --tug7-surface-atom-primary-normal-default-rest     | informational
+ * --tug7-element-atom-icon-normal-default-rest        | --tug7-surface-atom-primary-normal-default-rest     | informational
+ * --tug7-element-atom-border-normal-default-hover     | --tug7-surface-atom-primary-normal-default-hover    | informational
+ * --tug7-element-atom-text-normal-default-rest        | --tug7-surface-atom-primary-normal-default-hover    | content
+ * --tug7-element-atom-text-normal-selected-rest       | --tug7-surface-atom-primary-normal-selected-rest    | content
+ * --tug7-element-atom-icon-normal-selected-rest       | --tug7-surface-atom-primary-normal-selected-rest    | content
+ * --tug7-element-atom-outline-normal-highlighted-rest | --tug7-surface-atom-primary-normal-default-rest     | informational
+ * } */
+
 /**
  * @tug-pairings
- * | Element                                              | Surface                                                | Role          | Context                                |
- * |------------------------------------------------------|--------------------------------------------------------|---------------|----------------------------------------|
- * | --tug7-element-global-text-normal-default-rest        | --tug7-surface-global-secondary-normal-default-rest     | content       | .tug-atom (color)                      |
- * | --tug7-element-global-border-normal-default-rest      | --tug7-surface-global-secondary-normal-default-rest     | informational | .tug-atom (border — hover only)        |
- * | --tug7-element-global-text-normal-muted-rest          | --tug7-surface-global-secondary-normal-default-rest     | informational | .tug-atom-icon (color)                 |
- * | --tug7-element-global-text-normal-default-rest        | --tug7-element-global-fill-normal-accentCool-rest       | content       | .tug-atom-selected (color)             |
- * | --tug7-element-global-text-normal-default-rest        | --tug7-surface-global-secondary-normal-default-rest     | content       | .tug-atom-highlighted (color)          |
- * | --tug7-element-global-text-normal-muted-rest          | --tug7-surface-global-secondary-normal-default-rest     | informational | .tug-atom-disabled (color)             |
+ * | Element                                              | Surface                                              | Role          | Context                                    |
+ * |------------------------------------------------------|------------------------------------------------------|---------------|--------------------------------------------|
+ * | --tug7-element-atom-text-normal-default-rest         | --tug7-surface-atom-primary-normal-default-rest      | content       | .tug-atom (color)                          |
+ * | --tug7-element-atom-border-normal-default-rest       | --tug7-surface-atom-primary-normal-default-rest      | informational | .tug-atom (border-color)                   |
+ * | --tug7-element-atom-icon-normal-default-rest         | --tug7-surface-atom-primary-normal-default-rest      | informational | .tug-atom-icon svg (color)                 |
+ * | --tug7-element-atom-border-normal-default-hover      | --tug7-surface-atom-primary-normal-default-hover     | informational | .tug-atom:hover (border-color)             |
+ * | --tug7-element-atom-text-normal-default-rest         | --tug7-surface-atom-primary-normal-default-hover     | content       | .tug-atom:hover (color, inherited)         |
+ * | --tug7-element-atom-text-normal-selected-rest        | --tug7-surface-atom-primary-normal-selected-rest     | content       | .tug-atom-selected (color)                 |
+ * | --tug7-element-atom-icon-normal-selected-rest        | --tug7-surface-atom-primary-normal-selected-rest     | content       | .tug-atom-selected .tug-atom-icon svg (color) |
+ * | --tug7-element-atom-outline-normal-highlighted-rest  | --tug7-surface-atom-primary-normal-default-rest      | informational | .tug-atom-highlighted (outline-color)      |
  */
 
 /* ---------------------------------------------------------------------------
-   Base atom
+   Base atom — rest state
    --------------------------------------------------------------------------- */
 
 .tug-atom {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 3px;
   padding: 0 5px;
-  margin: 0 1px;
-  font-size: 0.8125em; /* 13px at 16px base, scales with surrounding text */
+  margin: 0 2px;
+  font-size: var(--tug-atom-font-scale, 0.85em);
   font-family: inherit;
-  line-height: 1.45;
+  line-height: 1.4;
   border-radius: 3px;
-  border: 1px solid transparent;
+  border: 1px solid var(--tug7-element-atom-border-normal-default-rest);
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
   white-space: nowrap;
+  /* Align the first baseline of the inline-flex box (the label text)
+     with the surrounding text baseline. */
   vertical-align: baseline;
   max-width: 240px;
   transition: background-color 80ms ease, border-color 80ms ease, color 80ms ease;
 
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest (input surface) */
-  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
-  color: var(--tug7-element-global-text-normal-default-rest);
+  background-color: var(--tug7-surface-atom-primary-normal-default-rest);
+  color: var(--tug7-element-atom-text-normal-default-rest);
 }
 
 /* ---------------------------------------------------------------------------
@@ -54,13 +68,16 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+  /* Visually center the icon on the text x-height while the label text
+     sits on the shared baseline. */
+  align-self: center;
 }
 
 .tug-atom-icon svg {
-  width: 0.875em;
-  height: 0.875em;
-  /* @tug-renders-on: --tug7-surface-global-secondary-normal-default-rest */
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  width: 1em;
+  height: 1em;
+  /* @tug-renders-on: --tug7-surface-atom-primary-normal-default-rest */
+  color: var(--tug7-element-atom-icon-normal-default-rest);
 }
 
 /* Dismiss icon is hidden by default, shown on hover */
@@ -85,8 +102,9 @@
    --------------------------------------------------------------------------- */
 
 .tug-atom:hover {
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-  border-color: var(--tug7-element-global-border-normal-default-rest);
+  background-color: var(--tug7-surface-atom-primary-normal-default-hover);
+  /* @tug-renders-on: --tug7-surface-atom-primary-normal-default-hover */
+  border-color: var(--tug7-element-atom-border-normal-default-hover);
 }
 
 /* On hover for dismissible atoms: swap type icon for dismiss icon */
@@ -99,8 +117,8 @@
 }
 
 .tug-atom-dismiss-icon:hover svg {
-  /* @tug-renders-on: --tug7-surface-global-secondary-normal-default-rest */
-  color: var(--tug7-element-global-text-normal-default-rest);
+  /* @tug-renders-on: --tug7-surface-atom-primary-normal-default-hover */
+  color: var(--tug7-element-atom-text-normal-default-rest);
 }
 
 /* ---------------------------------------------------------------------------
@@ -108,14 +126,14 @@
    --------------------------------------------------------------------------- */
 
 .tug-atom-selected {
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  color: var(--tug7-surface-global-primary-normal-default-rest);
-  border-color: transparent;
+  background-color: var(--tug7-surface-atom-primary-normal-selected-rest);
+  /* @tug-renders-on: --tug7-surface-atom-primary-normal-selected-rest */
+  color: var(--tug7-element-atom-text-normal-selected-rest);
 }
 
 .tug-atom-selected .tug-atom-icon svg {
-  color: var(--tug7-surface-global-primary-normal-default-rest);
+  /* @tug-renders-on: --tug7-surface-atom-primary-normal-selected-rest */
+  color: var(--tug7-element-atom-icon-normal-selected-rest);
 }
 
 /* ---------------------------------------------------------------------------
@@ -123,8 +141,8 @@
    --------------------------------------------------------------------------- */
 
 .tug-atom-highlighted {
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  /* @tug-renders-on: --tug7-surface-atom-primary-normal-default-rest */
+  outline: 2px solid var(--tug7-element-atom-outline-normal-highlighted-rest);
   outline-offset: -1px;
 }
 
@@ -138,9 +156,9 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Selected + hover: no border change when already selected
+   Selected + hover: hold selected appearance
    --------------------------------------------------------------------------- */
 
 .tug-atom-selected:hover {
-  border-color: transparent;
+  background-color: var(--tug7-surface-atom-primary-normal-selected-rest);
 }

@@ -2,8 +2,8 @@
  * gallery-atom.tsx -- TugAtom demo tab for the Component Gallery.
  *
  * Shows TugAtom in all states (rest, hover, selected, highlighted, disabled),
- * all known types, dismissible mode with icon-to-X flip, the DOM rendering
- * path for engine integration, and label formatting options.
+ * all known types, dismissible mode with icon-to-X flip, click-to-select,
+ * the DOM rendering path for engine integration, and label formatting options.
  *
  * @module components/tugways/cards/gallery-atom
  */
@@ -15,6 +15,7 @@ import {
   formatAtomLabel,
 } from "@/components/tugways/tug-atom";
 import type { AtomSegment, AtomLabelMode } from "@/components/tugways/tug-atom";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import "./gallery-atom.css";
@@ -64,9 +65,19 @@ export function GalleryAtom() {
   const [labelMode, setLabelMode] = useState<AtomLabelMode>("filename");
   const domContainerRef = useRef<HTMLDivElement>(null);
   const [dismissLog, setDismissLog] = useState<string[]>([]);
+  // Track which atom is selected by value (at most one at a time)
+  const [selectedValue, setSelectedValue] = useState<string | null>(null);
 
   const handleDismiss = useCallback((label: string) => {
     setDismissLog(prev => [`Dismissed: ${label}`, ...prev].slice(0, 5));
+  }, []);
+
+  const handleSelect = useCallback((value: string) => {
+    setSelectedValue(value);
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedValue(null);
   }, []);
 
   // Render DOM-path atoms into a container via useLayoutEffect [L01, L06]
@@ -100,7 +111,7 @@ export function GalleryAtom() {
 
       <div className="cg-divider" />
 
-      {/* ---- States ---- */}
+      {/* ---- States: static examples + interactive click-to-select ---- */}
       <div className="cg-section">
         <div className="cg-section-title">States</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -109,7 +120,7 @@ export function GalleryAtom() {
             <TugAtom type="file" label="main.ts" value="/src/main.ts" />
           </div>
           <div>
-            <div style={descStyle}>hover — try hovering the atom above (border appears)</div>
+            <div style={descStyle}>hover — try hovering the atom above (border intensifies)</div>
           </div>
           <div>
             <div style={descStyle}>selected (two-step delete highlight)</div>
@@ -123,6 +134,37 @@ export function GalleryAtom() {
             <div style={descStyle}>disabled (unavailable reference)</div>
             <TugAtom type="file" label="deleted-file.ts" value="/src/deleted-file.ts" disabled />
           </div>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Click to select ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Click to Select</div>
+        <div style={descStyle}>Click any atom to select it. Clear button deselects.</div>
+        <div style={{ ...inlineWrapStyle, marginBottom: "8px" }}>
+          {SAMPLE_ATOMS.map((seg) => (
+            <TugAtom
+              key={seg.value}
+              type={seg.type}
+              label={seg.label}
+              value={seg.value}
+              selected={selectedValue === seg.value}
+              onClick={() => handleSelect(seg.value)}
+            />
+          ))}
+        </div>
+        <div>
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="sm"
+            disabled={selectedValue === null}
+            onClick={clearSelection}
+          >
+            Clear Selection
+          </TugPushButton>
         </div>
       </div>
 

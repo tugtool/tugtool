@@ -766,6 +766,18 @@ body {
   --tug7-surface-badge-primary-tinted-data-rest: --tug-color(teal, i: 80, t: 40, a: 40);
   --tug7-surface-badge-primary-tinted-success-rest: --tug-color(green, i: 80, t: 40, a: 40);
 
+  /* Atom — inline token for resolved references (file, command, link, etc.) */
+  --tug7-surface-atom-primary-normal-default-rest: --tug-color(blue, i: 8, t: 88, a: 20);
+  --tug7-surface-atom-primary-normal-default-hover: --tug-color(blue, i: 15, t: 82, a: 45);
+  --tug7-element-atom-text-normal-default-rest: --tug-color(indigo, i: 4, t: 18);
+  --tug7-element-atom-border-normal-default-rest: --tug-color(blue, i: 20, t: 40, a: 35);
+  --tug7-element-atom-border-normal-default-hover: --tug-color(blue, i: 30, t: 50, a: 70);
+  --tug7-element-atom-icon-normal-default-rest: --tug-color(blue, i: 30, t: 45);
+  --tug7-surface-atom-primary-normal-selected-rest: --tug-color(blue, i: 35, t: 70, a: 50);
+  --tug7-element-atom-text-normal-selected-rest: --tug-color(blue, i: 50, t: 25);
+  --tug7-element-atom-icon-normal-selected-rest: --tug-color(blue, i: 50, t: 25);
+  --tug7-element-atom-outline-normal-highlighted-rest: --tug-color(blue, i: 60, t: 50);
+
   /* Skeleton */
   --tug7-surface-skeleton-primary-normal-default-rest: --tug-color(indigo, i: 3, t: 82);
   --tug7-surface-skeleton-primary-normal-default-active: --tug-color(indigo, i: 2, t: 88);
