@@ -63,6 +63,7 @@ import { GalleryAlert } from "./gallery-alert";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
+import { GalleryTextModelSpike } from "./gallery-text-model-spike";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-sheet",         title: "TugSheet",              closable: true },
   { id: "template", componentId: "gallery-bulletin",      title: "TugBulletin",           closable: true },
   { id: "template", componentId: "gallery-markdown-view", title: "TugMarkdownView",        closable: true },
+  { id: "template", componentId: "gallery-text-model-spike", title: "Text Model Spike",  closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -667,6 +669,18 @@ export function registerGalleryCards(): void {
     componentId: "gallery-markdown-view",
     contentFactory: (_cardId) => <GalleryMarkdownView />,
     defaultMeta: { title: "TugMarkdownView", icon: "FileText", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-text-model-spike ----
+  // T3.0 Text Model Spike: three prototype approaches (textarea+overlay,
+  // contentEditable, hidden textarea+rendered div) for evaluating the text
+  // model for tug-prompt-input's mixed text+atom input surface.
+  registerCard({
+    componentId: "gallery-text-model-spike",
+    contentFactory: (_cardId) => <GalleryTextModelSpike />,
+    defaultMeta: { title: "Text Model Spike", icon: "FlaskConical", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

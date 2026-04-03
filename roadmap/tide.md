@@ -575,7 +575,7 @@ Phase T0.5: Protocol Hardening           — open FeedId, dynamic router, lag re
 
 ─── TIDE: INPUT ───────────────────────────────────────────
 Phase T3: Prefix Router + Prompt Input   — text model spike, atoms, completions, routing, history
-  T3.0: Text Model Spike                   — textarea+overlay vs contentEditable vs hybrid
+  T3.0: Text Model Spike                   — DONE — contentEditable as input surface + own document model
   T3.1: tug-atom                           — inline token pill component
   T3.2: tug-prompt-input                   — rich input with atoms, prefix detection, completions
   T3.3: Stores                             — SessionMetadataStore + PromptHistoryStore
@@ -1135,42 +1135,24 @@ The fixes have dependencies. Organized into dashes:
 
 #### T3.0: Text Model Spike {#t3-text-model-spike}
 
-**Goal:** Determine the correct implementation strategy for tug-prompt-input's mixed text+atom model. This is the load-bearing decision — everything else in T3 depends on it.
+**Status:** COMPLETE. See [t3-text-model-spike.md](t3-text-model-spike.md) for full findings.
 
-**The problem:** Atoms (inline pill elements) embedded in a text input require mixing editable text with non-editable inline elements. A native `<textarea>` is plain-text only. We need a strategy that supports atoms while preserving IME composition (CJK), undo/redo, and accessibility.
+**Goal:** Determine the correct implementation strategy for tug-prompt-input's mixed text+atom model.
 
-**Approaches to spike:**
+**Spike summary:** Tested three approaches in a Component Gallery card:
+- **Approach A (Textarea + overlay):** Non-functional. Arrow keys can't navigate past atoms — spatial correspondence between placeholder chars and rendered pills breaks with proportional fonts.
+- **Approach B (Thin contentEditable):** Best surface-level result. Japanese IME, VoiceOver, auto-resize, drag-and-drop, and paste all worked. But deep failures: spurious marked text on US keyboard (macOS/WebKit treats contentEditable as active input session), Cmd+A escapes to page, cursor enters atom interior, undo repositions atoms instead of removing them, Enter during IME composition fires submit instead of accepting text, SelectionGuard conflicts with native selection.
+- **Approach C (Hidden textarea + rendered div):** Correct architecture but needs proper implementation — no insertion point without a real document model.
 
-*Approach A — Textarea + overlay mirror:*
-Keep a real `<textarea>` for input capture (native IME, undo, accessibility). Render a visual mirror div on top that shows styled text + atom pills. Atom placeholders in the textarea (e.g., a fixed-width Unicode sentinel or marker string) map 1:1 to pill elements in the overlay. The textarea is hidden but focused; the overlay is visible but non-interactive.
-- **Pro:** Native IME, native undo, native accessibility. No contentEditable complexity.
-- **Con:** Spatial correspondence between placeholder text and overlay pills is fragile with proportional fonts. Cursor position mapping between textarea and overlay is complex. Selection highlighting must be faked in the overlay.
-- **Reference:** This is essentially the CodeMirror/Monaco architecture (hidden textarea + rendered view).
+**Decision:** Build a proper text input engine (Approach C done right), inspired by UITextInput concepts. contentEditable is used as an **input capture surface only** — not the document model. All three reference implementations (ProseMirror, CodeMirror 6, Lexical — all MIT licensed) converge on this architecture.
 
-*Approach B — Thin contentEditable:*
-Use a `contentEditable` div with `role="textbox"` and `aria-multiline="true"`. Text is plain text nodes. Atoms are inline `<span contentEditable="false">` elements. No rich formatting, no block elements — the simplest possible contentEditable surface.
-- **Pro:** Atoms live in the real DOM, cursor flows naturally around them, selection works natively.
-- **Con:** Browser undo stack breaks if we mutate DOM programmatically (atom insertion must use `document.execCommand` or careful `beforeinput` handling). IME behavior in contentEditable varies by browser. Screen readers handle inline non-editable spans inconsistently.
-- **Mitigation:** `beforeinput` events (Input Events Level 2) give us `inputType` discrimination for IME composing vs. committed input. Modern browsers (Chrome, Safari, Firefox) all support this.
-
-*Approach C — Hidden textarea + rendered div (hybrid):*
-Hidden `<textarea>` captures all keyboard input. A separate div renders the visible content (text + atoms). The textarea content is a serialized representation; the div is the visual truth. Focus is always on the textarea; clicks on the div are translated to textarea cursor positions.
-- **Pro:** Full native input handling. Complete visual freedom in the rendered div.
-- **Con:** Most complex to implement. Must maintain a bidirectional mapping between textarea offsets and rendered positions. Essentially building a mini editor.
-
-**Spike deliverables:**
-- Build a Component Gallery card ("Text Model Spike") that contains all three approach prototypes side-by-side. This runs in the real tugways environment — theme tokens, font stacks, card geometry, the actual CSS context where tug-prompt-input will live. Each prototype is a self-contained section within the card.
-- Test matrix for each approach:
-  - [ ] English typing, cursor movement, selection
-  - [ ] Atom insertion (simulate `@file` completion resolving to a pill)
-  - [ ] Backspace at atom boundary (should delete whole atom)
-  - [ ] Undo after atom insertion (should undo the atom, restoring the trigger text)
-  - [ ] IME composition: Japanese (hiragana → kanji conversion), Chinese pinyin
-  - [ ] Screen reader announcement: VoiceOver reads atom label when cursor enters it
-  - [ ] Auto-resize: input grows vertically as content wraps (1 row → maxRows)
-  - [ ] Drag-and-drop: file dragged onto input creates an atom
-- Write up findings and recommendation in `roadmap/t3-text-model-spike.md`
-- **Exit:** A chosen approach with evidence from the test matrix. This unblocks all subsequent T3 sub-phases.
+**Architecture:**
+1. **Document Model** — Array of segments: `TextSegment` (string) and `AtomSegment` (type + label + value). Source of truth. Never derived from DOM.
+2. **Input Capture** — contentEditable div as input device. DOM mutations intercepted, translated to model operations, DOM re-rendered from model. Browser never owns the document.
+3. **Selection/Cursor** — We own selection state: `{ anchor: DocPosition, focus: DocPosition }`. `DocPosition` = `{ segmentIndex, offset }`. Atoms have offset 0 (before) or 1 (after). Cursor rendered by us.
+4. **Composition (IME)** — Explicit marked text tracking: `markedRange | null`. During composition, marked text rendered with platform styling. Enter during active marked text → IME acceptance, not submit. Modeled on UITextInput's `markedTextRange` / `setMarkedText:selectedRange:`.
+5. **Undo** — We own the undo stack. Each operation recorded. Cmd+Z pops and re-renders. Browser undo stack not used.
+6. **Return vs Enter** — Distinguished via `e.code`: `"Enter"` (Return key) vs `"NumpadEnter"` (Enter key). Independently configurable actions.
 
 ---
 

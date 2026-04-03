@@ -1,0 +1,210 @@
+/* ============================================================================
+   gallery-text-model-spike.css
+   ============================================================================
+   Styles for the T3.0 Text Model Spike gallery card.
+   Approach B: Thin contentEditable with inline atom pills.
+   ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-primary-normal-default-rest | content      | .spike-input (color)                 |
+ * | --tug7-element-global-border-normal-default-rest | --tug7-surface-global-primary-normal-default-rest | informational | .spike-input (border)               |
+ * | --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-default-rest | informational | placeholder, .spike-status (color)   |
+ * | --tug7-element-global-fill-normal-accentCool-rest| --tug7-surface-global-primary-normal-default-rest | informational | .spike-input:focus (outline)         |
+ * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-secondary-normal-default-rest | content    | .spike-atom (color)                  |
+ * | --tug7-element-global-border-normal-default-rest | --tug7-surface-global-secondary-normal-default-rest | informational | .spike-atom (border)               |
+ * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-primary-normal-control-rest | content      | .spike-typeahead-item (color)       |
+ * | --tug7-element-global-fill-normal-accentCool-rest| --tug7-surface-global-primary-normal-control-rest | informational | .spike-typeahead-selected (bg)      |
+ */
+
+/* ---------------------------------------------------------------------------
+   Shared spike layout
+   --------------------------------------------------------------------------- */
+
+.spike-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.spike-approach-desc {
+  font-size: 12px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  line-height: 1.6;
+}
+
+.spike-approach-desc code {
+  font-family: var(--tug-font-mono);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.spike-status {
+  font-size: 11px;
+  font-family: var(--tug-font-mono);
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  min-height: 1.4em;
+}
+
+/* ---------------------------------------------------------------------------
+   Editor container (positions popup relative to editor)
+   --------------------------------------------------------------------------- */
+
+.spike-editor-container {
+  position: relative;
+}
+
+/* ---------------------------------------------------------------------------
+   contentEditable input
+   --------------------------------------------------------------------------- */
+
+.spike-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-family: var(--tug-font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background-color: var(--tug7-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.spike-input:focus {
+  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline-offset: -1px;
+}
+
+.spike-contenteditable {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  min-height: 32px;
+  max-height: calc(1.5em * 8 + 12px + 2px);
+  overflow-y: hidden;
+}
+
+.spike-contenteditable:empty::before {
+  content: attr(data-placeholder);
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Atom pill
+   --------------------------------------------------------------------------- */
+
+.spike-atom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  margin: 0 1px;
+  font-size: 12px;
+  font-family: var(--tug-font-sans);
+  line-height: 1.5;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: 10px;
+  user-select: none;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: default;
+}
+
+.spike-atom-icon {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* Two-step backspace: first press highlights the atom, second deletes */
+.spike-atom-selected {
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline-offset: 1px;
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Typeahead popup
+   --------------------------------------------------------------------------- */
+
+.spike-typeahead-popup {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  min-width: 240px;
+  max-width: 400px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+  padding: 4px 0;
+  /* @tug-renders-on: card surface (overlay) */
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.spike-typeahead-item {
+  padding: 4px 12px;
+  font-size: 13px;
+  font-family: var(--tug-font-mono);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spike-typeahead-item:hover {
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+}
+
+.spike-typeahead-selected {
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+.spike-typeahead-selected:hover {
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Event log
+   --------------------------------------------------------------------------- */
+
+.spike-log {
+  font-family: var(--tug-font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  min-height: 60px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  border-radius: var(--tug-radius-sm);
+}
