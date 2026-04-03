@@ -107,9 +107,13 @@ export function putTheme(theme: string): void {
 }
 
 /**
- * PUT a single tab state bag to tugbank (fire-and-forget).
+ * PUT a single tab state bag to tugbank.
+ *
+ * Returns a Promise that resolves when the write completes. Callers that
+ * need to wait (e.g. prepareForReload) can await it; fire-and-forget
+ * callers can ignore the return value.
  */
-export function putTabState(tabId: string, bag: TabStateBag, options?: { keepalive?: boolean; sync?: boolean }): void {
+export function putTabState(tabId: string, bag: TabStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
   const url = `/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`;
   const body = JSON.stringify({ kind: "json", value: bag });
 
@@ -122,15 +126,15 @@ export function putTabState(tabId: string, bag: TabStateBag, options?: { keepali
     } catch (err) {
       console.warn("[settings] PUT tabState (sync) failed for tab", tabId, err);
     }
-    return;
+    return Promise.resolve();
   }
 
-  fetch(url, {
+  return fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body,
     keepalive: options?.keepalive,
-  }).catch((err) => {
+  }).then(() => {}).catch((err) => {
     console.warn("[settings] PUT tabState failed for tab", tabId, err);
   });
 }

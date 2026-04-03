@@ -168,11 +168,15 @@ export function initActionDispatch(
   // on DeckManager so the beforeunload handler skips the redundant keepalive
   // flush (which fails in WKWebView during page navigation with CORS errors).
   registerAction("reload", () => {
+    console.log("[action-dispatch] reload action received");
     if (reloadPending) {
+      console.log("[action-dispatch] reload: already pending, skipping");
       return;
     }
     reloadPending = true;
+    console.log("[action-dispatch] reload: calling prepareForReload");
     deckManager.prepareForReload().then(() => {
+      console.log("[action-dispatch] reload: prepareForReload complete, reloading");
       location.reload();
     });
   });

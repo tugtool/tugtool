@@ -292,7 +292,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(developerMenu)
         let devMenu = NSMenu(title: "Developer")
         developerMenu.submenu = devMenu
-        devMenu.addItem(NSMenuItem(title: "Reload", action: #selector(reload(_:)), keyEquivalent: "r"))
+        let reloadItem = NSMenuItem(title: "Reload", action: #selector(reload(_:)), keyEquivalent: "r")
+        reloadItem.target = self
+        devMenu.addItem(reloadItem)
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem.separator())

@@ -18,6 +18,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::warn;
 use tugbank_core::TugbankClient;
@@ -139,11 +140,21 @@ pub(crate) fn build_app(
     source_tree: Option<PathBuf>,
     bank_store: Option<Arc<TugbankClient>>,
 ) -> Router {
+    // Allow any origin on localhost — tugcast only binds to loopback.
+    // This prevents WKWebView CORS errors during page teardown (keepalive
+    // fetches during beforeunload) and for cross-port requests when the
+    // page is served by Vite dev server on a different port.
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let mut base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
-        .with_state(router);
+        .with_state(router)
+        .layer(cors);
 
     // Wire defaults routes when an already-opened store is provided.
     if let Some(store) = bank_store {

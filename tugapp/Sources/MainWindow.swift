@@ -69,11 +69,6 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         webView.load(request)
     }
 
-    /// Reload the current page
-    func reload() {
-        webView.reload()
-    }
-
     /// Evaluate JavaScript in the current page context.
     func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
         webView.evaluateJavaScript(script, completionHandler: completionHandler)
@@ -236,7 +231,27 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // Allow all navigation for auth flow
+        // Intercept reload navigation: save state via JS bridge BEFORE
+        // the page tears down. WKWebView's network stack is killed during
+        // teardown, so fetch/XHR from beforeunload/visibilitychange fail.
+        NSLog("MainWindow: decidePolicyFor navigationType=%d url=%@",
+              navigationAction.navigationType.rawValue,
+              navigationAction.request.url?.absoluteString ?? "(nil)")
+        if navigationAction.navigationType == .reload {
+            NSLog("MainWindow: intercepting reload — saving state before navigation")
+            decisionHandler(.cancel)
+            webView.evaluateJavaScript("window.__tugdeckSaveState?.()") { [weak webView] _, error in
+                if let error = error {
+                    NSLog("MainWindow: __tugdeckSaveState failed: %@", error.localizedDescription)
+                } else {
+                    NSLog("MainWindow: __tugdeckSaveState succeeded, triggering reload")
+                }
+                if let url = webView?.url {
+                    webView?.load(URLRequest(url: url))
+                }
+            }
+            return
+        }
         decisionHandler(.allow)
     }
 

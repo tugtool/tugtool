@@ -102,8 +102,11 @@ export class DeckManager implements IDeckManagerStore {
    */
   private readonly handleVisibilityChange = (): void => {
     if (document.hidden) {
+      if (this.stateFlushed) return;
       this.saveCallbacks.forEach((cb) => cb());
-      this.flushDirtyTabStates();
+      // Use sync XHR — during page teardown, document.hidden fires before
+      // beforeunload. Async fetch/keepalive CORS-fails in WKWebView.
+      this.flushDirtyTabStates({ sync: true });
     }
   };
 
@@ -114,6 +117,13 @@ export class DeckManager implements IDeckManagerStore {
   private reloadPending = false;
 
   /**
+   * Set to true by saveAndFlushSync() (called from __tugdeckSaveState).
+   * Tells visibilitychange and beforeunload handlers to skip — state was
+   * already persisted before the navigation/teardown started.
+   */
+  private stateFlushed = false;
+
+  /**
    * Bound handler for the window beforeunload event.
    * Uses keepalive: true so the browser dispatches the fetch even during
    * page teardown (per corrected D49).
@@ -122,7 +132,7 @@ export class DeckManager implements IDeckManagerStore {
    * flushed without keepalive before location.reload() was called.
    */
   private readonly handleBeforeUnload = (): void => {
-    if (this.reloadPending) return;
+    if (this.reloadPending || this.stateFlushed) return;
     // Flush any pending debounced layout save immediately
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
@@ -130,7 +140,10 @@ export class DeckManager implements IDeckManagerStore {
       this.saveLayout();
     }
     this.saveCallbacks.forEach((cb) => cb());
-    this.flushDirtyTabStates({ keepalive: true });
+    // Use sync XHR — keepalive fetch fails in WKWebView during page
+    // teardown with CORS errors. Sync XHR completes before the page
+    // unloads, same approach as saveAndFlushSync for app quit.
+    this.flushDirtyTabStates({ sync: true });
   };
 
   // ---- Phase 5f: Initial focused card ID for reload restoration ([D03]) ----
@@ -530,17 +543,22 @@ export class DeckManager implements IDeckManagerStore {
    * Write all dirty tab state bags to tugbank and clear the dirty set.
    * Called by the debounce timer and by destroy() to flush pending writes.
    *
+   * Returns a Promise that resolves when all writes complete. Callers that
+   * need to wait (e.g. prepareForReload) can await it.
+   *
    * The optional `options.keepalive` flag is forwarded to putTabState so the
    * browser dispatches the fetch even during page teardown (beforeunload path).
    */
-  private flushDirtyTabStates(options?: { keepalive?: boolean; sync?: boolean }): void {
+  private flushDirtyTabStates(options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
+    const promises: Promise<void>[] = [];
     for (const tabId of this.dirtyTabIds) {
       const bag = this.tabStateCache.get(tabId);
       if (bag !== undefined) {
-        putTabState(tabId, bag, options);
+        promises.push(putTabState(tabId, bag, options));
       }
     }
     this.dirtyTabIds.clear();
+    return Promise.all(promises).then(() => {});
   }
 
   // ---- Phase 5f3: Save callback registration (Spec S01, [D01]) ----
@@ -576,6 +594,7 @@ export class DeckManager implements IDeckManagerStore {
   saveAndFlushSync(): void {
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyTabStates({ sync: true });
+    this.stateFlushed = true;
   }
 
   /**
@@ -608,7 +627,7 @@ export class DeckManager implements IDeckManagerStore {
     }
     await this.saveLayout();
     this.saveCallbacks.forEach((cb) => cb());
-    this.flushDirtyTabStates();
+    await this.flushDirtyTabStates();
     this.reloadPending = true;
   }
 
