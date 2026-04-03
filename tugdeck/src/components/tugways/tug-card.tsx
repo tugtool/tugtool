@@ -787,10 +787,19 @@ export function Tugcard({
     onClose?.();
   }, [onClose]);
 
-  // selectAll: scope Cmd+A to this card's content area.
+  // selectAll: scope Cmd+A to the first responder.
+  // If focus is inside a contentEditable child (e.g. a text input engine),
+  // scope selection to that element — it is the first responder.
+  // Otherwise, select the entire card content area.
   const handleSelectAll = useCallback(() => {
     const el = contentRef.current;
     if (!el) return;
+    const active = document.activeElement;
+    if (active && active !== el && el.contains(active) &&
+        active.getAttribute("contenteditable") === "true") {
+      window.getSelection()?.selectAllChildren(active);
+      return;
+    }
     window.getSelection()?.selectAllChildren(el);
   }, []);
 
