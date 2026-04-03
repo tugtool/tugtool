@@ -26,14 +26,51 @@ import type {
 
 // ---- Types ----
 
-/** Imperative handle exposed via ref for parent control (T3.4). */
-export interface TugPromptInputHandle {
-  focus(): void;
-  clear(): void;
+/**
+ * TugTextInputDelegate — UITextInput-inspired imperative API.
+ *
+ * Modeled on Apple's UITextInput protocol. This is the contract between
+ * the prompt input component and its consumers (e.g., tug-prompt-entry).
+ * The interface is proven — UITextInput has been the foundation of text
+ * input on iOS/macOS since its inception.
+ */
+export interface TugTextInputDelegate {
+  // --- Document content ---
+  /** Full text content with U+FFFC for atoms. */
   getText(): string;
+  /** All atom segments in document order. */
   getAtoms(): AtomSegment[];
+  /** Whether the document is empty (no text, no atoms). */
+  isEmpty(): boolean;
+
+  // --- Selection ---
+  /** Current selection as flat offsets. Null if editor is not focused. */
+  getSelectedRange(): { start: number; end: number } | null;
+  /** Whether an IME composition is in progress. */
+  readonly hasMarkedText: boolean;
+
+  // --- Mutation ---
+  /** Insert plain text at the current selection. */
+  insertText(text: string): void;
+  /** Insert an atom at the current selection. */
   insertAtom(atom: AtomSegment): void;
-  getEngine(): TugTextEngine | null;
+  /** Delete backward from the current selection (backspace). */
+  deleteBackward(): void;
+  /** Delete forward from the current selection (forward delete). */
+  deleteForward(): void;
+  /** Select all content. */
+  selectAll(): void;
+  /** Clear all content. */
+  clear(): void;
+
+  // --- Undo ---
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  undo(): void;
+  redo(): void;
+
+  // --- Focus ---
+  focus(): void;
 }
 
 /**
@@ -100,7 +137,7 @@ const PADDING_Y = 14;
 
 // ---- Component ----
 
-export const TugPromptInput = React.forwardRef<TugPromptInputHandle, TugPromptInputProps>(
+export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptInputProps>(
   function TugPromptInput({
     placeholder = "",
     maxRows = DEFAULT_MAX_ROWS,
@@ -119,30 +156,27 @@ export const TugPromptInput = React.forwardRef<TugPromptInputHandle, TugPromptIn
     const editorRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<TugTextEngine | null>(null);
 
-    // Expose imperative handle [L07]
+    // Expose TugTextInputDelegate — the UITextInput-inspired API [L07]
     useImperativeHandle(ref, () => ({
-      focus() {
-        engineRef.current?.root.focus();
-      },
-      clear() {
-        engineRef.current?.clear();
-      },
-      getText() {
-        return engineRef.current?.getText() ?? "";
-      },
-      getAtoms() {
-        return engineRef.current?.getAtoms() ?? [];
-      },
+      getText() { return engineRef.current?.getText() ?? ""; },
+      getAtoms() { return engineRef.current?.getAtoms() ?? []; },
+      isEmpty() { return engineRef.current?.isEmpty() ?? true; },
+      getSelectedRange() { return engineRef.current?.getSelectedRange() ?? null; },
+      get hasMarkedText() { return engineRef.current?.hasMarkedText ?? false; },
+      insertText(text: string) { engineRef.current?.insertText(text); },
       insertAtom(atom: AtomSegment) {
         const engine = engineRef.current;
-        if (engine) {
-          engine.root.focus();
-          engine.insertAtom(atom);
-        }
+        if (engine) { engine.root.focus(); engine.insertAtom(atom); }
       },
-      getEngine() {
-        return engineRef.current;
-      },
+      deleteBackward() { engineRef.current?.deleteBackward(); },
+      deleteForward() { engineRef.current?.deleteForward(); },
+      selectAll() { engineRef.current?.selectAll(); },
+      clear() { engineRef.current?.clear(); },
+      get canUndo() { return engineRef.current?.canUndo ?? false; },
+      get canRedo() { return engineRef.current?.canRedo ?? false; },
+      undo() { engineRef.current?.undo(); },
+      redo() { engineRef.current?.redo(); },
+      focus() { engineRef.current?.root.focus(); },
     }), []);
 
     // Stable callback refs — engine reads these via closure over refs [L07]

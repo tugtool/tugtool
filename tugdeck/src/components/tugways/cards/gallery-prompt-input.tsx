@@ -12,11 +12,11 @@
 
 import React, { useRef, useLayoutEffect, useCallback, useState } from "react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
-import type { TugPromptInputHandle } from "@/components/tugways/tug-prompt-input";
+import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import type { TextSegment, AtomSegment, InputAction, CompletionItem } from "@/lib/tug-text-engine";
+import type { AtomSegment, InputAction, CompletionItem } from "@/lib/tug-text-engine";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -72,7 +72,8 @@ const ENTER_CHOICES: TugChoiceItem[] = [
 // ===================================================================
 
 export function GalleryPromptInput() {
-  const inputRef = useRef<TugPromptInputHandle>(null);
+  const inputRef = useRef<TugTextInputDelegate>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const diagRef = useRef<HTMLPreElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -93,52 +94,44 @@ export function GalleryPromptInput() {
 
   // Diagnostics — direct DOM write [L06]
   const updateDiagnostics = useCallback(() => {
-    const engine = inputRef.current?.getEngine();
+    const delegate = inputRef.current;
     const el = diagRef.current;
-    if (!engine || !el) return;
+    if (!delegate || !el) return;
 
-    const range = engine.getSelectedRange();
+    const range = delegate.getSelectedRange();
     const rangeStr = range
       ? (range.start === range.end
         ? `{${range.start}}` : `{${range.start}, ${range.end}}`)
       : "null";
     const collapsed = range ? range.start === range.end : false;
-    const atoms = engine.getAtoms();
-    const segDesc = engine.segments.map(s =>
-      s.kind === "text"
-        ? `text(${JSON.stringify((s as TextSegment).text).slice(0, 20)})`
-        : `atom(${(s as AtomSegment).label})`
-    ).join(" ");
+    const atoms = delegate.getAtoms();
+    const text = delegate.getText();
 
     el.textContent = [
       `selectedRange: ${rangeStr}${collapsed ? " (collapsed)" : ""}`,
-      `hasMarkedText: ${engine.hasMarkedText}`,
-      `canUndo: ${engine.canUndo}`,
-      `canRedo: ${engine.canRedo}`,
-      `flatLength: ${engine.flatLength()} | atoms: ${atoms.length} | height: ${engine.root.offsetHeight}px`,
-      `segments: ${segDesc}`,
+      `hasMarkedText: ${delegate.hasMarkedText}`,
+      `canUndo: ${delegate.canUndo} | canRedo: ${delegate.canRedo}`,
+      `length: ${text.length} | atoms: ${atoms.length} | empty: ${delegate.isEmpty()}`,
     ].join("\n");
   }, []);
 
   // Listen for selection changes to update diagnostics
   useLayoutEffect(() => {
     const onSelChange = () => {
-      const engine = inputRef.current?.getEngine();
-      if (engine && engine.root.contains(document.activeElement)) {
-        updateDiagnostics();
-      }
+      // Update diagnostics whenever selection changes and we have a delegate
+      if (inputRef.current) updateDiagnostics();
     };
     document.addEventListener("selectionchange", onSelChange);
     return () => document.removeEventListener("selectionchange", onSelChange);
   }, [updateDiagnostics]);
 
   const handleSubmit = useCallback(() => {
-    const handle = inputRef.current;
-    if (!handle) return;
-    const text = handle.getText().trim();
-    const atoms = handle.getAtoms().map(a => a.label);
+    const delegate = inputRef.current;
+    if (!delegate) return;
+    const text = delegate.getText().trim();
+    const atoms = delegate.getAtoms().map(a => a.label);
     appendLog(`submit: "${text}" atoms=[${atoms.join(", ")}]`);
-    handle.clear();
+    delegate.clear();
   }, [appendLog]);
 
   const handleChange = useCallback(() => {
@@ -149,8 +142,7 @@ export function GalleryPromptInput() {
     active: boolean, filtered: CompletionItem[], selectedIndex: number,
   ) => {
     const popup = popupRef.current;
-    const engine = inputRef.current?.getEngine();
-    if (!popup || !engine) return;
+    if (!popup) return;
     if (!active || filtered.length === 0) {
       popup.style.display = "none";
       return;
@@ -164,27 +156,32 @@ export function GalleryPromptInput() {
       div.textContent = item.label;
       popup.appendChild(div);
     });
+    // Position near cursor, relative to the container
     const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
+    const container = containerRef.current;
+    if (sel && sel.rangeCount > 0 && container) {
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      const editorRect = engine.root.getBoundingClientRect();
-      popup.style.left = `${rect.left - editorRect.left}px`;
-      popup.style.bottom = `${editorRect.bottom - rect.top + 4}px`;
+      const containerRect = container.getBoundingClientRect();
+      popup.style.left = `${rect.left - containerRect.left}px`;
+      popup.style.bottom = `${containerRect.bottom - rect.top + 4}px`;
     }
   }, []);
 
   const handleInsertAtom = useCallback(() => {
-    const handle = inputRef.current;
-    if (!handle) return;
+    const delegate = inputRef.current;
+    if (!delegate) return;
     const atom = SAMPLE_ATOMS[nextAtomIdx.current % SAMPLE_ATOMS.length];
     nextAtomIdx.current++;
-    handle.insertAtom(atom);
+    delegate.focus();
+    delegate.insertAtom(atom);
   }, []);
 
   const handleClear = useCallback(() => {
-    inputRef.current?.clear();
-    inputRef.current?.focus();
+    const delegate = inputRef.current;
+    if (!delegate) return;
+    delegate.clear();
+    delegate.focus();
   }, []);
 
   const handleReturnAction = useCallback((value: string) => {
@@ -206,7 +203,7 @@ export function GalleryPromptInput() {
           <TugPushButton size="sm" onClick={handleInsertAtom}>Insert Atom</TugPushButton>
           <TugPushButton size="sm" emphasis="outlined" onClick={handleClear}>Clear</TugPushButton>
         </div>
-        <div className="prompt-input-container">
+        <div ref={containerRef} className="prompt-input-container">
           <TugPromptInput
             ref={inputRef}
             placeholder="Type here... @ for file completion, drag files, test IME, Return vs Enter"
