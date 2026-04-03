@@ -636,7 +636,7 @@ export function GalleryPromptInput() {
 
         {/* Test editor — visible so it can focus, dimmed to indicate non-interactive */}
         <div className="prompt-input-test-editor">
-          <TugPromptInput ref={testInputRef} placeholder="" maxRows={2} />
+          <TugPromptInput ref={testInputRef} placeholder="" maxRows={2} persistState={false} />
         </div>
 
         {testResults.length > 0 && (

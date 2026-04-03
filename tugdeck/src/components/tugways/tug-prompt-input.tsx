@@ -24,7 +24,9 @@ import type {
   CompletionProvider,
   DropHandler,
   TugTextInputDelegate,
+  TugTextEditingState,
 } from "@/lib/tug-text-engine";
+import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
 
 // Re-export for consumers that import from the component module
 export type { TugTextInputDelegate } from "@/lib/tug-text-engine";
@@ -83,6 +85,43 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    * @default false
    */
   disabled?: boolean;
+  /**
+   * Whether to persist editing state via tugbank [L23].
+   * Set to false for test harness editors or transient inputs.
+   * @default true
+   */
+  persistState?: boolean;
+}
+
+// ---- Persistence helper ----
+
+/**
+ * Internal component that registers tugcard persistence for TugPromptInput.
+ * Conditionally rendered (only when persistState=true) so the hook isn't
+ * called for test harness editors, avoiding registration collisions.
+ */
+function TugPromptInputPersistence({ engineRef }: { engineRef: React.RefObject<TugTextEngine | null> }) {
+  useTugcardPersistence<TugTextEditingState>({
+    onSave: () => {
+      const empty: TugTextEditingState = { segments: [{ kind: "text", text: "" }], selection: null, markedText: null };
+      const engine = engineRef.current;
+      if (!engine) return empty;
+      const state = engine.captureState();
+      console.log("[tug-prompt-input] onSave:", JSON.stringify(state));
+      return state;
+    },
+    onRestore: (state) => {
+      console.log("[tug-prompt-input] onRestore:", JSON.stringify(state));
+      const engine = engineRef.current;
+      if (!engine) {
+        console.log("[tug-prompt-input] onRestore: no engine");
+        return;
+      }
+      engine.restoreState(state);
+      console.log("[tug-prompt-input] onRestore: applied");
+    },
+  });
+  return null;
 }
 
 // ---- Constants ----
@@ -106,6 +145,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     onTypeaheadChange,
     dropHandler,
     disabled = false,
+    persistState = true,
     className,
     ...rest
   }: TugPromptInputProps, ref) {
@@ -222,6 +262,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         onPointerDown={handlePointerDown}
         {...rest}
       >
+        {persistState && <TugPromptInputPersistence engineRef={engineRef} />}
         <div
           ref={editorRef}
           className="tug-prompt-input-editor"
