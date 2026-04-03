@@ -64,6 +64,7 @@ import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryTextModelSpike } from "./gallery-text-model-spike";
+import { GalleryAtom } from "./gallery-atom";
 import "./gallery.css";
 
 // ---------------------------------------------------------------------------
@@ -681,6 +682,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-text-model-spike",
     contentFactory: (_cardId) => <GalleryTextModelSpike />,
     defaultMeta: { title: "Text Model Spike", icon: "FlaskConical", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-atom ----
+  // TugAtom showcase: all known types, states (rest/hover/selected/highlighted/disabled),
+  // dismissible mode, inline text integration, label formatting, and DOM rendering path.
+  registerCard({
+    componentId: "gallery-atom",
+    contentFactory: (_cardId) => <GalleryAtom />,
+    defaultMeta: { title: "TugAtom", icon: "AtSign", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

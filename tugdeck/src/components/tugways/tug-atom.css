@@ -1,0 +1,146 @@
+/* ============================================================================
+   tug-atom.css
+   ============================================================================
+   Inline token for resolved references in text input surfaces.
+   Compact rectangle (Apple Mail / Cursor style), not a rounded pill.
+   Shared by both React and DOM rendering paths.
+   ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                              | Surface                                                | Role          | Context                                |
+ * |------------------------------------------------------|--------------------------------------------------------|---------------|----------------------------------------|
+ * | --tug7-element-global-text-normal-default-rest        | --tug7-surface-global-secondary-normal-default-rest     | content       | .tug-atom (color)                      |
+ * | --tug7-element-global-border-normal-default-rest      | --tug7-surface-global-secondary-normal-default-rest     | informational | .tug-atom (border — hover only)        |
+ * | --tug7-element-global-text-normal-muted-rest          | --tug7-surface-global-secondary-normal-default-rest     | informational | .tug-atom-icon (color)                 |
+ * | --tug7-element-global-text-normal-default-rest        | --tug7-element-global-fill-normal-accentCool-rest       | content       | .tug-atom-selected (color)             |
+ * | --tug7-element-global-text-normal-default-rest        | --tug7-surface-global-secondary-normal-default-rest     | content       | .tug-atom-highlighted (color)          |
+ * | --tug7-element-global-text-normal-muted-rest          | --tug7-surface-global-secondary-normal-default-rest     | informational | .tug-atom-disabled (color)             |
+ */
+
+/* ---------------------------------------------------------------------------
+   Base atom
+   --------------------------------------------------------------------------- */
+
+.tug-atom {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  margin: 0 1px;
+  font-size: 0.8125em; /* 13px at 16px base, scales with surrounding text */
+  font-family: inherit;
+  line-height: 1.45;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: nowrap;
+  vertical-align: baseline;
+  max-width: 240px;
+  transition: background-color 80ms ease, border-color 80ms ease, color 80ms ease;
+
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest (input surface) */
+  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Icon — type icon and dismiss icon
+   --------------------------------------------------------------------------- */
+
+.tug-atom-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tug-atom-icon svg {
+  width: 0.875em;
+  height: 0.875em;
+  /* @tug-renders-on: --tug7-surface-global-secondary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Dismiss icon is hidden by default, shown on hover */
+.tug-atom-dismiss-icon {
+  display: none;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   Label — truncated with ellipsis
+   --------------------------------------------------------------------------- */
+
+.tug-atom-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   State: hover
+   --------------------------------------------------------------------------- */
+
+.tug-atom:hover {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  border-color: var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* On hover for dismissible atoms: swap type icon for dismiss icon */
+.tug-atom-dismissible:hover .tug-atom-type-icon {
+  display: none;
+}
+
+.tug-atom-dismissible:hover .tug-atom-dismiss-icon {
+  display: inline-flex;
+}
+
+.tug-atom-dismiss-icon:hover svg {
+  /* @tug-renders-on: --tug7-surface-global-secondary-normal-default-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   State: selected (engine two-step delete / click-select)
+   --------------------------------------------------------------------------- */
+
+.tug-atom-selected {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  color: var(--tug7-surface-global-primary-normal-default-rest);
+  border-color: transparent;
+}
+
+.tug-atom-selected .tug-atom-icon svg {
+  color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   State: highlighted (search match, typeahead preview)
+   --------------------------------------------------------------------------- */
+
+.tug-atom-highlighted {
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline-offset: -1px;
+}
+
+/* ---------------------------------------------------------------------------
+   State: disabled (references something unavailable)
+   --------------------------------------------------------------------------- */
+
+.tug-atom-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Selected + hover: no border change when already selected
+   --------------------------------------------------------------------------- */
+
+.tug-atom-selected:hover {
+  border-color: transparent;
+}
