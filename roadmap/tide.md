@@ -1167,7 +1167,7 @@ The fixes have dependencies. Organized into dashes:
 
 **Goal:** Build the tug-atom component — the inline token. Two rendering paths: React for standalone/gallery use, DOM for engine reconciler.
 
-**Prerequisites:** T3.0 (architecture decision — atoms are `contentEditable="false"` spans built by the engine reconciler).
+**Prerequisites:** T3.0 (architecture decision — atoms are U+E100 characters in inline-flex spans, navigable as single characters. See T3.2 atom architecture).
 
 **Governing documents:**
 - [Component Authoring Guide](../tuglaws/component-authoring.md) — file structure, TSX/CSS conventions, `@tug-pairings`, `@tug-renders-on`, checklist
@@ -1224,13 +1224,23 @@ Engine extraction and integration:
 - Extract `TugTextEngine` from the spike gallery card into `lib/tug-text-engine.ts` as a standalone module
 - Define `TugTextInputDelegate` interface in `lib/tug-text-input-delegate.ts` (the UITextInput-inspired API)
 - tug-prompt-input creates the engine in `useLayoutEffect` (L01), accesses via ref (L07), all updates in DOM zone (L06)
-- Engine reconciler uses `TugAtom.createDOM()` (T3.1 DOM path) for atom rendering
+- Engine reconciler uses the U+E100 atom DOM structure (see atom architecture below)
 - `selectionAffinity` support for multiline: track upstream/downstream at soft line breaks
 - Auto-resize: 1 row default, grows to maxRows (8), Apple Messages style [L06]
 - Return vs Enter: independently configurable actions via delegate API. Shift inverts. `hasMarkedText === true` → key goes to IME.
-- `-webkit-user-modify: read-write-plaintext-only` for plain-text editing mode
 - `::selection` re-enabled, `::highlight(card-selection)` suppressed inside editor
 - `data-td-select="custom"` to exempt from SelectionGuard clipping
+
+Atom architecture (U+E100):
+- Atoms are U+E100 (PUA) characters in the text flow — the browser navigates them as single characters
+- Atom DOM: `<span data-slot="tug-atom">` (inline-flex, styled) containing a U+E100 text node + a `contentEditable="false"` label span
+- The outer atom span does NOT have `contentEditable="false"` — only the label does
+- `-webkit-user-modify: read-write-plaintext-only` is NOT used (it strips spans). The engine intercepts paste, drop, and all `beforeinput` types to prevent rich content injection.
+- Arrow keys, shift+selection, word movement all treat atoms as single character positions
+- Visible units layer (WebKit `visible_units.h` architecture): `startOfWord`, `endOfWord`, `startOfParagraph`, `endOfParagraph` — pure functions over the segment model, atoms are word boundaries
+- Deletion by granularity (word, line, paragraph) built on visible units + `deleteRange` primitive
+- Kill ring (Ctrl+K/Y), transpose (Ctrl+T), openLine (Ctrl+O) — Emacs text system bindings
+- `TUG_ATOM_CHAR = "\uE100"` constant defined once, used everywhere
 
 Prefix detection:
 - First character `>`, `$`, `:` sets the active route
@@ -1266,7 +1276,8 @@ Quality and correctness regime:
 - **Editing state persistence** [L23] — `TugTextEditingState` saved to tugbank on every meaningful change. Survives Reload, app quit, `just app`.
 
 **Exit criteria:**
-- Text input with atoms works per the chosen text model
+- Text input with atoms works: atoms navigate as single characters (arrow keys, shift+select, word movement)
+- U+E100 atom character architecture: correct caret movement, proper visual width, no navigation bugs
 - Auto-resize works (1 row → 8 rows)
 - Prefix detection correctly identifies route from first character
 - `@` file completion works: trigger → filter → resolve to atom
@@ -1275,11 +1286,14 @@ Quality and correctness regime:
 - History navigation works
 - IME composition (Japanese, Chinese) works correctly
 - Undo works (including undo of atom insertion)
+- Deletion by granularity: character, word, paragraph (visible units layer)
+- Kill ring (Ctrl+K/Y), transpose (Ctrl+T), openLine (Ctrl+O) functional
 - Token-compliant styling: `@tug-pairings` (compact + expanded), `@tug-renders-on` on all foreground rules
 - Conforms to component authoring guide checklist
-- Gallery card for isolated testing
+- Gallery card with interactive editor + automated test harness
 - TEOI defined; TEOE test suite passes with 50+ test cases
-- Simulation and interactive produce identical results for all TEOEs
+- `/api/eval` test automation: programmatic test execution and result retrieval
+- Simulation (`execCommand` path) and delegate API produce identical results for all TEOEs
 - Editing state persists across reload and app restart [L23]
 
 ---

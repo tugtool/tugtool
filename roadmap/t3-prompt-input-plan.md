@@ -235,6 +235,92 @@ Once the TEOI framework is validated with all operations implemented, expand to 
 
 **Validation:** All TEOEs pass. Manual interaction matches simulation for every tested scenario.
 
+### Pass 3h: Atom DOM Architecture Refactor
+
+**Status:** Investigation complete. Ready for implementation.
+
+#### The problem: `contentEditable="false"` breaks navigation
+
+The original atom architecture uses `<span contentEditable="false">` for atoms in the contentEditable. This tells WebKit "this is an opaque non-editable block" — which prevents users from editing the atom's label text. But it has a critical side effect: **WebKit's caret movement (`Selection.modify`) does not treat `contentEditable="false"` inline elements as single character positions.** Arrow keys jump over them and land in the wrong adjacent text.
+
+Spike findings (2026-04-03):
+
+- Left arrow from after atom lands at the *end of the preceding text*, not at the atom boundary. If the preceding text is "x ", the cursor lands before the space — two positions too far.
+- `user-select: all` on the atom span produces identical broken behavior.
+- No CSS attribute fixes this. It's fundamental to how WebKit handles non-editable inline elements in caret movement.
+- Shift+arrow selection across atoms doesn't visually highlight the atom (WebKit doesn't render `::selection` inside `contentEditable="false"` elements).
+
+#### The solution: U+E100 atom character
+
+Atoms are represented as U+E100 (Unicode Private Use Area) characters in the text flow. The browser navigates them as single characters — perfect arrow key, shift+select, and word-movement behavior.
+
+**Why U+E100:**
+
+- **Single BMP code point** — `.length === 1`, flat offset model works.
+- **Non-zero rendered width** (~7-9px in WebKit as missing-glyph box) — the caret has a real position to land on. (U+FFFC renders at zero width in WebKit, which causes positioning issues.)
+- **Zero collision risk** — PUA characters don't appear in user-pasted text. U+FFFC has collision risk (rich text editors use it for attachments).
+- **Perfect navigation** — verified in spike: left arrow, right arrow, shift+arrow, word movement all treat it as exactly one character position.
+- **We define the semantics** — it means "atom" and nothing else.
+
+Constant: `const TUG_ATOM_CHAR = "\uE100"` defined once, used everywhere.
+
+#### New atom DOM structure
+
+```html
+<div contenteditable="true">
+  "before "                          ← text node
+  <span data-slot="tug-atom">       ← inline-flex, styled as atom badge
+    "\uE100"                         ← text node (the navigable character)
+    <span contenteditable="false">   ← visual label, not user-editable
+      "main.rs"
+    </span>
+  </span>
+  " after"                           ← text node
+</div>
+```
+
+Key properties:
+- The atom outer span does **NOT** have `contentEditable="false"` — the U+E100 character inside is what the browser navigates.
+- The visual label span has `contentEditable="false"` — this prevents the user from editing the label text, but doesn't affect caret movement because the caret navigates the U+E100 text node, not the label span.
+- The atom span has proper layout width (~65-75px depending on label) — text flows correctly around it.
+- Arrow keys: one step into atom (U+E100 offset 0→1), one step out. Atom is one character.
+- Shift+arrow: selects atom as one character, including the U+E100 in the selection string.
+
+#### What changes from current architecture
+
+- **Drop `-webkit-user-modify: read-write-plaintext-only`** from the editor root. This was preventing spans inside the contentEditable, but we need the atom span for visual rendering. The engine already intercepts paste, drop, and all `beforeinput` types, so rich content injection is prevented.
+- **`createAtomDOM()` new output** — produces the new structure: outer span (inline-flex, styled) containing U+E100 text node + `contentEditable="false"` label span.
+- **Reconciler** — atom segments reconcile to the new DOM structure. Text nodes contain only text; atom spans contain U+E100 + label.
+- **`flatFromDOM` / `domPosition`** — adapted: the U+E100 text node inside the atom span is the navigable element. Atom detection is `isAtomElement(parent)` on the text node's parent, not the node itself.
+- **`domNodes` mapping** — maps text nodes AND atom text nodes. Each atom's U+E100 text node is the entry in `domNodes`, not the span.
+- **`rebuildFromDOM`** — scans for atom spans by `data-slot="tug-atom"`, reads U+E100 from the text child, reads atom metadata from `data-` attributes.
+- **`isAtomElement()`** — checks `data-slot="tug-atom"` on spans (unchanged).
+- **`getText()`** — returns U+E100 for atoms (unchanged from current, but the character changes from U+FFFC to U+E100).
+
+#### Approaches tested and rejected
+
+| Approach | Result |
+|---|---|
+| `contentEditable="false"` (current) | Arrow keys skip atom, land in wrong position |
+| `user-select: all` (no ce=false) | Same broken navigation as ce=false |
+| Plain U+E100 in text node (no span) | Perfect navigation, but no visual width — decoration overlaps adjacent text by ~53px |
+| U+FFFC in text node | Perfect navigation, but zero rendered width |
+| U+E100 in ce=false span | Browser can't navigate into span — same problem |
+| Inline span with U+E100 + ce=false label | ✓ Correct navigation + proper visual width |
+
+#### Implementation plan
+
+1. Define `TUG_ATOM_CHAR = "\uE100"` constant
+2. Update `createAtomDOM()` to produce the new structure
+3. Remove `-webkit-user-modify: read-write-plaintext-only` from editor CSS
+4. Update reconciler to handle new atom DOM
+5. Update `flatFromDOM` / `domPosition` for new structure
+6. Update `rebuildFromDOM` for new structure
+7. Update `getText()` to use U+E100
+8. Run TEOE suite — all 58 tests should pass
+9. Verify interactive: arrow keys, shift+select, typing near atoms, two-step delete
+10. Verify IME composition still works without `read-write-plaintext-only`
+
 ### Pass 4: Add prefix detection
 
 First-character routing (`>`, `$`, `:`, `/`). This is engine-level (the engine knows the document content) with a callback to the component. The prefix character gets styled distinctly via CSS.
@@ -243,11 +329,23 @@ First-character routing (`>`, `$`, `:`, `/`). This is engine-level (the engine k
 
 ---
 
-## Key Lesson (from failed first attempt)
+## Key Lessons
+
+### Lesson 1: failed first extraction attempt
 
 The first extraction attempt failed because it simultaneously: (1) extracted the engine, (2) swapped the atom DOM from spike-atom to tug-atom, and (3) changed all DOM detection selectors — without testing after step 1. The spike was left broken and the bugs were compounded by adding new features (managed arrow navigation) instead of reverting.
 
 **The fix:** engine and gallery card are built together in pass 1, so we have an immediate feedback loop. tug-atom integration is tested from the start — we write the engine for tug-atom from day one and fix DOM interaction issues as they surface, with a gallery card to verify every change.
+
+### Lesson 2: `contentEditable="false"` is the wrong tool for atoms
+
+The spike used `contentEditable="false"` on atom spans to prevent label editing. This is correct for block-level non-editable regions, but wrong for inline elements that should navigate as single characters. WebKit's caret movement treats `contentEditable="false"` elements as opaque blocks — it skips them rather than stepping through them character-by-character. No CSS attribute (`user-select`, etc.) fixes this.
+
+The fix: atoms are U+E100 characters in the text flow. The character provides correct navigation; the span provides visual rendering; the label's `contentEditable="false"` prevents label editing without affecting navigation.
+
+### Lesson 3: test infrastructure before bug fixing
+
+Building the TEOI/TEOE framework before fixing bugs meant we could verify fixes against a formal specification. The test automation interface (`/api/eval` → `window.__runTEOETests()`) enabled rapid iteration: make a change, run 58 tests, see results in seconds. Without this, we'd be manually testing each scenario.
 
 ---
 
@@ -262,5 +360,5 @@ From `t3-text-model-spike.md` — the validated patterns we're porting:
 5. **`compositionEndedAt` timing window** — WebKit compositionend ordering bug
 6. **Own undo stack with immutable snapshots** — merge within 300ms
 7. **Flat offset as universal position type** — text chars = 1, atoms = 1
-8. **`-webkit-user-modify: read-write-plaintext-only`** — prevents spurious composition
+8. ~~**`-webkit-user-modify: read-write-plaintext-only`**~~ — **SUPERSEDED by Pass 3h.** Removed to enable atom spans in contentEditable. Engine intercepts paste, drop, and `beforeinput` to prevent rich content injection.
 9. **`::selection` re-enabled, `::highlight(card-selection)` suppressed** — contentEditable selection fix
