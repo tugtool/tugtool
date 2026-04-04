@@ -32,6 +32,7 @@ import { captureEditingState, editingStatesEqual, formatEditingState } from "@/l
 import { allTEOEs } from "@/lib/tug-text-editing-operations";
 import type { TEOE, Operation } from "@/lib/tug-text-editing-operations";
 import { runAtomDOMTests } from "@/lib/tug-atom-dom-tests";
+import { runIntegrationTests } from "@/lib/tug-integration-tests";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -557,7 +558,13 @@ export function GalleryPromptInput() {
       return { passed, failed, total: results.length, failures: results.filter(r => !r.passed) };
     };
     w.__runAtomDOMTests = () => runAtomDOMTests();
-    return () => { delete w.__runTEOETests; delete w.__runAtomDOMTests; };
+    w.__runIntegrationTests = () => {
+      // Use the MAIN interactive editor, not the hidden test editor
+      const delegate = inputRef.current;
+      if (!delegate) return { error: "no delegate" };
+      return runIntegrationTests(delegate);
+    };
+    return () => { delete w.__runTEOETests; delete w.__runAtomDOMTests; delete w.__runIntegrationTests; };
   }, []);
 
   const handleSubmit = useCallback(() => {
