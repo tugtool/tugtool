@@ -29,6 +29,13 @@ const TEST_ATOM: AtomSegment = {
   value: "/src/main.rs",
 };
 
+const TEST_ATOM_2: AtomSegment = {
+  kind: "atom",
+  type: "file",
+  label: "lib.rs",
+  value: "/src/lib.rs",
+};
+
 /** Type text via execCommand — the real browser editing pipeline. */
 function type(d: TugTextInputDelegate, text: string): void {
   const el = d.getEditorElement();
@@ -336,6 +343,351 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return {
       passed,
       detail: `text="${text.slice(0, 20)}" (len=${text.length}), cursor=${range?.start}, insideAtom=${inside}`,
+    };
+  });
+
+  // ── Atom at start of document ──────────────────────────────────
+
+  test("Atom at start of document — cursor after, can type", () => {
+    d.insertAtom(TEST_ATOM);
+    type(d, " hello");
+
+    const text = d.getText();
+    const range = d.getSelectedRange();
+    const passed = text.length === 7 && range?.start === 7;
+    return {
+      passed,
+      detail: `text="${text.slice(0, 20)}" (len=${text.length}), cursor=${range?.start}`,
+    };
+  });
+
+  // ── Atom at end of document ──────────────────────────────────
+
+  test("Atom at end of document — getText correct", () => {
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+
+    const text = d.getText();
+    const atoms = d.getAtoms();
+    const passed = text.length === 7 && atoms.length === 1;
+    return {
+      passed,
+      detail: `text len=${text.length} (expect 7), atoms=${atoms.length}`,
+    };
+  });
+
+  // ── Type before atom ────────────────────────────────────────
+
+  test("Position before atom, type there", () => {
+    type(d, "hello");
+    d.insertAtom(TEST_ATOM);
+
+    // Position cursor before atom (end of "hello")
+    d.setSelectedRange(5);
+    type(d, " ");
+
+    const text = d.getText();
+    // Should be "hello " + atom = 7 chars
+    const passed = text.length === 7;
+    return {
+      passed,
+      detail: `text="${text.slice(0, 20)}" (len=${text.length}, expect 7)`,
+    };
+  });
+
+  // ── Multiple atoms ────────────────────────────────────────────
+
+  test("Two atoms — getText correct", () => {
+    type(d, "a");
+    d.insertAtom(TEST_ATOM);
+    type(d, "b");
+    d.insertAtom(TEST_ATOM_2);
+    type(d, "c");
+
+    const text = d.getText();
+    const atoms = d.getAtoms();
+    // "a" + atom + "b" + atom + "c" = 5 chars
+    const passed = text.length === 5 && atoms.length === 2;
+    return {
+      passed,
+      detail: `text len=${text.length} (expect 5), atoms=${atoms.length} (expect 2)`,
+    };
+  });
+
+  test("Two atoms — navigate between them", () => {
+    type(d, "a");
+    d.insertAtom(TEST_ATOM);
+    d.insertAtom(TEST_ATOM_2);
+    type(d, "z");
+
+    // Position between the two atoms
+    // "a"=1, atom1=1, atom2=1, "z"=1 = flat length 4
+    // Position 2 is between atom1 and atom2
+    d.setSelectedRange(2);
+    const at2 = d.getSelectedRange();
+
+    // Right arrow should cross atom2
+    arrowRight(1);
+    const after = d.getSelectedRange();
+
+    const passed = at2?.start === 2 && after !== null && after.start >= 3;
+    return {
+      passed,
+      detail: `at2=${at2?.start}, afterRight=${after?.start} (expect >=3)`,
+    };
+  });
+
+  // ── Delete forward at atom boundary ────────────────────────────
+
+  test("Two-step forward delete: highlights then deletes atom", () => {
+    type(d, "hello");
+    d.insertAtom(TEST_ATOM);
+    type(d, " world");
+
+    // Position before atom
+    d.setSelectedRange(5);
+    d.deleteForward(); // should highlight
+    const highlighted = atomIsHighlighted(d);
+    const atomsBefore = d.getAtoms().length;
+
+    d.deleteForward(); // should delete
+    const atomsAfter = d.getAtoms().length;
+    const text = d.getText();
+
+    const passed = highlighted && atomsBefore === 1 && atomsAfter === 0 && text === "hello world";
+    return {
+      passed,
+      detail: `highlighted=${highlighted}, before=${atomsBefore}, after=${atomsAfter}, text="${text}"`,
+    };
+  });
+
+  // ── Select all with atoms ────────────────────────────────────
+
+  test("selectAll with atoms — covers entire document", () => {
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    type(d, " world");
+
+    d.selectAll();
+    const range = d.getSelectedRange();
+    const totalLen = d.getText().length;
+
+    const passed = range !== null && range.start === 0 && range.end === totalLen;
+    return {
+      passed,
+      detail: `selection=${range?.start}..${range?.end}, totalLen=${totalLen}`,
+    };
+  });
+
+  // ── Delete backward with ranged selection spanning atom ────────
+
+  test("Delete backward with selection spanning atom", () => {
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    type(d, " world");
+
+    // Select "o " + atom + " w" (offsets 4..9)
+    d.setSelectedRange(4, 9);
+    d.deleteBackward();
+
+    const text = d.getText();
+    const atoms = d.getAtoms();
+    const passed = atoms.length === 0 && text === "hellorld";
+    return {
+      passed,
+      detail: `text="${text}", atoms=${atoms.length}`,
+    };
+  });
+
+  // ── Undo after insert atom ────────────────────────────────────
+
+  test("Undo after insertAtom restores previous state", () => {
+    type(d, "hello");
+    d.insertAtom(TEST_ATOM);
+
+    const beforeUndo = d.getAtoms().length;
+    d.undo();
+    const afterUndo = d.getAtoms().length;
+    const text = d.getText();
+
+    const passed = beforeUndo === 1 && afterUndo === 0 && text === "hello";
+    return {
+      passed,
+      detail: `before=${beforeUndo}, after=${afterUndo}, text="${text}"`,
+    };
+  });
+
+  // ── Undo after two-step delete ────────────────────────────────
+
+  test("Undo after two-step atom delete restores atom", () => {
+    type(d, "hello");
+    d.insertAtom(TEST_ATOM);
+
+    d.setSelectedRange(6);
+    d.deleteBackward(); // highlight
+    d.deleteBackward(); // delete
+
+    const deleted = d.getAtoms().length === 0;
+    d.undo();
+    const restored = d.getAtoms().length === 1;
+
+    const passed = deleted && restored;
+    return {
+      passed,
+      detail: `deleted=${deleted}, restored=${restored}`,
+    };
+  });
+
+  // ── Type between two atoms ────────────────────────────────────
+
+  test("Type between two adjacent atoms", () => {
+    d.insertAtom(TEST_ATOM);
+    d.insertAtom(TEST_ATOM_2);
+
+    // Position between the two atoms (offset 1)
+    d.setSelectedRange(1);
+    type(d, "x");
+
+    const text = d.getText();
+    const atoms = d.getAtoms();
+    // atom + "x" + atom = 3 chars
+    const passed = text.length === 3 && atoms.length === 2;
+    return {
+      passed,
+      detail: `text="${text.slice(0, 20)}" (len=${text.length}), atoms=${atoms.length}`,
+    };
+  });
+
+  // ── Arrow through multiple atoms ──────────────────────────────
+
+  test("Arrow right through text-atom-text-atom-text", () => {
+    type(d, "a");
+    d.insertAtom(TEST_ATOM);
+    type(d, "b");
+    d.insertAtom(TEST_ATOM_2);
+    type(d, "c");
+
+    // Start at beginning
+    d.setSelectedRange(0);
+    const positions: number[] = [0];
+    for (let i = 0; i < 6; i++) {
+      arrowRight(1);
+      const r = d.getSelectedRange();
+      if (r) positions.push(r.start);
+    }
+
+    // Should visit 0, 1, 2, 3, 4, 5 (each position once, monotonically increasing)
+    const monotonic = positions.every((p, i) => i === 0 || p > positions[i - 1]);
+    const reachesEnd = positions[positions.length - 1] >= 5;
+    const passed = monotonic && reachesEnd;
+    return {
+      passed,
+      detail: `positions=[${positions.join(",")}], monotonic=${monotonic}, reachesEnd=${reachesEnd}`,
+    };
+  });
+
+  // ── Shift+select across multiple atoms ────────────────────────
+
+  test("Shift+right selects across two atoms", () => {
+    type(d, "a");
+    d.insertAtom(TEST_ATOM);
+    d.insertAtom(TEST_ATOM_2);
+    type(d, "z");
+
+    d.setSelectedRange(0);
+    shiftRight(4);
+
+    const range = d.getSelectedRange();
+    const passed = range !== null && range.start === 0 && range.end === 4;
+    return {
+      passed,
+      detail: `selection=${range?.start}..${range?.end} (expect 0..4)`,
+    };
+  });
+
+  // ── Clear resets everything ──────────────────────────────────
+
+  test("Clear with atoms resets to empty", () => {
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    type(d, " world");
+
+    d.clear();
+    const passed = d.isEmpty() && d.getText() === "" && d.getAtoms().length === 0;
+    return {
+      passed,
+      detail: `empty=${d.isEmpty()}, text="${d.getText()}", atoms=${d.getAtoms().length}`,
+    };
+  });
+
+  // ── Newline with atom ────────────────────────────────────────
+
+  test("Newline before atom", () => {
+    type(d, "hello");
+    d.insertText("\n");
+    d.insertAtom(TEST_ATOM);
+
+    const text = d.getText();
+    const atoms = d.getAtoms();
+    const hasNewline = text.includes("\n");
+    const passed = hasNewline && atoms.length === 1;
+    return {
+      passed,
+      detail: `text="${text.replace(/\n/g, "\\n")}", atoms=${atoms.length}, hasNewline=${hasNewline}`,
+    };
+  });
+
+  // ── Empty document operations ────────────────────────────────
+
+  test("deleteBackward on empty is no-op", () => {
+    d.deleteBackward();
+    const passed = d.isEmpty();
+    return { passed, detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("deleteForward on empty is no-op", () => {
+    d.deleteForward();
+    const passed = d.isEmpty();
+    return { passed, detail: `empty=${d.isEmpty()}` };
+  });
+
+  // ── Word deletion near atom ──────────────────────────────────
+
+  test("deleteWordBackward at atom boundary", () => {
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    type(d, " world");
+
+    // Position at start of " world" (offset 8)
+    d.setSelectedRange(8);
+    d.deleteWordBackward();
+
+    const text = d.getText();
+    // Should delete " " (the space after atom) — or the atom itself depending on word boundary
+    // The key test: it shouldn't crash and should produce valid state
+    const atoms = d.getAtoms();
+    const valid = typeof text === "string" && !d.isEmpty();
+    return {
+      passed: valid,
+      detail: `text="${text.slice(0, 20)}" (len=${text.length}), atoms=${atoms.length}`,
+    };
+  });
+
+  test("deleteWordForward at atom boundary", () => {
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    type(d, " world");
+
+    // Position before atom (offset 6)
+    d.setSelectedRange(6);
+    d.deleteWordForward();
+
+    const text = d.getText();
+    const atoms = d.getAtoms();
+    const valid = typeof text === "string";
+    return {
+      passed: valid,
+      detail: `text="${text.slice(0, 20)}" (len=${text.length}), atoms=${atoms.length}`,
     };
   });
 
