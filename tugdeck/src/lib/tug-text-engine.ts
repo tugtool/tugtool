@@ -499,6 +499,9 @@ export class TugTextEngine {
   }
 
   private domPosition(flat: number): { node: Node; offset: number } | null {
+    // Never place cursor inside an atom span. Positions adjacent to atoms
+    // go to the neighboring text node. The browser's own caret movement
+    // (arrow keys) can enter the atom naturally — but we never put it there.
     let remaining = flat;
     for (let i = 0; i < this.segments.length; i++) {
       const seg = this.segments[i];
@@ -509,28 +512,25 @@ export class TugTextEngine {
         }
         remaining -= len;
       } else {
-        // Atom: offset 0 = before atom char, offset 1 = after atom char
-        if (remaining <= 1 && this.domNodes[i]) {
-          // Find the U+E100 text node inside the atom span
-          const atomSpan = this.domNodes[i];
-          const atomTextNode = atomSpan instanceof HTMLSpanElement ? atomSpan.firstChild : atomSpan;
-          if (atomTextNode) {
-            return { node: atomTextNode, offset: remaining };
-          }
+        // Atom: "before atom" (remaining=0) → end of previous text node
+        if (remaining === 0 && i > 0 && this.domNodes[i - 1]) {
+          const prevSeg = this.segments[i - 1] as TextSegment;
+          return { node: this.domNodes[i - 1], offset: prevSeg.text.length };
         }
+        // "after atom" (remaining=1) will be handled by the next text segment
+        // when remaining becomes 0 on the next iteration
         remaining -= 1;
       }
     }
     const last = this.segments.length - 1;
     if (last >= 0 && this.domNodes[last]) {
       const seg = this.segments[last];
+      const len = seg.kind === "text" ? (seg as TextSegment).text.length : 1;
       if (seg.kind === "text") {
-        return { node: this.domNodes[last], offset: (seg as TextSegment).text.length };
+        return { node: this.domNodes[last], offset: len };
       }
-      // Last segment is atom — position after it
-      const atomSpan = this.domNodes[last];
-      const atomTextNode = atomSpan instanceof HTMLSpanElement ? atomSpan.firstChild : atomSpan;
-      return { node: atomTextNode ?? this.root, offset: 1 };
+      // Edge case: last segment is atom, position after it — use root child index
+      return { node: this.root, offset: this.root.childNodes.length };
     }
     return { node: this.root, offset: 0 };
   }

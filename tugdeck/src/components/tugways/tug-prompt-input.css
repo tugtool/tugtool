@@ -109,6 +109,8 @@
    The highlight is managed by TugTextEngine after each reconcile. */
 .tug-prompt-input-editor::highlight(tug-atom-chars) {
   color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke-color: transparent;
 }
 
 /* ---------------------------------------------------------------------------
