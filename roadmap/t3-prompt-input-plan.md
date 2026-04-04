@@ -144,7 +144,7 @@ No DOM, no methods. JSON round-trips cleanly. Lives alongside `TugTextInputDeleg
 
 Save `TugTextEditingState` to tugbank on every meaningful change. Restore on mount. Editing state must survive: Developer → Reload, app quit/relaunch, `just app`. This is an L23 requirement — internal operations must never lose user-visible state.
 
-#### 3d. Text Editing Operation Inventory (TEOI)
+#### 3d. Text Editing Operation Inventory (TEOI) ✓
 
 A formal catalog of every editing operation as a state machine transition:
 
@@ -152,31 +152,86 @@ A formal catalog of every editing operation as a state machine transition:
 TugTextEditingState::incoming × Operation → TugTextEditingState::outgoing
 ```
 
-Operations: `insertText`, `insertAtom`, `deleteBackward`, `deleteForward`, `selectAll`, `clear`, `undo`, `redo`, `setSelectedRange`. For every combination of incoming state and operation, the outgoing state must be predictable and correct.
+Lives in `lib/tug-text-editing-operations.ts`. Contains:
 
-The TEOI is the conceptual grounding — the specification for what editing operations do.
+- **Operation taxonomy** (24 operations): text entry (typing, insertText, paste), atom manipulation (insertAtom, typeaheadAccept), deletion by granularity (character, word, soft line, paragraph), selection, undo/redo, IME composition, transpose, kill/yank, openLine
+- **19 canonical incoming states**: empty, text at every cursor position, selections, atom boundaries, multi-atom, multi-word, multiline, atom-highlighted, IME composing
+- **TEOE interface**: concrete test triples with single-op and multi-step sequence support, tags for filtering
+- **Operation × State matrix**: ~160 interesting combinations across 7 grouped sub-tables
+- **Builder helpers**: `text()`, `atom1()`, `atom2()`, `state()`, `cursor()`, `sel()`
 
-#### 3e. Text Editing Operation Examples (TEOE)
+Architecture decisions made during 3d:
+- **Visible units hierarchy** adopted from WebKit's `visible_units.h` — word, line, paragraph, document as distinct granularities
+- **`execCommand`** replaces manual DOM mutation as the simulation hook for typing (exercises the real browser editing pipeline)
+- **`highlightedAtomIndices`** added to `TugTextEditingState` — atom highlight is model state, not hidden CSS state
+- **`deleteRange(start, end)`** added as the foundational deletion primitive
+- **All mutation operations made range-aware** — `insertText`, `insertAtom`, `deleteBackward`, `deleteForward` handle ranged selections correctly
+- **IME composition** included from the start, not deferred
 
-Concrete instances of TEOI triples with real data. Each TEOE is a specific test case:
+#### 3e. Text Editing Operation Examples (TEOE) ✓
 
-```
-{
-  name: "deleteBackward at atom boundary — two-step highlight",
-  incoming: { segments: [text("hello"), atom(file), text("")], selection: {6, 6} },
-  operation: "deleteBackward",
-  outgoing: { segments: [text("hello"), atom(file), text("")], selection: {6, 6} },
-  note: "atom highlighted but not deleted (first step of two-step)"
-}
-```
+Concrete instances of TEOI triples with real data. Two tiers:
+
+- **Hand-written** (35): boundary cases, atom interactions, two-step deletion sequences, undo/redo chains, multiline, selection spanning atoms
+- **Generated** (23): mechanical patterns — no-ops, selection-overrides-granularity, clear, selectAll
+
+Any generated TEOE can be "promoted" to hand-written when it needs custom attention. `allTEOEs()` returns the combined collection for the test runner.
+
+Remaining TEOEs (word deletion, line deletion, paragraph deletion, transpose, kill/yank, openLine, IME) depend on the visible units layer and new engine operations — written as part of 3d-iv/3d-v below.
+
+#### 3d-i. Visible units module
+
+Build `lib/tug-text-visible-units.ts` — pure functions over `Segment[]`:
+
+- `startOfWord(segments, offset) → offset`
+- `endOfWord(segments, offset) → offset`
+- `startOfParagraph(segments, offset) → offset`
+- `endOfParagraph(segments, offset) → offset`
+- `startOfDocument() → 0`
+- `endOfDocument(segments) → flatLength`
+
+No DOM. An atom is an atomic unit — it behaves as its own word. Word boundaries at spaces, punctuation, and atom edges. Paragraph boundaries at `\n` and document edges.
+
+#### 3d-ii. Wire visible units into the engine
+
+Implement the missing operations in TugTextEngine as one-liners on top of visible units + `deleteRange`:
+
+- `deleteWordBackward` = `deleteRange(startOfWord(cursor), cursor)`
+- `deleteWordForward` = `deleteRange(cursor, endOfWord(cursor))`
+- `deleteParagraphBackward` = `deleteRange(startOfParagraph(cursor), cursor)`
+- `deleteParagraphForward` = `deleteRange(cursor, endOfParagraph(cursor))`
+- `killLine` = `deleteParagraphForward` + save to kill ring buffer
+- `yank` = `insertText(killRingContent)`
+- `transpose` = swap characters around cursor via visible units
+- `openLine` = `insertText("\n")` then move cursor back one
+
+#### 3d-iii. Handle `beforeinput` types
+
+Route the `beforeinput` inputTypes the engine currently `preventDefault()`s and drops:
+
+- `deleteWordBackward` → `deleteWordBackward()`
+- `deleteWordForward` → `deleteWordForward()`
+- `deleteSoftLineBackward` → `deleteParagraphBackward()` (soft ≡ paragraph for now)
+- `deleteSoftLineForward` → `deleteParagraphForward()` (soft ≡ paragraph for now)
+- `deleteHardLineForward` → `killLine()`
+- `insertTranspose` → `transpose()`
+- `insertFromYank` → `yank()`
+
+#### 3d-iv. Write remaining TEOEs
+
+Add TEOEs for the new operations: word deletion at word boundaries, at atom boundaries, at spaces; paragraph deletion at newlines; kill/yank sequences; transpose at various positions; openLine. Both hand-written interesting cases and generated mechanical patterns.
+
+#### 3d-v. Soft line treatment
+
+Soft line (visual wrap boundary) is distinct from paragraph (`\n` boundary). For the current non-wrapping prompt input, soft line ≡ paragraph. The `deleteSoftLineBackward` / `deleteSoftLineForward` operations route to paragraph operations. When wrapping is added later, soft line operations will need layout information (where did text wrap?) and will diverge from paragraph.
 
 #### 3f. Simulation ≡ Interactive
 
-The test harness's typing simulation (DOM mutation → MutationObserver) and the interactive component must always produce the same `TugTextEditingState::outgoing` for the same `incoming × operation`. If they diverge, the simulation or the engine has a bug. This equivalence is what makes the test suite trustworthy.
+The test harness uses `document.execCommand("insertText", false, text)` for typing simulation — this goes through the browser's actual editing pipeline (beforeinput → DOM mutation → MutationObserver → engine). The delegate API path (`insertText()`) goes through the engine directly. Both paths must produce the same `TugTextEditingState::outgoing` for the same `incoming × operation`. If they diverge, the simulation or the engine has a bug.
 
 #### 3g. Exhaustive test generation
 
-Once the TEOI framework is validated, generate 50–100+ TEOEs systematically — every operation at every interesting boundary: empty document, text-only, at atom boundary, mid-text, selection spanning atom, marked text active, multiple atoms, undo after atom delete, etc. This is the payoff: the framework makes mass test generation mechanical.
+Once the TEOI framework is validated with all operations implemented, expand to 100+ TEOEs systematically. The generation framework (`generatedTEOEs()`) makes this mechanical — add new generator functions for each operation category, with promotion to hand-written for cases that need attention.
 
 **Validation:** All TEOEs pass. Manual interaction matches simulation for every tested scenario.
 
