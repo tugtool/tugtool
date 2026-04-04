@@ -103,7 +103,7 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
 function TugPromptInputPersistence({ engineRef }: { engineRef: React.RefObject<TugTextEngine | null> }) {
   useTugcardPersistence<TugTextEditingState>({
     onSave: () => {
-      const empty: TugTextEditingState = { segments: [{ kind: "text", text: "" }], selection: null, markedText: null };
+      const empty: TugTextEditingState = { segments: [{ kind: "text", text: "" }], selection: null, markedText: null, highlightedAtomIndices: [] };
       const engine = engineRef.current;
       if (!engine) return empty;
       return engine.captureState();
@@ -151,11 +151,13 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       getSelectedRange() { return engineRef.current?.getSelectedRange() ?? null; },
       setSelectedRange(start: number, end?: number) { engineRef.current?.setSelectedRange(start, end); },
       get hasMarkedText() { return engineRef.current?.hasMarkedText ?? false; },
+      get highlightedAtomIndices() { return engineRef.current?.highlightedAtomIndices ?? []; },
       insertText(text: string) { engineRef.current?.insertText(text); },
       insertAtom(atom: AtomSegment) {
         const engine = engineRef.current;
         if (engine) { engine.root.focus(); engine.insertAtom(atom); }
       },
+      deleteRange(start: number, end: number) { return engineRef.current?.deleteRange(start, end) ?? start; },
       deleteBackward() { engineRef.current?.deleteBackward(); },
       deleteForward() { engineRef.current?.deleteForward(); },
       selectAll() { engineRef.current?.selectAll(); },

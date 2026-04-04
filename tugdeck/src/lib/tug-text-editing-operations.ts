@@ -148,6 +148,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "" }],
       selection: { start: 0, end: 0 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
 
@@ -159,6 +160,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello" }],
       selection: { start: 0, end: 0 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -168,6 +170,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello" }],
       selection: { start: 3, end: 3 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -177,6 +180,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello" }],
       selection: { start: 5, end: 5 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -186,6 +190,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello" }],
       selection: { start: 1, end: 4 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -195,6 +200,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello" }],
       selection: { start: 0, end: 5 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
 
@@ -210,6 +216,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       ],
       selection: { start: 5, end: 5 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -223,6 +230,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       ],
       selection: { start: 6, end: 6 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -236,6 +244,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       ],
       selection: { start: 8, end: 8 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -249,6 +258,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       ],
       selection: { start: 3, end: 8 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
 
@@ -266,6 +276,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       ],
       selection: { start: 2, end: 2 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -281,6 +292,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       ],
       selection: { start: 0, end: 5 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
 
@@ -292,6 +304,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello world" }],
       selection: { start: 8, end: 8 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -301,12 +314,25 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello world" }],
       selection: { start: 5, end: 5 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
 
-  // --- Atom highlighted (pending two-step delete) ---
-  // Note: atom highlight is CSS state, not in TugTextEditingState.
-  // Tests for two-step delete use operation sequences, not incoming state.
+  // --- Atom highlighted (two-step delete pending) ---
+  {
+    name: "atom-highlighted-single",
+    description: "'hello' + [main.rs highlighted] + '', atom at index 1 highlighted",
+    create: () => ({
+      segments: [
+        { kind: "text", text: "hello" },
+        { ...TEST_ATOM },
+        { kind: "text", text: "" },
+      ],
+      selection: { start: 5, end: 5 },
+      markedText: null,
+      highlightedAtomIndices: [1],
+    }),
+  },
 
   // --- Newline ---
   {
@@ -316,6 +342,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello\nworld" }],
       selection: { start: 6, end: 6 },
       markedText: null,
+      highlightedAtomIndices: [],
     }),
   },
 
@@ -327,6 +354,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "" }],
       selection: { start: 0, end: 0 },
       markedText: { start: 0, end: 0 },
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -336,6 +364,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       segments: [{ kind: "text", text: "hello" }],
       selection: { start: 3, end: 3 },
       markedText: { start: 3, end: 3 },
+      highlightedAtomIndices: [],
     }),
   },
   {
@@ -349,6 +378,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
       ],
       selection: { start: 6, end: 6 },
       markedText: { start: 6, end: 6 },
+      highlightedAtomIndices: [],
     }),
   },
 ];
@@ -590,8 +620,9 @@ export function state(
   segments: Segment[],
   selection: { start: number; end: number } | null = null,
   markedText: { start: number; end: number } | null = null,
+  highlightedAtomIndices: number[] = [],
 ): TugTextEditingState {
-  return { segments, selection, markedText };
+  return { segments, selection, markedText, highlightedAtomIndices };
 }
 
 /** Shorthand: collapsed cursor at offset. */

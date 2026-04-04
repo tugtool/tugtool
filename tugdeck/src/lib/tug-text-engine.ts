@@ -81,15 +81,19 @@ export interface TugTextInputDelegate {
   setSelectedRange(start: number, end?: number): void;
   /** Whether an IME composition is in progress. */
   readonly hasMarkedText: boolean;
+  /** Segment indices of atoms currently highlighted (two-step delete pending). */
+  readonly highlightedAtomIndices: readonly number[];
 
   // --- Mutation ---
-  /** Insert plain text at the current selection. */
+  /** Insert plain text at the current selection (replaces selection if ranged). */
   insertText(text: string): void;
-  /** Insert an atom at the current selection. */
+  /** Insert an atom at the current selection (replaces selection if ranged). */
   insertAtom(atom: AtomSegment): void;
-  /** Delete backward from the current selection (backspace). */
+  /** Delete content in flat offset range [start, end). Returns cursor position after deletion. */
+  deleteRange(start: number, end: number): number;
+  /** Delete backward from the current selection (backspace). Deletes range if selection is ranged. */
   deleteBackward(): void;
-  /** Delete forward from the current selection (forward delete). */
+  /** Delete forward from the current selection (forward delete). Deletes range if selection is ranged. */
   deleteForward(): void;
   /** Select all content. */
   selectAll(): void;
@@ -131,6 +135,8 @@ export interface TugTextEditingState {
   selection: { start: number; end: number } | null;
   /** Active IME composition range, or null if not composing. */
   markedText: { start: number; end: number } | null;
+  /** Segment indices of highlighted atoms (e.g., two-step delete pending). Empty if none. */
+  highlightedAtomIndices: number[];
 }
 
 /** Capture the current editing state from a delegate (reconstructs segments from getText/getAtoms). */
@@ -163,6 +169,7 @@ export function captureEditingState(d: TugTextInputDelegate): TugTextEditingStat
     segments,
     selection: d.getSelectedRange(),
     markedText: d.hasMarkedText ? d.getSelectedRange() : null,
+    highlightedAtomIndices: [...d.highlightedAtomIndices],
   };
 }
 
@@ -189,6 +196,12 @@ export function editingStatesEqual(a: TugTextEditingState, b: TugTextEditingStat
   if (a.markedText && b.markedText) {
     if (a.markedText.start !== b.markedText.start || a.markedText.end !== b.markedText.end) return false;
   }
+  const aHighlight = a.highlightedAtomIndices ?? [];
+  const bHighlight = b.highlightedAtomIndices ?? [];
+  if (aHighlight.length !== bHighlight.length) return false;
+  for (let i = 0; i < aHighlight.length; i++) {
+    if (aHighlight[i] !== bHighlight[i]) return false;
+  }
   return true;
 }
 
@@ -203,7 +216,10 @@ export function formatEditingState(s: TugTextEditingState): string {
   const marked = s.markedText
     ? ` marked:{${s.markedText.start},${s.markedText.end}}`
     : "";
-  return `${content} ${sel}${marked}`;
+  const highlight = (s.highlightedAtomIndices ?? []).length > 0
+    ? ` highlight:[${s.highlightedAtomIndices!.join(",")}]`
+    : "";
+  return `${content} ${sel}${marked}${highlight}`;
 }
 
 // ===================================================================
@@ -269,6 +285,8 @@ export class TugTextEngine {
   private observer: MutationObserver;
   private reconciling = false;
   private composingIndex: number | null = null;
+  /** Segment indices of highlighted atoms (two-step delete pending). */
+  highlightedAtomIndices: number[] = [];
   /** Timestamp of last compositionend — used to detect Enter that accepted IME. */
   private compositionEndedAt = 0;
   private undoStack: UndoEntry[] = [];
@@ -398,7 +416,7 @@ export class TugTextEngine {
   // dn.contains(node) catches any node inside the atom.
   // -----------------------------------------------------------------
 
-  saveSelection(): number | null {
+  saveCursorOffset(): number | null {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return null;
     if (!this.root.contains(sel.anchorNode)) return null;
@@ -494,12 +512,18 @@ export class TugTextEngine {
   }
 
   private clearAtomSelection(): void {
-    this.root.querySelectorAll(".tug-atom-selected")
-      .forEach(a => a.classList.remove("tug-atom-selected"));
+    for (const idx of this.highlightedAtomIndices) {
+      const node = this.domNodes[idx];
+      if (node instanceof HTMLSpanElement) {
+        node.classList.remove("tug-atom-selected");
+      }
+    }
+    this.highlightedAtomIndices = [];
   }
 
   private selectAtomAtIndex(idx: number): void {
     this.clearAtomSelection();
+    this.highlightedAtomIndices = [idx];
     const node = this.domNodes[idx];
     if (node instanceof HTMLSpanElement) {
       node.classList.add("tug-atom-selected");
@@ -519,7 +543,7 @@ export class TugTextEngine {
     } else {
       this.undoStack.push({
         segments: cloneSegments(this.segments),
-        cursorOffset: this.saveSelection() ?? 0,
+        cursorOffset: this.saveCursorOffset() ?? 0,
       });
       if (this.undoStack.length > UNDO_MAX) this.undoStack.shift();
     }
@@ -532,7 +556,7 @@ export class TugTextEngine {
     if (!this.canUndo) return;
     this.redoStack.push({
       segments: cloneSegments(this.segments),
-      cursorOffset: this.saveSelection() ?? 0,
+      cursorOffset: this.saveCursorOffset() ?? 0,
     });
     const entry = this.undoStack.pop()!;
     this.segments = entry.segments;
@@ -546,7 +570,7 @@ export class TugTextEngine {
     if (!this.canRedo) return;
     this.undoStack.push({
       segments: cloneSegments(this.segments),
-      cursorOffset: this.saveSelection() ?? 0,
+      cursorOffset: this.saveCursorOffset() ?? 0,
     });
     const entry = this.redoStack.pop()!;
     this.segments = entry.segments;
@@ -632,11 +656,57 @@ export class TugTextEngine {
   // Text mutation API (UITextInput-inspired)
   // -----------------------------------------------------------------
 
+  /**
+   * Delete content in the flat offset range [start, end).
+   * Returns the cursor position after deletion (= start).
+   * This is the primitive that all deletion operations build on.
+   */
+  deleteRange(start: number, end: number): number {
+    if (start === end) return start;
+    if (start > end) { const t = start; start = end; end = t; }
+
+    const startPos = this.segmentPosition(start);
+    const endPos = this.segmentPosition(end);
+
+    if (startPos.segmentIndex === endPos.segmentIndex) {
+      // Range is within a single text segment
+      const seg = this.segments[startPos.segmentIndex];
+      if (seg.kind === "text") {
+        (seg as TextSegment).text =
+          (seg as TextSegment).text.slice(0, startPos.offset) +
+          (seg as TextSegment).text.slice(endPos.offset);
+      }
+    } else {
+      // Range spans multiple segments: trim start, trim end, remove middle
+      const startSeg = this.segments[startPos.segmentIndex];
+      if (startSeg.kind === "text") {
+        (startSeg as TextSegment).text = (startSeg as TextSegment).text.slice(0, startPos.offset);
+      }
+      const endSeg = this.segments[endPos.segmentIndex];
+      if (endSeg.kind === "text") {
+        (endSeg as TextSegment).text = (endSeg as TextSegment).text.slice(endPos.offset);
+      }
+      // Remove segments strictly between start and end
+      const removeFrom = startPos.segmentIndex + 1;
+      const removeTo = endPos.segmentIndex;
+      if (removeTo > removeFrom) {
+        this.segments.splice(removeFrom, removeTo - removeFrom);
+      }
+    }
+
+    this.segments = normalizeSegments(this.segments);
+    return start;
+  }
+
   insertText(text: string): void {
-    const offset = this.saveSelection();
-    if (offset === null) return;
+    const range = this.getSelectedRange();
+    if (!range) return;
     this.clearAtomSelection();
     this.pushUndo("insert");
+    let offset = range.start;
+    if (range.start !== range.end) {
+      offset = this.deleteRange(range.start, range.end);
+    }
     const pos = this.segmentPosition(offset);
     const seg = this.segments[pos.segmentIndex];
     if (seg.kind === "text") {
@@ -650,10 +720,14 @@ export class TugTextEngine {
   }
 
   insertAtom(atom: AtomSegment): void {
-    const offset = this.saveSelection();
-    if (offset === null) return;
+    const range = this.getSelectedRange();
+    if (!range) return;
     this.clearAtomSelection();
     this.pushUndo("atom");
+    let offset = range.start;
+    if (range.start !== range.end) {
+      offset = this.deleteRange(range.start, range.end);
+    }
     const pos = this.segmentPosition(offset);
     const seg = this.segments[pos.segmentIndex];
     if (seg.kind !== "text") return;
@@ -672,12 +746,36 @@ export class TugTextEngine {
   }
 
   deleteBackward(): void {
-    const offset = this.saveSelection();
-    if (offset === null) return;
+    const range = this.getSelectedRange();
+    if (!range) return;
 
-    const selected = this.root.querySelector(".tug-atom-selected");
-    if (selected instanceof HTMLSpanElement) {
-      this.deleteAtomElement(selected);
+    // Ranged selection: delete the range
+    if (range.start !== range.end) {
+      this.pushUndo("delete");
+      const offset = this.deleteRange(range.start, range.end);
+      this.clearAtomSelection();
+      this.reconcile();
+      this.restoreSelection(offset);
+      this.onChange?.();
+      return;
+    }
+
+    const offset = range.start;
+
+    // Two-step delete: highlighted atom(s) → delete them
+    if (this.highlightedAtomIndices.length > 0) {
+      this.pushUndo("delete-atom");
+      // Delete in reverse index order so splicing doesn't shift later indices
+      const sorted = [...this.highlightedAtomIndices].sort((a, b) => b - a);
+      const firstFlat = this.flatOffset(sorted[sorted.length - 1], 0);
+      for (const idx of sorted) {
+        this.segments.splice(idx, 1);
+      }
+      this.highlightedAtomIndices = [];
+      this.segments = normalizeSegments(this.segments);
+      this.reconcile();
+      this.restoreSelection(firstFlat);
+      this.onChange?.();
       return;
     }
 
@@ -706,12 +804,35 @@ export class TugTextEngine {
   }
 
   deleteForward(): void {
-    const offset = this.saveSelection();
-    if (offset === null) return;
+    const range = this.getSelectedRange();
+    if (!range) return;
 
-    const selected = this.root.querySelector(".tug-atom-selected");
-    if (selected instanceof HTMLSpanElement) {
-      this.deleteAtomElement(selected);
+    // Ranged selection: delete the range
+    if (range.start !== range.end) {
+      this.pushUndo("delete");
+      const offset = this.deleteRange(range.start, range.end);
+      this.clearAtomSelection();
+      this.reconcile();
+      this.restoreSelection(offset);
+      this.onChange?.();
+      return;
+    }
+
+    const offset = range.start;
+
+    // Two-step delete: highlighted atom(s) → delete them
+    if (this.highlightedAtomIndices.length > 0) {
+      this.pushUndo("delete-atom");
+      const sorted = [...this.highlightedAtomIndices].sort((a, b) => b - a);
+      const firstFlat = this.flatOffset(sorted[sorted.length - 1], 0);
+      for (const idx of sorted) {
+        this.segments.splice(idx, 1);
+      }
+      this.highlightedAtomIndices = [];
+      this.segments = normalizeSegments(this.segments);
+      this.reconcile();
+      this.restoreSelection(firstFlat);
+      this.onChange?.();
       return;
     }
 
@@ -740,21 +861,8 @@ export class TugTextEngine {
     }
   }
 
-  private deleteAtomElement(atomEl: HTMLSpanElement): void {
-    const atomIdx = this.domNodes.indexOf(atomEl);
-    if (atomIdx === -1) return;
-    const label = (this.segments[atomIdx] as AtomSegment).label;
-    const atomFlat = this.flatOffset(atomIdx, 0);
-    this.pushUndo("delete-atom");
-    this.segments.splice(atomIdx, 1);
-    this.segments = normalizeSegments(this.segments);
-    this.reconcile();
-    this.restoreSelection(atomFlat);
-    this.onChange?.();
-    this.onLog?.(`delete atom: ${label}`);
-  }
-
   clear(): void {
+    this.clearAtomSelection();
     this.pushUndo("clear");
     this.segments = [{ kind: "text", text: "" }];
     this.reconcile();
@@ -769,15 +877,29 @@ export class TugTextEngine {
       segments: cloneSegments(this.segments),
       selection: this.getSelectedRange(),
       markedText: this.hasMarkedText ? this.getSelectedRange() : null,
+      highlightedAtomIndices: [...this.highlightedAtomIndices],
     };
   }
 
   /** Restore editing state from a snapshot. Used for persistence [L23]. */
   restoreState(state: TugTextEditingState): void {
+    this.clearAtomSelection();
     this.segments = normalizeSegments(cloneSegments(state.segments));
     this.reconcile();
     if (state.selection) {
       this.setSelectedRange(state.selection.start, state.selection.end);
+    }
+    // Restore atom highlights
+    if (state.highlightedAtomIndices && state.highlightedAtomIndices.length > 0) {
+      for (const idx of state.highlightedAtomIndices) {
+        if (idx < this.segments.length && this.segments[idx].kind === "atom") {
+          this.highlightedAtomIndices.push(idx);
+          const node = this.domNodes[idx];
+          if (node instanceof HTMLSpanElement) {
+            node.classList.add("tug-atom-selected");
+          }
+        }
+      }
     }
   }
 
@@ -787,7 +909,7 @@ export class TugTextEngine {
 
   private activateTypeahead(): void {
     if (!this.completionProvider) return;
-    const offset = this.saveSelection();
+    const offset = this.saveCursorOffset();
     if (offset === null) return;
     const pos = this.segmentPosition(offset);
     const filtered = this.completionProvider("");
@@ -808,7 +930,7 @@ export class TugTextEngine {
     const seg = this.segments[this.typeahead.anchorSegment];
     if (seg.kind !== "text") { this.cancelTypeahead(); return; }
     const text = (seg as TextSegment).text;
-    const offset = this.saveSelection();
+    const offset = this.saveCursorOffset();
     if (offset === null) { this.cancelTypeahead(); return; }
     const pos = this.segmentPosition(offset);
     if (pos.segmentIndex !== this.typeahead.anchorSegment) {
@@ -1120,7 +1242,7 @@ export class TugTextEngine {
   };
 
   private onCompositionStart = (): void => {
-    const offset = this.saveSelection();
+    const offset = this.saveCursorOffset();
     if (offset !== null) {
       const pos = this.segmentPosition(offset);
       this.composingIndex = pos.segmentIndex;
