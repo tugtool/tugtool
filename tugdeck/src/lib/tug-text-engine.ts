@@ -490,8 +490,10 @@ export class TugTextEngine {
     for (let i = 0; i < this.domNodes.length; i++) {
       const dn = this.domNodes[i];
       if (dn === node || dn.contains(node)) {
+        if (i >= this.segments.length) return 0;
         let flat = 0;
         for (let j = 0; j < i; j++) {
+          if (j >= this.segments.length) break;
           flat += this.segments[j].kind === "text"
             ? (this.segments[j] as TextSegment).text.length : 1;
         }
@@ -509,9 +511,9 @@ export class TugTextEngine {
         // Find the U+FFFC text node that precedes this badge
         const prev = parent.previousSibling;
         const idx = prev ? this.domNodes.indexOf(prev as Text) : -1;
-        if (idx !== -1 && this.segments[idx].kind === "atom") {
+        if (idx !== -1 && idx < this.segments.length && this.segments[idx].kind === "atom") {
           let flat = 0;
-          for (let j = 0; j <= idx; j++) {
+          for (let j = 0; j <= idx && j < this.segments.length; j++) {
             flat += this.segments[j].kind === "text"
               ? (this.segments[j] as TextSegment).text.length : 1;
           }
@@ -523,8 +525,8 @@ export class TugTextEngine {
   }
 
   /** Map a flat model offset to a DOM position for Selection.collapse().
-   *  For empty text segments (cursor anchors between atoms), uses root-relative
-   *  child positioning instead of the empty text node — WebKit mispositions
+   *  For empty text segments adjacent to atoms (cursor anchors between badge
+   *  spans), uses root-relative child positioning — WebKit mispositions
    *  the caret on empty text nodes adjacent to inline-flex badge spans. */
   private domPosition(flat: number): { node: Node; offset: number } | null {
     let remaining = flat;
@@ -533,9 +535,7 @@ export class TugTextEngine {
       if (seg.kind === "text") {
         const len = (seg as TextSegment).text.length;
         if (remaining <= len && this.domNodes[i]) {
-          if (len === 0) {
-            // Empty text node — use root-relative position instead.
-            // sel.collapse(root, childIdx+1) = "after this child".
+          if (len === 0 && this.hasAdjacentAtom(i) && this.composingIndex === null) {
             return this.rootPosition(this.domNodes[i]);
           }
           return { node: this.domNodes[i], offset: remaining };
@@ -544,7 +544,8 @@ export class TugTextEngine {
       } else {
         if (remaining === 0 && i > 0 && this.domNodes[i - 1]) {
           const prevSeg = this.segments[i - 1] as TextSegment;
-          if (prevSeg.text.length === 0) {
+          if (prevSeg.text.length === 0 && this.hasAdjacentAtom(i - 1)
+              && this.composingIndex === null) {
             return this.rootPosition(this.domNodes[i - 1]);
           }
           return { node: this.domNodes[i - 1], offset: prevSeg.text.length };
@@ -555,13 +556,20 @@ export class TugTextEngine {
     const last = this.segments.length - 1;
     if (last >= 0 && this.domNodes[last]) {
       const seg = this.segments[last];
-      if (seg.kind === "text" && (seg as TextSegment).text.length === 0) {
+      if (seg.kind === "text" && (seg as TextSegment).text.length === 0
+          && this.hasAdjacentAtom(last) && this.composingIndex === null) {
         return this.rootPosition(this.domNodes[last]);
       }
       const len = seg.kind === "text" ? (seg as TextSegment).text.length : 1;
       return { node: this.domNodes[last], offset: len };
     }
     return { node: this.root, offset: 0 };
+  }
+
+  /** Whether segment at index i has an adjacent atom segment. */
+  private hasAdjacentAtom(i: number): boolean {
+    return (i > 0 && this.segments[i - 1]?.kind === "atom") ||
+           (i < this.segments.length - 1 && this.segments[i + 1]?.kind === "atom");
   }
 
   /** Root-relative position: "after child" = {node: root, offset: childIdx + 1}. */
@@ -1318,7 +1326,7 @@ export class TugTextEngine {
       if (rec.type === "characterData") {
         const textNode = rec.target as Text;
         const idx = this.domNodes.indexOf(textNode as unknown as Text);
-        if (idx !== -1 && this.segments[idx].kind === "text") {
+        if (idx !== -1 && idx < this.segments.length && this.segments[idx].kind === "text") {
           // Normal text segment mutation
           const newText = textNode.textContent ?? "";
           const oldText = (this.segments[idx] as TextSegment).text;
@@ -1327,7 +1335,7 @@ export class TugTextEngine {
             (this.segments[idx] as TextSegment).text = newText;
             changed = true;
           }
-        } else if (idx !== -1 && this.segments[idx].kind === "atom") {
+        } else if (idx !== -1 && idx < this.segments.length && this.segments[idx].kind === "atom") {
           // Stray edit in atom's U+FFFC text node. The browser inserted text
           // at atomText:1. Extract the stray text and redirect it to the
           // trailing text segment.
@@ -1453,6 +1461,7 @@ export class TugTextEngine {
     el.addEventListener("drop", this.onDrop);
     el.addEventListener("click", this.onClick);
     el.addEventListener("focus", this.onFocus);
+    document.addEventListener("selectionchange", this.onSelectionChange);
   }
 
   teardown(): void {
@@ -1467,6 +1476,7 @@ export class TugTextEngine {
     el.removeEventListener("drop", this.onDrop);
     el.removeEventListener("click", this.onClick);
     el.removeEventListener("focus", this.onFocus);
+    document.removeEventListener("selectionchange", this.onSelectionChange);
     this.observer.disconnect();
   }
 
@@ -1802,7 +1812,7 @@ export class TugTextEngine {
       const prev = badge.previousSibling;
       if (prev) {
         const idx = this.domNodes.indexOf(prev as Text);
-        if (idx !== -1 && this.segments[idx].kind === "atom") {
+        if (idx !== -1 && idx < this.segments.length && this.segments[idx].kind === "atom") {
           this.onLog?.(`click: atom[${idx}] "${(this.segments[idx] as AtomSegment).label}"`);
           this.setHighlightedAtomIndices([idx]);
           return;
@@ -1812,6 +1822,66 @@ export class TugTextEngine {
     this.onLog?.("click: clear atom selection");
     this.clearAtomSelection();
   };
+
+  private fixingSelection = false;
+
+  private onSelectionChange = (): void => {
+    if (this.fixingSelection) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode || !this.root.contains(sel.anchorNode)) return;
+    if (this.composingIndex !== null || this.reconciling) return;
+
+    // Fix caret on empty text nodes adjacent to atoms: when the browser
+    // natively places the caret on an empty Text("") node (e.g., via mouse
+    // click near a badge span), reposition it using root-relative offset so
+    // WebKit renders it correctly. Only applies to empty text nodes that are
+    // between/adjacent to atoms — not standalone empty text (e.g., empty editor).
+    if (sel.isCollapsed && sel.anchorNode instanceof Text &&
+        this.domNodes.includes(sel.anchorNode as Text)) {
+      const segIdx = this.domNodes.indexOf(sel.anchorNode as Text);
+      const segLen = segIdx >= 0 && segIdx < this.segments.length && this.segments[segIdx].kind === "text"
+        ? (this.segments[segIdx] as TextSegment).text.length : -1;
+      // Fix caret on empty text nodes (model length 0) adjacent to atoms.
+      // For interior anchors: reposition to root-relative offset.
+      // For trailing ZWSP anchor: position at offset 1 (after ZWSP).
+      if (segLen === 0 && this.hasAdjacentAtom(segIdx)) {
+        this.fixingSelection = true;
+        const pos = this.rootPosition(sel.anchorNode);
+        sel.collapse(pos.node, pos.offset);
+        this.fixingSelection = false;
+      }
+    }
+
+    // Update visual selection on atom badges
+    this.updateAtomSelectionVisual();
+  };
+
+  /** Apply/remove tug-atom-in-selection class on atom badges based on current selection. */
+  private updateAtomSelectionVisual(): void {
+    const range = this.getSelectedRange();
+    for (let i = 0; i < this.segments.length; i++) {
+      if (this.segments[i].kind !== "atom") continue;
+      const badge = this.atomBadge(i);
+      if (!badge) continue;
+      if (range && range.start !== range.end) {
+        // Atom's flat offset
+        let atomStart = 0;
+        for (let j = 0; j < i; j++) {
+          atomStart += this.segments[j].kind === "text"
+            ? (this.segments[j] as TextSegment).text.length : 1;
+        }
+        const atomEnd = atomStart + 1;
+        // Atom is in selection if ranges overlap
+        if (atomStart < range.end && atomEnd > range.start) {
+          badge.classList.add("tug-atom-in-selection");
+        } else {
+          badge.classList.remove("tug-atom-in-selection");
+        }
+      } else {
+        badge.classList.remove("tug-atom-in-selection");
+      }
+    }
+  }
 
   private onFocus = (): void => {
     this.onLog?.("focus");

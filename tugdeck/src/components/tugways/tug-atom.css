@@ -163,6 +163,16 @@
 }
 
 /* ---------------------------------------------------------------------------
+   State: in-selection (atom within a ranged text selection)
+   --------------------------------------------------------------------------- */
+
+.tug-atom-in-selection {
+  background-color: var(--tug7-surface-atom-primary-normal-selected-rest);
+  /* @tug-renders-on: --tug7-surface-atom-primary-normal-selected-rest */
+  color: var(--tug7-element-atom-text-normal-selected-rest);
+}
+
+/* ---------------------------------------------------------------------------
    State: highlighted (search match, typeahead preview)
    --------------------------------------------------------------------------- */
 

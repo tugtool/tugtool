@@ -162,20 +162,26 @@ function simulateComposition(d: TugTextInputDelegate, intermediates: string[], c
   if (!sel || !sel.anchorNode) return;
 
   // Find the text node and offset where composition starts
-  let textNode: Text;
-  let baseOffset: number;
+  let textNode: Text = null!;
+  let baseOffset: number = 0;
   if (sel.anchorNode instanceof Text) {
     textNode = sel.anchorNode;
     baseOffset = sel.anchorOffset;
   } else {
-    // Cursor is at root level — find or create a text node
-    const child = el.childNodes[sel.anchorOffset];
-    if (child instanceof Text) {
-      textNode = child;
-      baseOffset = 0;
-    } else {
-      return; // Can't compose at this position
+    // Cursor is at root level (e.g., root-relative position from domPosition).
+    // Find the nearest text node at or before the anchor offset.
+    let found = false;
+    const offset = sel.anchorOffset;
+    // Try the child at offset, then the child before it
+    for (let ci = offset; ci >= 0 && ci < el.childNodes.length; ci--) {
+      if (el.childNodes[ci] instanceof Text) {
+        textNode = el.childNodes[ci] as Text;
+        baseOffset = ci < offset ? (textNode.textContent?.length ?? 0) : 0;
+        found = true;
+        break;
+      }
     }
+    if (!found) return; // Can't compose at this position
   }
 
   const textBefore = textNode.textContent?.slice(0, baseOffset) ?? "";
