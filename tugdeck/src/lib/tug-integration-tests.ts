@@ -1519,10 +1519,8 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     d.setSelectedRange(7); // at space between "two" and "three"
     d.deleteWordBackward();
     const t = d.getText();
-    // Deletes "two" (word before cursor), leaving "one " + " three"
-    // The double space is expected: visible units stops at word boundary, not space
-    const passed = t === "one  three" || t === "one three";
-    return { passed, detail: `text="${t}"` };
+    // macOS behavior: Option+Delete deletes " two" (space + word), leaving "one three"
+    return { passed: t === "one three", detail: `text="${t}"` };
   });
 
   test("deleteWordForward: three words, cursor at start of second", () => {

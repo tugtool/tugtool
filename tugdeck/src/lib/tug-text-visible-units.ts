@@ -120,22 +120,38 @@ export function startOfWord(segments: readonly Segment[], offset: number): numbe
 
   let pos = offset;
 
-  // Skip whitespace backward
+  // Skip whitespace backward (handles cursor at/after spaces).
+  // Check both the char at the cursor (flat[pos]) and before it (flat[pos-1])
+  // to detect if the cursor is at a word boundary with whitespace.
+  const startedOnWhitespace = (pos > 0 && classifyChar(flat[pos - 1]) === CharClass.Space) ||
+    (pos < flat.length && classifyChar(flat[pos]) === CharClass.Space);
   while (pos > 0 && classifyChar(flat[pos - 1]) === CharClass.Space) {
     pos--;
   }
 
   if (pos === 0) return 0;
 
-  // Check what's just before the cursor
+  // Check what's just before the cursor (after skipping whitespace)
   const cls = classifyChar(flat[pos - 1]);
 
   // Atom: it's its own word — just step over it
   if (cls === CharClass.Atom) return pos - 1;
 
-  // Skip characters of the same class
+  // Skip characters of the same class backward
   while (pos > 0 && classifyChar(flat[pos - 1]) === cls) {
     pos--;
+  }
+
+  // macOS behavior: if we started by skipping whitespace (cursor was at/after
+  // a space), also consume whitespace before the word. This ensures
+  // Option+Delete from "one two| three" (cursor on space) deletes " two"
+  // and leaves "one three" (single space), not "one  three" (double space).
+  // But if the cursor was directly after word characters (e.g., end of
+  // "hello world|"), don't consume the preceding space — just delete the word.
+  if (startedOnWhitespace) {
+    while (pos > 0 && classifyChar(flat[pos - 1]) === CharClass.Space) {
+      pos--;
+    }
   }
 
   return pos;
