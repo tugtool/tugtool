@@ -1231,16 +1231,14 @@ Engine extraction and integration:
 - `::selection` re-enabled, `::highlight(card-selection)` suppressed inside editor
 - `data-td-select="custom"` to exempt from SelectionGuard clipping
 
-Atom architecture (U+E100):
-- Atoms are U+E100 (PUA) characters in the text flow — the browser navigates them as single characters
-- Atom DOM: `<span data-slot="tug-atom">` (inline-flex, styled) containing a U+E100 text node + a `contentEditable="false"` label span
-- The outer atom span does NOT have `contentEditable="false"` — only the label does
-- `-webkit-user-modify: read-write-plaintext-only` stays — it only strips browser-generated markup, not engine-placed spans. Atom spans survive. IME composition behavior preserved.
-- Arrow keys, shift+selection, word movement all treat atoms as single character positions
+Atom architecture (U+E100 — planned, not yet implemented):
+- Target: atoms are U+E100 (PUA) characters in the text flow — browser navigates them as single characters
+- Target DOM: `<span data-slot="tug-atom">` (inline-flex, styled) containing a U+E100 text node + a `contentEditable="false"` label span
+- Current: atoms use `contentEditable="false"` spans, which has navigation bugs (arrow keys skip atoms incorrectly)
+- Spike (2026-04-03) validated browser behavior on bare DOM; first implementation (2026-04-04) reverted — broke interactive editor. Integration tests needed before re-attempting.
 - Visible units layer (WebKit `visible_units.h` architecture): `startOfWord`, `endOfWord`, `startOfParagraph`, `endOfParagraph` — pure functions over the segment model, atoms are word boundaries
 - Deletion by granularity (word, line, paragraph) built on visible units + `deleteRange` primitive
 - Kill ring (Ctrl+K/Y), transpose (Ctrl+T), openLine (Ctrl+O) — Emacs text system bindings
-- `TUG_ATOM_CHAR = "\uE100"` constant defined once, used everywhere
 
 Prefix detection:
 - First character `>`, `$`, `:` sets the active route
