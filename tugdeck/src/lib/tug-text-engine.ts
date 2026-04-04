@@ -25,6 +25,7 @@
 
 import { createAtomDOM } from "@/components/tugways/tug-atom";
 import type { AtomSegment } from "@/components/tugways/tug-atom";
+import { startOfWord, endOfWord, startOfParagraph, endOfParagraph } from "./tug-text-visible-units";
 
 // ===================================================================
 // Types
@@ -95,10 +96,26 @@ export interface TugTextInputDelegate {
   deleteBackward(): void;
   /** Delete forward from the current selection (forward delete). Deletes range if selection is ranged. */
   deleteForward(): void;
+  /** Delete word backward (Option+Delete). */
+  deleteWordBackward(): void;
+  /** Delete word forward (Option+Fn+Delete). */
+  deleteWordForward(): void;
+  /** Delete to paragraph start. */
+  deleteParagraphBackward(): void;
+  /** Delete to paragraph end. */
+  deleteParagraphForward(): void;
   /** Select all content. */
   selectAll(): void;
   /** Clear all content. */
   clear(): void;
+  /** Kill line: delete to paragraph end, save to kill ring (Ctrl+K). */
+  killLine(): void;
+  /** Yank: paste from kill ring (Ctrl+Y). */
+  yank(): void;
+  /** Transpose characters around cursor (Ctrl+T). */
+  transpose(): void;
+  /** Open line: insert newline, cursor stays (Ctrl+O). */
+  openLine(): void;
 
   // --- Undo ---
   readonly canUndo: boolean;
@@ -861,6 +878,195 @@ export class TugTextEngine {
     }
   }
 
+  // -----------------------------------------------------------------
+  // Deletion by granularity (visible units)
+  // -----------------------------------------------------------------
+
+  deleteWordBackward(): void {
+    const range = this.getSelectedRange();
+    if (!range) return;
+    if (range.start !== range.end) {
+      this.pushUndo("delete");
+      const offset = this.deleteRange(range.start, range.end);
+      this.clearAtomSelection();
+      this.reconcile();
+      this.restoreSelection(offset);
+      this.onChange?.();
+      return;
+    }
+    const boundary = startOfWord(this.segments, range.start);
+    if (boundary === range.start) return;
+    this.clearAtomSelection();
+    this.pushUndo("delete-word");
+    this.deleteRange(boundary, range.start);
+    this.reconcile();
+    this.restoreSelection(boundary);
+    this.onChange?.();
+  }
+
+  deleteWordForward(): void {
+    const range = this.getSelectedRange();
+    if (!range) return;
+    if (range.start !== range.end) {
+      this.pushUndo("delete");
+      const offset = this.deleteRange(range.start, range.end);
+      this.clearAtomSelection();
+      this.reconcile();
+      this.restoreSelection(offset);
+      this.onChange?.();
+      return;
+    }
+    const boundary = endOfWord(this.segments, range.start);
+    if (boundary === range.start) return;
+    this.clearAtomSelection();
+    this.pushUndo("delete-word");
+    this.deleteRange(range.start, boundary);
+    this.reconcile();
+    this.restoreSelection(range.start);
+    this.onChange?.();
+  }
+
+  deleteParagraphBackward(): void {
+    const range = this.getSelectedRange();
+    if (!range) return;
+    if (range.start !== range.end) {
+      this.pushUndo("delete");
+      const offset = this.deleteRange(range.start, range.end);
+      this.clearAtomSelection();
+      this.reconcile();
+      this.restoreSelection(offset);
+      this.onChange?.();
+      return;
+    }
+    const boundary = startOfParagraph(this.segments, range.start);
+    if (boundary === range.start) return;
+    this.clearAtomSelection();
+    this.pushUndo("delete-paragraph");
+    this.deleteRange(boundary, range.start);
+    this.reconcile();
+    this.restoreSelection(boundary);
+    this.onChange?.();
+  }
+
+  deleteParagraphForward(): void {
+    const range = this.getSelectedRange();
+    if (!range) return;
+    if (range.start !== range.end) {
+      this.pushUndo("delete");
+      const offset = this.deleteRange(range.start, range.end);
+      this.clearAtomSelection();
+      this.reconcile();
+      this.restoreSelection(offset);
+      this.onChange?.();
+      return;
+    }
+    const boundary = endOfParagraph(this.segments, range.start);
+    if (boundary === range.start) return;
+    this.clearAtomSelection();
+    this.pushUndo("delete-paragraph");
+    this.deleteRange(range.start, boundary);
+    this.reconcile();
+    this.restoreSelection(range.start);
+    this.onChange?.();
+  }
+
+  // -----------------------------------------------------------------
+  // Kill ring
+  // -----------------------------------------------------------------
+
+  private killRing = "";
+
+  killLine(): void {
+    const range = this.getSelectedRange();
+    if (!range) return;
+    if (range.start !== range.end) {
+      // With selection: kill the selection
+      this.killRing = this.getText().slice(range.start, range.end);
+      this.pushUndo("kill");
+      this.deleteRange(range.start, range.end);
+      this.clearAtomSelection();
+      this.reconcile();
+      this.restoreSelection(range.start);
+      this.onChange?.();
+      return;
+    }
+    const boundary = endOfParagraph(this.segments, range.start);
+    if (boundary === range.start) return;
+    this.killRing = this.getText().slice(range.start, boundary);
+    this.clearAtomSelection();
+    this.pushUndo("kill");
+    this.deleteRange(range.start, boundary);
+    this.reconcile();
+    this.restoreSelection(range.start);
+    this.onChange?.();
+    this.onLog?.(`kill: "${this.killRing.slice(0, 20)}${this.killRing.length > 20 ? "..." : ""}"`);
+  }
+
+  yank(): void {
+    if (!this.killRing) return;
+    this.insertText(this.killRing);
+    this.onLog?.(`yank: "${this.killRing.slice(0, 20)}${this.killRing.length > 20 ? "..." : ""}"`);
+  }
+
+  // -----------------------------------------------------------------
+  // Text transforms
+  // -----------------------------------------------------------------
+
+  transpose(): void {
+    const range = this.getSelectedRange();
+    if (!range || range.start !== range.end) return;
+    const offset = range.start;
+    const flat = this.getText();
+    // Need at least 2 characters, and cursor not at position 0
+    if (offset < 1 || offset > flat.length) return;
+    // If at end of document, transpose the two characters before cursor
+    const swapPos = offset >= flat.length ? offset - 2 : offset - 1;
+    if (swapPos < 0) return;
+    const a = flat[swapPos];
+    const b = flat[swapPos + 1];
+    if (a === "\uFFFC" || b === "\uFFFC") return; // Don't transpose atoms
+    this.pushUndo("transpose");
+    this.deleteRange(swapPos, swapPos + 2);
+    // Insert in reverse order at swapPos
+    const pos = this.segmentPosition(swapPos);
+    const seg = this.segments[pos.segmentIndex];
+    if (seg.kind === "text") {
+      (seg as TextSegment).text =
+        (seg as TextSegment).text.slice(0, pos.offset) + b + a +
+        (seg as TextSegment).text.slice(pos.offset);
+    }
+    this.reconcile();
+    this.restoreSelection(swapPos + 2);
+    this.onChange?.();
+    this.onLog?.(`transpose: '${a}' ↔ '${b}'`);
+  }
+
+  openLine(): void {
+    const range = this.getSelectedRange();
+    if (!range) return;
+    const offset = range.start;
+    if (range.start !== range.end) {
+      // With selection: delete it first
+      this.pushUndo("insert");
+      this.deleteRange(range.start, range.end);
+    } else {
+      this.pushUndo("insert");
+    }
+    // Insert newline at cursor position
+    const pos = this.segmentPosition(offset);
+    const seg = this.segments[pos.segmentIndex];
+    if (seg.kind === "text") {
+      (seg as TextSegment).text =
+        (seg as TextSegment).text.slice(0, pos.offset) + "\n" +
+        (seg as TextSegment).text.slice(pos.offset);
+    }
+    this.reconcile();
+    // Cursor stays at original position (before the newline)
+    this.restoreSelection(offset);
+    this.onChange?.();
+    this.onLog?.("openLine");
+  }
+
   clear(): void {
     this.clearAtomSelection();
     this.pushUndo("clear");
@@ -1146,6 +1352,34 @@ export class TugTextEngine {
       return;
     }
 
+    // Ctrl+key Emacs bindings
+    if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+      if (e.key === "k") {
+        e.preventDefault();
+        this.onLog?.("  → killLine (Ctrl+K)");
+        this.killLine();
+        return;
+      }
+      if (e.key === "y") {
+        e.preventDefault();
+        this.onLog?.("  → yank (Ctrl+Y)");
+        this.yank();
+        return;
+      }
+      if (e.key === "t") {
+        e.preventDefault();
+        this.onLog?.("  → transpose (Ctrl+T)");
+        this.transpose();
+        return;
+      }
+      if (e.key === "o") {
+        e.preventDefault();
+        this.onLog?.("  → openLine (Ctrl+O)");
+        this.openLine();
+        return;
+      }
+    }
+
     // Return (main keyboard) vs Enter (numpad)
     if (e.key === "Enter") {
       e.preventDefault();
@@ -1209,15 +1443,44 @@ export class TugTextEngine {
         this.onLog?.("  → prevented (insertParagraph)");
         break;
       case "deleteContentBackward":
+        e.preventDefault();
+        this.onLog?.("  → deleteBackward");
+        this.deleteBackward();
+        break;
       case "deleteContentForward":
-      case "deleteSoftLineBackward":
-      case "deleteSoftLineForward":
-      case "deleteHardLineBackward":
-      case "deleteHardLineForward":
+        e.preventDefault();
+        this.onLog?.("  → deleteForward");
+        this.deleteForward();
+        break;
       case "deleteWordBackward":
+        e.preventDefault();
+        this.onLog?.("  → deleteWordBackward");
+        this.deleteWordBackward();
+        break;
       case "deleteWordForward":
         e.preventDefault();
-        this.onLog?.(`  → prevented (${e.inputType})`);
+        this.onLog?.("  → deleteWordForward");
+        this.deleteWordForward();
+        break;
+      case "deleteSoftLineBackward":
+        e.preventDefault();
+        this.onLog?.("  → deleteParagraphBackward (soft ≡ paragraph)");
+        this.deleteParagraphBackward();
+        break;
+      case "deleteSoftLineForward":
+        e.preventDefault();
+        this.onLog?.("  → deleteParagraphForward (soft ≡ paragraph)");
+        this.deleteParagraphForward();
+        break;
+      case "deleteHardLineBackward":
+        e.preventDefault();
+        this.onLog?.("  → deleteParagraphBackward");
+        this.deleteParagraphBackward();
+        break;
+      case "deleteHardLineForward":
+        e.preventDefault();
+        this.onLog?.("  → killLine");
+        this.killLine();
         break;
       case "historyUndo":
         e.preventDefault();
