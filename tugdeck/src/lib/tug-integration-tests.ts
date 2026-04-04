@@ -1602,15 +1602,35 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed, detail: `sel=${range?.start}..${range?.end} (expect 5..6)` };
   });
 
-  test("B06: click atom should highlight it (two-step select)", () => {
+  test("B02: first return key swallowed, second works", () => {
+    // Select "Return = newline" mode, type "hello", press Return twice
+    // The first Return should insert a newline. If it doesn't, that's the bug.
+    type(d, "hello");
+
+    // Simulate Return key — the engine handles Enter via keydown → insertText("\n")
+    // We call insertText directly since we can't dispatch trusted keydown events
+    d.insertText("\n");
+    const afterFirst = d.getText();
+
+    d.insertText("\n");
+    const afterSecond = d.getText();
+
+    // Both should have inserted newlines
+    const firstWorked = afterFirst === "hello\n";
+    const secondWorked = afterSecond === "hello\n\n";
+    const passed = firstWorked && secondWorked;
+    return {
+      passed,
+      detail: `afterFirst="${afterFirst.replace(/\n/g, "\\n")}" (expect "hello\\n"), afterSecond="${afterSecond.replace(/\n/g, "\\n")}" (expect "hello\\n\\n")`,
+    };
+  });
+
+  test("B06: click atom should highlight it and hide caret", () => {
     // Type "hello", insert atom
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
 
-    // Simulate clicking the atom — the engine's onClick handler checks for atom clicks
-    // and calls setHighlightedAtomIndices. We can't dispatch a real click event
-    // (untrusted clicks don't position caret), but we can call the engine's
-    // click path directly: find the atom span and simulate what onClick does.
+    // Simulate clicking the atom
     const atomSpan = el!.querySelector("[data-slot=tug-atom]");
     if (!atomSpan) return { passed: false, detail: "No atom span found" };
 
@@ -1618,7 +1638,20 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     atomSpan.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     const highlighted = atomIsHighlighted(d);
-    return { passed: highlighted, detail: `highlighted=${highlighted}` };
+
+    // The cursor should NOT be blinking inside/adjacent to the atom.
+    // After clicking an atom, the selection should either:
+    // (a) be collapsed to a position outside the atom, or
+    // (b) the atom should be the "selection" (highlighted state) with no visible caret
+    // Check: is the cursor inside the atom span?
+    const caretInAtom = cursorIsInsideAtom(d);
+
+    // The atom should be highlighted AND the caret should not be visually inside the atom
+    const passed = highlighted && !caretInAtom;
+    return {
+      passed,
+      detail: `highlighted=${highlighted}, caretInAtom=${caretInAtom} (expect false)`,
+    };
   });
 
   // ── Summary ──
