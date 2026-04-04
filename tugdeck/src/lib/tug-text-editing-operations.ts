@@ -281,7 +281,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
   },
   {
     name: "two-atoms-selection-spanning-both",
-    description: "'a' + [main.rs] + '' + [lib.rs] + 'z', select all (0..5)",
+    description: "'a' + [main.rs] + '' + [lib.rs] + 'z', select all (0..4)",
     create: () => ({
       segments: [
         { kind: "text", text: "a" },
@@ -290,7 +290,7 @@ export const INCOMING_STATES: readonly IncomingState[] = [
         { ...TEST_ATOM_2 },
         { kind: "text", text: "z" },
       ],
-      selection: { start: 0, end: 5 },
+      selection: { start: 0, end: 4 },
       markedText: null,
       highlightedAtomIndices: [],
     }),
@@ -935,14 +935,14 @@ export const HAND_WRITTEN_TEOES: readonly TEOE[] = [
   {
     id: "undo-after-atom-delete",
     name: "Undo after two-step atom deletion",
-    description: "Delete atom via two-step, undo restores it",
+    description: "Delete atom via two-step, undo restores it. Cursor returns to position before delete.",
     incoming: state([text("hello"), atom1(), text("")], cursor(6)),
     sequenceOps: [
       { type: "deleteBackward" },   // highlight
       { type: "deleteBackward" },   // delete
       { type: "undo" },             // restore
     ],
-    expected: state([text("hello"), atom1(), text("")], cursor(5)),
+    expected: state([text("hello"), atom1(), text("")], cursor(6)),
     tags: ["undo", "two-step", "sequence"],
   },
 
@@ -1124,7 +1124,7 @@ function generateSelectAlls(): TEOE[] {
     { name: "text-cursor-middle", flatLen: 5 },
     { name: "text-atom-cursor-before-atom", flatLen: 6 },
     { name: "multiline-cursor-after-newline", flatLen: 11 },
-    { name: "two-atoms-cursor-between", flatLen: 5 },
+    { name: "two-atoms-cursor-between", flatLen: 4 },
   ];
 
   return cases.map(({ name, flatLen }) => {

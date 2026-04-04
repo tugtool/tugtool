@@ -176,6 +176,8 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       undo() { engineRef.current?.undo(); },
       redo() { engineRef.current?.redo(); },
       focus() { engineRef.current?.root.focus(); },
+      restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
+      flushMutations() { engineRef.current?.flushMutations(); },
       getEditorElement() { return engineRef.current?.root ?? null; },
     }), []);
 

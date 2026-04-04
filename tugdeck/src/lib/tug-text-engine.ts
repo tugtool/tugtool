@@ -128,7 +128,13 @@ export interface TugTextInputDelegate {
   // --- Focus ---
   focus(): void;
 
+  // --- State management ---
+  /** Restore editing state from a snapshot. Resets undo history. */
+  restoreState(state: TugTextEditingState): void;
+
   // --- Testing ---
+  /** Flush pending MutationObserver records synchronously. Call after execCommand. */
+  flushMutations(): void;
   /** The contentEditable DOM element. For test harness event dispatch. */
   getEditorElement(): HTMLDivElement | null;
 }
@@ -167,9 +173,8 @@ export function captureEditingState(d: TugTextInputDelegate): TugTextEditingStat
   let textStart = 0;
   for (let i = 0; i < text.length; i++) {
     if (text[i] === "\uFFFC") {
-      if (i > textStart) {
-        segments.push({ kind: "text", text: text.slice(textStart, i) });
-      }
+      // Always push the text before the atom (even if empty)
+      segments.push({ kind: "text", text: text.slice(textStart, i) });
       if (atomIdx < atoms.length) {
         segments.push({ ...atoms[atomIdx] });
         atomIdx++;
@@ -177,15 +182,11 @@ export function captureEditingState(d: TugTextInputDelegate): TugTextEditingStat
       textStart = i + 1;
     }
   }
-  if (textStart <= text.length) {
-    segments.push({ kind: "text", text: text.slice(textStart) });
-  }
-  if (segments.length === 0) {
-    segments.push({ kind: "text", text: "" });
-  }
+  // Trailing text (always push, even if empty, to maintain text-atom-text invariant)
+  segments.push({ kind: "text", text: text.slice(textStart) });
 
   return {
-    segments,
+    segments: normalizeSegments(segments),
     selection: d.getSelectedRange(),
     markedText: d.hasMarkedText ? d.getSelectedRange() : null,
     highlightedAtomIndices: [...d.getHighlightedAtomIndices()],
@@ -1099,6 +1100,10 @@ export class TugTextEngine {
   /** Restore editing state from a snapshot. Used for persistence [L23]. */
   restoreState(state: TugTextEditingState): void {
     this.clearAtomSelection();
+    this.undoStack = [];
+    this.redoStack = [];
+    this.lastEditTime = 0;
+    this.lastEditType = "";
     this.segments = normalizeSegments(cloneSegments(state.segments));
     this.reconcile();
     if (state.selection) {
@@ -1207,6 +1212,13 @@ export class TugTextEngine {
   // -----------------------------------------------------------------
   // MutationObserver
   // -----------------------------------------------------------------
+
+  flushMutations(): void {
+    const records = this.observer.takeRecords();
+    if (records.length > 0) {
+      this.handleMutations(records);
+    }
+  }
 
   private handleMutations = (records: MutationRecord[]): void => {
     if (this.reconciling) return;

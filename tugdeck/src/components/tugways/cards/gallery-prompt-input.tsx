@@ -64,12 +64,14 @@ interface TestCase {
 
 /**
  * Simulate typing via execCommand — goes through the browser's editing pipeline.
+ * Flushes MutationObserver synchronously so the engine model is updated before return.
  */
 function typeText(d: TugTextInputDelegate, text: string): void {
   const el = d.getEditorElement();
   if (!el) return;
   el.focus();
   document.execCommand("insertText", false, text);
+  d.flushMutations();
 }
 
 /**
@@ -156,36 +158,18 @@ function executeOperation(d: TugTextInputDelegate, op: Operation): void {
  * 4. Compare with expected
  */
 function runTEOE(d: TugTextInputDelegate, teoe: TEOE): TestResult {
-  // Set up incoming state
-  // Use the engine's restoreState for segments + selection
   const el = d.getEditorElement();
   if (!el) {
     return { name: teoe.name, passed: false, expected: "", actual: "No editor element" };
   }
   el.focus();
 
-  // We need to access the engine directly for restoreState
-  // The delegate doesn't expose restoreState, but clear + programmatic setup works
-  d.clear();
-
-  // Build up the incoming state through the delegate API:
-  // Insert text and atoms segment by segment
-  for (const seg of teoe.incoming.segments) {
-    if (seg.kind === "text" && seg.text) {
-      d.insertText(seg.text);
-    } else if (seg.kind === "atom") {
-      d.insertAtom(seg as AtomSegment);
-    }
-  }
-
-  // Set selection
+  // Set up incoming state via restoreState — clean slate with no undo history
+  d.restoreState(teoe.incoming);
+  el.focus();
+  // Re-apply selection after focus — restoreState sets it but focus may reset it
   if (teoe.incoming.selection) {
     d.setSelectedRange(teoe.incoming.selection.start, teoe.incoming.selection.end);
-  }
-
-  // Set atom highlights
-  if (teoe.incoming.highlightedAtomIndices.length > 0) {
-    d.setHighlightedAtomIndices(teoe.incoming.highlightedAtomIndices);
   }
 
   // Execute operation(s)
@@ -772,8 +756,8 @@ export function GalleryPromptInput() {
           )}
         </div>
 
-        {/* Test editor — offscreen but focusable for test execution */}
-        <div style={{ position: "absolute", left: "-9999px", width: "400px", height: "100px" }}>
+        {/* Test editor — visually hidden but with real layout so execCommand works */}
+        <div style={{ position: "fixed", top: "-200px", left: 0, width: "400px", height: "100px" }}>
           <TugPromptInput ref={testInputRef} placeholder="" maxRows={2} persistState={false} />
         </div>
 
