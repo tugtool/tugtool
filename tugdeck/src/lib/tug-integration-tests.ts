@@ -169,13 +169,14 @@ function simulateComposition(d: TugTextInputDelegate, intermediates: string[], c
     baseOffset = sel.anchorOffset;
   } else {
     // Cursor is at root level (e.g., root-relative position from domPosition).
-    // Find the nearest text node at or before the anchor offset.
+    // Find the nearest composable text node at or before the anchor offset.
+    // Skip U+FFFC text nodes (atom navigable characters — not valid for composition).
     let found = false;
     const offset = sel.anchorOffset;
-    // Try the child at offset, then the child before it
-    for (let ci = offset; ci >= 0 && ci < el.childNodes.length; ci--) {
-      if (el.childNodes[ci] instanceof Text) {
-        textNode = el.childNodes[ci] as Text;
+    for (let ci = Math.min(offset, el.childNodes.length - 1); ci >= 0; ci--) {
+      const child = el.childNodes[ci];
+      if (child instanceof Text && child.textContent !== "\uFFFC") {
+        textNode = child;
         baseOffset = ci < offset ? (textNode.textContent?.length ?? 0) : 0;
         found = true;
         break;

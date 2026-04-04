@@ -760,6 +760,14 @@ export class TugTextEngine {
       existingBr.remove();
     }
 
+    // Trailing atom cursor fix: set data attribute so CSS ::after can provide
+    // a caret anchor after the last badge. No extra DOM children needed.
+    const lastIdx = this.segments.length - 1;
+    const trailingAtom = lastSeg?.kind === "text" &&
+      (lastSeg as TextSegment).text.length === 0 &&
+      this.hasAdjacentAtom(lastIdx);
+    this.root.dataset.trailingAtom = trailingAtom ? "true" : "false";
+
     this.root.dataset.empty = this.isEmpty() ? "true" : "false";
     this.autoResize();
 
@@ -1198,6 +1206,7 @@ export class TugTextEngine {
   /** Restore editing state from a snapshot. Used for persistence [L23]. */
   restoreState(state: TugTextEditingState): void {
     this.clearAtomSelection();
+    this.composingIndex = null;
     this.undoStack = [];
     this.redoStack = [];
     this.lastEditTime = 0;
@@ -1742,6 +1751,10 @@ export class TugTextEngine {
   };
 
   private onCompositionStart = (): void => {
+    // Save undo snapshot BEFORE composition mutates segments.
+    // handleMutations updates segments during composition, so by
+    // compositionEnd the pre-composition state is already lost.
+    this.pushUndo("compose");
     const offset = this.saveCursorOffset();
     if (offset !== null) {
       const pos = this.segmentPosition(offset);
@@ -1756,12 +1769,9 @@ export class TugTextEngine {
     if (this.composingIndex !== null) {
       const dn = this.domNodes[this.composingIndex];
       if (dn instanceof Text && this.segments[this.composingIndex].kind === "text") {
-        const oldText = (this.segments[this.composingIndex] as TextSegment).text;
+        // Read final composed text from DOM into model
         const newText = dn.textContent ?? "";
-        if (oldText !== newText) {
-          this.pushUndo("compose");
-          (this.segments[this.composingIndex] as TextSegment).text = newText;
-        }
+        (this.segments[this.composingIndex] as TextSegment).text = newText;
       }
     }
     this.composingIndex = null;
