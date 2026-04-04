@@ -898,9 +898,11 @@ export async function runIntegrationTests(d: TugTextInputDelegate): Promise<{
       const r = cursorAt(d);
       if (r !== null) positions.push(r);
     }
-    const monotonic = positions.every((p, i) => i === 0 || p > positions[i - 1]);
+    // Monotonic non-decreasing, strictly increasing until reaching the end
+    const monotonic = positions.every((p, i) => i === 0 || p >= positions[i - 1]);
     const reachesEnd = positions[positions.length - 1] >= 5;
-    return { passed: monotonic && reachesEnd, detail: `positions=[${positions.join(",")}]` };
+    const strictlyIncreasingUntilEnd = positions.slice(0, -1).every((p, i) => i === 0 || p > positions[i - 1]);
+    return { passed: monotonic && reachesEnd && strictlyIncreasingUntilEnd, detail: `positions=[${positions.join(",")}]` };
   });
 
   await test("arrow left: before single atom", async () => {
@@ -922,9 +924,11 @@ export async function runIntegrationTests(d: TugTextInputDelegate): Promise<{
       const r = cursorAt(d);
       if (r !== null) positions.push(r);
     }
-    const monotonic = positions.every((p, i) => i === 0 || p < positions[i - 1]);
+    // Monotonic non-increasing, strictly decreasing until reaching start
+    const monotonic = positions.every((p, i) => i === 0 || p <= positions[i - 1]);
     const reachesStart = positions[positions.length - 1] === 0;
-    return { passed: monotonic && reachesStart, detail: `positions=[${positions.join(",")}]` };
+    const strictlyDecreasingUntilStart = positions.slice(0, -1).every((p, i) => i === 0 || p < positions[i - 1]);
+    return { passed: monotonic && reachesStart && strictlyDecreasingUntilStart, detail: `positions=[${positions.join(",")}]` };
   });
 
   await test("arrow right: between two adjacent atoms", async () => {
@@ -1495,10 +1499,12 @@ export async function runIntegrationTests(d: TugTextInputDelegate): Promise<{
   });
 
   await test("typing: replaces selection spanning atom", () => {
+    // "hello " + atom + " world" = 13 chars. Selection 4..9 = "o \uFFFC w".
+    // Replacing with "x" → "hell" + "x" + "orld" = 9 chars, 0 atoms.
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(4, 9);
     type(d, "x");
-    return { passed: d.getAtoms().length === 0 && d.getText().length === 6, detail: `text="${d.getText()}", atoms=${d.getAtoms().length}` };
+    return { passed: d.getAtoms().length === 0 && d.getText() === "hellxorld", detail: `text="${d.getText()}", atoms=${d.getAtoms().length}` };
   });
 
   await test("selectAll: with two atoms", () => {

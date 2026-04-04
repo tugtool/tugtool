@@ -429,11 +429,10 @@ export class TugTextEngine {
   // -----------------------------------------------------------------
   // DOM ↔ Model position mapping
   //
-  // The domNodes array maps 1:1 with segments: Text nodes for text
-  // segments, HTMLSpanElement (tug-atom) for atom segments. tug-atom
-  // elements contain child spans (icon, label) but the position
-  // mapping only cares about the top-level atom element —
-  // dn.contains(node) catches any node inside the atom.
+  // domNodes maps 1:1 with segments — all entries are Text nodes.
+  // Text segments → Text with content. Atom segments → Text("\uFFFC").
+  // Badge spans (visual decoration, ce=false) follow atom text nodes
+  // in the DOM but are NOT in domNodes.
   // -----------------------------------------------------------------
 
   saveCursorOffset(): number | null {
@@ -523,6 +522,10 @@ export class TugTextEngine {
     return 0;
   }
 
+  /** Map a flat model offset to a DOM position for Selection.collapse().
+   *  For empty text segments (cursor anchors between atoms), uses root-relative
+   *  child positioning instead of the empty text node — WebKit mispositions
+   *  the caret on empty text nodes adjacent to inline-flex badge spans. */
   private domPosition(flat: number): { node: Node; offset: number } | null {
     let remaining = flat;
     for (let i = 0; i < this.segments.length; i++) {
@@ -530,12 +533,20 @@ export class TugTextEngine {
       if (seg.kind === "text") {
         const len = (seg as TextSegment).text.length;
         if (remaining <= len && this.domNodes[i]) {
+          if (len === 0) {
+            // Empty text node — use root-relative position instead.
+            // sel.collapse(root, childIdx+1) = "after this child".
+            return this.rootPosition(this.domNodes[i]);
+          }
           return { node: this.domNodes[i], offset: remaining };
         }
         remaining -= len;
       } else {
         if (remaining === 0 && i > 0 && this.domNodes[i - 1]) {
           const prevSeg = this.segments[i - 1] as TextSegment;
+          if (prevSeg.text.length === 0) {
+            return this.rootPosition(this.domNodes[i - 1]);
+          }
           return { node: this.domNodes[i - 1], offset: prevSeg.text.length };
         }
         remaining -= 1;
@@ -544,10 +555,22 @@ export class TugTextEngine {
     const last = this.segments.length - 1;
     if (last >= 0 && this.domNodes[last]) {
       const seg = this.segments[last];
+      if (seg.kind === "text" && (seg as TextSegment).text.length === 0) {
+        return this.rootPosition(this.domNodes[last]);
+      }
       const len = seg.kind === "text" ? (seg as TextSegment).text.length : 1;
       return { node: this.domNodes[last], offset: len };
     }
     return { node: this.root, offset: 0 };
+  }
+
+  /** Root-relative position: "after child" = {node: root, offset: childIdx + 1}. */
+  private rootPosition(child: Node): { node: Node; offset: number } {
+    const children = this.root.childNodes;
+    for (let i = 0; i < children.length; i++) {
+      if (children[i] === child) return { node: this.root, offset: i + 1 };
+    }
+    return { node: this.root, offset: this.root.childNodes.length };
   }
 
   // -----------------------------------------------------------------
@@ -1564,7 +1587,60 @@ export class TugTextEngine {
       return;
     }
 
-    // Arrow keys, other keys — not handled, pass to browser
+    // Arrow keys — intercept to handle atom badge spans.
+    // Browsers cannot move the caret leftward past contentEditable="false"
+    // elements. Every major editor (ProseMirror, Lexical, Slate) solves this
+    // the same way: intercept arrow keys and set selection explicitly.
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const sel = window.getSelection();
+      if (!sel || !sel.anchorNode || !this.root.contains(sel.anchorNode)) return;
+
+      const anchor = this.flatFromDOM(sel.anchorNode, sel.anchorOffset);
+      const focus = sel.focusNode ? this.flatFromDOM(sel.focusNode, sel.focusOffset) : anchor;
+      const isCollapsed = sel.isCollapsed;
+      const isLeft = e.key === "ArrowLeft";
+      const len = this.getText().length;
+
+      let newFocus: number;
+
+      if (e.metaKey) {
+        // Cmd+Arrow: jump to paragraph boundary
+        newFocus = isLeft
+          ? startOfParagraph(this.segments, focus)
+          : endOfParagraph(this.segments, focus);
+      } else if (e.altKey) {
+        // Option+Arrow: jump to word boundary
+        newFocus = isLeft
+          ? startOfWord(this.segments, focus)
+          : endOfWord(this.segments, focus);
+      } else {
+        // Plain arrow: one character (atoms count as one)
+        if (!isCollapsed && !e.shiftKey) {
+          // Collapse ranged selection to the appropriate end
+          newFocus = isLeft ? Math.min(anchor, focus) : Math.max(anchor, focus);
+        } else {
+          newFocus = isLeft ? Math.max(0, focus - 1) : Math.min(len, focus + 1);
+        }
+      }
+
+      e.preventDefault();
+
+      if (e.shiftKey) {
+        // Extend selection: anchor stays, focus moves
+        const anchorPos = this.domPosition(anchor);
+        const focusPos = this.domPosition(newFocus);
+        if (anchorPos && focusPos) {
+          sel.setBaseAndExtent(anchorPos.node, anchorPos.offset, focusPos.node, focusPos.offset);
+        }
+      } else {
+        this.setSelectedRange(newFocus);
+      }
+
+      this.onLog?.(`  → arrow ${isLeft ? "left" : "right"}: ${focus} → ${newFocus}`);
+      return;
+    }
+
+    // Other keys — not handled, pass to browser
     this.onLog?.("  → not handled (browser default)");
   };
 
