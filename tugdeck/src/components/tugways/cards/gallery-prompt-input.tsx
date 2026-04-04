@@ -31,6 +31,7 @@ import type { AtomSegment, InputAction, CompletionItem } from "@/lib/tug-text-en
 import { captureEditingState, editingStatesEqual, formatEditingState } from "@/lib/tug-text-engine";
 import { allTEOEs } from "@/lib/tug-text-editing-operations";
 import type { TEOE, Operation } from "@/lib/tug-text-editing-operations";
+import { runAtomDOMTests } from "@/lib/tug-atom-dom-tests";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -555,7 +556,8 @@ export function GalleryPromptInput() {
       const failed = results.filter(r => !r.passed).length;
       return { passed, failed, total: results.length, failures: results.filter(r => !r.passed) };
     };
-    return () => { delete w.__runTEOETests; };
+    w.__runAtomDOMTests = () => runAtomDOMTests();
+    return () => { delete w.__runTEOETests; delete w.__runAtomDOMTests; };
   }, []);
 
   const handleSubmit = useCallback(() => {

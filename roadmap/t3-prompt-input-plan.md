@@ -280,22 +280,27 @@ Constant: `const TUG_ATOM_CHAR = "\uE100"` defined once, used everywhere.
 ```
 
 Key properties:
+- **`-webkit-user-modify: read-write-plaintext-only` stays on the editor root.** The property only strips browser-generated markup — it does not strip spans placed programmatically by the engine reconciler. This preserves IME composition behavior and prevents rich content injection.
 - The atom outer span does **NOT** have `contentEditable="false"` — the U+E100 character inside is what the browser navigates.
 - The visual label span has `contentEditable="false"` — this prevents the user from editing the label text, but doesn't affect caret movement because the caret navigates the U+E100 text node, not the label span.
-- The atom span has proper layout width (~65-75px depending on label) — text flows correctly around it.
+- The atom span has proper layout width (~60px depending on label) — text flows correctly around it.
 - Arrow keys: one step into atom (U+E100 offset 0→1), one step out. Atom is one character.
 - Shift+arrow: selects atom as one character, including the U+E100 in the selection string.
+- **Stray edit handling:** Typing at `atomText offset 1` inserts into the atom text node. The MutationObserver detects `characterData` mutations on atom text nodes and redirects the inserted content to the adjacent text segment.
 
 #### What changes from current architecture
 
-- **Drop `-webkit-user-modify: read-write-plaintext-only`** from the editor root. This was preventing spans inside the contentEditable, but we need the atom span for visual rendering. The engine already intercepts paste, drop, and all `beforeinput` types, so rich content injection is prevented.
-- **`createAtomDOM()` new output** — produces the new structure: outer span (inline-flex, styled) containing U+E100 text node + `contentEditable="false"` label span.
+- **`-webkit-user-modify: read-write-plaintext-only` stays.** No change needed — verified that programmatic spans survive this property.
+- **`createAtomDOM()` new output** — produces the new structure: outer span (inline-flex, styled) containing U+E100 text node + `contentEditable="false"` label span. Outer span does NOT have `contentEditable="false"`.
 - **Reconciler** — atom segments reconcile to the new DOM structure. Text nodes contain only text; atom spans contain U+E100 + label.
-- **`flatFromDOM` / `domPosition`** — adapted: the U+E100 text node inside the atom span is the navigable element. Atom detection is `isAtomElement(parent)` on the text node's parent, not the node itself.
+- **`flatFromDOM` / `domPosition`** — adapted: the U+E100 text node inside the atom span is the navigable element. Atom detection is `isAtomElement(parent)` on the text node's parent.
 - **`domNodes` mapping** — maps text nodes AND atom text nodes. Each atom's U+E100 text node is the entry in `domNodes`, not the span.
 - **`rebuildFromDOM`** — scans for atom spans by `data-slot="tug-atom"`, reads U+E100 from the text child, reads atom metadata from `data-` attributes.
+- **`handleMutations`** — detects `characterData` mutations on atom text nodes (stray edits from typing at atom boundary) and redirects inserted content to the adjacent text segment.
 - **`isAtomElement()`** — checks `data-slot="tug-atom"` on spans (unchanged).
-- **`getText()`** — returns U+E100 for atoms (unchanged from current, but the character changes from U+FFFC to U+E100).
+- **`getText()`** — returns U+E100 for atoms (character changes from U+FFFC to U+E100).
+- **`captureEditingState`** — scans for U+E100 instead of U+FFFC.
+- **Visible units** — `flattenToString` and `classifyChar` use U+E100.
 
 #### Approaches tested and rejected
 
@@ -310,16 +315,16 @@ Key properties:
 
 #### Implementation plan
 
-1. Define `TUG_ATOM_CHAR = "\uE100"` constant
-2. Update `createAtomDOM()` to produce the new structure
-3. Remove `-webkit-user-modify: read-write-plaintext-only` from editor CSS
-4. Update reconciler to handle new atom DOM
-5. Update `flatFromDOM` / `domPosition` for new structure
-6. Update `rebuildFromDOM` for new structure
-7. Update `getText()` to use U+E100
-8. Run TEOE suite — all 58 tests should pass
-9. Verify interactive: arrow keys, shift+select, typing near atoms, two-step delete
-10. Verify IME composition still works without `read-write-plaintext-only`
+1. Define `TUG_ATOM_CHAR = "\uE100"` constant in `tug-text-engine.ts`
+2. Update `createAtomDOM()` to produce the new structure (U+E100 text node + ce=false label)
+3. Update reconciler to handle new atom DOM (atom spans contain text node + label)
+4. Update `flatFromDOM` / `domPosition` — atom detection via parent span
+5. Update `rebuildFromDOM` — detect atom spans, read metadata from `data-` attributes
+6. Add stray-edit handling in `handleMutations` — redirect atom text node edits to adjacent text
+7. Migrate U+FFFC → U+E100: `getText()`, `captureEditingState`, visible units `flattenToString` + `classifyChar`
+8. Run atom DOM test suite — verify navigation, selection, typing, layout
+9. Run TEOE suite — all 58 tests should pass
+10. Verify interactive: arrow keys, shift+select, typing near atoms, two-step delete, IME
 
 ### Pass 4: Add prefix detection
 
@@ -360,5 +365,5 @@ From `t3-text-model-spike.md` — the validated patterns we're porting:
 5. **`compositionEndedAt` timing window** — WebKit compositionend ordering bug
 6. **Own undo stack with immutable snapshots** — merge within 300ms
 7. **Flat offset as universal position type** — text chars = 1, atoms = 1
-8. ~~**`-webkit-user-modify: read-write-plaintext-only`**~~ — **SUPERSEDED by Pass 3h.** Removed to enable atom spans in contentEditable. Engine intercepts paste, drop, and `beforeinput` to prevent rich content injection.
+8. **`-webkit-user-modify: read-write-plaintext-only`** — stays. Verified that it only strips browser-generated markup, not engine-placed spans. Atom spans with U+E100 survive. IME composition behavior preserved.
 9. **`::selection` re-enabled, `::highlight(card-selection)` suppressed** — contentEditable selection fix
