@@ -1545,6 +1545,82 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: t.includes("\n") && d.getAtoms().length === 1, detail: `text="${t.replace(/\n/g, "\\n").slice(0, 30)}", atoms=${d.getAtoms().length}` };
   });
 
+  // ===================================================================
+  // ORIGINAL BUG REPORTS — B01, B04, B05, B06
+  // Exact reproduction steps from user testing.
+  // ===================================================================
+
+  test("B01: delete key after typing space after atom", () => {
+    // Type "hello", space, insert atom, space
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    type(d, " ");
+
+    // Cursor is now at offset 8 (after the trailing space)
+    // Move cursor back one (to offset 7, between atom and trailing space)
+    d.setSelectedRange(7);
+
+    // Delete forward should delete the space after the atom
+    d.deleteForward();
+    const text = d.getText();
+    // "hello " + atom = 7 chars (trailing space deleted)
+    const passed = text.length === 7;
+    return { passed, detail: `text len=${text.length} (expect 7), text="${text.slice(0, 20)}"` };
+  });
+
+  test("B04: left arrow after insert atom overshoots", () => {
+    // Type "hello", insert atom, left arrow
+    type(d, "hello");
+    d.insertAtom(TEST_ATOM);
+
+    // Cursor should be at 6 (after atom). "hello"=5 + atom=1 = 6
+    const before = cursorAt(d);
+
+    // Left arrow — should go to 5 (between "hello" and atom), not to 4 (before 'o')
+    arrowLeft(1);
+    const after = cursorAt(d);
+
+    // The cursor should be at 5 (just before the atom, at end of "hello")
+    const passed = before === 6 && after === 5;
+    return { passed, detail: `before=${before} (expect 6), after=${after} (expect 5)` };
+  });
+
+  test("B05: shift+right from before atom should select atom, not text", () => {
+    // Type "hello", insert atom
+    type(d, "hello");
+    d.insertAtom(TEST_ATOM);
+
+    // Place cursor between "hello" and atom (offset 5)
+    d.setSelectedRange(5);
+
+    // Shift+right should select the atom (extend to 6), not select "hello"
+    shiftRight(1);
+    const range = d.getSelectedRange();
+
+    // Selection should be 5..6 (just the atom), NOT 0..5 or anything backward
+    const passed = range !== null && range.start === 5 && range.end === 6;
+    return { passed, detail: `sel=${range?.start}..${range?.end} (expect 5..6)` };
+  });
+
+  test("B06: click atom should highlight it (two-step select)", () => {
+    // Type "hello", insert atom
+    type(d, "hello");
+    d.insertAtom(TEST_ATOM);
+
+    // Simulate clicking the atom — the engine's onClick handler checks for atom clicks
+    // and calls setHighlightedAtomIndices. We can't dispatch a real click event
+    // (untrusted clicks don't position caret), but we can call the engine's
+    // click path directly: find the atom span and simulate what onClick does.
+    const atomSpan = el!.querySelector("[data-slot=tug-atom]");
+    if (!atomSpan) return { passed: false, detail: "No atom span found" };
+
+    // Dispatch a click event on the atom span — the engine's onClick handler will catch it
+    atomSpan.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const highlighted = atomIsHighlighted(d);
+    return { passed: highlighted, detail: `highlighted=${highlighted}` };
+  });
+
   // ── Summary ──
 
   const passed = results.filter(r => r.passed).length;
