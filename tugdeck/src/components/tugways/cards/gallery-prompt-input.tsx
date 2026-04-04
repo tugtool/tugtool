@@ -558,10 +558,10 @@ export function GalleryPromptInput() {
       return { passed, failed, total: results.length, failures: results.filter(r => !r.passed) };
     };
     w.__runAtomDOMTests = () => runAtomDOMTests();
-    w.__runIntegrationTests = () => {
+    w.__runIntegrationTests = async () => {
       const delegate = inputRef.current;
       if (!delegate) return { error: "no delegate" };
-      return runIntegrationTests(delegate);
+      return await runIntegrationTests(delegate);
     };
     w.__runIMETests = () => {
       const delegate = inputRef.current;

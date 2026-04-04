@@ -453,29 +453,36 @@ export function runIMETests(d: TugTextInputDelegate): {
   return { passed, failed, total: results.length, results };
 }
 
-/** Move cursor via Selection.modify — programmatic equivalent of arrow keys. */
-function arrowLeft(n = 1): void {
-  const sel = window.getSelection();
-  if (!sel) return;
-  for (let i = 0; i < n; i++) sel.modify("move", "left", "character");
+/** Small delay for trusted key event processing. */
+const KEY_DELAY = 5;
+
+/** Move cursor via trusted arrow key events — real keyboard behavior. */
+async function arrowLeft(n = 1): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    await pressArrow("left");
+    await new Promise(r => setTimeout(r, KEY_DELAY));
+  }
 }
 
-function arrowRight(n = 1): void {
-  const sel = window.getSelection();
-  if (!sel) return;
-  for (let i = 0; i < n; i++) sel.modify("move", "right", "character");
+async function arrowRight(n = 1): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    await pressArrow("right");
+    await new Promise(r => setTimeout(r, KEY_DELAY));
+  }
 }
 
-function shiftRight(n = 1): void {
-  const sel = window.getSelection();
-  if (!sel) return;
-  for (let i = 0; i < n; i++) sel.modify("extend", "right", "character");
+async function shiftRight(n = 1): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    await pressArrow("right", ["shift"]);
+    await new Promise(r => setTimeout(r, KEY_DELAY));
+  }
 }
 
-function shiftLeft(n = 1): void {
-  const sel = window.getSelection();
-  if (!sel) return;
-  for (let i = 0; i < n; i++) sel.modify("extend", "left", "character");
+async function shiftLeft(n = 1): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    await pressArrow("left", ["shift"]);
+    await new Promise(r => setTimeout(r, KEY_DELAY));
+  }
 }
 
 /** Get the DOM node and offset where the cursor currently sits. */
@@ -554,12 +561,12 @@ function buildTwoAtoms(d: TugTextInputDelegate, a: string, b: string, c: string)
 /**
  * Run all integration tests against an engine-managed editor.
  */
-export function runIntegrationTests(d: TugTextInputDelegate): {
+export async function runIntegrationTests(d: TugTextInputDelegate): Promise<{
   passed: number;
   failed: number;
   total: number;
   results: IntegrationTestResult[];
-} {
+}> {
   const results: IntegrationTestResult[] = [];
   const el = d.getEditorElement();
   if (!el) {
@@ -568,11 +575,11 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
 
   const emptyState = { segments: [{ kind: "text" as const, text: "" }], selection: { start: 0, end: 0 }, markedText: null, highlightedAtomIndices: [] as number[] };
 
-  function test(name: string, fn: () => { passed: boolean; detail: string }) {
+  async function test(name: string, fn: () => Promise<{ passed: boolean; detail: string }> | { passed: boolean; detail: string }) {
     d.restoreState(emptyState);
     el!.focus();
     try {
-      const r = fn();
+      const r = await fn();
       results.push({ name, ...r });
     } catch (err) {
       results.push({ name, passed: false, detail: `Error: ${err}` });
@@ -585,53 +592,53 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
 
   // ── Typing into various states ──────────────────────────────────
 
-  test("typing: into empty", () => {
+  await test("typing: into empty", () => {
     type(d, "a");
     return { passed: d.getText() === "a" && cursorAt(d) === 1, detail: `text="${d.getText()}", cursor=${selStr(d)}` };
   });
 
-  test("typing: at start of text", () => {
+  await test("typing: at start of text", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     type(d, "x");
     return { passed: d.getText() === "xhello" && cursorAt(d) === 1, detail: `text="${d.getText()}", cursor=${selStr(d)}` };
   });
 
-  test("typing: at middle of text", () => {
+  await test("typing: at middle of text", () => {
     type(d, "hello");
     d.setSelectedRange(3);
     type(d, "x");
     return { passed: d.getText() === "helxlo" && cursorAt(d) === 4, detail: `text="${d.getText()}", cursor=${selStr(d)}` };
   });
 
-  test("typing: at end of text", () => {
+  await test("typing: at end of text", () => {
     type(d, "hello");
     type(d, "x");
     return { passed: d.getText() === "hellox" && cursorAt(d) === 6, detail: `text="${d.getText()}", cursor=${selStr(d)}` };
   });
 
-  test("typing: replaces partial selection", () => {
+  await test("typing: replaces partial selection", () => {
     type(d, "hello");
     d.setSelectedRange(1, 4);
     type(d, "x");
     return { passed: d.getText() === "hxo", detail: `text="${d.getText()}"` };
   });
 
-  test("typing: replaces full selection", () => {
+  await test("typing: replaces full selection", () => {
     type(d, "hello");
     d.selectAll();
     type(d, "x");
     return { passed: d.getText() === "x", detail: `text="${d.getText()}"` };
   });
 
-  test("typing: after atom", () => {
+  await test("typing: after atom", () => {
     buildTextAtomText(d, "hello ", "");
     type(d, "x");
     const t = d.getText();
     return { passed: t.length === 8 && cursorAt(d) === 8, detail: `text len=${t.length}, cursor=${selStr(d)}` };
   });
 
-  test("typing: between two atoms", () => {
+  await test("typing: between two atoms", () => {
     d.insertAtom(TEST_ATOM);
     d.insertAtom(TEST_ATOM_2);
     d.setSelectedRange(1);
@@ -639,7 +646,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText().length === 3 && d.getAtoms().length === 2, detail: `len=${d.getText().length}, atoms=${d.getAtoms().length}` };
   });
 
-  test("typing: multiline", () => {
+  await test("typing: multiline", () => {
     type(d, "hello");
     d.insertText("\n");
     type(d, "world");
@@ -648,19 +655,19 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
 
   // ── insertText API ────────────────────────────────────────────
 
-  test("insertText: into empty", () => {
+  await test("insertText: into empty", () => {
     d.insertText("hello");
     return { passed: d.getText() === "hello" && cursorAt(d) === 5, detail: `text="${d.getText()}", cursor=${selStr(d)}` };
   });
 
-  test("insertText: replaces partial selection", () => {
+  await test("insertText: replaces partial selection", () => {
     type(d, "hello");
     d.setSelectedRange(1, 4);
     d.insertText("x");
     return { passed: d.getText() === "hxo", detail: `text="${d.getText()}"` };
   });
 
-  test("insertText: at atom boundary (before)", () => {
+  await test("insertText: at atom boundary (before)", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     d.setSelectedRange(5);
@@ -668,7 +675,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText().length === 7, detail: `len=${d.getText().length}` };
   });
 
-  test("insertText: replaces selection spanning atom", () => {
+  await test("insertText: replaces selection spanning atom", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(4, 9);
     d.insertText("x");
@@ -680,46 +687,46 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // ATOM INSERTION — from TEOI Atom Manipulation matrix
   // ===================================================================
 
-  test("insertAtom: into empty", () => {
+  await test("insertAtom: into empty", () => {
     d.insertAtom(TEST_ATOM);
     return { passed: d.getAtoms().length === 1 && cursorAt(d) === 1, detail: `atoms=${d.getAtoms().length}, cursor=${selStr(d)}` };
   });
 
-  test("insertAtom: at start of text", () => {
+  await test("insertAtom: at start of text", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.insertAtom(TEST_ATOM);
     return { passed: d.getAtoms().length === 1 && d.getText().length === 6, detail: `atoms=${d.getAtoms().length}, len=${d.getText().length}` };
   });
 
-  test("insertAtom: at middle of text", () => {
+  await test("insertAtom: at middle of text", () => {
     type(d, "hello");
     d.setSelectedRange(3);
     d.insertAtom(TEST_ATOM);
     return { passed: d.getAtoms().length === 1 && d.getText().length === 6, detail: `atoms=${d.getAtoms().length}, len=${d.getText().length}` };
   });
 
-  test("insertAtom: at end of text", () => {
+  await test("insertAtom: at end of text", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     return { passed: d.getAtoms().length === 1 && d.getText().length === 6, detail: `atoms=${d.getAtoms().length}, len=${d.getText().length}` };
   });
 
-  test("insertAtom: replaces partial selection", () => {
+  await test("insertAtom: replaces partial selection", () => {
     type(d, "hello");
     d.setSelectedRange(1, 4);
     d.insertAtom(TEST_ATOM);
     return { passed: d.getAtoms().length === 1 && d.getText().length === 3, detail: `atoms=${d.getAtoms().length}, len=${d.getText().length}` };
   });
 
-  test("insertAtom: replaces full selection", () => {
+  await test("insertAtom: replaces full selection", () => {
     type(d, "hello");
     d.selectAll();
     d.insertAtom(TEST_ATOM);
     return { passed: d.getAtoms().length === 1 && d.getText().length === 1, detail: `atoms=${d.getAtoms().length}, len=${d.getText().length}` };
   });
 
-  test("insertAtom: at atom boundary (before existing)", () => {
+  await test("insertAtom: at atom boundary (before existing)", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     d.setSelectedRange(5);
@@ -727,14 +734,14 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getAtoms().length === 2, detail: `atoms=${d.getAtoms().length}` };
   });
 
-  test("insertAtom: after existing atom", () => {
+  await test("insertAtom: after existing atom", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     d.insertAtom(TEST_ATOM_2);
     return { passed: d.getAtoms().length === 2, detail: `atoms=${d.getAtoms().length}` };
   });
 
-  test("insertAtom: cursor not inside atom after insert", () => {
+  await test("insertAtom: cursor not inside atom after insert", () => {
     type(d, "hello ");
     d.insertAtom(TEST_ATOM);
     return { passed: !cursorIsInsideAtom(d) && cursorAt(d) === 7, detail: `inside=${cursorIsInsideAtom(d)}, cursor=${selStr(d)}` };
@@ -744,46 +751,46 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // DELETION: CHARACTER — from TEOI Deletion Character matrix
   // ===================================================================
 
-  test("deleteBackward: empty (no-op)", () => {
+  await test("deleteBackward: empty (no-op)", () => {
     d.deleteBackward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteBackward: at start of text (no-op)", () => {
+  await test("deleteBackward: at start of text (no-op)", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.deleteBackward();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteBackward: mid text", () => {
+  await test("deleteBackward: mid text", () => {
     type(d, "hello");
     d.setSelectedRange(3);
     d.deleteBackward();
     return { passed: d.getText() === "helo" && cursorAt(d) === 2, detail: `text="${d.getText()}", cursor=${selStr(d)}` };
   });
 
-  test("deleteBackward: at end of text", () => {
+  await test("deleteBackward: at end of text", () => {
     type(d, "hello");
     d.deleteBackward();
     return { passed: d.getText() === "hell", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteBackward: with partial selection", () => {
+  await test("deleteBackward: with partial selection", () => {
     type(d, "hello");
     d.setSelectedRange(1, 4);
     d.deleteBackward();
     return { passed: d.getText() === "ho" && cursorAt(d) === 1, detail: `text="${d.getText()}", cursor=${selStr(d)}` };
   });
 
-  test("deleteBackward: with full selection", () => {
+  await test("deleteBackward: with full selection", () => {
     type(d, "hello");
     d.selectAll();
     d.deleteBackward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteBackward: at atom boundary — two-step highlight", () => {
+  await test("deleteBackward: at atom boundary — two-step highlight", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     d.setSelectedRange(6);
@@ -791,7 +798,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getAtoms().length === 1 && atomIsHighlighted(d), detail: `atoms=${d.getAtoms().length}, highlighted=${atomIsHighlighted(d)}` };
   });
 
-  test("deleteBackward: two-step completes — atom deleted", () => {
+  await test("deleteBackward: two-step completes — atom deleted", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     d.setSelectedRange(6);
@@ -800,35 +807,35 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getAtoms().length === 0 && d.getText() === "hello", detail: `atoms=${d.getAtoms().length}, text="${d.getText()}"` };
   });
 
-  test("deleteBackward: in trailing text after atom", () => {
+  await test("deleteBackward: in trailing text after atom", () => {
     buildTextAtomText(d, "hello", " world");
     d.setSelectedRange(9);
     d.deleteBackward();
     return { passed: d.getText().length === 11, detail: `len=${d.getText().length}` };
   });
 
-  test("deleteBackward: with selection spanning atom", () => {
+  await test("deleteBackward: with selection spanning atom", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(4, 9);
     d.deleteBackward();
     return { passed: d.getAtoms().length === 0 && d.getText() === "hellorld", detail: `text="${d.getText()}", atoms=${d.getAtoms().length}` };
   });
 
-  test("deleteBackward: between two atoms (two-step)", () => {
+  await test("deleteBackward: between two atoms (two-step)", () => {
     buildTwoAtoms(d, "a", "", "z");
     d.setSelectedRange(2);
     d.deleteBackward();
     return { passed: atomIsHighlighted(d) && d.getAtoms().length === 2, detail: `highlighted=${atomIsHighlighted(d)}, atoms=${d.getAtoms().length}` };
   });
 
-  test("deleteBackward: with selection spanning both atoms", () => {
+  await test("deleteBackward: with selection spanning both atoms", () => {
     buildTwoAtoms(d, "a", "b", "z");
     d.selectAll();
     d.deleteBackward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteBackward: at newline boundary", () => {
+  await test("deleteBackward: at newline boundary", () => {
     type(d, "hello");
     d.insertText("\n");
     type(d, "world");
@@ -837,32 +844,32 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText() === "helloworld", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteForward: empty (no-op)", () => {
+  await test("deleteForward: empty (no-op)", () => {
     d.deleteForward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteForward: at start of text", () => {
+  await test("deleteForward: at start of text", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.deleteForward();
     return { passed: d.getText() === "ello", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteForward: at end of text (no-op)", () => {
+  await test("deleteForward: at end of text (no-op)", () => {
     type(d, "hello");
     d.deleteForward();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteForward: at atom boundary — two-step highlight", () => {
+  await test("deleteForward: at atom boundary — two-step highlight", () => {
     buildTextAtomText(d, "hello", " world");
     d.setSelectedRange(5);
     d.deleteForward();
     return { passed: atomIsHighlighted(d) && d.getAtoms().length === 1, detail: `highlighted=${atomIsHighlighted(d)}` };
   });
 
-  test("deleteForward: two-step completes — atom deleted", () => {
+  await test("deleteForward: two-step completes — atom deleted", () => {
     buildTextAtomText(d, "hello", " world");
     d.setSelectedRange(5);
     d.deleteForward();
@@ -874,20 +881,20 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // NAVIGATION — arrow keys via Selection.modify
   // ===================================================================
 
-  test("arrow right: past single atom", () => {
+  await test("arrow right: past single atom", async () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(6);
-    arrowRight(1);
+    await arrowRight(1);
     const p = cursorAt(d);
     return { passed: p !== null && p >= 7, detail: `cursor=${p} (expect >=7)` };
   });
 
-  test("arrow right: through text-atom-text-atom-text (monotonic)", () => {
+  await test("arrow right: through text-atom-text-atom-text (monotonic)", async () => {
     buildTwoAtoms(d, "a", "b", "c");
     d.setSelectedRange(0);
     const positions: number[] = [0];
     for (let i = 0; i < 6; i++) {
-      arrowRight(1);
+      await arrowRight(1);
       const r = cursorAt(d);
       if (r !== null) positions.push(r);
     }
@@ -896,22 +903,22 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: monotonic && reachesEnd, detail: `positions=[${positions.join(",")}]` };
   });
 
-  test("arrow left: before single atom", () => {
+  await test("arrow left: before single atom", async () => {
     buildTextAtomText(d, "hello ", "");
     // cursor at 7 (after atom)
-    arrowLeft(1);
+    await arrowLeft(1);
     const p1 = cursorAt(d);
-    arrowLeft(1);
+    await arrowLeft(1);
     const p2 = cursorAt(d);
     return { passed: p2 !== null && p2 < 7, detail: `left1=${p1}, left2=${p2}` };
   });
 
-  test("arrow left: through text-atom-text-atom-text (monotonic decreasing)", () => {
+  await test("arrow left: through text-atom-text-atom-text (monotonic decreasing)", async () => {
     buildTwoAtoms(d, "a", "b", "c");
     d.setSelectedRange(5);
     const positions: number[] = [5];
     for (let i = 0; i < 6; i++) {
-      arrowLeft(1);
+      await arrowLeft(1);
       const r = cursorAt(d);
       if (r !== null) positions.push(r);
     }
@@ -920,30 +927,30 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: monotonic && reachesStart, detail: `positions=[${positions.join(",")}]` };
   });
 
-  test("arrow right: between two adjacent atoms", () => {
+  await test("arrow right: between two adjacent atoms", async () => {
     d.insertAtom(TEST_ATOM);
     d.insertAtom(TEST_ATOM_2);
     type(d, "z");
     d.setSelectedRange(1);
-    arrowRight(1);
+    await arrowRight(1);
     const p = cursorAt(d);
     return { passed: p !== null && p >= 2, detail: `cursor=${p} (expect >=2)` };
   });
 
-  test("arrow: atom at start of document", () => {
+  await test("arrow: atom at start of document", async () => {
     d.insertAtom(TEST_ATOM);
     type(d, " hello");
     d.setSelectedRange(0);
-    arrowRight(1);
+    await arrowRight(1);
     const p = cursorAt(d);
     return { passed: p !== null && p >= 1, detail: `cursor=${p} (expect >=1)` };
   });
 
-  test("arrow: atom at end of document", () => {
+  await test("arrow: atom at end of document", async () => {
     type(d, "hello ");
     d.insertAtom(TEST_ATOM);
     d.setSelectedRange(7);
-    arrowLeft(1);
+    await arrowLeft(1);
     const p = cursorAt(d);
     return { passed: p !== null && p <= 6, detail: `cursor=${p} (expect <=6)` };
   });
@@ -952,34 +959,34 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // SELECTION — shift+arrow via Selection.modify
   // ===================================================================
 
-  test("shift+right: selects across single atom", () => {
+  await test("shift+right: selects across single atom", async () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(5);
-    shiftRight(2);
+    await shiftRight(2);
     const r = d.getSelectedRange();
     return { passed: r !== null && r.start === 5 && r.end >= 7, detail: `sel=${r?.start}..${r?.end}` };
   });
 
-  test("shift+left: selects atom backward", () => {
+  await test("shift+left: selects atom backward", async () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(8);
-    shiftLeft(2);
+    await shiftLeft(2);
     const r = d.getSelectedRange();
     return { passed: r !== null && r.start <= 7 && r.end === 8, detail: `sel=${r?.start}..${r?.end}` };
   });
 
-  test("shift+right: selects across two atoms", () => {
+  await test("shift+right: selects across two atoms", async () => {
     buildTwoAtoms(d, "a", "", "z");
     d.setSelectedRange(0);
-    shiftRight(4);
+    await shiftRight(4);
     const r = d.getSelectedRange();
     return { passed: r !== null && r.start === 0 && r.end >= 4, detail: `sel=${r?.start}..${r?.end}` };
   });
 
-  test("shift+left: selects across two atoms backward", () => {
+  await test("shift+left: selects across two atoms backward", async () => {
     buildTwoAtoms(d, "a", "", "z");
     d.setSelectedRange(4);
-    shiftLeft(4);
+    await shiftLeft(4);
     const r = d.getSelectedRange();
     return { passed: r !== null && r.start === 0, detail: `sel=${r?.start}..${r?.end}` };
   });
@@ -988,19 +995,19 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // DELETION: WORD — from TEOI Deletion Word matrix
   // ===================================================================
 
-  test("deleteWordBackward: empty (no-op)", () => {
+  await test("deleteWordBackward: empty (no-op)", () => {
     d.deleteWordBackward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteWordBackward: at start (no-op)", () => {
+  await test("deleteWordBackward: at start (no-op)", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.deleteWordBackward();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteWordBackward: mid word", () => {
+  await test("deleteWordBackward: mid word", () => {
     type(d, "hello world");
     d.setSelectedRange(8);
     d.deleteWordBackward();
@@ -1008,7 +1015,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: t.length < 11, detail: `text="${t}"` };
   });
 
-  test("deleteWordBackward: at space between words", () => {
+  await test("deleteWordBackward: at space between words", () => {
     type(d, "hello world");
     d.setSelectedRange(5);
     d.deleteWordBackward();
@@ -1016,32 +1023,32 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: t.length < 11, detail: `text="${t}"` };
   });
 
-  test("deleteWordBackward: at atom boundary (after atom)", () => {
+  await test("deleteWordBackward: at atom boundary (after atom)", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(8);
     d.deleteWordBackward();
     return { passed: d.getText().length < 13, detail: `len=${d.getText().length}` };
   });
 
-  test("deleteWordForward: empty (no-op)", () => {
+  await test("deleteWordForward: empty (no-op)", () => {
     d.deleteWordForward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteWordForward: at end (no-op)", () => {
+  await test("deleteWordForward: at end (no-op)", () => {
     type(d, "hello");
     d.deleteWordForward();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteWordForward: mid word", () => {
+  await test("deleteWordForward: mid word", () => {
     type(d, "hello world");
     d.setSelectedRange(2);
     d.deleteWordForward();
     return { passed: d.getText().length < 11, detail: `text="${d.getText()}"` };
   });
 
-  test("deleteWordForward: at atom boundary (before atom)", () => {
+  await test("deleteWordForward: at atom boundary (before atom)", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(6);
     d.deleteWordForward();
@@ -1050,7 +1057,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
 
   // ── Word deletion: additional atom × state combinations ────────
 
-  test("deleteWordBackward: after atom (atom is word boundary)", () => {
+  await test("deleteWordBackward: after atom (atom is word boundary)", () => {
     buildTextAtomText(d, "hello", "");
     // cursor at 6 (after atom, in empty trailing text)
     d.deleteWordBackward();
@@ -1058,7 +1065,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText().length < 6, detail: `len=${d.getText().length}, text="${d.getText().slice(0, 20)}"` };
   });
 
-  test("deleteWordBackward: between two atoms", () => {
+  await test("deleteWordBackward: between two atoms", () => {
     buildTwoAtoms(d, "a", "", "z");
     // cursor at 2 (between atoms, in empty text)
     d.setSelectedRange(2);
@@ -1066,7 +1073,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText().length < 4, detail: `len=${d.getText().length}, atoms=${d.getAtoms().length}` };
   });
 
-  test("deleteWordForward: before atom (atom is word boundary)", () => {
+  await test("deleteWordForward: before atom (atom is word boundary)", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     type(d, " world");
@@ -1076,27 +1083,27 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText().length < 12, detail: `len=${d.getText().length}, text="${d.getText().slice(0, 20)}"` };
   });
 
-  test("deleteWordForward: between two atoms", () => {
+  await test("deleteWordForward: between two atoms", () => {
     buildTwoAtoms(d, "a", "", "z");
     d.setSelectedRange(2);
     d.deleteWordForward();
     return { passed: d.getText().length < 4, detail: `len=${d.getText().length}, atoms=${d.getAtoms().length}` };
   });
 
-  test("deleteWordBackward: at end of text (whole word)", () => {
+  await test("deleteWordBackward: at end of text (whole word)", () => {
     type(d, "hello world");
     d.deleteWordBackward();
     return { passed: d.getText() === "hello ", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteWordForward: at start of text (whole word)", () => {
+  await test("deleteWordForward: at start of text (whole word)", () => {
     type(d, "hello world");
     d.setSelectedRange(0);
     d.deleteWordForward();
     return { passed: d.getText() === "world", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteWordBackward: multiline across newline", () => {
+  await test("deleteWordBackward: multiline across newline", () => {
     type(d, "hello");
     d.insertText("\n");
     type(d, "world");
@@ -1106,7 +1113,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: t.length < 11, detail: `text="${t.replace(/\n/g, "\\n")}"` };
   });
 
-  test("deleteWordForward: multiline across newline", () => {
+  await test("deleteWordForward: multiline across newline", () => {
     type(d, "hello");
     d.insertText("\n");
     type(d, "world");
@@ -1116,14 +1123,14 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: t.length < 11, detail: `text="${t.replace(/\n/g, "\\n")}"` };
   });
 
-  test("deleteWordBackward: with partial selection (selection overrides)", () => {
+  await test("deleteWordBackward: with partial selection (selection overrides)", () => {
     type(d, "hello world");
     d.setSelectedRange(2, 8);
     d.deleteWordBackward();
     return { passed: d.getText() === "herld", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteWordForward: with partial selection (selection overrides)", () => {
+  await test("deleteWordForward: with partial selection (selection overrides)", () => {
     type(d, "hello world");
     d.setSelectedRange(2, 8);
     d.deleteWordForward();
@@ -1134,28 +1141,28 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // DELETION: PARAGRAPH — from TEOI Deletion Paragraph matrix
   // ===================================================================
 
-  test("deleteParagraphBackward: mid text", () => {
+  await test("deleteParagraphBackward: mid text", () => {
     type(d, "hello world");
     d.setSelectedRange(7);
     d.deleteParagraphBackward();
     return { passed: d.getText() === "orld", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteParagraphForward: mid text", () => {
+  await test("deleteParagraphForward: mid text", () => {
     type(d, "hello world");
     d.setSelectedRange(5);
     d.deleteParagraphForward();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteParagraphBackward: at atom boundary", () => {
+  await test("deleteParagraphBackward: at atom boundary", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(8);
     d.deleteParagraphBackward();
     return { passed: d.getText().length < 13, detail: `len=${d.getText().length}` };
   });
 
-  test("deleteParagraphForward: multiline at newline", () => {
+  await test("deleteParagraphForward: multiline at newline", () => {
     type(d, "hello");
     d.insertText("\n");
     type(d, "world");
@@ -1166,43 +1173,43 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
 
   // ── Paragraph deletion: additional atom × state combinations ────
 
-  test("deleteParagraphBackward: empty (no-op)", () => {
+  await test("deleteParagraphBackward: empty (no-op)", () => {
     d.deleteParagraphBackward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteParagraphForward: empty (no-op)", () => {
+  await test("deleteParagraphForward: empty (no-op)", () => {
     d.deleteParagraphForward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteParagraphBackward: at start (no-op)", () => {
+  await test("deleteParagraphBackward: at start (no-op)", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.deleteParagraphBackward();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteParagraphForward: at end (no-op)", () => {
+  await test("deleteParagraphForward: at end (no-op)", () => {
     type(d, "hello");
     d.deleteParagraphForward();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteParagraphBackward: from end (deletes all)", () => {
+  await test("deleteParagraphBackward: from end (deletes all)", () => {
     type(d, "hello");
     d.deleteParagraphBackward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}, text="${d.getText()}"` };
   });
 
-  test("deleteParagraphForward: from start (deletes all)", () => {
+  await test("deleteParagraphForward: from start (deletes all)", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.deleteParagraphForward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}, text="${d.getText()}"` };
   });
 
-  test("deleteParagraphForward: at atom boundary (before atom)", () => {
+  await test("deleteParagraphForward: at atom boundary (before atom)", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(6);
     d.deleteParagraphForward();
@@ -1210,7 +1217,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText() === "hello " && d.getAtoms().length === 0, detail: `text="${d.getText()}", atoms=${d.getAtoms().length}` };
   });
 
-  test("deleteParagraphBackward: after atom", () => {
+  await test("deleteParagraphBackward: after atom", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(8);
     d.deleteParagraphBackward();
@@ -1218,21 +1225,21 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText() === "world", detail: `text="${d.getText()}"` };
   });
 
-  test("deleteParagraphBackward: between two atoms", () => {
+  await test("deleteParagraphBackward: between two atoms", () => {
     buildTwoAtoms(d, "a", "b", "z");
     d.setSelectedRange(3);
     d.deleteParagraphBackward();
     return { passed: d.getText().length < 5, detail: `text="${d.getText().slice(0, 20)}", len=${d.getText().length}` };
   });
 
-  test("deleteParagraphForward: between two atoms", () => {
+  await test("deleteParagraphForward: between two atoms", () => {
     buildTwoAtoms(d, "a", "b", "z");
     d.setSelectedRange(2);
     d.deleteParagraphForward();
     return { passed: d.getText().length < 5, detail: `text="${d.getText().slice(0, 20)}", len=${d.getText().length}` };
   });
 
-  test("deleteParagraphBackward: multiline, second paragraph with atom", () => {
+  await test("deleteParagraphBackward: multiline, second paragraph with atom", () => {
     type(d, "first");
     d.insertText("\n");
     type(d, "hello ");
@@ -1243,7 +1250,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText().startsWith("first\n"), detail: `text="${d.getText().replace(/\n/g, "\\n").slice(0, 30)}"` };
   });
 
-  test("deleteParagraphForward: multiline, first paragraph with atom", () => {
+  await test("deleteParagraphForward: multiline, first paragraph with atom", () => {
     type(d, "hello ");
     d.insertAtom(TEST_ATOM);
     d.insertText("\n");
@@ -1259,14 +1266,14 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // KILL/YANK — from TEOI Kill Ring matrix
   // ===================================================================
 
-  test("killLine: kills to end of paragraph", () => {
+  await test("killLine: kills to end of paragraph", () => {
     type(d, "hello world");
     d.setSelectedRange(5);
     d.killLine();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("killLine then yank: restores killed text", () => {
+  await test("killLine then yank: restores killed text", () => {
     type(d, "hello world");
     d.setSelectedRange(5);
     d.killLine();
@@ -1274,7 +1281,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText() === "hello world", detail: `text="${d.getText()}"` };
   });
 
-  test("killLine: at atom boundary", () => {
+  await test("killLine: at atom boundary", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(6);
     d.killLine();
@@ -1285,7 +1292,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // TRANSPOSE — from TEOI Text Transforms matrix
   // ===================================================================
 
-  test("transpose: mid text", () => {
+  await test("transpose: mid text", () => {
     type(d, "abcde");
     d.setSelectedRange(3);
     d.transpose();
@@ -1293,7 +1300,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText() === "abdce" && cursorAt(d) === 4, detail: `text="${d.getText()}", cursor=${selStr(d)}` };
   });
 
-  test("transpose: at end of text", () => {
+  await test("transpose: at end of text", () => {
     type(d, "abcde");
     d.transpose();
     // At end, transposes the last two chars: 'd' ↔ 'e' → "abced"
@@ -1304,7 +1311,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // OPEN LINE — from TEOI Structure matrix
   // ===================================================================
 
-  test("openLine: mid text (cursor stays)", () => {
+  await test("openLine: mid text (cursor stays)", () => {
     type(d, "hello");
     d.setSelectedRange(3);
     d.openLine();
@@ -1316,14 +1323,14 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // UNDO/REDO — from TEOI Selection/Undo matrix
   // ===================================================================
 
-  test("undo: after typing", () => {
+  await test("undo: after typing", () => {
     type(d, "hello");
     type(d, " world");
     d.undo();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("undo then redo: roundtrip", () => {
+  await test("undo then redo: roundtrip", () => {
     type(d, "hello");
     type(d, " world");
     d.undo();
@@ -1331,14 +1338,14 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText() === "hello world", detail: `text="${d.getText()}"` };
   });
 
-  test("undo: after insertAtom", () => {
+  await test("undo: after insertAtom", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     d.undo();
     return { passed: d.getAtoms().length === 0 && d.getText() === "hello", detail: `atoms=${d.getAtoms().length}, text="${d.getText()}"` };
   });
 
-  test("undo: after two-step atom delete", () => {
+  await test("undo: after two-step atom delete", () => {
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
     d.setSelectedRange(6);
@@ -1348,12 +1355,12 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getAtoms().length === 1, detail: `atoms=${d.getAtoms().length}` };
   });
 
-  test("undo: on empty (no-op)", () => {
+  await test("undo: on empty (no-op)", () => {
     d.undo();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("redo: on empty (no-op)", () => {
+  await test("redo: on empty (no-op)", () => {
     d.redo();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
@@ -1362,14 +1369,14 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // SELECT ALL / CLEAR / SET SELECTED RANGE
   // ===================================================================
 
-  test("selectAll: text only", () => {
+  await test("selectAll: text only", () => {
     type(d, "hello");
     d.selectAll();
     const r = d.getSelectedRange();
     return { passed: r !== null && r.start === 0 && r.end === 5, detail: `sel=${r?.start}..${r?.end}` };
   });
 
-  test("selectAll: with atoms", () => {
+  await test("selectAll: with atoms", () => {
     buildTextAtomText(d, "hello ", " world");
     d.selectAll();
     const r = d.getSelectedRange();
@@ -1377,7 +1384,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: r !== null && r.start === 0 && r.end === len, detail: `sel=${r?.start}..${r?.end}, len=${len}` };
   });
 
-  test("selectAll: multiline", () => {
+  await test("selectAll: multiline", () => {
     type(d, "hello");
     d.insertText("\n");
     type(d, "world");
@@ -1386,32 +1393,32 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: r !== null && r.start === 0 && r.end === 11, detail: `sel=${r?.start}..${r?.end}` };
   });
 
-  test("clear: text only", () => {
+  await test("clear: text only", () => {
     type(d, "hello");
     d.clear();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("clear: with atoms", () => {
+  await test("clear: with atoms", () => {
     buildTextAtomText(d, "hello ", " world");
     d.clear();
     return { passed: d.isEmpty() && d.getAtoms().length === 0, detail: `empty=${d.isEmpty()}, atoms=${d.getAtoms().length}` };
   });
 
-  test("setSelectedRange: collapse to position", () => {
+  await test("setSelectedRange: collapse to position", () => {
     type(d, "hello");
     d.setSelectedRange(3);
     return { passed: cursorAt(d) === 3, detail: `cursor=${selStr(d)}` };
   });
 
-  test("setSelectedRange: range", () => {
+  await test("setSelectedRange: range", () => {
     type(d, "hello");
     d.setSelectedRange(1, 4);
     const r = d.getSelectedRange();
     return { passed: r !== null && r.start === 1 && r.end === 4, detail: `sel=${r?.start}..${r?.end}` };
   });
 
-  test("setSelectedRange: at atom boundary", () => {
+  await test("setSelectedRange: at atom boundary", () => {
     buildTextAtomText(d, "hello ", "");
     d.setSelectedRange(6);
     return { passed: cursorAt(d) === 6 && !cursorIsInsideAtom(d), detail: `cursor=${selStr(d)}, inside=${cursorIsInsideAtom(d)}` };
@@ -1421,7 +1428,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // RENDERING — atom visual integrity
   // ===================================================================
 
-  test("atom: renders with label via data attribute", () => {
+  await test("atom: renders with label via data attribute", () => {
     buildTextAtomText(d, "hello ", "");
     const atom = el!.querySelector("[data-slot=tug-atom]") as HTMLSpanElement | null;
     if (!atom) return { passed: false, detail: "No atom span" };
@@ -1432,7 +1439,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: label === TEST_ATOM.label && hasNoTextChildren, detail: `label="${label}", childNodes=${atom.childNodes.length} (expect 0)` };
   });
 
-  test("atom: badge has no text children", () => {
+  await test("atom: badge has no text children", () => {
     buildTextAtomText(d, "hello ", " world");
     const atom = el!.querySelector("[data-slot=tug-atom]") as HTMLSpanElement | null;
     if (!atom) return { passed: false, detail: "No atom span" };
@@ -1445,63 +1452,63 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // FULL SELECTION × OPERATIONS — text-selection-all state
   // ===================================================================
 
-  test("insertAtom: replaces full selection with atom", () => {
+  await test("insertAtom: replaces full selection with atom", () => {
     type(d, "hello world");
     d.selectAll();
     d.insertAtom(TEST_ATOM);
     return { passed: d.getAtoms().length === 1 && d.getText().length === 1, detail: `atoms=${d.getAtoms().length}, len=${d.getText().length}` };
   });
 
-  test("deleteForward: with full selection clears all", () => {
+  await test("deleteForward: with full selection clears all", () => {
     type(d, "hello");
     d.selectAll();
     d.deleteForward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteWordBackward: with full selection clears all", () => {
+  await test("deleteWordBackward: with full selection clears all", () => {
     type(d, "hello world");
     d.selectAll();
     d.deleteWordBackward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteWordForward: with full selection clears all", () => {
+  await test("deleteWordForward: with full selection clears all", () => {
     type(d, "hello world");
     d.selectAll();
     d.deleteWordForward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteParagraphBackward: with full selection clears all", () => {
+  await test("deleteParagraphBackward: with full selection clears all", () => {
     type(d, "hello world");
     d.selectAll();
     d.deleteParagraphBackward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("deleteParagraphForward: with full selection clears all", () => {
+  await test("deleteParagraphForward: with full selection clears all", () => {
     type(d, "hello world");
     d.selectAll();
     d.deleteParagraphForward();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("typing: replaces selection spanning atom", () => {
+  await test("typing: replaces selection spanning atom", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(4, 9);
     type(d, "x");
     return { passed: d.getAtoms().length === 0 && d.getText().length === 6, detail: `text="${d.getText()}", atoms=${d.getAtoms().length}` };
   });
 
-  test("selectAll: with two atoms", () => {
+  await test("selectAll: with two atoms", () => {
     buildTwoAtoms(d, "a", "b", "c");
     d.selectAll();
     const r = d.getSelectedRange();
     return { passed: r !== null && r.start === 0 && r.end === 5, detail: `sel=${r?.start}..${r?.end}` };
   });
 
-  test("deleteBackward: full selection with atoms clears all", () => {
+  await test("deleteBackward: full selection with atoms clears all", () => {
     buildTwoAtoms(d, "hello ", " ", " world");
     d.selectAll();
     d.deleteBackward();
@@ -1512,7 +1519,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // MULTIWORD × WORD DELETION — comprehensive word boundary tests
   // ===================================================================
 
-  test("deleteWordBackward: three words, cursor at space after second", () => {
+  await test("deleteWordBackward: three words, cursor at space after second", () => {
     type(d, "one two three");
     d.setSelectedRange(7); // at space between "two" and "three"
     d.deleteWordBackward();
@@ -1521,7 +1528,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: t === "one three", detail: `text="${t}"` };
   });
 
-  test("deleteWordForward: three words, cursor at start of second", () => {
+  await test("deleteWordForward: three words, cursor at start of second", () => {
     type(d, "one two three");
     d.setSelectedRange(4);
     d.deleteWordForward();
@@ -1529,7 +1536,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: t === "one three", detail: `text="${t}"` };
   });
 
-  test("deleteWordBackward: word + atom + word, cursor in trailing word", () => {
+  await test("deleteWordBackward: word + atom + word, cursor in trailing word", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(13);
     d.deleteWordBackward();
@@ -1538,7 +1545,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: t.length < 13, detail: `text="${t.slice(0, 20)}", len=${t.length}` };
   });
 
-  test("deleteWordForward: word + atom + word, cursor in leading word", () => {
+  await test("deleteWordForward: word + atom + word, cursor in leading word", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(0);
     d.deleteWordForward();
@@ -1551,25 +1558,25 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // KILL/YANK × ATOM STATES — additional combinations
   // ===================================================================
 
-  test("killLine: empty (no-op)", () => {
+  await test("killLine: empty (no-op)", () => {
     d.killLine();
     return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
   });
 
-  test("killLine: at end (no-op)", () => {
+  await test("killLine: at end (no-op)", () => {
     type(d, "hello");
     d.killLine();
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("killLine: at start (kills entire line)", () => {
+  await test("killLine: at start (kills entire line)", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.killLine();
     return { passed: d.isEmpty(), detail: `text="${d.getText()}"` };
   });
 
-  test("killLine: multiline, kills to newline only", () => {
+  await test("killLine: multiline, kills to newline only", () => {
     type(d, "hello");
     d.insertText("\n");
     type(d, "world");
@@ -1578,7 +1585,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText() === "\nworld", detail: `text="${d.getText().replace(/\n/g, "\\n")}"` };
   });
 
-  test("killLine then yank: at atom boundary", () => {
+  await test("killLine then yank: at atom boundary", () => {
     buildTextAtomText(d, "hello ", " world");
     d.setSelectedRange(6);
     d.killLine();
@@ -1593,7 +1600,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // TRANSPOSE × ATOM STATES — additional combinations
   // ===================================================================
 
-  test("transpose: at start (no-op or limited)", () => {
+  await test("transpose: at start (no-op or limited)", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.transpose();
@@ -1601,14 +1608,14 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
   });
 
-  test("transpose: at position 1", () => {
+  await test("transpose: at position 1", () => {
     type(d, "hello");
     d.setSelectedRange(1);
     d.transpose();
     return { passed: d.getText() === "ehllo", detail: `text="${d.getText()}"` };
   });
 
-  test("transpose: near atom boundary (should not transpose atom)", () => {
+  await test("transpose: near atom boundary (should not transpose atom)", () => {
     buildTextAtomText(d, "hello", " world");
     d.setSelectedRange(5);
     d.transpose();
@@ -1621,20 +1628,20 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // OPEN LINE × STATES
   // ===================================================================
 
-  test("openLine: at start of text", () => {
+  await test("openLine: at start of text", () => {
     type(d, "hello");
     d.setSelectedRange(0);
     d.openLine();
     return { passed: d.getText() === "\nhello" && cursorAt(d) === 0, detail: `text="${d.getText().replace(/\n/g, "\\n")}", cursor=${selStr(d)}` };
   });
 
-  test("openLine: at end of text", () => {
+  await test("openLine: at end of text", () => {
     type(d, "hello");
     d.openLine();
     return { passed: d.getText() === "hello\n" && cursorAt(d) === 5, detail: `text="${d.getText().replace(/\n/g, "\\n")}", cursor=${selStr(d)}` };
   });
 
-  test("openLine: with atom", () => {
+  await test("openLine: with atom", () => {
     buildTextAtomText(d, "hello", " world");
     d.setSelectedRange(5);
     d.openLine();
@@ -1647,7 +1654,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // Exact reproduction steps from user testing.
   // ===================================================================
 
-  test("B01: delete key after typing space after atom", () => {
+  await test("B01: delete key after typing space after atom", () => {
     // Type "hello", space, insert atom, space
     type(d, "hello ");
     d.insertAtom(TEST_ATOM);
@@ -1665,7 +1672,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed, detail: `text len=${text.length} (expect 7), text="${text.slice(0, 20)}"` };
   });
 
-  test("B04: left arrow after insert atom overshoots", () => {
+  await test("B04: left arrow after insert atom overshoots", async () => {
     // Type "hello", insert atom, left arrow
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
@@ -1674,7 +1681,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     const before = cursorAt(d);
 
     // Left arrow — should go to 5 (between "hello" and atom), not to 4 (before 'o')
-    arrowLeft(1);
+    await arrowLeft(1);
     const after = cursorAt(d);
 
     // The cursor should be at 5 (just before the atom, at end of "hello")
@@ -1682,7 +1689,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed, detail: `before=${before} (expect 6), after=${after} (expect 5)` };
   });
 
-  test("B05: shift+right from before atom should select atom, not text", () => {
+  await test("B05: shift+right from before atom should select atom, not text", async () => {
     // Type "hello", insert atom
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
@@ -1691,7 +1698,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     d.setSelectedRange(5);
 
     // Shift+right should select the atom (extend to 6), not select "hello"
-    shiftRight(1);
+    await shiftRight(1);
     const range = d.getSelectedRange();
 
     // Selection should be 5..6 (just the atom), NOT 0..5 or anything backward
@@ -1699,7 +1706,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed, detail: `sel=${range?.start}..${range?.end} (expect 5..6)` };
   });
 
-  test("B02: first return key swallowed, second works", () => {
+  await test("B02: first return key swallowed, second works", () => {
     // Select "Return = newline" mode, type "hello", press Return twice
     // The first Return should insert a newline. If it doesn't, that's the bug.
     type(d, "hello");
@@ -1722,7 +1729,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     };
   });
 
-  test("B06: click atom should highlight it and hide caret", () => {
+  await test("B06: click atom should highlight it and hide caret", () => {
     // Type "hello", insert atom
     type(d, "hello");
     d.insertAtom(TEST_ATOM);
@@ -1756,7 +1763,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // Left and right arrow through atoms must take the same number of steps.
   // ===================================================================
 
-  test("BA01: left/right arrow count symmetric through atom", () => {
+  await test("BA01: left/right arrow count symmetric through atom", async () => {
     // Type "x ", insert atom → "x " + atom + "" = flat length 4
     type(d, "x ");
     d.insertAtom(TEST_ATOM);
@@ -1769,7 +1776,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     const rightPositions = [0];
     for (let i = 0; i < 10; i++) {
       const before = cursorAt(d);
-      arrowRight(1);
+      await arrowRight(1);
       const after = cursorAt(d);
       rightPositions.push(after!);
       if (after === before) break; // stuck at end
@@ -1782,7 +1789,7 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     const leftPositions = [totalLen];
     for (let i = 0; i < 10; i++) {
       const before = cursorAt(d);
-      arrowLeft(1);
+      await arrowLeft(1);
       const after = cursorAt(d);
       leftPositions.push(after!);
       if (after === before) break; // stuck at start
