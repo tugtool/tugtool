@@ -374,8 +374,15 @@ extension MainWindow: WKScriptMessageHandler {
                 case "control": modifierFlags.insert(.control)
                 case "option", "alt": modifierFlags.insert(.option)
                 case "command", "meta": modifierFlags.insert(.command)
+                case "function": modifierFlags.insert(.function)
                 default: break
                 }
+            }
+
+            // Arrow keys and forward delete are function keys — auto-set the flag
+            let functionKeyCodes: Set<Int> = [117, 123, 124, 125, 126]
+            if functionKeyCodes.contains(keyCode) {
+                modifierFlags.insert(.function)
             }
 
             // Create and deliver keyDown + keyUp events

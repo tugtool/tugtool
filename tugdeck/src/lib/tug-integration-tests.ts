@@ -114,13 +114,20 @@ export async function pressReturn(modifiers?: ModifierKey[]): Promise<boolean> {
 
 /** Convenience: simulate pressing Delete (Backspace). */
 export async function pressDelete(modifiers?: ModifierKey[]): Promise<boolean> {
-  return pressKey(KeyCode.Delete, modifiers, "\u007F");
+  return pressKey(KeyCode.Delete, modifiers, "\u{7F}");
+}
+
+/** Convenience: simulate pressing Forward Delete. */
+export async function pressForwardDelete(modifiers?: ModifierKey[]): Promise<boolean> {
+  return pressKey(KeyCode.ForwardDelete, modifiers, "\uF728");
 }
 
 /** Convenience: simulate pressing an arrow key. */
 export async function pressArrow(direction: "left" | "right" | "up" | "down", modifiers?: ModifierKey[]): Promise<boolean> {
   const codes = { left: KeyCode.LeftArrow, right: KeyCode.RightArrow, up: KeyCode.UpArrow, down: KeyCode.DownArrow };
-  const chars = { left: "\u001C", right: "\u001D", up: "\u001E", down: "\u001F" };
+  // Arrow keys use NSEvent function key Unicode values, passed via characters
+  // These are the standard NSEvent characters for arrow keys
+  const chars = { left: "\uF702", right: "\uF703", up: "\uF700", down: "\uF701" };
   return pressKey(codes[direction], modifiers, chars[direction]);
 }
 
