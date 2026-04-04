@@ -45,6 +45,93 @@ function type(d: TugTextInputDelegate, text: string): void {
   d.flushMutations();
 }
 
+// ===================================================================
+// Trusted key event simulation via WKWebView bridge
+//
+// Sends real NSEvent key events through the macOS event system.
+// The browser processes these as trusted events with full default actions.
+// Dev-mode only — the Swift handler rejects calls when dev mode is off.
+// ===================================================================
+
+/** macOS virtual key codes for common keys. */
+export const KeyCode = {
+  Return: 36,
+  Tab: 48,
+  Space: 49,
+  Delete: 51,          // Backspace
+  Escape: 53,
+  ForwardDelete: 117,
+  LeftArrow: 123,
+  RightArrow: 124,
+  DownArrow: 125,
+  UpArrow: 126,
+  // Letters (for Ctrl+key combinations)
+  A: 0, B: 11, D: 2, E: 14, F: 3, H: 4, K: 40, N: 45, O: 31, P: 35, T: 17, Y: 16, Z: 6,
+} as const;
+
+type ModifierKey = "shift" | "control" | "option" | "command";
+
+interface SimulateKeyOptions {
+  keyCode: number;
+  characters?: string;
+  unmodified?: string;
+  modifiers?: ModifierKey[];
+}
+
+/**
+ * Send a trusted key event through the WKWebView bridge.
+ * Returns a Promise that resolves after a frame, giving the browser time to process.
+ * Requires dev mode — returns false if the bridge is unavailable.
+ */
+export function simulateKey(opts: SimulateKeyOptions): Promise<boolean> {
+  const handler = (window as unknown as Record<string, unknown>).webkit as
+    { messageHandlers?: { simulateKey?: { postMessage: (msg: unknown) => void } } } | undefined;
+
+  if (!handler?.messageHandlers?.simulateKey) {
+    return Promise.resolve(false);
+  }
+
+  handler.messageHandlers.simulateKey.postMessage({
+    keyCode: opts.keyCode,
+    characters: opts.characters ?? "",
+    unmodified: opts.unmodified ?? opts.characters ?? "",
+    modifiers: opts.modifiers ?? [],
+  });
+
+  // Wait one frame for the event to be processed
+  return new Promise(resolve => requestAnimationFrame(() => resolve(true)));
+}
+
+/** Convenience: simulate pressing a key and wait for processing. */
+export async function pressKey(keyCode: number, modifiers?: ModifierKey[], characters?: string): Promise<boolean> {
+  return simulateKey({ keyCode, characters, modifiers });
+}
+
+/** Convenience: simulate pressing Return. */
+export async function pressReturn(modifiers?: ModifierKey[]): Promise<boolean> {
+  return pressKey(KeyCode.Return, modifiers, "\r");
+}
+
+/** Convenience: simulate pressing Delete (Backspace). */
+export async function pressDelete(modifiers?: ModifierKey[]): Promise<boolean> {
+  return pressKey(KeyCode.Delete, modifiers, "\u007F");
+}
+
+/** Convenience: simulate pressing an arrow key. */
+export async function pressArrow(direction: "left" | "right" | "up" | "down", modifiers?: ModifierKey[]): Promise<boolean> {
+  const codes = { left: KeyCode.LeftArrow, right: KeyCode.RightArrow, up: KeyCode.UpArrow, down: KeyCode.DownArrow };
+  const chars = { left: "\u001C", right: "\u001D", up: "\u001E", down: "\u001F" };
+  return pressKey(codes[direction], modifiers, chars[direction]);
+}
+
+/** Convenience: simulate typing a single character via trusted key event. */
+export async function pressChar(char: string): Promise<boolean> {
+  // For regular characters, we need the virtual key code.
+  // This is approximate — for test purposes, the character matters more than the keyCode.
+  // WebKit uses the characters field, not keyCode, for text insertion.
+  return pressKey(0, undefined, char);
+}
+
 /**
  * Simulate IME composition on the engine-managed editor.
  *

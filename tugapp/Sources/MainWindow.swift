@@ -10,6 +10,7 @@ protocol BridgeDelegate: AnyObject {
     func bridgeDevModeError(message: String)
     func bridgeSetTheme(color: String)
     func bridgeDevBadge(backend: Bool, app: Bool)
+    func bridgeIsDevMode() -> Bool
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
@@ -33,6 +34,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "frontendReady")
         contentController.add(self, name: "setTheme")
         contentController.add(self, name: "devBadge")
+        contentController.add(self, name: "simulateKey")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -164,6 +166,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "frontendReady")
         contentController.removeScriptMessageHandler(forName: "setTheme")
         contentController.removeScriptMessageHandler(forName: "devBadge")
+        contentController.removeScriptMessageHandler(forName: "simulateKey")
         bridgeCleaned = true
     }
 
@@ -346,6 +349,66 @@ extension MainWindow: WKScriptMessageHandler {
             let backend = body["backend"] as? Bool ?? false
             let app = body["app"] as? Bool ?? false
             bridgeDelegate?.bridgeDevBadge(backend: backend, app: app)
+        case "simulateKey":
+            // Dev-mode only: synthesize a trusted key event into the WKWebView.
+            // Used by the test automation system to produce real keyboard input
+            // that the browser processes with full default actions.
+            guard bridgeDelegate?.bridgeIsDevMode() == true else {
+                NSLog("MainWindow: simulateKey rejected — dev mode not active")
+                return
+            }
+            guard let body = message.body as? [String: Any],
+                  let keyCode = body["keyCode"] as? Int else {
+                NSLog("MainWindow: simulateKey — missing keyCode")
+                return
+            }
+
+            let characters = body["characters"] as? String ?? ""
+            let charactersIgnoringModifiers = body["unmodified"] as? String ?? characters
+            let modifierNames = body["modifiers"] as? [String] ?? []
+
+            var modifierFlags: NSEvent.ModifierFlags = []
+            for name in modifierNames {
+                switch name {
+                case "shift": modifierFlags.insert(.shift)
+                case "control": modifierFlags.insert(.control)
+                case "option", "alt": modifierFlags.insert(.option)
+                case "command", "meta": modifierFlags.insert(.command)
+                default: break
+                }
+            }
+
+            // Create and deliver keyDown + keyUp events
+            if let keyDown = NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: modifierFlags,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: self.windowNumber,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: charactersIgnoringModifiers,
+                isARepeat: false,
+                keyCode: UInt16(keyCode)
+            ) {
+                webView.keyDown(with: keyDown)
+            }
+
+            if let keyUp = NSEvent.keyEvent(
+                with: .keyUp,
+                location: .zero,
+                modifierFlags: modifierFlags,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: self.windowNumber,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: charactersIgnoringModifiers,
+                isARepeat: false,
+                keyCode: UInt16(keyCode)
+            ) {
+                webView.keyUp(with: keyUp)
+            }
+
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
         }

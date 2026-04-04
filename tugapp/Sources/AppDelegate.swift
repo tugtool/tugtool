@@ -548,6 +548,10 @@ extension AppDelegate: BridgeDelegate {
         _ = backend
         _ = app
     }
+
+    func bridgeIsDevMode() -> Bool {
+        return devModeEnabled
+    }
 }
 
 // MARK: - NSMenuDelegate (dynamic Theme menu)
