@@ -638,6 +638,88 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return { passed: d.getText().length < 13, detail: `len=${d.getText().length}` };
   });
 
+  // ── Word deletion: additional atom × state combinations ────────
+
+  test("deleteWordBackward: after atom (atom is word boundary)", () => {
+    buildTextAtomText(d, "hello", "");
+    // cursor at 6 (after atom, in empty trailing text)
+    d.deleteWordBackward();
+    // Should delete the atom (it's its own word)
+    return { passed: d.getText().length < 6, detail: `len=${d.getText().length}, text="${d.getText().slice(0, 20)}"` };
+  });
+
+  test("deleteWordBackward: between two atoms", () => {
+    buildTwoAtoms(d, "a", "", "z");
+    // cursor at 2 (between atoms, in empty text)
+    d.setSelectedRange(2);
+    d.deleteWordBackward();
+    return { passed: d.getText().length < 4, detail: `len=${d.getText().length}, atoms=${d.getAtoms().length}` };
+  });
+
+  test("deleteWordForward: before atom (atom is word boundary)", () => {
+    type(d, "hello");
+    d.insertAtom(TEST_ATOM);
+    type(d, " world");
+    // cursor at 5 (just before atom)
+    d.setSelectedRange(5);
+    d.deleteWordForward();
+    return { passed: d.getText().length < 12, detail: `len=${d.getText().length}, text="${d.getText().slice(0, 20)}"` };
+  });
+
+  test("deleteWordForward: between two atoms", () => {
+    buildTwoAtoms(d, "a", "", "z");
+    d.setSelectedRange(2);
+    d.deleteWordForward();
+    return { passed: d.getText().length < 4, detail: `len=${d.getText().length}, atoms=${d.getAtoms().length}` };
+  });
+
+  test("deleteWordBackward: at end of text (whole word)", () => {
+    type(d, "hello world");
+    d.deleteWordBackward();
+    return { passed: d.getText() === "hello ", detail: `text="${d.getText()}"` };
+  });
+
+  test("deleteWordForward: at start of text (whole word)", () => {
+    type(d, "hello world");
+    d.setSelectedRange(0);
+    d.deleteWordForward();
+    return { passed: d.getText() === "world", detail: `text="${d.getText()}"` };
+  });
+
+  test("deleteWordBackward: multiline across newline", () => {
+    type(d, "hello");
+    d.insertText("\n");
+    type(d, "world");
+    d.setSelectedRange(6);
+    d.deleteWordBackward();
+    const t = d.getText();
+    return { passed: t.length < 11, detail: `text="${t.replace(/\n/g, "\\n")}"` };
+  });
+
+  test("deleteWordForward: multiline across newline", () => {
+    type(d, "hello");
+    d.insertText("\n");
+    type(d, "world");
+    d.setSelectedRange(5);
+    d.deleteWordForward();
+    const t = d.getText();
+    return { passed: t.length < 11, detail: `text="${t.replace(/\n/g, "\\n")}"` };
+  });
+
+  test("deleteWordBackward: with partial selection (selection overrides)", () => {
+    type(d, "hello world");
+    d.setSelectedRange(2, 8);
+    d.deleteWordBackward();
+    return { passed: d.getText() === "herld", detail: `text="${d.getText()}"` };
+  });
+
+  test("deleteWordForward: with partial selection (selection overrides)", () => {
+    type(d, "hello world");
+    d.setSelectedRange(2, 8);
+    d.deleteWordForward();
+    return { passed: d.getText() === "herld", detail: `text="${d.getText()}"` };
+  });
+
   // ===================================================================
   // DELETION: PARAGRAPH — from TEOI Deletion Paragraph matrix
   // ===================================================================
@@ -670,6 +752,97 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     d.setSelectedRange(6);
     d.deleteParagraphForward();
     return { passed: d.getText() === "hello\n", detail: `text="${d.getText().replace(/\n/g, "\\n")}"` };
+  });
+
+  // ── Paragraph deletion: additional atom × state combinations ────
+
+  test("deleteParagraphBackward: empty (no-op)", () => {
+    d.deleteParagraphBackward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("deleteParagraphForward: empty (no-op)", () => {
+    d.deleteParagraphForward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("deleteParagraphBackward: at start (no-op)", () => {
+    type(d, "hello");
+    d.setSelectedRange(0);
+    d.deleteParagraphBackward();
+    return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
+  });
+
+  test("deleteParagraphForward: at end (no-op)", () => {
+    type(d, "hello");
+    d.deleteParagraphForward();
+    return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
+  });
+
+  test("deleteParagraphBackward: from end (deletes all)", () => {
+    type(d, "hello");
+    d.deleteParagraphBackward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}, text="${d.getText()}"` };
+  });
+
+  test("deleteParagraphForward: from start (deletes all)", () => {
+    type(d, "hello");
+    d.setSelectedRange(0);
+    d.deleteParagraphForward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}, text="${d.getText()}"` };
+  });
+
+  test("deleteParagraphForward: at atom boundary (before atom)", () => {
+    buildTextAtomText(d, "hello ", " world");
+    d.setSelectedRange(6);
+    d.deleteParagraphForward();
+    // Should delete atom + " world"
+    return { passed: d.getText() === "hello " && d.getAtoms().length === 0, detail: `text="${d.getText()}", atoms=${d.getAtoms().length}` };
+  });
+
+  test("deleteParagraphBackward: after atom", () => {
+    buildTextAtomText(d, "hello ", " world");
+    d.setSelectedRange(8);
+    d.deleteParagraphBackward();
+    // Should delete "hello " + atom + " " — everything before cursor
+    return { passed: d.getText() === "world", detail: `text="${d.getText()}"` };
+  });
+
+  test("deleteParagraphBackward: between two atoms", () => {
+    buildTwoAtoms(d, "a", "b", "z");
+    d.setSelectedRange(3);
+    d.deleteParagraphBackward();
+    return { passed: d.getText().length < 5, detail: `text="${d.getText().slice(0, 20)}", len=${d.getText().length}` };
+  });
+
+  test("deleteParagraphForward: between two atoms", () => {
+    buildTwoAtoms(d, "a", "b", "z");
+    d.setSelectedRange(2);
+    d.deleteParagraphForward();
+    return { passed: d.getText().length < 5, detail: `text="${d.getText().slice(0, 20)}", len=${d.getText().length}` };
+  });
+
+  test("deleteParagraphBackward: multiline, second paragraph with atom", () => {
+    type(d, "first");
+    d.insertText("\n");
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    type(d, " world");
+    // cursor at end of second paragraph
+    d.deleteParagraphBackward();
+    return { passed: d.getText().startsWith("first\n"), detail: `text="${d.getText().replace(/\n/g, "\\n").slice(0, 30)}"` };
+  });
+
+  test("deleteParagraphForward: multiline, first paragraph with atom", () => {
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    d.insertText("\n");
+    type(d, "second");
+    d.setSelectedRange(0);
+    d.deleteParagraphForward();
+    // Should delete "hello " + atom — everything in first paragraph up to \n
+    const t = d.getText();
+    return { passed: t.startsWith("\n") || t === "second", detail: `text="${t.replace(/\n/g, "\\n").slice(0, 30)}"` };
   });
 
   // ===================================================================
@@ -856,6 +1029,206 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     // This is architecture-dependent — current ce=false atoms have no leading text node
     const hasNoStrayText = !isTextNode || (firstChild as Text).textContent === "";
     return { passed: hasNoStrayText, detail: `firstChild=${firstChild?.nodeName}, text=${isTextNode ? JSON.stringify((firstChild as Text).textContent) : "n/a"}` };
+  });
+
+  // ===================================================================
+  // FULL SELECTION × OPERATIONS — text-selection-all state
+  // ===================================================================
+
+  test("insertAtom: replaces full selection with atom", () => {
+    type(d, "hello world");
+    d.selectAll();
+    d.insertAtom(TEST_ATOM);
+    return { passed: d.getAtoms().length === 1 && d.getText().length === 1, detail: `atoms=${d.getAtoms().length}, len=${d.getText().length}` };
+  });
+
+  test("deleteForward: with full selection clears all", () => {
+    type(d, "hello");
+    d.selectAll();
+    d.deleteForward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("deleteWordBackward: with full selection clears all", () => {
+    type(d, "hello world");
+    d.selectAll();
+    d.deleteWordBackward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("deleteWordForward: with full selection clears all", () => {
+    type(d, "hello world");
+    d.selectAll();
+    d.deleteWordForward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("deleteParagraphBackward: with full selection clears all", () => {
+    type(d, "hello world");
+    d.selectAll();
+    d.deleteParagraphBackward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("deleteParagraphForward: with full selection clears all", () => {
+    type(d, "hello world");
+    d.selectAll();
+    d.deleteParagraphForward();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("typing: replaces selection spanning atom", () => {
+    buildTextAtomText(d, "hello ", " world");
+    d.setSelectedRange(4, 9);
+    type(d, "x");
+    return { passed: d.getAtoms().length === 0 && d.getText().length === 6, detail: `text="${d.getText()}", atoms=${d.getAtoms().length}` };
+  });
+
+  test("selectAll: with two atoms", () => {
+    buildTwoAtoms(d, "a", "b", "c");
+    d.selectAll();
+    const r = d.getSelectedRange();
+    return { passed: r !== null && r.start === 0 && r.end === 5, detail: `sel=${r?.start}..${r?.end}` };
+  });
+
+  test("deleteBackward: full selection with atoms clears all", () => {
+    buildTwoAtoms(d, "hello ", " ", " world");
+    d.selectAll();
+    d.deleteBackward();
+    return { passed: d.isEmpty() && d.getAtoms().length === 0, detail: `empty=${d.isEmpty()}, atoms=${d.getAtoms().length}` };
+  });
+
+  // ===================================================================
+  // MULTIWORD × WORD DELETION — comprehensive word boundary tests
+  // ===================================================================
+
+  test("deleteWordBackward: three words, cursor at end of second", () => {
+    type(d, "one two three");
+    d.setSelectedRange(7);
+    d.deleteWordBackward();
+    const t = d.getText();
+    return { passed: t === "one three", detail: `text="${t}"` };
+  });
+
+  test("deleteWordForward: three words, cursor at start of second", () => {
+    type(d, "one two three");
+    d.setSelectedRange(4);
+    d.deleteWordForward();
+    const t = d.getText();
+    return { passed: t === "one three", detail: `text="${t}"` };
+  });
+
+  test("deleteWordBackward: word + atom + word, cursor in trailing word", () => {
+    buildTextAtomText(d, "hello ", " world");
+    d.setSelectedRange(13);
+    d.deleteWordBackward();
+    // Should delete "world" (the trailing word)
+    const t = d.getText();
+    return { passed: t.length < 13, detail: `text="${t.slice(0, 20)}", len=${t.length}` };
+  });
+
+  test("deleteWordForward: word + atom + word, cursor in leading word", () => {
+    buildTextAtomText(d, "hello ", " world");
+    d.setSelectedRange(0);
+    d.deleteWordForward();
+    // Should delete "hello " or "hello" (the leading word + trailing space)
+    const t = d.getText();
+    return { passed: t.length < 13, detail: `text="${t.slice(0, 20)}", len=${t.length}` };
+  });
+
+  // ===================================================================
+  // KILL/YANK × ATOM STATES — additional combinations
+  // ===================================================================
+
+  test("killLine: empty (no-op)", () => {
+    d.killLine();
+    return { passed: d.isEmpty(), detail: `empty=${d.isEmpty()}` };
+  });
+
+  test("killLine: at end (no-op)", () => {
+    type(d, "hello");
+    d.killLine();
+    return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
+  });
+
+  test("killLine: at start (kills entire line)", () => {
+    type(d, "hello");
+    d.setSelectedRange(0);
+    d.killLine();
+    return { passed: d.isEmpty(), detail: `text="${d.getText()}"` };
+  });
+
+  test("killLine: multiline, kills to newline only", () => {
+    type(d, "hello");
+    d.insertText("\n");
+    type(d, "world");
+    d.setSelectedRange(0);
+    d.killLine();
+    return { passed: d.getText() === "\nworld", detail: `text="${d.getText().replace(/\n/g, "\\n")}"` };
+  });
+
+  test("killLine then yank: at atom boundary", () => {
+    buildTextAtomText(d, "hello ", " world");
+    d.setSelectedRange(6);
+    d.killLine();
+    // Killed " world" including atom
+    const afterKill = d.getText();
+    d.yank();
+    const afterYank = d.getText();
+    return { passed: afterKill.length < 13 && afterYank.length > afterKill.length, detail: `afterKill="${afterKill.slice(0, 20)}", afterYank="${afterYank.slice(0, 20)}"` };
+  });
+
+  // ===================================================================
+  // TRANSPOSE × ATOM STATES — additional combinations
+  // ===================================================================
+
+  test("transpose: at start (no-op or limited)", () => {
+    type(d, "hello");
+    d.setSelectedRange(0);
+    d.transpose();
+    // At position 0, there's nothing before to transpose
+    return { passed: d.getText() === "hello", detail: `text="${d.getText()}"` };
+  });
+
+  test("transpose: at position 1", () => {
+    type(d, "hello");
+    d.setSelectedRange(1);
+    d.transpose();
+    return { passed: d.getText() === "ehllo", detail: `text="${d.getText()}"` };
+  });
+
+  test("transpose: near atom boundary (should not transpose atom)", () => {
+    buildTextAtomText(d, "hello", " world");
+    d.setSelectedRange(5);
+    d.transpose();
+    // Transpose at atom boundary — engine skips atoms
+    const atoms = d.getAtoms();
+    return { passed: atoms.length === 1, detail: `text="${d.getText().slice(0, 20)}", atoms=${atoms.length}` };
+  });
+
+  // ===================================================================
+  // OPEN LINE × STATES
+  // ===================================================================
+
+  test("openLine: at start of text", () => {
+    type(d, "hello");
+    d.setSelectedRange(0);
+    d.openLine();
+    return { passed: d.getText() === "\nhello" && cursorAt(d) === 0, detail: `text="${d.getText().replace(/\n/g, "\\n")}", cursor=${selStr(d)}` };
+  });
+
+  test("openLine: at end of text", () => {
+    type(d, "hello");
+    d.openLine();
+    return { passed: d.getText() === "hello\n" && cursorAt(d) === 5, detail: `text="${d.getText().replace(/\n/g, "\\n")}", cursor=${selStr(d)}` };
+  });
+
+  test("openLine: with atom", () => {
+    buildTextAtomText(d, "hello", " world");
+    d.setSelectedRange(5);
+    d.openLine();
+    const t = d.getText();
+    return { passed: t.includes("\n") && d.getAtoms().length === 1, detail: `text="${t.replace(/\n/g, "\\n").slice(0, 30)}", atoms=${d.getAtoms().length}` };
   });
 
   // ── Summary ──
