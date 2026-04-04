@@ -1045,7 +1045,6 @@ export class TugTextEngine {
     if (!range || range.start !== range.end) return;
     const offset = range.start;
     const flat = this.getText();
-    // Need at least 2 characters, and cursor not at position 0
     if (offset < 1 || offset > flat.length) return;
     // If at end of document, transpose the two characters before cursor
     const swapPos = offset >= flat.length ? offset - 2 : offset - 1;
@@ -1053,16 +1052,16 @@ export class TugTextEngine {
     const a = flat[swapPos];
     const b = flat[swapPos + 1];
     if (a === "\uFFFC" || b === "\uFFFC") return; // Don't transpose atoms
+    // Both characters must be in the same text segment
+    const posA = this.segmentPosition(swapPos);
+    const posB = this.segmentPosition(swapPos + 1);
+    if (posA.segmentIndex !== posB.segmentIndex) return;
+    const seg = this.segments[posA.segmentIndex];
+    if (seg.kind !== "text") return;
     this.pushUndo("transpose");
-    this.deleteRange(swapPos, swapPos + 2);
-    // Insert in reverse order at swapPos
-    const pos = this.segmentPosition(swapPos);
-    const seg = this.segments[pos.segmentIndex];
-    if (seg.kind === "text") {
-      (seg as TextSegment).text =
-        (seg as TextSegment).text.slice(0, pos.offset) + b + a +
-        (seg as TextSegment).text.slice(pos.offset);
-    }
+    const text = (seg as TextSegment).text;
+    (seg as TextSegment).text =
+      text.slice(0, posA.offset) + b + a + text.slice(posB.offset + 1);
     this.reconcile();
     this.restoreSelection(swapPos + 2);
     this.onChange?.();
