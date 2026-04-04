@@ -45,6 +45,320 @@ function type(d: TugTextInputDelegate, text: string): void {
   d.flushMutations();
 }
 
+/**
+ * Simulate IME composition on the engine-managed editor.
+ *
+ * Follows the real browser IME event sequence:
+ *   1. compositionstart — engine sets composingIndex, reconciler pauses
+ *   2. DOM mutation with intermediate text — MutationObserver updates model
+ *   3. compositionupdate events for each intermediate step
+ *   4. DOM mutation with final committed text
+ *   5. compositionend — engine finalizes, pushes undo, clears composingIndex
+ *
+ * @param d - The delegate for the engine-managed editor
+ * @param intermediates - Intermediate composition strings (e.g., ["n","ni","にh","にほ","にほん"])
+ * @param committed - Final committed text (e.g., "日本")
+ */
+function simulateComposition(d: TugTextInputDelegate, intermediates: string[], committed: string): void {
+  const el = d.getEditorElement();
+  if (!el) return;
+  el.focus();
+
+  const sel = window.getSelection();
+  if (!sel || !sel.anchorNode) return;
+
+  // Find the text node and offset where composition starts
+  let textNode: Text;
+  let baseOffset: number;
+  if (sel.anchorNode instanceof Text) {
+    textNode = sel.anchorNode;
+    baseOffset = sel.anchorOffset;
+  } else {
+    // Cursor is at root level — find or create a text node
+    const child = el.childNodes[sel.anchorOffset];
+    if (child instanceof Text) {
+      textNode = child;
+      baseOffset = 0;
+    } else {
+      return; // Can't compose at this position
+    }
+  }
+
+  const textBefore = textNode.textContent?.slice(0, baseOffset) ?? "";
+  const textAfter = textNode.textContent?.slice(baseOffset) ?? "";
+
+  // 1. compositionstart
+  el.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
+  d.flushMutations();
+
+  // 2-3. Intermediate steps: mutate DOM + compositionupdate
+  let prevLen = 0;
+  for (const step of intermediates) {
+    textNode.textContent = textBefore + step + textAfter;
+    sel.collapse(textNode, baseOffset + step.length);
+    el.dispatchEvent(new CompositionEvent("compositionupdate", { bubbles: true, data: step }));
+    d.flushMutations();
+    prevLen = step.length;
+  }
+
+  // 4. Final committed text
+  if (committed !== intermediates[intermediates.length - 1]) {
+    textNode.textContent = textBefore + committed + textAfter;
+    sel.collapse(textNode, baseOffset + committed.length);
+    d.flushMutations();
+  }
+
+  // 5. compositionend
+  el.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: committed }));
+  d.flushMutations();
+}
+
+/**
+ * IME test scenario: a named composition sequence for a specific language.
+ */
+export interface IMEScenario {
+  /** Language/input method name */
+  name: string;
+  /** Text to type before composition (setup) */
+  prefix: string;
+  /** Intermediate composition steps */
+  intermediates: string[];
+  /** Final committed text */
+  committed: string;
+  /** Expected full text content after composition */
+  expectedText: string;
+}
+
+/**
+ * Standard IME test scenarios covering CJK and other input methods.
+ */
+export const IME_SCENARIOS: IMEScenario[] = [
+  // ── Japanese (Hiragana → Kanji) ────────────────────────────────
+  {
+    name: "Japanese: にほん → 日本",
+    prefix: "hello ",
+    intermediates: ["n", "ni", "にh", "にほ", "にほn", "にほん"],
+    committed: "日本",
+    expectedText: "hello 日本",
+  },
+  {
+    name: "Japanese: とうきょう → 東京",
+    prefix: "",
+    intermediates: ["t", "to", "とu", "とう", "とうk", "とうky", "とうきょ", "とうきょu", "とうきょう"],
+    committed: "東京",
+    expectedText: "東京",
+  },
+  {
+    name: "Japanese: Katakana コーヒー",
+    prefix: "I like ",
+    intermediates: ["k", "ko", "こー", "こーh", "こーひ", "こーひー"],
+    committed: "コーヒー",
+    expectedText: "I like コーヒー",
+  },
+
+  // ── Chinese Simplified (Pinyin) ─────────────────────────────────
+  {
+    name: "Chinese Simplified: nihao → 你好",
+    prefix: "",
+    intermediates: ["n", "ni", "nih", "niha", "nihao"],
+    committed: "你好",
+    expectedText: "你好",
+  },
+  {
+    name: "Chinese Simplified: zhongguo → 中国",
+    prefix: "I love ",
+    intermediates: ["z", "zh", "zho", "zhon", "zhong", "zhongg", "zhonggu", "zhongguo"],
+    committed: "中国",
+    expectedText: "I love 中国",
+  },
+
+  // ── Chinese Traditional (Zhuyin/Bopomofo) ──────────────────────
+  {
+    name: "Chinese Traditional: ㄋㄧˇ ㄏㄠˇ → 你好",
+    prefix: "",
+    intermediates: ["ㄋ", "ㄋㄧ", "ㄋㄧˇ"],
+    committed: "你好",
+    expectedText: "你好",
+  },
+
+  // ── Korean (Hangul) ────────────────────────────────────────────
+  {
+    name: "Korean: ㅎㅏㄴㄱㅜㄱ → 한국",
+    prefix: "",
+    intermediates: ["ㅎ", "하", "한", "한ㄱ", "한구", "한국"],
+    committed: "한국",
+    expectedText: "한국",
+  },
+  {
+    name: "Korean: ㅅㅓㅇㅜㄹ → 서울",
+    prefix: "Visit ",
+    intermediates: ["ㅅ", "서", "서ㅇ", "서우", "서울"],
+    committed: "서울",
+    expectedText: "Visit 서울",
+  },
+
+  // ── Vietnamese (Telex) ─────────────────────────────────────────
+  {
+    name: "Vietnamese: Việt Nam",
+    prefix: "",
+    intermediates: ["V", "Vi", "Vie", "Việ", "Việt"],
+    committed: "Việt",
+    expectedText: "Việt",
+  },
+
+  // ── Hindi (Devanagari) ─────────────────────────────────────────
+  {
+    name: "Hindi: namaste → नमस्ते",
+    prefix: "",
+    intermediates: ["न", "नम", "नमस", "नमस्", "नमस्ते"],
+    committed: "नमस्ते",
+    expectedText: "नमस्ते",
+  },
+
+  // ── Emoji (macOS Emoji picker acts as composition) ──────────────
+  {
+    name: "Emoji composition: 👋",
+    prefix: "hello ",
+    intermediates: [],
+    committed: "👋",
+    expectedText: "hello 👋",
+  },
+];
+
+/**
+ * Run IME composition tests against an engine-managed editor.
+ * Returns structured results suitable for display.
+ */
+export function runIMETests(d: TugTextInputDelegate): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: IntegrationTestResult[];
+} {
+  const results: IntegrationTestResult[] = [];
+  const el = d.getEditorElement();
+  if (!el) {
+    return { passed: 0, failed: 0, total: 0, results: [{ name: "setup", passed: false, detail: "No editor element" }] };
+  }
+
+  const emptyState = { segments: [{ kind: "text" as const, text: "" }], selection: { start: 0, end: 0 }, markedText: null, highlightedAtomIndices: [] as number[] };
+
+  for (const scenario of IME_SCENARIOS) {
+    d.restoreState(emptyState);
+    el.focus();
+
+    try {
+      // Type prefix
+      if (scenario.prefix) {
+        type(d, scenario.prefix);
+      }
+
+      // Run composition
+      simulateComposition(d, scenario.intermediates, scenario.committed);
+
+      const text = d.getText();
+      const cursor = d.getSelectedRange();
+      const passed = text === scenario.expectedText;
+
+      results.push({
+        name: scenario.name,
+        passed,
+        detail: `text="${text}" (expect "${scenario.expectedText}"), cursor=${cursor?.start}`,
+      });
+    } catch (err) {
+      results.push({
+        name: scenario.name,
+        passed: false,
+        detail: `Error: ${err}`,
+      });
+    }
+  }
+
+  // ── IME + atom interaction tests ──────────────────────────────
+
+  // Compose after atom
+  {
+    d.restoreState(emptyState);
+    el.focus();
+    type(d, "hello ");
+    d.insertAtom(TEST_ATOM);
+    try {
+      simulateComposition(d, ["n", "ni", "にh", "にほ", "にほん"], "日本");
+      const text = d.getText();
+      const atoms = d.getAtoms();
+      results.push({
+        name: "IME after atom: compose 日本",
+        passed: atoms.length === 1 && text.includes("日本"),
+        detail: `text="${text.slice(0, 30)}", atoms=${atoms.length}`,
+      });
+    } catch (err) {
+      results.push({ name: "IME after atom: compose 日本", passed: false, detail: `Error: ${err}` });
+    }
+  }
+
+  // Compose before atom
+  {
+    d.restoreState(emptyState);
+    el.focus();
+    d.insertAtom(TEST_ATOM);
+    d.setSelectedRange(0);
+    try {
+      simulateComposition(d, ["ㅎ", "하", "한", "한ㄱ", "한구", "한국"], "한국");
+      const text = d.getText();
+      const atoms = d.getAtoms();
+      results.push({
+        name: "IME before atom: compose 한국",
+        passed: atoms.length === 1 && text.includes("한국"),
+        detail: `text="${text.slice(0, 30)}", atoms=${atoms.length}`,
+      });
+    } catch (err) {
+      results.push({ name: "IME before atom: compose 한국", passed: false, detail: `Error: ${err}` });
+    }
+  }
+
+  // Undo after IME composition
+  {
+    d.restoreState(emptyState);
+    el.focus();
+    type(d, "hello ");
+    try {
+      simulateComposition(d, ["n", "ni", "にh", "にほん"], "日本");
+      const before = d.getText();
+      d.undo();
+      const after = d.getText();
+      results.push({
+        name: "Undo after IME composition",
+        passed: before.includes("日本") && after === "hello ",
+        detail: `before="${before}", after="${after}"`,
+      });
+    } catch (err) {
+      results.push({ name: "Undo after IME composition", passed: false, detail: `Error: ${err}` });
+    }
+  }
+
+  // Cancelled composition (compositionstart + compositionend with empty)
+  {
+    d.restoreState(emptyState);
+    el.focus();
+    type(d, "hello ");
+    try {
+      simulateComposition(d, ["ni"], "");
+      const text = d.getText();
+      results.push({
+        name: "Cancelled IME composition",
+        passed: text === "hello ",
+        detail: `text="${text}" (expect "hello ")`,
+      });
+    } catch (err) {
+      results.push({ name: "Cancelled IME composition", passed: false, detail: `Error: ${err}` });
+    }
+  }
+
+  const passed = results.filter(r => r.passed).length;
+  const failed = results.filter(r => !r.passed).length;
+  return { passed, failed, total: results.length, results };
+}
+
 /** Move cursor via Selection.modify — programmatic equivalent of arrow keys. */
 function arrowLeft(n = 1): void {
   const sel = window.getSelection();

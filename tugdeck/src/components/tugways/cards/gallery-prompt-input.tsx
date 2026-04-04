@@ -32,7 +32,7 @@ import { captureEditingState, editingStatesEqual, formatEditingState } from "@/l
 import { allTEOEs } from "@/lib/tug-text-editing-operations";
 import type { TEOE, Operation } from "@/lib/tug-text-editing-operations";
 import { runAtomDOMTests } from "@/lib/tug-atom-dom-tests";
-import { runIntegrationTests } from "@/lib/tug-integration-tests";
+import { runIntegrationTests, runIMETests } from "@/lib/tug-integration-tests";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -559,12 +559,16 @@ export function GalleryPromptInput() {
     };
     w.__runAtomDOMTests = () => runAtomDOMTests();
     w.__runIntegrationTests = () => {
-      // Use the MAIN interactive editor, not the hidden test editor
       const delegate = inputRef.current;
       if (!delegate) return { error: "no delegate" };
       return runIntegrationTests(delegate);
     };
-    return () => { delete w.__runTEOETests; delete w.__runAtomDOMTests; delete w.__runIntegrationTests; };
+    w.__runIMETests = () => {
+      const delegate = inputRef.current;
+      if (!delegate) return { error: "no delegate" };
+      return runIMETests(delegate);
+    };
+    return () => { delete w.__runTEOETests; delete w.__runAtomDOMTests; delete w.__runIntegrationTests; delete w.__runIMETests; };
   }, []);
 
   const handleSubmit = useCallback(() => {
@@ -679,6 +683,19 @@ export function GalleryPromptInput() {
     setTestResults(results);
   }, []);
 
+  const runIME = useCallback(() => {
+    const delegate = inputRef.current;
+    if (!delegate) return;
+    const imeResults = runIMETests(delegate);
+    const mapped: TestResult[] = imeResults.results.map(r => ({
+      name: r.name,
+      passed: r.passed,
+      expected: "",
+      actual: r.detail,
+    }));
+    setTestResults(mapped);
+  }, []);
+
   const passCount = testResults.filter(r => r.passed).length;
   const failCount = testResults.filter(r => !r.passed).length;
 
@@ -755,6 +772,7 @@ export function GalleryPromptInput() {
         </div>
         <div className="prompt-input-toolbar" style={{ marginBottom: "8px" }}>
           <TugPushButton size="sm" onClick={runAllTests}>Run All Tests</TugPushButton>
+          <TugPushButton size="sm" emphasis="outlined" onClick={runIME}>Run IME Tests</TugPushButton>
           {testResults.length > 0 && (
             <>
               <TugBadge role="success" emphasis="tinted" icon={<CircleCheck size={12} />}>{passCount} passed</TugBadge>
