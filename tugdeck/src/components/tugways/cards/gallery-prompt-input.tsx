@@ -3,16 +3,15 @@
  *
  * Testing surface for the tug-prompt-input component. Includes:
  * - Interactive editor with diagnostics and event log
- * - Automated test harness with faithful typing simulation
+ * - TEOE test runner: incoming state → operation → verify outgoing state
+ * - Scenario tests for mixed typing+API sequences
  * - Key configuration for Return/Enter
  *
  * Test approach:
- *   Typing simulation mutates DOM text nodes directly — the same path
- *   the browser uses. MutationObserver fires, engine updates model.
- *   This exercises the real code path, not a shortcut.
- *
- *   Atom insertion, deletion, undo, and selection use delegate API —
- *   the same methods that keyboard handlers call.
+ *   TEOE tests set up incoming state, execute operations, and compare
+ *   the captured outgoing state against expected. Typing simulation uses
+ *   document.execCommand("insertText") — the browser's actual editing
+ *   pipeline. All other operations use the delegate API.
  *
  * Laws of Tug compliance:
  *   [L01] One root.render() at mount — component manages engine internally
@@ -20,13 +19,18 @@
  */
 
 import React, { useRef, useLayoutEffect, useCallback, useState } from "react";
+import { CircleCheck, CircleX } from "lucide-react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import type { AtomSegment, InputAction, CompletionItem } from "@/lib/tug-text-engine";
+import { captureEditingState, editingStatesEqual, formatEditingState } from "@/lib/tug-text-engine";
+import { allTEOEs } from "@/lib/tug-text-editing-operations";
+import type { TEOE, Operation } from "@/lib/tug-text-editing-operations";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -49,72 +53,158 @@ interface TestCase {
 // ===================================================================
 // Typing simulation
 //
-// Simulates real typing by mutating DOM text nodes directly, then
-// letting MutationObserver pick up the change — the same path the
-// browser uses for real keystrokes. This is NOT a shortcut through
-// the delegate API; it exercises the actual MutationObserver → engine
-// update path.
+// Uses document.execCommand("insertText") to go through the browser's
+// actual editing pipeline: beforeinput → DOM mutation → MutationObserver
+// → engine. This is the same path as real keyboard input.
+//
+// For operations that don't go through the browser (deleteBackward,
+// insertAtom, etc.), we call the delegate API directly — same as the
+// keyboard handlers.
 // ===================================================================
 
 /**
- * Type a string into the editor by mutating the DOM text node at the
- * current caret position. MutationObserver picks up the change.
- */
-function simulateTyping(el: HTMLElement, text: string): void {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return;
-
-  const { anchorNode, anchorOffset } = sel;
-  if (!anchorNode || !el.contains(anchorNode)) return;
-
-  if (anchorNode instanceof Text) {
-    // Splice text into the existing text node
-    const before = anchorNode.textContent?.slice(0, anchorOffset) ?? "";
-    const after = anchorNode.textContent?.slice(anchorOffset) ?? "";
-    anchorNode.textContent = before + text + after;
-    // Move caret to after the inserted text
-    sel.collapse(anchorNode, anchorOffset + text.length);
-  } else if (anchorNode === el) {
-    // Caret is at the root level (between child nodes).
-    // Insert a new text node or append to adjacent text node.
-    const childAtOffset = el.childNodes[anchorOffset];
-    if (childAtOffset instanceof Text) {
-      childAtOffset.textContent = text + (childAtOffset.textContent ?? "");
-      sel.collapse(childAtOffset, text.length);
-    } else {
-      const textNode = document.createTextNode(text);
-      if (childAtOffset) {
-        el.insertBefore(textNode, childAtOffset);
-      } else {
-        el.appendChild(textNode);
-      }
-      sel.collapse(textNode, text.length);
-    }
-  }
-  // MutationObserver will fire asynchronously and update the engine model.
-  // For synchronous test assertions, we need to flush the observer.
-}
-
-/**
- * Flush pending MutationObserver callbacks synchronously.
- * The observer batches mutations and delivers them asynchronously.
- * This forces immediate delivery so tests can assert synchronously.
- */
-function flushMutations(el: HTMLElement): void {
-  // Reading offsetHeight forces a synchronous layout, which triggers
-  // pending mutation records to be delivered.
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-  el.offsetHeight;
-}
-
-/**
- * Type text into the editor and flush mutations synchronously.
+ * Simulate typing via execCommand — goes through the browser's editing pipeline.
  */
 function typeText(d: TugTextInputDelegate, text: string): void {
   const el = d.getEditorElement();
   if (!el) return;
-  simulateTyping(el, text);
-  flushMutations(el);
+  el.focus();
+  document.execCommand("insertText", false, text);
+}
+
+/**
+ * Execute a single TEOE operation against a delegate.
+ * For "typing", uses execCommand (browser path).
+ * For everything else, uses the delegate API (same as keyboard handlers).
+ */
+function executeOperation(d: TugTextInputDelegate, op: Operation): void {
+  switch (op.type) {
+    case "typing":
+      typeText(d, op.text);
+      break;
+    case "insertText":
+      d.insertText(op.text);
+      break;
+    case "paste":
+      d.insertText(op.text); // paste routes to insertText in the engine
+      break;
+    case "insertAtom":
+      d.insertAtom(op.atom);
+      break;
+    case "deleteBackward":
+      d.deleteBackward();
+      break;
+    case "deleteForward":
+      d.deleteForward();
+      break;
+    case "deleteWordBackward":
+      d.deleteWordBackward();
+      break;
+    case "deleteWordForward":
+      d.deleteWordForward();
+      break;
+    case "deleteSoftLineBackward":
+    case "deleteParagraphBackward":
+      d.deleteParagraphBackward();
+      break;
+    case "deleteSoftLineForward":
+    case "deleteParagraphForward":
+      d.deleteParagraphForward();
+      break;
+    case "selectAll":
+      d.selectAll();
+      break;
+    case "setSelectedRange":
+      d.setSelectedRange(op.start, op.end);
+      break;
+    case "clear":
+      d.clear();
+      break;
+    case "undo":
+      d.undo();
+      break;
+    case "redo":
+      d.redo();
+      break;
+    case "killLine":
+      d.killLine();
+      break;
+    case "yank":
+      d.yank();
+      break;
+    case "transpose":
+      d.transpose();
+      break;
+    case "openLine":
+      d.openLine();
+      break;
+    case "typeaheadAccept":
+    case "compositionStart":
+    case "compositionUpdate":
+    case "compositionEnd":
+      // Not yet implemented in test runner
+      break;
+  }
+}
+
+/**
+ * Run a single TEOE against a delegate. Returns a TestResult.
+ *
+ * 1. Restore incoming state
+ * 2. Execute operation(s)
+ * 3. Capture outgoing state
+ * 4. Compare with expected
+ */
+function runTEOE(d: TugTextInputDelegate, teoe: TEOE): TestResult {
+  // Set up incoming state
+  // Use the engine's restoreState for segments + selection
+  const el = d.getEditorElement();
+  if (!el) {
+    return { name: teoe.name, passed: false, expected: "", actual: "No editor element" };
+  }
+  el.focus();
+
+  // We need to access the engine directly for restoreState
+  // The delegate doesn't expose restoreState, but clear + programmatic setup works
+  d.clear();
+
+  // Build up the incoming state through the delegate API:
+  // Insert text and atoms segment by segment
+  for (const seg of teoe.incoming.segments) {
+    if (seg.kind === "text" && seg.text) {
+      d.insertText(seg.text);
+    } else if (seg.kind === "atom") {
+      d.insertAtom(seg as AtomSegment);
+    }
+  }
+
+  // Set selection
+  if (teoe.incoming.selection) {
+    d.setSelectedRange(teoe.incoming.selection.start, teoe.incoming.selection.end);
+  }
+
+  // Set atom highlights
+  if (teoe.incoming.highlightedAtomIndices.length > 0) {
+    d.setHighlightedAtomIndices(teoe.incoming.highlightedAtomIndices);
+  }
+
+  // Execute operation(s)
+  const ops = teoe.sequenceOps ?? (teoe.operation ? [teoe.operation] : []);
+  for (const op of ops) {
+    executeOperation(d, op);
+  }
+
+  // Capture outgoing state
+  const actual = captureEditingState(d);
+
+  // Compare
+  const passed = editingStatesEqual(actual, teoe.expected);
+  return {
+    name: teoe.name,
+    passed,
+    expected: formatEditingState(teoe.expected),
+    actual: formatEditingState(actual),
+  };
 }
 
 // ===================================================================
@@ -534,6 +624,24 @@ export function GalleryPromptInput() {
     if (!delegate) return;
     delegate.focus();
     const results: TestResult[] = [];
+
+    // Run TEOE tests
+    const teoes = allTEOEs();
+    for (const teoe of teoes) {
+      delegate.clear();
+      try {
+        results.push(runTEOE(delegate, teoe));
+      } catch (err) {
+        results.push({
+          name: teoe.name,
+          passed: false,
+          expected: formatEditingState(teoe.expected),
+          actual: `Error: ${err}`,
+        });
+      }
+    }
+
+    // Run scenario tests (mixed typing + API sequences)
     for (const tc of TEST_CASES) {
       delegate.clear();
       try {
@@ -547,6 +655,7 @@ export function GalleryPromptInput() {
         });
       }
     }
+
     delegate.clear();
     setTestResults(results);
   }, []);
@@ -621,21 +730,24 @@ export function GalleryPromptInput() {
       <div className="cg-section">
         <div className="cg-section-title">Test Harness</div>
         <div className="prompt-input-desc" style={{ marginBottom: "8px" }}>
-          Typing simulation mutates DOM text nodes directly — the same path
-          the browser uses. MutationObserver fires, engine updates model.
-          Atom insertion and actions use delegate API.
+          TEOE tests: incoming state → operation → compare outgoing state.
+          Typing uses execCommand (browser editing pipeline).
+          All other operations use delegate API.
         </div>
         <div className="prompt-input-toolbar" style={{ marginBottom: "8px" }}>
           <TugPushButton size="sm" onClick={runAllTests}>Run All Tests</TugPushButton>
           {testResults.length > 0 && (
-            <span className="prompt-input-test-summary">
-              {passCount} passed, {failCount} failed
-            </span>
+            <>
+              <TugBadge role="success" emphasis="tinted" icon={<CircleCheck size={12} />}>{passCount} passed</TugBadge>
+              {failCount > 0 && (
+                <TugBadge role="danger" emphasis="tinted" icon={<CircleX size={12} />}>{failCount} failed</TugBadge>
+              )}
+            </>
           )}
         </div>
 
-        {/* Test editor — visible so it can focus, dimmed to indicate non-interactive */}
-        <div className="prompt-input-test-editor">
+        {/* Test editor — offscreen but focusable for test execution */}
+        <div style={{ position: "absolute", left: "-9999px", width: "400px", height: "100px" }}>
           <TugPromptInput ref={testInputRef} placeholder="" maxRows={2} persistState={false} />
         </div>
 
@@ -646,15 +758,16 @@ export function GalleryPromptInput() {
                 key={i}
                 value={`test-${i}`}
                 trigger={
-                  <span className={r.passed ? "prompt-input-test-pass" : "prompt-input-test-fail"}>
-                    {r.passed ? "PASS" : "FAIL"} — {r.name}
+                  <span className="prompt-input-test-trigger">
+                    {r.passed
+                      ? <CircleCheck size={14} style={{ color: "var(--tug7-element-control-text-filled-success-rest)" }} />
+                      : <CircleX size={14} style={{ color: "var(--tug7-element-control-text-filled-danger-rest)" }} />
+                    }
+                    {r.name}
                   </span>
                 }
               >
                 <div className="prompt-input-test-detail">
-                  <div className="prompt-input-test-desc">
-                    {TEST_CASES[i].description}
-                  </div>
                   <div><strong>Expected:</strong> {r.expected}</div>
                   <div><strong>Actual:</strong> {r.actual}</div>
                 </div>

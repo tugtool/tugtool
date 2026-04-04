@@ -151,7 +151,8 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       getSelectedRange() { return engineRef.current?.getSelectedRange() ?? null; },
       setSelectedRange(start: number, end?: number) { engineRef.current?.setSelectedRange(start, end); },
       get hasMarkedText() { return engineRef.current?.hasMarkedText ?? false; },
-      get highlightedAtomIndices() { return engineRef.current?.highlightedAtomIndices ?? []; },
+      getHighlightedAtomIndices() { return engineRef.current?.getHighlightedAtomIndices() ?? []; },
+      setHighlightedAtomIndices(indices: number[]) { engineRef.current?.setHighlightedAtomIndices(indices); },
       insertText(text: string) { engineRef.current?.insertText(text); },
       insertAtom(atom: AtomSegment) {
         const engine = engineRef.current;

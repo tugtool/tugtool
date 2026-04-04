@@ -83,7 +83,9 @@ export interface TugTextInputDelegate {
   /** Whether an IME composition is in progress. */
   readonly hasMarkedText: boolean;
   /** Segment indices of atoms currently highlighted (two-step delete pending). */
-  readonly highlightedAtomIndices: readonly number[];
+  getHighlightedAtomIndices(): readonly number[];
+  /** Set which atoms are highlighted. Pass [] to clear. */
+  setHighlightedAtomIndices(indices: number[]): void;
 
   // --- Mutation ---
   /** Insert plain text at the current selection (replaces selection if ranged). */
@@ -186,7 +188,7 @@ export function captureEditingState(d: TugTextInputDelegate): TugTextEditingStat
     segments,
     selection: d.getSelectedRange(),
     markedText: d.hasMarkedText ? d.getSelectedRange() : null,
-    highlightedAtomIndices: [...d.highlightedAtomIndices],
+    highlightedAtomIndices: [...d.getHighlightedAtomIndices()],
   };
 }
 
@@ -303,7 +305,7 @@ export class TugTextEngine {
   private reconciling = false;
   private composingIndex: number | null = null;
   /** Segment indices of highlighted atoms (two-step delete pending). */
-  highlightedAtomIndices: number[] = [];
+  private _highlightedAtomIndices: number[] = [];
   /** Timestamp of last compositionend — used to detect Enter that accepted IME. */
   private compositionEndedAt = 0;
   private undoStack: UndoEntry[] = [];
@@ -529,22 +531,29 @@ export class TugTextEngine {
   }
 
   private clearAtomSelection(): void {
-    for (const idx of this.highlightedAtomIndices) {
+    for (const idx of this._highlightedAtomIndices) {
       const node = this.domNodes[idx];
       if (node instanceof HTMLSpanElement) {
         node.classList.remove("tug-atom-selected");
       }
     }
-    this.highlightedAtomIndices = [];
+    this._highlightedAtomIndices = [];
   }
 
-  private selectAtomAtIndex(idx: number): void {
+  getHighlightedAtomIndices(): readonly number[] {
+    return this._highlightedAtomIndices;
+  }
+
+  setHighlightedAtomIndices(indices: number[]): void {
     this.clearAtomSelection();
-    this.highlightedAtomIndices = [idx];
-    const node = this.domNodes[idx];
-    if (node instanceof HTMLSpanElement) {
-      node.classList.add("tug-atom-selected");
-      this.onLog?.(`select atom: ${(this.segments[idx] as AtomSegment).label}`);
+    for (const idx of indices) {
+      if (idx < this.segments.length && this.segments[idx].kind === "atom") {
+        this._highlightedAtomIndices.push(idx);
+        const node = this.domNodes[idx];
+        if (node instanceof HTMLSpanElement) {
+          node.classList.add("tug-atom-selected");
+        }
+      }
     }
   }
 
@@ -780,15 +789,15 @@ export class TugTextEngine {
     const offset = range.start;
 
     // Two-step delete: highlighted atom(s) → delete them
-    if (this.highlightedAtomIndices.length > 0) {
+    if (this._highlightedAtomIndices.length > 0) {
       this.pushUndo("delete-atom");
       // Delete in reverse index order so splicing doesn't shift later indices
-      const sorted = [...this.highlightedAtomIndices].sort((a, b) => b - a);
+      const sorted = [...this._highlightedAtomIndices].sort((a, b) => b - a);
       const firstFlat = this.flatOffset(sorted[sorted.length - 1], 0);
       for (const idx of sorted) {
         this.segments.splice(idx, 1);
       }
-      this.highlightedAtomIndices = [];
+      this._highlightedAtomIndices = [];
       this.segments = normalizeSegments(this.segments);
       this.reconcile();
       this.restoreSelection(firstFlat);
@@ -804,7 +813,7 @@ export class TugTextEngine {
     if (pos.offset === 0 && pos.segmentIndex >= 2) {
       const prevSeg = this.segments[pos.segmentIndex - 1];
       if (prevSeg.kind === "atom") {
-        this.selectAtomAtIndex(pos.segmentIndex - 1);
+        this.setHighlightedAtomIndices([pos.segmentIndex - 1]);
         return;
       }
     }
@@ -838,14 +847,14 @@ export class TugTextEngine {
     const offset = range.start;
 
     // Two-step delete: highlighted atom(s) → delete them
-    if (this.highlightedAtomIndices.length > 0) {
+    if (this._highlightedAtomIndices.length > 0) {
       this.pushUndo("delete-atom");
-      const sorted = [...this.highlightedAtomIndices].sort((a, b) => b - a);
+      const sorted = [...this._highlightedAtomIndices].sort((a, b) => b - a);
       const firstFlat = this.flatOffset(sorted[sorted.length - 1], 0);
       for (const idx of sorted) {
         this.segments.splice(idx, 1);
       }
-      this.highlightedAtomIndices = [];
+      this._highlightedAtomIndices = [];
       this.segments = normalizeSegments(this.segments);
       this.reconcile();
       this.restoreSelection(firstFlat);
@@ -862,7 +871,7 @@ export class TugTextEngine {
     if (seg.kind === "text" && pos.offset === (seg as TextSegment).text.length &&
         pos.segmentIndex + 1 < this.segments.length &&
         this.segments[pos.segmentIndex + 1].kind === "atom") {
-      this.selectAtomAtIndex(pos.segmentIndex + 1);
+      this.setHighlightedAtomIndices([pos.segmentIndex + 1]);
       return;
     }
 
@@ -1083,7 +1092,7 @@ export class TugTextEngine {
       segments: cloneSegments(this.segments),
       selection: this.getSelectedRange(),
       markedText: this.hasMarkedText ? this.getSelectedRange() : null,
-      highlightedAtomIndices: [...this.highlightedAtomIndices],
+      highlightedAtomIndices: [...this._highlightedAtomIndices],
     };
   }
 
@@ -1099,7 +1108,7 @@ export class TugTextEngine {
     if (state.highlightedAtomIndices && state.highlightedAtomIndices.length > 0) {
       for (const idx of state.highlightedAtomIndices) {
         if (idx < this.segments.length && this.segments[idx].kind === "atom") {
-          this.highlightedAtomIndices.push(idx);
+          this._highlightedAtomIndices.push(idx);
           const node = this.domNodes[idx];
           if (node instanceof HTMLSpanElement) {
             node.classList.add("tug-atom-selected");
@@ -1574,7 +1583,7 @@ export class TugTextEngine {
       const idx = this.domNodes.indexOf(atom);
       if (idx !== -1 && this.segments[idx].kind === "atom") {
         this.onLog?.(`click: atom[${idx}] "${(this.segments[idx] as AtomSegment).label}"`);
-        this.selectAtomAtIndex(idx);
+        this.setHighlightedAtomIndices([idx]);
         return;
       }
     }
