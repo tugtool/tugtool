@@ -199,15 +199,13 @@ export function createAtomBadgeDOM(seg: AtomSegment): HTMLSpanElement {
   el.setAttribute("aria-label", `${seg.type}: ${seg.label}`);
   el.title = seg.value;
 
-  const icon = document.createElement("span");
-  icon.className = "tug-atom-icon tug-atom-type-icon";
-  icon.innerHTML = DOM_ICON_SVGS[seg.type] ?? DOM_DEFAULT_ICON_SVG;
-  el.appendChild(icon);
-
-  const labelEl = document.createElement("span");
-  labelEl.className = "tug-atom-label";
-  labelEl.textContent = seg.label;
-  el.appendChild(labelEl);
+  // NO text children — the label renders via CSS ::after (content: attr(data-atom-label)).
+  // Text children inside a ce=false span create extra caret stops during
+  // keyboard navigation, causing asymmetric left/right arrow behavior.
+  // The icon renders via CSS ::before with a background-image SVG data URI.
+  const iconSvg = DOM_ICON_SVGS[seg.type] ?? DOM_DEFAULT_ICON_SVG;
+  const encodedSvg = encodeURIComponent(iconSvg);
+  el.style.setProperty("--tug-atom-icon-url", `url("data:image/svg+xml,${encodedSvg}")`);
 
   return el;
 }

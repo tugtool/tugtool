@@ -36,10 +36,10 @@
    --------------------------------------------------------------------------- */
 
 .tug-atom {
-  /* The atom badge is contentEditable="false" and inline-block.
+  /* The atom badge is contentEditable="false" with NO text children.
      The U+FFFC atom character lives in the adjacent text node (not inside
      this element), so the caret skips this badge during navigation.
-     This separation is what makes arrow keys work correctly with atoms. */
+     Icon renders via ::before (SVG data URI), label via ::after (data-atom-label). */
   display: inline-flex;
   align-items: baseline;
   gap: 3px;
@@ -53,7 +53,6 @@
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
-  pointer-events: none;
   white-space: nowrap;
   vertical-align: baseline;
   max-width: 240px;
@@ -61,6 +60,26 @@
 
   background-color: var(--tug7-surface-atom-primary-normal-default-rest);
   color: var(--tug7-element-atom-text-normal-default-rest);
+}
+
+/* Icon via ::before — SVG data URI from --tug-atom-icon-url custom property */
+.tug-atom::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background: var(--tug-atom-icon-url) no-repeat center / contain;
+  /* @tug-renders-on: --tug7-surface-atom-primary-normal-default-rest */
+  opacity: 0.7;
+  vertical-align: -1px;
+  flex-shrink: 0;
+}
+
+/* Label via ::after — reads from data-atom-label attribute */
+.tug-atom::after {
+  content: attr(data-atom-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------------------------------------------------------------------------

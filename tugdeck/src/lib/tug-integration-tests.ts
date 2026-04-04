@@ -1421,27 +1421,24 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
   // RENDERING — atom visual integrity
   // ===================================================================
 
-  test("atom: renders with icon and label", () => {
+  test("atom: renders with label via data attribute", () => {
     buildTextAtomText(d, "hello ", "");
-    const atom = el!.querySelector("[data-slot=tug-atom]");
+    const atom = el!.querySelector("[data-slot=tug-atom]") as HTMLSpanElement | null;
     if (!atom) return { passed: false, detail: "No atom span" };
-    const icon = atom.querySelector(".tug-atom-icon");
-    const label = atom.querySelector(".tug-atom-label");
-    return { passed: !!icon && label?.textContent === TEST_ATOM.label, detail: `icon=${!!icon}, label="${label?.textContent}"` };
+    // Label renders via CSS ::after from data-atom-label attribute
+    const label = atom.dataset.atomLabel;
+    // Badge should have NO text children (prevents caret asymmetry)
+    const hasNoTextChildren = atom.childNodes.length === 0;
+    return { passed: label === TEST_ATOM.label && hasNoTextChildren, detail: `label="${label}", childNodes=${atom.childNodes.length} (expect 0)` };
   });
 
-  test("atom: no stray visible characters in DOM", () => {
+  test("atom: badge has no text children", () => {
     buildTextAtomText(d, "hello ", " world");
-    const atom = el!.querySelector("[data-slot=tug-atom]");
+    const atom = el!.querySelector("[data-slot=tug-atom]") as HTMLSpanElement | null;
     if (!atom) return { passed: false, detail: "No atom span" };
-    // The atom's first child should be a text node containing only U+FFFC
-    // (which renders at zero width in WebKit — invisible).
-    // The visual content (icon + label) is in the .tug-atom-visual wrapper.
-    const firstChild = atom.firstChild;
-    const isFFFC = firstChild instanceof Text && firstChild.textContent === "\uFFFC";
-    const hasVisual = atom.querySelector(".tug-atom-visual") !== null ||
-      atom.querySelector(".tug-atom-icon") !== null; // support both old and new structure
-    return { passed: isFFFC || hasVisual, detail: `firstChild=${firstChild?.nodeName}, text=${firstChild instanceof Text ? JSON.stringify(firstChild.textContent) : "n/a"}, hasVisual=${hasVisual}` };
+    // Badge must have zero child nodes — icon and label render via CSS pseudo-elements.
+    // Text children create extra caret stops during keyboard navigation.
+    return { passed: atom.childNodes.length === 0, detail: `childNodes=${atom.childNodes.length} (expect 0)` };
   });
 
   // ===================================================================
@@ -1751,6 +1748,51 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     return {
       passed,
       detail: `highlighted=${highlighted}, caretInAtom=${caretInAtom} (expect false)`,
+    };
+  });
+
+  // ===================================================================
+  // BA01: Atom navigation asymmetry
+  // Left and right arrow through atoms must take the same number of steps.
+  // ===================================================================
+
+  test("BA01: left/right arrow count symmetric through atom", () => {
+    // Type "x ", insert atom → "x " + atom + "" = flat length 4
+    type(d, "x ");
+    d.insertAtom(TEST_ATOM);
+
+    const totalLen = d.getText().length; // should be 3: "x "(2) + atom(1)
+
+    // Count right arrows from start to end
+    d.setSelectedRange(0);
+    let rightSteps = 0;
+    const rightPositions = [0];
+    for (let i = 0; i < 10; i++) {
+      const before = cursorAt(d);
+      arrowRight(1);
+      const after = cursorAt(d);
+      rightPositions.push(after!);
+      if (after === before) break; // stuck at end
+      rightSteps++;
+    }
+
+    // Count left arrows from end to start
+    d.setSelectedRange(totalLen);
+    let leftSteps = 0;
+    const leftPositions = [totalLen];
+    for (let i = 0; i < 10; i++) {
+      const before = cursorAt(d);
+      arrowLeft(1);
+      const after = cursorAt(d);
+      leftPositions.push(after!);
+      if (after === before) break; // stuck at start
+      leftSteps++;
+    }
+
+    const passed = rightSteps === leftSteps && rightSteps === totalLen;
+    return {
+      passed,
+      detail: `right=${rightSteps} steps ${JSON.stringify(rightPositions)}, left=${leftSteps} steps ${JSON.stringify(leftPositions)}, totalLen=${totalLen} (expect ${totalLen} steps each)`,
     };
   });
 
