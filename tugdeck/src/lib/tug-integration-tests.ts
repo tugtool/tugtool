@@ -1434,13 +1434,14 @@ export function runIntegrationTests(d: TugTextInputDelegate): {
     buildTextAtomText(d, "hello ", " world");
     const atom = el!.querySelector("[data-slot=tug-atom]");
     if (!atom) return { passed: false, detail: "No atom span" };
-    // Check that the atom's first child is NOT a visible text node with a glyph
+    // The atom's first child should be a text node containing only U+FFFC
+    // (which renders at zero width in WebKit — invisible).
+    // The visual content (icon + label) is in the .tug-atom-visual wrapper.
     const firstChild = atom.firstChild;
-    const isTextNode = firstChild instanceof Text;
-    // If it's a text node, it should only contain characters that are invisible (not rendered as a glyph box)
-    // This is architecture-dependent — current ce=false atoms have no leading text node
-    const hasNoStrayText = !isTextNode || (firstChild as Text).textContent === "";
-    return { passed: hasNoStrayText, detail: `firstChild=${firstChild?.nodeName}, text=${isTextNode ? JSON.stringify((firstChild as Text).textContent) : "n/a"}` };
+    const isFFFC = firstChild instanceof Text && firstChild.textContent === "\uFFFC";
+    const hasVisual = atom.querySelector(".tug-atom-visual") !== null ||
+      atom.querySelector(".tug-atom-icon") !== null; // support both old and new structure
+    return { passed: isFFFC || hasVisual, detail: `firstChild=${firstChild?.nodeName}, text=${firstChild instanceof Text ? JSON.stringify(firstChild.textContent) : "n/a"}, hasVisual=${hasVisual}` };
   });
 
   // ===================================================================

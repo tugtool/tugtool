@@ -1246,12 +1246,38 @@ export class TugTextEngine {
         const textNode = rec.target as Text;
         const idx = this.domNodes.indexOf(textNode as unknown as Text);
         if (idx !== -1 && this.segments[idx].kind === "text") {
+          // Normal text segment mutation
           const newText = textNode.textContent ?? "";
           const oldText = (this.segments[idx] as TextSegment).text;
           if (newText !== oldText) {
             if (this.composingIndex === null && !changed) this.pushUndo("type");
             (this.segments[idx] as TextSegment).text = newText;
             changed = true;
+          }
+        } else if (idx === -1) {
+          // Text node not in domNodes — check if it's inside an atom span (stray edit).
+          // The browser may insert text into the atom's U+FFFC text node when
+          // the cursor is at atomText:1. Redirect to the trailing text segment.
+          const parent = textNode.parentElement;
+          if (parent && isAtomElement(parent)) {
+            const atomIdx = this.domNodes.indexOf(parent as HTMLSpanElement);
+            if (atomIdx !== -1) {
+              const content = textNode.textContent ?? "";
+              const strayText = content.replace("\uFFFC", "");
+              if (strayText) {
+                textNode.textContent = "\uFFFC";
+                const nextIdx = atomIdx + 1;
+                if (nextIdx < this.segments.length && this.segments[nextIdx].kind === "text") {
+                  if (!changed) this.pushUndo("type");
+                  (this.segments[nextIdx] as TextSegment).text =
+                    strayText + (this.segments[nextIdx] as TextSegment).text;
+                  const cursorFlat = this.flatOffset(nextIdx, 0) + strayText.length;
+                  this.reconcile();
+                  this.restoreSelection(cursorFlat);
+                  changed = true;
+                }
+              }
+            }
           }
         }
       } else if (rec.type === "childList" && this.composingIndex === null) {

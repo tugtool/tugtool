@@ -36,9 +36,10 @@
    --------------------------------------------------------------------------- */
 
 .tug-atom {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
+  /* Must be display:inline (not inline-flex) — WebKit's Selection.modify
+     cannot navigate into inline-flex elements. The U+FFFC text node inside
+     must be reachable by the caret for correct arrow key navigation. */
+  display: inline;
   padding: 0 5px;
   margin: 0 2px;
   font-size: var(--tug-atom-font-scale, 0.85em);
@@ -47,17 +48,24 @@
   border-radius: 3px;
   border: 1px solid var(--tug7-element-atom-border-normal-default-rest);
   cursor: default;
-  user-select: none;
-  -webkit-user-select: none;
+  /* No user-select:none — the U+FFFC text node inside must be navigable */
   white-space: nowrap;
-  /* Align the first baseline of the inline-flex box (the label text)
-     with the surrounding text baseline. */
   vertical-align: baseline;
   max-width: 240px;
   transition: background-color 80ms ease, border-color 80ms ease, color 80ms ease;
 
   background-color: var(--tug7-surface-atom-primary-normal-default-rest);
   color: var(--tug7-element-atom-text-normal-default-rest);
+}
+
+/* Visual wrapper: icon + label layout, not editable by the user */
+.tug-atom-visual {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
 }
 
 /* ---------------------------------------------------------------------------
