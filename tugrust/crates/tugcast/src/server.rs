@@ -134,6 +134,15 @@ async fn eval_handler(
             .into_response();
     }
 
+    // Eval is dev-mode only
+    if router.dev_state.load().is_none() {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"status": "error", "message": "eval requires dev mode"})),
+        )
+            .into_response();
+    }
+
     let payload: serde_json::Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(_) => {
