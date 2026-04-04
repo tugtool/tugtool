@@ -548,6 +548,32 @@ export function GalleryPromptInput() {
     return () => document.removeEventListener("selectionchange", onSelChange);
   }, [updateDiagnostics]);
 
+  // Expose test runner for programmatic access via /api/eval
+  useLayoutEffect(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.__runTEOETests = () => {
+      const delegate = testInputRef.current;
+      if (!delegate) return { error: "no test delegate" };
+      delegate.focus();
+      const teoes = allTEOEs();
+      const results: Array<{ id: string; name: string; passed: boolean; expected: string; actual: string }> = [];
+      for (const teoe of teoes) {
+        delegate.clear();
+        try {
+          const r = runTEOE(delegate, teoe);
+          results.push({ id: teoe.id, name: r.name, passed: r.passed, expected: r.expected, actual: r.actual });
+        } catch (err) {
+          results.push({ id: teoe.id, name: teoe.name, passed: false, expected: formatEditingState(teoe.expected), actual: `Error: ${err}` });
+        }
+      }
+      delegate.clear();
+      const passed = results.filter(r => r.passed).length;
+      const failed = results.filter(r => !r.passed).length;
+      return { passed, failed, total: results.length, failures: results.filter(r => !r.passed) };
+    };
+    return () => { delete w.__runTEOETests; };
+  }, []);
+
   const handleSubmit = useCallback(() => {
     const delegate = inputRef.current;
     if (!delegate) return;

@@ -17,6 +17,7 @@ pub async fn dispatch_action(
     shutdown_tx: &mpsc::Sender<u8>,
     stream_outputs: &HashMap<FeedId, (broadcast::Sender<Frame>, LagPolicy)>,
     shared_dev_state: &crate::dev::SharedDevState,
+    pending_evals: &crate::router::PendingEvals,
 ) {
     match action {
         "relaunch" => {
@@ -31,6 +32,19 @@ pub async fn dispatch_action(
                     crate::control::handle_relaunch(shared, cat, stx).await;
                 }
             });
+        }
+        "eval-response" => {
+            // Complete a pending eval request
+            if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(raw_payload) {
+                if let Some(request_id) = payload.get("requestId").and_then(|r| r.as_str()) {
+                    let mut pending = pending_evals.lock().unwrap();
+                    if let Some(tx) = pending.remove(request_id) {
+                        let result = payload.get("result").cloned().unwrap_or(serde_json::Value::Null);
+                        let _ = tx.send(result);
+                        info!("dispatch_action: eval-response completed for {}", request_id);
+                    }
+                }
+            }
         }
         other => {
             info!("dispatch_action: broadcasting client action: {}", other);
@@ -55,12 +69,15 @@ mod tests {
         let mut stream_outputs = HashMap::new();
         stream_outputs.insert(FeedId::CONTROL, (client_action_tx, LagPolicy::Warn));
 
+        let pending_evals = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+
         dispatch_action(
             "show-card",
             br#"{"action":"show-card"}"#,
             &shutdown_tx,
             &stream_outputs,
             &dev_state,
+            &pending_evals,
         )
         .await;
 

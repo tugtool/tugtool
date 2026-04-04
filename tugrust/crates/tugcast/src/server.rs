@@ -18,10 +18,12 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::time::timeout;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::warn;
 use tugbank_core::TugbankClient;
+use tugcast_core::{FeedId, Frame};
 
 use crate::dev::SharedDevState;
 use crate::router::FeedRouter;
@@ -101,6 +103,7 @@ async fn tell_handler(
         &router.shutdown_tx,
         &router.stream_outputs,
         &router.dev_state,
+        &router.pending_evals,
     )
     .await;
 
@@ -112,6 +115,94 @@ async fn tell_handler(
         }),
     )
         .into_response()
+}
+
+/// Handle POST /api/eval requests for evaluating JavaScript in the browser.
+///
+/// Sends an eval request to the browser via CONTROL frame and waits for the
+/// response. Returns the result as JSON. Timeout after 30 seconds.
+async fn eval_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(router): State<FeedRouter>,
+    body: Bytes,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"status": "error", "message": "forbidden"})),
+        )
+            .into_response();
+    }
+
+    let payload: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"status": "error", "message": "invalid JSON"})),
+            )
+                .into_response();
+        }
+    };
+
+    let code = match payload.get("code").and_then(|c| c.as_str()) {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"status": "error", "message": "missing code field"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Generate request ID and create oneshot channel
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    // Register pending eval
+    {
+        let mut pending = router.pending_evals.lock().unwrap();
+        pending.insert(request_id.clone(), tx);
+    }
+
+    // Broadcast eval request to browser
+    let eval_frame = serde_json::json!({
+        "action": "eval",
+        "requestId": request_id,
+        "code": code,
+    });
+    if let Some((broadcast_tx, _)) = router.stream_outputs.get(&FeedId::CONTROL) {
+        let frame = Frame::new(FeedId::CONTROL, serde_json::to_vec(&eval_frame).unwrap());
+        let _ = broadcast_tx.send(frame);
+    }
+
+    // Await response with timeout
+    match timeout(std::time::Duration::from_secs(30), rx).await {
+        Ok(Ok(result)) => (
+            StatusCode::OK,
+            axum::Json(serde_json::json!({"status": "ok", "result": result})),
+        )
+            .into_response(),
+        Ok(Err(_)) => {
+            // Sender dropped (browser disconnected)
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"status": "error", "message": "browser disconnected"})),
+            )
+                .into_response()
+        }
+        Err(_) => {
+            // Timeout — clean up pending entry
+            let mut pending = router.pending_evals.lock().unwrap();
+            pending.remove(&request_id);
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                axum::Json(serde_json::json!({"status": "error", "message": "timeout waiting for browser response"})),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// Build the axum application router
@@ -153,6 +244,7 @@ pub(crate) fn build_app(
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
+        .route("/api/eval", post(eval_handler))
         .with_state(router)
         .layer(cors);
 

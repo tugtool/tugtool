@@ -171,7 +171,13 @@ pub struct FeedRouter {
     auth: SharedAuthState,
     pub(crate) shutdown_tx: mpsc::Sender<u8>,
     pub(crate) dev_state: crate::dev::SharedDevState,
+    /// Pending eval requests awaiting browser responses.
+    pub(crate) pending_evals: PendingEvals,
 }
+
+/// Pending eval requests awaiting responses from the browser.
+pub(crate) type PendingEvals =
+    Arc<std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>>>;
 
 impl FeedRouter {
     /// Create a new feed router with shared infrastructure channels.
@@ -191,6 +197,7 @@ impl FeedRouter {
             auth,
             shutdown_tx,
             dev_state,
+            pending_evals: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -644,6 +651,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                         &router.shutdown_tx,
                                                         &router.stream_outputs,
                                                         &router.dev_state,
+                                                        &router.pending_evals,
                                                     ).await;
                                                 }
                                             }

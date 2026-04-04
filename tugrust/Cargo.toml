@@ -24,6 +24,9 @@ chrono = "0.4"
 thiserror = "2"
 anyhow = "1"
 
+# UUID generation
+uuid = { version = "1", features = ["v4"] }
+
 # Atomic shared state
 arc-swap = "1"
 

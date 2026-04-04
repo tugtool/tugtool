@@ -378,12 +378,14 @@ async fn main() {
         let tx = response_tx
             .clone()
             .expect("response_tx must exist when control_reader exists");
+        let ctl_pending_evals = feed_router.pending_evals.clone();
         tokio::spawn(reader.run_recv_loop(
             ctl_shutdown_tx,
             ctl_stream_outputs,
             dev_state,
             tx,
             auth.clone(),
+            ctl_pending_evals,
         ));
     }
 

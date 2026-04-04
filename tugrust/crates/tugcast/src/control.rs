@@ -81,6 +81,7 @@ impl ControlReader {
         shared_dev_state: crate::dev::SharedDevState,
         response_tx: mpsc::Sender<String>,
         auth: crate::auth::SharedAuthState,
+        pending_evals: crate::router::PendingEvals,
     ) {
         // Extract the CONTROL broadcast sender for use throughout the recv loop.
         let client_action_tx = stream_outputs
@@ -122,6 +123,7 @@ impl ControlReader {
                                         &shutdown_tx,
                                         &stream_outputs,
                                         &shared_dev_state,
+                                        &pending_evals,
                                     )
                                     .await;
                                 }
