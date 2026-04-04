@@ -19,6 +19,7 @@
  */
 
 import type { Segment, TextSegment } from "./tug-text-engine";
+import { TUG_ATOM_CHAR } from "./tug-atom-char";
 
 // ===================================================================
 // Document — trivial, but complete for symmetry
@@ -43,13 +44,13 @@ export function endOfDocument(segments: readonly Segment[]): number {
 // ===================================================================
 
 /**
- * Flatten segments into a single string where each atom is U+FFFC.
+ * Flatten segments into a single string where each atom is TUG_ATOM_CHAR (U+E100).
  * This lets us do character-class scanning without worrying about
  * the segment array structure.
  */
 function flattenToString(segments: readonly Segment[]): string {
   return segments.map(s =>
-    s.kind === "text" ? (s as TextSegment).text : "\uFFFC"
+    s.kind === "text" ? (s as TextSegment).text : TUG_ATOM_CHAR
   ).join("");
 }
 
@@ -92,13 +93,13 @@ const enum CharClass {
   Punctuation,
   /** Word character: letter, digit, underscore */
   Word,
-  /** Atom (U+FFFC) — treated as its own word */
+  /** Atom (TUG_ATOM_CHAR / U+E100) — treated as its own word */
   Atom,
 }
 
 /** Classify a character for word boundary detection. */
 function classifyChar(ch: string): CharClass {
-  if (ch === "\uFFFC") return CharClass.Atom;
+  if (ch === TUG_ATOM_CHAR) return CharClass.Atom;
   if (/\s/.test(ch)) return CharClass.Space;
   if (/[\p{P}\p{S}]/u.test(ch)) return CharClass.Punctuation;
   return CharClass.Word;
