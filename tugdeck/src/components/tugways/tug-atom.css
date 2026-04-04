@@ -38,7 +38,7 @@
 .tug-atom {
   display: inline-flex;
   align-items: baseline;
-  gap: 0;
+  gap: 3px;
   padding: 0 5px;
   margin: 0 2px;
   font-size: var(--tug-atom-font-scale, 0.85em);
@@ -47,7 +47,8 @@
   border-radius: 3px;
   border: 1px solid var(--tug7-element-atom-border-normal-default-rest);
   cursor: default;
-  /* No user-select:none — the U+E100 text node inside must be navigable */
+  user-select: none;
+  -webkit-user-select: none;
   white-space: nowrap;
   /* Align the first baseline of the inline-flex box (the label text)
      with the surrounding text baseline. */
@@ -57,19 +58,6 @@
 
   background-color: var(--tug7-surface-atom-primary-normal-default-rest);
   color: var(--tug7-element-atom-text-normal-default-rest);
-}
-
-/* The U+E100 atom character — hidden via CSS Highlight API (::highlight(tug-atom-chars)).
-   The highlight is applied by the engine after each reconcile. */
-
-/* Visual wrapper: icon + label, not editable */
-.tug-atom-visual {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  user-select: none;
-  -webkit-user-select: none;
-  pointer-events: none;
 }
 
 /* ---------------------------------------------------------------------------

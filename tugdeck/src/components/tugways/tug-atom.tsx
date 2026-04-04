@@ -18,7 +18,6 @@
 import "./tug-atom.css";
 
 import React from "react";
-import { TUG_ATOM_CHAR } from "@/lib/tug-atom-char";
 import {
   FileText,
   Terminal,
@@ -180,8 +179,7 @@ export const TugAtom = React.forwardRef<HTMLSpanElement, TugAtomProps>(
 export function createAtomDOM(seg: AtomSegment): HTMLSpanElement {
   const el = document.createElement("span");
   el.className = "tug-atom";
-  // No contentEditable="false" on the outer span — the U+E100 text node
-  // inside must be navigable by the browser's caret movement.
+  el.contentEditable = "false";
   el.dataset.slot = "tug-atom";
   el.dataset.atomType = seg.type;
   el.dataset.atomLabel = seg.label;
@@ -189,25 +187,15 @@ export function createAtomDOM(seg: AtomSegment): HTMLSpanElement {
   el.setAttribute("aria-label", `${seg.type}: ${seg.label}`);
   el.title = seg.value;
 
-  // The navigable character — the browser's caret steps through this
-  el.appendChild(document.createTextNode(TUG_ATOM_CHAR));
-
-  // Visual: icon + label, contentEditable="false" so user can't edit the label
-  const visual = document.createElement("span");
-  visual.className = "tug-atom-visual";
-  visual.contentEditable = "false";
-
   const icon = document.createElement("span");
   icon.className = "tug-atom-icon tug-atom-type-icon";
   icon.innerHTML = DOM_ICON_SVGS[seg.type] ?? DOM_DEFAULT_ICON_SVG;
-  visual.appendChild(icon);
+  el.appendChild(icon);
 
   const labelEl = document.createElement("span");
   labelEl.className = "tug-atom-label";
   labelEl.textContent = seg.label;
-  visual.appendChild(labelEl);
-
-  el.appendChild(visual);
+  el.appendChild(labelEl);
 
   return el;
 }

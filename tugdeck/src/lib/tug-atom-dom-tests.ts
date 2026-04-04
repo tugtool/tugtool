@@ -12,8 +12,8 @@
  * Run via: window.__runAtomDOMTests()
  */
 
-import { TUG_ATOM_CHAR } from "./tug-atom-char";
-export { TUG_ATOM_CHAR };
+/** U+E100 — Private Use Area character representing an atom in the text flow. */
+export const TUG_ATOM_CHAR = "\uE100";
 
 export interface AtomDOMTestResult {
   name: string;

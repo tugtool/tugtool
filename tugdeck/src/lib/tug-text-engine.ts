@@ -28,13 +28,6 @@ import type { AtomSegment } from "@/components/tugways/tug-atom";
 import { startOfWord, endOfWord, startOfParagraph, endOfParagraph } from "./tug-text-visible-units";
 
 // ===================================================================
-// Constants
-// ===================================================================
-
-import { TUG_ATOM_CHAR } from "./tug-atom-char";
-export { TUG_ATOM_CHAR };
-
-// ===================================================================
 // Types
 // ===================================================================
 
@@ -75,7 +68,7 @@ export type DropHandler = (files: FileList) => AtomSegment[];
  */
 export interface TugTextInputDelegate {
   // --- Document content ---
-  /** Full text content with TUG_ATOM_CHAR (U+E100) for atoms. */
+  /** Full text content with U+FFFC for atoms. */
   getText(): string;
   /** All atom segments in document order. */
   getAtoms(): AtomSegment[];
@@ -179,7 +172,7 @@ export function captureEditingState(d: TugTextInputDelegate): TugTextEditingStat
   let atomIdx = 0;
   let textStart = 0;
   for (let i = 0; i < text.length; i++) {
-    if (text[i] === TUG_ATOM_CHAR) {
+    if (text[i] === "\uFFFC") {
       // Always push the text before the atom (even if empty)
       segments.push({ kind: "text", text: text.slice(textStart, i) });
       if (atomIdx < atoms.length) {
@@ -414,7 +407,7 @@ export class TugTextEngine {
 
   getText(): string {
     return this.segments.map(s =>
-      s.kind === "text" ? (s as TextSegment).text : TUG_ATOM_CHAR
+      s.kind === "text" ? (s as TextSegment).text : "\uFFFC"
     ).join("");
   }
 
@@ -499,9 +492,6 @@ export class TugTextEngine {
   }
 
   private domPosition(flat: number): { node: Node; offset: number } | null {
-    // Never place cursor inside an atom span. Positions adjacent to atoms
-    // go to the neighboring text node. The browser's own caret movement
-    // (arrow keys) can enter the atom naturally — but we never put it there.
     let remaining = flat;
     for (let i = 0; i < this.segments.length; i++) {
       const seg = this.segments[i];
@@ -512,13 +502,10 @@ export class TugTextEngine {
         }
         remaining -= len;
       } else {
-        // Atom: "before atom" (remaining=0) → end of previous text node
         if (remaining === 0 && i > 0 && this.domNodes[i - 1]) {
           const prevSeg = this.segments[i - 1] as TextSegment;
           return { node: this.domNodes[i - 1], offset: prevSeg.text.length };
         }
-        // "after atom" (remaining=1) will be handled by the next text segment
-        // when remaining becomes 0 on the next iteration
         remaining -= 1;
       }
     }
@@ -526,11 +513,7 @@ export class TugTextEngine {
     if (last >= 0 && this.domNodes[last]) {
       const seg = this.segments[last];
       const len = seg.kind === "text" ? (seg as TextSegment).text.length : 1;
-      if (seg.kind === "text") {
-        return { node: this.domNodes[last], offset: len };
-      }
-      // Edge case: last segment is atom, position after it — use root child index
-      return { node: this.root, offset: this.root.childNodes.length };
+      return { node: this.domNodes[last], offset: len };
     }
     return { node: this.root, offset: 0 };
   }
@@ -680,34 +663,9 @@ export class TugTextEngine {
     this.domNodes = newNodes;
     this.root.dataset.empty = this.isEmpty() ? "true" : "false";
     this.autoResize();
-    this.updateAtomCharHighlights();
 
     this.observer.observe(this.root, OBSERVER_OPTIONS);
     this.reconciling = false;
-  }
-
-  /** Update CSS Highlight API to make U+E100 atom characters invisible. */
-  private updateAtomCharHighlights(): void {
-    if (typeof CSS === "undefined" || !CSS.highlights) return;
-    const ranges: Range[] = [];
-    for (let i = 0; i < this.segments.length; i++) {
-      if (this.segments[i].kind === "atom" && this.domNodes[i]) {
-        const atomSpan = this.domNodes[i];
-        // The first child of the atom span is the U+E100 text node
-        const textNode = atomSpan instanceof HTMLSpanElement ? atomSpan.firstChild : null;
-        if (textNode instanceof Text) {
-          const range = document.createRange();
-          range.setStart(textNode, 0);
-          range.setEnd(textNode, 1);
-          ranges.push(range);
-        }
-      }
-    }
-    if (ranges.length > 0) {
-      CSS.highlights.set("tug-atom-chars", new Highlight(...ranges));
-    } else {
-      CSS.highlights.delete("tug-atom-chars");
-    }
   }
 
   private autoResize(): void {
@@ -1076,7 +1034,7 @@ export class TugTextEngine {
     if (swapPos < 0) return;
     const a = flat[swapPos];
     const b = flat[swapPos + 1];
-    if (a === TUG_ATOM_CHAR || b === TUG_ATOM_CHAR) return; // Don't transpose atoms
+    if (a === "\uFFFC" || b === "\uFFFC") return; // Don't transpose atoms
     this.pushUndo("transpose");
     this.deleteRange(swapPos, swapPos + 2);
     // Insert in reverse order at swapPos
@@ -1271,42 +1229,12 @@ export class TugTextEngine {
         const textNode = rec.target as Text;
         const idx = this.domNodes.indexOf(textNode as unknown as Text);
         if (idx !== -1 && this.segments[idx].kind === "text") {
-          // Normal text segment mutation
           const newText = textNode.textContent ?? "";
           const oldText = (this.segments[idx] as TextSegment).text;
           if (newText !== oldText) {
             if (this.composingIndex === null && !changed) this.pushUndo("type");
             (this.segments[idx] as TextSegment).text = newText;
             changed = true;
-          }
-        } else if (idx === -1) {
-          // Text node not in domNodes — check if it's inside an atom span (stray edit).
-          // The browser may insert text into the atom's U+E100 text node when
-          // the cursor is at atomText:1. Extract the stray text and redirect
-          // it to the trailing text segment.
-          const parent = textNode.parentElement;
-          if (parent && isAtomElement(parent)) {
-            const atomIdx = this.domNodes.indexOf(parent as HTMLSpanElement);
-            if (atomIdx !== -1) {
-              const content = textNode.textContent ?? "";
-              const strayText = content.replace(TUG_ATOM_CHAR, "");
-              if (strayText) {
-                // Restore atom text node to just the atom char
-                textNode.textContent = TUG_ATOM_CHAR;
-                // Insert stray text into trailing text segment
-                const nextIdx = atomIdx + 1;
-                if (nextIdx < this.segments.length && this.segments[nextIdx].kind === "text") {
-                  if (!changed) this.pushUndo("type");
-                  (this.segments[nextIdx] as TextSegment).text =
-                    strayText + (this.segments[nextIdx] as TextSegment).text;
-                  // Reconcile DOM and place cursor after the redirected text
-                  const cursorFlat = this.flatOffset(nextIdx, 0) + strayText.length;
-                  this.reconcile();
-                  this.restoreSelection(cursorFlat);
-                  changed = true;
-                }
-              }
-            }
           }
         }
       } else if (rec.type === "childList" && this.composingIndex === null) {

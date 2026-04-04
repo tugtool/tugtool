@@ -242,8 +242,7 @@ const ENTER_CHOICES: TugChoiceItem[] = [
   { value: "newline", label: "Enter = newline" },
 ];
 
-import { TUG_ATOM_CHAR } from "@/lib/tug-atom-char";
-const OBJ = TUG_ATOM_CHAR;
+const OBJ = "\uFFFC";
 
 // ===================================================================
 // Test cases
@@ -350,7 +349,7 @@ const TEST_CASES: TestCase[] = [
         name: this.name,
         passed: d.isEmpty(),
         expected: "empty",
-        actual: d.isEmpty() ? "empty" : `"${d.getText().replace(new RegExp(TUG_ATOM_CHAR, "g"), "[atom]")}"`,
+        actual: d.isEmpty() ? "empty" : `"${d.getText().replace(/\uFFFC/g, "[atom]")}"`,
       };
     },
   },
@@ -423,7 +422,7 @@ const TEST_CASES: TestCase[] = [
         name: this.name,
         passed: d.getAtoms().length === 0 && d.getText() === "hello",
         expected: `"hello", 0 atoms`,
-        actual: `"${d.getText().replace(new RegExp(TUG_ATOM_CHAR, "g"), "[atom]")}", ${d.getAtoms().length} atoms`,
+        actual: `"${d.getText().replace(/\uFFFC/g, "[atom]")}", ${d.getAtoms().length} atoms`,
       };
     },
   },
