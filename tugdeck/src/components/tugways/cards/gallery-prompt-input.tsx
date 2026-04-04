@@ -760,8 +760,8 @@ export function GalleryPromptInput() {
                 trigger={
                   <span className="prompt-input-test-trigger">
                     {r.passed
-                      ? <CircleCheck size={14} style={{ color: "var(--tug7-element-control-text-filled-success-rest)" }} />
-                      : <CircleX size={14} style={{ color: "var(--tug7-element-control-text-filled-danger-rest)" }} />
+                      ? <CircleCheck size={14} style={{ color: "var(--tug7-element-global-text-normal-success-rest)" }} />
+                      : <CircleX size={14} style={{ color: "var(--tug7-element-global-text-normal-danger-rest)" }} />
                     }
                     {r.name}
                   </span>

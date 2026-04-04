@@ -85,6 +85,9 @@ body {
   --tug7-element-global-text-normal-onDanger-rest: --tug-color(sapphire-cobalt, i: 4, t: 94);
   --tug7-element-global-text-normal-onSuccess-rest: --tug-color(indigo, i: 5, t: 7);
   --tug7-element-global-text-normal-placeholder-rest: --tug-color(indigo, i: 7, t: 60);
+  --tug7-element-global-text-normal-success-rest: --tug-color(green, i: 80, t: 22);
+  --tug7-element-global-text-normal-danger-rest: --tug-color(red, i: 80, t: 22);
+  --tug7-element-global-text-normal-caution-rest: --tug-color(yellow, i: 80, t: 22);
   --tug7-element-global-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 8, t: 68);
   --tug7-element-global-text-normal-subtle-rest: --tug-color(indigo, i: 8, t: 29);
 
