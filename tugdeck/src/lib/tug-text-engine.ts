@@ -661,6 +661,24 @@ export class TugTextEngine {
     }
 
     this.domNodes = newNodes;
+
+    // Trailing newline fix: a \n at the end of content is invisible in
+    // contentEditable (browser collapses trailing whitespace). Append a
+    // <br> so the browser renders the line break and gives the cursor
+    // a line to land on. This is a DOM rendering concern only — the
+    // model stays clean.
+    const existingBr = this.root.querySelector("br.tug-trailing-br");
+    const lastSeg = this.segments[this.segments.length - 1];
+    const needsBr = lastSeg?.kind === "text" &&
+      (lastSeg as TextSegment).text.endsWith("\n");
+    if (needsBr && !existingBr) {
+      const br = document.createElement("br");
+      br.className = "tug-trailing-br";
+      this.root.appendChild(br);
+    } else if (!needsBr && existingBr) {
+      existingBr.remove();
+    }
+
     this.root.dataset.empty = this.isEmpty() ? "true" : "false";
     this.autoResize();
 
