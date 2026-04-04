@@ -166,6 +166,39 @@ SOFTWARE.
 
 ---
 
+## WebKit
+
+**Source:** https://github.com/WebKit/WebKit
+**What was adopted:** Visible units architecture from `Source/WebCore/editing/visible_units.h` — the separation of position boundary queries (startOfWord, endOfWord, startOfLine, endOfLine, startOfParagraph, endOfParagraph, startOfDocument, endOfDocument) from editing operations, so that deletion, movement, and selection extension at any granularity reduce to "find boundary, act on range." Also informed by `document.execCommand` architecture (the mapping of command names to editing operations through a unified dispatch surface). Both originated in the same 2004-era Apple contributions to KHTML/WebKit.
+**Used in:** `tugdeck/src/lib/tug-text-editing-operations.ts` (TEOI operation taxonomy and visible units layer design), `tugdeck/src/lib/tug-text-engine.ts` (editing engine)
+
+```
+Copyright (C) 2004-2020 Apple Inc. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+---
+
 ## use-stick-to-bottom
 
 **Source:** https://github.com/stackblitz-labs/use-stick-to-bottom
