@@ -1272,16 +1272,37 @@ export class TugTextEngine {
         }
       }
     }
-    this.segments = normalizeSegments(newSegs);
-    this.domNodes = [];
-    let segIdx = 0;
-    for (let i = 0; i < this.root.childNodes.length && segIdx < this.segments.length; i++) {
-      const child = this.root.childNodes[i];
-      if (child instanceof Text || isAtomElement(child)) {
-        this.domNodes[segIdx] = child as Text | HTMLSpanElement;
-        segIdx++;
+    // Compute flat cursor offset from the raw DOM before normalization changes anything.
+    // We can't use saveCursorOffset() here because domNodes is stale.
+    // Instead, walk root.childNodes directly to compute the flat offset.
+    let flatCursor: number | null = null;
+    const sel = window.getSelection();
+    if (sel && sel.anchorNode && this.root.contains(sel.anchorNode)) {
+      let flat = 0;
+      for (let i = 0; i < this.root.childNodes.length; i++) {
+        const child = this.root.childNodes[i];
+        if (child === sel.anchorNode || child.contains(sel.anchorNode)) {
+          if (child instanceof Text) {
+            flatCursor = flat + sel.anchorOffset;
+          } else if (isAtomElement(child)) {
+            flatCursor = flat + (sel.anchorOffset > 0 ? 1 : 0);
+          }
+          break;
+        }
+        if (child instanceof Text) {
+          flat += (child.textContent ?? "").length;
+        } else if (isAtomElement(child)) {
+          flat += 1;
+        }
       }
     }
+
+    this.segments = normalizeSegments(newSegs);
+    // Reconcile DOM to match normalized model — the browser may have left
+    // the DOM in a state that doesn't match (e.g., adjacent text nodes that
+    // normalizeSegments merged, or missing empty text nodes between atoms).
+    this.reconcile();
+    if (flatCursor !== null) this.restoreSelection(flatCursor);
   }
 
   // -----------------------------------------------------------------
