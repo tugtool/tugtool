@@ -680,9 +680,34 @@ export class TugTextEngine {
     this.domNodes = newNodes;
     this.root.dataset.empty = this.isEmpty() ? "true" : "false";
     this.autoResize();
+    this.updateAtomCharHighlights();
 
     this.observer.observe(this.root, OBSERVER_OPTIONS);
     this.reconciling = false;
+  }
+
+  /** Update CSS Highlight API to make U+E100 atom characters invisible. */
+  private updateAtomCharHighlights(): void {
+    if (typeof CSS === "undefined" || !CSS.highlights) return;
+    const ranges: Range[] = [];
+    for (let i = 0; i < this.segments.length; i++) {
+      if (this.segments[i].kind === "atom" && this.domNodes[i]) {
+        const atomSpan = this.domNodes[i];
+        // The first child of the atom span is the U+E100 text node
+        const textNode = atomSpan instanceof HTMLSpanElement ? atomSpan.firstChild : null;
+        if (textNode instanceof Text) {
+          const range = document.createRange();
+          range.setStart(textNode, 0);
+          range.setEnd(textNode, 1);
+          ranges.push(range);
+        }
+      }
+    }
+    if (ranges.length > 0) {
+      CSS.highlights.set("tug-atom-chars", new Highlight(...ranges));
+    } else {
+      CSS.highlights.delete("tug-atom-chars");
+    }
   }
 
   private autoResize(): void {
