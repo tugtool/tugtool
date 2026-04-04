@@ -36,10 +36,13 @@
    --------------------------------------------------------------------------- */
 
 .tug-atom {
-  /* Must be display:inline (not inline-flex) — WebKit's Selection.modify
-     cannot navigate into inline-flex elements. The U+FFFC text node inside
-     must be reachable by the caret for correct arrow key navigation. */
-  display: inline;
+  /* The atom badge is contentEditable="false" and inline-block.
+     The U+FFFC atom character lives in the adjacent text node (not inside
+     this element), so the caret skips this badge during navigation.
+     This separation is what makes arrow keys work correctly with atoms. */
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
   padding: 0 5px;
   margin: 0 2px;
   font-size: var(--tug-atom-font-scale, 0.85em);
@@ -48,7 +51,9 @@
   border-radius: 3px;
   border: 1px solid var(--tug7-element-atom-border-normal-default-rest);
   cursor: default;
-  /* No user-select:none — the U+FFFC text node inside must be navigable */
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
   white-space: nowrap;
   vertical-align: baseline;
   max-width: 240px;
@@ -56,16 +61,6 @@
 
   background-color: var(--tug7-surface-atom-primary-normal-default-rest);
   color: var(--tug7-element-atom-text-normal-default-rest);
-}
-
-/* Visual wrapper: icon + label layout, not editable by the user */
-.tug-atom-visual {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  user-select: none;
-  -webkit-user-select: none;
-  pointer-events: none;
 }
 
 /* ---------------------------------------------------------------------------

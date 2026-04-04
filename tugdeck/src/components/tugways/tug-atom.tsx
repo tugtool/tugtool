@@ -177,11 +177,21 @@ export const TugAtom = React.forwardRef<HTMLSpanElement, TugAtomProps>(
  * No dismiss button — the engine handles deletion via two-step backspace.
  * No event handlers — the engine attaches its own click handler.
  */
-export function createAtomDOM(seg: AtomSegment): HTMLSpanElement {
+/**
+ * Create the visual badge element for an atom.
+ * This is a contentEditable="false" inline-block element that renders
+ * the atom's icon and label. It takes up space in the flow but is
+ * completely invisible to the browser's caret navigation.
+ *
+ * The atom character (U+FFFC) lives in the adjacent text node, NOT
+ * inside this element. This separation is what makes navigation work:
+ * the caret traverses the text node (including U+FFFC as one character)
+ * and skips the badge element entirely.
+ */
+export function createAtomBadgeDOM(seg: AtomSegment): HTMLSpanElement {
   const el = document.createElement("span");
   el.className = "tug-atom";
-  // No contentEditable="false" on the outer span — the U+FFFC text node
-  // inside must be navigable by the browser's caret movement.
+  el.contentEditable = "false";
   el.dataset.slot = "tug-atom";
   el.dataset.atomType = seg.type;
   el.dataset.atomLabel = seg.label;
@@ -189,27 +199,21 @@ export function createAtomDOM(seg: AtomSegment): HTMLSpanElement {
   el.setAttribute("aria-label", `${seg.type}: ${seg.label}`);
   el.title = seg.value;
 
-  // The navigable character — browser caret steps through this
-  el.appendChild(document.createTextNode(TUG_ATOM_CHAR));
-
-  // Visual: icon + label in a ce=false wrapper so user can't edit the label
-  const visual = document.createElement("span");
-  visual.className = "tug-atom-visual";
-  visual.contentEditable = "false";
-
   const icon = document.createElement("span");
   icon.className = "tug-atom-icon tug-atom-type-icon";
   icon.innerHTML = DOM_ICON_SVGS[seg.type] ?? DOM_DEFAULT_ICON_SVG;
-  visual.appendChild(icon);
+  el.appendChild(icon);
 
   const labelEl = document.createElement("span");
   labelEl.className = "tug-atom-label";
   labelEl.textContent = seg.label;
-  visual.appendChild(labelEl);
+  el.appendChild(labelEl);
 
-  el.appendChild(visual);
   return el;
 }
+
+/** @deprecated Use createAtomBadgeDOM — kept for backward compatibility during migration. */
+export const createAtomDOM = createAtomBadgeDOM;
 
 // ---- Label formatting utility ----
 

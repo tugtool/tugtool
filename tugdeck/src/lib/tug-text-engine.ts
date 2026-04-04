@@ -23,7 +23,7 @@
  * Reference implementations studied: CodeMirror 6 (MIT), Lexical (MIT), ProseMirror (MIT)
  */
 
-import { createAtomDOM } from "@/components/tugways/tug-atom";
+import { createAtomBadgeDOM } from "@/components/tugways/tug-atom";
 import type { AtomSegment } from "@/components/tugways/tug-atom";
 import { startOfWord, endOfWord, startOfParagraph, endOfParagraph } from "./tug-text-visible-units";
 
@@ -465,12 +465,25 @@ export class TugTextEngine {
   }
 
   private flatFromDOM(node: Node, offset: number): number {
-    // If the node is the root, offset is a child index
+    // If the node is the root, offset is a child index.
+    // Root children include badge spans (not in domNodes), so walk
+    // the actual children and map through segments.
     if (node === this.root) {
       let flat = 0;
-      for (let i = 0; i < offset && i < this.domNodes.length; i++) {
-        flat += this.segments[i].kind === "text"
-          ? (this.segments[i] as TextSegment).text.length : 1;
+      let segIdx = 0;
+      for (let i = 0; i < offset && i < this.root.childNodes.length; i++) {
+        const child = this.root.childNodes[i];
+        if (segIdx < this.segments.length) {
+          const seg = this.segments[segIdx];
+          if (child instanceof Text && seg.kind === "text") {
+            flat += (seg as TextSegment).text.length;
+            segIdx++;
+          } else if (child instanceof Text && seg.kind === "atom") {
+            flat += 1; // U+FFFC text node
+            segIdx++;
+          }
+          // Badge spans: skip (don't advance segIdx or flat)
+        }
       }
       return flat;
     }
@@ -486,6 +499,25 @@ export class TugTextEngine {
         if (this.segments[i].kind === "text") return flat + offset;
         // For atoms: before atom = flat, after atom = flat + 1
         return flat + (offset > 0 ? 1 : 0);
+      }
+    }
+    // Fallback: check if node is inside a badge span (visual decoration).
+    // Badge spans are not in domNodes but follow the atom's U+FFFC text node.
+    // Map to the atom's "after" position.
+    if (node !== this.root) {
+      const parent = node instanceof HTMLSpanElement ? node : node.parentElement;
+      if (parent && isAtomElement(parent) && this.root.contains(parent)) {
+        // Find the U+FFFC text node that precedes this badge
+        const prev = parent.previousSibling;
+        const idx = prev ? this.domNodes.indexOf(prev as Text) : -1;
+        if (idx !== -1 && this.segments[idx].kind === "atom") {
+          let flat = 0;
+          for (let j = 0; j <= idx; j++) {
+            flat += this.segments[j].kind === "text"
+              ? (this.segments[j] as TextSegment).text.length : 1;
+          }
+          return flat; // after the atom
+        }
       }
     }
     return 0;
@@ -531,12 +563,16 @@ export class TugTextEngine {
     sel.addRange(range);
   }
 
+  /** Find the badge span for an atom segment. It's the next sibling of the U+FFFC text node. */
+  private atomBadge(segIdx: number): HTMLSpanElement | null {
+    const textNode = this.domNodes[segIdx];
+    const next = textNode?.nextSibling;
+    return next instanceof HTMLSpanElement && isAtomElement(next) ? next : null;
+  }
+
   private clearAtomSelection(): void {
     for (const idx of this._highlightedAtomIndices) {
-      const node = this.domNodes[idx];
-      if (node instanceof HTMLSpanElement) {
-        node.classList.remove("tug-atom-selected");
-      }
+      this.atomBadge(idx)?.classList.remove("tug-atom-selected");
     }
     this._highlightedAtomIndices = [];
   }
@@ -550,9 +586,9 @@ export class TugTextEngine {
     for (const idx of indices) {
       if (idx < this.segments.length && this.segments[idx].kind === "atom") {
         this._highlightedAtomIndices.push(idx);
-        const node = this.domNodes[idx];
-        if (node instanceof HTMLSpanElement) {
-          node.classList.add("tug-atom-selected");
+        const badge = this.atomBadge(idx);
+        if (badge) {
+          badge.classList.add("tug-atom-selected");
         }
       }
     }
@@ -620,34 +656,48 @@ export class TugTextEngine {
     this.reconciling = true;
     this.observer.disconnect();
 
+    // Build domNodes (1:1 with segments) and the full DOM child list.
+    // Text segments → Text nodes.
+    // Atom segments → Text("\uFFFC") node (in domNodes) + badge span (in DOM only).
+    // The badge is a visual decoration — ce=false, skipped by caret navigation.
     const newNodes: (Text | HTMLSpanElement)[] = [];
+    const domChildren: (Text | HTMLSpanElement)[] = [];
+
     for (let i = 0; i < this.segments.length; i++) {
       const seg = this.segments[i];
       const old = this.domNodes[i];
 
       if (seg.kind === "text") {
+        let textNode: Text;
         if (old instanceof Text) {
           if (old.textContent !== (seg as TextSegment).text) {
             old.textContent = (seg as TextSegment).text;
           }
-          newNodes.push(old);
+          textNode = old;
         } else {
-          newNodes.push(document.createTextNode((seg as TextSegment).text));
+          textNode = document.createTextNode((seg as TextSegment).text);
         }
+        newNodes.push(textNode);
+        domChildren.push(textNode);
       } else {
-        // Reuse existing atom if label matches
-        if (isAtomElement(old) &&
-            old.dataset.atomLabel === (seg as AtomSegment).label) {
-          newNodes.push(old);
+        // Atom: navigable U+FFFC text node + visual badge span
+        let atomTextNode: Text;
+        if (old instanceof Text && old.textContent === "\uFFFC") {
+          atomTextNode = old;
         } else {
-          newNodes.push(createAtomDOM(seg as AtomSegment));
+          atomTextNode = document.createTextNode("\uFFFC");
         }
+        newNodes.push(atomTextNode);
+        domChildren.push(atomTextNode);
+
+        // Badge span — visual only, not in domNodes
+        domChildren.push(createAtomBadgeDOM(seg as AtomSegment));
       }
     }
 
-    // Sync children minimally
-    for (let i = 0; i < newNodes.length; i++) {
-      const target = newNodes[i];
+    // Sync DOM children
+    for (let i = 0; i < domChildren.length; i++) {
+      const target = domChildren[i];
       const current = this.root.childNodes[i] as ChildNode | undefined;
       if (current === target) continue;
       if (current) {
@@ -656,7 +706,7 @@ export class TugTextEngine {
         this.root.appendChild(target);
       }
     }
-    while (this.root.childNodes.length > newNodes.length) {
+    while (this.root.childNodes.length > domChildren.length) {
       this.root.removeChild(this.root.lastChild!);
     }
 
@@ -1254,29 +1304,23 @@ export class TugTextEngine {
             (this.segments[idx] as TextSegment).text = newText;
             changed = true;
           }
-        } else if (idx === -1) {
-          // Text node not in domNodes — check if it's inside an atom span (stray edit).
-          // The browser may insert text into the atom's U+FFFC text node when
-          // the cursor is at atomText:1. Redirect to the trailing text segment.
-          const parent = textNode.parentElement;
-          if (parent && isAtomElement(parent)) {
-            const atomIdx = this.domNodes.indexOf(parent as HTMLSpanElement);
-            if (atomIdx !== -1) {
-              const content = textNode.textContent ?? "";
-              const strayText = content.replace("\uFFFC", "");
-              if (strayText) {
-                textNode.textContent = "\uFFFC";
-                const nextIdx = atomIdx + 1;
-                if (nextIdx < this.segments.length && this.segments[nextIdx].kind === "text") {
-                  if (!changed) this.pushUndo("type");
-                  (this.segments[nextIdx] as TextSegment).text =
-                    strayText + (this.segments[nextIdx] as TextSegment).text;
-                  const cursorFlat = this.flatOffset(nextIdx, 0) + strayText.length;
-                  this.reconcile();
-                  this.restoreSelection(cursorFlat);
-                  changed = true;
-                }
-              }
+        } else if (idx !== -1 && this.segments[idx].kind === "atom") {
+          // Stray edit in atom's U+FFFC text node. The browser inserted text
+          // at atomText:1. Extract the stray text and redirect it to the
+          // trailing text segment.
+          const content = textNode.textContent ?? "";
+          const strayText = content.replace("\uFFFC", "");
+          if (strayText) {
+            textNode.textContent = "\uFFFC";
+            const nextIdx = idx + 1;
+            if (nextIdx < this.segments.length && this.segments[nextIdx].kind === "text") {
+              if (!changed) this.pushUndo("type");
+              (this.segments[nextIdx] as TextSegment).text =
+                strayText + (this.segments[nextIdx] as TextSegment).text;
+              const cursorFlat = this.flatOffset(nextIdx, 0) + strayText.length;
+              this.reconcile();
+              this.restoreSelection(cursorFlat);
+              changed = true;
             }
           }
         }
@@ -1298,8 +1342,30 @@ export class TugTextEngine {
     for (let i = 0; i < this.root.childNodes.length; i++) {
       const child = this.root.childNodes[i];
       if (child instanceof Text) {
-        newSegs.push({ kind: "text", text: child.textContent ?? "" });
+        const content = child.textContent ?? "";
+        // A text node containing only U+FFFC is an atom's navigable character.
+        // The next sibling should be the badge span with the atom metadata.
+        if (content === "\uFFFC") {
+          const nextSibling = this.root.childNodes[i + 1];
+          if (nextSibling && isAtomElement(nextSibling as HTMLSpanElement)) {
+            const badge = nextSibling as HTMLSpanElement;
+            newSegs.push({
+              kind: "atom",
+              type: badge.dataset.atomType ?? "file",
+              label: badge.dataset.atomLabel ?? "?",
+              value: badge.title ?? badge.dataset.atomLabel ?? "?",
+            });
+            i++; // Skip the badge span
+          } else {
+            // Orphan FFFC without a badge — treat as text
+            newSegs.push({ kind: "text", text: content });
+          }
+        } else {
+          newSegs.push({ kind: "text", text: content });
+        }
       } else if (isAtomElement(child)) {
+        // Badge span without preceding FFFC text node — legacy or orphaned.
+        // Read atom metadata from the badge.
         newSegs.push({
           kind: "atom",
           type: child.dataset.atomType ?? "file",
@@ -1316,8 +1382,6 @@ export class TugTextEngine {
       }
     }
     // Compute flat cursor offset from the raw DOM before normalization changes anything.
-    // We can't use saveCursorOffset() here because domNodes is stale.
-    // Instead, walk root.childNodes directly to compute the flat offset.
     let flatCursor: number | null = null;
     const sel = window.getSelection();
     if (sel && sel.anchorNode && this.root.contains(sel.anchorNode)) {
@@ -1328,15 +1392,17 @@ export class TugTextEngine {
           if (child instanceof Text) {
             flatCursor = flat + sel.anchorOffset;
           } else if (isAtomElement(child)) {
-            flatCursor = flat + (sel.anchorOffset > 0 ? 1 : 0);
+            // Cursor in badge span — position after the atom
+            flatCursor = flat;
           }
           break;
         }
         if (child instanceof Text) {
-          flat += (child.textContent ?? "").length;
-        } else if (isAtomElement(child)) {
-          flat += 1;
+          const content = child.textContent ?? "";
+          // U+FFFC text node counts as 1 (atom), regular text counts as length
+          flat += content === "\uFFFC" ? 1 : content.length;
         }
+        // Badge spans don't contribute to flat offset (atom already counted via FFFC)
       }
     }
 
@@ -1654,13 +1720,17 @@ export class TugTextEngine {
 
   private onClick = (e: MouseEvent): void => {
     const target = e.target as HTMLElement;
-    const atom = target.closest?.("[data-slot='tug-atom']");
-    if (atom instanceof HTMLSpanElement && this.root.contains(atom)) {
-      const idx = this.domNodes.indexOf(atom);
-      if (idx !== -1 && this.segments[idx].kind === "atom") {
-        this.onLog?.(`click: atom[${idx}] "${(this.segments[idx] as AtomSegment).label}"`);
-        this.setHighlightedAtomIndices([idx]);
-        return;
+    const badge = target.closest?.("[data-slot='tug-atom']");
+    if (badge instanceof HTMLSpanElement && this.root.contains(badge)) {
+      // Badge span clicked — find the atom segment via the preceding U+FFFC text node
+      const prev = badge.previousSibling;
+      if (prev) {
+        const idx = this.domNodes.indexOf(prev as Text);
+        if (idx !== -1 && this.segments[idx].kind === "atom") {
+          this.onLog?.(`click: atom[${idx}] "${(this.segments[idx] as AtomSegment).label}"`);
+          this.setHighlightedAtomIndices([idx]);
+          return;
+        }
       }
     }
     this.onLog?.("click: clear atom selection");
