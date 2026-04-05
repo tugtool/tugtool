@@ -42,7 +42,7 @@
   padding: 6px 10px;
   font-family: var(--tug-font-sans);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 24px;
   /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
   color: var(--tug7-element-global-text-normal-default-rest);
   background-color: var(--tug7-surface-global-primary-normal-control-rest);
@@ -54,8 +54,6 @@
   word-wrap: break-word;
   overflow-wrap: break-word;
   overflow-y: hidden;
-  /* Prevent macOS from treating normal typing as IME composition */
-  -webkit-user-modify: read-write-plaintext-only;
 }
 
 /* ---------------------------------------------------------------------------
@@ -115,12 +113,3 @@
   pointer-events: none;
 }
 
-/* ---------------------------------------------------------------------------
-   Cursor anchor — ce=false span after atom badges at line boundaries.
-   Provides visual width so the caret on the adjacent ZWSP text node
-   doesn't drift into the badge. [L06]
-   --------------------------------------------------------------------------- */
-
-.tug-cursor-anchor {
-  color: transparent;
-}
