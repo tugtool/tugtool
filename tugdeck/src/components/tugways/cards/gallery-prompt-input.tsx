@@ -813,9 +813,35 @@ export function GalleryPromptInput() {
         </div>
         <div
           id="spike-editor"
+          data-return-action={returnAction}
+          data-enter-action={enterAction}
           ref={(el) => {
             if (!el || (el as any).__spikeSetup) return;
             (el as any).__spikeSetup = true;
+
+            // Return/Enter: submit or newline based on key config.
+            // Reads current action from data attributes (set by React).
+            el.addEventListener("keydown", (e) => {
+              if (e.key !== "Enter") return;
+              if (e.isComposing) return; // IME gets the key
+
+              e.preventDefault();
+              const isNumpad = e.code === "NumpadEnter";
+              const baseAction = isNumpad
+                ? el.dataset.enterAction
+                : el.dataset.returnAction;
+              // Shift inverts
+              const action = e.shiftKey
+                ? (baseAction === "submit" ? "newline" : "submit")
+                : baseAction;
+
+              if (action === "submit") {
+                // For the spike, just log it
+                console.log("SPIKE: submit");
+              } else {
+                document.execCommand("insertLineBreak");
+              }
+            });
 
             // Click on atom: select the entire image
             el.addEventListener("click", (e) => {
@@ -831,53 +857,68 @@ export function GalleryPromptInput() {
             });
 
             // Option+Arrow: treat atoms as word boundaries.
-            // Selection.modify("move", dir, "word") doesn't stop at images.
-            // Intercept and handle manually.
+            // Let the browser do the word move, then check if we jumped
+            // over an atom. If so, clamp to the first atom boundary crossed.
             el.addEventListener("keydown", (e) => {
               if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && e.altKey && !e.metaKey && !e.ctrlKey) {
+                e.preventDefault();
                 const sel = window.getSelection();
-                if (!sel || !sel.anchorNode) return;
+                if (!sel || !sel.focusNode) return;
+
+                const forward = e.key === "ArrowRight";
+                const method = e.shiftKey ? "extend" : "move";
+                const dir = forward ? "forward" : "backward";
+
+                // Create a range marking the caret position BEFORE the move
+                const beforeRange = document.createRange();
+                beforeRange.setStart(sel.focusNode, sel.focusOffset);
+                beforeRange.collapse(true);
 
                 // Let browser do the word move
-                e.preventDefault();
-                const direction = e.key === "ArrowLeft" ? "backward" : "forward";
-                const method = e.shiftKey ? "extend" : "move";
+                sel.modify(method, dir, "word");
 
-                // Save position before move
-                const beforeNode = sel.focusNode;
-                const beforeOffset = sel.focusOffset;
+                // Create a range marking the caret position AFTER the move
+                const afterRange = document.createRange();
+                afterRange.setStart(sel.focusNode, sel.focusOffset);
+                afterRange.collapse(true);
 
-                sel.modify(method, direction, "word");
-
-                // Check if we crossed an atom — if so, stop at the atom boundary
-                const afterNode = sel.focusNode;
-                if (beforeNode && afterNode && beforeNode !== afterNode) {
-                  // Walk between before and after to see if we crossed an img
-                  const range = document.createRange();
-                  if (direction === "forward") {
-                    range.setStart(beforeNode, beforeOffset);
-                    range.setEnd(afterNode, sel.focusOffset);
-                  } else {
-                    range.setStart(afterNode, sel.focusOffset);
-                    range.setEnd(beforeNode, beforeOffset);
-                  }
-                  const fragment = range.cloneContents();
-                  if (fragment.querySelector("img[data-atom-label]")) {
-                    // We crossed an atom — find it and stop at its boundary
-                    let node: Node | null = direction === "forward" ? beforeNode : afterNode;
-                    while (node && node !== el) {
-                      const sibling = direction === "forward" ? node.nextSibling : node.previousSibling;
-                      if (sibling instanceof HTMLImageElement && sibling.dataset.atomLabel) {
-                        // Stop right before/after this atom
-                        if (direction === "forward") {
-                          sel.collapse(sibling.parentNode, Array.from(sibling.parentNode!.childNodes).indexOf(sibling));
-                        } else {
-                          sel.collapse(sibling.parentNode, Array.from(sibling.parentNode!.childNodes).indexOf(sibling) + 1);
-                        }
-                        break;
-                      }
-                      node = sibling;
+                // Check each atom: is it between before and after?
+                const atoms = el.querySelectorAll("img[data-atom-label]");
+                let clampAtom: HTMLImageElement | null = null;
+                for (let i = 0; i < atoms.length; i++) {
+                  const atomRange = document.createRange();
+                  if (forward) {
+                    // For forward: check if atom's leading edge is between before and after
+                    atomRange.setStartBefore(atoms[i]);
+                    atomRange.collapse(true);
+                    const afterBefore = beforeRange.compareBoundaryPoints(Range.START_TO_START, atomRange) <= 0;
+                    const beforeAfter = afterRange.compareBoundaryPoints(Range.START_TO_START, atomRange) >= 0;
+                    if (afterBefore && beforeAfter) {
+                      // This atom is in the crossed range — clamp to its trailing edge
+                      if (!clampAtom) clampAtom = atoms[i] as HTMLImageElement;
                     }
+                  } else {
+                    // For backward: check if atom's trailing edge is between after and before
+                    atomRange.setStartAfter(atoms[i]);
+                    atomRange.collapse(true);
+                    const afterAfter = afterRange.compareBoundaryPoints(Range.START_TO_START, atomRange) <= 0;
+                    const beforeBefore = beforeRange.compareBoundaryPoints(Range.START_TO_START, atomRange) >= 0;
+                    if (afterAfter && beforeBefore) {
+                      clampAtom = atoms[i] as HTMLImageElement; // keep last (closest to before)
+                    }
+                  }
+                }
+
+                if (clampAtom) {
+                  // Clamp: position at the atom's far edge (the side we approached from)
+                  const parent = clampAtom.parentNode!;
+                  const idx = Array.from(parent.childNodes).indexOf(clampAtom);
+                  if (forward) {
+                    // Stop after the atom
+                    sel.collapse(parent, idx + 1);
+                  } else {
+                    // Stop before the atom
+                    sel.collapse(parent, idx);
                   }
                 }
               }
