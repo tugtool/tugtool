@@ -197,7 +197,8 @@ Remove the dead code from the old engine-based architecture. This comes first so
 - Delete `lib/tug-integration-tests.ts` (old integration test suite)
 - Delete `lib/tug-atom-dom-tests.ts` (old atom DOM tests)
 - Delete `lib/tug-text-visible-units.ts` (segment-model visible units)
-- Remove `simulateKey` message handler from `MainWindow.swift` (trusted key events no longer needed)
+- Remove `simulateKey` message handler from `MainWindow.swift` (trusted key events no longer needed — registration in `setupWebView`, handler in `userContentController`, teardown in `cleanupMessageHandlers`)
+- Remove `loadLocalFile` method from `MainWindow.swift` (spike-only, not needed going forward)
 - Remove `/api/key` endpoint from `tugcast/src/server.rs`
 - Remove `__runIntegrationTests`, `__runTEOETests`, `__runIMETests`, `__runAtomDOMTests`, `__getTestDelegate` from gallery card (keep `/api/eval` endpoint as general debugging tool)
 - Remove old `TugTextEditingState`, `captureEditingState`, `formatEditingState` from the engine (no parallel state model)
