@@ -520,7 +520,8 @@ export class TugTextEngine {
       this.root.style.height = `${this.maxHeight}px`;
       this.root.style.overflowY = "auto";
     } else {
-      this.root.style.height = `${scrollH}px`;
+      // Let CSS min-height govern when content is short
+      this.root.style.height = "";
       this.root.style.overflowY = "hidden";
     }
   }

@@ -39,7 +39,7 @@
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  min-height: 32px;
+  min-height: 38px;
   padding: 6px 10px;
   font-family: var(--tug-font-sans);
   font-size: 14px;
