@@ -349,13 +349,112 @@ Two issues in the offset helpers:
 
 ### Step 4: Typeahead
 
-Port the typeahead state machine. Adapted for DOM-based cursor position:
-- `@` trigger detection via the `input` event (same change detection as above)
-- Cursor-relative position: walk DOM backward from caret to find the `@` character and extract the query
-- Popup positioned near cursor
-- Completion provider callback
-- Tab/Enter accepts, Escape cancels, arrow keys navigate
-- Accepted completion → insert atom image at cursor
+Implement `@`-trigger typeahead in the DOM-based engine. When the user types `@`, a completion popup appears, filtered as they type. The engine owns the state machine; the popup is a proper component using our design system.
+
+#### Sub-step 4.1: Add typeahead state to the engine
+
+Private state on `TugTextEngine`:
+```typescript
+private _typeahead = {
+  active: false,
+  query: "",
+  anchorOffset: 0,  // flat offset of the @ character
+  filtered: [] as CompletionItem[],
+  selectedIndex: 0,
+};
+```
+
+The old engine tracked `anchorSegment` + `anchorOffset` in segment-model terms. We track a single flat character offset — DOM is truth.
+
+#### Sub-step 4.2: Detect `@` trigger
+
+In the existing `input` event handler, after `updateEmpty`/`autoResize`/`onChange`:
+- If typeahead is not active and `completionProvider` is set
+- Read the character just before the caret (walk DOM backward one position)
+- If it's `@`, activate: record the flat offset, call `completionProvider("")`, emit `onTypeaheadChange`
+
+Detection happens in the `input` handler — the DOM is already updated, so the `@` is present.
+
+#### Sub-step 4.3: Update query on every input
+
+When typeahead is active and `input` fires:
+- Read text from `anchorOffset + 1` to the current caret position (the query)
+- If caret moved before the `@`, cancel
+- Call `completionProvider(query)` with the extracted query
+- Update `filtered`, clamp `selectedIndex`
+- Emit `onTypeaheadChange`
+
+#### Sub-step 4.4: Key interception during typeahead
+
+New keydown listener registered early (before Enter/Option+Arrow handlers):
+- If typeahead is not active, bail
+- **Tab or Enter:** `preventDefault`, accept the selected completion
+- **ArrowDown:** `preventDefault`, increment `selectedIndex`
+- **ArrowUp:** `preventDefault`, decrement `selectedIndex`
+- **Escape:** `preventDefault`, cancel typeahead
+- All other keys: fall through (typing updates query via input event)
+- IME guard: `e.isComposing` → bail
+
+#### Sub-step 4.5: Accept completion
+
+When the user accepts (Tab/Enter or click on popup item):
+- Get the selected `CompletionItem`
+- Delete the `@query` text: `setSelectedRange(anchorOffset, anchorOffset + 1 + query.length)` then `execCommand("delete")`
+- Insert the atom: `execCommand("insertHTML", false, atomImgHTML(...))`
+- Cancel typeahead state
+- All via execCommand → undoable
+
+#### Sub-step 4.6: Cancel typeahead
+
+Set `active = false`, emit `onTypeaheadChange(false, [], 0)`. Triggered by:
+- Escape key
+- Caret moves before the `@` anchor
+- Editor blur
+- `clear()` called
+
+#### Sub-step 4.7: Public API
+
+Add to `TugTextInputDelegate` and the imperative handle:
+- `acceptTypeahead(): void`
+- `cancelTypeahead(): void`
+- `typeaheadNavigate(direction: "up" | "down"): void`
+- `readonly isTypeaheadActive: boolean`
+
+#### Sub-step 4.8: TugCompletionMenu component
+
+A new library component following [component-authoring.md](../tuglaws/component-authoring.md):
+- `tug-completion-menu.tsx` + `tug-completion-menu.css` in `tugdeck/src/components/tugways/`
+- Module docstring with law citations ([L06], [L15], [L16], [L19])
+- Exported props interface with JSDoc and `@selector` annotations
+- `data-slot="tug-completion-menu"` on root element
+- `@tug-pairings` (compact + expanded table) declaring all foreground-on-background relationships
+- `@tug-renders-on` on every foreground rule without a co-located background
+- All colors via `--tug7-*` tokens, zero hardcoded colors
+- State selectors in canonical order (rest → hover → active)
+
+**Props:**
+- `items: CompletionItem[]` — filtered completion items
+- `selectedIndex: number` — which item is highlighted
+- `onAccept: (index: number) => void` — called when an item is clicked
+- `anchorRect: DOMRect | null` — caret position for placement
+- `containerRef: React.RefObject<HTMLElement>` — editor container for relative positioning
+
+**Design:**
+- Floating panel positioned above/below the caret (prefers above, flips if no room)
+- Each item shows the atom type icon + label
+- Selected item uses token-driven highlight state
+- Click on item calls `onAccept`
+- No keyboard handling — that's the engine's job (Sub-step 4.4)
+- Mount/unmount driven by whether `items.length > 0`
+
+#### Sub-step 4.9: Wire TugCompletionMenu into TugPromptInput
+
+`TugPromptInput` manages the completion menu internally:
+- Engine emits `onTypeaheadChange(active, filtered, selectedIndex)`
+- Component stores these in refs (L06 — appearance via DOM, not React state) or minimal state for the popup
+- Renders `TugCompletionMenu` when active, passing caret rect from `Range.getBoundingClientRect`
+- `onAccept` callback calls `engine.acceptTypeahead(index)` (engine sets selected index then accepts)
+- The parent (gallery card) no longer builds the popup with raw DOM — `handleTypeaheadChange`, `popupRef`, and the popup CSS in `gallery-prompt-input.css` become dead code and get removed
 
 ### Step 5: Persistence
 
