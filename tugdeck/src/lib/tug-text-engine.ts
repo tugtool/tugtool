@@ -15,7 +15,7 @@
  */
 
 import type { AtomSegment } from "@/components/tugways/tug-atom";
-import { createAtomImgElement, atomImgHTML } from "./tug-atom-img";
+import { atomImgHTML } from "./tug-atom-img";
 
 // ===================================================================
 // Types
@@ -534,19 +534,229 @@ export class TugTextEngine {
   // =================================================================
 
   /** Register an event listener and track it for teardown. */
-  private listen<K extends keyof HTMLElementEventMap>(
+  private listen(
     target: EventTarget,
-    type: K,
-    fn: (e: HTMLElementEventMap[K]) => void,
+    type: string,
+    fn: EventListener,
     capture?: boolean,
   ): void {
-    const listener = fn as EventListener;
-    target.addEventListener(type, listener, capture);
-    this._handlers.push({ target, type, fn: listener, capture });
+    target.addEventListener(type, fn, capture);
+    this._handlers.push({ target, type, fn, capture });
   }
 
   private setupEvents(): void {
-    // Event handlers wired in sub-step 3.3
+    const root = this.root;
+
+    // 1. Return/Enter — submit or newline
+    this.listen(root, "keydown", (e: Event) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key !== "Enter") return;
+      if (ke.isComposing) return;
+
+      ke.preventDefault();
+      const isNumpad = ke.code === "NumpadEnter";
+      const baseAction = isNumpad ? this.numpadEnterAction : this.returnAction;
+      const action = ke.shiftKey
+        ? (baseAction === "submit" ? "newline" : "submit")
+        : baseAction;
+
+      if (action === "submit") {
+        this.onSubmit?.();
+      } else {
+        document.execCommand("insertLineBreak");
+      }
+    });
+
+    // 2. Click on atom — select entire image
+    this.listen(root, "click", (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "IMG" && target.dataset.atomLabel) {
+        const sel = window.getSelection();
+        if (!sel) return;
+        const range = document.createRange();
+        range.selectNode(target);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
+
+    // 3. Option+Arrow — word boundary clamping at atoms
+    this.listen(root, "keydown", (e: Event) => {
+      const ke = e as KeyboardEvent;
+      if ((ke.key !== "ArrowLeft" && ke.key !== "ArrowRight") || !ke.altKey || ke.metaKey || ke.ctrlKey) return;
+      if (ke.isComposing) return;
+
+      ke.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || !sel.focusNode) return;
+
+      const forward = ke.key === "ArrowRight";
+      const method = ke.shiftKey ? "extend" : "move";
+      const dir = forward ? "forward" : "backward";
+
+      // Range marking caret BEFORE the move
+      const beforeRange = document.createRange();
+      beforeRange.setStart(sel.focusNode, sel.focusOffset);
+      beforeRange.collapse(true);
+
+      // Let browser do the word move
+      sel.modify(method, dir, "word");
+
+      // Range marking caret AFTER the move
+      const afterRange = document.createRange();
+      afterRange.setStart(sel.focusNode, sel.focusOffset);
+      afterRange.collapse(true);
+
+      // Check each atom: is it between before and after?
+      const atoms = root.querySelectorAll("img[data-atom-label]");
+      let clampAtom: HTMLImageElement | null = null;
+      for (let i = 0; i < atoms.length; i++) {
+        const atomRange = document.createRange();
+        if (forward) {
+          atomRange.setStartBefore(atoms[i]);
+          atomRange.collapse(true);
+          const afterBefore = beforeRange.compareBoundaryPoints(Range.START_TO_START, atomRange) <= 0;
+          const beforeAfter = afterRange.compareBoundaryPoints(Range.START_TO_START, atomRange) >= 0;
+          if (afterBefore && beforeAfter) {
+            if (!clampAtom) clampAtom = atoms[i] as HTMLImageElement;
+          }
+        } else {
+          atomRange.setStartAfter(atoms[i]);
+          atomRange.collapse(true);
+          const afterAfter = afterRange.compareBoundaryPoints(Range.START_TO_START, atomRange) <= 0;
+          const beforeBefore = beforeRange.compareBoundaryPoints(Range.START_TO_START, atomRange) >= 0;
+          if (afterAfter && beforeBefore) {
+            clampAtom = atoms[i] as HTMLImageElement;
+          }
+        }
+      }
+
+      if (clampAtom) {
+        const parent = clampAtom.parentNode!;
+        const idx = Array.from(parent.childNodes).indexOf(clampAtom);
+        if (forward) {
+          sel.collapse(parent, idx + 1);
+        } else {
+          sel.collapse(parent, idx);
+        }
+      }
+    });
+
+    // 4. Copy — write atom HTML + plain text to clipboard
+    this.listen(root, "copy", (e: Event) => {
+      const ce = e as ClipboardEvent;
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const fragment = range.cloneContents();
+
+      const wrapper = document.createElement("div");
+      wrapper.appendChild(fragment);
+      const html = wrapper.innerHTML;
+
+      const plainWrapper = wrapper.cloneNode(true) as HTMLElement;
+      plainWrapper.querySelectorAll("img[data-atom-label]").forEach((img) => {
+        const text = document.createTextNode((img as HTMLImageElement).dataset.atomLabel || "");
+        img.parentNode?.replaceChild(text, img);
+      });
+      const plain = plainWrapper.textContent || "";
+
+      ce.clipboardData?.setData("text/html", html);
+      ce.clipboardData?.setData("text/plain", plain);
+      ce.preventDefault();
+    });
+
+    // 5. Cut — copy then delete via execCommand
+    this.listen(root, "cut", (e: Event) => {
+      const ce = e as ClipboardEvent;
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const fragment = range.cloneContents();
+
+      const wrapper = document.createElement("div");
+      wrapper.appendChild(fragment);
+      const html = wrapper.innerHTML;
+
+      const plainWrapper = wrapper.cloneNode(true) as HTMLElement;
+      plainWrapper.querySelectorAll("img[data-atom-label]").forEach((img) => {
+        const text = document.createTextNode((img as HTMLImageElement).dataset.atomLabel || "");
+        img.parentNode?.replaceChild(text, img);
+      });
+
+      ce.clipboardData?.setData("text/html", html);
+      ce.clipboardData?.setData("text/plain", plainWrapper.textContent || "");
+      ce.preventDefault();
+      document.execCommand("delete");
+    });
+
+    // 6. Paste — preserve atoms from our clipboard, strip external rich text
+    this.listen(root, "paste", (e: Event) => {
+      const ce = e as ClipboardEvent;
+      const html = ce.clipboardData?.getData("text/html") || "";
+      const plain = ce.clipboardData?.getData("text/plain") || "";
+
+      if (html.includes("data-atom-label")) {
+        // Our atoms — extract body content and insert via insertHTML
+        ce.preventDefault();
+        const match = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+        const content = match ? match[1] : html;
+        document.execCommand("insertHTML", false, content);
+      } else if (html && plain) {
+        // External rich text — strip markup, insert as plain text
+        ce.preventDefault();
+        document.execCommand("insertText", false, plain);
+      }
+      // If only plain text, let browser handle natively
+    }, true); // capture phase
+
+    // 7. Drag & drop — files become atom images
+    this.listen(root, "dragover", (e: Event) => {
+      e.preventDefault();
+      (e as DragEvent).dataTransfer!.dropEffect = "copy";
+    });
+
+    this.listen(root, "drop", (e: Event) => {
+      e.preventDefault();
+      const de = e as DragEvent;
+      const files = de.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+
+      // Position caret at drop point
+      const range = document.caretRangeFromPoint(de.clientX, de.clientY);
+      if (range) {
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+
+      // Build atom HTML for all dropped files
+      let html = "";
+      for (let i = 0; i < files.length; i++) {
+        const name = files[i].name;
+        const ext = name.split(".").pop()?.toLowerCase() || "";
+        const imgExts = ["png", "jpg", "jpeg", "gif", "svg", "webp"];
+        const type = imgExts.includes(ext) ? "image" : "file";
+        html += atomImgHTML(type, name, name);
+      }
+      document.execCommand("insertHTML", false, html);
+    });
+
+    // 8. Rich text blocking — reject formatting inputTypes
+    this.listen(root, "beforeinput", (e: Event) => {
+      const ie = e as InputEvent;
+      const type = ie.inputType;
+      if (type.startsWith("format")) {
+        ie.preventDefault();
+      }
+    });
+
+    // 9 & 10. Change detection + auto-resize — input event
+    this.listen(root, "input", () => {
+      this.updateEmpty();
+      this.autoResize();
+      this.onChange?.();
+    });
   }
 
   teardown(): void {
