@@ -471,24 +471,64 @@ These are pluggable via the `CompletionProvider` callback — the engine doesn't
 
 ### Step 5: Persistence
 
-Migrate `TugTextEditingState` from the old segment model to the new DOM-based architecture. The persistence format evolves — it is not deleted.
+Migrate the editing state format from the old segment model to a DOM-friendly representation. The persistence mechanism (`useTugcardPersistence` via Tugcard → tugbank) is already wired — only the state format and the `captureState`/`restoreState` implementations need to change.
 
-Serialize editor state to tugbank on meaningful changes (detected via `input` event):
-- **Not raw innerHTML** — data URIs are huge and WebKit may normalize HTML across sessions
-- New format:
-  ```typescript
-  {
-    text: string,                  // plain text with U+FFFC at atom positions
-    atoms: { position: number, type: string, label: string, value: string }[],
-    selection: { start: number, end: number } | null,
-    markedText: { start: number, end: number, text: string } | null,
-  }
-  ```
-- `text` + `atoms` replace the old `segments[]` — same information, no DOM dependency
-- `selection` and `markedText` are preserved — restoring cursor position across reload is a real feature
-- On restore: rebuild the DOM from text + atom metadata, recreating atom `<img>` elements at the correct positions, then restore selection via DOM walk
-- Once the new format is working, remove the old `captureEditingState`, `formatEditingState`, `editingStatesEqual` helpers and the segment-based `TugTextEditingState`
-- Must survive reload, app quit, `just app` [L23]
+Must survive reload, app quit, `just app` [L23].
+
+#### Sub-step 5.1: Define the new state format
+
+Replace `TugTextEditingState` with a DOM-friendly format:
+```typescript
+export interface TugTextEditingState {
+  text: string;                  // plain text with U+FFFC at atom positions
+  atoms: { position: number; type: string; label: string; value: string }[];
+  selection: { start: number; end: number } | null;
+}
+```
+
+- `text` + `atoms` replace `segments[]` — same information, reads directly from DOM via `getText()`/`getAtoms()`
+- `position` is the index of the U+FFFC character in `text` for each atom (for ordered reconstruction)
+- Each atom is serialized as `{ type, label, value }` — its identity. The label is semantic data (the human-readable name chosen by the completion provider or drop handler), not visual data. The SVG is generated at render time from type + label.
+- No SVG, no visual data in the persisted state
+- `selection` preserved — restoring cursor position across reload is a real feature
+- `markedText` dropped — IME composition is transient, never persists across sessions
+- `highlightedAtomIndices` dropped — vestigial from two-step delete
+
+This is a breaking change to the persisted format. Existing saved state from the old format will fail to restore. This is fine — the old format produced no useful data (captureState was a stub returning empty state).
+
+#### Sub-step 5.2: Implement `captureState()`
+
+Replace the stub with a real implementation:
+- `text` = `this.getText()`
+- `atoms` = `this.getAtoms()` mapped to `{ position, type, label, value }` — position is the index of each U+FFFC in `text`
+- `selection` = `this.getSelectedRange()`
+
+All reads from DOM. No segment model.
+
+#### Sub-step 5.3: Implement `restoreState()`
+
+Rebuild the DOM from the saved state:
+1. Build HTML string: walk `text`, emit text runs (with `\n` → `<br>` conversion), emit `atomImgHTML(atom.type, atom.label, atom.value)` at each U+FFFC position
+3. Set `root.innerHTML` to the built HTML
+4. Restore selection via `setSelectedRange` if selection was saved
+5. Update `data-empty` attribute
+6. Do NOT fire `onChange` — this is restoring previous state, not a user edit
+
+All via DOM. No execCommand (this is not a user edit, it's reconstruction — undo stack should be clean after restore).
+
+#### Sub-step 5.4: Clean up old format
+
+- Remove `segments`, `markedText`, `highlightedAtomIndices` from `TugTextEditingState`
+- Remove `Segment`, `TextSegment` types if no longer used elsewhere
+- Update `TugPromptInputPersistence` — the empty-state fallback changes shape
+- Remove any remaining references to the old format
+
+#### Sub-step 5.5: Verify
+
+- Type text + atoms, reload → content and cursor restored
+- Empty editor, reload → stays empty
+- Multiple atoms, reload → all atoms in correct positions
+- `bun run check` passes
 
 ### Step 6: Theme change handling
 
