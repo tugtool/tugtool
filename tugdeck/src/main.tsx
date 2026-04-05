@@ -21,6 +21,7 @@ import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-c
 import { registerGitCard } from "./components/tugways/cards/git-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { initMotionObserver } from "./components/tugways/scale-timing";
+import { initThemeTokens } from "./theme-tokens";
 import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
 import { selectionGuard } from "./components/tugways/selection-guard";
 import { deserialize } from "./serialization";
@@ -82,6 +83,9 @@ if (!container) {
   if (initialHostCanvasColor !== null) {
     sendCanvasColor(initialHostCanvasColor);
   }
+
+  // Capture the baseline sentinel for theme change detection.
+  initThemeTokens();
 
   // Initialize motion observer early so data-tug-motion attribute is set before
   // DeckManager construction. The cleanup function is intentionally not stored

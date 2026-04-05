@@ -27,6 +27,7 @@ import React, {
 } from "react";
 import { putTheme } from "../settings-api";
 import { registerThemeSetter, registerThemeGetter } from "../action-dispatch";
+import { notifyThemeChange } from "../theme-tokens";
 import { BASE_THEME_NAME } from "../theme-constants";
 
 // ---------------------------------------------------------------------------
@@ -173,6 +174,7 @@ export function TugThemeProvider({
           sendCanvasColor(hostCanvasColor);
         }
         setThemeState(newTheme);
+        notifyThemeChange();
         try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
         putTheme(newTheme);
       });
@@ -196,6 +198,7 @@ export function TugThemeProvider({
             sendCanvasColor(result.hostCanvasColor);
           }
           setThemeState(newTheme);
+          notifyThemeChange();
           try { localStorage.setItem("td-theme", newTheme); } catch { /* unavailable */ }
           putTheme(newTheme);
         });
