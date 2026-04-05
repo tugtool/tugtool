@@ -104,7 +104,7 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
 function TugPromptInputPersistence({ engineRef }: { engineRef: React.RefObject<TugTextEngine | null> }) {
   useTugcardPersistence<TugTextEditingState>({
     onSave: () => {
-      const empty: TugTextEditingState = { segments: [{ kind: "text", text: "" }], selection: null, markedText: null, highlightedAtomIndices: [] };
+      const empty: TugTextEditingState = { text: "", atoms: [], selection: null };
       const engine = engineRef.current;
       if (!engine) return empty;
       return engine.captureState();

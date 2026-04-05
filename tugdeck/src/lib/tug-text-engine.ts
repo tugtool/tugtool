@@ -15,9 +15,7 @@ import { atomImgHTML } from "./tug-atom-img";
 // Types
 // ===================================================================
 
-export interface TextSegment { kind: "text"; text: string }
 export type { AtomSegment };
-export type Segment = TextSegment | AtomSegment;
 
 export type InputAction = "submit" | "newline";
 
@@ -96,16 +94,18 @@ export interface TugTextInputDelegate {
 // ===================================================================
 
 /**
- * TugTextEditingState — complete serializable snapshot of editing state.
+ * TugTextEditingState — serializable snapshot of editing state.
  *
  * Used for persistence via tugbank (survives reload, app quit) [L23].
  * Plain object. No DOM, no methods. JSON round-trips cleanly.
  */
 export interface TugTextEditingState {
-  segments: Segment[];
+  /** Plain text with U+FFFC at atom positions. */
+  text: string;
+  /** Atom identity and position. Position is the index of U+FFFC in text. */
+  atoms: { position: number; type: string; label: string; value: string }[];
+  /** Cursor/selection as flat offsets. Null if editor was not focused. */
   selection: { start: number; end: number } | null;
-  markedText: { start: number; end: number } | null;
-  highlightedAtomIndices: number[];
 }
 
 
@@ -437,14 +437,49 @@ export class TugTextEngine {
   }
 
   // =================================================================
-  // State — stubs until Step 5 migrates persistence
+  // State — persistence via tugbank [L23]
   // =================================================================
 
   captureState(): TugTextEditingState {
-    return { segments: [{ kind: "text", text: "" }], selection: null, markedText: null, highlightedAtomIndices: [] };
+    const text = this.getText();
+    const domAtoms = this.getAtoms();
+    const atoms: TugTextEditingState["atoms"] = [];
+    let atomIdx = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "\uFFFC" && atomIdx < domAtoms.length) {
+        const a = domAtoms[atomIdx];
+        atoms.push({ position: i, type: a.type, label: a.label, value: a.value });
+        atomIdx++;
+      }
+    }
+    return { text, atoms, selection: this.getSelectedRange() };
   }
 
-  restoreState(_state: TugTextEditingState): void {}
+  restoreState(state: TugTextEditingState): void {
+    let html = "";
+    let atomIdx = 0;
+    for (let i = 0; i < state.text.length; i++) {
+      const ch = state.text[i];
+      if (ch === "\uFFFC" && atomIdx < state.atoms.length) {
+        const a = state.atoms[atomIdx];
+        html += atomImgHTML(a.type, a.label, a.value);
+        atomIdx++;
+      } else if (ch === "\n") {
+        html += "<br>";
+      } else if (ch === "<") {
+        html += "&lt;";
+      } else if (ch === "&") {
+        html += "&amp;";
+      } else {
+        html += ch;
+      }
+    }
+    this.root.innerHTML = html;
+    this.updateEmpty();
+    if (state.selection) {
+      this.setSelectedRange(state.selection.start, state.selection.end);
+    }
+  }
 
   // =================================================================
   // Internal helpers
