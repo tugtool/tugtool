@@ -732,14 +732,20 @@ export class TugTextEngine {
         sel?.addRange(range);
       }
 
-      // Build atom HTML for all dropped files
+      // Convert dropped files to atoms
+      const atoms = this.dropHandler
+        ? this.dropHandler(files)
+        : Array.from(files).map(f => {
+            const ext = f.name.split(".").pop()?.toLowerCase() || "";
+            const imgExts = ["png", "jpg", "jpeg", "gif", "svg", "webp"];
+            const type = imgExts.includes(ext) ? "image" : "file";
+            return { kind: "atom" as const, type, label: f.name, value: f.name };
+          });
+
+      if (atoms.length === 0) return;
       let html = "";
-      for (let i = 0; i < files.length; i++) {
-        const name = files[i].name;
-        const ext = name.split(".").pop()?.toLowerCase() || "";
-        const imgExts = ["png", "jpg", "jpeg", "gif", "svg", "webp"];
-        const type = imgExts.includes(ext) ? "image" : "file";
-        html += atomImgHTML(type, name, name);
+      for (const atom of atoms) {
+        html += atomImgHTML(atom.type, atom.label, atom.value);
       }
       document.execCommand("insertHTML", false, html);
     });
