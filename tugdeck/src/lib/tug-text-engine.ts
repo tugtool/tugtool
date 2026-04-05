@@ -25,7 +25,12 @@
 
 import { createAtomBadgeDOM } from "@/components/tugways/tug-atom";
 import type { AtomSegment } from "@/components/tugways/tug-atom";
-import { startOfWord, endOfWord, startOfParagraph, endOfParagraph } from "./tug-text-visible-units";
+// Visible-units stubs — the real implementations were deleted with tug-text-visible-units.ts.
+// The engine itself is being stripped in Step 2; these keep it compiling until then.
+function startOfWord(_segments: Segment[], offset: number): number { return offset; }
+function endOfWord(_segments: Segment[], offset: number): number { return offset; }
+function startOfParagraph(_segments: Segment[], offset: number): number { return offset; }
+function endOfParagraph(_segments: Segment[], offset: number): number { return offset; }
 
 // ===================================================================
 // Types

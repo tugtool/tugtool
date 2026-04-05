@@ -3,15 +3,8 @@
  *
  * Testing surface for the tug-prompt-input component. Includes:
  * - Interactive editor with diagnostics and event log
- * - TEOE test runner: incoming state → operation → verify outgoing state
- * - Scenario tests for mixed typing+API sequences
+ * - IMG atom spike (read-only reference for new architecture)
  * - Key configuration for Return/Enter
- *
- * Test approach:
- *   TEOE tests set up incoming state, execute operations, and compare
- *   the captured outgoing state against expected. Typing simulation uses
- *   document.execCommand("insertText") — the browser's actual editing
- *   pipeline. All other operations use the delegate API.
  *
  * Laws of Tug compliance:
  *   [L01] One root.render() at mount — component manages engine internally
@@ -19,20 +12,12 @@
  */
 
 import React, { useRef, useLayoutEffect, useCallback, useState } from "react";
-import { CircleCheck, CircleX } from "lucide-react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import type { AtomSegment, InputAction, CompletionItem } from "@/lib/tug-text-engine";
-import { captureEditingState, editingStatesEqual, formatEditingState } from "@/lib/tug-text-engine";
-import { allTEOEs } from "@/lib/tug-text-editing-operations";
-import type { TEOE, Operation } from "@/lib/tug-text-editing-operations";
-import { runAtomDOMTests } from "@/lib/tug-atom-dom-tests";
-import { runIntegrationTests, runIMETests } from "@/lib/tug-integration-tests";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -98,172 +83,12 @@ function atomImgHTML(type: string, label: string, value?: string): string {
 }
 
 // ===================================================================
-// Test harness types
-// ===================================================================
-
-interface TestResult {
-  name: string;
-  passed: boolean;
-  expected: string;
-  actual: string;
-}
-
-interface TestCase {
-  name: string;
-  description: string;
-  run(d: TugTextInputDelegate): TestResult;
-}
-
-// ===================================================================
-// Typing simulation
-//
-// Uses document.execCommand("insertText") to go through the browser's
-// actual editing pipeline: beforeinput → DOM mutation → MutationObserver
-// → engine. This is the same path as real keyboard input.
-//
-// For operations that don't go through the browser (deleteBackward,
-// insertAtom, etc.), we call the delegate API directly — same as the
-// keyboard handlers.
-// ===================================================================
-
-/**
- * Simulate typing via execCommand — goes through the browser's editing pipeline.
- * Flushes MutationObserver synchronously so the engine model is updated before return.
- */
-function typeText(d: TugTextInputDelegate, text: string): void {
-  const el = d.getEditorElement();
-  if (!el) return;
-  el.focus();
-  document.execCommand("insertText", false, text);
-  d.flushMutations();
-}
-
-/**
- * Execute a single TEOE operation against a delegate.
- * For "typing", uses execCommand (browser path).
- * For everything else, uses the delegate API (same as keyboard handlers).
- */
-function executeOperation(d: TugTextInputDelegate, op: Operation): void {
-  switch (op.type) {
-    case "typing":
-      typeText(d, op.text);
-      break;
-    case "insertText":
-      d.insertText(op.text);
-      break;
-    case "paste":
-      d.insertText(op.text); // paste routes to insertText in the engine
-      break;
-    case "insertAtom":
-      d.insertAtom(op.atom);
-      break;
-    case "deleteBackward":
-      d.deleteBackward();
-      break;
-    case "deleteForward":
-      d.deleteForward();
-      break;
-    case "deleteWordBackward":
-      d.deleteWordBackward();
-      break;
-    case "deleteWordForward":
-      d.deleteWordForward();
-      break;
-    case "deleteSoftLineBackward":
-    case "deleteParagraphBackward":
-      d.deleteParagraphBackward();
-      break;
-    case "deleteSoftLineForward":
-    case "deleteParagraphForward":
-      d.deleteParagraphForward();
-      break;
-    case "selectAll":
-      d.selectAll();
-      break;
-    case "setSelectedRange":
-      d.setSelectedRange(op.start, op.end);
-      break;
-    case "clear":
-      d.clear();
-      break;
-    case "undo":
-      d.undo();
-      break;
-    case "redo":
-      d.redo();
-      break;
-    case "killLine":
-      d.killLine();
-      break;
-    case "yank":
-      d.yank();
-      break;
-    case "transpose":
-      d.transpose();
-      break;
-    case "openLine":
-      d.openLine();
-      break;
-    case "typeaheadAccept":
-    case "compositionStart":
-    case "compositionUpdate":
-    case "compositionEnd":
-      // Not yet implemented in test runner
-      break;
-  }
-}
-
-/**
- * Run a single TEOE against a delegate. Returns a TestResult.
- *
- * 1. Restore incoming state
- * 2. Execute operation(s)
- * 3. Capture outgoing state
- * 4. Compare with expected
- */
-function runTEOE(d: TugTextInputDelegate, teoe: TEOE): TestResult {
-  const el = d.getEditorElement();
-  if (!el) {
-    return { name: teoe.name, passed: false, expected: "", actual: "No editor element" };
-  }
-  el.focus();
-
-  // Set up incoming state via restoreState — clean slate with no undo history
-  d.restoreState(teoe.incoming);
-  el.focus();
-  // Re-apply selection after focus — restoreState sets it but focus may reset it
-  if (teoe.incoming.selection) {
-    d.setSelectedRange(teoe.incoming.selection.start, teoe.incoming.selection.end);
-  }
-
-  // Execute operation(s)
-  const ops = teoe.sequenceOps ?? (teoe.operation ? [teoe.operation] : []);
-  for (const op of ops) {
-    executeOperation(d, op);
-  }
-
-  // Capture outgoing state
-  const actual = captureEditingState(d);
-
-  // Compare
-  const passed = editingStatesEqual(actual, teoe.expected);
-  return {
-    name: teoe.name,
-    passed,
-    expected: formatEditingState(teoe.expected),
-    actual: formatEditingState(actual),
-  };
-}
-
-// ===================================================================
 // Sample data
 // ===================================================================
 
-const FILE_ATOM: AtomSegment = { kind: "atom", type: "file", label: "src/main.ts", value: "/project/src/main.ts" };
-const FILE_ATOM_2: AtomSegment = { kind: "atom", type: "file", label: "README.md", value: "/project/README.md" };
-
 const SAMPLE_ATOMS: AtomSegment[] = [
-  FILE_ATOM, FILE_ATOM_2,
+  { kind: "atom", type: "file", label: "src/main.ts", value: "/project/src/main.ts" },
+  { kind: "atom", type: "file", label: "README.md", value: "/project/README.md" },
   { kind: "atom", type: "command", label: "/commit", value: "/commit" },
   { kind: "atom", type: "file", label: "src/lib/feed-store.ts", value: "/project/src/lib/feed-store.ts" },
 ];
@@ -305,226 +130,7 @@ const ENTER_CHOICES: TugChoiceItem[] = [
   { value: "newline", label: "Enter = newline" },
 ];
 
-const OBJ = "\uFFFC";
 
-// ===================================================================
-// Test cases
-//
-// Setup uses typeText() for realistic typing (DOM mutation path) and
-// delegate.insertAtom() for atom insertion (programmatic, same as
-// clicking the Insert Atom button). Actions use delegate API methods —
-// the same methods keyboard handlers call.
-// ===================================================================
-
-const TEST_CASES: TestCase[] = [
-  {
-    name: "B01: deleteForward after typed text + atom",
-    description: 'Type "hello ", insert atom, type " ". Cursor at end. deleteForward at offset 7 (after atom) should delete the space.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello ");
-      d.insertAtom(FILE_ATOM);
-      typeText(d, " world");
-      // Cursor after atom: "hello " = 6, atom = 1
-      d.setSelectedRange(7);
-      d.deleteForward();
-      const text = d.getText();
-      const expected = `hello ${OBJ}world`;
-      return {
-        name: this.name,
-        passed: text === expected,
-        expected: `"hello [atom]world"`,
-        actual: `"${text.replace(OBJ, "[atom]")}"`,
-      };
-    },
-  },
-  {
-    name: "B01b: deleteBackward after typed text + atom",
-    description: 'Type "hello", insert atom, type " world". Cursor at end. deleteBackward should remove "d".',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello");
-      d.insertAtom(FILE_ATOM);
-      typeText(d, " world");
-      // Cursor at end
-      d.deleteBackward();
-      const text = d.getText();
-      const expected = `hello${OBJ} worl`;
-      return {
-        name: this.name,
-        passed: text === expected,
-        expected: `"hello[atom] worl"`,
-        actual: `"${text.replace(OBJ, "[atom]")}"`,
-      };
-    },
-  },
-  {
-    name: "B02: insertText newline",
-    description: 'Type "hello", insertText("\\n"), type "world". Content should have newline.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello");
-      d.insertText("\n");
-      typeText(d, "world");
-      const text = d.getText();
-      const expected = "hello\nworld";
-      return {
-        name: this.name,
-        passed: text === expected,
-        expected: `"hello\\nworld"`,
-        actual: `"${text.replace(/\n/g, "\\n")}"`,
-      };
-    },
-  },
-  {
-    name: "B03: selectAll covers full content with atoms",
-    description: 'Type "hello ", insert two atoms. selectAll should span entire content.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello ");
-      d.insertAtom(FILE_ATOM);
-      typeText(d, " ");
-      d.insertAtom(FILE_ATOM_2);
-      d.selectAll();
-      const range = d.getSelectedRange();
-      const totalLen = d.getText().length;
-      const passed = range !== null && range.start === 0 && range.end === totalLen;
-      return {
-        name: this.name,
-        passed,
-        expected: `selection: {0, ${totalLen}}`,
-        actual: range ? `selection: {${range.start}, ${range.end}}` : "null",
-      };
-    },
-  },
-  {
-    name: "B03b: deleteBackward after selectAll clears all",
-    description: 'Type + atoms, selectAll, deleteBackward → empty.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello ");
-      d.insertAtom(FILE_ATOM);
-      typeText(d, " ");
-      d.insertAtom(FILE_ATOM_2);
-      d.selectAll();
-      d.deleteBackward();
-      return {
-        name: this.name,
-        passed: d.isEmpty(),
-        expected: "empty",
-        actual: d.isEmpty() ? "empty" : `"${d.getText().replace(/\uFFFC/g, "[atom]")}"`,
-      };
-    },
-  },
-  {
-    name: "B04: cursor positioning at atom boundary",
-    description: 'Type "hello", insert atom. setSelectedRange(5) should place cursor between text and atom.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello");
-      d.insertAtom(FILE_ATOM);
-      d.setSelectedRange(5);
-      const range = d.getSelectedRange();
-      return {
-        name: this.name,
-        passed: range !== null && range.start === 5 && range.end === 5,
-        expected: "cursor at {5}",
-        actual: range ? `cursor at {${range.start}}` : "null",
-      };
-    },
-  },
-  {
-    name: "B05: setSelectedRange selects across atom",
-    description: 'Type "hello", insert atom, type "world". setSelectedRange(5, 6) selects atom.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello");
-      d.insertAtom(FILE_ATOM);
-      typeText(d, "world");
-      d.setSelectedRange(5, 6);
-      const range = d.getSelectedRange();
-      return {
-        name: this.name,
-        passed: range !== null && range.start === 5 && range.end === 6,
-        expected: "selection: {5, 6}",
-        actual: range ? `selection: {${range.start}, ${range.end}}` : "null",
-      };
-    },
-  },
-  {
-    name: "B06: two-step backspace highlights atom",
-    description: 'Type "hello", insert atom. Cursor after atom. First deleteBackward highlights, does not delete.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello");
-      d.insertAtom(FILE_ATOM);
-      d.setSelectedRange(6); // after atom
-      d.deleteBackward();
-      const atoms = d.getAtoms();
-      const el = d.getEditorElement();
-      const highlighted = el?.querySelector(".tug-atom-selected") !== null;
-      return {
-        name: this.name,
-        passed: atoms.length === 1 && highlighted,
-        expected: "1 atom, highlighted",
-        actual: `${atoms.length} atom(s), ${highlighted ? "highlighted" : "not highlighted"}`,
-      };
-    },
-  },
-  {
-    name: "B06b: second deleteBackward deletes atom",
-    description: 'Type "hello", insert atom. Two deleteBackward calls → atom gone.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello");
-      d.insertAtom(FILE_ATOM);
-      d.setSelectedRange(6);
-      d.deleteBackward();
-      d.deleteBackward();
-      return {
-        name: this.name,
-        passed: d.getAtoms().length === 0 && d.getText() === "hello",
-        expected: `"hello", 0 atoms`,
-        actual: `"${d.getText().replace(/\uFFFC/g, "[atom]")}", ${d.getAtoms().length} atoms`,
-      };
-    },
-  },
-  {
-    name: "Typed text + atom + getText",
-    description: 'Type "before ", insert atom, type " after". getText should match.',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "before ");
-      d.insertAtom(FILE_ATOM);
-      typeText(d, " after");
-      const text = d.getText();
-      const expected = `before ${OBJ} after`;
-      return {
-        name: this.name,
-        passed: text === expected,
-        expected: `"before [atom] after"`,
-        actual: `"${text.replace(OBJ, "[atom]")}"`,
-      };
-    },
-  },
-  {
-    name: "Undo after typed text",
-    description: 'Type "hello", then type " world", undo → "hello".',
-    run(d) {
-      d.clear(); d.focus();
-      typeText(d, "hello");
-      typeText(d, " world");
-      d.undo();
-      const text = d.getText();
-      return {
-        name: this.name,
-        passed: text === "hello",
-        expected: `"hello"`,
-        actual: `"${text}"`,
-      };
-    },
-  },
-];
 
 // ===================================================================
 // Gallery component
@@ -532,7 +138,6 @@ const TEST_CASES: TestCase[] = [
 
 export function GalleryPromptInput() {
   const inputRef = useRef<TugTextInputDelegate>(null);
-  const testInputRef = useRef<TugTextInputDelegate>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const diagRef = useRef<HTMLPreElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -540,7 +145,6 @@ export function GalleryPromptInput() {
   const nextAtomIdx = useRef(0);
   const [returnAction, setReturnAction] = useState<InputAction>("submit");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
-  const [testResults, setTestResults] = useState<TestResult[]>([]);
 
   // Log — direct DOM write [L06]
   const appendLog = useCallback((msg: string) => {
@@ -595,44 +199,6 @@ export function GalleryPromptInput() {
     document.addEventListener("selectionchange", onSelChange);
     return () => document.removeEventListener("selectionchange", onSelChange);
   }, [updateDiagnostics]);
-
-  // Expose test runner for programmatic access via /api/eval
-  useLayoutEffect(() => {
-    const w = window as unknown as Record<string, unknown>;
-    w.__runTEOETests = () => {
-      const delegate = testInputRef.current;
-      if (!delegate) return { error: "no test delegate" };
-      delegate.focus();
-      const teoes = allTEOEs();
-      const results: Array<{ id: string; name: string; passed: boolean; expected: string; actual: string }> = [];
-      for (const teoe of teoes) {
-        delegate.clear();
-        try {
-          const r = runTEOE(delegate, teoe);
-          results.push({ id: teoe.id, name: r.name, passed: r.passed, expected: r.expected, actual: r.actual });
-        } catch (err) {
-          results.push({ id: teoe.id, name: teoe.name, passed: false, expected: formatEditingState(teoe.expected), actual: `Error: ${err}` });
-        }
-      }
-      delegate.clear();
-      const passed = results.filter(r => r.passed).length;
-      const failed = results.filter(r => !r.passed).length;
-      return { passed, failed, total: results.length, failures: results.filter(r => !r.passed) };
-    };
-    w.__runAtomDOMTests = () => runAtomDOMTests();
-    w.__runIntegrationTests = async () => {
-      const delegate = inputRef.current;
-      if (!delegate) return { error: "no delegate" };
-      return await runIntegrationTests(delegate);
-    };
-    w.__runIMETests = () => {
-      const delegate = inputRef.current;
-      if (!delegate) return { error: "no delegate" };
-      return runIMETests(delegate);
-    };
-    w.__getTestDelegate = () => inputRef.current;
-    return () => { delete w.__runTEOETests; delete w.__runAtomDOMTests; delete w.__runIntegrationTests; delete w.__runIMETests; delete w.__getTestDelegate; };
-  }, []);
 
   const handleSubmit = useCallback(() => {
     const delegate = inputRef.current;
@@ -704,63 +270,6 @@ export function GalleryPromptInput() {
   }, [appendLog]);
 
   // --- Test harness ---
-
-  const runAllTests = useCallback(() => {
-    const delegate = testInputRef.current;
-    if (!delegate) return;
-    delegate.focus();
-    const results: TestResult[] = [];
-
-    // Run TEOE tests
-    const teoes = allTEOEs();
-    for (const teoe of teoes) {
-      delegate.clear();
-      try {
-        results.push(runTEOE(delegate, teoe));
-      } catch (err) {
-        results.push({
-          name: teoe.name,
-          passed: false,
-          expected: formatEditingState(teoe.expected),
-          actual: `Error: ${err}`,
-        });
-      }
-    }
-
-    // Run scenario tests (mixed typing + API sequences)
-    for (const tc of TEST_CASES) {
-      delegate.clear();
-      try {
-        results.push(tc.run(delegate));
-      } catch (err) {
-        results.push({
-          name: tc.name,
-          passed: false,
-          expected: "(no error)",
-          actual: `Error: ${err}`,
-        });
-      }
-    }
-
-    delegate.clear();
-    setTestResults(results);
-  }, []);
-
-  const runIME = useCallback(() => {
-    const delegate = inputRef.current;
-    if (!delegate) return;
-    const imeResults = runIMETests(delegate);
-    const mapped: TestResult[] = imeResults.results.map(r => ({
-      name: r.name,
-      passed: r.passed,
-      expected: "",
-      actual: r.detail,
-    }));
-    setTestResults(mapped);
-  }, []);
-
-  const passCount = testResults.filter(r => r.passed).length;
-  const failCount = testResults.filter(r => !r.passed).length;
 
   return (
     <div className="cg-content" data-testid="gallery-prompt-input">
@@ -1093,60 +602,6 @@ export function GalleryPromptInput() {
           <TugPushButton size="sm" emphasis="ghost" onClick={copyLog}>Copy Log</TugPushButton>
         </div>
         <div ref={logRef} className="prompt-input-log" />
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Automated Test Harness ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Test Harness</div>
-        <div className="prompt-input-desc" style={{ marginBottom: "8px" }}>
-          TEOE tests: incoming state → operation → compare outgoing state.
-          Typing uses execCommand (browser editing pipeline).
-          All other operations use delegate API.
-        </div>
-        <div className="prompt-input-toolbar" style={{ marginBottom: "8px" }}>
-          <TugPushButton size="sm" onClick={runAllTests}>Run All Tests</TugPushButton>
-          <TugPushButton size="sm" emphasis="outlined" onClick={runIME}>Run IME Tests</TugPushButton>
-          {testResults.length > 0 && (
-            <>
-              <TugBadge role="success" emphasis="tinted" icon={<CircleCheck size={12} />}>{passCount} passed</TugBadge>
-              {failCount > 0 && (
-                <TugBadge role="danger" emphasis="tinted" icon={<CircleX size={12} />}>{failCount} failed</TugBadge>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Test editor — visually hidden but with real layout so execCommand works */}
-        <div style={{ position: "fixed", top: "-200px", left: 0, width: "400px", height: "100px" }}>
-          <TugPromptInput ref={testInputRef} placeholder="" maxRows={2} persistState={false} />
-        </div>
-
-        {testResults.length > 0 && (
-          <TugAccordion type="multiple" variant="outline">
-            {testResults.map((r, i) => (
-              <TugAccordionItem
-                key={i}
-                value={`test-${i}`}
-                trigger={
-                  <span className="prompt-input-test-trigger">
-                    {r.passed
-                      ? <CircleCheck size={14} style={{ color: "var(--tug7-element-global-text-normal-success-rest)" }} />
-                      : <CircleX size={14} style={{ color: "var(--tug7-element-global-text-normal-danger-rest)" }} />
-                    }
-                    {r.name}
-                  </span>
-                }
-              >
-                <div className="prompt-input-test-detail">
-                  <div><strong>Expected:</strong> {r.expected}</div>
-                  <div><strong>Actual:</strong> {r.actual}</div>
-                </div>
-              </TugAccordionItem>
-            ))}
-          </TugAccordion>
-        )}
       </div>
 
     </div>
