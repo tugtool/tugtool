@@ -498,17 +498,10 @@ export class TugTextEngine {
             ? (this.segments[j] as TextSegment).text.length : 1;
         }
         if (this.segments[i].kind === "text") {
-          const segText = (this.segments[i] as TextSegment).text;
-          const segLen = segText.length;
-          // Adjust for ZWSP cursor anchor prepended in DOM.
-          // DOM "\u200B\n..." has offset shifted by 1 vs model "\n...".
-          // DOM "\u200B" (empty model) clamps to 0.
-          const domNode = this.domNodes[i];
-          const hasZWSP = domNode instanceof Text &&
-            domNode.textContent?.charCodeAt(0) === 0x200B &&
-            (domNode.textContent?.length ?? 0) > segLen;
-          const adjustedOffset = hasZWSP ? Math.max(0, offset - 1) : offset;
-          return flat + Math.min(adjustedOffset, segLen);
+          // Clamp offset to model length — ZWSP cursor anchors in DOM
+          // can produce offset=1 for empty model segments.
+          const segLen = (this.segments[i] as TextSegment).text.length;
+          return flat + Math.min(offset, segLen);
         }
         // For atoms: before atom = flat, after atom = flat + 1
         return flat + (offset > 0 ? 1 : 0);
@@ -548,20 +541,9 @@ export class TugTextEngine {
         const len = (seg as TextSegment).text.length;
         if (remaining <= len && this.domNodes[i]) {
           if (len === 0 && this.hasAdjacentAtom(i) && this.composingIndex === null) {
-            return this.rootPosition(this.domNodes[i]);
-          }
-          // ZWSP prefix: DOM may have "\u200B\n..." for model "\n..." after atom.
-          // Check actual DOM content — handleMutations may have stripped the ZWSP.
-          const afterAtom = i > 0 && this.segments[i - 1]?.kind === "atom";
-          if (afterAtom && (seg as TextSegment).text.startsWith("\n") &&
-              this.composingIndex === null) {
-            const dn = this.domNodes[i];
-            const hasZWSP = dn instanceof Text &&
-              dn.textContent?.charCodeAt(0) === 0x200B;
-            if (hasZWSP) {
-              const domOffset = remaining === 0 ? 0 : remaining + 1;
-              return { node: dn, offset: domOffset };
-            }
+            // ZWSP cursor anchor: the DOM text node has "\u200B" for an
+            // empty model segment. Position at offset 0 (on the ZWSP).
+            return { node: this.domNodes[i], offset: 0 };
           }
           return { node: this.domNodes[i], offset: remaining };
         }
@@ -571,7 +553,7 @@ export class TugTextEngine {
           const prevSeg = this.segments[i - 1] as TextSegment;
           if (prevSeg.text.length === 0 && this.hasAdjacentAtom(i - 1)
               && this.composingIndex === null) {
-            return this.rootPosition(this.domNodes[i - 1]);
+            return { node: this.domNodes[i - 1], offset: 0 };
           }
           return { node: this.domNodes[i - 1], offset: prevSeg.text.length };
         }
@@ -726,19 +708,14 @@ export class TugTextEngine {
       if (seg.kind === "text") {
         let textNode: Text;
         const modelText = (seg as TextSegment).text;
-        // ZWSP cursor anchor: text nodes after atoms at line boundaries
+        // ZWSP cursor anchor: empty text nodes after atoms at end of document
         // get ZWSP in the DOM so the caret has something to render on.
-        // Two cases:
-        //   1. Empty text at end of document: "" → "\u200B"
-        //   2. Text starting with \n after atom: "\n..." → "\u200B\n..."
+        // NOT applied to text starting with \n — ZWSP before \n breaks
+        // WebKit's trailing newline line break rendering.
         const afterAtom = i > 0 && this.segments[i - 1]?.kind === "atom";
-        const needsZWSP = afterAtom && (
-          (modelText === "" && i === this.segments.length - 1) ||
-          modelText.startsWith("\n")
-        );
-        const domText = needsZWSP
-          ? (modelText === "" ? "\u200B" : "\u200B" + modelText)
-          : modelText;
+        const needsZWSP = afterAtom &&
+          modelText === "" && i === this.segments.length - 1;
+        const domText = needsZWSP ? "\u200B" : modelText;
         if (old instanceof Text) {
           if (old.textContent !== domText) {
             old.textContent = domText;
@@ -749,9 +726,11 @@ export class TugTextEngine {
         }
         newNodes.push(textNode);
         domChildren.push(textNode);
-        // Cursor anchor: after empty text nodes at line boundaries following
+        // Cursor anchor: after empty text nodes at END OF DOCUMENT following
         // atoms, add a ce=false span so the caret doesn't drift into the badge.
-        if (needsZWSP) {
+        // Not needed for endOfLine — the \n character provides caret content,
+        // and the anchor would block the trailing-br's line break effect.
+        if (needsZWSP && modelText === "") {
           const anchor = document.createElement("span");
           anchor.className = "tug-cursor-anchor";
           anchor.contentEditable = "false";
@@ -1911,13 +1890,11 @@ export class TugTextEngine {
       const segIdx = this.domNodes.indexOf(sel.anchorNode as Text);
       const segLen = segIdx >= 0 && segIdx < this.segments.length && this.segments[segIdx].kind === "text"
         ? (this.segments[segIdx] as TextSegment).text.length : -1;
-      // Fix caret on empty text nodes (model length 0) adjacent to atoms.
-      // For interior anchors: reposition to root-relative offset.
-      // For trailing ZWSP anchor: position at offset 1 (after ZWSP).
-      if (segLen === 0 && this.hasAdjacentAtom(segIdx)) {
+      // Fix caret on ZWSP cursor anchor nodes: if the browser placed the
+      // caret at offset 1 (after ZWSP), move it to offset 0 (on the ZWSP).
+      if (segLen === 0 && this.hasAdjacentAtom(segIdx) && sel.anchorOffset !== 0) {
         this.fixingSelection = true;
-        const pos = this.rootPosition(sel.anchorNode);
-        sel.collapse(pos.node, pos.offset);
+        sel.collapse(sel.anchorNode, 0);
         this.fixingSelection = false;
       }
     }
