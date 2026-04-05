@@ -80,7 +80,7 @@ function createAtomImgElement(type: string, label: string, value: string): HTMLI
   ].join("");
 
   const img = document.createElement("img");
-  img.src = "data:image/svg+xml;base64," + btoa(svg);
+  img.src = "data:image/svg+xml," + encodeURIComponent(svg);
   img.height = h;
   img.style.verticalAlign = "-5px";
   img.dataset.atomType = type;
@@ -817,6 +817,72 @@ export function GalleryPromptInput() {
             if (!el || (el as any).__spikeSetup) return;
             (el as any).__spikeSetup = true;
 
+            // Click on atom: select the entire image
+            el.addEventListener("click", (e) => {
+              const target = e.target as HTMLElement;
+              if (target.tagName === "IMG" && target.dataset.atomLabel) {
+                const sel = window.getSelection();
+                if (!sel) return;
+                const range = document.createRange();
+                range.selectNode(target);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            });
+
+            // Option+Arrow: treat atoms as word boundaries.
+            // Selection.modify("move", dir, "word") doesn't stop at images.
+            // Intercept and handle manually.
+            el.addEventListener("keydown", (e) => {
+              if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && e.altKey && !e.metaKey && !e.ctrlKey) {
+                const sel = window.getSelection();
+                if (!sel || !sel.anchorNode) return;
+
+                // Let browser do the word move
+                e.preventDefault();
+                const direction = e.key === "ArrowLeft" ? "backward" : "forward";
+                const method = e.shiftKey ? "extend" : "move";
+
+                // Save position before move
+                const beforeNode = sel.focusNode;
+                const beforeOffset = sel.focusOffset;
+
+                sel.modify(method, direction, "word");
+
+                // Check if we crossed an atom — if so, stop at the atom boundary
+                const afterNode = sel.focusNode;
+                if (beforeNode && afterNode && beforeNode !== afterNode) {
+                  // Walk between before and after to see if we crossed an img
+                  const range = document.createRange();
+                  if (direction === "forward") {
+                    range.setStart(beforeNode, beforeOffset);
+                    range.setEnd(afterNode, sel.focusOffset);
+                  } else {
+                    range.setStart(afterNode, sel.focusOffset);
+                    range.setEnd(beforeNode, beforeOffset);
+                  }
+                  const fragment = range.cloneContents();
+                  if (fragment.querySelector("img[data-atom-label]")) {
+                    // We crossed an atom — find it and stop at its boundary
+                    let node: Node | null = direction === "forward" ? beforeNode : afterNode;
+                    while (node && node !== el) {
+                      const sibling = direction === "forward" ? node.nextSibling : node.previousSibling;
+                      if (sibling instanceof HTMLImageElement && sibling.dataset.atomLabel) {
+                        // Stop right before/after this atom
+                        if (direction === "forward") {
+                          sel.collapse(sibling.parentNode, Array.from(sibling.parentNode!.childNodes).indexOf(sibling));
+                        } else {
+                          sel.collapse(sibling.parentNode, Array.from(sibling.parentNode!.childNodes).indexOf(sibling) + 1);
+                        }
+                        break;
+                      }
+                      node = sibling;
+                    }
+                  }
+                }
+              }
+            });
+
             // Copy/Cut: write atom HTML + plain text to clipboard
             el.addEventListener("copy", (e) => {
               const sel = window.getSelection();
@@ -883,6 +949,40 @@ export function GalleryPromptInput() {
               // Try inserting the atom HTML directly (no blob conversion)
               document.execCommand("insertHTML", false, content);
             }, true);
+
+            // Drag & drop: create atoms from dropped files
+            el.addEventListener("dragover", (e) => {
+              e.preventDefault();
+              e.dataTransfer!.dropEffect = "copy";
+            });
+
+            el.addEventListener("drop", (e) => {
+              e.preventDefault();
+              const files = e.dataTransfer?.files;
+              if (!files || files.length === 0) return;
+
+              // Position caret at drop point
+              const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+              if (range) {
+                const sel = window.getSelection();
+                sel?.removeAllRanges();
+                sel?.addRange(range);
+              }
+
+              // Build atom HTML for all dropped files and insert via insertHTML (undoable)
+              let html = "";
+              for (let i = 0; i < files.length; i++) {
+                const name = files[i].name;
+                // Guess type from extension
+                const ext = name.split(".").pop()?.toLowerCase() || "";
+                const imgExts = ["png", "jpg", "jpeg", "gif", "svg", "webp"];
+                const type = imgExts.includes(ext) ? "image" : "file";
+                const wrapper = document.createElement("div");
+                wrapper.appendChild(createAtomImgElement(type, name, name));
+                html += wrapper.innerHTML;
+              }
+              document.execCommand("insertHTML", false, html);
+            });
           }}
           contentEditable
           suppressContentEditableWarning
