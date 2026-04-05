@@ -509,6 +509,61 @@ function getCursorDOM(): { nodeName: string; offset: number; parentSlot?: string
   };
 }
 
+/**
+ * Get the caret's visual bounding rect. Returns null if no caret.
+ * This is the KEY diagnostic for verifying caret placement — the
+ * "fourth element" that turns TEOI triples into quads.
+ */
+function caretRect(): DOMRect | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  return sel.getRangeAt(0).getBoundingClientRect();
+}
+
+/** Check if the caret is visually past (to the right of) the last atom badge. */
+function caretIsAfterLastBadge(d: TugTextInputDelegate): boolean {
+  const el = d.getEditorElement();
+  if (!el) return false;
+  const cr = caretRect();
+  if (!cr || cr.height === 0) return false;
+  const badges = el.querySelectorAll("[data-slot='tug-atom']");
+  if (badges.length === 0) return true;
+  const lastBadge = badges[badges.length - 1];
+  const badgeRect = lastBadge.getBoundingClientRect();
+  return cr.left >= badgeRect.right - 2;
+}
+
+/** Check if the caret is visually NOT inside any badge span's bounding box. */
+function caretIsOutsideAllBadges(d: TugTextInputDelegate): boolean {
+  const el = d.getEditorElement();
+  if (!el) return false;
+  const cr = caretRect();
+  if (!cr || cr.height === 0) return false;
+  const badges = el.querySelectorAll("[data-slot='tug-atom']");
+  for (let i = 0; i < badges.length; i++) {
+    const br = badges[i].getBoundingClientRect();
+    if (cr.left >= br.left && cr.left <= br.right &&
+        cr.top >= br.top && cr.top <= br.bottom) {
+      return false; // caret is inside this badge
+    }
+  }
+  return true;
+}
+
+/**
+ * Get the visual line number the caret is on (0-based).
+ * Uses the editor's line-height to determine line boundaries.
+ */
+function caretLineNumber(d: TugTextInputDelegate): number {
+  const el = d.getEditorElement();
+  if (!el) return -1;
+  const cr = caretRect();
+  if (!cr || cr.height === 0) return -1;
+  const editorRect = el.getBoundingClientRect();
+  const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || cr.height;
+  return Math.round((cr.top - editorRect.top) / lineHeight);
+}
+
 /** Check if the cursor is visually inside an atom span (not in adjacent text). */
 function cursorIsInsideAtom(d: TugTextInputDelegate): boolean {
   const sel = window.getSelection();
@@ -756,7 +811,12 @@ export async function runIntegrationTests(d: TugTextInputDelegate): Promise<{
   await test("insertAtom: cursor not inside atom after insert", () => {
     type(d, "hello ");
     d.insertAtom(TEST_ATOM);
-    return { passed: !cursorIsInsideAtom(d) && cursorAt(d) === 7, detail: `inside=${cursorIsInsideAtom(d)}, cursor=${selStr(d)}` };
+    const outside = caretIsOutsideAllBadges(d);
+    const afterBadge = caretIsAfterLastBadge(d);
+    return {
+      passed: !cursorIsInsideAtom(d) && cursorAt(d) === 7 && outside && afterBadge,
+      detail: `inside=${cursorIsInsideAtom(d)}, cursor=${selStr(d)}, caretOutside=${outside}, caretAfterBadge=${afterBadge}`,
+    };
   });
 
   // ===================================================================
@@ -1908,9 +1968,12 @@ export async function runIntegrationTests(d: TugTextInputDelegate): Promise<{
     d.insertAtom(TEST_ATOM);
     d.insertText("\n");
     const text = d.getText();
-    // "x" + atom + "\n" = length 3, ends with newline
-    const passed = text === "x\uFFFC\n" && text.length === 3;
-    return { passed, detail: `text="${text.replace(/\n/g, "\\n")}", len=${text.length}` };
+    const line = caretLineNumber(d);
+    // "x" + atom + "\n" = length 3, ends with newline.
+    // Caret should be on line 2 (index 1), not still on line 1.
+    const textOK = text === "x\uFFFC\n" && text.length === 3;
+    const caretOK = line === 1;
+    return { passed: textOK && caretOK, detail: `text="${text.replace(/\n/g, "\\n")}", len=${text.length}, caretLine=${line} (expect 1)` };
   });
 
   await test("endOfLine: deleteBackward at start of second line", () => {
@@ -1992,6 +2055,66 @@ export async function runIntegrationTests(d: TugTextInputDelegate): Promise<{
     return {
       passed,
       detail: `right=${rightSteps}, left=${leftSteps}, totalLen=${totalLen} (expect ${totalLen} each)`,
+    };
+  });
+
+  // ===================================================================
+  // CARET VISUAL PLACEMENT — the caret must render outside badges
+  // and on the correct line. These turn TEOI triples into quads.
+  // ===================================================================
+
+  await test("caret: after atom at end of document", () => {
+    type(d, "x");
+    d.insertAtom(TEST_ATOM);
+    const outside = caretIsOutsideAllBadges(d);
+    const after = caretIsAfterLastBadge(d);
+    return { passed: outside && after, detail: `outside=${outside}, afterBadge=${after}` };
+  });
+
+  await test("caret: after atom then return, caret on line 2", () => {
+    type(d, "x");
+    d.insertAtom(TEST_ATOM);
+    d.insertText("\n");
+    const line = caretLineNumber(d);
+    const outside = caretIsOutsideAllBadges(d);
+    return { passed: line === 1 && outside, detail: `line=${line} (expect 1), outside=${outside}` };
+  });
+
+  await test("caret: navigate to end of first line with atom", async () => {
+    buildAtomEndOfLine(d);
+    // Position 2 = after atom, before \n = end of line 1
+    d.setSelectedRange(2);
+    const line = caretLineNumber(d);
+    const outside = caretIsOutsideAllBadges(d);
+    return { passed: line === 0 && outside, detail: `line=${line} (expect 0), outside=${outside}` };
+  });
+
+  await test("caret: navigate to start of second line after atom", async () => {
+    buildAtomEndOfLine(d);
+    // Position 3 = after \n, before y = start of line 2
+    d.setSelectedRange(3);
+    const line = caretLineNumber(d);
+    return { passed: line === 1, detail: `line=${line} (expect 1)` };
+  });
+
+  await test("caret: left arrow through two-line atoms tracks correct line", async () => {
+    // "x" atom "\ny" atom = two lines
+    buildTwoLineAtoms(d);
+    const totalLen = d.getText().length;
+    d.setSelectedRange(totalLen);
+    // Walk left, recording caret line at each position
+    const lines: number[] = [caretLineNumber(d)];
+    for (let i = 0; i < totalLen; i++) {
+      await arrowLeft(1);
+      lines.push(caretLineNumber(d));
+    }
+    // Lines should transition from 1 to 0 as we cross the newline
+    const hasLine1 = lines.some(l => l === 1);
+    const hasLine0 = lines.some(l => l === 0);
+    const noNegative = lines.every(l => l >= 0);
+    return {
+      passed: hasLine1 && hasLine0 && noNegative,
+      detail: `lines=${JSON.stringify(lines)}`,
     };
   });
 

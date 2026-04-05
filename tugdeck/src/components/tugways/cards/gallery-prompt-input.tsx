@@ -568,7 +568,8 @@ export function GalleryPromptInput() {
       if (!delegate) return { error: "no delegate" };
       return runIMETests(delegate);
     };
-    return () => { delete w.__runTEOETests; delete w.__runAtomDOMTests; delete w.__runIntegrationTests; delete w.__runIMETests; };
+    w.__getTestDelegate = () => inputRef.current;
+    return () => { delete w.__runTEOETests; delete w.__runAtomDOMTests; delete w.__runIntegrationTests; delete w.__runIMETests; delete w.__getTestDelegate; };
   }, []);
 
   const handleSubmit = useCallback(() => {
