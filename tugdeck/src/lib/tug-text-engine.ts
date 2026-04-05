@@ -15,6 +15,7 @@
  */
 
 import type { AtomSegment } from "@/components/tugways/tug-atom";
+import { createAtomImgElement, atomImgHTML } from "./tug-atom-img";
 
 // ===================================================================
 // Types
@@ -216,7 +217,111 @@ export function formatEditingState(s: TugTextEditingState): string {
 }
 
 // ===================================================================
-// TugTextEngine — stripped shell (no-op stubs)
+// DOM ↔ flat offset helpers
+//
+// The DOM contains text nodes, <img> atoms (1 char = U+FFFC), and
+// <br> elements (1 char = \n). These helpers convert between flat
+// character offsets and DOM (node, offset) positions.
+// ===================================================================
+
+/** Return true if a node is an atom image. */
+function isAtomImg(node: Node): node is HTMLImageElement {
+  return node.nodeType === Node.ELEMENT_NODE
+    && (node as HTMLElement).tagName === "IMG"
+    && (node as HTMLElement).dataset.atomLabel !== undefined;
+}
+
+/** Return true if a node is a <br>. */
+function isBR(node: Node): boolean {
+  return node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR";
+}
+
+/**
+ * Walk the direct children of a root element and build a text string.
+ * Atom images become U+FFFC, <br> becomes \n, text nodes pass through.
+ */
+function domToText(root: HTMLElement): string {
+  let text = "";
+  for (const child of root.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      text += child.textContent ?? "";
+    } else if (isAtomImg(child)) {
+      text += "\uFFFC";
+    } else if (isBR(child)) {
+      text += "\n";
+    }
+  }
+  return text;
+}
+
+/**
+ * Convert a flat character offset to a DOM position (node, offset)
+ * within root's direct children.
+ *
+ * Returns { node, offset } suitable for Range.setStart/setEnd.
+ * If the flat offset lands inside a text node, node is the text node
+ * and offset is the character offset within it. If it lands on an
+ * atom or BR, node is root and offset is the child index.
+ */
+function flatToDom(root: HTMLElement, flat: number): { node: Node; offset: number } {
+  let remaining = flat;
+  for (let i = 0; i < root.childNodes.length; i++) {
+    const child = root.childNodes[i];
+    if (child.nodeType === Node.TEXT_NODE) {
+      const len = (child.textContent ?? "").length;
+      if (remaining <= len) {
+        return { node: child, offset: remaining };
+      }
+      remaining -= len;
+    } else if (isAtomImg(child) || isBR(child)) {
+      if (remaining === 0) {
+        return { node: root, offset: i };
+      }
+      remaining -= 1;
+    }
+  }
+  // Past the end — return position after last child
+  return { node: root, offset: root.childNodes.length };
+}
+
+/**
+ * Convert a DOM position (node, offset) to a flat character offset
+ * relative to root's content.
+ */
+function domToFlat(root: HTMLElement, node: Node, offset: number): number {
+  let flat = 0;
+
+  // If node is root, offset is a child index
+  if (node === root) {
+    for (let i = 0; i < offset && i < root.childNodes.length; i++) {
+      const child = root.childNodes[i];
+      if (child.nodeType === Node.TEXT_NODE) {
+        flat += (child.textContent ?? "").length;
+      } else if (isAtomImg(child) || isBR(child)) {
+        flat += 1;
+      }
+    }
+    return flat;
+  }
+
+  // If node is a text node child of root, count preceding siblings + offset
+  for (const child of root.childNodes) {
+    if (child === node) {
+      return flat + offset;
+    }
+    if (child.nodeType === Node.TEXT_NODE) {
+      flat += (child.textContent ?? "").length;
+    } else if (isAtomImg(child) || isBR(child)) {
+      flat += 1;
+    }
+  }
+
+  // Node is nested deeper (shouldn't happen in our flat structure)
+  return flat;
+}
+
+// ===================================================================
+// TugTextEngine — DOM-based implementation
 // ===================================================================
 
 export class TugTextEngine {
@@ -235,54 +340,219 @@ export class TugTextEngine {
   onLog: ((msg: string) => void) | null = null;
   onTypeaheadChange: ((active: boolean, filtered: CompletionItem[], selectedIndex: number) => void) | null = null;
 
+  // Event handler references for teardown
+  private _handlers: Array<{ target: EventTarget; type: string; fn: EventListener; capture?: boolean }> = [];
+
   constructor(root: HTMLDivElement) {
     this.root = root;
+    this.setupEvents();
   }
 
-  // --- Document content ---
-  get hasMarkedText(): boolean { return false; }
-  isEmpty(): boolean { return true; }
-  getText(): string { return ""; }
-  getAtoms(): AtomSegment[] { return []; }
+  // =================================================================
+  // Document content — read directly from DOM
+  // =================================================================
 
-  // --- Selection ---
-  getSelectedRange(): { start: number; end: number } | null { return null; }
-  setSelectedRange(_start: number, _end?: number): void {}
-  selectAll(): void {}
+  get hasMarkedText(): boolean { return false; }
+
+  isEmpty(): boolean {
+    return this.root.childNodes.length === 0
+      || (this.root.textContent === "" && this.root.querySelector("img[data-atom-label]") === null);
+  }
+
+  getText(): string {
+    return domToText(this.root);
+  }
+
+  getAtoms(): AtomSegment[] {
+    const imgs = this.root.querySelectorAll("img[data-atom-label]");
+    const atoms: AtomSegment[] = [];
+    for (const img of imgs) {
+      const el = img as HTMLImageElement;
+      atoms.push({
+        kind: "atom",
+        type: el.dataset.atomType ?? "file",
+        label: el.dataset.atomLabel ?? "",
+        value: el.dataset.atomValue ?? "",
+      });
+    }
+    return atoms;
+  }
+
+  // =================================================================
+  // Selection — flat offset ↔ DOM position
+  // =================================================================
+
+  getSelectedRange(): { start: number; end: number } | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    if (!this.root.contains(sel.anchorNode)) return null;
+
+    const range = sel.getRangeAt(0);
+    const start = domToFlat(this.root, range.startContainer, range.startOffset);
+    const end = domToFlat(this.root, range.endContainer, range.endOffset);
+    return { start, end };
+  }
+
+  setSelectedRange(start: number, end?: number): void {
+    const sel = window.getSelection();
+    if (!sel) return;
+    const s = flatToDom(this.root, start);
+    const e = end !== undefined ? flatToDom(this.root, end) : s;
+    const range = document.createRange();
+    range.setStart(s.node, s.offset);
+    range.setEnd(e.node, e.offset);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  selectAll(): void {
+    this.root.focus();
+    document.execCommand("selectAll");
+  }
+
   getHighlightedAtomIndices(): readonly number[] { return []; }
   setHighlightedAtomIndices(_indices: number[]): void {}
 
-  // --- Mutation ---
-  insertText(_text: string): void {}
-  insertAtom(_atom: AtomSegment): void {}
-  deleteRange(_start: number, _end: number): number { return _start; }
-  deleteBackward(): void {}
-  deleteForward(): void {}
-  deleteWordBackward(): void {}
-  deleteWordForward(): void {}
-  deleteParagraphBackward(): void {}
-  deleteParagraphForward(): void {}
-  clear(): void {}
+  // =================================================================
+  // Mutation — all via execCommand for native undo
+  // =================================================================
+
+  insertText(text: string): void {
+    this.root.focus();
+    document.execCommand("insertText", false, text);
+  }
+
+  insertAtom(atom: AtomSegment): void {
+    this.root.focus();
+    const html = atomImgHTML(atom.type, atom.label, atom.value);
+    document.execCommand("insertHTML", false, html);
+  }
+
+  deleteRange(start: number, end: number): number {
+    if (start === end) return start;
+    this.setSelectedRange(start, end);
+    document.execCommand("delete");
+    return start;
+  }
+
+  deleteBackward(): void {
+    document.execCommand("delete");
+  }
+
+  deleteForward(): void {
+    document.execCommand("forwardDelete");
+  }
+
+  deleteWordBackward(): void {
+    // Stub — full implementation in Step 8
+    document.execCommand("delete");
+  }
+
+  deleteWordForward(): void {
+    // Stub — full implementation in Step 8
+    document.execCommand("forwardDelete");
+  }
+
+  deleteParagraphBackward(): void {
+    // Stub — full implementation in Step 8
+    document.execCommand("delete");
+  }
+
+  deleteParagraphForward(): void {
+    // Stub — full implementation in Step 8
+    document.execCommand("forwardDelete");
+  }
+
+  clear(): void {
+    this.root.innerHTML = "";
+    this.updateEmpty();
+    this.onChange?.();
+  }
+
+  // Emacs bindings — stubs for now (Step 8)
   killLine(): void {}
   yank(): void {}
   transpose(): void {}
   openLine(): void {}
 
-  // --- Undo ---
-  get canUndo(): boolean { return false; }
-  get canRedo(): boolean { return false; }
-  undo(): void {}
-  redo(): void {}
+  // =================================================================
+  // Undo/Redo — browser's native stack via execCommand
+  // =================================================================
 
-  // --- State ---
+  get canUndo(): boolean { return true; }
+  get canRedo(): boolean { return true; }
+
+  undo(): void {
+    document.execCommand("undo");
+  }
+
+  redo(): void {
+    document.execCommand("redo");
+  }
+
+  // =================================================================
+  // State — stubs until Step 5 migrates persistence
+  // =================================================================
+
   captureState(): TugTextEditingState {
     return { segments: [{ kind: "text", text: "" }], selection: null, markedText: null, highlightedAtomIndices: [] };
   }
+
   restoreState(_state: TugTextEditingState): void {}
 
-  // --- Testing ---
+  // =================================================================
+  // Testing compatibility
+  // =================================================================
+
   flushMutations(): void {}
 
-  // --- Lifecycle ---
-  teardown(): void {}
+  // =================================================================
+  // Internal helpers
+  // =================================================================
+
+  /** Update the data-empty attribute for placeholder visibility. */
+  private updateEmpty(): void {
+    this.root.dataset.empty = this.isEmpty() ? "true" : "false";
+  }
+
+  /** Auto-resize the editor to fit content, up to maxHeight. */
+  private autoResize(): void {
+    if (this.maxHeight <= 0) return;
+    this.root.style.height = "auto";
+    const scrollH = this.root.scrollHeight;
+    if (scrollH > this.maxHeight) {
+      this.root.style.height = `${this.maxHeight}px`;
+      this.root.style.overflowY = "auto";
+    } else {
+      this.root.style.height = `${scrollH}px`;
+      this.root.style.overflowY = "hidden";
+    }
+  }
+
+  // =================================================================
+  // Event handling — setup and teardown
+  // =================================================================
+
+  /** Register an event listener and track it for teardown. */
+  private listen<K extends keyof HTMLElementEventMap>(
+    target: EventTarget,
+    type: K,
+    fn: (e: HTMLElementEventMap[K]) => void,
+    capture?: boolean,
+  ): void {
+    const listener = fn as EventListener;
+    target.addEventListener(type, listener, capture);
+    this._handlers.push({ target, type, fn: listener, capture });
+  }
+
+  private setupEvents(): void {
+    // Event handlers wired in sub-step 3.3
+  }
+
+  teardown(): void {
+    for (const h of this._handlers) {
+      h.target.removeEventListener(h.type, h.fn, h.capture);
+    }
+    this._handlers.length = 0;
+  }
 }
