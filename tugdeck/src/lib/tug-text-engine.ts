@@ -53,8 +53,6 @@ export interface TugTextInputDelegate {
   getSelectedRange(): { start: number; end: number } | null;
   setSelectedRange(start: number, end?: number): void;
   readonly hasMarkedText: boolean;
-  getHighlightedAtomIndices(): readonly number[];
-  setHighlightedAtomIndices(indices: number[]): void;
 
   // --- Mutation ---
   insertText(text: string): void;
@@ -74,8 +72,6 @@ export interface TugTextInputDelegate {
   openLine(): void;
 
   // --- Undo ---
-  readonly canUndo: boolean;
-  readonly canRedo: boolean;
   undo(): void;
   redo(): void;
 
@@ -86,7 +82,6 @@ export interface TugTextInputDelegate {
   restoreState(state: TugTextEditingState): void;
 
   // --- Testing ---
-  flushMutations(): void;
   getEditorElement(): HTMLDivElement | null;
 }
 
@@ -157,7 +152,7 @@ export function captureEditingState(d: TugTextInputDelegate): TugTextEditingStat
     segments: normalizeSegments(segments),
     selection: d.getSelectedRange(),
     markedText: d.hasMarkedText ? d.getSelectedRange() : null,
-    highlightedAtomIndices: [...d.getHighlightedAtomIndices()],
+    highlightedAtomIndices: [],
   };
 }
 
@@ -457,9 +452,6 @@ export class TugTextEngine {
     document.execCommand("selectAll");
   }
 
-  getHighlightedAtomIndices(): readonly number[] { return []; }
-  setHighlightedAtomIndices(_indices: number[]): void {}
-
   // =================================================================
   // Mutation — all via execCommand for native undo
   // =================================================================
@@ -526,9 +518,6 @@ export class TugTextEngine {
   // Undo/Redo — browser's native stack via execCommand
   // =================================================================
 
-  get canUndo(): boolean { return true; }
-  get canRedo(): boolean { return true; }
-
   undo(): void {
     document.execCommand("undo");
   }
@@ -546,12 +535,6 @@ export class TugTextEngine {
   }
 
   restoreState(_state: TugTextEditingState): void {}
-
-  // =================================================================
-  // Testing compatibility
-  // =================================================================
-
-  flushMutations(): void {}
 
   // =================================================================
   // Internal helpers

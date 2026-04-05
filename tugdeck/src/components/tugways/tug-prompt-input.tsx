@@ -151,8 +151,6 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       getSelectedRange() { return engineRef.current?.getSelectedRange() ?? null; },
       setSelectedRange(start: number, end?: number) { engineRef.current?.setSelectedRange(start, end); },
       get hasMarkedText() { return engineRef.current?.hasMarkedText ?? false; },
-      getHighlightedAtomIndices() { return engineRef.current?.getHighlightedAtomIndices() ?? []; },
-      setHighlightedAtomIndices(indices: number[]) { engineRef.current?.setHighlightedAtomIndices(indices); },
       insertText(text: string) { engineRef.current?.insertText(text); },
       insertAtom(atom: AtomSegment) {
         const engine = engineRef.current;
@@ -171,13 +169,10 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       yank() { engineRef.current?.yank(); },
       transpose() { engineRef.current?.transpose(); },
       openLine() { engineRef.current?.openLine(); },
-      get canUndo() { return engineRef.current?.canUndo ?? false; },
-      get canRedo() { return engineRef.current?.canRedo ?? false; },
       undo() { engineRef.current?.undo(); },
       redo() { engineRef.current?.redo(); },
       focus() { engineRef.current?.root.focus(); },
       restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
-      flushMutations() { engineRef.current?.flushMutations(); },
       getEditorElement() { return engineRef.current?.root ?? null; },
     }), []);
 

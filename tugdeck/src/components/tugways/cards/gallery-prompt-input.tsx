@@ -187,7 +187,6 @@ export function GalleryPromptInput() {
     el.textContent = [
       `selectedRange: ${rangeStr}${collapsed ? " (collapsed)" : ""}`,
       `hasMarkedText: ${delegate.hasMarkedText}`,
-      `canUndo: ${delegate.canUndo} | canRedo: ${delegate.canRedo}`,
       `length: ${text.length} | atoms: ${atoms.length} | empty: ${delegate.isEmpty()}`,
     ].join("\n");
   }, []);
