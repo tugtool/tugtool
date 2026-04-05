@@ -531,6 +531,27 @@ export class TugTextEngine {
     }
   }
 
+  /** Write the current selection to the clipboard as HTML + plain text. */
+  private writeSelectionToClipboard(clipboardData: DataTransfer | null): boolean {
+    if (!clipboardData) return false;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return false;
+    const fragment = sel.getRangeAt(0).cloneContents();
+
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(fragment);
+
+    const plainWrapper = wrapper.cloneNode(true) as HTMLElement;
+    plainWrapper.querySelectorAll("img[data-atom-label]").forEach((img) => {
+      const text = document.createTextNode((img as HTMLImageElement).dataset.atomLabel || "");
+      img.parentNode?.replaceChild(text, img);
+    });
+
+    clipboardData.setData("text/html", wrapper.innerHTML);
+    clipboardData.setData("text/plain", plainWrapper.textContent || "");
+    return true;
+  }
+
   // =================================================================
   // Event handling — setup and teardown
   // =================================================================
@@ -646,50 +667,17 @@ export class TugTextEngine {
 
     // 4. Copy — write atom HTML + plain text to clipboard
     this.listen(root, "copy", (e: Event) => {
-      const ce = e as ClipboardEvent;
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-      const range = sel.getRangeAt(0);
-      const fragment = range.cloneContents();
-
-      const wrapper = document.createElement("div");
-      wrapper.appendChild(fragment);
-      const html = wrapper.innerHTML;
-
-      const plainWrapper = wrapper.cloneNode(true) as HTMLElement;
-      plainWrapper.querySelectorAll("img[data-atom-label]").forEach((img) => {
-        const text = document.createTextNode((img as HTMLImageElement).dataset.atomLabel || "");
-        img.parentNode?.replaceChild(text, img);
-      });
-      const plain = plainWrapper.textContent || "";
-
-      ce.clipboardData?.setData("text/html", html);
-      ce.clipboardData?.setData("text/plain", plain);
-      ce.preventDefault();
+      if (this.writeSelectionToClipboard((e as ClipboardEvent).clipboardData)) {
+        e.preventDefault();
+      }
     });
 
     // 5. Cut — copy then delete via execCommand
     this.listen(root, "cut", (e: Event) => {
-      const ce = e as ClipboardEvent;
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-      const range = sel.getRangeAt(0);
-      const fragment = range.cloneContents();
-
-      const wrapper = document.createElement("div");
-      wrapper.appendChild(fragment);
-      const html = wrapper.innerHTML;
-
-      const plainWrapper = wrapper.cloneNode(true) as HTMLElement;
-      plainWrapper.querySelectorAll("img[data-atom-label]").forEach((img) => {
-        const text = document.createTextNode((img as HTMLImageElement).dataset.atomLabel || "");
-        img.parentNode?.replaceChild(text, img);
-      });
-
-      ce.clipboardData?.setData("text/html", html);
-      ce.clipboardData?.setData("text/plain", plainWrapper.textContent || "");
-      ce.preventDefault();
-      document.execCommand("delete");
+      if (this.writeSelectionToClipboard((e as ClipboardEvent).clipboardData)) {
+        e.preventDefault();
+        document.execCommand("delete");
+      }
     });
 
     // 6. Paste — preserve atoms from our clipboard, strip external rich text
