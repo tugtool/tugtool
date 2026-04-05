@@ -552,16 +552,71 @@ function caretIsOutsideAllBadges(d: TugTextInputDelegate): boolean {
 
 /**
  * Get the visual line number the caret is on (0-based).
- * Uses the editor's line-height to determine line boundaries.
+ * Inserts a temporary marker element at the caret position and measures
+ * its Y coordinate. This is more reliable than getBoundingClientRect on
+ * the selection range, which reports wrong positions for "after \n" carets.
  */
 function caretLineNumber(d: TugTextInputDelegate): number {
   const el = d.getEditorElement();
   if (!el) return -1;
-  const cr = caretRect();
-  if (!cr || cr.height === 0) return -1;
-  const editorRect = el.getBoundingClientRect();
-  const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || cr.height;
-  return Math.round((cr.top - editorRect.top) / lineHeight);
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return -1;
+
+  // Find the caret's DOM position relative to the editor
+  const anchorNode = sel.anchorNode;
+  const anchorOffset = sel.anchorOffset;
+
+  // Build a path from anchorNode to the editor root so we can find
+  // the corresponding node in the clone.
+  const path: number[] = [];
+  let node: Node | null = anchorNode;
+  while (node && node !== el) {
+    const parent: Node | null = node.parentNode;
+    if (!parent) return -1;
+    path.unshift(Array.from(parent.childNodes).indexOf(node as ChildNode));
+    node = parent;
+  }
+
+  // Clone the editor, position it identically (same size/location)
+  const clone = el.cloneNode(true) as HTMLDivElement;
+  const rect = el.getBoundingClientRect();
+  clone.style.position = "fixed";
+  clone.style.left = rect.left + "px";
+  clone.style.top = rect.top + "px";
+  clone.style.width = rect.width + "px";
+  clone.style.visibility = "hidden";
+  document.body.appendChild(clone);
+
+  // Walk the path to find the corresponding node in the clone
+  let cloneNode: Node = clone;
+  for (const idx of path) {
+    cloneNode = cloneNode.childNodes[idx];
+    if (!cloneNode) { clone.remove(); return -1; }
+  }
+
+  // Insert marker at the caret position in the clone
+  const marker = document.createElement("span");
+  marker.textContent = "\u200B";
+  if (cloneNode instanceof Text) {
+    cloneNode.splitText(anchorOffset);
+    cloneNode.parentNode!.insertBefore(marker, cloneNode.nextSibling);
+  } else {
+    if (anchorOffset < cloneNode.childNodes.length) {
+      cloneNode.insertBefore(marker, cloneNode.childNodes[anchorOffset]);
+    } else {
+      cloneNode.appendChild(marker);
+    }
+  }
+
+  // Measure
+  const markerRect = marker.getBoundingClientRect();
+  const cloneRect = clone.getBoundingClientRect();
+  const lineHeight = parseFloat(getComputedStyle(clone).lineHeight) || markerRect.height || 21;
+  const line = Math.round((markerRect.top - cloneRect.top) / lineHeight);
+
+  // Discard the clone
+  clone.remove();
+  return line;
 }
 
 /** Check if the cursor is visually inside an atom span (not in adjacent text). */

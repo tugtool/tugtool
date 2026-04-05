@@ -724,12 +724,21 @@ export class TugTextEngine {
         } else {
           textNode = document.createTextNode(domText);
         }
+        // Cursor anchor for endOfLine: when text starts with \n after an atom,
+        // add a ce=false anchor span BEFORE the text node so the caret at
+        // offset 0 renders after the badge, not inside it. Placed before the
+        // text node so it doesn't block the trailing-br's line break effect.
+        if (afterAtom && modelText.startsWith("\n") && this.composingIndex === null) {
+          const anchor = document.createElement("span");
+          anchor.className = "tug-cursor-anchor";
+          anchor.contentEditable = "false";
+          anchor.textContent = " ";
+          domChildren.push(anchor);
+        }
         newNodes.push(textNode);
         domChildren.push(textNode);
-        // Cursor anchor: after empty text nodes at END OF DOCUMENT following
-        // atoms, add a ce=false span so the caret doesn't drift into the badge.
-        // Not needed for endOfLine — the \n character provides caret content,
-        // and the anchor would block the trailing-br's line break effect.
+        // Cursor anchor for endOfDocument: when trailing text is empty after
+        // an atom, add a ce=false anchor span AFTER the ZWSP text node.
         if (needsZWSP && modelText === "") {
           const anchor = document.createElement("span");
           anchor.className = "tug-cursor-anchor";
