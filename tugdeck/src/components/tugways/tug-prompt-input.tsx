@@ -118,7 +118,7 @@ function TugPromptInputPersistence({ engineRef }: { engineRef: React.RefObject<T
 // ---- Constants ----
 
 const DEFAULT_MAX_ROWS = 8;
-const LINE_HEIGHT = 21;
+const LINE_HEIGHT = 24;
 const PADDING_Y = 14;
 
 // ---- Component ----
