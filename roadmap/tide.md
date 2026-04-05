@@ -1209,9 +1209,11 @@ Component features:
 
 #### T3.2: tug-prompt-input {#t3-prompt-input}
 
-**Goal:** The rich input field. A proper tugways component wrapping the TugTextEngine with atom support, prefix detection, and completions.
+**Goal:** The rich input field. A thin event-handling layer on top of WebKit's native contentEditable, with atoms rendered as `<img>` replaced elements.
 
-**Prerequisites:** T3.0 (architecture validated), T3.1 (tug-atom with DOM rendering path).
+**Prerequisites:** T3.0 (architecture validated).
+
+**Architecture:** The browser is the engine. The DOM is the source of truth. No parallel document model, no reconciler, no MutationObserver diffing. Atoms are `<img src="data:image/svg+xml,...">` elements — WebKit handles caret navigation, selection, undo/redo, and IME natively. Our code provides seven focused customizations on top. See [t3-prompt-input-plan.md](t3-prompt-input-plan.md) for full details.
 
 **Governing documents:**
 - [Component Authoring Guide](../tuglaws/component-authoring.md) — file structure, TSX/CSS conventions, `@tug-pairings`, `@tug-renders-on`, input value management, checklist
@@ -1220,78 +1222,62 @@ Component features:
 
 **Work:**
 
-Engine extraction and integration:
-- Extract `TugTextEngine` from the spike gallery card into `lib/tug-text-engine.ts` as a standalone module
-- Define `TugTextInputDelegate` interface in `lib/tug-text-input-delegate.ts` (the UITextInput-inspired API)
-- tug-prompt-input creates the engine in `useLayoutEffect` (L01), accesses via ref (L07), all updates in DOM zone (L06)
-- Engine reconciler uses the U+E100 atom DOM structure (see atom architecture below)
-- `selectionAffinity` support for multiline: track upstream/downstream at soft line breaks
-- Auto-resize: 1 row default, grows to maxRows (8), Apple Messages style [L06]
-- Return vs Enter: independently configurable actions via delegate API. Shift inverts. `hasMarkedText === true` → key goes to IME.
+Simplify and reimplement:
+- Strip the TugTextEngine down to a thin event-handling layer (~300 lines, not 1800+)
+- Remove: segment model, reconciler, MutationObserver, domPosition/flatFromDOM, ZWSP anchors, ce=false infrastructure, arrow key interception for basic navigation
+- Atoms as `<img src="data:image/svg+xml,...">` with `data-atom-*` attributes — replaced elements that WebKit handles atomically
+- Standard contentEditable — no `-webkit-user-modify: read-write-plaintext-only` (it blocks image insertion via execCommand)
+- CSS: suppress CSS Custom Highlights inside editor, re-enable native `::selection` — this prevents selection guard visual artifacts around images
+- Line-height: 24px to accommodate 22px atom images without layout shift
+- Read API (getText/getAtoms) reads directly from DOM, no parallel model
+- Auto-resize: 1 row default, grows to maxRows [L06]
+- Return vs Enter: configurable actions via data attributes [L06]. Shift inverts. IME composing → key passes through.
 - `::selection` re-enabled, `::highlight(card-selection)` suppressed inside editor
-- `data-td-select="custom"` to exempt from SelectionGuard clipping
 
-Atom architecture (U+E100 — planned, not yet implemented):
-- Target: atoms are U+E100 (PUA) characters in the text flow — browser navigates them as single characters
-- Target DOM: `<span data-slot="tug-atom">` (inline-flex, styled) containing a U+E100 text node + a `contentEditable="false"` label span
-- Current: atoms use `contentEditable="false"` spans, which has navigation bugs (arrow keys skip atoms incorrectly)
-- Spike (2026-04-03) validated browser behavior on bare DOM; first implementation (2026-04-04) reverted — broke interactive editor. Integration tests needed before re-attempting.
-- Visible units layer (WebKit `visible_units.h` architecture): `startOfWord`, `endOfWord`, `startOfParagraph`, `endOfParagraph` — pure functions over the segment model, atoms are word boundaries
-- Deletion by granularity (word, line, paragraph) built on visible units + `deleteRange` primitive
-- Kill ring (Ctrl+K/Y), transpose (Ctrl+T), openLine (Ctrl+O) — Emacs text system bindings
+Seven customizations on top of native contentEditable:
+1. **Atom creation** — SVG `<img>` elements with canvas-measured text, Lucide icons
+2. **Clipboard** — copy/cut preserve atom HTML + plain text; paste detects atom HTML and uses insertHTML
+3. **Drag & drop** — files → atom images at drop point via caretRangeFromPoint + insertHTML
+4. **Option+Arrow** — clamp word movement at atom boundaries via Range.compareBoundaryPoints
+5. **Click on atom** — select entire image via Range.selectNode
+6. **Return/Enter** — submit vs newline via data attributes, Shift inverts
+7. **Selection guard** — CSS Custom Highlight suppression inside editor
 
 Prefix detection:
 - First character `>`, `$`, `:` sets the active route
 - `/` as first character implies `>` route (slash command mode)
-- Route change emits an event/callback so tug-prompt-entry can sync the route indicator
-- Visual: prefix character is styled distinctly (e.g., dimmed or colored) to indicate it's structural, not content
-
-Atom insertion:
-- `@` trigger: typing `@` opens a file completion popup. Typing further filters results. Tab or Enter resolves the selection to a tug-atom pill inserted inline. Escape cancels.
-- `/` trigger (in `>` route): opens slash command completion popup. Same tab/enter/escape behavior.
-- Drag-and-drop: files dragged from Finder onto the input create file atoms. **Drop handler must be configurable** — accepted file types (extensions, MIME types) are set by the component consumer, not hardcoded.
-- Atoms in the submitted text are serialized as structured attachments, not inline text
+- Route change emits callback for tug-prompt-entry sync
 
 Typeahead and completion:
-- Completion popup positioned near the cursor (or at the bottom of the input area)
-- Fuzzy matching on file paths, command names
-- Tab-completion: Tab accepts the top suggestion
-- Arrow keys navigate the popup; Enter selects
-- **Completion data source is a service, not a hardcoded list.** The component accepts a completion provider (callback or interface): `(query: string) => Promise<CompletionItem[]>`. For `@` file completion, this calls a file index service (TBD — may need a new file listing API on tugcast, or a local directory scan). For `/` commands, this reads from SessionMetadataStore (slash commands + skills). The spike used a hardcoded file list; the real component must not.
-- Completion data sources: SessionMetadataStore (slash commands, skills) and a file completion service (architecture TBD — may be a new tugcast feed, a local scan, or a combination)
+- `@` trigger opens file completion; `/` trigger opens command completion
+- Completion provider interface: `(query: string) => CompletionItem[]`
+- Tab/Enter accepts, Escape cancels, arrow keys navigate popup
+- Drag-and-drop files → atoms via configurable drop handler
 
 History:
-- Up/down arrows when cursor is at the start/end of input navigate history
-- History is per-route (Claude Code history separate from shell history)
-- History state comes from PromptHistoryStore
+- Up/down at document boundaries navigate history
+- Per-route history from PromptHistoryStore
 
-Quality and correctness regime:
-- `TugTextInputDelegate` — UITextInput-inspired API, shared by engine, component, and test harness
-- `TugTextEditingState` — serializable snapshot of complete editing state (segments, selection, marked text). Used for persistence and testing.
-- **Text Editing Operation Inventory (TEOI)** — formal catalog of every editing operation as a state machine transition: `TugTextEditingState::incoming × Operation → TugTextEditingState::outgoing`. The specification for what editing operations do.
-- **Text Editing Operation Examples (TEOE)** — concrete test cases: specific TEOI triples with real data. Exhaustive coverage of operations at every interesting boundary.
-- **Simulation ≡ Interactive** — test harness typing simulation (DOM mutation → MutationObserver) and interactive component always produce the same outgoing state for the same incoming × operation.
-- **Editing state persistence** [L23] — `TugTextEditingState` saved to tugbank on every meaningful change. Survives Reload, app quit, `just app`.
+Persistence:
+- Serialize editor innerHTML + cursor position to tugbank [L23]
+- Restore on mount. Survives reload, app quit, `just app`.
 
 **Exit criteria:**
-- Text input with atoms works: atoms navigate as single characters (arrow keys, shift+select, word movement)
-- U+E100 atom character architecture: correct caret movement, proper visual width, no navigation bugs
-- Auto-resize works (1 row → 8 rows)
-- Prefix detection correctly identifies route from first character
-- `@` file completion works: trigger → filter → resolve to atom
-- `/` slash command completion works in `>` route
+- Text input with atoms works: native caret navigation, selection, undo/redo
+- Atoms render as `<img>` with SVG: icons, measured text, theme colors
+- Auto-resize works (1 row → maxRows)
+- Prefix detection correctly identifies route
+- `@` file completion and `/` slash command completion work
 - Drag-and-drop file → atom works
+- Copy/cut/paste preserves atoms (undo-compatible via execCommand)
+- Option+Arrow stops at atom boundaries
 - History navigation works
-- IME composition (Japanese, Chinese) works correctly
-- Undo works (including undo of atom insertion)
-- Deletion by granularity: character, word, paragraph (visible units layer)
-- Kill ring (Ctrl+K/Y), transpose (Ctrl+T), openLine (Ctrl+O) functional
-- Token-compliant styling: `@tug-pairings` (compact + expanded), `@tug-renders-on` on all foreground rules
-- Conforms to component authoring guide checklist
-- Gallery card with interactive editor + automated test harness
-- TEOI defined; TEOE test suite passes with 50+ test cases
-- `/api/eval` test automation: programmatic test execution and result retrieval
-- Simulation (`execCommand` path) and delegate API produce identical results for all TEOEs
+- IME composition works correctly (native)
+- Return/Enter key configuration works with Shift inversion
+- No `-webkit-user-modify: read-write-plaintext-only`
+- CSS Custom Highlight suppression prevents selection artifacts
+- Token-compliant styling per component authoring guide
+- Gallery card with interactive testing surface
 - Editing state persists across reload and app restart [L23]
 
 ---

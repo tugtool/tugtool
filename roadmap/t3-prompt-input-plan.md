@@ -1,374 +1,233 @@
 # T3.2 Tactical Plan: tug-prompt-input
 
-*Tactical execution plan for building the tug-prompt-input component. Companion to the T3.2 section in [tide.md](tide.md) and the spike findings in [t3-text-model-spike.md](t3-text-model-spike.md).*
+*Tactical execution plan for building the tug-prompt-input component. Companion to the T3.2 section in [tide.md](tide.md).*
 
 ---
 
-## Principle: the spike is frozen
+## Principle: the browser is the engine
 
-`gallery-text-model-spike.tsx` is not touched. It is a read-only reference for the engine patterns, CSS tricks, and event handling. We read from it; we never write to it.
+WebKit's native contentEditable with `<img>` atoms handles text editing correctly. We do not maintain a parallel document model, reconciler, or mutation observer. The DOM is the source of truth. Our code is a thin event-handling layer — a few focused customizations on top of WebKit's editing.
 
----
+This principle was validated by the IMG atom spike (2026-04-05). The spike proved:
 
-## What We're Building
-
-A proper tugways component — `tug-prompt-input.tsx` + `tug-prompt-input.css` — that wraps TugTextEngine in a React-compliant shell. The engine becomes a standalone module. The component is the *input field only* — not the surrounding chrome (route indicator, submit button — that's T3.4).
-
-**Governing documents:**
-- [Component Authoring Guide](../tuglaws/component-authoring.md) — file structure, TSX/CSS conventions, `@tug-pairings`, `@tug-renders-on`, checklist
-- [Token Naming](../tuglaws/token-naming.md) — seven-slot `--tug7-` convention
-- Laws: [L01] single mount, [L03] useLayoutEffect for registrations, [L06] appearance via CSS, [L07] stable refs, [L15] token-driven states, [L16] pairings declared, [L19] component authoring guide, [L22] direct DOM updates, [L23] preserve user-visible state
+- `<img src="data:image/svg+xml,...">` atoms are replaced elements — WebKit navigates them atomically, positions the caret correctly before/after them, and handles selection natively.
+- No `contentEditable="false"` needed. No ZWSP. No anchor spans. No domPosition/flatFromDOM mapping. No reconciler.
+- Native undo/redo via `execCommand`. Native IME. Native arrow navigation. Native click-to-position.
+- ~300 lines of focused event handling vs 1800+ lines of the old engine.
 
 ---
 
-## Three Deliverables
+## What Failed (and Why)
 
-### 1. `lib/tug-text-engine.ts` — the engine, ported
+The original TugTextEngine architecture used `contentEditable="false"` spans for atom badges. This caused WebKit's caret renderer to misposition the caret near atoms. We spent days building increasingly complex workarounds:
 
-A fresh port of the spike's `TugTextEngine`, written as a new file using the spike as a read-only reference. **Not** a mechanical extraction that modifies the spike.
+- ZWSP cursor anchors + ce=false anchor spans (broke trailing newlines)
+- rootPosition (WebKit rendered caret at height 0)
+- Ce=true badges with real text (caret entered the badge text)
+- Custom caret rendering plans (would break IME)
 
-Changes from the spike:
+**Root cause:** `contentEditable="false"` inline elements create "non-editable islands" that WebKit's editing code cannot handle correctly. Every major web editor (ProseMirror, Lexical, Slate) fights the same bugs. The solution is not more workarounds — it's eliminating ce=false from the text flow entirely.
 
-- **Import `createAtomDOM` from tug-atom** instead of the spike's local `createAtomDOM`. This is the T3.1 integration point. The engine's DOM detection, position mapping (`flatFromDOM`, `domPosition`), and reconciler must all be written to handle tug-atom's DOM structure (inline-flex, icon span + label span, `data-slot="tug-atom"`).
-- **Import `AtomSegment` from tug-atom** — it's already the canonical type definition.
-- **Use `tug-atom` / `tug-atom-selected` CSS classes** instead of `spike-atom` / `spike-atom-selected`.
-- **Export `TextSegment`, `Segment`, and helper functions** (`normalizeSegments`, `cloneSegments`).
-- **Remove hardcoded `TYPEAHEAD_FILES`** — the typeahead becomes callback-driven (completion provider).
-- **Generalize the typeahead** — the engine calls a provider callback, not a hardcoded filter. But the engine still owns the typeahead *state machine* (active, query, selectedIndex, accept, cancel, navigate) because that state is tightly coupled to cursor position and document model mutations.
-- **Drop handler is a callback**, not hardcoded `files[i].name -> atom`. The consumer provides a handler that maps files to atoms.
-- The engine's `onSubmit` / `onChange` / `onLog` callbacks stay as-is — they're the right pattern for L06/L22 (direct DOM updates, no React round-trip).
-
-Known spike bugs come along for the ride. That's expected — we fix them iteratively in the new component, not in the spike.
-
-### 2. `tug-prompt-input.tsx` + `tug-prompt-input.css` — the component
-
-The React shell. Follows the component authoring guide exactly.
-
-**TSX:**
-- Creates engine in `useLayoutEffect` [L01, L03] — engine is a stable ref [L07]
-- `data-slot="tug-prompt-input"` on root, `forwardRef`, `cn()`, `...rest`
-- Props: `placeholder`, `maxRows`, `returnAction`, `numpadEnterAction`, `onSubmit`, `onChange`, `completionProvider`, `dropHandler`, `disabled`
-- The contentEditable div is *inside* this component — the consumer never touches it
-- Auto-resize [L06]: direct DOM height manipulation, 1 row -> maxRows
-- Placeholder via `data-empty` attribute + CSS `::before` [L06]
-- Imperative handle via `useImperativeHandle` for parent access: `focus()`, `clear()`, `getText()`, `getAtoms()`, `insertAtom()` — T3.4 needs these
-- The typeahead popup is rendered by this component as a positioned div — the engine provides the data, the component renders the DOM
-
-**CSS:**
-- The input surface — border, padding, focus ring
-- The contentEditable area — `white-space: pre-wrap`, `min-height`, `max-height`, overflow
-- `::selection` re-enabled, `::highlight(card-selection)` suppressed
-- `-webkit-user-modify: read-write-plaintext-only`
-- `data-td-select="custom"` to exempt from SelectionGuard
-- Placeholder styling via `data-empty` + `::before`
-- Typeahead popup positioning and appearance
-- Uses existing `field` tokens for the input surface, `atom` tokens already defined in themes
-
-### 3. Gallery card — `gallery-prompt-input.tsx` + `gallery-prompt-input.css`
-
-The testing surface for the new component. Mirrors the spike's testing UI (editor, diagnostics, key config, event log, insert atom, clear) but uses the real component. This is where we test and debug.
+**The fix:** atoms as `<img>` elements. Images are replaced elements — WebKit already knows how to lay them out and navigate around them. Twenty years of browser engineering handles the caret correctly.
 
 ---
 
-## Integration Points
+## What We Need
 
-### From T3.1 (tug-atom)
+A thin event-handling layer on top of native contentEditable. Seven focused behaviors:
 
-Engine's reconciler calls `createAtomDOM(seg)` from tug-atom instead of building spike-specific DOM. Engine's click handler toggles `tug-atom-selected` class. Engine's two-step backspace checks for `tug-atom-selected`. CSS classes are the contract — no runtime coupling beyond that.
+### 1. Atom creation and rendering
 
-**Critical:** tug-atom's DOM structure is richer than the spike's (inline-flex, icon span, label span, `data-slot`, SVG icons, 0.85em font-size, baseline alignment). The engine's DOM position mapping must handle this correctly. This is tested in pass 1 before moving on.
+Atoms are `<img src="data:image/svg+xml,...">` elements with `data-atom-*` attributes. Each atom SVG contains:
+- Rounded rect background with border
+- Lucide-style icon (file, command, doc, link, image)
+- Label text, measured via canvas `measureText` for accurate width
 
-### For T3.3 (stores)
+Creation: `createAtomImgElement(type, label, value)` → `HTMLImageElement`.
 
-The completion provider interface (`(query: string) => CompletionItem[]`) is the hook. For now, the gallery card provides a fake completion provider. When SessionMetadataStore ships, it plugs in without changing the component.
+### 2. Clipboard (copy / cut / paste)
 
-History navigation: props for `onHistoryUp` / `onHistoryDown` callbacks fire when cursor is at document boundary and user presses arrow keys. PromptHistoryStore plugs into these callbacks in T3.4.
+- **Copy**: intercept `copy` event. Write `text/html` (preserving atom `<img>` tags with `data-atom-*` attributes) and `text/plain` (atom labels as text) to clipboard.
+- **Cut**: write to clipboard (same as copy), then `document.execCommand("delete")` for undo-stack-compatible deletion.
+- **Paste**: check `text/html` for `data-atom-label` markers. If present, `e.preventDefault()` + `document.execCommand("insertHTML", false, content)`. Otherwise let browser handle natively. Both paths are undoable.
 
-### For T3.4 (tug-prompt-entry)
+### 3. Drag and drop
 
-The imperative handle (`focus`, `clear`, `getText`, `getAtoms`, `insertAtom`) is how tug-prompt-entry controls the input. The `onSubmit` callback is how it receives submission. Prefix detection fires a callback with the detected route. tug-prompt-entry composes this component with route indicator and submit button.
+- `dragover`: `e.preventDefault()`, `dropEffect = "copy"`
+- `drop`: read `dataTransfer.files`, position caret at drop point via `document.caretRangeFromPoint(e.clientX, e.clientY)`, build atom HTML for each file, insert via `document.execCommand("insertHTML")`.
+
+### 4. Option+Arrow word boundaries at atoms
+
+Native `Selection.modify("move", dir, "word")` skips over images. Intercept Option+Arrow:
+1. Record caret position before the move (as a Range)
+2. Let `sel.modify` do the native word move
+3. Check if any atom `<img>` is between the before and after positions using `Range.compareBoundaryPoints`
+4. If so, clamp to the first atom boundary crossed
+
+### 5. Click on atom → select
+
+Click handler: if `e.target` is an `<img data-atom-label>`, create a Range that selects the entire image and set it as the selection. The image shows as selected; backspace deletes it.
+
+### 6. Return / Enter key configuration
+
+Keydown handler for Enter:
+- Read `data-return-action` / `data-enter-action` from the editor element (set by React via data attributes, L06 compliant)
+- Distinguish Return (main keyboard) from Enter (numpad) via `e.code`
+- Shift inverts the action
+- `e.isComposing` → ignore (IME gets the key)
+- Submit action → fire `onSubmit` callback
+- Newline action → `document.execCommand("insertLineBreak")`
+
+### 7. Selection guard integration
+
+The app's selection guard uses CSS Custom Highlights for cross-card selection management. Without mitigation, this causes visual selection artifacts during arrow navigation near images.
+
+**Fix:** suppress Custom Highlights inside the editor via CSS:
+```css
+.tug-prompt-input-editor ::selection,
+.tug-prompt-input-editor::selection {
+  background-color: Highlight;
+  color: HighlightText;
+}
+.tug-prompt-input-editor::highlight(card-selection),
+.tug-prompt-input-editor ::highlight(card-selection) {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+.tug-prompt-input-editor::highlight(inactive-selection),
+.tug-prompt-input-editor ::highlight(inactive-selection) {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+```
+
+**Critical:** do NOT use `-webkit-user-modify: read-write-plaintext-only`. It strips `<img>` elements from `execCommand("insertHTML")`, breaking atom paste. Standard contentEditable with the Custom Highlight suppression above is correct.
 
 ---
 
-## What We Are NOT Building Yet
+## ContentEditable Setup
 
-- **Route indicator chrome** — T3.4
-- **Submit button** — T3.4
-- **Live completion data** — T3.3 (SessionMetadataStore for `/` commands, file service for `@` files)
-- **History persistence** — T3.3 (PromptHistoryStore)
-- **Live Claude Code integration** — T3.5
+The editor div:
+```html
+<div
+  contenteditable
+  class="tug-prompt-input-editor"
+  style="line-height: 24px"  /* accommodates 22px atom images without layout shift */
+  data-return-action="submit"
+  data-enter-action="submit"
+>
+```
 
-The *hook points* for all of these exist (props, callbacks, imperative handle), but the implementations plug in later.
+No `-webkit-user-modify`. No `white-space: pre-wrap` (standard contentEditable handles whitespace). Line breaks via `<br>` (native `insertLineBreak` behavior).
+
+---
+
+## Read API (getText / getAtoms)
+
+Read directly from the DOM. No parallel model.
+
+- **getText()**: walk `editor.childNodes`. Text nodes → their content. `<img data-atom-label>` → U+FFFC. `<br>` → `\n`. Join.
+- **getAtoms()**: `editor.querySelectorAll("img[data-atom-label]")` → map to `AtomSegment` objects from data attributes.
+- **getSelectedRange()**: use `window.getSelection()` and a DOM walk to compute flat offsets. Same flat offset convention: text chars = 1, atoms = 1.
+
+These are computed on demand, not maintained as state.
+
+---
+
+## What We're Removing
+
+The following infrastructure from the old TugTextEngine is no longer needed:
+
+- **Segment array as source of truth** — DOM is the source of truth
+- **MutationObserver + handleMutations** — no model to sync
+- **Reconciler (reconcile method)** — no model to render
+- **domPosition / flatFromDOM mapping** — no parallel model to map between
+- **ZWSP cursor anchors** — atoms are `<img>`, caret works natively
+- **ce=false anchor spans** — no ce=false elements in the flow
+- **rootPosition helper** — was compensating for ce=false caret issues
+- **selectionchange handler for caret fixup** — caret positions correctly natively
+- **Arrow key interception for basic navigation** — browser handles it (we only intercept Option+Arrow for word boundaries)
+- **Two-step atom deletion state (highlightedAtomIndices)** — click selects the image natively, backspace deletes it
+- **hasAdjacentAtom / needsZWSP logic** — no ZWSP, no anchors
+- **Badge DOM creation (createAtomBadgeDOM)** — replaced by createAtomImgElement
+
+---
+
+## What We're Keeping (adapted)
+
+- **Typeahead state machine** — `@` trigger, query filtering, accept/cancel/navigate. The engine owns this because it's tightly coupled to cursor position. Adapted to work with DOM-based cursor position instead of flat offset model.
+- **Completion provider interface** — `(query: string) => CompletionItem[]` callback.
+- **Drop handler interface** — `(files: FileList) => AtomSegment[]` callback.
+- **Tugbank persistence** [L23] — serialize editor innerHTML + selection. Restore on mount.
+- **Delegate API surface** — `getText()`, `getAtoms()`, `insertAtom()`, `focus()`, `clear()`, `getSelectedRange()`, `setSelectedRange()`. Implementations read/write DOM directly.
+- **Gallery card test harness** — `__runIntegrationTests`, `__getTestDelegate`, caret visual assertions.
+- **Visible units** for Option+Delete word/paragraph deletion — adapted to work with DOM traversal instead of segment model.
 
 ---
 
 ## Execution Order
 
-### Pass 1: Port engine + build gallery card together
+### Step 1: Strip and simplify
 
-Write `lib/tug-text-engine.ts` by porting from the spike. Simultaneously write a minimal `gallery-prompt-input.tsx` that wires it up — similar to the spike's `SpikeEditor` function. This gives us an immediate testing surface.
+Remove the old TugTextEngine complexity. The component becomes a thin wrapper around a contentEditable div with the seven event handlers described above. Keep the React shell (useLayoutEffect for setup, data attributes for config, imperative handle for parent access).
 
-The gallery card starts simple (editor + diagnostics), not the full component yet. **Test that it works** — typing, atoms, arrow navigation, selection, IME, undo, newlines. Fix DOM mapping issues that arise from tug-atom's structure. Don't move on until this works.
+### Step 2: Roll in spike findings
 
-**Validation:** Gallery card demonstrates basic editing with tug-atom atoms. All spike behaviors work correctly with the new atom DOM structure.
+Port the spike's proven patterns into tug-prompt-input:
+- `createAtomImgElement` with canvas text measurement and SVG icons
+- Copy/cut/paste handlers with atom HTML preservation
+- Drag & drop handler
+- Option+Arrow word boundary clamping
+- Click-to-select on atom images
+- Return/Enter key configuration via data attributes
+- CSS: Custom Highlight suppression, `::selection` override, no `read-write-plaintext-only`
+- Line-height: 24px for stable layout with 22px atom images
 
-### Pass 2: Build the component
+### Step 3: Typeahead
 
-Wrap the working engine in `tug-prompt-input.tsx` + `tug-prompt-input.css` per the component authoring guide. The gallery card switches from wiring the engine directly to using the component. Add the component-level features: auto-resize, placeholder, focus management, imperative handle.
+Port the typeahead state machine. Adapted for DOM-based cursor position. The `@` trigger opens the popup, typing filters, Tab/Enter accepts, Escape cancels.
 
-**Validation:** Gallery card demonstrates all features: typing, atoms, IME, undo, typeahead, auto-resize, Return/Enter, paste, drop.
+### Step 4: Persistence
 
-### Pass 3: Quality and correctness regime
+Serialize editor state to tugbank on meaningful changes. Restore on mount. State = innerHTML + cursor position. Must survive reload, app quit, `just app`.
 
-Before adding more features, establish the formal testing and state management framework that ensures the text editing system is correct and stays correct.
+### Step 5: Test suite
 
-#### 3a. Extract TugTextInputDelegate to shared location
+Adapt the integration test suite for the new architecture:
+- Tests use `execCommand` for typing (native browser pipeline)
+- Tests use `Selection.modify` or native arrow keys for navigation
+- Caret visual assertions via clone-and-marker technique
+- All tests exercise the real editor, not a parallel model
+- Focus on user-visible behavior, not internal model state
 
-Move `TugTextInputDelegate` and associated types from `tug-prompt-input.tsx` into `lib/tug-text-engine.ts` where they can be shared by the engine, component, test harness, and future consumers.
+### Step 6: Remaining features
 
-#### 3b. Define TugTextEditingState
-
-A plain serializable object that captures the complete state of an editing component:
-
-```typescript
-interface TugTextEditingState {
-  segments: Segment[];
-  selection: { start: number; end: number } | null;
-  markedText: { start: number; end: number } | null;
-}
-```
-
-No DOM, no methods. JSON round-trips cleanly. Lives alongside `TugTextInputDelegate` in the engine module.
-
-#### 3c. Persist editing state via tugbank [L23]
-
-Save `TugTextEditingState` to tugbank on every meaningful change. Restore on mount. Editing state must survive: Developer → Reload, app quit/relaunch, `just app`. This is an L23 requirement — internal operations must never lose user-visible state.
-
-#### 3d. Text Editing Operation Inventory (TEOI) ✓
-
-A formal catalog of every editing operation as a state machine transition:
-
-```
-TugTextEditingState::incoming × Operation → TugTextEditingState::outgoing
-```
-
-Lives in `lib/tug-text-editing-operations.ts`. Contains:
-
-- **Operation taxonomy** (24 operations): text entry (typing, insertText, paste), atom manipulation (insertAtom, typeaheadAccept), deletion by granularity (character, word, soft line, paragraph), selection, undo/redo, IME composition, transpose, kill/yank, openLine
-- **19 canonical incoming states**: empty, text at every cursor position, selections, atom boundaries, multi-atom, multi-word, multiline, atom-highlighted, IME composing
-- **TEOE interface**: concrete test triples with single-op and multi-step sequence support, tags for filtering
-- **Operation × State matrix**: ~160 interesting combinations across 7 grouped sub-tables
-- **Builder helpers**: `text()`, `atom1()`, `atom2()`, `state()`, `cursor()`, `sel()`
-
-Architecture decisions made during 3d:
-- **Visible units hierarchy** adopted from WebKit's `visible_units.h` — word, line, paragraph, document as distinct granularities
-- **`execCommand`** replaces manual DOM mutation as the simulation hook for typing (exercises the real browser editing pipeline)
-- **`highlightedAtomIndices`** added to `TugTextEditingState` — atom highlight is model state, not hidden CSS state
-- **`deleteRange(start, end)`** added as the foundational deletion primitive
-- **All mutation operations made range-aware** — `insertText`, `insertAtom`, `deleteBackward`, `deleteForward` handle ranged selections correctly
-- **IME composition** included from the start, not deferred
-
-#### 3e. Text Editing Operation Examples (TEOE) ✓
-
-Concrete instances of TEOI triples with real data. Two tiers:
-
-- **Hand-written** (35): boundary cases, atom interactions, two-step deletion sequences, undo/redo chains, multiline, selection spanning atoms
-- **Generated** (23): mechanical patterns — no-ops, selection-overrides-granularity, clear, selectAll
-
-Any generated TEOE can be "promoted" to hand-written when it needs custom attention. `allTEOEs()` returns the combined collection for the test runner.
-
-Remaining TEOEs (word deletion, line deletion, paragraph deletion, transpose, kill/yank, openLine, IME) depend on the visible units layer and new engine operations — written as part of 3d-iv/3d-v below.
-
-#### 3d-i. Visible units module
-
-Build `lib/tug-text-visible-units.ts` — pure functions over `Segment[]`:
-
-- `startOfWord(segments, offset) → offset`
-- `endOfWord(segments, offset) → offset`
-- `startOfParagraph(segments, offset) → offset`
-- `endOfParagraph(segments, offset) → offset`
-- `startOfDocument() → 0`
-- `endOfDocument(segments) → flatLength`
-
-No DOM. An atom is an atomic unit — it behaves as its own word. Word boundaries at spaces, punctuation, and atom edges. Paragraph boundaries at `\n` and document edges.
-
-#### 3d-ii. Wire visible units into the engine
-
-Implement the missing operations in TugTextEngine as one-liners on top of visible units + `deleteRange`:
-
-- `deleteWordBackward` = `deleteRange(startOfWord(cursor), cursor)`
-- `deleteWordForward` = `deleteRange(cursor, endOfWord(cursor))`
-- `deleteParagraphBackward` = `deleteRange(startOfParagraph(cursor), cursor)`
-- `deleteParagraphForward` = `deleteRange(cursor, endOfParagraph(cursor))`
-- `killLine` = `deleteParagraphForward` + save to kill ring buffer
-- `yank` = `insertText(killRingContent)`
-- `transpose` = swap characters around cursor via visible units
-- `openLine` = `insertText("\n")` then move cursor back one
-
-#### 3d-iii. Handle `beforeinput` types
-
-Route the `beforeinput` inputTypes the engine currently `preventDefault()`s and drops:
-
-- `deleteWordBackward` → `deleteWordBackward()`
-- `deleteWordForward` → `deleteWordForward()`
-- `deleteSoftLineBackward` → `deleteParagraphBackward()` (soft ≡ paragraph for now)
-- `deleteSoftLineForward` → `deleteParagraphForward()` (soft ≡ paragraph for now)
-- `deleteHardLineForward` → `killLine()`
-- `insertTranspose` → `transpose()`
-- `insertFromYank` → `yank()`
-
-#### 3d-iv. Write remaining TEOEs
-
-Add TEOEs for the new operations: word deletion at word boundaries, at atom boundaries, at spaces; paragraph deletion at newlines; kill/yank sequences; transpose at various positions; openLine. Both hand-written interesting cases and generated mechanical patterns.
-
-#### 3d-v. Soft line treatment
-
-Soft line (visual wrap boundary) is distinct from paragraph (`\n` boundary). For the current non-wrapping prompt input, soft line ≡ paragraph. The `deleteSoftLineBackward` / `deleteSoftLineForward` operations route to paragraph operations. When wrapping is added later, soft line operations will need layout information (where did text wrap?) and will diverge from paragraph.
-
-#### 3f. Simulation ≡ Interactive
-
-The test harness uses `document.execCommand("insertText", false, text)` for typing simulation — this goes through the browser's actual editing pipeline (beforeinput → DOM mutation → MutationObserver → engine). The delegate API path (`insertText()`) goes through the engine directly. Both paths must produce the same `TugTextEditingState::outgoing` for the same `incoming × operation`. If they diverge, the simulation or the engine has a bug.
-
-#### 3g. Exhaustive test generation
-
-Once the TEOI framework is validated with all operations implemented, expand to 100+ TEOEs systematically. The generation framework (`generatedTEOEs()`) makes this mechanical — add new generator functions for each operation category, with promotion to hand-written for cases that need attention.
-
-**Validation:** All TEOEs pass. Manual interaction matches simulation for every tested scenario.
-
-### Pass 3h: Atom DOM Architecture Refactor
-
-**Status:** Spike complete. First implementation attempt reverted. Needs integration tests before re-attempting.
-
-#### The problem: `contentEditable="false"` breaks navigation
-
-The original atom architecture uses `<span contentEditable="false">` for atoms in the contentEditable. This prevents users from editing the atom's label text, but it causes WebKit's caret movement to skip atoms incorrectly. Arrow keys jump over atoms and land in the wrong adjacent text. Shift+selection doesn't visually highlight atoms.
-
-Spike findings (2026-04-03): verified via `Selection.modify` on hand-built editors.
-
-#### The solution: U+E100 atom character
-
-Atoms as U+E100 (Unicode Private Use Area) characters in the text flow. Browser navigates them as single characters. Spike verified: perfect arrow key, shift+select, and word-movement behavior on standalone editors.
-
-**Why U+E100 (not U+FFFC):** Non-zero rendered width (~7-9px), zero collision risk (PUA), single BMP code point. U+FFFC renders at zero width in WebKit and has collision risk.
-
-#### Target atom DOM structure
-
-```html
-<div contenteditable="true">
-  "before "                          ← text node
-  <span data-slot="tug-atom">       ← inline-flex, styled as atom badge
-    "\uE100"                         ← text node (the navigable character)
-    <span contenteditable="false">   ← visual label, not user-editable
-      "main.rs"
-    </span>
-  </span>
-  " after"                           ← text node
-</div>
-```
-
-`-webkit-user-modify: read-write-plaintext-only` stays — verified that it only strips browser-generated markup, not engine-placed spans.
-
-#### First implementation attempt (reverted)
-
-The first attempt (2026-04-04) implemented the refactor and passed all automated tests (12/12 atom DOM, 58/58 TEOE). But the interactive editor was completely broken:
-
-- Cursor stuck inside atom, couldn't navigate past with arrow keys or mouse
-- U+E100 missing-glyph character visible despite CSS Highlight API
-- `user-select: none` on `.tug-atom` CSS blocked caret entry into atom span
-- `domPosition` placed cursor inside atom span instead of adjacent text nodes
-
-**Root cause:** The automated tests were disconnected from the real editor:
-- Atom DOM tests created standalone editors without the engine — validated browser behavior, not engine integration
-- TEOE tests used `restoreState` + delegate API — never exercised the real interactive flow (keyboard → browser → MutationObserver → engine → reconcile → visual result)
-
-Both test suites passed while the product was broken. The tests validated the theory, not the reality.
-
-#### Revised approach: integration tests first
-
-Before re-attempting the refactor, build integration tests that exercise the real engine through the real editor. These tests must:
-
-1. **Use the actual engine-managed editor** — not standalone hand-built editors
-2. **Type via `execCommand`** — goes through the real browser → MutationObserver → engine pipeline
-3. **Insert atoms via the delegate API** — same as clicking "Insert Atom"
-4. **Navigate via `Selection.modify`** — programmatic equivalent of real arrow keys
-5. **Check both model state AND visual/DOM state** — not just flat offsets but actual cursor position in the DOM, actual DOM structure, actual visual rendering
-6. **Run on the interactive editor** — the one the user sees, not a hidden test editor
-
-Test scenarios that must pass before and after the refactor:
-
-| Scenario | What to verify |
-|---|---|
-| Type "hello ", insert atom | Cursor is visually after atom (not inside it). Atom renders correctly (icon + label, no glitch). |
-| Type "hello ", insert atom, press right arrow | Cursor moves past atom into trailing text. Can type after atom. |
-| Type "hello ", insert atom, press left arrow | Cursor moves to before atom (between space and atom). |
-| Type text, insert atom, type more text | All text renders correctly. Atom in correct position. Content matches `getText()`. |
-| Type text, insert atom, shift+right to select atom | Atom visually selected (highlighted). Selection range includes atom. |
-| Type text, insert atom, click after atom | Cursor positions after atom. Can type. |
-| Type text, insert atom, click before atom | Cursor positions before atom. |
-| Two-step delete: backspace at atom boundary | First backspace highlights atom. Second deletes it. |
-
-Each scenario is run on the real interactive editor and checks:
-- `getSelectedRange()` returns expected flat offset
-- `getText()` returns expected content
-- DOM cursor position (which node, which offset) is correct
-- Visual appearance matches expectations (no glitched characters, no cursor-inside-atom)
-
-#### Implementation plan (revised)
-
-1. **Build integration test suite** — `window.__runIntegrationTests()` that exercises the real editor with the scenarios above. Run on the current `contentEditable="false"` architecture. Document which tests pass and which fail (the navigation bugs).
-2. **Make the refactor** — change `createAtomDOM`, engine, CSS as planned.
-3. **Run integration tests after each change** — every step must maintain or improve the pass rate. Never proceed with a step that breaks previously-passing scenarios.
-4. **Verify interactively** — after the refactor, manually test the scenarios. If any interactive behavior doesn't match the test results, the tests are wrong and must be fixed first.
-
-### Pass 4: Add prefix detection
-
-First-character routing (`>`, `$`, `:`, `/`). This is engine-level (the engine knows the document content) with a callback to the component. The prefix character gets styled distinctly via CSS.
-
-**Validation:** Gallery card shows route detection, prefix styling, callback logging.
+- Prefix detection (first-character routing)
+- Option+Delete word/paragraph deletion via visible units + DOM traversal
+- Emacs bindings (Ctrl+K/Y/T/O) adapted for DOM-based editing
+- History navigation (up/down at document boundaries)
+- Text truncation for long atom labels
 
 ---
 
 ## Key Lessons
 
-### Lesson 1: failed first extraction attempt
+### The browser is smarter than us
 
-The first extraction attempt failed because it simultaneously: (1) extracted the engine, (2) swapped the atom DOM from spike-atom to tug-atom, and (3) changed all DOM detection selectors — without testing after step 1. The spike was left broken and the bugs were compounded by adding new features (managed arrow navigation) instead of reverting.
+We spent days building a parallel document model, reconciler, and caret fixup layer. The browser does all of this correctly for `<img>` elements. The lesson: use the browser's editing engine, don't replace it. Customize at the edges (clipboard, word boundaries, key config), not at the core (caret movement, undo, selection).
 
-**The fix:** engine and gallery card are built together in pass 1, so we have an immediate feedback loop. tug-atom integration is tested from the start — we write the engine for tug-atom from day one and fix DOM interaction issues as they surface, with a gallery card to verify every change.
+### contentEditable="false" is poison for inline elements
 
-### Lesson 2: `contentEditable="false"` is the wrong tool for atoms
+It works for block-level non-editable regions. For inline elements in a text flow, it breaks caret navigation in every browser. The entire web editing ecosystem (ProseMirror, Lexical, Slate) struggles with this. The fix: don't use it. Use `<img>` replaced elements instead.
 
-The spike used `contentEditable="false"` on atom spans to prevent label editing. This is correct for block-level non-editable regions, but wrong for inline elements that should navigate as single characters. WebKit's caret movement treats `contentEditable="false"` elements as opaque blocks — it skips them rather than stepping through them character-by-character. No CSS attribute (`user-select`, etc.) fixes this.
+### `-webkit-user-modify: read-write-plaintext-only` blocks image operations
 
-The fix: atoms are U+E100 characters in the text flow. The character provides correct navigation; the span provides visual rendering; the label's `contentEditable="false"` prevents label editing without affecting navigation.
+It strips `<img>` elements from `execCommand("insertHTML")`, breaking atom paste. It also prevents the browser from inserting images via drop. Standard contentEditable with CSS Custom Highlight suppression is the correct setup.
 
-### Lesson 3: test infrastructure before bug fixing
+### The selection guard's CSS Custom Highlights cause visual artifacts
 
-Building the TEOI/TEOE framework before fixing bugs meant we could verify fixes against a formal specification. The test automation interface (`/api/eval` → `window.__runTEOETests()`) enabled rapid iteration: make a change, run 58 tests, see results in seconds. Without this, we'd be manually testing each scenario.
+The app's selection guard paints selection via the CSS Custom Highlight API. Inside a contentEditable with images, this causes spurious selection highlighting during arrow navigation. The fix: suppress Custom Highlights inside the editor element and re-enable native `::selection`.
 
-### Lesson 4: tests must match what users see and experience
+### Tests must verify what the user sees
 
-The U+E100 atom refactor (2026-04-04) passed all automated tests but broke the interactive editor completely. Root cause: the tests were disconnected from reality.
-
-- **Atom DOM tests** created standalone editors via `document.createElement` — proved browser behavior works on bare DOM, but didn't prove the engine produces correct DOM or that the engine's event handlers, reconciler, and MutationObserver work with it.
-- **TEOE tests** used `restoreState` + delegate API — tested the engine's model layer but never the interactive pipeline (keyboard → browser → MutationObserver → engine → reconcile → visual).
-
-Both test suites validated a theory. Neither tested the product. The result: "All tests pass!" while the product was broken in the user's hands.
-
-**The fix:** Integration tests must exercise the real engine through the real editor. They must type via `execCommand` (browser pipeline), navigate via `Selection.modify` (arrow key equivalent), and check both model state and DOM/visual state. Tests that don't catch interactive bugs are not tests — they're self-congratulatory assertions about a fantasy.
-
----
-
-## Reference: Spike Architecture Summary
-
-From `t3-text-model-spike.md` — the validated patterns we're porting:
-
-1. **"Let the browser mutate, diff afterward"** — MutationObserver fast path for typing
-2. **Text-atom-text invariant** — segments always alternate, cursor always in Text node
-3. **Native browser caret** — no custom cursor rendering
-4. **Reconciliation skips composing node** — IME composition protected
-5. **`compositionEndedAt` timing window** — WebKit compositionend ordering bug
-6. **Own undo stack with immutable snapshots** — merge within 300ms
-7. **Flat offset as universal position type** — text chars = 1, atoms = 1
-8. **`-webkit-user-modify: read-write-plaintext-only`** — currently used. Verified (in spike) that it only strips browser-generated markup, not engine-placed spans. Stays unless the atom refactor proves otherwise via integration tests.
-9. **`::selection` re-enabled, `::highlight(card-selection)` suppressed** — contentEditable selection fix
+Automated tests that check model state but not visual behavior are dangerous — they pass while the product is broken. The clone-and-marker technique for caret measurement, and testing on the real interactive editor, are essential.
