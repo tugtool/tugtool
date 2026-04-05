@@ -498,10 +498,17 @@ export class TugTextEngine {
             ? (this.segments[j] as TextSegment).text.length : 1;
         }
         if (this.segments[i].kind === "text") {
-          // Clamp offset to model length — ZWSP cursor anchors in DOM
-          // can produce offset=1 for empty model segments.
-          const segLen = (this.segments[i] as TextSegment).text.length;
-          return flat + Math.min(offset, segLen);
+          const segText = (this.segments[i] as TextSegment).text;
+          const segLen = segText.length;
+          // Adjust for ZWSP cursor anchor prepended in DOM.
+          // DOM "\u200B\n..." has offset shifted by 1 vs model "\n...".
+          // DOM "\u200B" (empty model) clamps to 0.
+          const domNode = this.domNodes[i];
+          const hasZWSP = domNode instanceof Text &&
+            domNode.textContent?.charCodeAt(0) === 0x200B &&
+            (domNode.textContent?.length ?? 0) > segLen;
+          const adjustedOffset = hasZWSP ? Math.max(0, offset - 1) : offset;
+          return flat + Math.min(adjustedOffset, segLen);
         }
         // For atoms: before atom = flat, after atom = flat + 1
         return flat + (offset > 0 ? 1 : 0);
@@ -542,6 +549,19 @@ export class TugTextEngine {
         if (remaining <= len && this.domNodes[i]) {
           if (len === 0 && this.hasAdjacentAtom(i) && this.composingIndex === null) {
             return this.rootPosition(this.domNodes[i]);
+          }
+          // ZWSP prefix: DOM may have "\u200B\n..." for model "\n..." after atom.
+          // Check actual DOM content — handleMutations may have stripped the ZWSP.
+          const afterAtom = i > 0 && this.segments[i - 1]?.kind === "atom";
+          if (afterAtom && (seg as TextSegment).text.startsWith("\n") &&
+              this.composingIndex === null) {
+            const dn = this.domNodes[i];
+            const hasZWSP = dn instanceof Text &&
+              dn.textContent?.charCodeAt(0) === 0x200B;
+            if (hasZWSP) {
+              const domOffset = remaining === 0 ? 0 : remaining + 1;
+              return { node: dn, offset: domOffset };
+            }
           }
           return { node: this.domNodes[i], offset: remaining };
         }
@@ -706,14 +726,19 @@ export class TugTextEngine {
       if (seg.kind === "text") {
         let textNode: Text;
         const modelText = (seg as TextSegment).text;
-        // ZWSP cursor anchor: empty text nodes after atoms at line boundaries
+        // ZWSP cursor anchor: text nodes after atoms at line boundaries
         // get ZWSP in the DOM so the caret has something to render on.
-        const needsZWSP = modelText === "" && i > 0 &&
-          this.segments[i - 1]?.kind === "atom" &&
-          (i === this.segments.length - 1 ||
-           (this.segments[i + 1]?.kind === "text" &&
-            (this.segments[i + 1] as TextSegment).text.startsWith("\n")));
-        const domText = needsZWSP ? "\u200B" : modelText;
+        // Two cases:
+        //   1. Empty text at end of document: "" → "\u200B"
+        //   2. Text starting with \n after atom: "\n..." → "\u200B\n..."
+        const afterAtom = i > 0 && this.segments[i - 1]?.kind === "atom";
+        const needsZWSP = afterAtom && (
+          (modelText === "" && i === this.segments.length - 1) ||
+          modelText.startsWith("\n")
+        );
+        const domText = needsZWSP
+          ? (modelText === "" ? "\u200B" : "\u200B" + modelText)
+          : modelText;
         if (old instanceof Text) {
           if (old.textContent !== domText) {
             old.textContent = domText;
@@ -1362,16 +1387,17 @@ export class TugTextEngine {
         if (idx !== -1 && idx < this.segments.length && this.segments[idx].kind === "text") {
           // Normal text segment mutation.
           // Strip ZWSP cursor anchors — they exist in the DOM only, not the model.
+          const oldText = (this.segments[idx] as TextSegment).text;
           const rawText = textNode.textContent ?? "";
           const newText = rawText.replace(/\u200B/g, "");
-          // Sync DOM if ZWSP was stripped, so offsets stay aligned.
-          // Save/restore cursor since textContent assignment resets it.
           if (rawText !== newText) {
+            // Update model FIRST so flatFromDOM uses correct length for cursor
+            // offset computation, then strip ZWSP from DOM and restore cursor.
+            (this.segments[idx] as TextSegment).text = newText;
             const cursorBefore = this.saveCursorOffset();
             textNode.textContent = newText;
             if (cursorBefore !== null) this.restoreSelection(cursorBefore);
           }
-          const oldText = (this.segments[idx] as TextSegment).text;
           if (newText !== oldText) {
             if (this.composingIndex === null && !changed) this.pushUndo("type");
             (this.segments[idx] as TextSegment).text = newText;
