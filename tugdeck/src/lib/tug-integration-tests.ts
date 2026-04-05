@@ -185,6 +185,11 @@ function simulateComposition(d: TugTextInputDelegate, intermediates: string[], c
     if (!found) return; // Can't compose at this position
   }
 
+  // Strip ZWSP cursor anchors before composing — they're DOM-only rendering aids.
+  if (textNode.textContent?.includes("\u200B")) {
+    textNode.textContent = textNode.textContent.replace(/\u200B/g, "");
+    baseOffset = Math.min(baseOffset, textNode.textContent.length);
+  }
   const textBefore = textNode.textContent?.slice(0, baseOffset) ?? "";
   const textAfter = textNode.textContent?.slice(baseOffset) ?? "";
 

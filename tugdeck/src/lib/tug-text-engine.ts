@@ -497,7 +497,12 @@ export class TugTextEngine {
           flat += this.segments[j].kind === "text"
             ? (this.segments[j] as TextSegment).text.length : 1;
         }
-        if (this.segments[i].kind === "text") return flat + offset;
+        if (this.segments[i].kind === "text") {
+          // Clamp offset to model length — ZWSP cursor anchors in DOM
+          // can produce offset=1 for empty model segments.
+          const segLen = (this.segments[i] as TextSegment).text.length;
+          return flat + Math.min(offset, segLen);
+        }
         // For atoms: before atom = flat, after atom = flat + 1
         return flat + (offset > 0 ? 1 : 0);
       }
@@ -700,16 +705,34 @@ export class TugTextEngine {
 
       if (seg.kind === "text") {
         let textNode: Text;
+        const modelText = (seg as TextSegment).text;
+        // ZWSP cursor anchor: empty text nodes after atoms at line boundaries
+        // get ZWSP in the DOM so the caret has something to render on.
+        const needsZWSP = modelText === "" && i > 0 &&
+          this.segments[i - 1]?.kind === "atom" &&
+          (i === this.segments.length - 1 ||
+           (this.segments[i + 1]?.kind === "text" &&
+            (this.segments[i + 1] as TextSegment).text.startsWith("\n")));
+        const domText = needsZWSP ? "\u200B" : modelText;
         if (old instanceof Text) {
-          if (old.textContent !== (seg as TextSegment).text) {
-            old.textContent = (seg as TextSegment).text;
+          if (old.textContent !== domText) {
+            old.textContent = domText;
           }
           textNode = old;
         } else {
-          textNode = document.createTextNode((seg as TextSegment).text);
+          textNode = document.createTextNode(domText);
         }
         newNodes.push(textNode);
         domChildren.push(textNode);
+        // Cursor anchor: after empty text nodes at line boundaries following
+        // atoms, add a ce=false span so the caret doesn't drift into the badge.
+        if (needsZWSP) {
+          const anchor = document.createElement("span");
+          anchor.className = "tug-cursor-anchor";
+          anchor.contentEditable = "false";
+          anchor.textContent = " ";
+          domChildren.push(anchor);
+        }
       } else {
         // Atom: navigable U+FFFC text node + visual badge span
         let atomTextNode: Text;
@@ -723,6 +746,7 @@ export class TugTextEngine {
 
         // Badge span — visual only, not in domNodes
         domChildren.push(createAtomBadgeDOM(seg as AtomSegment));
+
       }
     }
 
@@ -1336,8 +1360,17 @@ export class TugTextEngine {
         const textNode = rec.target as Text;
         const idx = this.domNodes.indexOf(textNode as unknown as Text);
         if (idx !== -1 && idx < this.segments.length && this.segments[idx].kind === "text") {
-          // Normal text segment mutation
-          const newText = textNode.textContent ?? "";
+          // Normal text segment mutation.
+          // Strip ZWSP cursor anchors — they exist in the DOM only, not the model.
+          const rawText = textNode.textContent ?? "";
+          const newText = rawText.replace(/\u200B/g, "");
+          // Sync DOM if ZWSP was stripped, so offsets stay aligned.
+          // Save/restore cursor since textContent assignment resets it.
+          if (rawText !== newText) {
+            const cursorBefore = this.saveCursorOffset();
+            textNode.textContent = newText;
+            if (cursorBefore !== null) this.restoreSelection(cursorBefore);
+          }
           const oldText = (this.segments[idx] as TextSegment).text;
           if (newText !== oldText) {
             if (this.composingIndex === null && !changed) this.pushUndo("type");
@@ -1382,7 +1415,8 @@ export class TugTextEngine {
     for (let i = 0; i < this.root.childNodes.length; i++) {
       const child = this.root.childNodes[i];
       if (child instanceof Text) {
-        const content = child.textContent ?? "";
+        // Strip ZWSP cursor anchors — DOM-only, not in the model.
+        const content = (child.textContent ?? "").replace(/\u200B/g, "");
         // A text node containing only U+FFFC is an atom's navigable character.
         // The next sibling should be the badge span with the atom metadata.
         if (content === "\uFFFC") {

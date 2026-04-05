@@ -116,12 +116,11 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Trailing atom cursor anchor — when the document ends with an atom,
-   the browser has no visible content to anchor the caret after the badge.
-   A ::after pseudo-element with ZWSP extends the inline flow just enough
-   for the caret to land in the right place. [L06]
+   Cursor anchor — ce=false span after atom badges at line boundaries.
+   Provides visual width so the caret on the adjacent ZWSP text node
+   doesn't drift into the badge. [L06]
    --------------------------------------------------------------------------- */
 
-.tug-prompt-input-editor[data-trailing-atom="true"]::after {
-  content: "\200B";
+.tug-cursor-anchor {
+  color: transparent;
 }
