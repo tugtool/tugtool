@@ -510,80 +510,40 @@ function getCursorDOM(): { nodeName: string; offset: number; parentSlot?: string
 }
 
 /**
- * Get the caret's visual bounding rect. Returns null if no caret.
- * This is the KEY diagnostic for verifying caret placement — the
- * "fourth element" that turns TEOI triples into quads.
+ * Get the accurate visual position of the caret by cloning the editor DOM,
+ * inserting a marker at the caret position in the clone, and measuring the
+ * marker's bounding rect. This is the ONLY reliable way to get caret position
+ * in WebKit — getBoundingClientRect on the selection range lies for positions
+ * near \n characters and contentEditable=false boundaries.
+ *
+ * Returns {x, y, h, line} relative to the editor, or null if no caret.
  */
-function caretRect(): DOMRect | null {
+function getAccurateCaretPosition(d: TugTextInputDelegate): { x: number; y: number; h: number; line: number } | null {
+  const el = d.getEditorElement();
+  if (!el) return null;
   const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
-  return sel.getRangeAt(0).getBoundingClientRect();
-}
+  if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return null;
 
-/** Check if the caret is visually past (to the right of) the last atom badge. */
-function caretIsAfterLastBadge(d: TugTextInputDelegate): boolean {
-  const el = d.getEditorElement();
-  if (!el) return false;
-  const cr = caretRect();
-  if (!cr || cr.height === 0) return false;
-  const badges = el.querySelectorAll("[data-slot='tug-atom']");
-  if (badges.length === 0) return true;
-  const lastBadge = badges[badges.length - 1];
-  const badgeRect = lastBadge.getBoundingClientRect();
-  return cr.left >= badgeRect.right - 2;
-}
-
-/** Check if the caret is visually NOT inside any badge span's bounding box. */
-function caretIsOutsideAllBadges(d: TugTextInputDelegate): boolean {
-  const el = d.getEditorElement();
-  if (!el) return false;
-  const cr = caretRect();
-  if (!cr || cr.height === 0) return false;
-  const badges = el.querySelectorAll("[data-slot='tug-atom']");
-  for (let i = 0; i < badges.length; i++) {
-    const br = badges[i].getBoundingClientRect();
-    if (cr.left >= br.left && cr.left <= br.right &&
-        cr.top >= br.top && cr.top <= br.bottom) {
-      return false; // caret is inside this badge
-    }
-  }
-  return true;
-}
-
-/**
- * Get the visual line number the caret is on (0-based).
- * Inserts a temporary marker element at the caret position and measures
- * its Y coordinate. This is more reliable than getBoundingClientRect on
- * the selection range, which reports wrong positions for "after \n" carets.
- */
-function caretLineNumber(d: TugTextInputDelegate): number {
-  const el = d.getEditorElement();
-  if (!el) return -1;
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return -1;
-
-  // Find the caret's DOM position relative to the editor
   const anchorNode = sel.anchorNode;
   const anchorOffset = sel.anchorOffset;
 
-  // Build a path from anchorNode to the editor root so we can find
-  // the corresponding node in the clone.
+  // Build a child-index path from anchorNode to the editor root
   const path: number[] = [];
   let node: Node | null = anchorNode;
   while (node && node !== el) {
     const parent: Node | null = node.parentNode;
-    if (!parent) return -1;
+    if (!parent) return null;
     path.unshift(Array.from(parent.childNodes).indexOf(node as ChildNode));
     node = parent;
   }
 
-  // Clone the editor, position it identically (same size/location)
+  // Clone the editor at the same position/size
   const clone = el.cloneNode(true) as HTMLDivElement;
-  const rect = el.getBoundingClientRect();
+  const editorRect = el.getBoundingClientRect();
   clone.style.position = "fixed";
-  clone.style.left = rect.left + "px";
-  clone.style.top = rect.top + "px";
-  clone.style.width = rect.width + "px";
+  clone.style.left = editorRect.left + "px";
+  clone.style.top = editorRect.top + "px";
+  clone.style.width = editorRect.width + "px";
   clone.style.visibility = "hidden";
   document.body.appendChild(clone);
 
@@ -591,7 +551,7 @@ function caretLineNumber(d: TugTextInputDelegate): number {
   let cloneNode: Node = clone;
   for (const idx of path) {
     cloneNode = cloneNode.childNodes[idx];
-    if (!cloneNode) { clone.remove(); return -1; }
+    if (!cloneNode) { clone.remove(); return null; }
   }
 
   // Insert marker at the caret position in the clone
@@ -612,11 +572,59 @@ function caretLineNumber(d: TugTextInputDelegate): number {
   const markerRect = marker.getBoundingClientRect();
   const cloneRect = clone.getBoundingClientRect();
   const lineHeight = parseFloat(getComputedStyle(clone).lineHeight) || markerRect.height || 21;
-  const line = Math.round((markerRect.top - cloneRect.top) / lineHeight);
 
-  // Discard the clone
+  const result = {
+    x: markerRect.left - cloneRect.left,
+    y: markerRect.top - cloneRect.top,
+    h: markerRect.height,
+    line: Math.round((markerRect.top - cloneRect.top) / lineHeight),
+  };
+
   clone.remove();
-  return line;
+  return result;
+}
+
+/** Check if the caret is visually past (to the right of) the last atom badge. */
+function caretIsAfterLastBadge(d: TugTextInputDelegate): boolean {
+  const el = d.getEditorElement();
+  if (!el) return false;
+  const pos = getAccurateCaretPosition(d);
+  if (!pos || pos.h === 0) return false;
+  const badges = el.querySelectorAll("[data-slot='tug-atom']");
+  if (badges.length === 0) return true;
+  const lastBadge = badges[badges.length - 1];
+  const badgeRect = lastBadge.getBoundingClientRect();
+  const editorRect = el.getBoundingClientRect();
+  const badgeRight = badgeRect.right - editorRect.left;
+  return pos.x >= badgeRight - 2;
+}
+
+/** Check if the caret is visually NOT inside any badge span's bounding box. */
+function caretIsOutsideAllBadges(d: TugTextInputDelegate): boolean {
+  const el = d.getEditorElement();
+  if (!el) return false;
+  const pos = getAccurateCaretPosition(d);
+  if (!pos || pos.h === 0) return false;
+  const editorRect = el.getBoundingClientRect();
+  const badges = el.querySelectorAll("[data-slot='tug-atom']");
+  for (let i = 0; i < badges.length; i++) {
+    const br = badges[i].getBoundingClientRect();
+    const bLeft = br.left - editorRect.left;
+    const bRight = br.right - editorRect.left;
+    const bTop = br.top - editorRect.top;
+    const bBottom = br.bottom - editorRect.top;
+    if (pos.x >= bLeft && pos.x <= bRight &&
+        pos.y >= bTop && pos.y <= bBottom) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Get the visual line number the caret is on (0-based). */
+function caretLineNumber(d: TugTextInputDelegate): number {
+  const pos = getAccurateCaretPosition(d);
+  return pos ? pos.line : -1;
 }
 
 /** Check if the cursor is visually inside an atom span (not in adjacent text). */
