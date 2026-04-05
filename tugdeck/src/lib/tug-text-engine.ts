@@ -292,6 +292,9 @@ export class TugTextEngine {
   private _composing = false;
   private _compositionJustEnded = false;
 
+  // Emptiness flag — tracked as state, updated on input events.
+  private _empty = true;
+
   // @-trigger typeahead state
   private _typeahead = {
     active: false,
@@ -314,7 +317,7 @@ export class TugTextEngine {
   get hasMarkedText(): boolean { return this._composing; }
 
   isEmpty(): boolean {
-    return this.getText().length === 0;
+    return this._empty;
   }
 
   getText(): string {
@@ -417,6 +420,7 @@ export class TugTextEngine {
   clear(): void {
     this.cancelTypeahead();
     this.root.innerHTML = "";
+    this._empty = true;
     this.updateEmpty();
     this.onChange?.();
   }
@@ -478,6 +482,7 @@ export class TugTextEngine {
       }
     }
     this.root.innerHTML = parts.join("");
+    this._empty = state.text.length === 0;
     this.updateEmpty();
     if (state.selection) {
       this.setSelectedRange(state.selection.start, state.selection.end);
@@ -929,7 +934,18 @@ export class TugTextEngine {
     });
 
     // 9 & 10. Change detection + auto-resize + typeahead — input event
-    this.listen(root, "input", () => {
+    this.listen(root, "input", (e: Event) => {
+      const ie = e as InputEvent;
+      const inputType = ie.inputType ?? "";
+      // Track emptiness as state. Insertions → not empty.
+      // Deletions and undo/redo → re-check via getText().
+      // A lone "\n" is WebKit's trailing caret-stub BR, not user content.
+      if (inputType.startsWith("insert")) {
+        this._empty = false;
+      } else {
+        const text = this.getText();
+        this._empty = text.length === 0 || text === "\n";
+      }
       this.updateEmpty();
       this.autoResize();
       this.onChange?.();
