@@ -8,8 +8,11 @@
  * Each atom is an <img> with data attributes:
  *   data-atom-type, data-atom-label, data-atom-value
  *
- * Colors are hardcoded for now. Step 6 reads from CSS custom properties.
+ * Colors read from theme tokens via getTokenValue. SVG is regenerated
+ * on theme change (see TugTextEngine.regenerateAtoms).
  */
+
+import { getTokenValue } from "@/theme-tokens";
 
 /** Escape text for safe interpolation into SVG/XML markup. */
 function escapeSVG(s: string): string {
@@ -47,14 +50,19 @@ export function createAtomImgElement(type: string, label: string, value: string)
   const w = padding + iconSize + gap + Math.ceil(textWidth) + padding;
   const h = 22;
 
+  const bgColor = getTokenValue("--tug7-surface-atom-primary-normal-default-rest");
+  const borderColor = getTokenValue("--tug7-element-atom-border-normal-default-rest");
+  const iconColor = getTokenValue("--tug7-element-atom-icon-normal-default-rest");
+  const textColor = getTokenValue("--tug7-element-atom-text-normal-default-rest");
+
   const iconPath = ATOM_ICON_PATHS[type] ?? ATOM_ICON_PATHS.file;
-  const icon = `<g transform="translate(${padding},${(h - iconSize) / 2}) scale(${iconSize / 24})" fill="none" stroke="#8899aa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</g>`;
+  const icon = `<g transform="translate(${padding},${(h - iconSize) / 2}) scale(${iconSize / 24})" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</g>`;
 
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
-    `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="3" fill="#2a2f3a" stroke="#4a5568" stroke-width="1"/>`,
+    `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
     icon,
-    `<text x="${padding + iconSize + gap}" y="${h / 2 + fontSize * 0.36}" font-size="${fontSize}" font-family="${fontFamily}" fill="#c8d0dc">${escapeSVG(label)}</text>`,
+    `<text x="${padding + iconSize + gap}" y="${h / 2 + fontSize * 0.36}" font-size="${fontSize}" font-family="${fontFamily}" fill="${textColor}">${escapeSVG(label)}</text>`,
     `</svg>`,
   ].join("");
 
