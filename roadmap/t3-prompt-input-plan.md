@@ -311,9 +311,13 @@ Copy and cut handlers duplicate ~20 lines of clipboard-writing logic. Extract a 
 
 `tug-atom-img.ts` interpolates `label` directly into SVG `<text>` content. Characters like `<`, `>`, `&`, `"` will produce malformed SVG. Escape them.
 
-#### Sub-step 3.11: Harden domToFlat for nested nodes
+#### Sub-step 3.11: Harden flat ↔ DOM offset conversion
 
-If the selection lands inside a nested element (e.g., a `<span>` WebKit inserts during paste or undo), `domToFlat` falls through silently and returns a wrong offset. Walk up from `node` to find its root-level ancestor before matching.
+Two issues in the offset helpers:
+
+1. **`domToFlat` nested nodes:** If the selection lands inside a nested element (e.g., a `<span>` WebKit inserts during paste or undo), `domToFlat` falls through silently and returns a wrong offset. Walk up from `node` to find its root-level ancestor before matching.
+
+2. **`flatToDom` position after atom:** When `remaining === 0` on an atom/BR, the function returns `{ node: root, offset: i }` — position *before* the element. But if we consumed the atom's character to get here, we need position *after* it (`offset: i + 1`). This causes selection to land before an atom when it should land after.
 
 #### Sub-step 3.12: Delete dead code
 
