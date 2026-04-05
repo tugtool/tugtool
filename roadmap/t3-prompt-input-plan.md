@@ -168,7 +168,7 @@ The following infrastructure from the old TugTextEngine is no longer needed:
 The following was built to test and support the parallel editing engine. The engine is gone; the infrastructure goes with it.
 
 - **TEOI (Text Editing Operation Inventory)** — formal catalog of editing operations as state machine transitions on a segment model. No segment model anymore.
-- **TEOE (Text Editing Operation Examples)** — concrete test triples with incoming/outgoing `TugTextEditingState`. No `TugTextEditingState` anymore.
+- **TEOE (Text Editing Operation Examples)** — concrete test triples with incoming/outgoing `TugTextEditingState`. The TEOE framework is gone; `TugTextEditingState` itself evolves into the new persistence format (see Step 5).
 - **`tug-text-editing-operations.ts`** — the TEOI/TEOE framework, builder helpers, operation taxonomy. All of it.
 - **`tug-integration-tests.ts`** — 154 integration tests that tested the old engine's model state, domPosition, flatFromDOM, ZWSP handling, etc. Not applicable to the new architecture.
 - **`tug-text-visible-units.ts`** — visible units as pure functions over `Segment[]`. Needs reimplementation for DOM traversal if we want Option+Delete granularity.
@@ -203,7 +203,7 @@ Remove the dead code from the old engine-based architecture. This comes first so
 - Remove `loadLocalFile` method from `MainWindow.swift` (spike-only, not needed going forward)
 - Remove `/api/key` endpoint from `tugcast/src/server.rs`
 - Remove `__runIntegrationTests`, `__runTEOETests`, `__runIMETests`, `__runAtomDOMTests`, `__getTestDelegate` from gallery card (keep `/api/eval` endpoint as general debugging tool)
-- Remove old `TugTextEditingState`, `captureEditingState`, `formatEditingState` from the engine (no parallel state model)
+- Keep `TugTextEditingState`, `captureEditingState`, `formatEditingState` for now — persistence depends on them. Migrated in Step 5.
 - Clean up gallery card: remove TEOE test runner UI, atom DOM test runner UI, integration test runner buttons. Keep the spike section and the interactive editor section.
 
 ### Step 2: Strip TugTextEngine
@@ -264,12 +264,23 @@ Port the typeahead state machine. Adapted for DOM-based cursor position:
 
 ### Step 5: Persistence
 
+Migrate `TugTextEditingState` from the old segment model to the new DOM-based architecture. The persistence format evolves — it is not deleted.
+
 Serialize editor state to tugbank on meaningful changes (detected via `input` event):
 - **Not raw innerHTML** — data URIs are huge and WebKit may normalize HTML across sessions
-- Lightweight representation: `{ text: string, atoms: { position: number, type: string, label: string, value: string }[] }`
-- `text` contains plain text with U+FFFC at atom positions (same convention as before)
-- On restore: rebuild the DOM from text + atom metadata, recreating atom `<img>` elements at the correct positions
-- Cursor position: save as flat offset, restore via DOM walk
+- New format:
+  ```typescript
+  {
+    text: string,                  // plain text with U+FFFC at atom positions
+    atoms: { position: number, type: string, label: string, value: string }[],
+    selection: { start: number, end: number } | null,
+    markedText: { start: number, end: number, text: string } | null,
+  }
+  ```
+- `text` + `atoms` replace the old `segments[]` — same information, no DOM dependency
+- `selection` and `markedText` are preserved — restoring cursor position across reload is a real feature
+- On restore: rebuild the DOM from text + atom metadata, recreating atom `<img>` elements at the correct positions, then restore selection via DOM walk
+- Once the new format is working, remove the old `captureEditingState`, `formatEditingState`, `editingStatesEqual` helpers and the segment-based `TugTextEditingState`
 - Must survive reload, app quit, `just app` [L23]
 
 ### Step 6: Theme change handling
