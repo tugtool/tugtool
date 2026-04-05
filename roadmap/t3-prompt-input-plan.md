@@ -155,58 +155,129 @@ The following infrastructure from the old TugTextEngine is no longer needed:
 
 ## What We're Keeping (adapted)
 
-- **Typeahead state machine** — `@` trigger, query filtering, accept/cancel/navigate. The engine owns this because it's tightly coupled to cursor position. Adapted to work with DOM-based cursor position instead of flat offset model.
+- **Typeahead state machine** — `@` trigger, query filtering, accept/cancel/navigate. Tightly coupled to cursor position. Adapted to work with DOM-based cursor position instead of flat offset model.
 - **Completion provider interface** — `(query: string) => CompletionItem[]` callback.
 - **Drop handler interface** — `(files: FileList) => AtomSegment[]` callback.
 - **Tugbank persistence** [L23] — serialize editor innerHTML + selection. Restore on mount.
 - **Delegate API surface** — `getText()`, `getAtoms()`, `insertAtom()`, `focus()`, `clear()`, `getSelectedRange()`, `setSelectedRange()`. Implementations read/write DOM directly.
-- **Gallery card test harness** — `__runIntegrationTests`, `__getTestDelegate`, caret visual assertions.
-- **Visible units** for Option+Delete word/paragraph deletion — adapted to work with DOM traversal instead of segment model.
+
+## What We're Removing (obsolete infrastructure)
+
+The following was built to test and support the parallel editing engine. The engine is gone; the infrastructure goes with it.
+
+- **TEOI (Text Editing Operation Inventory)** — formal catalog of editing operations as state machine transitions on a segment model. No segment model anymore.
+- **TEOE (Text Editing Operation Examples)** — concrete test triples with incoming/outgoing `TugTextEditingState`. No `TugTextEditingState` anymore.
+- **`tug-text-editing-operations.ts`** — the TEOI/TEOE framework, builder helpers, operation taxonomy. All of it.
+- **`tug-integration-tests.ts`** — 154 integration tests that tested the old engine's model state, domPosition, flatFromDOM, ZWSP handling, etc. Not applicable to the new architecture.
+- **`tug-text-visible-units.ts`** — visible units as pure functions over `Segment[]`. Needs reimplementation for DOM traversal if we want Option+Delete granularity.
+- **`tug-atom-dom-tests.ts`** — tested the old ce=false badge DOM structure.
+- **`/api/eval` test pipeline** — `__runIntegrationTests`, `__runTEOETests`, `__runIMETests`, `__runAtomDOMTests`, `__getTestDelegate`. The formal test suites are removed; the `/api/eval` endpoint itself stays as a general debugging tool.
+- **`/api/key` (simulateKey)** — trusted key event simulation via NSEvent. Was needed because we intercepted arrow keys. We don't intercept basic navigation anymore.
+- **Clone-and-marker caret measurement** — was compensating for unreliable caret positioning near ce=false elements. With `<img>` atoms, caret positions correctly. If we need caret measurement later, we can rebuild it, but it's not part of the core architecture.
+
+---
+
+## Principle: the spike is frozen
+
+The IMG atom spike in `gallery-prompt-input.tsx` (the "IMG Atom Spike" section) is a **read-only reference** for the new architecture. It contains the proven patterns for atom creation, clipboard handling, drag & drop, word boundaries, key configuration, and selection guard integration.
+
+The spike is preserved exactly as-is while we clean up and reimplement. None of the fresh tug-prompt-input implementation imports or depends on the spike code. The spike is a reference, not a dependency. Implementation code goes into proper standalone component locations (`tug-prompt-input.tsx`, `tug-prompt-input.css`, and supporting modules).
+
+Once the properly-refactored tug-prompt-input is working and verified, the spike section is retired and deleted from the gallery card.
 
 ---
 
 ## Execution Order
 
-### Step 1: Strip and simplify
+### Step 1: Clean up — remove obsolete infrastructure
 
-Remove the old TugTextEngine complexity. The component becomes a thin wrapper around a contentEditable div with the seven event handlers described above. Keep the React shell (useLayoutEffect for setup, data attributes for config, imperative handle for parent access).
+Remove the dead code from the old engine-based architecture. This comes first so we have a clean codebase before building the replacement.
 
-### Step 2: Roll in spike findings
+- Delete `lib/tug-text-editing-operations.ts` (TEOI/TEOE framework)
+- Delete `lib/tug-integration-tests.ts` (old integration test suite)
+- Delete `lib/tug-atom-dom-tests.ts` (old atom DOM tests)
+- Delete `lib/tug-text-visible-units.ts` (segment-model visible units)
+- Remove `simulateKey` message handler from `MainWindow.swift` (trusted key events no longer needed)
+- Remove `/api/key` endpoint from `tugcast/src/server.rs`
+- Remove `__runIntegrationTests`, `__runTEOETests`, `__runIMETests`, `__runAtomDOMTests`, `__getTestDelegate` from gallery card (keep `/api/eval` endpoint as general debugging tool)
+- Remove old `TugTextEditingState`, `captureEditingState`, `formatEditingState` from the engine (no parallel state model)
+- Clean up gallery card: remove TEOE test runner UI, atom DOM test runner UI, integration test runner buttons. Keep the spike section and the interactive editor section.
 
-Port the spike's proven patterns into tug-prompt-input:
-- `createAtomImgElement` with canvas text measurement and SVG icons
-- Copy/cut/paste handlers with atom HTML preservation
-- Drag & drop handler
-- Option+Arrow word boundary clamping
-- Click-to-select on atom images
-- Return/Enter key configuration via data attributes
-- CSS: Custom Highlight suppression, `::selection` override, no `read-write-plaintext-only`
-- Line-height: 24px for stable layout with 22px atom images
+### Step 2: Strip TugTextEngine
 
-### Step 3: Typeahead
+Gut the engine down to what we actually need. Remove:
+- Segment array, normalizeSegments, cloneSegments
+- MutationObserver + handleMutations + rebuildFromDOM
+- Reconciler (reconcile method, domNodes, domChildren)
+- domPosition, flatFromDOM, segmentPosition, rootPosition, hasAdjacentAtom
+- ZWSP infrastructure, anchor span creation
+- Arrow key interception for basic navigation (keep Option+Arrow for word boundaries)
+- selectionchange handler for caret fixup
+- highlightedAtomIndices, two-step deletion state
+- Badge DOM creation (createAtomBadgeDOM)
+- Kill ring, transpose, openLine (reimplement later if needed, directly on DOM)
 
-Port the typeahead state machine. Adapted for DOM-based cursor position. The `@` trigger opens the popup, typing filters, Tab/Enter accepts, Escape cancels.
+Keep the shell: React component, useLayoutEffect setup, imperative handle, props interface, auto-resize, placeholder.
 
-### Step 4: Persistence
+### Step 3: Implement the new architecture
 
-Serialize editor state to tugbank on meaningful changes. Restore on mount. State = innerHTML + cursor position. Must survive reload, app quit, `just app`.
+Write the seven event handlers fresh, referencing the spike but not importing from it. Code goes into proper component locations:
 
-### Step 5: Test suite
+- **`tug-prompt-input.tsx`** — React component with contentEditable div, event handler setup in useLayoutEffect, imperative handle for parent access
+- **`tug-prompt-input.css`** — styling, `::selection` override, Custom Highlight suppression, line-height for stable layout
+- **`lib/tug-atom-img.ts`** (new) — `createAtomImgElement`, `atomImgHTML`, SVG builder, canvas text measurement, icon paths. Standalone module, no dependency on the old tug-atom badge code.
 
-Adapt the integration test suite for the new architecture:
-- Tests use `execCommand` for typing (native browser pipeline)
-- Tests use `Selection.modify` or native arrow keys for navigation
-- Caret visual assertions via clone-and-marker technique
-- All tests exercise the real editor, not a parallel model
-- Focus on user-visible behavior, not internal model state
+The seven handlers:
+1. Atom creation and insertion (via execCommand insertHTML)
+2. Clipboard (copy/cut/paste with atom preservation)
+3. Drag & drop (files → atom images at drop point)
+4. Option+Arrow (word boundary clamping at atoms)
+5. Click on atom (select entire image)
+6. Return/Enter (submit vs newline via data attributes)
+7. CSS setup (Custom Highlight suppression — in CSS file, not JS)
 
-### Step 6: Remaining features
+Read API: `getText()`, `getAtoms()`, `getSelectedRange()` — read directly from the DOM.
+
+### Step 4: Typeahead
+
+Port the typeahead state machine. Adapted for DOM-based cursor position:
+- `@` trigger detection by watching text input
+- Popup positioned near cursor
+- Completion provider callback
+- Tab/Enter accepts, Escape cancels, arrow keys navigate
+- Accepted completion → insert atom image at cursor
+
+### Step 5: Persistence
+
+Serialize editor state to tugbank on meaningful changes:
+- State = editor innerHTML + cursor position (as a DOM path or flat offset)
+- Restore on mount
+- Must survive reload, app quit, `just app` [L23]
+
+### Step 6: Testing
+
+Simple, direct tests on the real editor. No formal framework — just functions that exercise the editor and check results:
+- Type text, check DOM content
+- Insert atom, check it appears
+- Cut/paste atom, check round-trip
+- Option+Arrow near atoms, check caret position
+- Drag file, check atom created
+- Return key, check newline or submit
+
+Tests run in the gallery card on the real component. No parallel model to validate.
+
+### Step 7: Remaining features
 
 - Prefix detection (first-character routing)
-- Option+Delete word/paragraph deletion via visible units + DOM traversal
+- Option+Delete word/paragraph deletion via DOM traversal
 - Emacs bindings (Ctrl+K/Y/T/O) adapted for DOM-based editing
 - History navigation (up/down at document boundaries)
 - Text truncation for long atom labels
+- Theme token integration for atom colors
+
+### Step 8: Retire the spike
+
+Once tug-prompt-input is working and verified with all the above features, remove the spike section from the gallery card. The gallery card's interactive editor section remains as the testing surface for the real component.
 
 ---
 
