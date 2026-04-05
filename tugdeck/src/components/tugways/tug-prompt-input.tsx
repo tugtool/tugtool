@@ -28,6 +28,7 @@ import type {
   TugTextEditingState,
 } from "@/lib/tug-text-engine";
 import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
+import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 
 // Re-export for consumers that import from the component module
 export type { TugTextInputDelegate } from "@/lib/tug-text-engine";
@@ -281,6 +282,13 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         engineRef.current.dropHandler = dropHandler ?? null;
       }
     }, [dropHandler]);
+
+    // Regenerate atom images on theme change — direct DOM update [L06, L22]
+    useLayoutEffect(() => {
+      const onThemeChange = () => { engineRef.current?.regenerateAtoms(); };
+      subscribeThemeChange(onThemeChange);
+      return () => { unsubscribeThemeChange(onThemeChange); };
+    }, []);
 
     // Prevent interaction when disabled
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
