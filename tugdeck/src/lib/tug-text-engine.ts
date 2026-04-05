@@ -9,7 +9,7 @@
  */
 
 import type { AtomSegment } from "@/components/tugways/tug-atom";
-import { atomImgHTML } from "./tug-atom-img";
+import { atomImgHTML, createAtomImgElement } from "./tug-atom-img";
 
 // ===================================================================
 // Types
@@ -488,6 +488,19 @@ export class TugTextEngine {
     this.updateEmpty();
     if (state.selection) {
       this.setSelectedRange(state.selection.start, state.selection.end);
+    }
+  }
+
+  /** Regenerate all atom images with current theme colors [L23 minimal mutation]. */
+  regenerateAtoms(): void {
+    const imgs = this.root.querySelectorAll("img[data-atom-label]");
+    for (const img of imgs) {
+      const el = img as HTMLImageElement;
+      const type = el.dataset.atomType ?? "file";
+      const label = el.dataset.atomLabel ?? "";
+      const value = el.dataset.atomValue ?? "";
+      const fresh = createAtomImgElement(type, label, value);
+      el.src = fresh.src;
     }
   }
 
