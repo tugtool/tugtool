@@ -78,6 +78,12 @@ export interface TugTextInputDelegate {
   // --- Focus ---
   focus(): void;
 
+  // --- Typeahead ---
+  readonly isTypeaheadActive: boolean;
+  acceptTypeahead(): void;
+  cancelTypeahead(): void;
+  typeaheadNavigate(direction: "up" | "down"): void;
+
   // --- State management ---
   restoreState(state: TugTextEditingState): void;
 

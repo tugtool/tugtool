@@ -169,6 +169,10 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       undo() { engineRef.current?.undo(); },
       redo() { engineRef.current?.redo(); },
       focus() { engineRef.current?.root.focus(); },
+      get isTypeaheadActive() { return engineRef.current?.isTypeaheadActive ?? false; },
+      acceptTypeahead() { engineRef.current?.acceptTypeahead(); },
+      cancelTypeahead() { engineRef.current?.cancelTypeahead(); },
+      typeaheadNavigate(direction: "up" | "down") { engineRef.current?.typeaheadNavigate(direction); },
       restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
       getEditorElement() { return engineRef.current?.root ?? null; },
     }), []);
