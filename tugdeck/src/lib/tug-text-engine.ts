@@ -314,8 +314,7 @@ export class TugTextEngine {
   get hasMarkedText(): boolean { return this._composing; }
 
   isEmpty(): boolean {
-    return this.root.childNodes.length === 0
-      || (this.root.textContent === "" && this.root.querySelector("img[data-atom-label]") === null);
+    return this.getText().length === 0;
   }
 
   getText(): string {
