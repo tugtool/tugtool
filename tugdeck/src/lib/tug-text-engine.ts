@@ -1,17 +1,11 @@
 /**
- * TugTextEngine — stripped shell for tug-prompt-input.
+ * TugTextEngine — editing engine for tug-prompt-input.
  *
- * The old parallel document model (segments, reconciler, MutationObserver)
- * has been removed. This file retains the types, delegate interface,
- * persistence state, and a minimal class shell so tug-prompt-input.tsx
- * compiles. The class methods are no-op stubs.
+ * Atoms are <img> elements with SVG data URIs. All mutations go
+ * through execCommand for native undo.
  *
- * Step 3 of t3-prompt-input-plan rebuilds the engine as a thin event-
- * handling layer on top of native contentEditable with <img> atoms.
- *
- * Laws of Tug compliance:
- *   [L06] All text/atom rendering via direct DOM manipulation, no React state
- *   [L07] Engine is a stable ref; handlers access current state via `this`
+ * [L06] All text/atom rendering via direct DOM manipulation, no React state
+ * [L07] Engine is a stable ref; handlers access current state via `this`
  */
 
 import type { AtomSegment } from "@/components/tugways/tug-atom";
@@ -345,10 +339,9 @@ export class TugTextEngine {
 
   // IME composition state.
   // _composing is true between compositionstart and compositionend.
-  // _compositionJustEnded is set on compositionend and cleared at end
-  // of the event loop turn. In WebKit, the Enter that commits a Japanese
-  // IME composition arrives as a keydown after compositionend in the
-  // same turn — this flag catches it.
+  // _compositionJustEnded is set on compositionend and cleared on keyup.
+  // In WebKit, the Enter that commits a Japanese IME composition arrives
+  // as a keydown after compositionend — this flag catches it.
   private _composing = false;
   private _compositionJustEnded = false;
 

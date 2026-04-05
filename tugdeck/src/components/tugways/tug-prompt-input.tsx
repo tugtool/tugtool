@@ -3,7 +3,7 @@
  *
  * Wraps TugTextEngine in a React-compliant shell. The contentEditable
  * div is internal — the consumer interacts via props and imperative handle.
- * Atoms are rendered by TugTextEngine using tug-atom's createAtomDOM (T3.1).
+ * Atoms are <img> elements with SVG data URIs (see lib/tug-atom-img.ts).
  *
  * Laws: [L01] single mount, [L03] useLayoutEffect for registrations,
  *        [L06] appearance via CSS, [L07] stable refs,
