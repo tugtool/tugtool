@@ -66,10 +66,6 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   onChange?: () => void;
   /**
-   * Called when the engine logs a debug event.
-   */
-  onLog?: (msg: string) => void;
-  /**
    * Completion provider for @-trigger typeahead.
    */
   completionProvider?: CompletionProvider;
@@ -134,7 +130,6 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     numpadEnterAction = "submit",
     onSubmit,
     onChange,
-    onLog,
     completionProvider,
     onTypeaheadChange,
     dropHandler,
@@ -185,11 +180,9 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     // Stable callback refs — engine reads these via closure over refs [L07]
     const onSubmitRef = useRef(onSubmit);
     const onChangeRef = useRef(onChange);
-    const onLogRef = useRef(onLog);
     const onTypeaheadChangeRef = useRef(onTypeaheadChange);
     useLayoutEffect(() => { onSubmitRef.current = onSubmit; }, [onSubmit]);
     useLayoutEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-    useLayoutEffect(() => { onLogRef.current = onLog; }, [onLog]);
     useLayoutEffect(() => { onTypeaheadChangeRef.current = onTypeaheadChange; }, [onTypeaheadChange]);
 
     // Mount engine once [L01, L03]
@@ -207,7 +200,6 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       // Wire callbacks through refs so they always call the latest prop
       engine.onSubmit = () => onSubmitRef.current?.();
       engine.onChange = () => onChangeRef.current?.();
-      engine.onLog = (msg) => onLogRef.current?.(msg);
       engine.onTypeaheadChange = (active, filtered, selectedIndex) => {
         onTypeaheadChangeRef.current?.(active, filtered, selectedIndex);
         // Direct DOM update for completion popup [L06]

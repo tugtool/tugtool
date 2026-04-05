@@ -279,7 +279,6 @@ export class TugTextEngine {
   // Callbacks — wired by tug-prompt-input.tsx
   onSubmit: (() => void) | null = null;
   onChange: (() => void) | null = null;
-  onLog: ((msg: string) => void) | null = null;
   onTypeaheadChange: ((active: boolean, filtered: CompletionItem[], selectedIndex: number) => void) | null = null;
 
   // Event handler references for teardown
@@ -688,7 +687,6 @@ export class TugTextEngine {
       if (this._typeahead.active) return;
       if (ke.isComposing || this.hasMarkedText || this._compositionJustEnded) return;
 
-      ke.preventDefault();
       const isNumpad = ke.code === "NumpadEnter";
       const baseAction = isNumpad ? this.numpadEnterAction : this.returnAction;
       const action = ke.shiftKey
@@ -696,10 +694,11 @@ export class TugTextEngine {
         : baseAction;
 
       if (action === "submit") {
+        ke.preventDefault();
         this.onSubmit?.();
-      } else {
-        document.execCommand("insertLineBreak");
       }
+      // For newline: let the browser handle it natively — no preventDefault,
+      // no execCommand. WebKit inserts a <br> or splits the block naturally.
     });
 
     // 1b. Ctrl+U — kill line backward (not handled natively by WebKit contentEditable)

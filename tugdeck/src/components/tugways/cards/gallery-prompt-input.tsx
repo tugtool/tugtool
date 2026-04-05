@@ -2,16 +2,16 @@
  * gallery-prompt-input.tsx -- TugPromptInput gallery card.
  *
  * Testing surface for the tug-prompt-input component. Includes:
- * - Interactive editor with diagnostics and event log
+ * - Interactive editor with atom insertion, typeahead, drag-and-drop
  * - IMG atom spike (read-only reference for new architecture)
  * - Key configuration for Return/Enter
  *
  * Laws of Tug compliance:
  *   [L01] One root.render() at mount — component manages engine internally
- *   [L06] Diagnostics and log are direct DOM writes, no React state
+ *   [L06] Appearance via CSS and DOM, never React state
  */
 
-import React, { useRef, useLayoutEffect, useCallback, useState } from "react";
+import React, { useRef, useCallback, useState } from "react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -138,77 +138,13 @@ const ENTER_CHOICES: TugChoiceItem[] = [
 
 export function GalleryPromptInput() {
   const inputRef = useRef<TugTextInputDelegate>(null);
-  const diagRef = useRef<HTMLPreElement>(null);
-  const logRef = useRef<HTMLDivElement>(null);
   const nextAtomIdx = useRef(0);
   const [returnAction, setReturnAction] = useState<InputAction>("submit");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
 
-  // Log — direct DOM write [L06]
-  const appendLog = useCallback((msg: string) => {
-    const el = logRef.current;
-    if (!el) return;
-    const line = document.createElement("div");
-    line.textContent = msg;
-    el.appendChild(line);
-    while (el.childNodes.length > 30) el.removeChild(el.firstChild!);
-    el.scrollTop = el.scrollHeight;
-  }, []);
-
-  const clearLog = useCallback(() => {
-    const el = logRef.current;
-    if (el) el.textContent = "";
-  }, []);
-
-  const copyLog = useCallback(() => {
-    const el = logRef.current;
-    if (!el) return;
-    const text = Array.from(el.children).map(c => c.textContent).join("\n");
-    navigator.clipboard.writeText(text);
-  }, []);
-
-  // Diagnostics — direct DOM write [L06]
-  const updateDiagnostics = useCallback(() => {
-    const delegate = inputRef.current;
-    const el = diagRef.current;
-    if (!delegate || !el) return;
-
-    const range = delegate.getSelectedRange();
-    const rangeStr = range
-      ? (range.start === range.end
-        ? `{${range.start}}` : `{${range.start}, ${range.end}}`)
-      : "null";
-    const collapsed = range ? range.start === range.end : false;
-    const atoms = delegate.getAtoms();
-    const text = delegate.getText();
-
-    el.textContent = [
-      `selectedRange: ${rangeStr}${collapsed ? " (collapsed)" : ""}`,
-      `hasMarkedText: ${delegate.hasMarkedText}`,
-      `length: ${text.length} | atoms: ${atoms.length} | empty: ${delegate.isEmpty()}`,
-    ].join("\n");
-  }, []);
-
-  useLayoutEffect(() => {
-    const onSelChange = () => {
-      if (inputRef.current) updateDiagnostics();
-    };
-    document.addEventListener("selectionchange", onSelChange);
-    return () => document.removeEventListener("selectionchange", onSelChange);
-  }, [updateDiagnostics]);
-
   const handleSubmit = useCallback(() => {
-    const delegate = inputRef.current;
-    if (!delegate) return;
-    const text = delegate.getText().trim();
-    const atoms = delegate.getAtoms().map(a => a.label);
-    appendLog(`submit: "${text}" atoms=[${atoms.join(", ")}]`);
-    delegate.clear();
-  }, [appendLog]);
-
-  const handleChange = useCallback(() => {
-    updateDiagnostics();
-  }, [updateDiagnostics]);
+    inputRef.current?.clear();
+  }, []);
 
   const handleInsertAtom = useCallback(() => {
     const delegate = inputRef.current;
@@ -224,18 +160,15 @@ export function GalleryPromptInput() {
     if (!delegate) return;
     delegate.clear();
     delegate.focus();
-    clearLog();
-  }, [clearLog]);
+  }, []);
 
   const handleReturnAction = useCallback((value: string) => {
     setReturnAction(value as InputAction);
-    appendLog(`return: ${value}, shift+return: ${value === "submit" ? "newline" : "submit"}`);
-  }, [appendLog]);
+  }, []);
 
   const handleEnterAction = useCallback((value: string) => {
     setEnterAction(value as InputAction);
-    appendLog(`numpad enter: ${value}, shift+enter: ${value === "submit" ? "newline" : "submit"}`);
-  }, [appendLog]);
+  }, []);
 
   // --- Test harness ---
 
@@ -528,12 +461,9 @@ export function GalleryPromptInput() {
           returnAction={returnAction}
           numpadEnterAction={enterAction}
           onSubmit={handleSubmit}
-          onChange={handleChange}
-          onLog={appendLog}
           completionProvider={galleryCompletionProvider}
           dropHandler={galleryDropHandler}
         />
-        <pre ref={diagRef} className="prompt-input-diagnostics" />
       </div>
 
       <div className="cg-divider" />
@@ -554,18 +484,6 @@ export function GalleryPromptInput() {
             Shift always inverts. hasMarkedText=true → key goes to IME.
           </div>
         </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Event Log ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Event Log</div>
-        <div className="prompt-input-toolbar" style={{ marginBottom: "4px" }}>
-          <TugPushButton size="sm" emphasis="ghost" onClick={clearLog}>Clear Log</TugPushButton>
-          <TugPushButton size="sm" emphasis="ghost" onClick={copyLog}>Copy Log</TugPushButton>
-        </div>
-        <div ref={logRef} className="prompt-input-log" />
       </div>
 
     </div>
