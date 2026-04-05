@@ -13,8 +13,9 @@
  */
 
 import "./tug-prompt-input.css";
+import "./tug-completion-menu.css";
 
-import React, { useRef, useState, useLayoutEffect, useImperativeHandle, useCallback } from "react";
+import React, { useRef, useLayoutEffect, useImperativeHandle, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { TugTextEngine } from "@/lib/tug-text-engine";
 import type {
@@ -26,7 +27,6 @@ import type {
   TugTextInputDelegate,
   TugTextEditingState,
 } from "@/lib/tug-text-engine";
-import { TugCompletionMenu } from "@/components/tugways/tug-completion-menu";
 import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
 
 // Re-export for consumers that import from the component module
@@ -73,7 +73,8 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   completionProvider?: CompletionProvider;
   /**
-   * Called when typeahead state changes — parent renders the popup.
+   * Called when typeahead state changes. The popup is rendered internally;
+   * this callback is for external observers of typeahead state.
    */
   onTypeaheadChange?: (active: boolean, filtered: CompletionItem[], selectedIndex: number) => void;
   /**
@@ -143,12 +144,8 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
   }: TugPromptInputProps, ref) {
     const editorRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const completionRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<TugTextEngine | null>(null);
-    const [completionState, setCompletionState] = useState<{
-      items: CompletionItem[];
-      selectedIndex: number;
-      anchorRect: DOMRect | null;
-    } | null>(null);
 
     // Expose TugTextInputDelegate — the UITextInput-inspired API [L07]
     useImperativeHandle(ref, () => ({
@@ -212,12 +209,36 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       engine.onLog = (msg) => onLogRef.current?.(msg);
       engine.onTypeaheadChange = (active, filtered, selectedIndex) => {
         onTypeaheadChangeRef.current?.(active, filtered, selectedIndex);
-        if (active && filtered.length > 0) {
-          const sel = window.getSelection();
-          const rect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null;
-          setCompletionState({ items: filtered, selectedIndex, anchorRect: rect });
-        } else {
-          setCompletionState(null);
+        // Direct DOM update for completion popup [L06]
+        const popup = completionRef.current;
+        const container = containerRef.current;
+        if (!popup) return;
+        if (!active || filtered.length === 0) {
+          popup.style.display = "none";
+          return;
+        }
+        popup.style.display = "block";
+        popup.innerHTML = "";
+        filtered.forEach((item, i) => {
+          const div = document.createElement("div");
+          div.className = "tug-completion-menu-item" +
+            (i === selectedIndex ? " tug-completion-menu-item-selected" : "");
+          const label = document.createElement("span");
+          label.className = "tug-completion-menu-label";
+          label.textContent = item.label;
+          div.appendChild(label);
+          div.addEventListener("pointerdown", (e) => {
+            e.preventDefault(); // Don't steal focus from editor
+            engine.acceptTypeahead(i);
+          });
+          popup.appendChild(div);
+        });
+        // Position at the @ anchor rect
+        const anchorRect = engine.typeaheadAnchorRect;
+        if (anchorRect && container) {
+          const containerRect = container.getBoundingClientRect();
+          popup.style.left = `${anchorRect.left - containerRect.left}px`;
+          popup.style.bottom = `${containerRect.bottom - anchorRect.top + 4}px`;
         }
       };
 
@@ -261,10 +282,6 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       }
     }, [dropHandler]);
 
-    const handleAcceptCompletion = useCallback((index: number) => {
-      engineRef.current?.acceptTypeahead(index);
-    }, []);
-
     // Prevent interaction when disabled
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
       if (disabled) e.preventDefault();
@@ -298,15 +315,12 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
           autoCapitalize="off"
           suppressContentEditableWarning
         />
-        {completionState && (
-          <TugCompletionMenu
-            items={completionState.items}
-            selectedIndex={completionState.selectedIndex}
-            onAccept={handleAcceptCompletion}
-            anchorRect={completionState.anchorRect}
-            containerRef={containerRef}
-          />
-        )}
+        <div
+          ref={completionRef}
+          data-slot="tug-completion-menu"
+          className="tug-completion-menu"
+          style={{ display: "none" }}
+        />
       </div>
     );
   }

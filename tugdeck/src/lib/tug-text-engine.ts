@@ -153,12 +153,13 @@ function domToText(root: HTMLElement): string {
 
 /**
  * Convert a flat character offset to a DOM position (node, offset)
- * within root's direct children.
+ * suitable for Range.setStart/setEnd.
  *
- * Returns { node, offset } suitable for Range.setStart/setEnd.
  * If the flat offset lands inside a text node, node is the text node
  * and offset is the character offset within it. If it lands on an
- * atom or BR, node is root and offset is the child index.
+ * atom or BR, node is the parent and offset is the child index.
+ * Unknown element wrappers (e.g., <span> from WebKit paste/undo) are
+ * recursed into.
  */
 function flatToDom(root: HTMLElement, flat: number): { node: Node; offset: number } {
   let remaining = flat;
@@ -175,6 +176,13 @@ function flatToDom(root: HTMLElement, flat: number): { node: Node; offset: numbe
         return { node: root, offset: i };
       }
       remaining -= 1;
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      // Unknown wrapper element — recurse into it
+      const textLen = (child.textContent ?? "").length;
+      if (remaining <= textLen) {
+        return flatToDom(child as HTMLElement, remaining);
+      }
+      remaining -= textLen;
     }
   }
   // Past the end — return position after last child
@@ -290,6 +298,7 @@ export class TugTextEngine {
     active: false,
     query: "",
     anchorOffset: 0,
+    anchorRect: null as DOMRect | null,
     filtered: [] as CompletionItem[],
     selectedIndex: 0,
   };
@@ -456,25 +465,26 @@ export class TugTextEngine {
   }
 
   restoreState(state: TugTextEditingState): void {
-    let html = "";
+    this.cancelTypeahead();
+    const parts: string[] = [];
     let atomIdx = 0;
     for (let i = 0; i < state.text.length; i++) {
       const ch = state.text[i];
       if (ch === "\uFFFC" && atomIdx < state.atoms.length) {
         const a = state.atoms[atomIdx];
-        html += atomImgHTML(a.type, a.label, a.value);
+        parts.push(atomImgHTML(a.type, a.label, a.value));
         atomIdx++;
       } else if (ch === "\n") {
-        html += "<br>";
+        parts.push("<br>");
       } else if (ch === "<") {
-        html += "&lt;";
+        parts.push("&lt;");
       } else if (ch === "&") {
-        html += "&amp;";
+        parts.push("&amp;");
       } else {
-        html += ch;
+        parts.push(ch);
       }
     }
-    this.root.innerHTML = html;
+    this.root.innerHTML = parts.join("");
     this.updateEmpty();
     if (state.selection) {
       this.setSelectedRange(state.selection.start, state.selection.end);
@@ -539,8 +549,13 @@ export class TugTextEngine {
     const text = this.getText();
     if (text[range.start - 1] !== "@") return;
 
+    // Capture the caret rect at the @ position for popup anchoring
+    const sel = window.getSelection();
+    const anchorRect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null;
+
     this._typeahead.active = true;
     this._typeahead.anchorOffset = range.start - 1;
+    this._typeahead.anchorRect = anchorRect;
     this._typeahead.query = "";
     this._typeahead.filtered = this.completionProvider!("");
     this._typeahead.selectedIndex = 0;
@@ -620,6 +635,9 @@ export class TugTextEngine {
 
   /** Whether the typeahead popup is active. */
   get isTypeaheadActive(): boolean { return this._typeahead.active; }
+
+  /** The caret rect captured at @ trigger time, for popup anchoring. */
+  get typeaheadAnchorRect(): DOMRect | null { return this._typeahead.anchorRect; }
 
   // =================================================================
   // Event handling — setup and teardown
