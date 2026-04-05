@@ -289,6 +289,45 @@ Called from constructor, cleaned up in `teardown()`. All proven in the spike:
 - `bun run check` passes
 - Gallery card renders working editor: type text, insert atoms via button, copy/paste atoms, drag files, Option+Arrow stops at atoms, click atom selects it, Return submits
 
+#### Sub-step 3.6: Fix stale docstrings
+
+- `tug-text-engine.ts` module docstring still says "stripped shell" and "no-op stubs" — rewrite to describe the DOM-based implementation
+- `tug-prompt-input.tsx` line 6 references `tug-atom's createAtomDOM (T3.1)` — update to reflect `<img>` atom architecture
+- `_compositionJustEnded` comment says "cleared at end of the event loop turn" — update to say "cleared on keyup"
+
+#### Sub-step 3.7: Fix LINE_HEIGHT mismatch
+
+`tug-prompt-input.tsx` has `const LINE_HEIGHT = 21` but CSS sets `line-height: 24px`. The constant is used for `maxHeight` calculation. Fix to `24`.
+
+#### Sub-step 3.8: Wire the dropHandler prop
+
+The drop event handler in `setupEvents` hardcodes file-to-atom conversion. It never calls `this.dropHandler`. When a `dropHandler` prop is provided, delegate to it. Keep the hardcoded logic as the fallback when no handler is set.
+
+#### Sub-step 3.9: Extract shared clipboard helper
+
+Copy and cut handlers duplicate ~20 lines of clipboard-writing logic. Extract a private method (e.g., `writeSelectionToClipboard`) called by both.
+
+#### Sub-step 3.10: Escape SVG label text
+
+`tug-atom-img.ts` interpolates `label` directly into SVG `<text>` content. Characters like `<`, `>`, `&`, `"` will produce malformed SVG. Escape them.
+
+#### Sub-step 3.11: Harden domToFlat for nested nodes
+
+If the selection lands inside a nested element (e.g., a `<span>` WebKit inserts during paste or undo), `domToFlat` falls through silently and returns a wrong offset. Walk up from `node` to find its root-level ancestor before matching.
+
+#### Sub-step 3.12: Delete dead code
+
+- Remove `flushMutations()` from `TugTextEngine` and `TugTextInputDelegate`. No MutationObserver means no flush. No "no-op for API compatibility" — dead code gets deleted.
+- Remove `flushMutations()` call from `tug-prompt-input.tsx` imperative handle.
+- Remove `getHighlightedAtomIndices` / `setHighlightedAtomIndices` — two-step deletion is gone, highlighted atom indices are vestigial. Remove from delegate interface, engine, and imperative handle.
+- Remove `canUndo` / `canRedo` — browser's `execCommand("undo")` silently no-ops when there's nothing to undo, and we can't query the browser's undo state. Lying about it is worse than not exposing it. Remove from delegate interface, engine, and imperative handle.
+- Audit for any other dead delegate methods that have no real implementation.
+
+#### Sub-step 3.13: Minor cleanup
+
+- `measureTextWidth` in `tug-atom-img.ts` is exported but only used internally — make it module-private.
+- Option+Arrow handler should also check `_compositionJustEnded` for consistency with Enter handler.
+
 #### What Step 3 does NOT build
 
 - Typeahead (Step 4)
@@ -302,7 +341,7 @@ Called from constructor, cleaned up in `teardown()`. All proven in the spike:
 - **`execCommand` for everything** — typing, insertions, deletions all go through the browser's editing pipeline. Native undo for free.
 - **DOM is truth** — `getText()`, `getAtoms()`, `getSelectedRange()` read from the DOM every time. No caching, no stale state.
 - **IME: don't touch it** — every keydown handler checks `e.isComposing`. We never intercept basic arrow keys or typing. Browser handles IME natively.
-- **No `flushMutations()`** — no MutationObserver. The method stays as a no-op for API compatibility.
+- **Dead code gets deleted.** No no-op stubs for API compatibility. If it doesn't do anything, it doesn't exist.
 
 ### Step 4: Typeahead
 
