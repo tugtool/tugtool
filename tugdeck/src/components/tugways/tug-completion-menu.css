@@ -1,0 +1,77 @@
+/* @tug-pairings {
+  --tug7-element-global-text-normal-default-rest     | --tug7-surface-global-primary-normal-overlay-rest | content
+  --tug7-element-global-text-normal-muted-rest       | --tug7-surface-global-primary-normal-overlay-rest | informational
+  --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-overlay-rest | informational
+  --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-global-primary-normal-overlay-rest | content
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                            | Surface                                           | Role          | Context                                              |
+ * |----------------------------------------------------|---------------------------------------------------|---------------|------------------------------------------------------|
+ * | --tug7-element-global-text-normal-default-rest     | --tug7-surface-global-primary-normal-overlay-rest  | content       | .tug-completion-menu-item (color)                    |
+ * | --tug7-element-global-text-normal-muted-rest       | --tug7-surface-global-primary-normal-overlay-rest  | informational | .tug-completion-menu-item atom type icon (color)     |
+ * | --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-overlay-rest  | informational | .tug-completion-menu (border-color)                  |
+ * | --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-global-primary-normal-overlay-rest  | content       | .tug-completion-menu-item-selected (background-color)|
+ */
+
+/* ---------------------------------------------------------------------------
+   Root container — floating panel
+   --------------------------------------------------------------------------- */
+
+.tug-completion-menu {
+  position: absolute;
+  z-index: 50;
+  min-width: 200px;
+  max-width: 400px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-overlay-rest */
+  background-color: var(--tug7-surface-global-primary-normal-overlay-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  box-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Item — rest state
+   --------------------------------------------------------------------------- */
+
+.tug-completion-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--tug-radius-xs);
+  cursor: pointer;
+  font-size: 13px;
+  /* @tug-renders-on: --tug7-surface-global-primary-normal-overlay-rest */
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Item — hover state
+   --------------------------------------------------------------------------- */
+
+.tug-completion-menu-item:hover {
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Item — selected state (keyboard navigation)
+   --------------------------------------------------------------------------- */
+
+.tug-completion-menu-item-selected {
+  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+}
+
+/* ---------------------------------------------------------------------------
+   Item label
+   --------------------------------------------------------------------------- */
+
+.tug-completion-menu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
