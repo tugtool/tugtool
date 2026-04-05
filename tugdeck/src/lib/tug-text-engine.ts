@@ -343,6 +343,15 @@ export class TugTextEngine {
   // Event handler references for teardown
   private _handlers: Array<{ target: EventTarget; type: string; fn: EventListener; capture?: boolean }> = [];
 
+  // IME composition state.
+  // _composing is true between compositionstart and compositionend.
+  // _compositionJustEnded is set on compositionend and cleared at end
+  // of the event loop turn. In WebKit, the Enter that commits a Japanese
+  // IME composition arrives as a keydown after compositionend in the
+  // same turn — this flag catches it.
+  private _composing = false;
+  private _compositionJustEnded = false;
+
   constructor(root: HTMLDivElement) {
     this.root = root;
     this.setupEvents();
@@ -352,7 +361,7 @@ export class TugTextEngine {
   // Document content — read directly from DOM
   // =================================================================
 
-  get hasMarkedText(): boolean { return false; }
+  get hasMarkedText(): boolean { return this._composing; }
 
   isEmpty(): boolean {
     return this.root.childNodes.length === 0
@@ -551,7 +560,7 @@ export class TugTextEngine {
     this.listen(root, "keydown", (e: Event) => {
       const ke = e as KeyboardEvent;
       if (ke.key !== "Enter") return;
-      if (ke.isComposing) return;
+      if (ke.isComposing || this.hasMarkedText || this._compositionJustEnded) return;
 
       ke.preventDefault();
       const isNumpad = ke.code === "NumpadEnter";
@@ -756,6 +765,19 @@ export class TugTextEngine {
       this.updateEmpty();
       this.autoResize();
       this.onChange?.();
+    });
+
+    // 11. IME composition tracking
+    this.listen(root, "compositionstart", () => { this._composing = true; });
+    this.listen(root, "compositionend", () => {
+      this._composing = false;
+      this._compositionJustEnded = true;
+    });
+    // Clear the compositionJustEnded flag on the next keyup.
+    // The Enter that committed the composition produces keydown then keyup —
+    // by keyup the flag has served its purpose.
+    this.listen(root, "keyup", () => {
+      if (this._compositionJustEnded) this._compositionJustEnded = false;
     });
   }
 
