@@ -548,13 +548,65 @@ Post-implementation audit found six issues:
 
 ### Step 6: Theme change handling
 
-Atom SVG colors are baked into the data URI at creation time. When the theme changes:
-- Walk the DOM for all `img[data-atom-label]` elements
-- Read the atom metadata from data attributes
-- Rebuild each atom's SVG with the new theme colors
-- Replace the `src` attribute
+Atom SVG colors are baked into `<img src="data:image/svg+xml,...">` data URIs at creation time. CSS custom property changes (from theme switching) don't reach inside data URIs. When the theme changes, all atom images must be regenerated with the new colors.
 
-This can be triggered by a theme change observer or callback from the theme system.
+#### Sub-step 6.1: Create `theme-tokens.ts` module
+
+New module: `tugdeck/src/theme-tokens.ts` — runtime API for the theme token system. Consolidates token value reading and theme change observation into one place.
+
+```typescript
+/** Read the current resolved value of a CSS custom property. */
+getTokenValue(tokenName: string): string
+
+/** Subscribe to theme change notifications. */
+subscribeThemeChange(callback: () => void): void
+
+/** Unsubscribe from theme change notifications. */
+unsubscribeThemeChange(callback: () => void): void
+
+/** Called by the theme provider when the theme changes. */
+notifyThemeChange(): void
+```
+
+- `getTokenValue` encapsulates `getComputedStyle` — callers never see it
+- Theme change observers backed by a `Set<() => void>`
+- `notifyThemeChange` called by `TugThemeProvider` alongside its existing `setThemeState` call
+- Gives non-React code a direct path to observe theme changes [L22]
+
+#### Sub-step 6.2: Wire theme provider to `notifyThemeChange`
+
+Update `theme-provider.tsx` to call `notifyThemeChange()` from `theme-tokens.ts` when the theme changes. One line added to the `setTheme` flow.
+
+#### Sub-step 6.3: Read atom colors from tokens
+
+Update `createAtomImgElement` in `tug-atom-img.ts` to read colors via `getTokenValue`:
+- Background: `getTokenValue('--tug7-surface-atom-primary-normal-default-rest')`
+- Border: `getTokenValue('--tug7-element-atom-border-normal-default-rest')`
+- Icon stroke: `getTokenValue('--tug7-element-atom-icon-normal-default-rest')`
+- Label text: `getTokenValue('--tug7-element-atom-text-normal-default-rest')`
+
+Remove the hardcoded hex values. After this sub-step, newly created atoms pick up the current theme's colors. Existing atoms in the DOM still show old colors until regenerated.
+
+#### Sub-step 6.4: Add `regenerateAtoms()` to the engine
+
+A method on `TugTextEngine` that walks all `img[data-atom-label]` elements in the editor, reads their data attributes, builds a new SVG data URI with current theme colors via `createAtomImgElement`, and updates the existing `<img>` element's `src` attribute.
+
+- **Minimal mutation [L23]:** Update `src` on the existing `<img>` — do not remove/insert DOM nodes. The element stays in place, selection is undisturbed.
+- **Not via execCommand:** This is appearance, not user editing. The undo stack must not be touched.
+
+#### Sub-step 6.5: Wire theme change to engine
+
+`TugPromptInput` subscribes via `subscribeThemeChange` in a `useLayoutEffect`:
+- On theme change, call `engine.regenerateAtoms()`
+- Teardown calls `unsubscribeThemeChange`
+- No React state, no re-render — direct DOM update in the callback [L22]
+
+#### Sub-step 6.6: Verify
+
+- Switch between brio and harmony themes — atom colors update immediately
+- Create new atoms after theme switch — they use the new theme's colors
+- Undo after theme switch — content is undone, atom colors remain current theme
+- `bun run check` passes
 
 ### Step 7: Testing
 
