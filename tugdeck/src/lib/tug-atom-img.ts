@@ -29,7 +29,7 @@ const ATOM_ICON_PATHS: Record<string, string> = {
 let _measureCanvas: HTMLCanvasElement | null = null;
 
 /** Measure text width using Canvas 2D API. */
-export function measureTextWidth(text: string, font: string): number {
+function measureTextWidth(text: string, font: string): number {
   if (!_measureCanvas) _measureCanvas = document.createElement("canvas");
   const ctx = _measureCanvas.getContext("2d")!;
   ctx.font = font;

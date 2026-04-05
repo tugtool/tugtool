@@ -635,7 +635,7 @@ export class TugTextEngine {
     this.listen(root, "keydown", (e: Event) => {
       const ke = e as KeyboardEvent;
       if ((ke.key !== "ArrowLeft" && ke.key !== "ArrowRight") || !ke.altKey || ke.metaKey || ke.ctrlKey) return;
-      if (ke.isComposing) return;
+      if (ke.isComposing || this._compositionJustEnded) return;
 
       ke.preventDefault();
       const sel = window.getSelection();
