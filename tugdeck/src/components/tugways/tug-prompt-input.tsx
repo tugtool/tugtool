@@ -14,7 +14,7 @@
 
 import "./tug-prompt-input.css";
 
-import React, { useRef, useLayoutEffect, useImperativeHandle, useCallback } from "react";
+import React, { useRef, useState, useLayoutEffect, useImperativeHandle, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { TugTextEngine } from "@/lib/tug-text-engine";
 import type {
@@ -26,6 +26,7 @@ import type {
   TugTextInputDelegate,
   TugTextEditingState,
 } from "@/lib/tug-text-engine";
+import { TugCompletionMenu } from "@/components/tugways/tug-completion-menu";
 import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
 
 // Re-export for consumers that import from the component module
@@ -141,7 +142,13 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     ...rest
   }: TugPromptInputProps, ref) {
     const editorRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<TugTextEngine | null>(null);
+    const [completionState, setCompletionState] = useState<{
+      items: CompletionItem[];
+      selectedIndex: number;
+      anchorRect: DOMRect | null;
+    } | null>(null);
 
     // Expose TugTextInputDelegate — the UITextInput-inspired API [L07]
     useImperativeHandle(ref, () => ({
@@ -170,7 +177,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       redo() { engineRef.current?.redo(); },
       focus() { engineRef.current?.root.focus(); },
       get isTypeaheadActive() { return engineRef.current?.isTypeaheadActive ?? false; },
-      acceptTypeahead() { engineRef.current?.acceptTypeahead(); },
+      acceptTypeahead(index?: number) { engineRef.current?.acceptTypeahead(index); },
       cancelTypeahead() { engineRef.current?.cancelTypeahead(); },
       typeaheadNavigate(direction: "up" | "down") { engineRef.current?.typeaheadNavigate(direction); },
       restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
@@ -203,8 +210,16 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       engine.onSubmit = () => onSubmitRef.current?.();
       engine.onChange = () => onChangeRef.current?.();
       engine.onLog = (msg) => onLogRef.current?.(msg);
-      engine.onTypeaheadChange = (active, filtered, selectedIndex) =>
+      engine.onTypeaheadChange = (active, filtered, selectedIndex) => {
         onTypeaheadChangeRef.current?.(active, filtered, selectedIndex);
+        if (active && filtered.length > 0) {
+          const sel = window.getSelection();
+          const rect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null;
+          setCompletionState({ items: filtered, selectedIndex, anchorRect: rect });
+        } else {
+          setCompletionState(null);
+        }
+      };
 
       engineRef.current = engine;
 
@@ -246,6 +261,10 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       }
     }, [dropHandler]);
 
+    const handleAcceptCompletion = useCallback((index: number) => {
+      engineRef.current?.acceptTypeahead(index);
+    }, []);
+
     // Prevent interaction when disabled
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
       if (disabled) e.preventDefault();
@@ -253,6 +272,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
 
     return (
       <div
+        ref={containerRef}
         data-slot="tug-prompt-input"
         className={cn(
           "tug-prompt-input",
@@ -278,6 +298,15 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
           autoCapitalize="off"
           suppressContentEditableWarning
         />
+        {completionState && (
+          <TugCompletionMenu
+            items={completionState.items}
+            selectedIndex={completionState.selectedIndex}
+            onAccept={handleAcceptCompletion}
+            anchorRect={completionState.anchorRect}
+            containerRef={containerRef}
+          />
+        )}
       </div>
     );
   }

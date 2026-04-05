@@ -138,10 +138,8 @@ const ENTER_CHOICES: TugChoiceItem[] = [
 
 export function GalleryPromptInput() {
   const inputRef = useRef<TugTextInputDelegate>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const diagRef = useRef<HTMLPreElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
   const nextAtomIdx = useRef(0);
   const [returnAction, setReturnAction] = useState<InputAction>("submit");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
@@ -211,35 +209,6 @@ export function GalleryPromptInput() {
   const handleChange = useCallback(() => {
     updateDiagnostics();
   }, [updateDiagnostics]);
-
-  const handleTypeaheadChange = useCallback((
-    active: boolean, filtered: CompletionItem[], selectedIndex: number,
-  ) => {
-    const popup = popupRef.current;
-    const container = containerRef.current;
-    if (!popup) return;
-    if (!active || filtered.length === 0) {
-      popup.style.display = "none";
-      return;
-    }
-    popup.style.display = "block";
-    popup.innerHTML = "";
-    filtered.forEach((item, i) => {
-      const div = document.createElement("div");
-      div.className = "prompt-input-typeahead-item" +
-        (i === selectedIndex ? " prompt-input-typeahead-selected" : "");
-      div.textContent = item.label;
-      popup.appendChild(div);
-    });
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && container) {
-      const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      popup.style.left = `${rect.left - containerRect.left}px`;
-      popup.style.bottom = `${containerRect.bottom - rect.top + 4}px`;
-    }
-  }, []);
 
   const handleInsertAtom = useCallback(() => {
     const delegate = inputRef.current;
@@ -552,22 +521,18 @@ export function GalleryPromptInput() {
           <TugPushButton size="sm" onClick={handleInsertAtom}>Insert Atom</TugPushButton>
           <TugPushButton size="sm" emphasis="outlined" onClick={handleClear}>Clear</TugPushButton>
         </div>
-        <div ref={containerRef} className="prompt-input-container">
-          <TugPromptInput
-            ref={inputRef}
-            placeholder="Type here... @ for file completion, drag files, test IME, Return vs Enter"
-            maxRows={8}
-            returnAction={returnAction}
-            numpadEnterAction={enterAction}
-            onSubmit={handleSubmit}
-            onChange={handleChange}
-            onLog={appendLog}
-            completionProvider={galleryCompletionProvider}
-            onTypeaheadChange={handleTypeaheadChange}
-            dropHandler={galleryDropHandler}
-          />
-          <div ref={popupRef} className="prompt-input-typeahead-popup" />
-        </div>
+        <TugPromptInput
+          ref={inputRef}
+          placeholder="Type here... @ for file completion, drag files, test IME, Return vs Enter"
+          maxRows={8}
+          returnAction={returnAction}
+          numpadEnterAction={enterAction}
+          onSubmit={handleSubmit}
+          onChange={handleChange}
+          onLog={appendLog}
+          completionProvider={galleryCompletionProvider}
+          dropHandler={galleryDropHandler}
+        />
         <pre ref={diagRef} className="prompt-input-diagnostics" />
       </div>
 

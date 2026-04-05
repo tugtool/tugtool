@@ -80,7 +80,7 @@ export interface TugTextInputDelegate {
 
   // --- Typeahead ---
   readonly isTypeaheadActive: boolean;
-  acceptTypeahead(): void;
+  acceptTypeahead(index?: number): void;
   cancelTypeahead(): void;
   typeaheadNavigate(direction: "up" | "down"): void;
 
@@ -544,10 +544,12 @@ export class TugTextEngine {
     this.onTypeaheadChange?.(true, this._typeahead.filtered, this._typeahead.selectedIndex);
   }
 
-  /** Accept the currently selected typeahead completion. */
-  acceptTypeahead(): void {
+  /** Accept a typeahead completion. If index is provided, accept that item; otherwise accept the selected item. */
+  acceptTypeahead(index?: number): void {
     if (!this._typeahead.active || this._typeahead.filtered.length === 0) return;
-    const item = this._typeahead.filtered[this._typeahead.selectedIndex];
+    const idx = index ?? this._typeahead.selectedIndex;
+    if (idx < 0 || idx >= this._typeahead.filtered.length) return;
+    const item = this._typeahead.filtered[idx];
 
     // Delete @query and insert the atom
     const start = this._typeahead.anchorOffset;

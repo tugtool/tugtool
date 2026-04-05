@@ -6,62 +6,6 @@
    ========================================================================= */
 
 /* ---------------------------------------------------------------------------
-   Editor container (positions typeahead popup relative to editor)
-   --------------------------------------------------------------------------- */
-
-.prompt-input-container {
-  position: relative;
-}
-
-/* ---------------------------------------------------------------------------
-   @-trigger typeahead popup
-   --------------------------------------------------------------------------- */
-
-.prompt-input-typeahead-popup {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  min-width: 240px;
-  max-width: 400px;
-  max-height: 200px;
-  overflow-y: auto;
-  margin-bottom: 4px;
-  padding: 4px 0;
-  /* @tug-renders-on: card surface (overlay) */
-  background-color: var(--tug7-surface-global-primary-normal-default-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 100;
-}
-
-.prompt-input-typeahead-item {
-  padding: 4px 12px;
-  font-size: 13px;
-  font-family: var(--tug-font-mono);
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-  color: var(--tug7-element-global-text-normal-default-rest);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.prompt-input-typeahead-item:hover {
-  background-color: var(--tug7-surface-global-secondary-normal-default-rest);
-}
-
-.prompt-input-typeahead-selected {
-  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  color: var(--tug7-surface-global-primary-normal-default-rest);
-}
-
-.prompt-input-typeahead-selected:hover {
-  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-}
-
-/* ---------------------------------------------------------------------------
    Diagnostics panel
    --------------------------------------------------------------------------- */
 
@@ -106,31 +50,6 @@
   font-size: 12px;
   font-weight: 500;
   min-width: 170px;
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-/* ---------------------------------------------------------------------------
-   Test harness
-   --------------------------------------------------------------------------- */
-
-.prompt-input-test-trigger {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--tug-font-mono);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.prompt-input-test-trigger > svg {
-  flex-shrink: 0;
-}
-
-.prompt-input-test-detail {
-  font-size: 12px;
-  font-family: var(--tug-font-mono);
-  line-height: 1.6;
   /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
   color: var(--tug7-element-global-text-normal-default-rest);
 }
