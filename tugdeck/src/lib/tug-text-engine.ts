@@ -102,108 +102,6 @@ export interface TugTextEditingState {
   highlightedAtomIndices: number[];
 }
 
-// ===================================================================
-// State helpers (used by persistence)
-// ===================================================================
-
-/** Normalize a segment array: merge adjacent text, ensure text-atom-text sandwich. */
-function normalizeSegments(segs: Segment[]): Segment[] {
-  if (segs.length === 0) return [{ kind: "text", text: "" }];
-  const out: Segment[] = [];
-  for (const s of segs) {
-    if (s.kind === "text" && out.length > 0 && out[out.length - 1].kind === "text") {
-      (out[out.length - 1] as TextSegment).text += s.text;
-    } else {
-      out.push({ ...s });
-    }
-  }
-  // Ensure text bookends
-  if (out[0].kind !== "text") out.unshift({ kind: "text", text: "" });
-  if (out[out.length - 1].kind !== "text") out.push({ kind: "text", text: "" });
-  // Ensure text between adjacent atoms
-  for (let i = out.length - 1; i > 0; i--) {
-    if (out[i].kind === "atom" && out[i - 1].kind === "atom") {
-      out.splice(i, 0, { kind: "text", text: "" });
-    }
-  }
-  return out;
-}
-
-/** Capture the current editing state from a delegate. */
-export function captureEditingState(d: TugTextInputDelegate): TugTextEditingState {
-  const text = d.getText();
-  const atoms = d.getAtoms();
-  const segments: Segment[] = [];
-  let atomIdx = 0;
-  let textStart = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === "\uFFFC") {
-      segments.push({ kind: "text", text: text.slice(textStart, i) });
-      if (atomIdx < atoms.length) {
-        segments.push({ ...atoms[atomIdx] });
-        atomIdx++;
-      }
-      textStart = i + 1;
-    }
-  }
-  segments.push({ kind: "text", text: text.slice(textStart) });
-
-  return {
-    segments: normalizeSegments(segments),
-    selection: d.getSelectedRange(),
-    markedText: d.hasMarkedText ? d.getSelectedRange() : null,
-    highlightedAtomIndices: [],
-  };
-}
-
-/** Compare two editing states for equality. */
-export function editingStatesEqual(a: TugTextEditingState, b: TugTextEditingState): boolean {
-  if (a.segments.length !== b.segments.length) return false;
-  for (let i = 0; i < a.segments.length; i++) {
-    const sa = a.segments[i];
-    const sb = b.segments[i];
-    if (sa.kind !== sb.kind) return false;
-    if (sa.kind === "text" && sb.kind === "text") {
-      if (sa.text !== sb.text) return false;
-    } else if (sa.kind === "atom" && sb.kind === "atom") {
-      if (sa.type !== sb.type || sa.label !== sb.label || sa.value !== sb.value) return false;
-    }
-  }
-  if (a.selection === null && b.selection !== null) return false;
-  if (a.selection !== null && b.selection === null) return false;
-  if (a.selection && b.selection) {
-    if (a.selection.start !== b.selection.start || a.selection.end !== b.selection.end) return false;
-  }
-  if (a.markedText === null && b.markedText !== null) return false;
-  if (a.markedText !== null && b.markedText === null) return false;
-  if (a.markedText && b.markedText) {
-    if (a.markedText.start !== b.markedText.start || a.markedText.end !== b.markedText.end) return false;
-  }
-  const aHighlight = a.highlightedAtomIndices ?? [];
-  const bHighlight = b.highlightedAtomIndices ?? [];
-  if (aHighlight.length !== bHighlight.length) return false;
-  for (let i = 0; i < aHighlight.length; i++) {
-    if (aHighlight[i] !== bHighlight[i]) return false;
-  }
-  return true;
-}
-
-/** Format a TugTextEditingState for display. */
-export function formatEditingState(s: TugTextEditingState): string {
-  const content = s.segments.map(seg =>
-    seg.kind === "text" ? JSON.stringify(seg.text) : `[${seg.type}:${seg.label}]`
-  ).join(" ");
-  const sel = s.selection
-    ? `sel:{${s.selection.start},${s.selection.end}}`
-    : "sel:null";
-  const marked = s.markedText
-    ? ` marked:{${s.markedText.start},${s.markedText.end}}`
-    : "";
-  const highlight = (s.highlightedAtomIndices ?? []).length > 0
-    ? ` highlight:[${s.highlightedAtomIndices!.join(",")}]`
-    : "";
-  return `${content} ${sel}${marked}${highlight}`;
-}
 
 // ===================================================================
 // DOM ↔ flat offset helpers
@@ -226,8 +124,10 @@ function isBR(node: Node): boolean {
 }
 
 /**
- * Walk the direct children of a root element and build a text string.
+ * Walk the children of a root element and build a text string.
  * Atom images become U+FFFC, <br> becomes \n, text nodes pass through.
+ * Unknown element wrappers (e.g., <span> from WebKit paste/undo) are
+ * recursed into so their text content is not lost.
  */
 function domToText(root: HTMLElement): string {
   let text = "";
@@ -238,6 +138,8 @@ function domToText(root: HTMLElement): string {
       text += "\uFFFC";
     } else if (isBR(child)) {
       text += "\n";
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      text += domToText(child as HTMLElement);
     }
   }
   return text;
@@ -315,14 +217,6 @@ function domToFlat(root: HTMLElement, node: Node, offset: number): number {
 
   for (const child of root.childNodes) {
     if (child === directChild) {
-      if (child.nodeType === Node.TEXT_NODE) {
-        return flat + nestedOffset;
-      }
-      // For element children (atom/BR or wrapper spans), treat as atom boundary
-      if (isAtomImg(child) || isBR(child)) {
-        return flat + nestedOffset;
-      }
-      // Unknown element wrapper — count text within it up to the offset
       return flat + nestedOffset;
     }
     if (child.nodeType === Node.TEXT_NODE) {
