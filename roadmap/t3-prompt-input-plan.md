@@ -530,6 +530,22 @@ All via DOM. No execCommand (this is not a user edit, it's reconstruction — un
 - Multiple atoms, reload → all atoms in correct positions
 - `bun run check` passes
 
+#### Sub-step 5.6: Audit fixes
+
+Post-implementation audit found six issues:
+
+1. **`restoreState` doesn't cancel typeahead.** If typeahead is active when state is restored (tab activation), `anchorOffset` points into the old DOM. Add `this.cancelTypeahead()` at the top.
+
+2. **Typeahead popup anchored to current caret, not `@` position.** `onTypeaheadChange` re-reads `getBoundingClientRect` on every update, including as the user types query characters. The popup drifts rightward. Anchor to the `@` position captured at trigger time.
+
+3. **`flatToDom` doesn't handle nested elements.** `domToFlat` was hardened with `rootChild`/`offsetWithin` for WebKit-inserted `<span>` wrappers, but `flatToDom` only walks direct children. If WebKit has wrapped text, `setSelectedRange` will land at the wrong position. Harden to match.
+
+4. **`onTypeaheadChange` prop docstring is stale.** Says "parent renders the popup" — the parent no longer does. Update.
+
+5. **Completion popup uses `useState` — violates [L06].** L06: "Appearance changes go through CSS and DOM, never React state." The completion menu is driven by `setCompletionState`, triggering React re-renders on every keystroke during typeahead. Fix: always render the popup container in the DOM, drive visibility and content via direct DOM writes from the engine's `onTypeaheadChange` callback. No React state for the popup.
+
+6. **`restoreState` HTML builder is O(n²).** Character-by-character `+=` string concatenation. Use an array and `join`.
+
 ### Step 6: Theme change handling
 
 Atom SVG colors are baked into the data URI at creation time. When the theme changes:
