@@ -71,6 +71,13 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         webView.load(request)
     }
 
+    /// Load a local HTML file in webview
+    func loadLocalFile(_ path: String) {
+        NSLog("MainWindow: loadLocalFile called with %@", path)
+        let fileURL = URL(fileURLWithPath: path)
+        webView.loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
+    }
+
     /// Evaluate JavaScript in the current page context.
     func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
         webView.evaluateJavaScript(script, completionHandler: completionHandler)
