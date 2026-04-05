@@ -456,6 +456,19 @@ A new library component following [component-authoring.md](../tuglaws/component-
 - `onAccept` callback calls `engine.acceptTypeahead(index)` (engine sets selected index then accepts)
 - The parent (gallery card) no longer builds the popup with raw DOM — `handleTypeaheadChange`, `popupRef`, and the popup CSS in `gallery-prompt-input.css` become dead code and get removed
 
+#### Step 4 scope: UI/UX only
+
+Step 4 builds the typeahead *mechanism* — trigger detection, state machine, popup component, accept/cancel. It does not build the real data source or matching algorithm.
+
+**Mock data source:** The gallery card's `galleryCompletionProvider` uses a hardcoded file list with `String.includes()` matching. This is sufficient to prove the UI works end-to-end. The mock is clearly demarcated (it lives in the gallery card, not in library code).
+
+**Deferred to later steps:**
+- Real completion data source (project file tree from source tree path via tugbank/tugcast)
+- Fuzzy/subsequence matching algorithm (typing "fst" matches "feed-store.ts")
+- Multiple completion categories (files, commands, docs, links)
+
+These are pluggable via the `CompletionProvider` callback — the engine doesn't care where data comes from or how matching works. The real provider replaces the mock when the prompt input is wired into the Tide shell.
+
 ### Step 5: Persistence
 
 Migrate `TugTextEditingState` from the old segment model to the new DOM-based architecture. The persistence format evolves — it is not deleted.
