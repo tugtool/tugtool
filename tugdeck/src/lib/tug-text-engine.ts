@@ -401,22 +401,18 @@ export class TugTextEngine {
   }
 
   deleteWordBackward(): void {
-    // Stub — full implementation in Step 8
     document.execCommand("delete");
   }
 
   deleteWordForward(): void {
-    // Stub — full implementation in Step 8
     document.execCommand("forwardDelete");
   }
 
   deleteParagraphBackward(): void {
-    // Stub — full implementation in Step 8
     document.execCommand("delete");
   }
 
   deleteParagraphForward(): void {
-    // Stub — full implementation in Step 8
     document.execCommand("forwardDelete");
   }
 
@@ -427,7 +423,6 @@ export class TugTextEngine {
     this.onChange?.();
   }
 
-  // Emacs bindings — stubs for now (Step 8)
   killLine(): void {}
   yank(): void {}
   transpose(): void {}
@@ -705,6 +700,77 @@ export class TugTextEngine {
       } else {
         document.execCommand("insertLineBreak");
       }
+    });
+
+    // 1b. Ctrl+U — kill line backward (not handled natively by WebKit contentEditable)
+    this.listen(root, "keydown", (e: Event) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key !== "u" || !ke.ctrlKey || ke.metaKey || ke.altKey || ke.shiftKey) return;
+      if (ke.isComposing || this._compositionJustEnded) return;
+
+      ke.preventDefault();
+      const range = this.getSelectedRange();
+      if (!range) return;
+
+      // Find beginning of current line: walk backward through text to find \n
+      const text = this.getText();
+      let lineStart = 0;
+      for (let i = range.start - 1; i >= 0; i--) {
+        if (text[i] === "\n") {
+          lineStart = i + 1;
+          break;
+        }
+      }
+      if (lineStart === range.start) return; // already at line start
+      this.setSelectedRange(lineStart, range.start);
+      document.execCommand("delete");
+    });
+
+    // 1c. Ctrl+T — transpose (native handles text, we handle atoms)
+    this.listen(root, "keydown", (e: Event) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key !== "t" || !ke.ctrlKey || ke.metaKey || ke.altKey || ke.shiftKey) return;
+      if (ke.isComposing || this._compositionJustEnded) return;
+
+      const range = this.getSelectedRange();
+      if (!range || range.start !== range.end) return;
+      if (range.start === 0) return;
+
+      const text = this.getText();
+      const pos = range.start;
+
+      // Check if either character flanking the cursor is an atom (U+FFFC)
+      const charBefore = pos > 0 ? text[pos - 1] : "";
+      const charAfter = pos < text.length ? text[pos] : "";
+      const atomInvolved = charBefore === "\uFFFC" || charAfter === "\uFFFC";
+
+      if (!atomInvolved) return; // let browser handle native text transpose
+
+      ke.preventDefault();
+
+      // Need at least two characters to transpose
+      if (pos === 0 || pos >= text.length) return;
+
+      // Get the atom/text data for positions (pos-1) and (pos)
+      const atoms = this.getAtoms();
+      let atomIdx = 0;
+      for (let i = 0; i < pos - 1; i++) {
+        if (text[i] === "\uFFFC") atomIdx++;
+      }
+
+      // Build HTML for the two items in swapped order
+      const itemBefore = charBefore === "\uFFFC"
+        ? atomImgHTML(atoms[atomIdx].type, atoms[atomIdx].label, atoms[atomIdx].value)
+        : (charBefore === "<" ? "&lt;" : charBefore === "&" ? "&amp;" : charBefore);
+      const nextAtomIdx = charBefore === "\uFFFC" ? atomIdx + 1 : atomIdx;
+      const itemAfter = charAfter === "\uFFFC"
+        ? atomImgHTML(atoms[nextAtomIdx].type, atoms[nextAtomIdx].label, atoms[nextAtomIdx].value)
+        : (charAfter === "<" ? "&lt;" : charAfter === "&" ? "&amp;" : charAfter);
+
+      // Select both characters and replace with swapped content
+      this.setSelectedRange(pos - 1, pos + 1);
+      document.execCommand("delete");
+      document.execCommand("insertHTML", false, itemAfter + itemBefore);
     });
 
     // 2. Click on atom — select entire image
