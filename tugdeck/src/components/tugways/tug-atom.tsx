@@ -18,7 +18,6 @@
 import "./tug-atom.css";
 
 import React from "react";
-import { TUG_ATOM_CHAR } from "@/lib/tug-atom-char";
 import {
   FileText,
   Terminal,

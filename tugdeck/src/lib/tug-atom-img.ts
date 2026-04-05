@@ -14,6 +14,9 @@
 
 import { getTokenValue } from "@/theme-tokens";
 
+/** U+FFFC — Object Replacement Character representing an atom in the text flow. */
+export const TUG_ATOM_CHAR = "\uFFFC";
+
 /** Escape text for safe interpolation into SVG/XML markup. */
 function escapeSVG(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -69,7 +72,7 @@ export function createAtomImgElement(type: string, label: string, value: string)
   const img = document.createElement("img");
   img.src = "data:image/svg+xml," + encodeURIComponent(svg);
   img.height = h;
-  img.style.verticalAlign = "-5px";
+  img.style.verticalAlign = "-6px";
   img.dataset.atomType = type;
   img.dataset.atomLabel = label;
   img.dataset.atomValue = value;

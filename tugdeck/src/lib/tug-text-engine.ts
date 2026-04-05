@@ -9,7 +9,7 @@
  */
 
 import type { AtomSegment } from "@/components/tugways/tug-atom";
-import { atomImgHTML, createAtomImgElement } from "./tug-atom-img";
+import { atomImgHTML, createAtomImgElement, TUG_ATOM_CHAR } from "./tug-atom-img";
 
 // ===================================================================
 // Types
@@ -100,9 +100,9 @@ export interface TugTextInputDelegate {
  * Plain object. No DOM, no methods. JSON round-trips cleanly.
  */
 export interface TugTextEditingState {
-  /** Plain text with U+FFFC at atom positions. */
+  /** Plain text with TUG_ATOM_CHAR at atom positions. */
   text: string;
-  /** Atom identity and position. Position is the index of U+FFFC in text. */
+  /** Atom identity and position. Position is the index of TUG_ATOM_CHAR in text. */
   atoms: { position: number; type: string; label: string; value: string }[];
   /** Cursor/selection as flat offsets. Null if editor was not focused. */
   selection: { start: number; end: number } | null;
@@ -112,7 +112,7 @@ export interface TugTextEditingState {
 // ===================================================================
 // DOM ↔ flat offset helpers
 //
-// The DOM contains text nodes, <img> atoms (1 char = U+FFFC), and
+// The DOM contains text nodes, <img> atoms (1 char = TUG_ATOM_CHAR), and
 // <br> elements (1 char = \n). These helpers convert between flat
 // character offsets and DOM (node, offset) positions.
 // ===================================================================
@@ -131,7 +131,7 @@ function isBR(node: Node): boolean {
 
 /**
  * Walk the children of a root element and build a text string.
- * Atom images become U+FFFC, <br> becomes \n, text nodes pass through.
+ * Atom images become TUG_ATOM_CHAR, <br> becomes \n, text nodes pass through.
  * Unknown element wrappers (e.g., <span> from WebKit paste/undo) are
  * recursed into so their text content is not lost.
  */
@@ -141,7 +141,7 @@ function domToText(root: HTMLElement): string {
     if (child.nodeType === Node.TEXT_NODE) {
       text += child.textContent ?? "";
     } else if (isAtomImg(child)) {
-      text += "\uFFFC";
+      text += TUG_ATOM_CHAR;
     } else if (isBR(child)) {
       text += "\n";
     } else if (child.nodeType === Node.ELEMENT_NODE) {
@@ -452,7 +452,7 @@ export class TugTextEngine {
     const atoms: TugTextEditingState["atoms"] = [];
     let atomIdx = 0;
     for (let i = 0; i < text.length; i++) {
-      if (text[i] === "\uFFFC" && atomIdx < domAtoms.length) {
+      if (text[i] === TUG_ATOM_CHAR && atomIdx < domAtoms.length) {
         const a = domAtoms[atomIdx];
         atoms.push({ position: i, type: a.type, label: a.label, value: a.value });
         atomIdx++;
@@ -467,7 +467,7 @@ export class TugTextEngine {
     let atomIdx = 0;
     for (let i = 0; i < state.text.length; i++) {
       const ch = state.text[i];
-      if (ch === "\uFFFC" && atomIdx < state.atoms.length) {
+      if (ch === TUG_ATOM_CHAR && atomIdx < state.atoms.length) {
         const a = state.atoms[atomIdx];
         parts.push(atomImgHTML(a.type, a.label, a.value));
         atomIdx++;
@@ -743,10 +743,10 @@ export class TugTextEngine {
       const text = this.getText();
       const pos = range.start;
 
-      // Check if either character flanking the cursor is an atom (U+FFFC)
+      // Check if either character flanking the cursor is an atom (TUG_ATOM_CHAR)
       const charBefore = pos > 0 ? text[pos - 1] : "";
       const charAfter = pos < text.length ? text[pos] : "";
-      const atomInvolved = charBefore === "\uFFFC" || charAfter === "\uFFFC";
+      const atomInvolved = charBefore === TUG_ATOM_CHAR || charAfter === TUG_ATOM_CHAR;
 
       if (!atomInvolved) return; // let browser handle native text transpose
 
@@ -759,15 +759,15 @@ export class TugTextEngine {
       const atoms = this.getAtoms();
       let atomIdx = 0;
       for (let i = 0; i < pos - 1; i++) {
-        if (text[i] === "\uFFFC") atomIdx++;
+        if (text[i] === TUG_ATOM_CHAR) atomIdx++;
       }
 
       // Build HTML for the two items in swapped order
-      const itemBefore = charBefore === "\uFFFC"
+      const itemBefore = charBefore === TUG_ATOM_CHAR
         ? atomImgHTML(atoms[atomIdx].type, atoms[atomIdx].label, atoms[atomIdx].value)
         : (charBefore === "<" ? "&lt;" : charBefore === "&" ? "&amp;" : charBefore);
-      const nextAtomIdx = charBefore === "\uFFFC" ? atomIdx + 1 : atomIdx;
-      const itemAfter = charAfter === "\uFFFC"
+      const nextAtomIdx = charBefore === TUG_ATOM_CHAR ? atomIdx + 1 : atomIdx;
+      const itemAfter = charAfter === TUG_ATOM_CHAR
         ? atomImgHTML(atoms[nextAtomIdx].type, atoms[nextAtomIdx].label, atoms[nextAtomIdx].value)
         : (charAfter === "<" ? "&lt;" : charAfter === "&" ? "&amp;" : charAfter);
 
