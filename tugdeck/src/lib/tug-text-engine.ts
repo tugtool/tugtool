@@ -611,12 +611,13 @@ export class TugTextEngine {
       if (ke.isComposing) return;
       if (ke.key === "Tab" || ke.key === "Enter") {
         ke.preventDefault();
+        ke.stopImmediatePropagation();
         this.acceptTypeahead();
         return;
       }
-      if (ke.key === "ArrowDown") { ke.preventDefault(); this.typeaheadNavigate("down"); return; }
-      if (ke.key === "ArrowUp") { ke.preventDefault(); this.typeaheadNavigate("up"); return; }
-      if (ke.key === "Escape") { ke.preventDefault(); this.cancelTypeahead(); return; }
+      if (ke.key === "ArrowDown") { ke.preventDefault(); ke.stopImmediatePropagation(); this.typeaheadNavigate("down"); return; }
+      if (ke.key === "ArrowUp") { ke.preventDefault(); ke.stopImmediatePropagation(); this.typeaheadNavigate("up"); return; }
+      if (ke.key === "Escape") { ke.preventDefault(); ke.stopImmediatePropagation(); this.cancelTypeahead(); return; }
     });
 
     // 1. Return/Enter — submit or newline (skipped when typeahead is active — handler 0 takes it)
