@@ -45,6 +45,8 @@ Atoms are `<img src="data:image/svg+xml,...">` elements with `data-atom-*` attri
 
 Creation: `createAtomImgElement(type, label, value)` → `HTMLImageElement`.
 
+**Theming:** Data URI SVGs are isolated from the page's CSS cascade — `currentColor`, `var()`, and CSS custom properties do not cross into them. Colors are read live from theme tokens via `getComputedStyle(document.documentElement).getPropertyValue('--tug7-...')` at atom creation time. No hardcoded hex values in the builder — always token lookups. Atoms created under the current theme automatically match it. For theme changes to update existing atoms, see Step 6.
+
 ### 2. Clipboard (copy / cut / paste)
 
 - **Copy**: intercept `copy` event. Write `text/html` (preserving atom `<img>` tags with `data-atom-*` attributes) and `text/plain` (atom labels as text) to clipboard.
