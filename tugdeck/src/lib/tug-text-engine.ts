@@ -406,6 +406,7 @@ export class TugTextEngine {
   }
 
   clear(): void {
+    this.cancelTypeahead();
     this.root.innerHTML = "";
     this.updateEmpty();
     this.onChange?.();
@@ -484,6 +485,100 @@ export class TugTextEngine {
   }
 
   // =================================================================
+  // Typeahead
+  // =================================================================
+
+  /** Check if the character just typed is @ and activate typeahead. */
+  private detectTypeaheadTrigger(): void {
+    const range = this.getSelectedRange();
+    if (!range || range.start !== range.end) return;
+    if (range.start === 0) return;
+
+    // Read the character before the caret
+    const text = this.getText();
+    if (text[range.start - 1] !== "@") return;
+
+    this._typeahead.active = true;
+    this._typeahead.anchorOffset = range.start - 1;
+    this._typeahead.query = "";
+    this._typeahead.filtered = this.completionProvider!("");
+    this._typeahead.selectedIndex = 0;
+    this.onTypeaheadChange?.(true, this._typeahead.filtered, 0);
+  }
+
+  /** Update the typeahead query from the text between @ and the caret. */
+  private updateTypeaheadQuery(): void {
+    const range = this.getSelectedRange();
+    if (!range || range.start !== range.end) {
+      this.cancelTypeahead();
+      return;
+    }
+
+    // Caret must be after the @
+    if (range.start <= this._typeahead.anchorOffset) {
+      this.cancelTypeahead();
+      return;
+    }
+
+    const text = this.getText();
+    const query = text.slice(this._typeahead.anchorOffset + 1, range.start);
+
+    // Cancel if query contains a newline (moved to another line)
+    if (query.includes("\n")) {
+      this.cancelTypeahead();
+      return;
+    }
+
+    this._typeahead.query = query;
+    this._typeahead.filtered = this.completionProvider!(query);
+    this._typeahead.selectedIndex = Math.min(
+      this._typeahead.selectedIndex,
+      Math.max(0, this._typeahead.filtered.length - 1),
+    );
+    this.onTypeaheadChange?.(true, this._typeahead.filtered, this._typeahead.selectedIndex);
+  }
+
+  /** Accept the currently selected typeahead completion. */
+  acceptTypeahead(): void {
+    if (!this._typeahead.active || this._typeahead.filtered.length === 0) return;
+    const item = this._typeahead.filtered[this._typeahead.selectedIndex];
+
+    // Delete @query and insert the atom
+    const start = this._typeahead.anchorOffset;
+    const end = start + 1 + this._typeahead.query.length;
+    this.setSelectedRange(start, end);
+    document.execCommand("delete");
+    const html = atomImgHTML(item.atom.type, item.atom.label, item.atom.value);
+    document.execCommand("insertHTML", false, html);
+
+    this.cancelTypeahead();
+  }
+
+  /** Cancel the active typeahead session. */
+  cancelTypeahead(): void {
+    if (!this._typeahead.active) return;
+    this._typeahead.active = false;
+    this._typeahead.query = "";
+    this._typeahead.filtered = [];
+    this._typeahead.selectedIndex = 0;
+    this.onTypeaheadChange?.(false, [], 0);
+  }
+
+  /** Navigate the typeahead selection up or down. */
+  typeaheadNavigate(direction: "up" | "down"): void {
+    if (!this._typeahead.active) return;
+    if (direction === "down") {
+      this._typeahead.selectedIndex = Math.min(this._typeahead.selectedIndex + 1, this._typeahead.filtered.length - 1);
+    } else {
+      this._typeahead.selectedIndex = Math.max(this._typeahead.selectedIndex - 1, 0);
+    }
+    this.onTypeaheadChange?.(true, this._typeahead.filtered, this._typeahead.selectedIndex);
+  }
+
+  /** Whether the typeahead popup is active. */
+  get isTypeaheadActive(): boolean { return this._typeahead.active; }
+
+  // =================================================================
   // Event handling — setup and teardown
   // =================================================================
 
@@ -501,10 +596,26 @@ export class TugTextEngine {
   private setupEvents(): void {
     const root = this.root;
 
-    // 1. Return/Enter — submit or newline
+    // 0. Typeahead key interception — registered first so it captures before Enter handler
+    this.listen(root, "keydown", (e: Event) => {
+      if (!this._typeahead.active) return;
+      const ke = e as KeyboardEvent;
+      if (ke.isComposing) return;
+      if (ke.key === "Tab" || ke.key === "Enter") {
+        ke.preventDefault();
+        this.acceptTypeahead();
+        return;
+      }
+      if (ke.key === "ArrowDown") { ke.preventDefault(); this.typeaheadNavigate("down"); return; }
+      if (ke.key === "ArrowUp") { ke.preventDefault(); this.typeaheadNavigate("up"); return; }
+      if (ke.key === "Escape") { ke.preventDefault(); this.cancelTypeahead(); return; }
+    });
+
+    // 1. Return/Enter — submit or newline (skipped when typeahead is active — handler 0 takes it)
     this.listen(root, "keydown", (e: Event) => {
       const ke = e as KeyboardEvent;
       if (ke.key !== "Enter") return;
+      if (this._typeahead.active) return;
       if (ke.isComposing || this.hasMarkedText || this._compositionJustEnded) return;
 
       ke.preventDefault();
@@ -678,11 +789,17 @@ export class TugTextEngine {
       }
     });
 
-    // 9 & 10. Change detection + auto-resize — input event
+    // 9 & 10. Change detection + auto-resize + typeahead — input event
     this.listen(root, "input", () => {
       this.updateEmpty();
       this.autoResize();
       this.onChange?.();
+
+      if (this._typeahead.active) {
+        this.updateTypeaheadQuery();
+      } else if (this.completionProvider) {
+        this.detectTypeaheadTrigger();
+      }
     });
 
     // 11. IME composition tracking
@@ -696,6 +813,11 @@ export class TugTextEngine {
     // by keyup the flag has served its purpose.
     this.listen(root, "keyup", () => {
       if (this._compositionJustEnded) this._compositionJustEnded = false;
+    });
+
+    // 12. Cancel typeahead on blur
+    this.listen(root, "blur", () => {
+      this.cancelTypeahead();
     });
   }
 
