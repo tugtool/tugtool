@@ -279,6 +279,18 @@ function flatToDom(root: HTMLElement, flat: number): { node: Node; offset: numbe
 }
 
 /**
+ * Find the direct child of root that contains (or is) the given node.
+ * Returns null if node is not inside root.
+ */
+function rootChild(root: HTMLElement, node: Node): Node | null {
+  let cur: Node | null = node;
+  while (cur && cur.parentNode !== root) {
+    cur = cur.parentNode;
+  }
+  return cur;
+}
+
+/**
  * Convert a DOM position (node, offset) to a flat character offset
  * relative to root's content.
  */
@@ -298,10 +310,25 @@ function domToFlat(root: HTMLElement, node: Node, offset: number): number {
     return flat;
   }
 
-  // If node is a text node child of root, count preceding siblings + offset
+  // Resolve node to a direct child of root (handles nested selections)
+  const directChild = rootChild(root, node);
+  if (!directChild) return flat;
+
+  // If node is deeper than directChild (e.g., inside a <span>),
+  // compute offset within directChild's text content
+  const nestedOffset = (node === directChild) ? offset : offsetWithin(directChild, node, offset);
+
   for (const child of root.childNodes) {
-    if (child === node) {
-      return flat + offset;
+    if (child === directChild) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        return flat + nestedOffset;
+      }
+      // For element children (atom/BR or wrapper spans), treat as atom boundary
+      if (isAtomImg(child) || isBR(child)) {
+        return flat + nestedOffset;
+      }
+      // Unknown element wrapper — count text within it up to the offset
+      return flat + nestedOffset;
     }
     if (child.nodeType === Node.TEXT_NODE) {
       flat += (child.textContent ?? "").length;
@@ -310,8 +337,26 @@ function domToFlat(root: HTMLElement, node: Node, offset: number): number {
     }
   }
 
-  // Node is nested deeper (shouldn't happen in our flat structure)
   return flat;
+}
+
+/**
+ * Compute a text offset within a container element, given a nested
+ * (node, offset) position. Walks the container's text content up to
+ * the target position.
+ */
+function offsetWithin(container: Node, node: Node, offset: number): number {
+  let count = 0;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let textNode: Text | null;
+  while ((textNode = walker.nextNode() as Text | null)) {
+    if (textNode === node) {
+      return count + offset;
+    }
+    count += textNode.length;
+  }
+  // node wasn't a text node — fall back to counting all text before it
+  return count;
 }
 
 // ===================================================================
