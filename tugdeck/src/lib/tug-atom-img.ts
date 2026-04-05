@@ -11,6 +11,11 @@
  * Colors are hardcoded for now. Step 6 reads from CSS custom properties.
  */
 
+/** Escape text for safe interpolation into SVG/XML markup. */
+function escapeSVG(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 /** Lucide-style icon paths (24x24 viewBox) for atom types */
 const ATOM_ICON_PATHS: Record<string, string> = {
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
@@ -49,7 +54,7 @@ export function createAtomImgElement(type: string, label: string, value: string)
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
     `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="3" fill="#2a2f3a" stroke="#4a5568" stroke-width="1"/>`,
     icon,
-    `<text x="${padding + iconSize + gap}" y="${h / 2 + fontSize * 0.36}" font-size="${fontSize}" font-family="${fontFamily}" fill="#c8d0dc">${label}</text>`,
+    `<text x="${padding + iconSize + gap}" y="${h / 2 + fontSize * 0.36}" font-size="${fontSize}" font-family="${fontFamily}" fill="#c8d0dc">${escapeSVG(label)}</text>`,
     `</svg>`,
   ].join("");
 
