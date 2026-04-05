@@ -1821,6 +1821,180 @@ export async function runIntegrationTests(d: TugTextInputDelegate): Promise<{
     };
   });
 
+  // ===================================================================
+  // ATOM AT END OF LINE — caret placement, navigation, editing
+  // ===================================================================
+
+  // Helper: build "x<atom>\ny<atom>" — two lines, each ending with an atom
+  function buildTwoLineAtoms(d: TugTextInputDelegate): void {
+    type(d, "x");
+    d.insertAtom(TEST_ATOM);
+    d.insertText("\n");
+    type(d, "y");
+    d.insertAtom(TEST_ATOM_2);
+  }
+
+  // Helper: build "x<atom>\ny" — first line ends with atom, second line has text
+  function buildAtomEndOfLine(d: TugTextInputDelegate): void {
+    type(d, "x");
+    d.insertAtom(TEST_ATOM);
+    d.insertText("\n");
+    type(d, "y");
+  }
+
+  await test("endOfLine: arrow left from end visits every position", async () => {
+    // "x" + atom + "\ny" + atom = flat length 5
+    // Expected positions: 5, 4, 3, 2, 1, 0
+    buildTwoLineAtoms(d);
+    const totalLen = d.getText().length;
+    d.setSelectedRange(totalLen);
+    const positions: number[] = [totalLen];
+    for (let i = 0; i < totalLen + 2; i++) {
+      const before = cursorAt(d);
+      await arrowLeft(1);
+      const after = cursorAt(d);
+      positions.push(after!);
+      if (after === before) break;
+    }
+    const reachesStart = positions[positions.length - 1] === 0;
+    const monotonic = positions.every((p, i) => i === 0 || p <= positions[i - 1]);
+    const steps = positions.length - 1;
+    return {
+      passed: reachesStart && monotonic && steps <= totalLen + 1,
+      detail: `positions=${JSON.stringify(positions)}, totalLen=${totalLen}`,
+    };
+  });
+
+  await test("endOfLine: arrow right from start visits every position", async () => {
+    buildTwoLineAtoms(d);
+    const totalLen = d.getText().length;
+    d.setSelectedRange(0);
+    const positions: number[] = [0];
+    for (let i = 0; i < totalLen + 2; i++) {
+      const before = cursorAt(d);
+      await arrowRight(1);
+      const after = cursorAt(d);
+      positions.push(after!);
+      if (after === before) break;
+    }
+    const reachesEnd = positions[positions.length - 1] === totalLen;
+    const monotonic = positions.every((p, i) => i === 0 || p >= positions[i - 1]);
+    return {
+      passed: reachesEnd && monotonic,
+      detail: `positions=${JSON.stringify(positions)}, totalLen=${totalLen}`,
+    };
+  });
+
+  await test("endOfLine: cursor at end of first line (after atom, before newline)", async () => {
+    buildAtomEndOfLine(d);
+    // "x"(1) + atom(1) + "\ny"(2) = 4. Position 2 = after atom, before \n.
+    d.setSelectedRange(2);
+    const pos = cursorAt(d);
+    return { passed: pos === 2, detail: `cursor=${pos} (expect 2)` };
+  });
+
+  await test("endOfLine: type at end of first line inserts before newline", () => {
+    buildAtomEndOfLine(d);
+    d.setSelectedRange(2); // after atom, before \n
+    d.insertText("z");
+    const text = d.getText();
+    // "x" + atom + "z\ny" = "x\uFFFCz\ny"
+    const passed = text === "x\uFFFCz\ny";
+    return { passed, detail: `text="${text.replace(/\n/g, "\\n")}"` };
+  });
+
+  await test("endOfLine: return at end of first line (after atom)", () => {
+    type(d, "x");
+    d.insertAtom(TEST_ATOM);
+    d.insertText("\n");
+    const text = d.getText();
+    // "x" + atom + "\n" = length 3, ends with newline
+    const passed = text === "x\uFFFC\n" && text.length === 3;
+    return { passed, detail: `text="${text.replace(/\n/g, "\\n")}", len=${text.length}` };
+  });
+
+  await test("endOfLine: deleteBackward at start of second line", () => {
+    buildAtomEndOfLine(d);
+    d.setSelectedRange(3); // start of "y" on line 2 (after \n)
+    d.deleteBackward();
+    const text = d.getText();
+    // Delete \n: "x" + atom + "y" = "x\uFFFCy"
+    const passed = text === "x\uFFFCy";
+    return { passed, detail: `text="${text.replace(/\n/g, "\\n")}"` };
+  });
+
+  await test("endOfLine: deleteForward at end of first line (after atom)", () => {
+    buildAtomEndOfLine(d);
+    d.setSelectedRange(2); // after atom, before \n
+    d.deleteForward();
+    const text = d.getText();
+    // Delete \n: "x" + atom + "y" = "x\uFFFCy"
+    const passed = text === "x\uFFFCy";
+    return { passed, detail: `text="${text.replace(/\n/g, "\\n")}"` };
+  });
+
+  await test("endOfLine: selectAll with multiline atoms", () => {
+    buildTwoLineAtoms(d);
+    d.selectAll();
+    const range = d.getSelectedRange();
+    const totalLen = d.getText().length;
+    const passed = range !== null && range.start === 0 && range.end === totalLen;
+    return { passed, detail: `sel=${range?.start}..${range?.end} (expect 0..${totalLen})` };
+  });
+
+  await test("endOfLine: shift+right selects across line boundary with atom", async () => {
+    buildAtomEndOfLine(d);
+    d.setSelectedRange(1); // after "x", before atom
+    await shiftRight(3); // should select atom + \n + y = 3 chars
+    const range = d.getSelectedRange();
+    const passed = range !== null && range.start === 1 && range.end === 4;
+    return { passed, detail: `sel=${range?.start}..${range?.end} (expect 1..4)` };
+  });
+
+  await test("endOfLine: deleteWordBackward from second line", () => {
+    buildAtomEndOfLine(d);
+    const len = d.getText().length;
+    d.setSelectedRange(len); // end of "y"
+    d.deleteWordBackward();
+    const text = d.getText();
+    // Delete "y" (word backward from end = delete "y")
+    const passed = text === "x\uFFFC\n";
+    return { passed, detail: `text="${text.replace(/\n/g, "\\n")}"` };
+  });
+
+  await test("endOfLine: two atoms on separate lines, symmetric navigation", async () => {
+    buildTwoLineAtoms(d);
+    const totalLen = d.getText().length;
+
+    // Count right arrows from start to end
+    d.setSelectedRange(0);
+    let rightSteps = 0;
+    for (let i = 0; i < 10; i++) {
+      const before = cursorAt(d);
+      await arrowRight(1);
+      const after = cursorAt(d);
+      if (after === before) break;
+      rightSteps++;
+    }
+
+    // Count left arrows from end to start
+    d.setSelectedRange(totalLen);
+    let leftSteps = 0;
+    for (let i = 0; i < 10; i++) {
+      const before = cursorAt(d);
+      await arrowLeft(1);
+      const after = cursorAt(d);
+      if (after === before) break;
+      leftSteps++;
+    }
+
+    const passed = rightSteps === leftSteps && rightSteps === totalLen;
+    return {
+      passed,
+      detail: `right=${rightSteps}, left=${leftSteps}, totalLen=${totalLen} (expect ${totalLen} each)`,
+    };
+  });
+
   // ── Summary ──
 
   const passed = results.filter(r => r.passed).length;
