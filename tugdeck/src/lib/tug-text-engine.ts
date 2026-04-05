@@ -279,6 +279,15 @@ export class TugTextEngine {
   private _composing = false;
   private _compositionJustEnded = false;
 
+  // @-trigger typeahead state
+  private _typeahead = {
+    active: false,
+    query: "",
+    anchorOffset: 0,
+    filtered: [] as CompletionItem[],
+    selectedIndex: 0,
+  };
+
   constructor(root: HTMLDivElement) {
     this.root = root;
     this.setupEvents();
