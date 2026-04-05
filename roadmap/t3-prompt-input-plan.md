@@ -228,21 +228,33 @@ Write the seven event handlers fresh, referencing the spike but not importing fr
 - **`tug-prompt-input.css`** — styling, `::selection` override, Custom Highlight suppression, line-height for stable layout
 - **`lib/tug-atom-img.ts`** (new) — `createAtomImgElement`, `atomImgHTML`, SVG builder, canvas text measurement, icon paths. Standalone module, no dependency on the old tug-atom badge code.
 
-The seven handlers:
+The event handlers:
 1. Atom creation and insertion (via execCommand insertHTML)
 2. Clipboard (copy/cut/paste with atom preservation)
 3. Drag & drop (files → atom images at drop point)
 4. Option+Arrow (word boundary clamping at atoms)
 5. Click on atom (select entire image)
 6. Return/Enter (submit vs newline via data attributes)
-7. CSS setup (Custom Highlight suppression — in CSS file, not JS)
+7. Rich text blocking (see below)
+8. Change detection (see below)
+9. CSS setup (Custom Highlight suppression — in CSS file, not JS)
 
-Read API: `getText()`, `getAtoms()`, `getSelectedRange()` — read directly from the DOM.
+**Rich text blocking:** Without `-webkit-user-modify: read-write-plaintext-only`, the editor is a rich text surface. Users can paste formatted HTML from other apps, and Cmd+B/I/U could apply formatting. Block this:
+- `beforeinput` handler: reject formatting inputTypes (`formatBold`, `formatItalic`, `formatUnderline`, etc.)
+- Paste handler: when pasting non-atom HTML, strip all markup and insert as plain text via `execCommand("insertText")`
+- This keeps the editor plaintext-with-atoms — no rich text leaks in
+
+**Change detection:** Without MutationObserver, we need to know when content changes (for tugbank persistence, typeahead query updates, `onChange` callback). Use the `input` event — fires on every content change in contentEditable, including typing, deletion, paste, and execCommand operations. Lightweight, no DOM diffing.
+
+**IME guards:** Every intercepted keydown handler must check `e.isComposing` and bail out during IME composition. This applies to: Option+Arrow, Return/Enter, and any future key handlers. Missing this would break Japanese, Chinese, Korean, and other IME-based input.
+
+Read API: `getText()`, `getAtoms()`, `getSelectedRange()` — read directly from the DOM on demand.
 
 ### Step 4: Typeahead
 
 Port the typeahead state machine. Adapted for DOM-based cursor position:
-- `@` trigger detection by watching text input
+- `@` trigger detection via the `input` event (same change detection as above)
+- Cursor-relative position: walk DOM backward from caret to find the `@` character and extract the query
 - Popup positioned near cursor
 - Completion provider callback
 - Tab/Enter accepts, Escape cancels, arrow keys navigate
@@ -250,33 +262,57 @@ Port the typeahead state machine. Adapted for DOM-based cursor position:
 
 ### Step 5: Persistence
 
-Serialize editor state to tugbank on meaningful changes:
-- State = editor innerHTML + cursor position (as a DOM path or flat offset)
-- Restore on mount
+Serialize editor state to tugbank on meaningful changes (detected via `input` event):
+- **Not raw innerHTML** — data URIs are huge and WebKit may normalize HTML across sessions
+- Lightweight representation: `{ text: string, atoms: { position: number, type: string, label: string, value: string }[] }`
+- `text` contains plain text with U+FFFC at atom positions (same convention as before)
+- On restore: rebuild the DOM from text + atom metadata, recreating atom `<img>` elements at the correct positions
+- Cursor position: save as flat offset, restore via DOM walk
 - Must survive reload, app quit, `just app` [L23]
 
-### Step 6: Testing
+### Step 6: Theme change handling
 
-Simple, direct tests on the real editor. No formal framework — just functions that exercise the editor and check results:
-- Type text, check DOM content
-- Insert atom, check it appears
+Atom SVG colors are baked into the data URI at creation time. When the theme changes:
+- Walk the DOM for all `img[data-atom-label]` elements
+- Read the atom metadata from data attributes
+- Rebuild each atom's SVG with the new theme colors
+- Replace the `src` attribute
+
+This can be triggered by a theme change observer or callback from the theme system.
+
+### Step 7: Testing
+
+Simple, direct tests on the real editor. A test function that exercises the editor and reports pass/fail results — not a formal state-machine framework, but not "no tests" either:
+
+- Type text, check DOM content via `getText()`
+- Insert atom, check it appears via `getAtoms()`
 - Cut/paste atom, check round-trip
-- Option+Arrow near atoms, check caret position
+- Option+Arrow near atoms, check caret stops at boundary
 - Drag file, check atom created
 - Return key, check newline or submit
+- Paste rich HTML from external source, verify only plain text arrives (no formatting)
+- IME composition, verify no interference from event handlers
+- Theme change, verify atom colors update
 
-Tests run in the gallery card on the real component. No parallel model to validate.
+Tests run in the gallery card on the real component.
 
-### Step 7: Remaining features
+### Step 8: Option+Delete and editing granularity
+
+Option+Delete (word deletion) and other granularity operations need DOM-based boundary detection. This is real work — not a small remaining item:
+
+- Walk the DOM backward/forward from cursor, counting characters, treating atoms and whitespace as boundaries
+- Handle: Option+Delete (word backward), Option+Fn+Delete (word forward), Cmd+Delete (line backward)
+- Atoms are word boundaries — Option+Delete from after an atom deletes the atom
+- Emacs bindings (Ctrl+K/Y/T/O) adapted similarly
+
+### Step 9: Remaining features
 
 - Prefix detection (first-character routing)
-- Option+Delete word/paragraph deletion via DOM traversal
-- Emacs bindings (Ctrl+K/Y/T/O) adapted for DOM-based editing
 - History navigation (up/down at document boundaries)
 - Text truncation for long atom labels
-- Theme token integration for atom colors
+- Auto-resize (1 row → maxRows)
 
-### Step 8: Retire the spike
+### Step 10: Retire the spike
 
 Once tug-prompt-input is working and verified with all the above features, remove the spike section from the gallery card. The gallery card's interactive editor section remains as the testing surface for the real component.
 
