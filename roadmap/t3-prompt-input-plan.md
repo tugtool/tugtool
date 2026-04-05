@@ -624,14 +624,23 @@ Simple, direct tests on the real editor. A test function that exercises the edit
 
 Tests run in the gallery card on the real component.
 
-### Step 8: Option+Delete and editing granularity
+### Step 8: Emacs binding fixes
 
-Option+Delete (word deletion) and other granularity operations need DOM-based boundary detection. This is real work — not a small remaining item:
+Native WebKit contentEditable handles Option+Delete word deletion, Cmd+Delete line deletion, and most Emacs bindings (Ctrl+K, Ctrl+Y, Ctrl+O, Ctrl+A, Ctrl+E) correctly with `<img>` atoms. Two gaps remain:
 
-- Walk the DOM backward/forward from cursor, counting characters, treating atoms and whitespace as boundaries
-- Handle: Option+Delete (word backward), Option+Fn+Delete (word forward), Cmd+Delete (line backward)
-- Atoms are word boundaries — Option+Delete from after an atom deletes the atom
-- Emacs bindings (Ctrl+K/Y/T/O) adapted similarly
+#### Sub-step 8.1: Implement Ctrl+U (kill line backward)
+
+WebKit doesn't handle Ctrl+U in contentEditable. Add a keydown handler:
+- Select from cursor to beginning of line (walk backward to previous `<br>` or start of content)
+- Delete via `execCommand("delete")` — goes on the undo stack
+- Store deleted content in the kill ring (already exists via native Ctrl+K)
+
+#### Sub-step 8.2: Implement Ctrl+T (transpose with atoms)
+
+Native Ctrl+T transposes text characters but doesn't handle atoms. Add a keydown handler:
+- Read the two items flanking the cursor (each is either a text character or an atom `<img>`)
+- If either is an atom, intercept: delete both, re-insert in swapped order via execCommand
+- If both are text characters, let the browser handle natively
 
 ### Step 9: Remaining features
 
