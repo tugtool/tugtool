@@ -224,33 +224,85 @@ Keep the shell: React component, useLayoutEffect setup, imperative handle, props
 
 ### Step 3: Implement the new architecture
 
-Write the seven event handlers fresh, referencing the spike but not importing from it. Code goes into proper component locations:
+Replace the no-op engine stubs with a working editor built on native contentEditable + `<img>` atoms. The DOM is the source of truth — no parallel document model. Code written fresh, referencing the spike but not importing from it.
 
-- **`tug-prompt-input.tsx`** — React component with contentEditable div, event handler setup in useLayoutEffect, imperative handle for parent access
-- **`tug-prompt-input.css`** — styling, `::selection` override, Custom Highlight suppression, line-height for stable layout
-- **`lib/tug-atom-img.ts`** (new) — `createAtomImgElement`, `atomImgHTML`, SVG builder, canvas text measurement, icon paths. Standalone module, no dependency on the old tug-atom badge code.
+#### Sub-step 3.1: Create `lib/tug-atom-img.ts` (new file)
 
-The event handlers:
-1. Atom creation and insertion (via execCommand insertHTML)
-2. Clipboard (copy/cut/paste with atom preservation)
-3. Drag & drop (files → atom images at drop point)
-4. Option+Arrow (word boundary clamping at atoms)
-5. Click on atom (select entire image)
-6. Return/Enter (submit vs newline via data attributes)
-7. Rich text blocking (see below)
-8. Change detection (see below)
-9. CSS setup (Custom Highlight suppression — in CSS file, not JS)
+Extract from the spike into a standalone module:
+- `ATOM_ICON_PATHS` — Lucide-style icon paths (24×24 viewBox)
+- `measureTextWidth(text, font)` — canvas-based text measurement
+- `createAtomImgElement(type, label, value)` → `HTMLImageElement` with SVG data URI
+- `atomImgHTML(type, label, value?)` → HTML string for `execCommand("insertHTML")`
 
-**Rich text blocking:** Without `-webkit-user-modify: read-write-plaintext-only`, the editor is a rich text surface. Users can paste formatted HTML from other apps, and Cmd+B/I/U could apply formatting. Block this:
-- `beforeinput` handler: reject formatting inputTypes (`formatBold`, `formatItalic`, `formatUnderline`, etc.)
-- Paste handler: when pasting non-atom HTML, strip all markup and insert as plain text via `execCommand("insertText")`
-- This keeps the editor plaintext-with-atoms — no rich text leaks in
+No dependency on old `tug-atom` badge code. Colors hardcoded initially (Step 6 adds theming).
 
-**Change detection:** Without MutationObserver, we need to know when content changes (for tugbank persistence, typeahead query updates, `onChange` callback). Use the `input` event — fires on every content change in contentEditable, including typing, deletion, paste, and execCommand operations. Lightweight, no DOM diffing.
+#### Sub-step 3.2: Implement `TugTextEngine` methods
 
-**IME guards:** Every intercepted keydown handler must check `e.isComposing` and bail out during IME composition. This applies to: Option+Arrow, Return/Enter, and any future key handlers. Missing this would break Japanese, Chinese, Korean, and other IME-based input.
+Replace no-op stubs with DOM-reading implementations in `tug-text-engine.ts`. No segment model — read directly from the contentEditable div.
 
-Read API: `getText()`, `getAtoms()`, `getSelectedRange()` — read directly from the DOM on demand.
+**Read API (DOM is truth):**
+- `getText()` — walk `root.childNodes`, replace `<img data-atom-label>` with U+FFFC, `<br>` with `\n`, text nodes as-is
+- `getAtoms()` — `root.querySelectorAll("img[data-atom-label]")`, return `AtomSegment[]` from data attributes
+- `isEmpty()` — `root.textContent === ""` and no atom images
+- `getSelectedRange()` / `setSelectedRange()` — flat-offset ↔ DOM position conversion via child node walk (count text chars + 1 per atom + 1 per `<br>`)
+
+**Mutation API (all via execCommand for native undo):**
+- `insertText(text)` — `document.execCommand("insertText", false, text)`
+- `insertAtom(atom)` — `atomImgHTML` + `document.execCommand("insertHTML", false, html)`
+- `clear()` — `root.innerHTML = ""; onChange()`
+- `selectAll()` — `document.execCommand("selectAll")`
+- `focus()` — `root.focus()`
+- Delete methods — `execCommand("delete")` / `execCommand("forwardDelete")`. Word/paragraph granularity: `setSelectedRange` to the boundary, then `execCommand("delete")`
+- `undo()` / `redo()` — `document.execCommand("undo")` / `document.execCommand("redo")` (browser's native stack)
+
+**Deferred (stubs for now):**
+- `captureState()` / `restoreState()` — keep returning empty state (Step 5 migrates persistence)
+- `killLine` / `yank` / `transpose` / `openLine` — implement in Step 8
+- `flushMutations()` — no-op, no MutationObserver
+
+#### Sub-step 3.3: Wire event handlers in `setupEvents()` / `teardown()`
+
+Called from constructor, cleaned up in `teardown()`. All proven in the spike:
+
+1. **Return/Enter** — keydown: `e.isComposing` guard, read action from config, submit callback or `execCommand("insertLineBreak")`
+2. **Click on atom** — click: if target is `img[data-atom-label]`, select entire image via `Range.selectNode`
+3. **Option+Arrow** — keydown: browser word move + atom boundary clamping via `Range.compareBoundaryPoints`
+4. **Copy** — copy: write `text/html` (preserves img tags) + `text/plain` (atoms → labels)
+5. **Cut** — cut: same as copy, then `execCommand("delete")`
+6. **Paste** — paste (capture phase): if HTML has `data-atom-label`, extract body content, `execCommand("insertHTML")`. If no atoms, strip markup, `execCommand("insertText")` (rich text blocking)
+7. **Drag & drop** — dragover: `preventDefault` + `dropEffect="copy"`. drop: `caretRangeFromPoint` + build atom imgs + `execCommand("insertHTML")`
+8. **Rich text blocking** — beforeinput: reject `formatBold`, `formatItalic`, `formatUnderline`, etc.
+9. **Change detection** — input event: fire `onChange` callback, update `data-empty` attribute
+10. **Auto-resize** — input event (same handler): `root.style.height = Math.min(scrollHeight, maxHeight)`
+
+**IME guards:** Every intercepted keydown handler checks `e.isComposing` and bails out during IME composition. This applies to: Option+Arrow, Return/Enter, and any future key handlers.
+
+#### Sub-step 3.4: Update CSS (`tug-prompt-input.css`)
+
+- Remove `-webkit-user-modify: read-write-plaintext-only` (blocks `insertHTML` with images)
+- Remove `.tug-cursor-anchor` (ZWSP infrastructure gone)
+- Set `line-height: 24px` (accommodates 22px atom images without layout shift)
+- Custom Highlight suppression already in place — keep it
+
+#### Sub-step 3.5: Verify
+
+- `bun run check` passes
+- Gallery card renders working editor: type text, insert atoms via button, copy/paste atoms, drag files, Option+Arrow stops at atoms, click atom selects it, Return submits
+
+#### What Step 3 does NOT build
+
+- Typeahead (Step 4)
+- Persistence (Step 5 — `captureState`/`restoreState` stay as stubs)
+- Theme-aware atom colors (Step 6)
+- Option+Delete word granularity (Step 8)
+- `killLine`/`yank`/`transpose`/`openLine` (Step 8)
+
+#### Key architectural decisions
+
+- **`execCommand` for everything** — typing, insertions, deletions all go through the browser's editing pipeline. Native undo for free.
+- **DOM is truth** — `getText()`, `getAtoms()`, `getSelectedRange()` read from the DOM every time. No caching, no stale state.
+- **IME: don't touch it** — every keydown handler checks `e.isComposing`. We never intercept basic arrow keys or typing. Browser handles IME natively.
+- **No `flushMutations()`** — no MutationObserver. The method stays as a no-op for API compatibility.
 
 ### Step 4: Typeahead
 
