@@ -29,6 +29,7 @@ use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
 use crate::auth::new_shared_auth_state;
 use crate::feeds::file_watcher::FileWatcher;
 use crate::feeds::filesystem::FilesystemFeed;
+use crate::feeds::filetree::{FileTreeFeed, FileTreeQuery};
 use crate::feeds::git::GitFeed;
 use crate::feeds::stats::{
     BuildStatusCollector, ProcessInfoCollector, StatsRunner, TokenUsageCollector,
@@ -180,6 +181,38 @@ async fn main() {
     let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
     let fs_feed = FilesystemFeed::new(watch_dir.clone(), fs_broadcast_tx.clone());
 
+    // Create FileTreeFeed: walk the directory, create query channel, watch channel.
+    let (initial_files, ft_truncated) = file_watcher.walk();
+    let (ft_query_tx, ft_query_rx) = mpsc::channel::<FileTreeQuery>(16);
+    let (ft_watch_tx, ft_watch_rx) = watch::channel(Frame::new(FeedId::FILETREE, vec![]));
+    let ft_feed = FileTreeFeed::new(
+        watch_dir.clone(),
+        initial_files,
+        ft_truncated,
+        fs_broadcast_tx.clone(),
+        ft_query_rx,
+    );
+
+    // Adapter: router sends raw Frames on FILETREE_QUERY; parse JSON into FileTreeQuery.
+    let (ft_input_tx, mut ft_input_rx) = mpsc::channel::<Frame>(16);
+    let ft_adapter_tx = ft_query_tx;
+    tokio::spawn(async move {
+        while let Some(frame) = ft_input_rx.recv().await {
+            #[derive(serde::Deserialize)]
+            struct RawQuery {
+                query: String,
+                root: Option<String>,
+            }
+            if let Ok(raw) = serde_json::from_slice::<RawQuery>(&frame.payload) {
+                let ftq = FileTreeQuery {
+                    query: raw.query,
+                    root: raw.root.map(PathBuf::from),
+                };
+                let _ = ft_adapter_tx.send(ftq).await;
+            }
+        }
+    });
+
     // Create git feed and watch channel
     let (git_watch_tx, git_watch_rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
     let git_feed = GitFeed::new(watch_dir.clone());
@@ -292,10 +325,12 @@ async fn main() {
     feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
+    feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
 
     // Register snapshot watches
     let mut snapshot_watches = vec![
         fs_watch_rx,
+        ft_watch_rx,
         git_watch_rx,
         stats_agg_rx,
         stats_proc_rx,
@@ -318,6 +353,12 @@ async fn main() {
     let fs_cancel = cancel.clone();
     tokio::spawn(async move {
         fs_feed.run(fs_watch_tx, fs_cancel).await;
+    });
+
+    // Start FileTreeFeed (query/response scoring)
+    let ft_cancel = cancel.clone();
+    tokio::spawn(async move {
+        ft_feed.run(ft_watch_tx, ft_cancel).await;
     });
 
     // Start git feed in background task

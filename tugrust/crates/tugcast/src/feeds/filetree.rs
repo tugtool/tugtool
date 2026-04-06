@@ -7,8 +7,6 @@
 //! This is a custom async task, NOT a `SnapshotFeed` implementor — the trait
 //! can't express the dual-input nature of query + file events.
 
-// Consumed by main.rs (Step 7). Allow dead code until then.
-#![allow(dead_code)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

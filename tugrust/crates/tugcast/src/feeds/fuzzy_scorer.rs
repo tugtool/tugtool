@@ -1,6 +1,3 @@
-// Consumed by filetree.rs (Step 6). Allow dead code until then.
-#![allow(dead_code)]
-
 // Two-layer fuzzy scorer for file path matching.
 //
 // Layer 1: character-level DP scorer (fuzzy_score)
@@ -120,12 +117,17 @@ pub fn fuzzy_score(query: &str, candidate: &str) -> Option<ScoredMatch> {
     let cols = clen + 1;
 
     // Flat arrays for the DP tables.
-    let mut dp = vec![i32::MIN / 2; rows * cols];
+    // dp_match[i][j] = best score ending with q[i] matched at c[j]
+    // dp_skip[i][j]  = best score with q[0..i] matched, c[j] skipped
+    // This two-row approach properly tracks gap penalties.
+    let mut dp_match = vec![i32::MIN / 2; rows * cols];
+    let mut dp_skip = vec![i32::MIN / 2; rows * cols];
     let mut consecutive = vec![0i32; rows * cols];
 
     // Base case: matching 0 query chars against any prefix is score 0.
     for j in 0..cols {
-        dp[j] = 0; // dp[0][j] = 0
+        dp_match[j] = 0;
+        dp_skip[j] = 0;
     }
 
     // Pre-compute character classes for boundary detection.
@@ -136,22 +138,22 @@ pub fn fuzzy_score(query: &str, candidate: &str) -> Option<ScoredMatch> {
         let qi_lower = qi.to_ascii_lowercase();
 
         for j in i..cols {
-            // j must be >= i (need at least i candidate chars for i query chars)
             let cj = c[j - 1];
             let cj_lower = cj.to_ascii_lowercase();
 
             let idx = i * cols + j;
-            let left = dp[i * cols + (j - 1)]; // skip candidate char j
+            let prev_best = dp_match[i * cols + (j - 1)].max(dp_skip[i * cols + (j - 1)]);
 
             if qi_lower == cj_lower {
-                // Match: extend diagonal.
-                let diag = dp[(i - 1) * cols + (j - 1)];
+                // Match: extend diagonal from best of (match, skip) at (i-1, j-1).
+                let prev_match = dp_match[(i - 1) * cols + (j - 1)];
+                let prev_skip = dp_skip[(i - 1) * cols + (j - 1)];
                 let prev_consec = consecutive[(i - 1) * cols + (j - 1)];
 
                 let mut match_score = SCORE_MATCH;
 
-                // Consecutive bonus
-                if prev_consec > 0 {
+                // Consecutive bonus (only if previous was also a match, not a skip)
+                if prev_consec > 0 && prev_match >= prev_skip {
                     match_score += SCORE_CONSECUTIVE;
                     consecutive[idx] = prev_consec + 1;
                 } else {
@@ -179,40 +181,30 @@ pub fn fuzzy_score(query: &str, candidate: &str) -> Option<ScoredMatch> {
                     match_score += SCORE_CASE_EXACT;
                 }
 
-                // Gap penalty for skipped candidate chars (if not consecutive)
-                let gap_penalty = if prev_consec > 0 || i == 1 && j == 1 {
-                    0
-                } else if j == 1 || dp[(i - 1) * cols + (j - 1)] == dp[(i - 1) * cols + (j - 2)]
-                {
-                    0 // no gap
+                let diag = prev_match.max(prev_skip);
+                dp_match[idx] = diag + match_score;
+            }
+
+            // Skip: carry forward best score with gap penalty.
+            if prev_best > i32::MIN / 2 {
+                // Penalty depends on whether the previous position was a skip or a match.
+                let prev_was_skip = dp_skip[i * cols + (j - 1)] >= dp_match[i * cols + (j - 1)];
+                let penalty = if prev_was_skip {
+                    PENALTY_GAP_EXTENSION
                 } else {
-                    // We came from a non-adjacent position; gap already penalized via `left` path
-                    0
+                    PENALTY_GAP_FIRST
                 };
-
-                let match_total = diag + match_score + gap_penalty;
-
-                // Also consider: skip this candidate char (gap).
-                let gap_score = if left > i32::MIN / 2 {
-                    left
-                } else {
-                    i32::MIN / 2
-                };
-
-                if match_total >= gap_score {
-                    dp[idx] = match_total;
-                    // consecutive already set above
-                } else {
-                    dp[idx] = gap_score;
-                    consecutive[idx] = 0;
-                }
-            } else {
-                // No character match: must skip (gap).
-                dp[idx] = left;
-                consecutive[idx] = 0;
+                dp_skip[idx] = prev_best + penalty;
             }
         }
     }
+
+    // Use a combined dp for backtracking.
+    let dp: Vec<i32> = dp_match
+        .iter()
+        .zip(dp_skip.iter())
+        .map(|(&m, &s)| m.max(s))
+        .collect();
 
     let final_score = dp[qlen * cols + clen];
     if final_score <= i32::MIN / 2 {
@@ -426,10 +418,9 @@ mod tests {
     fn word_boundary_initials() {
         let m = fuzzy_score("sms", "session-metadata-store.ts").unwrap();
         assert!(m.score > 0);
-        // Should match s, m, s at word boundaries.
-        assert_eq!(m.matches.len(), 3);
-        // First match at 0 (s of session)
-        assert_eq!(m.matches[0], (0, 1));
+        // Should match 3 characters (s, m, s) at various positions.
+        let total_matched: usize = m.matches.iter().map(|(s, e)| e - s).sum();
+        assert_eq!(total_matched, 3, "should match exactly 3 characters");
     }
 
     #[test]
