@@ -507,6 +507,7 @@ export class TugTextEngine {
     this._empty = state.text.length === 0;
     this._hasRouteAtom = this.hasRouteAtomAtStart();
     this.updateEmpty();
+    this.autoResize();
     if (state.selection) {
       this.setSelectedRange(state.selection.start, state.selection.end);
     }
@@ -564,6 +565,20 @@ export class TugTextEngine {
         range.setStart(container, offset + 1);
         range.collapse(true);
       }
+    }
+  }
+
+  /** Scroll the editor so the caret is visible after height changes. */
+  private scrollCaretIntoView(): void {
+    if (this.root.scrollHeight <= this.root.clientHeight) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const caretRect = sel.getRangeAt(0).getBoundingClientRect();
+    const rootRect = this.root.getBoundingClientRect();
+    if (caretRect.bottom > rootRect.bottom) {
+      this.root.scrollTop += caretRect.bottom - rootRect.bottom;
+    } else if (caretRect.top < rootRect.top) {
+      this.root.scrollTop -= rootRect.top - caretRect.top;
     }
   }
 
@@ -1225,6 +1240,7 @@ export class TugTextEngine {
       }
       this.updateEmpty();
       this.autoResize();
+      this.scrollCaretIntoView();
       this.onChange?.();
 
       if (this._typeahead.active) {

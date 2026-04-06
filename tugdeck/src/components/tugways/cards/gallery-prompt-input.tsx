@@ -178,7 +178,7 @@ export function GalleryPromptInput() {
       {/* ---- Interactive Editor ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Editor</div>
-        <div style={maximized ? { display: "flex", flexDirection: "column" as const, height: "300px" } : undefined}>
+        <div style={maximized ? { display: "flex", flexDirection: "column" as const, height: "300px", gap: "8px" } : undefined}>
           <div className="prompt-input-toolbar">
             <TugPushButton size="sm" onClick={handleInsertAtom}>Insert Atom</TugPushButton>
             <TugPushButton size="sm" emphasis="outlined" onClick={handleClear}>Clear</TugPushButton>
