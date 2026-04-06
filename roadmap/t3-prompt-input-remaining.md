@@ -161,29 +161,147 @@ Wire both providers:
 
 ## Item 2: Prefix Detection
 
-**Goal:** First-character routing for tug-prompt-entry integration.
+**Goal:** First-character routing for tug-prompt-entry integration. When the user types a route prefix as the first character of the document, detect it, consume it, notify the parent, and — for `/` — also trigger slash command completion.
 
-**Design:**
-
-When the user types as the first character of the document:
+**Route prefixes:**
 - `>` → AI route (Claude Code)
 - `$` → shell route (future)
 - `:` → surface command route (local)
-- `/` → slash command mode (implies `>` route)
+- `/` → slash command mode (implies `>` route, AND triggers `/` completion)
 
-The prefix character is consumed (not displayed) and the route is communicated to the parent via a callback.
+**Architecture:** The input detects and consumes the prefix. The route state lives in tug-prompt-entry (T3.4), not in the input. The input is a thin notification source. This keeps the input reusable — it doesn't know about routes, it just knows about prefix characters and a callback.
 
-**Engine additions:**
-- `onRouteChange?: (route: string) => void` callback
-- In the `input` event handler, after content changes, check if the document starts with a route prefix
-- If the first character matches a route prefix, remove it from the DOM (via execCommand delete) and fire `onRouteChange`
+### Sub-step 2.1: Engine — add route prefix config and callback
 
-**Component prop:**
+**New config fields on `TugTextEngine`:**
 ```typescript
+routePrefixes: string[] = [];
+onRouteChange: ((route: string) => void) | null = null;
+```
+
+`routePrefixes` is the set of characters that trigger routing when typed as the first character. The engine doesn't know what the routes mean — it just detects the character and fires `onRouteChange`.
+
+No hardcoded prefix list in the engine. The component passes the list.
+
+### Sub-step 2.2: Engine — detect prefix in the input handler
+
+In the input event handler (handler 9/10), after the emptiness/resize/onChange work, add prefix detection:
+
+```typescript
+// Prefix detection: if the document starts with a route prefix,
+// consume it and notify the parent.
+if (this.routePrefixes.length > 0 && inputType.startsWith("insert")) {
+    this.detectRoutePrefix();
+}
+```
+
+The `detectRoutePrefix` method:
+```typescript
+private detectRoutePrefix(): void {
+    const text = this.getText();
+    if (text.length === 0) return;
+    const firstChar = text[0];
+    if (!this.routePrefixes.includes(firstChar)) return;
+
+    // Consume the prefix character
+    this.setSelectedRange(0, 1);
+    document.execCommand("delete");
+
+    // Fire the callback
+    this.onRouteChange?.(firstChar);
+}
+```
+
+**Key behaviors:**
+- Only checks on insertions (not deletions or undo) — prevents firing when the user deletes back to a prefix character
+- Consumes the prefix via `setSelectedRange(0, 1)` + `execCommand("delete")` — this is undoable, though undo is unlikely to be meaningful here
+- Fires after the character is consumed, so the editor shows the remaining content (if any)
+
+**Interaction with `/` completion:**
+When the user types `/` as the first character:
+1. Prefix detection fires: consumes `/`, calls `onRouteChange("/")`
+2. But the `/` is now gone from the DOM — so the completion trigger won't see it
+
+This is a problem. The `/` needs to both change the route AND trigger completion. Two approaches:
+
+**Approach A — prefix detection fires first, then re-inserts `/` for completion:**
+After consuming the prefix, if the prefix is also a completion trigger, re-insert it. But this is messy — two mutations, confusing undo state.
+
+**Approach B (recommended) — prefix detection fires but does NOT consume `/` when it's a completion trigger:**
+If the prefix character is also a key in `completionProviders`, skip the consumption. The character stays in the editor, the route change fires, and the normal completion trigger detection (which runs later in the same input handler) picks up the `/` and opens the popup. The completion popup shows slash commands. When the user accepts a completion, the `/` is consumed as part of the typeahead accept flow.
+
+If the user dismisses the completion (Escape), the `/` stays in the editor as typed text. This is fine — it's just a character.
+
+```typescript
+private detectRoutePrefix(): void {
+    const text = this.getText();
+    if (text.length === 0) return;
+    const firstChar = text[0];
+    if (!this.routePrefixes.includes(firstChar)) return;
+
+    // If the prefix is also a completion trigger, don't consume it —
+    // let completion handle it. Just fire the route change.
+    if (this.completionProviders[firstChar]) {
+        this.onRouteChange?.(firstChar);
+        return;
+    }
+
+    // Consume the prefix character
+    this.setSelectedRange(0, 1);
+    document.execCommand("delete");
+    this.onRouteChange?.(firstChar);
+}
+```
+
+### Sub-step 2.3: Component — add props and wire to engine
+
+**New props on `TugPromptInputProps`:**
+```typescript
+/**
+ * Characters that trigger route detection when typed as the first character.
+ * The character is consumed and onRouteChange fires.
+ * If the character is also a completion trigger, it's kept for completion.
+ */
+routePrefixes?: string[];
+/**
+ * Called when a route prefix is detected as the first character.
+ */
 onRouteChange?: (route: string) => void;
 ```
 
-**Note:** This is a thin integration point. The actual route state lives in tug-prompt-entry (T3.4), not in the input. The input just detects the prefix and notifies.
+**Wiring:**
+- Destructure `routePrefixes` and `onRouteChange` in the component
+- `onRouteChange` gets the ref pattern (like `onSubmitRef`) since it's read from the engine's callback closure
+- `routePrefixes` is set directly on the engine (like `completionProviders`) with a sync effect
+
+### Sub-step 2.4: Gallery card — mock route display
+
+Add a simple route indicator to the gallery card that shows the current route:
+
+```typescript
+const [currentRoute, setCurrentRoute] = useState<string>(">");
+```
+
+Wire it:
+```typescript
+<TugPromptInput
+  routePrefixes={[">", "$", ":", "/"]}
+  onRouteChange={setCurrentRoute}
+  ...
+/>
+```
+
+Display the current route somewhere visible — a small label above or beside the editor showing "Route: >" or similar. Direct DOM write via a ref for L06 compliance, or a simple state display since this is a gallery test harness.
+
+### Sub-step 2.5: Verify and test
+
+- Type `>` as first character in empty editor → route changes to `>`, character consumed, editor empty
+- Type `$` as first character → route changes to `$`, character consumed
+- Type `/` as first character → route changes to `/`, character stays, completion popup opens
+- Type `hello` then `>` → no route change (not first character)
+- Clear editor, type `>hello` → route changes to `>`, editor shows "hello"
+- Prefix detection does NOT fire on deletion or undo
+- Existing features unaffected
 
 ---
 
