@@ -173,6 +173,9 @@ body {
   --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(yellow, i: 0, t: 30, a: 25);
   --tug7-surface-selection-primary-normal-plain-rest: --tug-color(blue, i: 50, t: 50, a: 40);
 
+  /* Element — Highlight */
+  --tug7-element-highlight-fill-normal-drop-rest: --tug-color(blue, i: 55, t: 60);
+
   /* Surface — Highlight */
   --tug7-surface-highlight-primary-normal-drop-rest: --tug-color(blue, i: 50, t: 50, a: 18);
   --tug7-surface-highlight-primary-normal-flash-rest: --tug-color(orange, i: 50, t: 50, a: 35);

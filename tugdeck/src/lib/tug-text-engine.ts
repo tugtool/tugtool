@@ -10,6 +10,7 @@
 
 import { atomImgHTML, createAtomImgElement, TUG_ATOM_CHAR } from "./tug-atom-img";
 import type { AtomSegment } from "./tug-atom-img";
+import { getTokenValue } from "@/theme-tokens";
 
 // ===================================================================
 // Types
@@ -307,6 +308,10 @@ export class TugTextEngine {
   // Cached min-height for grow-up margin calculation (avoids getComputedStyle per input).
   private _cachedMinHeight = 0;
 
+  // Drag state — drop caret indicator element [L06]
+  private _dropCaret: HTMLDivElement | null = null;
+  private _dragEnterCount = 0;
+
   // @-trigger typeahead state
   private _typeahead = {
     active: false,
@@ -516,6 +521,14 @@ export class TugTextEngine {
   /** Update the data-empty attribute for placeholder visibility. */
   private updateEmpty(): void {
     this.root.dataset.empty = this.isEmpty() ? "true" : "false";
+  }
+
+  /** Remove the drop caret indicator element. */
+  private removeDropCaret(): void {
+    if (this._dropCaret) {
+      this._dropCaret.remove();
+      this._dropCaret = null;
+    }
   }
 
   /** Auto-resize the editor to fit content, up to maxHeight. */
@@ -926,13 +939,58 @@ export class TugTextEngine {
     }, true); // capture phase
 
     // 7. Drag & drop — files become atom images
+    // Drop caret: a thin line positioned at the prospective insertion point [L06].
+    // The browser selection is untouched during drag — preserved per L23.
+    this.listen(root, "dragenter", (e: Event) => {
+      e.preventDefault();
+      this._dragEnterCount++;
+    });
+
+    this.listen(root, "dragleave", () => {
+      this._dragEnterCount--;
+      if (this._dragEnterCount === 0) this.removeDropCaret();
+    });
+
     this.listen(root, "dragover", (e: Event) => {
       e.preventDefault();
-      (e as DragEvent).dataTransfer!.dropEffect = "copy";
+      const de = e as DragEvent;
+      de.dataTransfer!.dropEffect = "copy";
+      // Position the drop caret indicator
+      const range = document.caretRangeFromPoint(de.clientX, de.clientY);
+      if (range) {
+        const rootRect = root.getBoundingClientRect();
+        if (!this._dropCaret) {
+          this._dropCaret = document.createElement("div");
+          this._dropCaret.style.cssText = "position:absolute;width:2px;pointer-events:none;border-radius:1px";
+          this._dropCaret.style.backgroundColor = getTokenValue("--tug7-element-highlight-fill-normal-drop-rest");
+          root.appendChild(this._dropCaret);
+        }
+        const caretRect = range.getBoundingClientRect();
+        const styles = getComputedStyle(root);
+        const lh = parseFloat(styles.lineHeight) || 24;
+        if (caretRect.height > 0) {
+          this._dropCaret.style.left = `${caretRect.left - rootRect.left + root.scrollLeft}px`;
+          this._dropCaret.style.top = `${caretRect.top - rootRect.top + root.scrollTop}px`;
+          this._dropCaret.style.height = `${caretRect.height}px`;
+        } else {
+          // Empty line — caretRangeFromPoint returns a zero rect.
+          // Snap to line grid at the editor's left edge, height centered in line.
+          const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+          const paddingTop = parseFloat(styles.paddingTop) || 0;
+          const relY = de.clientY - rootRect.top + root.scrollTop;
+          const line = Math.floor((relY - paddingTop) / lh);
+          const caretH = Math.round(lh * 0.85);
+          this._dropCaret.style.left = `${paddingLeft}px`;
+          this._dropCaret.style.top = `${paddingTop + line * lh + (lh - caretH) / 2}px`;
+          this._dropCaret.style.height = `${caretH}px`;
+        }
+      }
     });
 
     this.listen(root, "drop", (e: Event) => {
       e.preventDefault();
+      this._dragEnterCount = 0;
+      this.removeDropCaret();
       const de = e as DragEvent;
       const files = de.dataTransfer?.files;
       if (!files || files.length === 0) return;
