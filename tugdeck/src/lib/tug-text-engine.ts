@@ -24,10 +24,20 @@ export type InputAction = "submit" | "newline";
 export interface CompletionItem {
   label: string;
   atom: AtomSegment;
+  /** Byte-offset ranges [start, end) of matched characters for highlighting. */
+  matches?: [number, number][];
 }
 
-/** Completion provider: given a query string, return matching items. */
-export type CompletionProvider = (query: string) => CompletionItem[];
+/**
+ * Completion provider: given a query string, return matching items.
+ *
+ * Async providers (e.g., file completion) attach a `subscribe` method so the
+ * text engine can observe result changes via L22 (direct store observation,
+ * no React round-trip). Synchronous providers (command completion) omit it.
+ */
+export type CompletionProvider = ((query: string) => CompletionItem[]) & {
+  subscribe?: (listener: () => void) => () => void;
+};
 
 /** Drop handler: given a FileList from a drag-and-drop, return atoms to insert. */
 export type DropHandler = (files: FileList) => AtomSegment[];
@@ -329,6 +339,7 @@ export class TugTextEngine {
     filtered: [] as CompletionItem[],
     selectedIndex: 0,
     triggerConsumed: false,
+    unsubscribe: null as (() => void) | null,
   };
 
   constructor(root: HTMLDivElement) {
@@ -702,6 +713,14 @@ export class TugTextEngine {
       this._typeahead.triggerConsumed = true;
       this._typeahead.filtered = provider("");
       this._typeahead.selectedIndex = 0;
+
+      // Subscribe to async providers for L22 result notification.
+      if (provider.subscribe) {
+        this._typeahead.unsubscribe = provider.subscribe(() => {
+          this.refreshTypeahead();
+        });
+      }
+
       this.onTypeaheadChange?.(true, this._typeahead.filtered, 0);
     }
   }
@@ -733,7 +752,31 @@ export class TugTextEngine {
     this._typeahead.query = "";
     this._typeahead.filtered = provider("");
     this._typeahead.selectedIndex = 0;
+
+    // Subscribe to async providers for L22 result notification.
+    if (provider.subscribe) {
+      this._typeahead.unsubscribe = provider.subscribe(() => {
+        this.refreshTypeahead();
+      });
+    }
+
     this.onTypeaheadChange?.(true, this._typeahead.filtered, 0);
+  }
+
+  /**
+   * Re-read results from the active provider and update the typeahead menu.
+   * Called by the provider's subscribe callback when async results arrive.
+   * The provider handles staleness internally (returns [] if snapshot.query
+   * doesn't match the requested query).
+   */
+  refreshTypeahead(): void {
+    if (!this._typeahead.active || !this._typeahead.provider) return;
+    this._typeahead.filtered = this._typeahead.provider(this._typeahead.query);
+    this._typeahead.selectedIndex = Math.min(
+      this._typeahead.selectedIndex,
+      Math.max(0, this._typeahead.filtered.length - 1),
+    );
+    this.onTypeaheadChange?.(true, this._typeahead.filtered, this._typeahead.selectedIndex);
   }
 
   /** Update the typeahead query from the text between @ and the caret. */
@@ -794,6 +837,8 @@ export class TugTextEngine {
   /** Cancel the active typeahead session. */
   cancelTypeahead(): void {
     if (!this._typeahead.active) return;
+    this._typeahead.unsubscribe?.();
+    this._typeahead.unsubscribe = null;
     this._typeahead.active = false;
     this._typeahead.trigger = "";
     this._typeahead.provider = null;

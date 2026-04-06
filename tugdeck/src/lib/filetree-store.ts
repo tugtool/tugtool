@@ -1,0 +1,172 @@
+/**
+ * FileTreeStore — sends file completion queries and receives scored results.
+ *
+ * Subscribes to FILETREE (0x11) for scored responses. Sends queries on
+ * FILETREE_QUERY (0x12) via the connection singleton.
+ *
+ * **Laws:** [L22] Text engine observes store directly for DOM-driven typeahead
+ * updates — no React round-trip. [L07] Provider is a stable closure.
+ *
+ * @module lib/filetree-store
+ */
+
+import type { FeedStore } from "./feed-store";
+import type { FeedIdValue } from "../protocol";
+import { FeedId } from "../protocol";
+import type { CompletionProvider, CompletionItem } from "./tug-text-engine";
+import { getConnection } from "./connection-singleton";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+/** A single scored result from tugcast's fuzzy matcher. */
+export interface ScoredResult {
+  path: string;
+  score: number;
+  matches: [number, number][];
+}
+
+/** Snapshot of the current file tree query response. */
+export interface FileTreeResultSnapshot {
+  query: string;
+  results: ScoredResult[];
+  truncated: boolean;
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+const EMPTY_SNAPSHOT: FileTreeResultSnapshot = {
+  query: "",
+  results: [],
+  truncated: false,
+};
+
+/** Parse a FILETREE response payload into a snapshot. Returns null if invalid. */
+function parseResponsePayload(payload: unknown): FileTreeResultSnapshot | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  if (typeof p.query !== "string") return null;
+  if (!Array.isArray(p.results)) return null;
+  return {
+    query: p.query,
+    results: p.results as ScoredResult[],
+    truncated: !!p.truncated,
+  };
+}
+
+// ── FileTreeStore ─────────────────────────────────────────────────────────────
+
+/**
+ * FileTreeStore — query/response store for file completion.
+ *
+ * Sends queries to tugcast via FILETREE_QUERY, receives scored results on
+ * FILETREE. Exposes a subscribable CompletionProvider for the @ trigger.
+ */
+export class FileTreeStore {
+  private _snapshot: FileTreeResultSnapshot = { ...EMPTY_SNAPSHOT };
+  private _listeners: Set<() => void> = new Set();
+  private _unsubscribeFeed: (() => void) | null = null;
+  private _lastPayloadRef: unknown = undefined;
+  private _feedId: FeedIdValue;
+
+  constructor(feedStore: FeedStore, feedId: FeedIdValue) {
+    this._feedId = feedId;
+    this._unsubscribeFeed = feedStore.subscribe(() => {
+      this._onFeedUpdate(feedStore);
+    });
+    // Initial check in case data is already available.
+    this._onFeedUpdate(feedStore);
+  }
+
+  private _onFeedUpdate(feedStore: FeedStore): void {
+    const map = feedStore.getSnapshot();
+    const payload = map.get(this._feedId);
+
+    // Reference comparison: only process if the payload reference changed.
+    if (payload === this._lastPayloadRef) return;
+    this._lastPayloadRef = payload;
+
+    const parsed = parseResponsePayload(payload);
+    if (!parsed) return;
+
+    this._snapshot = parsed;
+    for (const listener of this._listeners) {
+      listener();
+    }
+  }
+
+  /** Subscribe to store updates. Returns an unsubscribe function. */
+  subscribe = (listener: () => void): (() => void) => {
+    this._listeners.add(listener);
+    return () => {
+      this._listeners.delete(listener);
+    };
+  };
+
+  /** Return the current file tree result snapshot. */
+  getSnapshot = (): FileTreeResultSnapshot => {
+    return this._snapshot;
+  };
+
+  /**
+   * Send a query to tugcast via FILETREE_QUERY.
+   * Builds `{ query, root? }` JSON payload and sends as a binary frame.
+   */
+  sendQuery(query: string, root?: string): void {
+    const conn = getConnection();
+    if (!conn) return;
+    const payload: Record<string, string> = { query };
+    if (root !== undefined) payload.root = root;
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    conn.send(FeedId.FILETREE_QUERY, bytes);
+  }
+
+  /**
+   * Returns a CompletionProvider for the @ trigger.
+   *
+   * The provider is a stable closure (L07) with an attached `subscribe`
+   * method for L22 async result notification. Two invariants:
+   *
+   * 1. **Deduplication**: only sends FILETREE_QUERY when the query changes.
+   * 2. **Staleness**: returns [] if snapshot.query doesn't match the request.
+   */
+  getFileCompletionProvider(): CompletionProvider {
+    let lastSentQuery: string | null = null;
+
+    const provider = ((query: string): CompletionItem[] => {
+      // Deduplication: only send when query changes.
+      if (query !== lastSentQuery) {
+        lastSentQuery = query;
+        this.sendQuery(query);
+      }
+
+      // Staleness: return [] if snapshot is for a different query.
+      if (this._snapshot.query !== query) {
+        return [];
+      }
+
+      return this._snapshot.results.map((r) => ({
+        label: r.path,
+        atom: {
+          kind: "atom" as const,
+          type: "file",
+          label: r.path,
+          value: r.path,
+        },
+        matches: r.matches,
+      }));
+    }) as CompletionProvider;
+
+    provider.subscribe = (listener: () => void) => this.subscribe(listener);
+
+    return provider;
+  }
+
+  /** Unsubscribe from FeedStore and clear listeners. */
+  dispose(): void {
+    if (this._unsubscribeFeed) {
+      this._unsubscribeFeed();
+      this._unsubscribeFeed = null;
+    }
+    this._listeners.clear();
+  }
+}
