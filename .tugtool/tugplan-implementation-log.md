@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-04-06T17:34:37Z
+---
+
+## step-1: Created SessionMetadataStore class that subscribes to FeedStore, parses system_metadata payloads, and exposes L02-compliant subscribe/getSnapshot plus getCommandCompletionProvider(). 13 tests pass.
+
+**Files changed:**
+- t3-stores-944c9ca-1
+
+---
+
+---
 step: step-7
 date: 2025-04-01T23:32:57Z
 ---
