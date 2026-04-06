@@ -17,7 +17,7 @@ import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import type { AtomSegment, InputAction, CompletionItem } from "@/lib/tug-text-engine";
+import type { AtomSegment, InputAction, CompletionItem, HistoryProvider, TugTextEditingState } from "@/lib/tug-text-engine";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -133,17 +133,61 @@ const ENTER_CHOICES: TugChoiceItem[] = [
 
 
 // ===================================================================
+// Mock history provider — session-scoped, plain object [L06]
+// ===================================================================
+
+class GalleryHistoryProvider implements HistoryProvider {
+  private entries: TugTextEditingState[] = [];
+  private cursor = -1; // -1 = at draft (current typing)
+  private draft: TugTextEditingState = { text: "", atoms: [], selection: null };
+
+  push(state: TugTextEditingState): void {
+    this.entries.push(state);
+    this.cursor = -1;
+  }
+
+  back(current: TugTextEditingState): TugTextEditingState | null {
+    if (this.entries.length === 0) return null;
+    if (this.cursor === -1) {
+      this.draft = current;
+      this.cursor = this.entries.length - 1;
+    } else if (this.cursor > 0) {
+      this.cursor--;
+    } else {
+      return null;
+    }
+    return this.entries[this.cursor];
+  }
+
+  forward(): TugTextEditingState | null {
+    if (this.cursor === -1) return null;
+    if (this.cursor < this.entries.length - 1) {
+      this.cursor++;
+      return this.entries[this.cursor];
+    }
+    this.cursor = -1;
+    return this.draft;
+  }
+}
+
+// ===================================================================
 // Gallery component
 // ===================================================================
 
 export function GalleryPromptInput() {
   const inputRef = useRef<TugTextInputDelegate>(null);
   const nextAtomIdx = useRef(0);
+  const historyRef = useRef(new GalleryHistoryProvider());
   const [returnAction, setReturnAction] = useState<InputAction>("submit");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
 
   const handleSubmit = useCallback(() => {
-    inputRef.current?.clear();
+    const delegate = inputRef.current;
+    if (!delegate) return;
+    if (!delegate.isEmpty()) {
+      historyRef.current.push(delegate.captureState());
+    }
+    delegate.clear();
   }, []);
 
   const handleInsertAtom = useCallback(() => {
@@ -462,6 +506,7 @@ export function GalleryPromptInput() {
           numpadEnterAction={enterAction}
           onSubmit={handleSubmit}
           completionProvider={galleryCompletionProvider}
+          historyProvider={historyRef.current}
           dropHandler={galleryDropHandler}
         />
       </div>

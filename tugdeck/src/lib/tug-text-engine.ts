@@ -31,6 +31,17 @@ export type CompletionProvider = (query: string) => CompletionItem[];
 /** Drop handler: given a FileList from a drag-and-drop, return atoms to insert. */
 export type DropHandler = (files: FileList) => AtomSegment[];
 
+/**
+ * History provider: navigates through previously submitted entries.
+ * The provider manages the stack, cursor, and draft state internally.
+ */
+export interface HistoryProvider {
+  /** Navigate backward. Receives the current editor state (saved as draft on first call). */
+  back(current: TugTextEditingState): TugTextEditingState | null;
+  /** Navigate forward. Returns the next entry, or the draft when reaching the end. */
+  forward(): TugTextEditingState | null;
+}
+
 // ===================================================================
 // TugTextInputDelegate — UITextInput-inspired API
 // ===================================================================
@@ -83,6 +94,7 @@ export interface TugTextInputDelegate {
   typeaheadNavigate(direction: "up" | "down"): void;
 
   // --- State management ---
+  captureState(): TugTextEditingState;
   restoreState(state: TugTextEditingState): void;
 
   // --- Testing ---
@@ -275,6 +287,7 @@ export class TugTextEngine {
   returnAction: InputAction = "submit";
   numpadEnterAction: InputAction = "submit";
   completionProvider: CompletionProvider | null = null;
+  historyProvider: HistoryProvider | null = null;
   dropHandler: DropHandler | null = null;
 
   // Callbacks — wired by tug-prompt-input.tsx
@@ -784,6 +797,27 @@ export class TugTextEngine {
       this.setSelectedRange(pos - 1, pos + 1);
       document.execCommand("delete");
       document.execCommand("insertHTML", false, itemAfter + itemBefore);
+    });
+
+    // 1d. Cmd+Up/Down — history navigation (at start or end of document)
+    this.listen(root, "keydown", (e: Event) => {
+      const ke = e as KeyboardEvent;
+      const isUp = ke.key === "ArrowUp";
+      const isDown = ke.key === "ArrowDown";
+      if ((!isUp && !isDown) || !ke.metaKey || ke.ctrlKey || ke.altKey || ke.shiftKey) return;
+      if (!this.historyProvider) return;
+      const range = this.getSelectedRange();
+      if (!range || range.start !== range.end) return;
+      const text = this.getText();
+      const atBoundary = range.start === 0 || range.start === text.length;
+      if (!atBoundary) return;
+      const state = isUp
+        ? this.historyProvider.back(this.captureState())
+        : this.historyProvider.forward();
+      if (!state) return;
+      ke.preventDefault();
+      this.restoreState(state);
+      this.autoResize();
     });
 
     // 2. Click on atom — select entire image

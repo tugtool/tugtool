@@ -23,6 +23,7 @@ import type {
   InputAction,
   CompletionItem,
   CompletionProvider,
+  HistoryProvider,
   DropHandler,
   TugTextInputDelegate,
   TugTextEditingState,
@@ -69,6 +70,10 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    * Completion provider for @-trigger typeahead.
    */
   completionProvider?: CompletionProvider;
+  /**
+   * History provider for Cmd+Up/Down navigation through previous submissions.
+   */
+  historyProvider?: HistoryProvider;
   /**
    * Called when typeahead state changes. The popup is rendered internally;
    * this callback is for external observers of typeahead state.
@@ -144,6 +149,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     onChange,
     completionProvider,
     completionDirection = "up",
+    historyProvider,
     onTypeaheadChange,
     dropHandler,
     growDirection = "down",
@@ -187,6 +193,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       acceptTypeahead(index?: number) { engineRef.current?.acceptTypeahead(index); },
       cancelTypeahead() { engineRef.current?.cancelTypeahead(); },
       typeaheadNavigate(direction: "up" | "down") { engineRef.current?.typeaheadNavigate(direction); },
+      captureState() { return engineRef.current?.captureState() ?? { text: "", atoms: [], selection: null }; },
       restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
       getEditorElement() { return engineRef.current?.root ?? null; },
     }), []);
@@ -210,6 +217,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       engine.maxHeight = LINE_HEIGHT * maxRows + PADDING_Y;
       engine.growDirection = growDirection;
       engine.completionProvider = completionProvider ?? null;
+      engine.historyProvider = historyProvider ?? null;
       engine.dropHandler = dropHandler ?? null;
       engine.returnAction = returnAction;
       engine.numpadEnterAction = numpadEnterAction;
@@ -291,6 +299,12 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         engineRef.current.completionProvider = completionProvider ?? null;
       }
     }, [completionProvider]);
+
+    useLayoutEffect(() => {
+      if (engineRef.current) {
+        engineRef.current.historyProvider = historyProvider ?? null;
+      }
+    }, [historyProvider]);
 
     useLayoutEffect(() => {
       if (engineRef.current) {
