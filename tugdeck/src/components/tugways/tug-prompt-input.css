@@ -87,8 +87,8 @@
 
 .tug-prompt-input-editor ::selection,
 .tug-prompt-input-editor::selection {
-  background-color: Highlight;
-  color: HighlightText;
+  background-color: color-mix(in srgb, Highlight 40%, transparent);
+  color: inherit;
 }
 
 .tug-prompt-input-editor::highlight(card-selection),
