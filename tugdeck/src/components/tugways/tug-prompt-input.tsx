@@ -284,17 +284,39 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
           });
           popup.appendChild(div);
         });
-        // Position at the @ anchor rect
+        // Position at the @ anchor rect, auto-flipping to avoid clipping.
+        // Find the nearest scrollable ancestor (overflow: auto/scroll) to
+        // measure available space. The popup stays inside that boundary.
         const anchorRect = engine.typeaheadAnchorRect;
         if (anchorRect && container) {
           const containerRect = container.getBoundingClientRect();
           popup.style.left = `${anchorRect.left - containerRect.left}px`;
-          if (completionDirectionRef.current === "down") {
-            popup.style.bottom = "";
+
+          // Measure popup height now that items are rendered
+          const popupH = popup.offsetHeight;
+
+          // Find the scrollable ancestor that clips us
+          let scrollParent: HTMLElement | null = container.parentElement;
+          while (scrollParent) {
+            const ov = getComputedStyle(scrollParent).overflowY;
+            if (ov === "auto" || ov === "scroll" || ov === "hidden") break;
+            scrollParent = scrollParent.parentElement;
+          }
+          const clipRect = scrollParent?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+
+          const spaceAbove = anchorRect.top - clipRect.top;
+          const spaceBelow = clipRect.bottom - anchorRect.bottom;
+          const preferred = completionDirectionRef.current;
+          const useDown = preferred === "down"
+            ? spaceBelow >= popupH || spaceBelow >= spaceAbove
+            : spaceAbove < popupH && spaceBelow > spaceAbove;
+
+          if (useDown) {
             popup.style.top = `${anchorRect.bottom - containerRect.top + 4}px`;
+            popup.style.bottom = "";
           } else {
-            popup.style.top = "";
             popup.style.bottom = `${containerRect.bottom - anchorRect.top + 4}px`;
+            popup.style.top = "";
           }
         }
       };
