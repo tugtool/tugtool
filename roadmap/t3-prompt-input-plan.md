@@ -677,9 +677,9 @@ The React `TugAtom` component (`tug-atom.tsx`) predates the img-based atom archi
 
 #### Sub-step 9.2 and beyond (remaining)
 
-- Prefix detection (first-character routing)
-- History navigation (up/down at document boundaries)
-- Auto-resize (1 row → maxRows) — already implemented via `autoResize()` and `maxRows` prop
+- [x] History navigation (up/down at document boundaries)
+- [x] Auto-resize (1 row → maxRows) — already implemented via `autoResize()` and `maxRows` prop
+- [ ] DEFER: Prefix detection (first-character routing)
 
 ### Step 10: Retire the spike
 

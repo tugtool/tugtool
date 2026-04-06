@@ -75,11 +75,6 @@ export interface TugTextInputDelegate {
   deleteParagraphForward(): void;
   selectAll(): void;
   clear(): void;
-  killLine(): void;
-  yank(): void;
-  transpose(): void;
-  openLine(): void;
-
   // --- Undo ---
   undo(): void;
   redo(): void;
@@ -283,7 +278,7 @@ export class TugTextEngine {
 
   // Config — set by tug-prompt-input.tsx
   maxHeight = 0;
-  growDirection: "up" | "down" = "up";
+  growDirection: "up" | "down" = "down";
   returnAction: InputAction = "submit";
   numpadEnterAction: InputAction = "submit";
   completionProvider: CompletionProvider | null = null;
@@ -308,6 +303,9 @@ export class TugTextEngine {
 
   // Emptiness flag — tracked as state, updated on input events.
   private _empty = true;
+
+  // Cached min-height for grow-up margin calculation (avoids getComputedStyle per input).
+  private _cachedMinHeight = 0;
 
   // @-trigger typeahead state
   private _typeahead = {
@@ -439,11 +437,6 @@ export class TugTextEngine {
     this.onChange?.();
   }
 
-  killLine(): void {}
-  yank(): void {}
-  transpose(): void {}
-  openLine(): void {}
-
   // =================================================================
   // Undo/Redo — browser's native stack via execCommand
   // =================================================================
@@ -540,10 +533,12 @@ export class TugTextEngine {
     }
     // Grow upward: use negative margin-top to keep the bottom edge fixed
     if (this.growDirection === "up") {
-      const baseHeight = parseFloat(getComputedStyle(this.root).minHeight) || 0;
+      if (this._cachedMinHeight === 0) {
+        this._cachedMinHeight = parseFloat(getComputedStyle(this.root).minHeight) || 0;
+      }
       const currentHeight = this.root.offsetHeight;
-      this.root.style.marginTop = currentHeight > baseHeight
-        ? `${baseHeight - currentHeight}px`
+      this.root.style.marginTop = currentHeight > this._cachedMinHeight
+        ? `${this._cachedMinHeight - currentHeight}px`
         : "";
     }
   }
