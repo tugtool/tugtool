@@ -16,6 +16,7 @@
 
 import type { TabStateBag } from "./layout-tree";
 import type { TugbankClient, TaggedValue } from "./lib/tugbank-client";
+import type { HistoryEntry } from "./lib/prompt-history-store";
 
 // ── Read functions (TugbankClient cache) ─────────────────────────────────────
 
@@ -150,4 +151,47 @@ export function putFocusedCardId(focusedCardId: string): void {
   }).catch((err) => {
     console.warn("[settings] PUT focusedCardId failed:", err);
   });
+}
+
+/**
+ * PUT prompt history for a session to tugbank (fire-and-forget).
+ *
+ * Domain: `dev.tugtool.prompt.history`, key: `{sessionId}`.
+ * Body format: `{ kind: "json", value: [...entries] }`
+ */
+export function putPromptHistory(sessionId: string, entries: HistoryEntry[]): void {
+  const url = `/api/defaults/dev.tugtool.prompt.history/${encodeURIComponent(sessionId)}`;
+  fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: entries }),
+  }).catch((err) => {
+    console.warn("[settings] PUT promptHistory failed for session", sessionId, err);
+  });
+}
+
+/**
+ * GET prompt history for a session from tugbank.
+ *
+ * Returns the entries array, or an empty array on 404 or parse error.
+ *
+ * Domain: `dev.tugtool.prompt.history`, key: `{sessionId}`.
+ * Response format: `{ kind: "json", value: [...entries] }`
+ */
+export async function getPromptHistory(sessionId: string): Promise<HistoryEntry[]> {
+  const url = `/api/defaults/dev.tugtool.prompt.history/${encodeURIComponent(sessionId)}`;
+  try {
+    const response = await fetch(url);
+    if (response.status === 404) {
+      return [];
+    }
+    const tagged = await response.json() as { kind: string; value: unknown };
+    if (tagged.kind === "json" && Array.isArray(tagged.value)) {
+      return tagged.value as HistoryEntry[];
+    }
+    return [];
+  } catch (err) {
+    console.warn("[settings] GET promptHistory failed for session", sessionId, err);
+    return [];
+  }
 }

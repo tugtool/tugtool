@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-04-06T18:00:50Z
+---
+
+## step-6: Integration checkpoint: verified all store files exist with correct exports, gallery card imports from store modules, tsc clean, 1823 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-t3-stores.md
+
+---
+
+---
+step: step-5
+date: 2025-04-06T17:57:05Z
+---
+
+## step-5: Refactored gallery-prompt-input.tsx to use SessionMetadataStore, PromptHistoryStore, and createFileCompletionProvider. Removed GalleryHistoryProvider class and inline provider functions. tsc clean, 1823 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-t3-stores.md
+
+---
+
+---
+step: step-4
+date: 2025-04-06T17:51:31Z
+---
+
+## step-4: Created createFileCompletionProvider(files) factory in file-completion-provider.ts, extracting gallery logic into a standalone module. tsc clean.
+
+**Files changed:**
+- .tugtool/tugplan-t3-stores.md
+
+---
+
+---
+step: step-3
+date: 2025-04-06T17:46:01Z
+---
+
+## step-3: Added PromptHistoryStore class with push/loadSession/createProvider, L02 subscribe/getSnapshot, 200-entry cap per session, and Tugbank persistence. 14 tests pass.
+
+**Files changed:**
+- t3-stores-944c9ca-1
+
+---
+
+---
+step: step-2
+date: 2025-04-06T17:39:06Z
+---
+
+## step-2: Created HistoryEntry/SerializedAtom types in prompt-history-store.ts, added putPromptHistory() and getPromptHistory() to settings-api.ts with Tugbank persistence. 12 tests pass.
+
+**Files changed:**
+- t3-stores-944c9ca-1
+
+---
+
+---
+step: step-1
+date: 2025-04-06T17:34:37Z
+---
+
+## step-1: Created SessionMetadataStore class that subscribes to FeedStore, parses system_metadata payloads, and exposes L02-compliant subscribe/getSnapshot plus getCommandCompletionProvider(). 13 tests pass.
+
+**Files changed:**
+- t3-stores-944c9ca-1
+
+---
+
+---
 step: step-7
 date: 2025-04-01T23:32:57Z
 ---

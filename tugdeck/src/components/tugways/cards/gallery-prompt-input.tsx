@@ -9,6 +9,7 @@
  * Laws of Tug compliance:
  *   [L01] One root.render() at mount — component manages engine internally
  *   [L06] Appearance via CSS and DOM, never React state
+ *   [L07] Providers are stable refs created once per scope
  */
 
 import React, { useRef, useCallback, useState } from "react";
@@ -17,7 +18,13 @@ import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import type { AtomSegment, InputAction, CompletionItem, HistoryProvider, TugTextEditingState } from "@/lib/tug-text-engine";
+import type { AtomSegment, InputAction } from "@/lib/tug-text-engine";
+import { FeedStore } from "@/lib/feed-store";
+import { SessionMetadataStore } from "@/lib/session-metadata-store";
+import { PromptHistoryStore } from "@/lib/prompt-history-store";
+import { createFileCompletionProvider } from "@/lib/file-completion-provider";
+import { getConnection } from "@/lib/connection-singleton";
+import { FeedId } from "@/protocol";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -38,32 +45,11 @@ const TYPEAHEAD_FILES = [
   "README.md", "package.json", "tsconfig.json",
 ];
 
-function galleryFileCompletionProvider(query: string): CompletionItem[] {
-  const q = query.toLowerCase();
-  const files = q.length === 0
-    ? TYPEAHEAD_FILES.slice(0, 8)
-    : TYPEAHEAD_FILES.filter(f => f.toLowerCase().includes(q)).slice(0, 8);
-  return files.map(f => ({
-    label: f,
-    atom: { kind: "atom" as const, type: "file", label: f, value: f },
-  }));
-}
-
-const TYPEAHEAD_COMMANDS = [
+/** Fallback slash commands seeded when no live connection is available. */
+const MOCK_SLASH_COMMANDS = [
   "/commit", "/review", "/help", "/clear", "/plan",
   "/implement", "/dash", "/compact", "/memory",
 ];
-
-function galleryCommandCompletionProvider(query: string): CompletionItem[] {
-  const q = query.toLowerCase();
-  const cmds = q.length === 0
-    ? TYPEAHEAD_COMMANDS.slice(0, 8)
-    : TYPEAHEAD_COMMANDS.filter(c => c.toLowerCase().includes(q)).slice(0, 8);
-  return cmds.map(c => ({
-    label: c,
-    atom: { kind: "atom" as const, type: "command", label: c, value: c },
-  }));
-}
 
 function galleryDropHandler(files: FileList): AtomSegment[] {
   const atoms: AtomSegment[] = [];
@@ -84,43 +70,64 @@ const ENTER_CHOICES: TugChoiceItem[] = [
   { value: "newline", label: "Newline" },
 ];
 
+// Fixed session ID for gallery use (no live session).
+const GALLERY_SESSION_ID = "gallery-mock-session";
+
 // ===================================================================
-// Mock history provider — session-scoped, plain object [L06]
+// Store construction (module-level, constructed once)
 // ===================================================================
 
-class GalleryHistoryProvider implements HistoryProvider {
-  private entries: TugTextEditingState[] = [];
-  private cursor = -1; // -1 = at draft (current typing)
-  private draft: TugTextEditingState = { text: "", atoms: [], selection: null };
+/**
+ * Build store instances for the gallery card.
+ *
+ * If a live connection is available, wires SessionMetadataStore to the real
+ * FeedStore so it picks up system_metadata events. Otherwise, seeds the store
+ * with mock slash commands via a synthetic FeedStore-like mock. [D05]
+ *
+ * PromptHistoryStore always works — in-memory only when tugbank is unavailable.
+ */
+function buildGalleryStores(): {
+  metadataStore: SessionMetadataStore | null;
+  historyStore: PromptHistoryStore;
+} {
+  const historyStore = new PromptHistoryStore();
+  const connection = getConnection();
 
-  push(state: TugTextEditingState): void {
-    this.entries.push(state);
-    this.cursor = -1;
+  if (connection !== null) {
+    const feedStore = new FeedStore(connection, [FeedId.CODE_OUTPUT]);
+    const metadataStore = new SessionMetadataStore(feedStore, FeedId.CODE_OUTPUT);
+    return { metadataStore, historyStore };
   }
 
-  back(current: TugTextEditingState): TugTextEditingState | null {
-    if (this.entries.length === 0) return null;
-    if (this.cursor === -1) {
-      this.draft = current;
-      this.cursor = this.entries.length - 1;
-    } else if (this.cursor > 0) {
-      this.cursor--;
-    } else {
-      return null;
-    }
-    return this.entries[this.cursor];
-  }
-
-  forward(): TugTextEditingState | null {
-    if (this.cursor === -1) return null;
-    if (this.cursor < this.entries.length - 1) {
-      this.cursor++;
-      return this.entries[this.cursor];
-    }
-    this.cursor = -1;
-    return this.draft;
-  }
+  return { metadataStore: null, historyStore };
 }
+
+const { metadataStore: _metadataStore, historyStore: _historyStore } = buildGalleryStores();
+
+/**
+ * Completion provider for the / trigger.
+ *
+ * Uses the live SessionMetadataStore when available. Falls back to mock
+ * slash command list when no connection exists. [D05]
+ */
+const galleryCommandCompletionProvider = _metadataStore !== null
+  ? _metadataStore.getCommandCompletionProvider()
+  : (query: string) => {
+      const q = query.toLowerCase();
+      const cmds = q.length === 0
+        ? MOCK_SLASH_COMMANDS.slice(0, 8)
+        : MOCK_SLASH_COMMANDS.filter(c => c.toLowerCase().includes(q)).slice(0, 8);
+      return cmds.map(c => ({
+        label: c,
+        atom: { kind: "atom" as const, type: "command", label: c, value: c },
+      }));
+    };
+
+/** Completion provider for the @ trigger. */
+const galleryFileCompletionProvider = createFileCompletionProvider(TYPEAHEAD_FILES);
+
+/** History provider scoped to the gallery mock session. */
+const galleryHistoryProvider = _historyStore.createProvider(GALLERY_SESSION_ID);
 
 // ===================================================================
 // Gallery component
@@ -129,7 +136,6 @@ class GalleryHistoryProvider implements HistoryProvider {
 export function GalleryPromptInput() {
   const inputRef = useRef<TugTextInputDelegate>(null);
   const nextAtomIdx = useRef(0);
-  const historyRef = useRef(new GalleryHistoryProvider());
   const routeRef = useRef<HTMLSpanElement>(null);
   const [returnAction, setReturnAction] = useState<InputAction>("newline");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
@@ -139,7 +145,21 @@ export function GalleryPromptInput() {
     const delegate = inputRef.current;
     if (!delegate) return;
     if (!delegate.isEmpty()) {
-      historyRef.current.push(delegate.captureState());
+      const state = delegate.captureState();
+      _historyStore.push({
+        id: `${GALLERY_SESSION_ID}-${Date.now()}`,
+        sessionId: GALLERY_SESSION_ID,
+        projectPath: "",
+        route: "",
+        text: state.text,
+        atoms: state.atoms.map(a => ({
+          position: a.position,
+          type: a.type,
+          label: a.label,
+          value: a.value,
+        })),
+        timestamp: Date.now(),
+      });
     }
     delegate.clear();
   }, []);
@@ -201,7 +221,7 @@ export function GalleryPromptInput() {
               "@": galleryFileCompletionProvider,
               "/": galleryCommandCompletionProvider,
             }}
-            historyProvider={historyRef.current}
+            historyProvider={galleryHistoryProvider}
             dropHandler={galleryDropHandler}
             routePrefixes={[">", "$", ":", "/"]}
             onRouteChange={handleRouteChange}
