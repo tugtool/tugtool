@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-04-06T17:57:05Z
+---
+
+## step-5: Refactored gallery-prompt-input.tsx to use SessionMetadataStore, PromptHistoryStore, and createFileCompletionProvider. Removed GalleryHistoryProvider class and inline provider functions. tsc clean, 1823 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-t3-stores.md
+
+---
+
+---
 step: step-4
 date: 2025-04-06T17:51:31Z
 ---
