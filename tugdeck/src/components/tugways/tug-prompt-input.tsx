@@ -15,7 +15,7 @@
 import "./tug-prompt-input.css";
 import "./tug-completion-menu.css";
 
-import React, { useRef, useLayoutEffect, useImperativeHandle, useCallback } from "react";
+import React, { useRef, useState, useLayoutEffect, useImperativeHandle, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { TugTextEngine } from "@/lib/tug-text-engine";
 import type {
@@ -115,8 +115,24 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
  * Internal component that registers tugcard persistence for TugPromptInput.
  * Conditionally rendered (only when persistState=true) so the hook isn't
  * called for test harness editors, avoiding registration collisions.
+ *
+ * onRestore may fire before the engine's useLayoutEffect creates the engine
+ * (React fires child effects before parent effects). The pendingRestore ref
+ * buffers the state until the engine mounts and applies it.
  */
-function TugPromptInputPersistence({ engineRef }: { engineRef: React.RefObject<TugTextEngine | null> }) {
+function TugPromptInputPersistence({
+  engineRef,
+  pendingRestoreRef,
+}: {
+  engineRef: React.RefObject<TugTextEngine | null>;
+  pendingRestoreRef: React.RefObject<TugTextEditingState | null>;
+}) {
+  // The Tugcard persistence protocol expects onRestore to trigger a re-render
+  // so the no-deps useLayoutEffect in useTugcardPersistence fires and calls
+  // onContentReady (which removes visibility:hidden). Without this setState,
+  // the direct DOM write via restoreState produces no re-render, onContentReady
+  // never fires, and the card stays invisible.
+  const [, setRestoreCount] = useState(0);
   useTugcardPersistence<TugTextEditingState>({
     onSave: () => {
       const empty: TugTextEditingState = { text: "", atoms: [], selection: null };
@@ -125,7 +141,12 @@ function TugPromptInputPersistence({ engineRef }: { engineRef: React.RefObject<T
       return engine.captureState();
     },
     onRestore: (state) => {
-      engineRef.current?.restoreState(state);
+      if (engineRef.current) {
+        engineRef.current.restoreState(state);
+      } else {
+        pendingRestoreRef.current = state;
+      }
+      setRestoreCount(c => c + 1);
     },
   });
   return null;
@@ -162,6 +183,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     const containerRef = useRef<HTMLDivElement>(null);
     const completionRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<TugTextEngine | null>(null);
+    const pendingRestoreRef = useRef<TugTextEditingState | null>(null);
 
     // Expose TugTextInputDelegate — the UITextInput-inspired API [L07]
     useImperativeHandle(ref, () => ({
@@ -268,6 +290,12 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
 
       engineRef.current = engine;
 
+      // Apply any state buffered by onRestore that fired before engine creation
+      if (pendingRestoreRef.current) {
+        engine.restoreState(pendingRestoreRef.current);
+        pendingRestoreRef.current = null;
+      }
+
       return () => {
         engine.teardown();
         engineRef.current = null;
@@ -342,7 +370,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         onPointerDown={handlePointerDown}
         {...rest}
       >
-        {persistState && <TugPromptInputPersistence engineRef={engineRef} />}
+        {persistState && <TugPromptInputPersistence engineRef={engineRef} pendingRestoreRef={pendingRestoreRef} />}
         <div
           ref={editorRef}
           className="tug-prompt-input-editor"
