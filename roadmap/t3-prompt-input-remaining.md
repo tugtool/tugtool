@@ -274,40 +274,155 @@ This keeps the engine simple — it doesn't know about routes, it just renders a
 
 **Rationale:** Prompt authoring is a first-class activity. Cramped input fields are a relic of form-based UIs. When the user wants to write a detailed prompt, the input should be able to grow to fill the available vertical space — potentially the entire card height — scrolling only when *that* bound is exceeded.
 
-**Design:**
+### Sub-step 3.1: Add `maximized` prop and data attribute
 
-New prop: `maximized?: boolean` (default `false`).
+**Component (`tug-prompt-input.tsx`):**
 
-When `maximized` is true:
-- The `maxHeight` constraint is replaced by the available height of the containing block
-- The editor grows to fill the container, minus any siblings (toolbar, route indicator, etc.)
-- Scrolling only kicks in when the content exceeds the container's available height
-- The `growDirection` prop still applies (upward or downward growth)
+New prop:
+```typescript
+/**
+ * Expand the editor to fill available container space.
+ * The container must be a flex column with a constrained height.
+ * When true, maxRows is ignored and the editor fills the flex parent.
+ * @default false
+ */
+maximized?: boolean;
+```
 
-**Implementation approach:**
+Add to destructuring with default: `maximized = false,`
 
-CSS-driven with a data attribute (L06):
-- `data-maximized="true"` on the editor element
-- CSS: `.tug-prompt-input-editor[data-maximized]` sets `flex: 1; min-height: 0;` and the parent container uses `display: flex; flex-direction: column;`
-- The `autoResize` method skips its height calculation when maximized — CSS flex handles it
-- `overflow-y: auto` always, since the flex container constrains the height
+Set `data-maximized` on both the wrapper (`.tug-prompt-input`) and the editor div:
+```tsx
+<div data-slot="tug-prompt-input" data-maximized={maximized || undefined} ...>
+  ...
+  <div className="tug-prompt-input-editor" data-maximized={maximized || undefined} ...>
+```
 
-**Toggle mechanism:**
-- The parent (tug-prompt-entry or gallery card) controls the `maximized` prop
-- Keyboard shortcut: Cmd+Shift+M (or similar) toggles maximize — handled by the parent, not the input
-- Visual affordance: a maximize/minimize button in the prompt entry toolbar
+The wrapper needs the attribute for flex layout. The editor needs it for the overflow/height behavior.
 
-**Container requirement:**
-- The prompt input's parent must be a flex column container with a defined height for maximize to work
-- This is naturally the case inside tug-prompt-entry (which fills a card's content area)
+### Sub-step 3.2: CSS for maximized state
+
+**`tug-prompt-input.css`:**
+
+The wrapper becomes a flex column that fills its parent:
+```css
+.tug-prompt-input[data-maximized] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+```
+
+The editor fills the wrapper and scrolls:
+```css
+.tug-prompt-input-editor[data-maximized] {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+```
+
+`flex: 1` + `min-height: 0` is the standard pattern for a flex child that fills available space and scrolls when content exceeds it. The parent's constrained height (from the card content area or gallery section) provides the boundary.
+
+### Sub-step 3.3: Engine — autoResize skips when maximized
+
+**`tug-text-engine.ts`:**
+
+New config field:
+```typescript
+maximized = false;
+```
+
+In `autoResize()`, add an early return:
+```typescript
+private autoResize(): void {
+    if (this.maximized) {
+        // Maximized: CSS flex handles sizing, just ensure overflow is auto
+        this.root.style.height = "";
+        this.root.style.overflowY = "auto";
+        this.root.style.marginTop = "";
+        return;
+    }
+    // ... existing logic
+}
+```
+
+When maximized:
+- No inline height manipulation (flex handles it)
+- `overflow-y: auto` always (content scrolls when it exceeds the flex-constrained height)
+- No margin-top (grow direction is irrelevant — the editor fills all available space)
+
+**Public relayout method:**
+
+Add a public `relayout()` on `TugTextEngine` that calls `autoResize()`:
+```typescript
+/** Re-evaluate sizing. Called by the component when external conditions change (e.g., maximize toggle). */
+relayout(): void {
+    this.autoResize();
+}
+```
+
+This is needed because toggling maximize OFF must restore the correct inline height based on content — CSS can't measure `scrollHeight`. Without this, the editor sits at `min-height` until the next input event. The `relayout()` call from `useLayoutEffect` is a sync DOM write during the commit phase — L03 and L06 compliant. It preserves user-visible content that would otherwise clip (L23).
+
+**Component sync:**
+
+Wire at mount: `engine.maximized = maximized;`
+
+Add sync effect:
+```typescript
+useLayoutEffect(() => {
+    if (engineRef.current) {
+        engineRef.current.maximized = maximized;
+        engineRef.current.relayout();
+    }
+}, [maximized]);
+```
+
+When toggling ON: `relayout()` → `autoResize()` → early return clears inline styles, CSS flex takes over.
+When toggling OFF: `relayout()` → `autoResize()` → measures `scrollHeight`, restores correct inline height and overflow. No visual glitch.
+
+### Sub-step 3.4: Gallery card — maximize toggle
+
+Add a maximize button and a demo container with constrained height.
+
+**Container:** The maximize feature requires the parent to be a flex column with a constrained height. In production, tug-prompt-entry inside a card provides this naturally. For the gallery demo, wrap the editor section in a fixed-height flex container when maximized:
+
+```tsx
+<div style={maximized ? { display: "flex", flexDirection: "column", height: "300px" } : undefined}>
+    <div className="prompt-input-toolbar">...</div>
+    <TugPromptInput maximized={maximized} ... />
+</div>
+```
+
+When not maximized, no wrapper styles — the editor uses its normal autoResize behavior. When maximized, the 300px container provides the boundary. This is an honest test harness, not a responsive layout demo.
+
+**Toggle button** in the toolbar:
+```tsx
+<TugPushButton size="sm" emphasis="ghost" onClick={() => setMaximized(m => !m)}>
+    {maximized ? "Minimize" : "Maximize"}
+</TugPushButton>
+```
+
+`maximized` is `useState<boolean>(false)`. This is a configuration prop, not appearance state — the visual change comes from `data-maximized` + CSS (L06).
+
+### Sub-step 3.5: Verify and test
+
+- Toggle maximize → editor expands to fill the container height
+- Type many lines → editor scrolls within the container bounds
+- Toggle back → editor returns to maxRows behavior
+- Atoms, typeahead, history, drag-drop all work in maximized mode
+- autoResize doesn't set inline height when maximized
+- Theme change works (regenerateAtoms still fires)
+- Persistence works (captureState/restoreState unaffected)
 
 ---
 
 ## Execution Order
 
 1. **Slash command completion** — ✅ Done. Generalized typeahead to multiple triggers.
-2. **Route atoms** — visible route prefixes as styled atoms at position 0. Sub-steps 2.1-2.5 (basic detection) done; sub-steps 2.6-2.13 (route atoms) pending.
-3. **Maximize mode** — CSS-driven expansion. The autoResize change is small; the real work is ensuring the flex container layout works in the gallery card and future prompt entry.
+2. **Route atoms** — ✅ Done. Visible route prefixes as styled atoms at position 0.
+3. **Maximize mode** — CSS flex-driven expansion. autoResize stands down when maximized; CSS `flex: 1` + `min-height: 0` fills available space.
 
 All three items prepare tug-prompt-input for integration into T3.4 (tug-prompt-entry).
 
