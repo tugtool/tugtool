@@ -8,7 +8,7 @@
  * [L07] Engine is a stable ref; handlers access current state via `this`
  */
 
-import { atomImgHTML, createAtomImgElement, routeAtomImgHTML, TUG_ATOM_CHAR } from "./tug-atom-img";
+import { atomImgHTML, createAtomImgElement, createRouteAtomImgElement, routeAtomImgHTML, TUG_ATOM_CHAR } from "./tug-atom-img";
 import type { AtomSegment } from "./tug-atom-img";
 import { getTokenValue } from "@/theme-tokens";
 
@@ -490,7 +490,7 @@ export class TugTextEngine {
       const ch = state.text[i];
       if (ch === TUG_ATOM_CHAR && atomIdx < state.atoms.length) {
         const a = state.atoms[atomIdx];
-        parts.push(atomImgHTML(a.type, a.label, a.value));
+        parts.push(a.type === "route" ? routeAtomImgHTML(a.label) : atomImgHTML(a.type, a.label, a.value));
         atomIdx++;
       } else if (ch === "\n") {
         parts.push("<br>");
@@ -519,7 +519,9 @@ export class TugTextEngine {
       const type = el.dataset.atomType ?? "file";
       const label = el.dataset.atomLabel ?? "";
       const value = el.dataset.atomValue ?? "";
-      const fresh = createAtomImgElement(type, label, value);
+      const fresh = type === "route"
+        ? createRouteAtomImgElement(label)
+        : createAtomImgElement(type, label, value);
       el.src = fresh.src;
     }
   }
@@ -658,8 +660,12 @@ export class TugTextEngine {
     // If the prefix is also a completion trigger, activate typeahead manually
     const provider = this.completionProviders[firstChar];
     if (provider) {
-      const sel = window.getSelection();
-      const anchorRect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null;
+      // Use the route atom's rect as the anchor — the caret rect is unreliable
+      // after multiple execCommands in the same handler.
+      const routeAtom = this.root.childNodes[0];
+      const anchorRect = routeAtom && routeAtom.nodeType === Node.ELEMENT_NODE
+        ? (routeAtom as HTMLElement).getBoundingClientRect()
+        : null;
       this._typeahead.active = true;
       this._typeahead.trigger = firstChar;
       this._typeahead.provider = provider;
