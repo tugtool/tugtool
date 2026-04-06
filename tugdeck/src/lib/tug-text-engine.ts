@@ -566,15 +566,37 @@ export class TugTextEngine {
       this.root.style.height = "";
       this.root.style.overflowY = "hidden";
     }
-    // Grow upward: use negative margin-top to keep the bottom edge fixed
-    if (this.growDirection === "up") {
-      if (this._cachedMinHeight === 0) {
-        this._cachedMinHeight = parseFloat(getComputedStyle(this.root).minHeight) || 0;
+    // Grow direction: "up" uses negative margin-top to keep the bottom edge
+    // fixed. Auto-flips based on available space in the scrollable ancestor,
+    // using growDirection as a preference (same logic as popup auto-flip).
+    if (this._cachedMinHeight === 0) {
+      this._cachedMinHeight = parseFloat(getComputedStyle(this.root).minHeight) || 0;
+    }
+    const currentHeight = this.root.offsetHeight;
+    const growth = currentHeight - this._cachedMinHeight;
+    if (growth > 0) {
+      let useUp = this.growDirection === "up";
+      // Find scrollable ancestor and check available space
+      let scrollParent: HTMLElement | null = this.root.parentElement;
+      while (scrollParent) {
+        const ov = getComputedStyle(scrollParent).overflowY;
+        if (ov === "auto" || ov === "scroll" || ov === "hidden") break;
+        scrollParent = scrollParent.parentElement;
       }
-      const currentHeight = this.root.offsetHeight;
-      this.root.style.marginTop = currentHeight > this._cachedMinHeight
-        ? `${this._cachedMinHeight - currentHeight}px`
-        : "";
+      if (scrollParent) {
+        const clipRect = scrollParent.getBoundingClientRect();
+        const rootRect = this.root.getBoundingClientRect();
+        const spaceAbove = rootRect.top - clipRect.top;
+        const spaceBelow = clipRect.bottom - rootRect.bottom;
+        if (useUp && spaceAbove < growth && spaceBelow > spaceAbove) {
+          useUp = false;
+        } else if (!useUp && spaceBelow < growth && spaceAbove > spaceBelow) {
+          useUp = true;
+        }
+      }
+      this.root.style.marginTop = useUp ? `${-growth}px` : "";
+    } else {
+      this.root.style.marginTop = "";
     }
   }
 
