@@ -27,6 +27,7 @@ use tugbank_core::notify as tugbank_notify;
 use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
+use crate::feeds::file_watcher::FileWatcher;
 use crate::feeds::filesystem::FilesystemFeed;
 use crate::feeds::git::GitFeed;
 use crate::feeds::stats::{
@@ -170,9 +171,14 @@ async fn main() {
         .as_ref()
         .map(|client| feeds::defaults::defaults_feed(Arc::clone(client)));
 
+    // Create FileWatcher broadcast channel and filesystem feed.
+    // FileWatcher is the shared event source; FilesystemFeed subscribes to its broadcast.
+    let file_watcher = FileWatcher::new(watch_dir.clone());
+    let fs_broadcast_tx = FileWatcher::create_sender();
+
     // Create filesystem feed and watch channel
     let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
-    let fs_feed = FilesystemFeed::new(watch_dir.clone());
+    let fs_feed = FilesystemFeed::new(watch_dir.clone(), fs_broadcast_tx.clone());
 
     // Create git feed and watch channel
     let (git_watch_tx, git_watch_rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
@@ -302,7 +308,13 @@ async fn main() {
     snapshot_watches.extend(agent_handles.snapshot_watches);
     feed_router.add_snapshot_watches(snapshot_watches);
 
-    // Start filesystem feed in background task
+    // Start FileWatcher (event source) and FilesystemFeed (broadcast consumer)
+    let fw_cancel = cancel.clone();
+    let fw_broadcast_tx = fs_broadcast_tx.clone();
+    tokio::spawn(async move {
+        file_watcher.run(fw_broadcast_tx, fw_cancel).await;
+    });
+
     let fs_cancel = cancel.clone();
     tokio::spawn(async move {
         fs_feed.run(fs_watch_tx, fs_cancel).await;

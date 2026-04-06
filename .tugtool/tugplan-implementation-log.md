@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-04-06T22:06:52Z
+---
+
+## step-3: Refactored FilesystemFeed to thin broadcast consumer. Removed all watcher/gitignore logic (now in file_watcher.rs). Updated main.rs with broadcast wiring. 229 tugcast tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-live-file-completion.md
+
+---
+
+---
 step: step-2
 date: 2025-04-06T21:59:40Z
 ---

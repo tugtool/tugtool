@@ -1,213 +1,32 @@
 //! Filesystem feed implementation
 //!
-//! Watches a directory for filesystem events and broadcasts them as FsEvent snapshots.
+//! Thin broadcast consumer: subscribes to the FileWatcher broadcast channel
+//! and forwards Vec<FsEvent> batches as Frame::new(FeedId::FILESYSTEM, json).
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc as std_mpsc;
-use std::time::Duration;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use notify::event::{ModifyKind, RenameMode};
-use notify::{Event, EventKind, RecursiveMode, Watcher};
-use tokio::sync::watch;
-use tokio::time::sleep;
+use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 use tugcast_core::types::FsEvent;
 use tugcast_core::{FeedId, Frame, SnapshotFeed};
 
-/// Debounce window for batching filesystem events
-const DEBOUNCE_MILLIS: u64 = 100;
-
-/// Poll interval when no events are available
-const POLL_MILLIS: u64 = 50;
-
-/// Filesystem feed that watches a directory and broadcasts FsEvent batches
+/// Filesystem feed — thin consumer of the FileWatcher broadcast channel.
 pub struct FilesystemFeed {
     watch_dir: PathBuf,
+    event_tx: broadcast::Sender<Vec<FsEvent>>,
 }
 
 impl FilesystemFeed {
-    /// Create a new filesystem feed watching the given directory
-    pub fn new(watch_dir: PathBuf) -> Self {
-        Self { watch_dir }
-    }
-}
-
-/// Build gitignore matcher from .gitignore file in the watch directory
-fn build_gitignore(watch_dir: &Path) -> Gitignore {
-    let mut builder = GitignoreBuilder::new(watch_dir);
-    let gitignore_path = watch_dir.join(".gitignore");
-
-    if gitignore_path.exists() {
-        if let Some(err) = builder.add(&gitignore_path) {
-            warn!(path = ?gitignore_path, error = %err, "failed to load .gitignore");
-        }
-    }
-
-    match builder.build() {
-        Ok(gi) => gi,
-        Err(e) => {
-            warn!(error = %e, "failed to build gitignore matcher, using empty matcher");
-            GitignoreBuilder::new(watch_dir).build().unwrap()
-        }
-    }
-}
-
-/// Check if a path should be ignored according to gitignore rules
-fn is_ignored(path: &Path, watch_dir: &Path, gitignore: &Gitignore) -> bool {
-    let relative = match path.strip_prefix(watch_dir) {
-        Ok(rel) => rel,
-        Err(_) => path,
-    };
-
-    // Always ignore the .git directory itself
-    if relative.starts_with(".git") {
-        return true;
-    }
-
-    // Check if this path is a directory by checking filesystem, or assume file if not exists
-    let is_dir = path.is_dir();
-
-    // Check the path itself
-    if gitignore.matched(relative, is_dir).is_ignore() {
-        return true;
-    }
-
-    // Check if any parent directory is ignored (matched() does not propagate
-    // directory-level ignores to children, so we must walk up explicitly)
-    for ancestor in relative.ancestors().skip(1) {
-        if ancestor == Path::new("") {
-            break;
-        }
-        if gitignore.matched(ancestor, true).is_ignore() {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Check if an FsEvent should be ignored
-fn is_fsevent_ignored(event: &FsEvent, watch_dir: &Path, gitignore: &Gitignore) -> bool {
-    match event {
-        FsEvent::Created { path } | FsEvent::Modified { path } | FsEvent::Removed { path } => {
-            let full_path = watch_dir.join(path);
-            is_ignored(&full_path, watch_dir, gitignore)
-        }
-        FsEvent::Renamed { from, to } => {
-            let from_path = watch_dir.join(from);
-            let to_path = watch_dir.join(to);
-            is_ignored(&from_path, watch_dir, gitignore)
-                && is_ignored(&to_path, watch_dir, gitignore)
-        }
-    }
-}
-
-/// Remove redundant Modified events from a batch.
-///
-/// macOS FSEvents fires modify events for parent directories when their contents
-/// change, and also fires redundant modify events alongside create/remove events
-/// for the same file. This function drops Modified events for any path that also
-/// has a Created or Removed event in the same batch, and drops Modified events
-/// for paths that look like directories (end with "" which is the watch root).
-fn deduplicate_batch(batch: &mut Vec<FsEvent>) {
-    // Collect paths that have a Created, Removed, or Renamed event
-    let mut non_modify_paths: HashSet<String> = HashSet::new();
-    for ev in batch.iter() {
-        match ev {
-            FsEvent::Created { path } | FsEvent::Removed { path } => {
-                non_modify_paths.insert(path.clone());
-            }
-            FsEvent::Renamed { from, to } => {
-                non_modify_paths.insert(from.clone());
-                non_modify_paths.insert(to.clone());
-            }
-            FsEvent::Modified { .. } => {}
-        }
-    }
-
-    // Drop Modified events for paths that already have create/remove/rename,
-    // and drop Modified events for the watch root (empty path = directory itself)
-    batch.retain(|ev| {
-        if let FsEvent::Modified { path } = ev {
-            if path.is_empty() || non_modify_paths.contains(path.as_str()) {
-                return false;
-            }
-        }
-        true
-    });
-}
-
-/// Convert notify Event to FsEvent values
-fn convert_event(event: &Event, watch_dir: &Path) -> Vec<FsEvent> {
-    let to_relative = |p: &Path| -> String {
-        p.strip_prefix(watch_dir)
-            .unwrap_or(p)
-            .to_string_lossy()
-            .to_string()
-    };
-
-    match &event.kind {
-        EventKind::Create(_) => event
-            .paths
-            .iter()
-            .map(|p| FsEvent::Created {
-                path: to_relative(p),
-            })
-            .collect(),
-
-        // Only Data changes are real file modifications.
-        // Metadata (timestamps, permissions) and Any (ambiguous, often directory
-        // listing changes) are noise — they fire alongside Create/Remove events.
-        EventKind::Modify(ModifyKind::Data(_)) => event
-            .paths
-            .iter()
-            .map(|p| FsEvent::Modified {
-                path: to_relative(p),
-            })
-            .collect(),
-
-        EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
-            if event.paths.len() >= 2 {
-                vec![FsEvent::Renamed {
-                    from: to_relative(&event.paths[0]),
-                    to: to_relative(&event.paths[1]),
-                }]
-            } else {
-                vec![]
-            }
-        }
-
-        EventKind::Modify(ModifyKind::Name(RenameMode::From)) => event
-            .paths
-            .iter()
-            .map(|p| FsEvent::Removed {
-                path: to_relative(p),
-            })
-            .collect(),
-
-        EventKind::Modify(ModifyKind::Name(RenameMode::To)) => event
-            .paths
-            .iter()
-            .map(|p| FsEvent::Created {
-                path: to_relative(p),
-            })
-            .collect(),
-
-        EventKind::Remove(_) => event
-            .paths
-            .iter()
-            .map(|p| FsEvent::Removed {
-                path: to_relative(p),
-            })
-            .collect(),
-
-        // Skip other event kinds (Access, Any, Other)
-        _ => vec![],
+    /// Create a new filesystem feed.
+    ///
+    /// `watch_dir` is used only for logging. `event_tx` is the broadcast sender
+    /// created by the FileWatcher; `run()` calls `subscribe()` on it to get its
+    /// own receiver.
+    pub fn new(watch_dir: PathBuf, event_tx: broadcast::Sender<Vec<FsEvent>>) -> Self {
+        Self { watch_dir, event_tx }
     }
 }
 
@@ -222,103 +41,32 @@ impl SnapshotFeed for FilesystemFeed {
     }
 
     async fn run(&self, tx: watch::Sender<Frame>, cancel: CancellationToken) {
-        // Build gitignore matcher
-        let gitignore = build_gitignore(&self.watch_dir);
-
-        // Create std::sync::mpsc channel for notify watcher
-        let (event_tx, event_rx) = std_mpsc::channel();
-
-        // Create watcher (must stay alive for the duration)
-        let mut watcher = match notify::recommended_watcher(event_tx) {
-            Ok(w) => w,
-            Err(e) => {
-                error!(error = %e, "failed to create filesystem watcher");
-                return;
-            }
-        };
-
-        // Start watching
-        if let Err(e) = watcher.watch(&self.watch_dir, RecursiveMode::Recursive) {
-            error!(dir = ?self.watch_dir, error = %e, "failed to watch directory");
-            return;
-        }
+        let mut rx = self.event_tx.subscribe();
         info!(dir = ?self.watch_dir, "filesystem feed started");
 
-        // Debounce loop
-        let debounce_duration = Duration::from_millis(DEBOUNCE_MILLIS);
-        let poll_duration = Duration::from_millis(POLL_MILLIS);
-        let mut batch: Vec<FsEvent> = Vec::new();
-
         loop {
-            // Check for cancellation
-            if cancel.is_cancelled() {
-                info!("filesystem feed shutting down");
-                break;
-            }
-
-            // Drain all available events from the std channel (non-blocking)
-            let mut received_events = false;
-            loop {
-                match event_rx.try_recv() {
-                    Ok(Ok(event)) => {
-                        received_events = true;
-                        // Convert and filter events
-                        let fs_events = convert_event(&event, &self.watch_dir);
-                        for ev in fs_events {
-                            if !is_fsevent_ignored(&ev, &self.watch_dir, &gitignore) {
-                                batch.push(ev);
-                            }
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        warn!(error = %e, "filesystem watcher error");
-                    }
-                    Err(std_mpsc::TryRecvError::Empty) => break,
-                    Err(std_mpsc::TryRecvError::Disconnected) => {
-                        error!("filesystem watcher channel disconnected");
-                        return;
-                    }
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    info!("filesystem feed shutting down");
+                    break;
                 }
-            }
-
-            // If we received events, wait for debounce window and flush
-            if received_events && !batch.is_empty() {
-                sleep(debounce_duration).await;
-
-                // Drain any more events that arrived during debounce
-                loop {
-                    match event_rx.try_recv() {
-                        Ok(Ok(event)) => {
-                            let fs_events = convert_event(&event, &self.watch_dir);
-                            for ev in fs_events {
-                                if !is_fsevent_ignored(&ev, &self.watch_dir, &gitignore) {
-                                    batch.push(ev);
-                                }
-                            }
+                result = rx.recv() => {
+                    match result {
+                        Ok(batch) => {
+                            let json = serde_json::to_vec(&batch).unwrap_or_default();
+                            let frame = Frame::new(FeedId::FILESYSTEM, json);
+                            let _ = tx.send(frame);
                         }
-                        Ok(Err(e)) => {
-                            warn!(error = %e, "filesystem watcher error");
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            warn!(skipped = n, "filesystem feed lagged, skipping messages");
+                            // Continue — the watcher is still running and we'll receive future batches
                         }
-                        Err(std_mpsc::TryRecvError::Empty) => break,
-                        Err(std_mpsc::TryRecvError::Disconnected) => {
-                            error!("filesystem watcher channel disconnected");
-                            return;
+                        Err(broadcast::error::RecvError::Closed) => {
+                            info!("filesystem feed broadcast closed, shutting down");
+                            break;
                         }
                     }
                 }
-
-                // Deduplicate and flush batch
-                deduplicate_batch(&mut batch);
-                if !batch.is_empty() {
-                    let json = serde_json::to_vec(&batch).unwrap_or_default();
-                    let frame = Frame::new(FeedId::FILESYSTEM, json);
-                    let _ = tx.send(frame);
-                    debug!(count = batch.len(), "filesystem events flushed");
-                    batch.clear();
-                }
-            } else {
-                // No events -- sleep briefly to avoid busy-polling
-                sleep(poll_duration).await;
             }
         }
     }
@@ -327,125 +75,23 @@ impl SnapshotFeed for FilesystemFeed {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use notify::{event::CreateKind, event::DataChange, event::RemoveKind};
     use std::fs;
+    use std::time::Duration;
     use tempfile::TempDir;
+    use tokio::time::sleep;
+
+    use crate::feeds::file_watcher::FileWatcher;
 
     #[test]
-    fn test_convert_event_create() {
-        let watch_dir = PathBuf::from("/tmp/test");
-        let event = Event {
-            kind: EventKind::Create(CreateKind::File),
-            paths: vec![PathBuf::from("/tmp/test/file.txt")],
-            attrs: Default::default(),
-        };
-
-        let fs_events = convert_event(&event, &watch_dir);
-        assert_eq!(fs_events.len(), 1);
-        match &fs_events[0] {
-            FsEvent::Created { path } => assert_eq!(path, "file.txt"),
-            _ => panic!("expected Created event"),
-        }
+    fn test_feed_id_and_name() {
+        let (tx, _) = broadcast::channel(256);
+        let feed = FilesystemFeed::new(PathBuf::from("/tmp/test"), tx);
+        assert_eq!(feed.feed_id(), FeedId::FILESYSTEM);
+        assert_eq!(feed.name(), "filesystem");
     }
 
-    #[test]
-    fn test_convert_event_modify() {
-        let watch_dir = PathBuf::from("/tmp/test");
-        let event = Event {
-            kind: EventKind::Modify(ModifyKind::Data(DataChange::Any)),
-            paths: vec![PathBuf::from("/tmp/test/file.txt")],
-            attrs: Default::default(),
-        };
-
-        let fs_events = convert_event(&event, &watch_dir);
-        assert_eq!(fs_events.len(), 1);
-        match &fs_events[0] {
-            FsEvent::Modified { path } => assert_eq!(path, "file.txt"),
-            _ => panic!("expected Modified event"),
-        }
-    }
-
-    #[test]
-    fn test_convert_event_remove() {
-        let watch_dir = PathBuf::from("/tmp/test");
-        let event = Event {
-            kind: EventKind::Remove(RemoveKind::File),
-            paths: vec![PathBuf::from("/tmp/test/file.txt")],
-            attrs: Default::default(),
-        };
-
-        let fs_events = convert_event(&event, &watch_dir);
-        assert_eq!(fs_events.len(), 1);
-        match &fs_events[0] {
-            FsEvent::Removed { path } => assert_eq!(path, "file.txt"),
-            _ => panic!("expected Removed event"),
-        }
-    }
-
-    #[test]
-    fn test_convert_event_rename_both() {
-        let watch_dir = PathBuf::from("/tmp/test");
-        let event = Event {
-            kind: EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
-            paths: vec![
-                PathBuf::from("/tmp/test/old.txt"),
-                PathBuf::from("/tmp/test/new.txt"),
-            ],
-            attrs: Default::default(),
-        };
-
-        let fs_events = convert_event(&event, &watch_dir);
-        assert_eq!(fs_events.len(), 1);
-        match &fs_events[0] {
-            FsEvent::Renamed { from, to } => {
-                assert_eq!(from, "old.txt");
-                assert_eq!(to, "new.txt");
-            }
-            _ => panic!("expected Renamed event"),
-        }
-    }
-
-    #[test]
-    fn test_relative_path_computation() {
-        let watch_dir = PathBuf::from("/home/user/project");
-        let path = PathBuf::from("/home/user/project/src/main.rs");
-
-        let relative = path
-            .strip_prefix(&watch_dir)
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-        assert_eq!(relative, "src/main.rs");
-    }
-
-    #[test]
-    fn test_gitignore_filtering() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create the directories for testing
-        fs::create_dir(temp_dir.path().join("target")).unwrap();
-        fs::create_dir(temp_dir.path().join("target/debug")).unwrap();
-        fs::create_dir(temp_dir.path().join("node_modules")).unwrap();
-        fs::create_dir(temp_dir.path().join("src")).unwrap();
-
-        let mut builder = GitignoreBuilder::new(temp_dir.path());
-
-        // Add patterns
-        builder.add_line(None, "target/").unwrap();
-        builder.add_line(None, "node_modules/").unwrap();
-
-        let gitignore = builder.build().unwrap();
-
-        // Test ignored paths
-        let target_path = temp_dir.path().join("target/debug/foo");
-        let node_modules_path = temp_dir.path().join("node_modules/bar");
-        let src_path = temp_dir.path().join("src/main.rs");
-
-        assert!(is_ignored(&target_path, temp_dir.path(), &gitignore));
-        assert!(is_ignored(&node_modules_path, temp_dir.path(), &gitignore));
-        assert!(!is_ignored(&src_path, temp_dir.path(), &gitignore));
-    }
-
+    /// Integration test: FilesystemFeed produces correct wire format when consuming
+    /// FileWatcher broadcast.
     #[tokio::test]
     async fn test_filesystem_feed_integration() {
         let temp_dir = TempDir::new().unwrap();
@@ -457,19 +103,29 @@ mod tests {
         // Create ignored directory
         fs::create_dir(watch_path.join("ignored_dir")).unwrap();
 
-        // Create filesystem feed
-        let feed = FilesystemFeed::new(watch_path.clone());
+        // Create the broadcast channel and FileWatcher
+        let (broadcast_tx, _) = broadcast::channel::<Vec<FsEvent>>(256);
+        let file_watcher = FileWatcher::new(watch_path.clone());
+
+        // Create the FilesystemFeed (subscribes to broadcast_tx)
+        let feed = FilesystemFeed::new(watch_path.clone(), broadcast_tx.clone());
 
         // Create watch channel
-        let (tx, mut rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
+        let (fs_watch_tx, mut fs_watch_rx) =
+            watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
 
-        // Create cancellation token
+        // Spawn the FileWatcher in the background
         let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
+        let watcher_cancel = cancel.clone();
+        let watcher_broadcast_tx = broadcast_tx.clone();
+        tokio::spawn(async move {
+            file_watcher.run(watcher_broadcast_tx, watcher_cancel).await;
+        });
 
-        // Spawn feed in background
+        // Spawn the FilesystemFeed in the background
+        let feed_cancel = cancel.clone();
         let feed_task = tokio::spawn(async move {
-            feed.run(tx, cancel_clone).await;
+            feed.run(fs_watch_tx, feed_cancel).await;
         });
 
         // Wait for watcher to initialize
@@ -487,7 +143,7 @@ mod tests {
         sleep(Duration::from_millis(50)).await;
         fs::remove_file(&test_file).unwrap();
 
-        // Create a file in ignored directory
+        // Create a file in ignored directory (should be filtered by FileWatcher)
         let ignored_file = watch_path.join("ignored_dir/secret.txt");
         fs::write(&ignored_file, "ignored").unwrap();
 
@@ -495,8 +151,8 @@ mod tests {
         sleep(Duration::from_millis(400)).await;
 
         // Check for events
-        rx.changed().await.unwrap();
-        let frame = rx.borrow_and_update().clone();
+        fs_watch_rx.changed().await.unwrap();
+        let frame = fs_watch_rx.borrow_and_update().clone();
 
         assert_eq!(frame.feed_id, FeedId::FILESYSTEM);
 
@@ -526,12 +182,5 @@ mod tests {
         // Cancel and wait for cleanup
         cancel.cancel();
         let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
-    }
-
-    #[test]
-    fn test_feed_id_and_name() {
-        let feed = FilesystemFeed::new(PathBuf::from("/tmp/test"));
-        assert_eq!(feed.feed_id(), FeedId::FILESYSTEM);
-        assert_eq!(feed.name(), "filesystem");
     }
 }
