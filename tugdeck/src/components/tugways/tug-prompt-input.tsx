@@ -102,6 +102,13 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   growDirection?: "up" | "down";
   /**
+   * Expand the editor to fill available container space.
+   * The container must be a flex column with a constrained height.
+   * When true, maxRows is ignored and the editor fills the flex parent.
+   * @default false
+   */
+  maximized?: boolean;
+  /**
    * Focus indication style.
    * "background" — subtle background shift on focus (default).
    * "ring" — accent border ring on focus.
@@ -197,6 +204,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     onTypeaheadChange,
     dropHandler,
     growDirection = "down",
+    maximized = false,
     focusStyle = "background",
     borderless = false,
     disabled = false,
@@ -263,6 +271,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       const engine = new TugTextEngine(el);
       engine.maxHeight = LINE_HEIGHT * maxRows + PADDING_Y;
       engine.growDirection = growDirection;
+      engine.maximized = maximized;
       engine.completionProviders = completionProviders ?? {};
       engine.historyProvider = historyProvider ?? null;
       engine.dropHandler = dropHandler ?? null;
@@ -397,6 +406,13 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
 
     useLayoutEffect(() => {
       if (engineRef.current) {
+        engineRef.current.maximized = maximized;
+        engineRef.current.relayout();
+      }
+    }, [maximized]);
+
+    useLayoutEffect(() => {
+      if (engineRef.current) {
         engineRef.current.routePrefixes = routePrefixes ?? [];
       }
     }, [routePrefixes]);
@@ -422,6 +438,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
           disabled && "tug-prompt-input-disabled",
           className,
         )}
+        data-maximized={maximized || undefined}
         onPointerDown={handlePointerDown}
         {...rest}
       >
@@ -435,6 +452,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
           aria-disabled={disabled || undefined}
           data-focus-style={focusStyle}
           data-borderless={borderless || undefined}
+          data-maximized={maximized || undefined}
           data-placeholder={placeholder}
           data-empty="true"
           data-td-select="custom"

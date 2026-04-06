@@ -280,6 +280,7 @@ export class TugTextEngine {
   // Config — set by tug-prompt-input.tsx
   maxHeight = 0;
   growDirection: "up" | "down" = "down";
+  maximized = false;
   returnAction: InputAction = "submit";
   numpadEnterAction: InputAction = "submit";
   completionProviders: Record<string, CompletionProvider> = {};
@@ -511,6 +512,11 @@ export class TugTextEngine {
     }
   }
 
+  /** Re-evaluate sizing. Called by the component when external conditions change. */
+  relayout(): void {
+    this.autoResize();
+  }
+
   /** Regenerate all atom images with current theme colors [L23 minimal mutation]. */
   regenerateAtoms(): void {
     const imgs = this.root.querySelectorAll("img[data-atom-label]");
@@ -571,6 +577,12 @@ export class TugTextEngine {
 
   /** Auto-resize the editor to fit content, up to maxHeight. */
   private autoResize(): void {
+    if (this.maximized) {
+      this.root.style.height = "";
+      this.root.style.overflowY = "auto";
+      this.root.style.marginTop = "";
+      return;
+    }
     if (this.maxHeight <= 0) return;
     this.root.style.height = "auto";
     const scrollH = this.root.scrollHeight;

@@ -133,6 +133,7 @@ export function GalleryPromptInput() {
   const routeRef = useRef<HTMLSpanElement>(null);
   const [returnAction, setReturnAction] = useState<InputAction>("newline");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
+  const [maximized, setMaximized] = useState(false);
 
   const handleSubmit = useCallback(() => {
     const delegate = inputRef.current;
@@ -177,29 +178,35 @@ export function GalleryPromptInput() {
       {/* ---- Interactive Editor ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Editor</div>
-        <div className="prompt-input-toolbar">
-          <TugPushButton size="sm" onClick={handleInsertAtom}>Insert Atom</TugPushButton>
-          <TugPushButton size="sm" emphasis="outlined" onClick={handleClear}>Clear</TugPushButton>
-          <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
-            Route: <span ref={routeRef} style={{ fontFamily: "var(--tug-font-mono)" }}>&gt;</span>
-          </span>
+        <div style={maximized ? { display: "flex", flexDirection: "column" as const, height: "300px" } : undefined}>
+          <div className="prompt-input-toolbar">
+            <TugPushButton size="sm" onClick={handleInsertAtom}>Insert Atom</TugPushButton>
+            <TugPushButton size="sm" emphasis="outlined" onClick={handleClear}>Clear</TugPushButton>
+            <TugPushButton size="sm" emphasis="ghost" onClick={() => setMaximized((m: boolean) => !m)}>
+              {maximized ? "Minimize" : "Maximize"}
+            </TugPushButton>
+            <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
+              Route: <span ref={routeRef} style={{ fontFamily: "var(--tug-font-mono)" }}>&gt;</span>
+            </span>
+          </div>
+          <TugPromptInput
+            ref={inputRef}
+            placeholder="Type here... @ for file, / for command, drag files, test IME, Return vs Enter"
+            maxRows={8}
+            maximized={maximized}
+            returnAction={returnAction}
+            numpadEnterAction={enterAction}
+            onSubmit={handleSubmit}
+            completionProviders={{
+              "@": galleryFileCompletionProvider,
+              "/": galleryCommandCompletionProvider,
+            }}
+            historyProvider={historyRef.current}
+            dropHandler={galleryDropHandler}
+            routePrefixes={[">", "$", ":", "/"]}
+            onRouteChange={handleRouteChange}
+          />
         </div>
-        <TugPromptInput
-          ref={inputRef}
-          placeholder="Type here... @ for file, / for command, drag files, test IME, Return vs Enter"
-          maxRows={8}
-          returnAction={returnAction}
-          numpadEnterAction={enterAction}
-          onSubmit={handleSubmit}
-          completionProviders={{
-            "@": galleryFileCompletionProvider,
-            "/": galleryCommandCompletionProvider,
-          }}
-          historyProvider={historyRef.current}
-          dropHandler={galleryDropHandler}
-          routePrefixes={[">", "$", ":", "/"]}
-          onRouteChange={handleRouteChange}
-        />
       </div>
 
       <div className="cg-divider" />
