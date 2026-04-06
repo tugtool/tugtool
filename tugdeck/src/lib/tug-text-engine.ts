@@ -271,6 +271,7 @@ export class TugTextEngine {
 
   // Config — set by tug-prompt-input.tsx
   maxHeight = 0;
+  growDirection: "up" | "down" = "up";
   returnAction: InputAction = "submit";
   numpadEnterAction: InputAction = "submit";
   completionProvider: CompletionProvider | null = null;
@@ -523,6 +524,14 @@ export class TugTextEngine {
       // Let CSS min-height govern when content is short
       this.root.style.height = "";
       this.root.style.overflowY = "hidden";
+    }
+    // Grow upward: use negative margin-top to keep the bottom edge fixed
+    if (this.growDirection === "up") {
+      const baseHeight = parseFloat(getComputedStyle(this.root).minHeight) || 0;
+      const currentHeight = this.root.offsetHeight;
+      this.root.style.marginTop = currentHeight > baseHeight
+        ? `${baseHeight - currentHeight}px`
+        : "";
     }
   }
 

@@ -90,6 +90,13 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   completionDirection?: "up" | "down";
   /**
+   * Direction the editor grows as lines are added.
+   * "down" — top edge fixed, bottom extends (default).
+   * "up" — bottom edge fixed, top extends (chat-style).
+   * @default "down"
+   */
+  growDirection?: "up" | "down";
+  /**
    * Whether to persist editing state via tugbank [L23].
    * Set to false for test harness editors or transient inputs.
    * @default true
@@ -139,6 +146,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     completionDirection = "up",
     onTypeaheadChange,
     dropHandler,
+    growDirection = "down",
     disabled = false,
     persistState = true,
     className,
@@ -200,6 +208,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
 
       const engine = new TugTextEngine(el);
       engine.maxHeight = LINE_HEIGHT * maxRows + PADDING_Y;
+      engine.growDirection = growDirection;
       engine.completionProvider = completionProvider ?? null;
       engine.dropHandler = dropHandler ?? null;
       engine.returnAction = returnAction;
@@ -288,6 +297,12 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         engineRef.current.dropHandler = dropHandler ?? null;
       }
     }, [dropHandler]);
+
+    useLayoutEffect(() => {
+      if (engineRef.current) {
+        engineRef.current.growDirection = growDirection;
+      }
+    }, [growDirection]);
 
     // Regenerate atom images on theme change — direct DOM update [L06, L22]
     useLayoutEffect(() => {
