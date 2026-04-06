@@ -644,10 +644,48 @@ Native Ctrl+T transposes text characters but doesn't handle atoms. Add a keydown
 
 ### Step 9: Remaining features
 
+#### Sub-step 9.1: Consolidate atom rendering into tug-atom-img.ts
+
+The React `TugAtom` component (`tug-atom.tsx`) predates the img-based atom architecture. Now that the engine uses `<img>` atoms exclusively, the React component is dead weight. This sub-step consolidates everything into `tug-atom-img.ts`.
+
+**Move to `tug-atom-img.ts`:**
+- `AtomSegment` interface (currently defined in `tug-atom.tsx`, imported by engine)
+- `AtomLabelMode` type and `formatAtomLabel()` utility (label truncation/formatting)
+
+**Add to `tug-atom-img.ts`:**
+- `maxLabelWidth` option for `createAtomImgElement` — SVG-level text truncation with ellipsis, replacing CSS truncation that doesn't work inside `<img>` elements
+- Consider label mode support (filename/relative/absolute) as an option on the create function
+
+**Delete:**
+- `tug-atom.tsx` — React component, `createAtomBadgeDOM`, `createAtomDOM`, `DOM_ICON_SVGS`, `ICON_MAP`, all props/states (selected, highlighted, disabled, dismissible)
+- `tug-atom.css` — all styles for the old React component
+
+**Update imports:**
+- `tug-text-engine.ts` — import `AtomSegment` from `tug-atom-img` instead
+- `gallery-atom.tsx` — rewrite to showcase img-based atoms: all types, inline with text, label modes, truncation
+
+**Gallery card rewrite:**
+- Show all atom types as `<img>` elements (via `createAtomImgElement`)
+- Label mode switcher (filename/relative/absolute) using `formatAtomLabel`
+- Truncation demo with long labels
+- Inline-with-text sample showing atoms in a text flow
+
+**Carry forward — dismiss affordance:**
+- `createAtomImgElement` gets an optional `onDismiss` callback
+- On `mouseenter`, swap the SVG `src` to show an X icon replacing the type icon
+- On `mouseleave`, swap back to the type icon
+- On `click`, call the `onDismiss` callback
+- This works outside the editor (tag lists, chip displays) — inside the editor, atoms don't get dismiss affordances (backspace handles deletion)
+
+**Do NOT carry forward:**
+- React component states (selected, highlighted, disabled) — the engine handles selection natively via browser `::selection`
+- `contentEditable="false"` badge DOM path — replaced by `<img>` atoms entirely
+
+#### Sub-step 9.2 and beyond (remaining)
+
 - Prefix detection (first-character routing)
 - History navigation (up/down at document boundaries)
-- Text truncation for long atom labels
-- Auto-resize (1 row → maxRows)
+- Auto-resize (1 row → maxRows) — already implemented via `autoResize()` and `maxRows` prop
 
 ### Step 10: Retire the spike
 
