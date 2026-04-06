@@ -74,18 +74,29 @@ pub struct FileStatus {
     pub status: String,
 }
 
-/// File tree snapshot
+/// A single scored result from fuzzy file matching.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScoredResult {
+    /// Relative path for indexed queries; absolute path for off-board queries [D10].
+    pub path: String,
+    /// Fuzzy match score (higher = better). 0 for off-board results.
+    pub score: i32,
+    /// Byte-offset ranges `[start, end)` of matched characters for highlighting.
+    /// Empty for off-board results.
+    pub matches: Vec<(usize, usize)>,
+}
+
+/// File tree query response.
 ///
-/// Represents the current set of files in the watched project directory.
-/// Delivered by the FILETREE feed (0x11) on connect and on file creates,
-/// removes, and renames. Paths are relative to `root`.
+/// Delivered by the FILETREE feed (0x11) in response to a FILETREE_QUERY (0x12).
+/// Contains the top-N scored results for the query.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileTreeSnapshot {
-    /// Flat array of relative file paths (files only, sorted lexicographically)
-    pub files: Vec<String>,
-    /// Absolute path to the project root (same as tugcast's `--dir`)
-    pub root: String,
-    /// True if the file count exceeded the 50,000 cap and the list was clipped
+    /// Echo of the query that produced these results (for staleness detection).
+    pub query: String,
+    /// Top-N results sorted by descending score.
+    pub results: Vec<ScoredResult>,
+    /// True if the file index exceeded the 50,000 cap.
     pub truncated: bool,
 }
 

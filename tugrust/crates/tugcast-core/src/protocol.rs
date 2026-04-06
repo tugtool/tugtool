@@ -43,8 +43,10 @@ impl FeedId {
     // -- Snapshot feeds --
     /// Filesystem events snapshot (tugcast → tugdeck)
     pub const FILESYSTEM: Self = Self(0x10);
-    /// File tree snapshot (tugcast → tugdeck)
+    /// File tree scored results (tugcast → tugdeck)
     pub const FILETREE: Self = Self(0x11);
+    /// File tree query (tugdeck → tugcast)
+    pub const FILETREE_QUERY: Self = Self(0x12);
     /// Git status snapshot (tugcast → tugdeck)
     pub const GIT: Self = Self(0x20);
 
@@ -97,6 +99,7 @@ impl FeedId {
             Self::TERMINAL_RESIZE => Some("TerminalResize"),
             Self::FILESYSTEM => Some("Filesystem"),
             Self::FILETREE => Some("FileTree"),
+            Self::FILETREE_QUERY => Some("FileTreeQuery"),
             Self::GIT => Some("Git"),
             Self::STATS => Some("Stats"),
             Self::STATS_PROCESS_INFO => Some("StatsProcessInfo"),
@@ -342,6 +345,7 @@ mod tests {
         assert_eq!(FeedId::TERMINAL_RESIZE.as_byte(), 0x02);
         assert_eq!(FeedId::FILESYSTEM.as_byte(), 0x10);
         assert_eq!(FeedId::FILETREE.as_byte(), 0x11);
+        assert_eq!(FeedId::FILETREE_QUERY.as_byte(), 0x12);
         assert_eq!(FeedId::GIT.as_byte(), 0x20);
         assert_eq!(FeedId::STATS.as_byte(), 0x30);
         assert_eq!(FeedId::STATS_PROCESS_INFO.as_byte(), 0x31);

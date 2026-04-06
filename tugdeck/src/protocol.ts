@@ -22,6 +22,7 @@ export const FeedId = {
   // Snapshot feeds
   FILESYSTEM: 0x10,
   FILETREE: 0x11,
+  FILETREE_QUERY: 0x12,
   GIT: 0x20,
   // Stats
   STATS: 0x30,
