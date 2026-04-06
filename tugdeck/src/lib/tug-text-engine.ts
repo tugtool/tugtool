@@ -711,14 +711,18 @@ export class TugTextEngine {
       return;
     }
 
-    // Caret must be after the @
-    if (range.start <= this._typeahead.anchorOffset) {
+    // Caret must be after the trigger (or at the anchor when trigger was consumed)
+    const minPos = this._typeahead.triggerConsumed
+      ? this._typeahead.anchorOffset
+      : this._typeahead.anchorOffset + 1;
+    if (range.start < minPos) {
       this.cancelTypeahead();
       return;
     }
 
     const text = this.getText();
-    const query = text.slice(this._typeahead.anchorOffset + 1, range.start);
+    const queryStart = this._typeahead.anchorOffset + (this._typeahead.triggerConsumed ? 0 : 1);
+    const query = text.slice(queryStart, range.start);
 
     // Cancel if query contains a newline (moved to another line)
     if (query.includes("\n")) {

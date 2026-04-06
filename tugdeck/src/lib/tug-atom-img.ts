@@ -146,6 +146,7 @@ export function createAtomImgElement(
   img.width = width;
   img.height = HEIGHT;
   img.style.verticalAlign = "-6px";
+  img.style.margin = "0 2px";
   img.dataset.atomType = type;
   img.dataset.atomLabel = label;
   img.dataset.atomValue = value;
@@ -184,6 +185,7 @@ export function createRouteAtomImgElement(char: string): HTMLImageElement {
   img.width = w;
   img.height = HEIGHT;
   img.style.verticalAlign = "-6px";
+  img.style.margin = "0 2px";
   img.dataset.atomType = "route";
   img.dataset.atomLabel = char;
   img.dataset.atomValue = char;
