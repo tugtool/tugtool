@@ -588,7 +588,7 @@ body {
 
   /* Field */
   --tug7-element-field-border-normal-danger-rest: --tug-color(red, t: 61);
-  --tug7-element-field-border-normal-plain-active: --tug-color(blue);
+  --tug7-element-field-border-normal-plain-active: --tug-color(blue, i: 35, t: 50);
   --tug7-element-field-border-normal-plain-disabled: --tug-color(indigo-violet, i: 6, t: 17);
   --tug7-element-field-border-normal-plain-hover: --tug-color(indigo-cobalt, i: 7, t: 56);
   --tug7-element-field-border-normal-plain-readonly: --tug-color(indigo-violet, i: 6, t: 17);
@@ -605,7 +605,7 @@ body {
   --tug7-element-field-text-normal-plain-rest: --tug-color(indigo, i: 3, t: 94);
   --tug7-element-field-text-normal-required-rest: --tug-color(red, t: 69);
   --tug7-surface-field-primary-normal-plain-disabled: --tug-color(indigo-violet, i: 5, t: 6);
-  --tug7-surface-field-primary-normal-plain-focus: --tug-color(indigo-violet, i: 4, t: 7);
+  --tug7-surface-field-primary-normal-plain-focus: --tug-color(indigo-violet, i: 10, t: 13);
   --tug7-surface-field-primary-normal-plain-hover: --tug-color(violet, i: 5, t: 11);
   --tug7-surface-field-primary-normal-plain-readonly: --tug-color(violet, i: 5, t: 11);
   --tug7-surface-field-primary-normal-plain-rest: --tug-color(indigo-violet, i: 5, t: 8);

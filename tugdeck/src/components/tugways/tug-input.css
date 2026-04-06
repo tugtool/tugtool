@@ -69,12 +69,35 @@
   border-color: var(--tug7-element-field-border-normal-plain-hover);
 }
 
-/* ---- Focus ---- */
+/* ---- Focus: background (default) ---- */
 
 .tug-input:focus {
   background-color: var(--tug7-surface-field-primary-normal-plain-focus);
   border-color: var(--tug7-element-field-border-normal-plain-active);
   outline: none;
+}
+
+/* ---- Focus: ring ---- */
+
+.tug-input[data-focus-style="ring"]:focus {
+  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
+  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
+  outline-offset: -1px;
+}
+
+/* ---- Borderless ---- */
+
+.tug-input[data-borderless] {
+  border-color: transparent;
+}
+
+.tug-input[data-borderless]:hover:not(:disabled):not(:read-only):not(:focus) {
+  border-color: transparent;
+}
+
+.tug-input[data-borderless]:focus {
+  border-color: transparent;
 }
 
 /* ---- Disabled ---- */

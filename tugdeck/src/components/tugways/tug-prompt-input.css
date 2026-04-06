@@ -58,14 +58,38 @@
 }
 
 /* ---------------------------------------------------------------------------
-   State: focus
+   State: focus — background (default)
    --------------------------------------------------------------------------- */
 
 .tug-prompt-input-editor:focus {
+  /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
+  background-color: var(--tug7-surface-field-primary-normal-plain-focus);
+  border-color: var(--tug7-element-field-border-normal-plain-active);
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+   State: focus — ring
+   --------------------------------------------------------------------------- */
+
+.tug-prompt-input-editor[data-focus-style="ring"]:focus {
   /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+  background-color: var(--tug7-surface-global-primary-normal-control-rest);
   border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
   outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
   outline-offset: -1px;
+}
+
+/* ---------------------------------------------------------------------------
+   Borderless — for compound components that own the border treatment
+   --------------------------------------------------------------------------- */
+
+.tug-prompt-input-editor[data-borderless] {
+  border-color: transparent;
+}
+
+.tug-prompt-input-editor[data-borderless]:focus {
+  border-color: transparent;
 }
 
 /* ---------------------------------------------------------------------------

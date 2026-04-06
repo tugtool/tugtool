@@ -605,7 +605,7 @@ body {
   --tug7-element-field-text-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
   --tug7-element-field-text-normal-required-rest: --tug-color(red, t: 33);
   --tug7-surface-field-primary-normal-plain-disabled: --tug-color(indigo, i: 6, t: 94);
-  --tug7-surface-field-primary-normal-plain-focus: --tug-color(indigo, i: 4, t: 92);
+  --tug7-surface-field-primary-normal-plain-focus: --tug-color(indigo, i: 6, t: 95);
   --tug7-surface-field-primary-normal-plain-hover: --tug-color(violet, i: 6, t: 88);
   --tug7-surface-field-primary-normal-plain-readonly: --tug-color(violet, i: 6, t: 88);
   --tug7-surface-field-primary-normal-plain-rest: --tug-color(indigo, i: 5, t: 91);

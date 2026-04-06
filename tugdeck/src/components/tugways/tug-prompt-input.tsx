@@ -102,6 +102,19 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   growDirection?: "up" | "down";
   /**
+   * Focus indication style.
+   * "background" — subtle background shift on focus (default).
+   * "ring" — accent border ring on focus.
+   * @default "background"
+   */
+  focusStyle?: "background" | "ring";
+  /**
+   * Remove visible border. For embedding in compound components
+   * where the parent owns the border treatment.
+   * @default false
+   */
+  borderless?: boolean;
+  /**
    * Whether to persist editing state via tugbank [L23].
    * Set to false for test harness editors or transient inputs.
    * @default true
@@ -174,6 +187,8 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     onTypeaheadChange,
     dropHandler,
     growDirection = "down",
+    focusStyle = "background",
+    borderless = false,
     disabled = false,
     persistState = true,
     className,
@@ -374,6 +389,8 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
           role="textbox"
           aria-multiline="true"
           aria-disabled={disabled || undefined}
+          data-focus-style={focusStyle}
+          data-borderless={borderless || undefined}
           data-placeholder={placeholder}
           data-empty="true"
           data-td-select="custom"

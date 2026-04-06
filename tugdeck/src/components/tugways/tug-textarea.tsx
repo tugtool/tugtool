@@ -74,6 +74,19 @@ export interface TugTextareaProps
    * @default undefined (no limit — grows indefinitely)
    */
   maxRows?: number;
+  /**
+   * Focus indication style.
+   * "background" — subtle background shift on focus (default).
+   * "ring" — accent border ring on focus.
+   * @default "background"
+   */
+  focusStyle?: "background" | "ring";
+  /**
+   * Remove visible border. For embedding in compound components
+   * where the parent owns the border treatment.
+   * @default false
+   */
+  borderless?: boolean;
 }
 
 // ---- TugTextarea ----
@@ -90,6 +103,8 @@ export const TugTextarea = React.forwardRef<
     maxLength,
     autoResize = false,
     maxRows,
+    focusStyle = "background",
+    borderless = false,
     className,
     disabled,
     onChange,
@@ -204,6 +219,8 @@ export const TugTextarea = React.forwardRef<
     <textarea
       ref={setRef}
       data-slot="tug-textarea"
+      data-focus-style={focusStyle}
+      data-borderless={borderless || undefined}
       className={textareaClassName}
       disabled={effectiveDisabled}
       aria-invalid={validation === "invalid" ? "true" : undefined}

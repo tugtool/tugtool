@@ -39,13 +39,26 @@ export interface TugInputProps
    * @default "default"
    */
   validation?: TugInputValidation;
+  /**
+   * Focus indication style.
+   * "background" — subtle background shift on focus (default).
+   * "ring" — accent border ring on focus.
+   * @default "background"
+   */
+  focusStyle?: "background" | "ring";
+  /**
+   * Remove visible border. For embedding in compound components
+   * where the parent owns the border treatment.
+   * @default false
+   */
+  borderless?: boolean;
 }
 
 // ---- TugInput ----
 
 export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
   function TugInput(
-    { size = "md", validation = "default", className, disabled, ...rest },
+    { size = "md", validation = "default", focusStyle = "background", borderless = false, className, disabled, ...rest },
     ref,
   ) {
     const boxDisabled = useTugBoxDisabled();
@@ -64,6 +77,8 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
       <input
         ref={ref}
         data-slot="tug-input"
+        data-focus-style={focusStyle}
+        data-borderless={borderless || undefined}
         className={inputClassName}
         disabled={effectiveDisabled}
         aria-invalid={validation === "invalid" ? "true" : undefined}
