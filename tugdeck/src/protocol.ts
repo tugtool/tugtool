@@ -21,6 +21,7 @@ export const FeedId = {
   TERMINAL_RESIZE: 0x02,
   // Snapshot feeds
   FILESYSTEM: 0x10,
+  FILETREE: 0x11,
   GIT: 0x20,
   // Stats
   STATS: 0x30,

@@ -74,6 +74,21 @@ pub struct FileStatus {
     pub status: String,
 }
 
+/// File tree snapshot
+///
+/// Represents the current set of files in the watched project directory.
+/// Delivered by the FILETREE feed (0x11) on connect and on file creates,
+/// removes, and renames. Paths are relative to `root`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileTreeSnapshot {
+    /// Flat array of relative file paths (files only, sorted lexicographically)
+    pub files: Vec<String>,
+    /// Absolute path to the project root (same as tugcast's `--dir`)
+    pub root: String,
+    /// True if the file count exceeded the 50,000 cap and the list was clipped
+    pub truncated: bool,
+}
+
 /// Aggregate stats snapshot combining all collector outputs
 ///
 /// Each collector produces a JSON value that is stored in the collectors map

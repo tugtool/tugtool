@@ -30,7 +30,7 @@ pub use protocol::{
     PROTOCOL_VERSION,
     ProtocolError,
 };
-pub use types::{FileStatus, FsEvent, GitStatus, StatSnapshot};
+pub use types::{FileStatus, FileTreeSnapshot, FsEvent, GitStatus, StatSnapshot};
 
 /// Default port for the Vite dev server.
 ///

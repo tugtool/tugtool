@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-04-06T21:23:16Z
+---
+
+## step-1: Added FeedId::FILETREE (0x11) to protocol.rs, FileTreeSnapshot struct to types.rs, lib.rs re-export, and FILETREE constant to tugdeck protocol.ts. 64 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-live-file-completion.md
+
+---
+
+---
 step: step-6
 date: 2025-04-06T18:00:50Z
 ---
