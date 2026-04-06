@@ -197,7 +197,9 @@ async fn eval_handler(
             // Sender dropped (browser disconnected)
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(serde_json::json!({"status": "error", "message": "browser disconnected"})),
+                axum::Json(
+                    serde_json::json!({"status": "error", "message": "browser disconnected"}),
+                ),
             )
                 .into_response()
         }

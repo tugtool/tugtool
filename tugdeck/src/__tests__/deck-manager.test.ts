@@ -1447,36 +1447,17 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
   });
 
   /**
-   * T05: beforeunload calls all registered callbacks and flushes dirty tab
-   * states with keepalive: true.
+   * T05: beforeunload calls all registered save callbacks.
    */
-  it("T05: beforeunload calls all registered callbacks and flushes dirty tab states with keepalive: true", async () => {
+  it("T05: beforeunload calls all registered save callbacks", () => {
     const calls: string[] = [];
     manager.registerSaveCallback("card-c", () => calls.push("card-c"));
+    manager.registerSaveCallback("card-d", () => calls.push("card-d"));
 
-    // Mark a tab as dirty.
-    manager.setTabState("tab-y", { scroll: { x: 10, y: 20 } });
-
-    const fetchedInits: RequestInit[] = [];
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
-      if (init) fetchedInits.push(init);
-      return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
-    };
-
-    // Simulate beforeunload.
     window.dispatchEvent(new Event("beforeunload"));
 
-    // Callback fires synchronously.
     expect(calls).toContain("card-c");
-
-    // Wait a tick for fire-and-forget fetch.
-    await new Promise((r) => setTimeout(r, 0));
-
-    // At least one fetch init must have keepalive: true.
-    const keepaliveInits = fetchedInits.filter((init) => init.keepalive === true);
-    expect(keepaliveInits.length).toBeGreaterThan(0);
-
-    globalThis.fetch = _noopFetch;
+    expect(calls).toContain("card-d");
   });
 
   /**

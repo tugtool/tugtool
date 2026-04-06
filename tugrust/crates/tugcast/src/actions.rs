@@ -39,9 +39,15 @@ pub async fn dispatch_action(
                 if let Some(request_id) = payload.get("requestId").and_then(|r| r.as_str()) {
                     let mut pending = pending_evals.lock().unwrap();
                     if let Some(tx) = pending.remove(request_id) {
-                        let result = payload.get("result").cloned().unwrap_or(serde_json::Value::Null);
+                        let result = payload
+                            .get("result")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
                         let _ = tx.send(result);
-                        info!("dispatch_action: eval-response completed for {}", request_id);
+                        info!(
+                            "dispatch_action: eval-response completed for {}",
+                            request_id
+                        );
                     }
                 }
             }
