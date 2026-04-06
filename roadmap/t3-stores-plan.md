@@ -125,15 +125,29 @@ The store is created once per connection (at the DeckManager level or similar) a
 
 ## Store 2: PromptHistoryStore
 
+### Tiered history model
+
+History has three access tiers. Storage supports all three from day one; T3.3 implements navigation only.
+
+| Tier | Scope | Access | When |
+|------|-------|--------|------|
+| **Navigate** | Current session | Cmd+Up/Down | T3.3 (now) |
+| **Search** | Per-project (`cwd`) | Search UI | T3.4+ (future) |
+| **Search** | Global (all projects) | Search UI | Later |
+
 ### What it stores
 
-Every prompt submission, organized by route and card:
+Every prompt submission, tagged with enough metadata to query at any scope:
 
 ```typescript
 interface HistoryEntry {
-  text: string;          // Plain text (with TUG_ATOM_CHAR for atoms)
-  atoms: SerializedAtom[]; // Atom data for restoration
-  timestamp: number;
+  id: string;              // UUID — unique across all history
+  sessionId: string;       // from SessionMetadataStore — groups entries per session
+  projectPath: string;     // cwd from session metadata — groups per project
+  route: string;           // ">", "$", ":", "/"
+  text: string;            // prompt text with TUG_ATOM_CHAR for atoms
+  atoms: SerializedAtom[]; // atom data for restoration
+  timestamp: number;       // ms since epoch
 }
 
 interface SerializedAtom {
@@ -144,48 +158,66 @@ interface SerializedAtom {
 }
 ```
 
-This matches `TugTextEditingState` minus the `selection` field (selection is not meaningful for history — the caret goes to the end on restore).
+**History entries include atoms.** Atoms are "promises" — the atom records what the user attached, not whether the target still exists. Resolution (does this file exist? is this command valid?) happens at submit time, not at storage or restore time. History restores exactly what was typed.
 
-### Scope: per-route, per-card
+### Navigation scope: current session
 
-History is scoped to `(route, cardId)`. The `>` route in card A has separate history from the `>` route in card B, and separate from the `$` route in card A.
+Cmd+Up/Down walks entries from the current session only. "What did I just type?" — not the full project history.
+
+The `HistoryProvider` returned by `createProvider()` filters to entries matching the current `sessionId`. This gives focused, predictable navigation without scrolling through weeks of history.
 
 ### API design
 
 ```typescript
 class PromptHistoryStore {
-  // Push a new entry after submission
-  push(route: string, cardId: string, entry: HistoryEntry): void;
+  // L02-compliant subscription
+  subscribe(listener: () => void): () => void;
+  getSnapshot(): PromptHistorySnapshot;
 
-  // Create a HistoryProvider for a specific (route, cardId) scope.
-  // Returns an object matching the engine's HistoryProvider interface.
-  createProvider(route: string, cardId: string): HistoryProvider;
+  // Push a new entry after submission
+  push(entry: HistoryEntry): void;
+
+  // Create a HistoryProvider for Cmd+Up/Down navigation.
+  // Scoped to the given sessionId — only that session's entries are navigable.
+  createProvider(sessionId: string): HistoryProvider;
+
+  // Future: search API for project and global tiers
+  // search(query: string, scope: { projectPath?: string }): HistoryEntry[];
+}
+
+interface PromptHistorySnapshot {
+  /** Total entry count across all sessions. */
+  totalEntries: number;
+  /** Entry count for the current session (if any provider is active). */
+  sessionEntries: number;
 }
 ```
 
-**Key design choice:** `createProvider()` returns an object implementing the engine's `HistoryProvider` interface (`back(current) / forward()`). The provider manages its own cursor and draft state (same pattern as the gallery mock `GalleryHistoryProvider`). Multiple providers for the same scope share the same underlying entry list but have independent cursors.
+**Key design choices:**
 
-### Persistence: IndexedDB
+- `push(entry)` takes a fully-tagged `HistoryEntry`. The caller (tug-prompt-entry) provides `sessionId`, `projectPath`, and `route` from SessionMetadataStore and the current route state.
+- `createProvider(sessionId)` returns a `HistoryProvider` scoped to that session. Same `back(current) / forward()` interface the engine expects. Manages its own cursor and draft (same pattern as the gallery mock `GalleryHistoryProvider`).
+- `subscribe`/`getSnapshot` are L02-compliant. The snapshot is lightweight metadata (counts), not the full entry array.
 
-History must survive reload, app quit, and `just app` restarts (L23). IndexedDB is the right backing store — it's async, has good capacity, and works in WKWebView.
+### Persistence: tugbank
 
-Schema:
+History must survive reload, app quit, and `just app` restarts (L23). Tugbank is the existing persistence layer — SQLite-backed, REST API, used by everything else.
+
+**Storage key:** `dev.tugtool.prompt.history/{sessionId}`
+**Value:** JSON array of that session's `HistoryEntry` objects.
+
+One key per session. Navigation reads exactly one key (fast). Future project search lists all keys under `dev.tugtool.prompt.history/` and filters by `projectPath`.
+
 ```
-Database: tug-prompt-history
-  Object store: entries
-    Key path: auto-increment
-    Indexes:
-      - [route, cardId] compound index for scoped queries
-      - timestamp for ordering/cleanup
+PUT /api/defaults/dev.tugtool.prompt.history/session-abc123
+Body: { "kind": "json", "value": [{ "id": "...", "sessionId": "...", ... }, ...] }
 ```
 
-**Write path:** `push()` writes to both the in-memory array and IndexedDB (fire-and-forget async write).
+**Write path:** `push()` writes to both the in-memory array and tugbank (fire-and-forget async PUT, same pattern as `putTabState`).
 
-**Read path:** On first `createProvider()` for a scope, load entries from IndexedDB into memory. Subsequent reads are from memory. IndexedDB is the durable backing store, memory is the fast read cache.
+**Read path:** On first `createProvider()` for a session, fetch from tugbank into memory. Subsequent reads are from memory. Tugbank is the durable store, memory is the fast cache.
 
-**Capacity:** Cap at ~100 entries per (route, cardId) scope. On push, if the count exceeds the cap, remove the oldest entries.
-
-**History entries include atoms.** Atoms are "promises" — the atom records what the user attached, not whether the target still exists. Resolution (does this file exist? is this command valid?) happens at submit time, not at storage or restore time. History restores exactly what was typed. The `HistoryEntry` type matches `TugTextEditingState` (minus selection).
+**Capacity:** Cap at ~200 entries per session. Real-world sessions have 5-50 submissions; 200 provides generous headroom. Cross-session cleanup (removing sessions older than N days) is future work.
 
 **PromptHistoryStore is L02-compliant.** Laws are laws, not suggestions. `subscribe` + `getSnapshot` are implemented even though the primary consumer (HistoryProvider) is imperative. The overhead is trivial (a Set + version counter), and when a React-rendered history browser arrives, the compliance is already there.
 
@@ -216,17 +248,26 @@ The store produces a `CompletionProvider` function that the engine can call dire
 
 ```typescript
 // In tug-prompt-entry (T3.4):
-const historyProvider = historyStore.createProvider(currentRoute, cardId);
+const sessionId = metadataStore.getSnapshot().sessionId;
+const historyProvider = historyStore.createProvider(sessionId);
 
 <TugPromptInput
   historyProvider={historyProvider}
 />
 
 // On submit:
-historyStore.push(currentRoute, cardId, { text, atoms, timestamp: Date.now() });
+historyStore.push({
+  id: crypto.randomUUID(),
+  sessionId,
+  projectPath: metadataStore.getSnapshot().cwd ?? "",
+  route: currentRoute,
+  text,
+  atoms,
+  timestamp: Date.now(),
+});
 ```
 
-The store produces a `HistoryProvider` object per scope. The prompt entry manages the lifecycle — creating a new provider when the route changes.
+The store produces a `HistoryProvider` scoped to the current session. The prompt entry creates it once when the session starts (from SessionMetadataStore). Cmd+Up/Down walks that session's submissions only.
 
 ---
 
@@ -242,11 +283,11 @@ The store produces a `HistoryProvider` object per scope. The prompt entry manage
 
 ### Step 2: PromptHistoryStore
 
-1. **Types** — `HistoryEntry`, `SerializedAtom` in a new `tugdeck/src/lib/prompt-history-store.ts`
-2. **In-memory store** — push, createProvider, per-scope arrays
-3. **IndexedDB backing** — async load on first access, fire-and-forget writes, capacity cap
-4. **Tests** — unit tests for push/navigate/persistence
-5. **Gallery integration** — wire into gallery card, replacing `GalleryHistoryProvider`
+1. **Types** — `HistoryEntry`, `SerializedAtom`, `PromptHistorySnapshot` in a new `tugdeck/src/lib/prompt-history-store.ts`
+2. **In-memory store** — push, createProvider(sessionId), L02 subscribe/getSnapshot
+3. **Tugbank backing** — one key per sessionId, async fetch on first access, fire-and-forget PUT writes, capacity cap
+4. **Tests** — unit tests for push/navigate (mock tugbank via fetch stub)
+5. **Gallery integration** — wire into gallery card with a mock sessionId, replacing `GalleryHistoryProvider`
 
 ### Step 3: File completion provider (stub)
 
@@ -266,7 +307,7 @@ The `@` trigger's real data comes from a project file index — that's future wo
 | L06 | Completion/history providers drive direct DOM updates via the engine — no React re-renders |
 | L07 | Providers are stable refs — created once per scope, not recreated on every render |
 | L22 | SessionMetadataStore observed by engine callbacks, not round-tripped through React |
-| L23 | PromptHistoryStore persists to IndexedDB — survives reload, quit |
+| L23 | PromptHistoryStore persists to tugbank — survives reload, quit |
 
 ---
 
@@ -274,8 +315,9 @@ The `@` trigger's real data comes from a project file index — that's future wo
 
 - SessionMetadataStore parses `system_metadata` from a FeedStore (tested with mock data)
 - `getCommandCompletionProvider()` returns a working CompletionProvider
-- PromptHistoryStore push/navigate works with in-memory data
-- IndexedDB persistence: entries survive page reload
+- PromptHistoryStore push/navigate works with session-scoped in-memory data
+- Tugbank persistence: session entries survive page reload
+- Entry schema includes sessionId, projectPath, route — ready for future search tiers
 - Both stores have unit tests
 - Gallery card uses real store instances (with mock feed data) instead of inline mocks
 - Existing tug-prompt-input features unaffected
@@ -285,5 +327,7 @@ The `@` trigger's real data comes from a project file index — that's future wo
 ## Decisions (resolved)
 
 1. **Slash command shape** — strict types (`{ name, description? }`), parsed defensively. Completion is a closed set — always completes to known commands.
-2. **History includes atoms** — yes. Atoms are promises; resolution is at submit time. Full `TugTextEditingState` stored (minus selection).
+2. **History includes atoms** — yes. Atoms are promises; resolution is at submit time. Full state stored (minus selection).
 3. **PromptHistoryStore L02** — yes. Laws are laws. Both stores implement `subscribe`/`getSnapshot`.
+4. **History tiers** — navigation is session-scoped (Cmd+Up/Down walks current session only). Storage schema includes sessionId + projectPath + route to support future per-project and global search. Search UI is T3.4+.
+5. **Persistence** — tugbank, not IndexedDB. One key per sessionId. Consistent with all other persistence in the system.
