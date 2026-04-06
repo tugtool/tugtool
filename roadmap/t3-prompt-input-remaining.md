@@ -159,9 +159,11 @@ Wire both providers:
 
 ---
 
-## Item 2: Prefix Detection
+## Item 2: Route Atoms
 
-**Goal:** First-character routing for tug-prompt-entry integration. When the user types a route prefix as the first character of the document, detect it, consume it, notify the parent, and — for `/` — also trigger slash command completion.
+**Goal:** Make route prefixes visible, tangible, and deletable inside the editor. When the user types a route prefix as the first character, it becomes a **route atom** — a styled `<img>` element at position 0 that shows the active route and can be backspaced away.
+
+**Status:** Sub-steps 2.1-2.5 (basic prefix detection with character consumption) are implemented and merged. This revision replaces the invisible-consumption model with visible route atoms.
 
 **Route prefixes:**
 - `>` → AI route (Claude Code)
@@ -169,139 +171,100 @@ Wire both providers:
 - `:` → surface command route (local)
 - `/` → slash command mode (implies `>` route, AND triggers `/` completion)
 
-**Architecture:** The input detects and consumes the prefix. The route state lives in tug-prompt-entry (T3.4), not in the input. The input is a thin notification source. This keeps the input reusable — it doesn't know about routes, it just knows about prefix characters and a callback.
+### Design: route atoms
 
-### Sub-step 2.1: Engine — add route prefix config and callback
+A route atom is a regular atom `<img>` with `data-atom-type="route"` and a distinct visual treatment:
+- Smaller than content atoms — just the route character, no icon, minimal padding
+- Different color scheme — uses a dedicated token set (e.g., `--tug7-surface-atom-primary-normal-route-rest`) to distinguish from content atoms
+- Always at position 0 — the engine enforces this
 
-**New config fields on `TugTextEngine`:**
-```typescript
-routePrefixes: string[] = [];
-onRouteChange: ((route: string) => void) | null = null;
+The engine and DOM treat route atoms identically to content atoms (they're `<img>` elements in the text flow). The distinction is semantic — consumers (tug-prompt-entry) check the first atom's type on submit.
+
+### Sub-step 2.6: tug-atom-img — add route atom rendering
+
+Add a `createRouteAtomImgElement(char: string)` function to `tug-atom-img.ts`:
+- Renders the route character (e.g., `>`) as SVG text with no icon
+- Uses route-specific theme tokens for bg/border/text color
+- Narrower than content atoms (character + minimal padding)
+- Sets `data-atom-type="route"` and `data-atom-label` to the character
+
+Also add `routeAtomImgHTML(char: string)` for `insertHTML` usage.
+
+### Sub-step 2.7: Theme tokens for route atoms
+
+Define tokens in both brio.css and harmony.css:
+```
+--tug7-surface-atom-primary-normal-route-rest
+--tug7-element-atom-border-normal-route-rest
+--tug7-element-atom-text-normal-route-rest
 ```
 
-`routePrefixes` is the set of characters that trigger routing when typed as the first character. The engine doesn't know what the routes mean — it just detects the character and fires `onRouteChange`.
+These should be subtler than content atom tokens — perhaps the same background but a muted or accent-tinted border/text to mark them as structural rather than content.
 
-No hardcoded prefix list in the engine. The component passes the list.
+### Sub-step 2.8: Engine — replace character consumption with route atom insertion
 
-### Sub-step 2.2: Engine — detect prefix in the input handler
+Revise `detectRoutePrefix()`:
+- Instead of consuming the typed character, replace it with a route atom at position 0
+- `setSelectedRange(0, 1)` + `execCommand("delete")` + `execCommand("insertHTML", false, routeAtomImgHTML(firstChar))`
+- Fire `onRouteChange(firstChar)`
+- For `/`: insert the route atom AND let the completion trigger fire (the `/` character is consumed by the atom insertion, but the typeahead trigger needs to activate — see below)
 
-In the input event handler (handler 9/10), after the emptiness/resize/onChange work, add prefix detection:
+**`/` stacking detail:**
+When `/` is typed as the first character:
+1. `detectRoutePrefix` replaces it with a route atom → `onRouteChange("/")` fires
+2. But the `/` text character is now gone (replaced by an atom), so `detectTypeaheadTrigger` won't see it
+3. Solution: after inserting a route atom for a character that's also a completion trigger, explicitly activate the typeahead with that trigger's provider. This is a direct call to set up `_typeahead` state, not a detection — we know the trigger.
 
-```typescript
-// Prefix detection: if the document starts with a route prefix,
-// consume it and notify the parent.
-if (this.routePrefixes.length > 0 && inputType.startsWith("insert")) {
-    this.detectRoutePrefix();
-}
-```
+### Sub-step 2.9: Engine — enforce position 0 constraint
 
-The `detectRoutePrefix` method:
-```typescript
-private detectRoutePrefix(): void {
-    const text = this.getText();
-    if (text.length === 0) return;
-    const firstChar = text[0];
-    if (!this.routePrefixes.includes(firstChar)) return;
+The route atom must stay at position 0:
+- **Caret guard:** In the click handler or a selection-change observer, if the caret is at position 0 and there's a route atom, nudge it to position 1 (after the atom). This prevents typing before the route atom.
+- **No drag:** Route atoms shouldn't be draggable to other positions. The existing atom click-select behavior is fine (click selects the atom, backspace deletes it).
 
-    // Consume the prefix character
-    this.setSelectedRange(0, 1);
-    document.execCommand("delete");
+### Sub-step 2.10: Engine — backspace on route atom clears the route
 
-    // Fire the callback
-    this.onRouteChange?.(firstChar);
-}
-```
+When the user deletes the route atom (backspace from position 1):
+- The normal `execCommand("delete")` removes the atom
+- The input handler detects the deletion and checks: was there a route atom at position 0 before, and is it gone now?
+- If so, fire `onRouteChange(null)` (or `onRouteChange("")`) to signal the route was cleared
 
-**Key behaviors:**
-- Only checks on insertions (not deletions or undo) — prevents firing when the user deletes back to a prefix character
-- Consumes the prefix via `setSelectedRange(0, 1)` + `execCommand("delete")` — this is undoable, though undo is unlikely to be meaningful here
-- Fires after the character is consumed, so the editor shows the remaining content (if any)
+Implementation: track `_hasRouteAtom` as a boolean flag. Set it when a route atom is inserted. In the input handler's deletion path, if `_hasRouteAtom` was true and the first child is no longer a route atom `<img>`, fire `onRouteChange(null)` and clear the flag.
 
-**Interaction with `/` completion:**
-When the user types `/` as the first character:
-1. Prefix detection fires: consumes `/`, calls `onRouteChange("/")`
-2. But the `/` is now gone from the DOM — so the completion trigger won't see it
+### Sub-step 2.11: Component and gallery card updates
 
-This is a problem. The `/` needs to both change the route AND trigger completion. Two approaches:
+**Component:**
+- `onRouteChange` callback type changes to `(route: string | null) => void` to support clearing
+- No other component changes — the engine handles everything
 
-**Approach A — prefix detection fires first, then re-inserts `/` for completion:**
-After consuming the prefix, if the prefix is also a completion trigger, re-insert it. But this is messy — two mutations, confusing undo state.
+**Gallery card:**
+- The route indicator already shows the current route via `routeRef`
+- Update `handleRouteChange` to show "none" or `>` (default) when route is null
+- Add visual feedback when route changes (the indicator updates via direct DOM write, already L06 compliant)
 
-**Approach B (recommended) — prefix detection fires but does NOT consume `/` when it's a completion trigger:**
-If the prefix character is also a key in `completionProviders`, skip the consumption. The character stays in the editor, the route change fires, and the normal completion trigger detection (which runs later in the same input handler) picks up the `/` and opens the popup. The completion popup shows slash commands. When the user accepts a completion, the `/` is consumed as part of the typeahead accept flow.
+### Sub-step 2.12: getText and captureState behavior
 
-If the user dismisses the completion (Escape), the `/` stays in the editor as typed text. This is fine — it's just a character.
+`getText()` returns `TUG_ATOM_CHAR` for the route atom at position 0, just like any atom. `getAtoms()` returns it as the first atom with `type: "route"`. `captureState()` includes it in the serialized state.
 
-```typescript
-private detectRoutePrefix(): void {
-    const text = this.getText();
-    if (text.length === 0) return;
-    const firstChar = text[0];
-    if (!this.routePrefixes.includes(firstChar)) return;
+On submit, tug-prompt-entry (T3.4) will:
+1. Read `getAtoms()` — if `atoms[0].type === "route"`, extract `atoms[0].label` as the route character
+2. Strip the route atom from the submitted text
+3. Dispatch to the appropriate feed based on the route
 
-    // If the prefix is also a completion trigger, don't consume it —
-    // let completion handle it. Just fire the route change.
-    if (this.completionProviders[firstChar]) {
-        this.onRouteChange?.(firstChar);
-        return;
-    }
+This keeps the engine simple — it doesn't know about routes, it just renders atoms. The routing logic lives in the consumer.
 
-    // Consume the prefix character
-    this.setSelectedRange(0, 1);
-    document.execCommand("delete");
-    this.onRouteChange?.(firstChar);
-}
-```
+### Sub-step 2.13: Verify and test
 
-### Sub-step 2.3: Component — add props and wire to engine
-
-**New props on `TugPromptInputProps`:**
-```typescript
-/**
- * Characters that trigger route detection when typed as the first character.
- * The character is consumed and onRouteChange fires.
- * If the character is also a completion trigger, it's kept for completion.
- */
-routePrefixes?: string[];
-/**
- * Called when a route prefix is detected as the first character.
- */
-onRouteChange?: (route: string) => void;
-```
-
-**Wiring:**
-- Destructure `routePrefixes` and `onRouteChange` in the component
-- `onRouteChange` gets the ref pattern (like `onSubmitRef`) since it's read from the engine's callback closure
-- `routePrefixes` is set directly on the engine (like `completionProviders`) with a sync effect
-
-### Sub-step 2.4: Gallery card — mock route display
-
-Add a simple route indicator to the gallery card that shows the current route:
-
-```typescript
-const [currentRoute, setCurrentRoute] = useState<string>(">");
-```
-
-Wire it:
-```typescript
-<TugPromptInput
-  routePrefixes={[">", "$", ":", "/"]}
-  onRouteChange={setCurrentRoute}
-  ...
-/>
-```
-
-Display the current route somewhere visible — a small label above or beside the editor showing "Route: >" or similar. Direct DOM write via a ref for L06 compliance, or a simple state display since this is a gallery test harness.
-
-### Sub-step 2.5: Verify and test
-
-- Type `>` as first character in empty editor → route changes to `>`, character consumed, editor empty
-- Type `$` as first character → route changes to `$`, character consumed
-- Type `/` as first character → route changes to `/`, character stays, completion popup opens
-- Type `hello` then `>` → no route change (not first character)
-- Clear editor, type `>hello` → route changes to `>`, editor shows "hello"
-- Prefix detection does NOT fire on deletion or undo
-- Existing features unaffected
+- Type `>` in empty editor → route atom appears at position 0, route indicator shows `>`
+- Type `$` → route atom shows `$`
+- Type `/` → route atom shows `/`, completion popup opens
+- Cannot type before the route atom (caret nudged to position 1)
+- Backspace at position 1 → route atom deleted, route indicator shows default
+- Type `>hello world` → route atom `>` at position 0, "hello world" as text
+- Content atoms after the route atom work normally (insert, select, delete)
+- getText() returns `\uFFFChello world` — route atom is the first FFFC
+- getAtoms()[0] has type "route", label ">"
+- History navigation preserves route atoms
+- Persistence preserves route atoms
 
 ---
 
@@ -342,8 +305,8 @@ CSS-driven with a data attribute (L06):
 
 ## Execution Order
 
-1. **Slash command completion** — generalizes the existing typeahead to multiple triggers. Low risk, builds directly on proven infrastructure.
-2. **Prefix detection** — thin notification layer. Minimal engine change.
+1. **Slash command completion** — ✅ Done. Generalized typeahead to multiple triggers.
+2. **Route atoms** — visible route prefixes as styled atoms at position 0. Sub-steps 2.1-2.5 (basic detection) done; sub-steps 2.6-2.13 (route atoms) pending.
 3. **Maximize mode** — CSS-driven expansion. The autoResize change is small; the real work is ensuring the flex container layout works in the gallery card and future prompt entry.
 
 All three items prepare tug-prompt-input for integration into T3.4 (tug-prompt-entry).
