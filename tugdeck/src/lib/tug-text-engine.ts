@@ -523,6 +523,26 @@ export class TugTextEngine {
     this.root.dataset.empty = this.isEmpty() ? "true" : "false";
   }
 
+  /**
+   * Adjust a caret range when the mouse is past an atom's midpoint.
+   * caretRangeFromPoint lands before an atom at end-of-line/document
+   * because there's no text after it. If the mouse X is past the atom's
+   * midpoint, nudge the range to after the atom.
+   */
+  private adjustRangeForAtom(range: Range, mouseX: number): void {
+    const container = range.startContainer;
+    const offset = range.startOffset;
+    if (container !== this.root) return;
+    const child = container.childNodes[offset];
+    if (child && isAtomImg(child)) {
+      const rect = (child as HTMLElement).getBoundingClientRect();
+      if (mouseX > rect.left + rect.width / 2) {
+        range.setStart(container, offset + 1);
+        range.collapse(true);
+      }
+    }
+  }
+
   /** Remove the drop caret indicator element. */
   private removeDropCaret(): void {
     if (this._dropCaret) {
@@ -944,11 +964,22 @@ export class TugTextEngine {
     this.listen(root, "dragenter", (e: Event) => {
       e.preventDefault();
       this._dragEnterCount++;
+      if (this._dragEnterCount === 1) {
+        // Hide the blinking caret during drag if selection is collapsed.
+        // Ranged selections stay visible (they use ::selection, not caret-color).
+        const range = this.getSelectedRange();
+        if (range && range.start === range.end) {
+          root.style.caretColor = "transparent";
+        }
+      }
     });
 
     this.listen(root, "dragleave", () => {
       this._dragEnterCount--;
-      if (this._dragEnterCount === 0) this.removeDropCaret();
+      if (this._dragEnterCount === 0) {
+        this.removeDropCaret();
+        root.style.caretColor = "";
+      }
     });
 
     this.listen(root, "dragover", (e: Event) => {
@@ -958,6 +989,7 @@ export class TugTextEngine {
       // Position the drop caret indicator
       const range = document.caretRangeFromPoint(de.clientX, de.clientY);
       if (range) {
+        this.adjustRangeForAtom(range, de.clientX);
         const rootRect = root.getBoundingClientRect();
         if (!this._dropCaret) {
           this._dropCaret = document.createElement("div");
@@ -968,21 +1000,52 @@ export class TugTextEngine {
         const caretRect = range.getBoundingClientRect();
         const styles = getComputedStyle(root);
         const lh = parseFloat(styles.lineHeight) || 24;
+        const caretH = Math.round(lh * 0.85);
         if (caretRect.height > 0) {
           this._dropCaret.style.left = `${caretRect.left - rootRect.left + root.scrollLeft}px`;
-          this._dropCaret.style.top = `${caretRect.top - rootRect.top + root.scrollTop}px`;
-          this._dropCaret.style.height = `${caretRect.height}px`;
-        } else {
-          // Empty line — caretRangeFromPoint returns a zero rect.
-          // Snap to line grid at the editor's left edge, height centered in line.
-          const paddingLeft = parseFloat(styles.paddingLeft) || 0;
-          const paddingTop = parseFloat(styles.paddingTop) || 0;
-          const relY = de.clientY - rootRect.top + root.scrollTop;
-          const line = Math.floor((relY - paddingTop) / lh);
-          const caretH = Math.round(lh * 0.85);
-          this._dropCaret.style.left = `${paddingLeft}px`;
-          this._dropCaret.style.top = `${paddingTop + line * lh + (lh - caretH) / 2}px`;
+          const midY = caretRect.top + caretRect.height / 2;
+          this._dropCaret.style.top = `${midY - caretH / 2 - rootRect.top + root.scrollTop}px`;
           this._dropCaret.style.height = `${caretH}px`;
+        } else {
+          // Degenerate rect — try to position relative to the previous sibling
+          const container = range.startContainer;
+          const offset = range.startOffset;
+          let positioned = false;
+          if (container === root && offset > 0) {
+            const prev = container.childNodes[offset - 1];
+            if (prev.nodeType === Node.ELEMENT_NODE) {
+              const prevRect = (prev as HTMLElement).getBoundingClientRect();
+              if (prevRect.height > 0) {
+                const midY = prevRect.top + prevRect.height / 2;
+                this._dropCaret.style.left = `${prevRect.right - rootRect.left + root.scrollLeft}px`;
+                this._dropCaret.style.top = `${midY - caretH / 2 - rootRect.top + root.scrollTop}px`;
+                this._dropCaret.style.height = `${caretH}px`;
+                positioned = true;
+              }
+            } else if (prev.nodeType === Node.TEXT_NODE) {
+              const probe = document.createRange();
+              probe.setStart(prev, prev.textContent?.length ?? 0);
+              probe.collapse(true);
+              const probeRect = probe.getBoundingClientRect();
+              if (probeRect.height > 0) {
+                const midY = probeRect.top + probeRect.height / 2;
+                this._dropCaret.style.left = `${probeRect.left - rootRect.left + root.scrollLeft}px`;
+                this._dropCaret.style.top = `${midY - caretH / 2 - rootRect.top + root.scrollTop}px`;
+                this._dropCaret.style.height = `${caretH}px`;
+                positioned = true;
+              }
+            }
+          }
+          if (!positioned) {
+            // True empty line — snap to line grid, centered in line.
+            const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+            const paddingTop = parseFloat(styles.paddingTop) || 0;
+            const relY = de.clientY - rootRect.top + root.scrollTop;
+            const line = Math.floor((relY - paddingTop) / lh);
+            this._dropCaret.style.left = `${paddingLeft}px`;
+            this._dropCaret.style.top = `${paddingTop + line * lh + (lh - caretH) / 2}px`;
+            this._dropCaret.style.height = `${caretH}px`;
+          }
         }
       }
     });
@@ -991,6 +1054,7 @@ export class TugTextEngine {
       e.preventDefault();
       this._dragEnterCount = 0;
       this.removeDropCaret();
+      root.style.caretColor = "";
       const de = e as DragEvent;
       const files = de.dataTransfer?.files;
       if (!files || files.length === 0) return;
@@ -998,6 +1062,7 @@ export class TugTextEngine {
       // Position caret at drop point
       const range = document.caretRangeFromPoint(de.clientX, de.clientY);
       if (range) {
+        this.adjustRangeForAtom(range, de.clientX);
         const sel = window.getSelection();
         sel?.removeAllRanges();
         sel?.addRange(range);
