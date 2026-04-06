@@ -22,7 +22,7 @@ import type { AtomSegment, InputAction } from "@/lib/tug-text-engine";
 import { FeedStore } from "@/lib/feed-store";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
-import { createFileCompletionProvider } from "@/lib/file-completion-provider";
+import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { FeedId } from "@/protocol";
 import "./gallery-prompt-input.css";
@@ -36,13 +36,6 @@ const SAMPLE_ATOMS: AtomSegment[] = [
   { kind: "atom", type: "file", label: "README.md", value: "/project/README.md" },
   { kind: "atom", type: "command", label: "/commit", value: "/commit" },
   { kind: "atom", type: "file", label: "src/lib/feed-store.ts", value: "/project/src/lib/feed-store.ts" },
-];
-
-const TYPEAHEAD_FILES = [
-  "src/main.ts", "src/main.tsx", "src/protocol.ts", "src/connection.ts",
-  "src/lib/feed-store.ts", "src/lib/connection-singleton.ts",
-  "src/deck-manager.ts", "src/settings-api.ts", "src/action-dispatch.ts",
-  "README.md", "package.json", "tsconfig.json",
 ];
 
 /** Fallback slash commands seeded when no live connection is available. */
@@ -88,21 +81,27 @@ const GALLERY_SESSION_ID = "gallery-mock-session";
  */
 function buildGalleryStores(): {
   metadataStore: SessionMetadataStore | null;
+  fileTreeStore: FileTreeStore;
   historyStore: PromptHistoryStore;
 } {
   const historyStore = new PromptHistoryStore();
   const connection = getConnection();
 
   if (connection !== null) {
-    const feedStore = new FeedStore(connection, [FeedId.CODE_OUTPUT]);
+    const feedStore = new FeedStore(connection, [FeedId.CODE_OUTPUT, FeedId.FILETREE, FeedId.FILETREE_QUERY]);
     const metadataStore = new SessionMetadataStore(feedStore, FeedId.CODE_OUTPUT);
-    return { metadataStore, historyStore };
+    const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
+    return { metadataStore, fileTreeStore, historyStore };
   }
 
-  return { metadataStore: null, historyStore };
+  // Tugcast is always running when cards are visible, but create a minimal
+  // FileTreeStore with a disconnected FeedStore for type safety.
+  const dummyFeedStore = new FeedStore(null as any, []);
+  const fileTreeStore = new FileTreeStore(dummyFeedStore, FeedId.FILETREE);
+  return { metadataStore: null, fileTreeStore, historyStore };
 }
 
-const { metadataStore: _metadataStore, historyStore: _historyStore } = buildGalleryStores();
+const { metadataStore: _metadataStore, fileTreeStore: _fileTreeStore, historyStore: _historyStore } = buildGalleryStores();
 
 /**
  * Completion provider for the / trigger.
@@ -123,8 +122,8 @@ const galleryCommandCompletionProvider = _metadataStore !== null
       }));
     };
 
-/** Completion provider for the @ trigger. */
-const galleryFileCompletionProvider = createFileCompletionProvider(TYPEAHEAD_FILES);
+/** Completion provider for the @ trigger — live fuzzy-scored results from tugcast. */
+const galleryFileCompletionProvider = _fileTreeStore.getFileCompletionProvider();
 
 /** History provider scoped to the gallery mock session. */
 const galleryHistoryProvider = _historyStore.createProvider(GALLERY_SESSION_ID);

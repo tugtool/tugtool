@@ -75,3 +75,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------------------
+   Match highlight — marks matched characters in fuzzy-scored results
+   --------------------------------------------------------------------------- */
+
+.tug-completion-match {
+  font-weight: 600;
+}

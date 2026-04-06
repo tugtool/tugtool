@@ -301,7 +301,25 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
             (i === selectedIndex ? " tug-completion-menu-item-selected" : "");
           const label = document.createElement("span");
           label.className = "tug-completion-menu-label";
-          label.textContent = item.label;
+          if (item.matches && item.matches.length > 0) {
+            // Render with match highlighting.
+            let pos = 0;
+            for (const [start, end] of item.matches) {
+              if (start > pos) {
+                label.appendChild(document.createTextNode(item.label.slice(pos, start)));
+              }
+              const mark = document.createElement("span");
+              mark.className = "tug-completion-match";
+              mark.textContent = item.label.slice(start, end);
+              label.appendChild(mark);
+              pos = end;
+            }
+            if (pos < item.label.length) {
+              label.appendChild(document.createTextNode(item.label.slice(pos)));
+            }
+          } else {
+            label.textContent = item.label;
+          }
           div.appendChild(label);
           div.addEventListener("pointerdown", (e) => {
             e.preventDefault(); // Don't steal focus from editor
