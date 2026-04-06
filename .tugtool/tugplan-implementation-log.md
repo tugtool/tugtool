@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-04-06T17:39:06Z
+---
+
+## step-2: Created HistoryEntry/SerializedAtom types in prompt-history-store.ts, added putPromptHistory() and getPromptHistory() to settings-api.ts with Tugbank persistence. 12 tests pass.
+
+**Files changed:**
+- t3-stores-944c9ca-1
+
+---
+
+---
 step: step-1
 date: 2025-04-06T17:34:37Z
 ---

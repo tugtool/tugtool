@@ -16,9 +16,12 @@ import {
   readDeckState,
   putFocusedCardId,
   readTabStates,
+  putPromptHistory,
+  getPromptHistory,
 } from "../settings-api";
 import type { TabStateBag } from "../layout-tree";
 import type { TugbankClient, TaggedValue } from "../lib/tugbank-client";
+import type { HistoryEntry } from "../lib/prompt-history-store";
 
 // ---------------------------------------------------------------------------
 // fetch mock helpers
@@ -208,5 +211,105 @@ describe("readTabStates", () => {
     expect(result.size).toBe(1);
     expect(result.has("tab-present")).toBe(true);
     expect(result.has("tab-missing")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// putPromptHistory
+// ---------------------------------------------------------------------------
+
+describe("putPromptHistory", () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  test("sends PUT to correct URL with json-tagged body", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+
+    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: url as string, init: init ?? {} });
+      return makeResponse(200, {});
+    };
+
+    const sessionId = "session-abc-123";
+    const entries: HistoryEntry[] = [
+      {
+        id: "entry-1",
+        sessionId,
+        projectPath: "/home/user/proj",
+        route: ">",
+        text: "hello world",
+        atoms: [],
+        timestamp: 1700000000000,
+      },
+    ];
+
+    putPromptHistory(sessionId, entries);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls.length).toBe(1);
+    expect(calls[0].url).toBe(
+      `/api/defaults/dev.tugtool.prompt.history/${encodeURIComponent(sessionId)}`
+    );
+    expect(calls[0].init.method).toBe("PUT");
+
+    const body = JSON.parse(calls[0].init.body as string);
+    expect(body.kind).toBe("json");
+    expect(Array.isArray(body.value)).toBe(true);
+    expect(body.value.length).toBe(1);
+    expect(body.value[0].id).toBe("entry-1");
+    expect(body.value[0].text).toBe("hello world");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getPromptHistory
+// ---------------------------------------------------------------------------
+
+describe("getPromptHistory", () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  test("returns parsed entries array on 200 response", async () => {
+    const sessionId = "session-xyz-456";
+    const entries: HistoryEntry[] = [
+      {
+        id: "entry-a",
+        sessionId,
+        projectPath: "/home/user/proj",
+        route: "$",
+        text: "ls -la",
+        atoms: [],
+        timestamp: 1700000001000,
+      },
+      {
+        id: "entry-b",
+        sessionId,
+        projectPath: "/home/user/proj",
+        route: ">",
+        text: "what is this file",
+        atoms: [{ position: 15, type: "file", label: "readme.md", value: "/readme.md" }],
+        timestamp: 1700000002000,
+      },
+    ];
+
+    globalThis.fetch = async () =>
+      makeResponse(200, { kind: "json", value: entries });
+
+    const result = await getPromptHistory(sessionId);
+
+    expect(result.length).toBe(2);
+    expect(result[0].id).toBe("entry-a");
+    expect(result[1].id).toBe("entry-b");
+    expect(result[1].atoms.length).toBe(1);
+    expect(result[1].atoms[0].type).toBe("file");
+  });
+
+  test("returns empty array on 404 response", async () => {
+    globalThis.fetch = async () => makeResponse(404, null);
+
+    const result = await getPromptHistory("session-no-history");
+    expect(result).toEqual([]);
   });
 });
