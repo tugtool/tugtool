@@ -149,6 +149,7 @@ export function createAtomImgElement(
   img.dataset.atomType = type;
   img.dataset.atomLabel = label;
   img.dataset.atomValue = value;
+  img.title = value;
 
   return img;
 }
