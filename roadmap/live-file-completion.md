@@ -164,8 +164,8 @@ We own the file index and scoring ourselves rather than depending on Claude Code
 
 **Implications:**
 - FileTreeFeed is a custom async task (not a `SnapshotFeed` implementor — the trait can't express the dual-input nature of query + file events). It owns a `watch::Sender<Frame>` for responses.
-- FileTreeFeed also receives an `mpsc::Receiver<String>` for query input.
-- The router registers `FILETREE_QUERY` as an input sink, dispatching to `mpsc::Sender<String>`.
+- FileTreeFeed also receives an `mpsc::Receiver<FileTreeQuery>` for query input (where `FileTreeQuery = { query: String, root: Option<PathBuf> }`).
+- The router registers `FILETREE_QUERY` as an input sink, dispatching to `mpsc::Sender<FileTreeQuery>`.
 - Initial response on connect is an empty result set (no query has been sent yet).
 - The fuzzy scorer lives in a Rust module, not TypeScript.
 
@@ -188,7 +188,7 @@ We own the file index and scoring ourselves rather than depending on Claude Code
 
 #### [D05] Paths are relative to root (DECIDED) {#d05-relative-paths}
 
-**Decision:** All file paths in the system are relative to the project root. The `BTreeSet<String>` in FileTreeFeed stores relative paths; the `ScoredResult.path` field in FILETREE responses carries relative paths; `CompletionItem.label` displays the relative path.
+**Decision:** File paths in the indexed project tree are relative to the project root. The `BTreeSet<String>` in FileTreeFeed stores relative paths; for normal queries, `ScoredResult.path` carries relative paths and `CompletionItem.label` displays them. **Exception:** off-board completion [D10] returns absolute paths — there is no project root to be relative to.
 
 **Rationale:**
 - Shorter, cleaner for display in completion items.
@@ -264,8 +264,10 @@ When the text engine activates a typeahead and detects `provider.subscribe`, it 
 - Re-walking is the same `FileWatcher::walk()` already used at startup — well-tested, bounded by the 50k cap.
 
 **Implications:**
-- FileTreeFeed tracks `current_root: PathBuf`. On query with a new `root`, calls `FileWatcher::walk()` on the new path, replaces the BTreeSet, updates `current_root`, then scores the query.
-- The `notify` watcher continues watching the original directory. A follow-on could restart the watcher on retarget, but for now the index is rebuilt from `walk()` on each retarget and stays static until the next retarget or file event. This is acceptable because retargeting is infrequent.
+- FileTreeFeed tracks `current_root: PathBuf` and `watcher_aligned: bool`. On query with a new `root`, calls `FileWatcher::walk()` on the new path (passing the new root as a parameter — `walk` is a static-style function that accepts a `PathBuf`, not tied to the watcher instance), replaces the BTreeSet, updates `current_root`, sets `watcher_aligned = false`, then scores the query.
+- When `!watcher_aligned`, the `tokio::select!` loop **skips the FileWatcher broadcast arm entirely**. Events from the original directory accumulate in the broadcast buffer and eventually get dropped. The index stays static (from the `walk()` at retarget time) — this is safe because retargeting is infrequent. Without this guard, FileWatcher events from the old directory would silently insert wrong-project paths into the new BTreeSet.
+- If a subsequent retarget switches back to the original root, `watcher_aligned` is set back to `true` and FileWatcher events resume.
+- A follow-on could restart the `notify` watcher on retarget so file events track the new root. For now, the static-index-after-retarget behavior is acceptable.
 - `FileTreeStore.sendQuery()` accepts an optional `root` parameter.
 
 #### [D10] Off-board completion via readdir (DECIDED) {#d10-off-board}
@@ -323,7 +325,7 @@ When the text engine activates a typeahead and detects `provider.subscribe`, it 
 |-------|------|-------------|
 | `query` | `string` | Echo of the query that produced these results (for staleness detection) |
 | `results` | `ScoredResult[]` | Top-N results sorted by descending score |
-| `results[].path` | `string` | Relative path (relative to project root) |
+| `results[].path` | `string` | Relative path (relative to project root) for normal/empty queries; absolute path for off-board queries [D10] |
 | `results[].score` | `number` | Fuzzy match score (higher = better) |
 | `results[].matches` | `[number, number][]` | Character ranges in `path` that matched (for highlighting) |
 | `truncated` | `bool` | `true` if the file index exceeded the 50,000 cap |
@@ -361,7 +363,7 @@ notify watcher ──> FileWatcher (shared service)
   (broadcast rx)        │         ▲                        │
                         │         │ Created/Removed/Renamed│
                         │                                  │
-  Client ──────────────►│  mpsc::Receiver<String> (query)  │
+  Client ──────────────►│  mpsc::Receiver<FileTreeQuery>   │
   (FILETREE_QUERY 0x12) │         │                        │
                         │         ▼                        │
                         │  fuzzy_scorer::score_file_path() │
@@ -394,7 +396,7 @@ class FileTreeStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): FileTreeResultSnapshot;
   getFileCompletionProvider(): CompletionProvider;
-  sendQuery(query: string): void;
+  sendQuery(query: string, root?: string): void;
   dispose(): void;
 }
 
@@ -609,14 +611,14 @@ The `matches` field carries character ranges for highlighting. When present, the
 
 **Tasks:**
 - [ ] Create `tugrust/crates/tugcast/src/feeds/filetree.rs` with `FileTreeFeed` struct
-- [ ] `FileTreeFeed` fields: `current_root: PathBuf`, `files: BTreeSet<String>`, `truncated: bool`, `event_tx: broadcast::Sender<Vec<FsEvent>>`, `query_rx: mpsc::Receiver<FileTreeQuery>` (where `FileTreeQuery` is `{ query: String, root: Option<PathBuf> }`)
+- [ ] `FileTreeFeed` fields: `current_root: PathBuf`, `files: BTreeSet<String>`, `truncated: bool`, `watcher_aligned: bool` (true when `current_root` matches the original root — controls whether FileWatcher events are processed), `event_tx: broadcast::Sender<Vec<FsEvent>>`, `query_rx: mpsc::Receiver<FileTreeQuery>` (where `FileTreeQuery` is `{ query: String, root: Option<PathBuf> }`)
 - [ ] Implement `FileTreeFeed::new(root, initial_files, truncated, event_tx, query_rx)` constructor
 - [ ] Implement `FileTreeFeed::run(self, watch_tx: watch::Sender<Frame>, cancel: CancellationToken)` — **custom async task, does NOT implement `SnapshotFeed`** (the trait can't express dual-input):
   - Call `self.event_tx.subscribe()` for FileWatcher events
   - Use `tokio::select!` to handle:
-    1. **FileWatcher events** (`rx.recv()`): apply Created/Removed/Renamed to BTreeSet, ignore Modified. Handle `RecvError::Lagged` by logging.
+    1. **FileWatcher events** (`rx.recv()`) — **only if `watcher_aligned`**: apply Created/Removed/Renamed to BTreeSet, ignore Modified. Handle `RecvError::Lagged` by logging. When `!watcher_aligned`, this arm is skipped entirely — events from the old directory must not pollute the retargeted index.
     2. **Query input** (`query_rx.recv()`): dispatch based on query shape:
-       - **Retarget** [D09]: if `root` is `Some` and differs from `current_root`, call `FileWatcher::walk()` on the new root, replace `self.files` and `self.current_root`, then score the query against the new index.
+       - **Retarget** [D09]: if `root` is `Some` and differs from `current_root`, call `FileWatcher::walk()` on the new root (static-style, accepts a `PathBuf`), replace `self.files` and `self.current_root`, set `self.watcher_aligned = (new_root == original_root)`, then score the query against the new index.
        - **Off-board** [D10]: if query starts with `/` or `~`, expand `~` to `$HOME`, split at last `/` into `parent_dir` + `name_prefix`, call `std::fs::read_dir(parent_dir)`, filter entries by prefix (case-insensitive), return top 8 alphabetically. Paths in response are absolute. Scores are 0, matches are empty.
        - **Empty query**: return root-level files (paths with no `/`), sorted alphabetically, top 8.
        - **Normal query**: pre-filter all paths via `contains_chars()`, score survivors via `score_file_path()`, sort by descending score, take top 8. Serialize as `FileTreeSnapshot` response (Spec S01b), send via `watch_tx`.
