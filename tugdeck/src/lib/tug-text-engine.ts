@@ -1212,12 +1212,18 @@ export class TugTextEngine {
       document.execCommand("insertHTML", false, html);
     });
 
-    // 8. Rich text blocking — reject formatting inputTypes
+    // 8. beforeinput interception:
+    //    - Block formatting (bold, italic, etc.)
+    //    - Convert insertParagraph to insertLineBreak so WebKit inserts <br>
+    //      instead of wrapping lines in <div> blocks (which cause uneven caret height)
     this.listen(root, "beforeinput", (e: Event) => {
       const ie = e as InputEvent;
       const type = ie.inputType;
       if (type.startsWith("format")) {
         ie.preventDefault();
+      } else if (type === "insertParagraph") {
+        ie.preventDefault();
+        document.execCommand("insertLineBreak");
       }
     });
 
