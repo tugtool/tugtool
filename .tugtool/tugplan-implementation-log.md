@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-04-06T18:00:50Z
+---
+
+## step-6: Integration checkpoint: verified all store files exist with correct exports, gallery card imports from store modules, tsc clean, 1823 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-t3-stores.md
+
+---
+
+---
 step: step-5
 date: 2025-04-06T17:57:05Z
 ---
