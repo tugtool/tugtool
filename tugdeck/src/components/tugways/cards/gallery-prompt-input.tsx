@@ -130,6 +130,7 @@ export function GalleryPromptInput() {
   const inputRef = useRef<TugTextInputDelegate>(null);
   const nextAtomIdx = useRef(0);
   const historyRef = useRef(new GalleryHistoryProvider());
+  const routeRef = useRef<HTMLSpanElement>(null);
   const [returnAction, setReturnAction] = useState<InputAction>("newline");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
 
@@ -166,6 +167,10 @@ export function GalleryPromptInput() {
     setEnterAction(value as InputAction);
   }, []);
 
+  const handleRouteChange = useCallback((route: string) => {
+    if (routeRef.current) routeRef.current.textContent = route;
+  }, []);
+
   return (
     <div className="cg-content" data-testid="gallery-prompt-input">
 
@@ -175,6 +180,9 @@ export function GalleryPromptInput() {
         <div className="prompt-input-toolbar">
           <TugPushButton size="sm" onClick={handleInsertAtom}>Insert Atom</TugPushButton>
           <TugPushButton size="sm" emphasis="outlined" onClick={handleClear}>Clear</TugPushButton>
+          <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
+            Route: <span ref={routeRef} style={{ fontFamily: "var(--tug-font-mono)" }}>&gt;</span>
+          </span>
         </div>
         <TugPromptInput
           ref={inputRef}
@@ -189,6 +197,8 @@ export function GalleryPromptInput() {
           }}
           historyProvider={historyRef.current}
           dropHandler={galleryDropHandler}
+          routePrefixes={[">", "$", ":", "/"]}
+          onRouteChange={handleRouteChange}
         />
       </div>
 

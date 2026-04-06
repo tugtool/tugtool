@@ -285,6 +285,8 @@ export class TugTextEngine {
   completionProviders: Record<string, CompletionProvider> = {};
   historyProvider: HistoryProvider | null = null;
   dropHandler: DropHandler | null = null;
+  routePrefixes: string[] = [];
+  onRouteChange: ((route: string) => void) | null = null;
 
   // Callbacks — wired by tug-prompt-input.tsx
   onSubmit: (() => void) | null = null;
@@ -619,6 +621,30 @@ export class TugTextEngine {
     clipboardData.setData("text/html", wrapper.innerHTML);
     clipboardData.setData("text/plain", plainWrapper.textContent || "");
     return true;
+  }
+
+  // =================================================================
+  // Route prefix detection
+  // =================================================================
+
+  /** Detect and handle a route prefix as the first character of the document. */
+  private detectRoutePrefix(): void {
+    const text = this.getText();
+    if (text.length === 0) return;
+    const firstChar = text[0];
+    if (!this.routePrefixes.includes(firstChar)) return;
+
+    // If the prefix is also a completion trigger, don't consume it —
+    // let completion handle it. Just fire the route change.
+    if (this.completionProviders[firstChar]) {
+      this.onRouteChange?.(firstChar);
+      return;
+    }
+
+    // Consume the prefix character
+    this.setSelectedRange(0, 1);
+    document.execCommand("delete");
+    this.onRouteChange?.(firstChar);
   }
 
   // =================================================================
@@ -1145,6 +1171,11 @@ export class TugTextEngine {
         this.updateTypeaheadQuery();
       } else if (Object.keys(this.completionProviders).length > 0) {
         this.detectTypeaheadTrigger();
+      }
+
+      // Prefix detection: first character triggers route change
+      if (this.routePrefixes.length > 0 && inputType.startsWith("insert")) {
+        this.detectRoutePrefix();
       }
     });
 

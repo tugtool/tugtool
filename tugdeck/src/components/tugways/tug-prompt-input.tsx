@@ -115,6 +115,16 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   borderless?: boolean;
   /**
+   * Characters that trigger route detection when typed as the first character.
+   * The character is consumed and onRouteChange fires.
+   * If the character is also a completion trigger, it's kept for completion.
+   */
+  routePrefixes?: string[];
+  /**
+   * Called when a route prefix is detected as the first character.
+   */
+  onRouteChange?: (route: string) => void;
+  /**
    * Whether to persist editing state via tugbank [L23].
    * Set to false for test harness editors or transient inputs.
    * @default true
@@ -191,6 +201,8 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     borderless = false,
     disabled = false,
     persistState = true,
+    routePrefixes,
+    onRouteChange,
     className,
     ...rest
   }: TugPromptInputProps, ref) {
@@ -236,10 +248,12 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     const onChangeRef = useRef(onChange);
     const onTypeaheadChangeRef = useRef(onTypeaheadChange);
     const completionDirectionRef = useRef(completionDirection);
+    const onRouteChangeRef = useRef(onRouteChange);
     useLayoutEffect(() => { onSubmitRef.current = onSubmit; }, [onSubmit]);
     useLayoutEffect(() => { onChangeRef.current = onChange; }, [onChange]);
     useLayoutEffect(() => { onTypeaheadChangeRef.current = onTypeaheadChange; }, [onTypeaheadChange]);
     useLayoutEffect(() => { completionDirectionRef.current = completionDirection; }, [completionDirection]);
+    useLayoutEffect(() => { onRouteChangeRef.current = onRouteChange; }, [onRouteChange]);
 
     // Mount engine once [L01, L03]
     useLayoutEffect(() => {
@@ -254,6 +268,8 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       engine.dropHandler = dropHandler ?? null;
       engine.returnAction = returnAction;
       engine.numpadEnterAction = numpadEnterAction;
+      engine.routePrefixes = routePrefixes ?? [];
+      engine.onRouteChange = (route) => onRouteChangeRef.current?.(route);
 
       // Wire callbacks through refs so they always call the latest prop
       engine.onSubmit = () => onSubmitRef.current?.();
@@ -378,6 +394,12 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         engineRef.current.growDirection = growDirection;
       }
     }, [growDirection]);
+
+    useLayoutEffect(() => {
+      if (engineRef.current) {
+        engineRef.current.routePrefixes = routePrefixes ?? [];
+      }
+    }, [routePrefixes]);
 
     // Regenerate atom images on theme change — direct DOM update [L06, L22]
     useLayoutEffect(() => {
