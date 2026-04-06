@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-04-06T17:51:31Z
+---
+
+## step-4: Created createFileCompletionProvider(files) factory in file-completion-provider.ts, extracting gallery logic into a standalone module. tsc clean.
+
+**Files changed:**
+- .tugtool/tugplan-t3-stores.md
+
+---
+
+---
 step: step-3
 date: 2025-04-06T17:46:01Z
 ---
