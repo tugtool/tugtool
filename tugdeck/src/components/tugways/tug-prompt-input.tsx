@@ -85,6 +85,11 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   disabled?: boolean;
   /**
+   * Direction the completion popup opens relative to the trigger.
+   * @default "up"
+   */
+  completionDirection?: "up" | "down";
+  /**
    * Whether to persist editing state via tugbank [L23].
    * Set to false for test harness editors or transient inputs.
    * @default true
@@ -131,6 +136,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     onSubmit,
     onChange,
     completionProvider,
+    completionDirection = "up",
     onTypeaheadChange,
     dropHandler,
     disabled = false,
@@ -177,13 +183,15 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       getEditorElement() { return engineRef.current?.root ?? null; },
     }), []);
 
-    // Stable callback refs — engine reads these via closure over refs [L07]
+    // Stable callback/config refs — engine reads these via closure over refs [L07]
     const onSubmitRef = useRef(onSubmit);
     const onChangeRef = useRef(onChange);
     const onTypeaheadChangeRef = useRef(onTypeaheadChange);
+    const completionDirectionRef = useRef(completionDirection);
     useLayoutEffect(() => { onSubmitRef.current = onSubmit; }, [onSubmit]);
     useLayoutEffect(() => { onChangeRef.current = onChange; }, [onChange]);
     useLayoutEffect(() => { onTypeaheadChangeRef.current = onTypeaheadChange; }, [onTypeaheadChange]);
+    useLayoutEffect(() => { completionDirectionRef.current = completionDirection; }, [completionDirection]);
 
     // Mount engine once [L01, L03]
     useLayoutEffect(() => {
@@ -231,7 +239,13 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
         if (anchorRect && container) {
           const containerRect = container.getBoundingClientRect();
           popup.style.left = `${anchorRect.left - containerRect.left}px`;
-          popup.style.bottom = `${containerRect.bottom - anchorRect.top + 4}px`;
+          if (completionDirectionRef.current === "down") {
+            popup.style.bottom = "";
+            popup.style.top = `${anchorRect.bottom - containerRect.top + 4}px`;
+          } else {
+            popup.style.top = "";
+            popup.style.bottom = `${containerRect.bottom - anchorRect.top + 4}px`;
+          }
         }
       };
 
