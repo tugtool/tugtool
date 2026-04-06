@@ -75,13 +75,13 @@ function galleryDropHandler(files: FileList): AtomSegment[] {
 }
 
 const RETURN_CHOICES: TugChoiceItem[] = [
-  { value: "submit", label: "Return submits" },
-  { value: "newline", label: "Return = newline" },
+  { value: "submit", label: "Submits" },
+  { value: "newline", label: "Newline" },
 ];
 
 const ENTER_CHOICES: TugChoiceItem[] = [
-  { value: "submit", label: "Enter submits" },
-  { value: "newline", label: "Enter = newline" },
+  { value: "submit", label: "Submits" },
+  { value: "newline", label: "Newline" },
 ];
 
 // ===================================================================
@@ -130,7 +130,7 @@ export function GalleryPromptInput() {
   const inputRef = useRef<TugTextInputDelegate>(null);
   const nextAtomIdx = useRef(0);
   const historyRef = useRef(new GalleryHistoryProvider());
-  const [returnAction, setReturnAction] = useState<InputAction>("submit");
+  const [returnAction, setReturnAction] = useState<InputAction>("newline");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
 
   const handleSubmit = useCallback(() => {
