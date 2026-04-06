@@ -34,42 +34,128 @@ Status of each exit criterion from [tide.md](tide.md) T3.2:
 
 ## Item 1: Slash Command Completion
 
-**Goal:** Add a `/` trigger for command completion, parallel to the existing `@` trigger for file completion.
+**Goal:** Generalize the typeahead system to support multiple trigger characters, each with its own completion provider. Add `/` for command completion alongside the existing `@` for file completion.
 
-**Design:**
+**Architecture:** Approach A — multiple providers. Each trigger character maps to exactly one provider. When T3.3 connects real data sources, the wiring is one line per trigger.
 
-The engine already has `CompletionProvider` for `@`. Rather than adding a second provider interface, generalize the typeahead system to support multiple trigger characters, each with its own provider.
+### Sub-step 1.1: Replace single provider with provider map
 
-**Approach A — multiple providers (recommended):**
-- New engine config: `completionProviders: Map<string, CompletionProvider>` replacing the single `completionProvider`
-- `detectTypeaheadTrigger` checks the character before the caret against all registered triggers
-- The rest of the typeahead state machine is unchanged — it already tracks `anchorOffset`, `query`, `filtered`, `selectedIndex`
-- The component prop becomes `completionProviders?: Record<string, CompletionProvider>`
+**Engine (`tug-text-engine.ts`):**
 
-**Approach B — single provider with trigger:**
-- Keep single `completionProvider` but pass the trigger character to it: `(trigger: string, query: string) => CompletionItem[]`
-- Provider decides what to return based on trigger
-- Simpler engine change, but conflates two data sources
+Replace `completionProvider: CompletionProvider | null` with `completionProviders: Record<string, CompletionProvider>` (default `{}`).
 
-Recommendation: **Approach A.** Clean separation. Each trigger maps to exactly one provider. When T3.3 connects real data sources, the wiring is obvious.
+Touchpoints to update:
+- Line 285: config field declaration → `completionProviders: Record<string, CompletionProvider> = {}`
+- Line 1117-1118: input handler guard `else if (this.completionProvider)` → `else if (Object.keys(this.completionProviders).length > 0)`
 
-**Component prop change:**
+**Component (`tug-prompt-input.tsx`):**
+
+Replace `completionProvider?: CompletionProvider` prop with `completionProviders?: Record<string, CompletionProvider>`.
+
+Touchpoints:
+- Props interface (line 72): rename prop, change type
+- Destructuring (line 184): rename
+- Engine mount (line 252): `engine.completionProviders = completionProviders ?? {}`
+- Sync effect (line 338-340): same rename
+
+### Sub-step 1.2: Generalize detectTypeaheadTrigger
+
+**Current state:** `detectTypeaheadTrigger` (line 605) hardcodes `@`:
 ```typescript
-// Before
-completionProvider?: CompletionProvider;
-// After  
-completionProviders?: Record<string, CompletionProvider>;
+if (text[range.start - 1] !== "@") return;
 ```
 
-**Gallery card mock:**
+**Change:** Check the character before the caret against all keys in `this.completionProviders`. If it matches, activate typeahead with that trigger's provider.
+
 ```typescript
-const providers = {
-  "@": galleryFileCompletionProvider,
-  "/": galleryCommandCompletionProvider,
+private detectTypeaheadTrigger(): void {
+    const range = this.getSelectedRange();
+    if (!range || range.start !== range.end) return;
+    if (range.start === 0) return;
+    const text = this.getText();
+    const char = text[range.start - 1];
+    const provider = this.completionProviders[char];
+    if (!provider) return;
+    // ... activate typeahead, store trigger + provider
+}
+```
+
+**Typeahead state addition:** Add `trigger: string` and `provider: CompletionProvider | null` to the `_typeahead` object so `updateTypeaheadQuery` and `acceptTypeahead` know which provider to call.
+
+Current `_typeahead` state (line 312-320):
+```typescript
+private _typeahead = {
+    active: false,
+    query: "",
+    anchorOffset: 0,
+    anchorRect: null as DOMRect | null,
+    filtered: [] as CompletionItem[],
+    selectedIndex: 0,
 };
 ```
 
-The gallery card already has `TYPEAHEAD_FILES` for `@`. Add a `TYPEAHEAD_COMMANDS` array for `/` with mock slash commands.
+Add:
+```typescript
+    trigger: "",
+    provider: null as CompletionProvider | null,
+```
+
+### Sub-step 1.3: Update updateTypeaheadQuery and acceptTypeahead
+
+Both currently reference `this.completionProvider!`. Change to `this._typeahead.provider!`.
+
+- `updateTypeaheadQuery` (line 651): `this._typeahead.filtered = this._typeahead.provider!(query)`
+- `detectTypeaheadTrigger` (line 622): `this._typeahead.filtered = provider("")` and store `this._typeahead.provider = provider`
+- `acceptTypeahead`: no change needed — it reads from `_typeahead.filtered` which is already populated by the active provider
+- `cancelTypeahead`: reset `trigger` and `provider` to defaults
+
+### Sub-step 1.4: Acceptance behavior per trigger
+
+The `@` trigger inserts an atom and deletes the `@query`. The `/` trigger should do the same — insert a command atom and delete the `/query`. The `acceptTypeahead` method (line 660) already handles this generically using `_typeahead.anchorOffset` and `_typeahead.query`. No change needed — the trigger character is at `anchorOffset` and gets deleted along with the query.
+
+However, slash commands may want to insert **text** rather than an **atom**. For example, `/commit` might insert the text "/commit" rather than an atom chip. This depends on what `CompletionItem.atom` contains — the provider controls this. For now, all completions produce atoms. This can be revisited when T3.3 provides real slash command data.
+
+### Sub-step 1.5: Gallery card — add mock command provider
+
+Add to the gallery card:
+
+```typescript
+const TYPEAHEAD_COMMANDS = [
+  "/commit", "/review", "/help", "/clear", "/plan",
+  "/implement", "/dash", "/compact", "/memory",
+];
+
+function galleryCommandCompletionProvider(query: string): CompletionItem[] {
+  const q = query.toLowerCase();
+  const cmds = q.length === 0
+    ? TYPEAHEAD_COMMANDS.slice(0, 8)
+    : TYPEAHEAD_COMMANDS.filter(c => c.toLowerCase().includes(q)).slice(0, 8);
+  return cmds.map(c => ({
+    label: c,
+    atom: { kind: "atom" as const, type: "command", label: c, value: c },
+  }));
+}
+```
+
+Wire both providers:
+```typescript
+<TugPromptInput
+  completionProviders={{
+    "@": galleryFileCompletionProvider,
+    "/": galleryCommandCompletionProvider,
+  }}
+  ...
+/>
+```
+
+### Sub-step 1.6: Verify and test
+
+- Type `@` → file completion popup appears (unchanged behavior)
+- Type `/` → command completion popup appears
+- Tab/Enter accepts, Escape cancels, arrows navigate (unchanged)
+- Both triggers work in the same document (type text, then `@file`, then more text, then `/cmd`)
+- Typeahead cancels correctly when switching between triggers
+- Existing features unaffected (atoms, clipboard, history, IME)
 
 ---
 
