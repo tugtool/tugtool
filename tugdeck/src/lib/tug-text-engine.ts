@@ -8,7 +8,7 @@
  * [L07] Engine is a stable ref; handlers access current state via `this`
  */
 
-import { atomImgHTML, createAtomImgElement, TUG_ATOM_CHAR } from "./tug-atom-img";
+import { atomImgHTML, createAtomImgElement, routeAtomImgHTML, TUG_ATOM_CHAR } from "./tug-atom-img";
 import type { AtomSegment } from "./tug-atom-img";
 import { getTokenValue } from "@/theme-tokens";
 
@@ -286,7 +286,7 @@ export class TugTextEngine {
   historyProvider: HistoryProvider | null = null;
   dropHandler: DropHandler | null = null;
   routePrefixes: string[] = [];
-  onRouteChange: ((route: string) => void) | null = null;
+  onRouteChange: ((route: string | null) => void) | null = null;
 
   // Callbacks — wired by tug-prompt-input.tsx
   onSubmit: (() => void) | null = null;
@@ -307,6 +307,9 @@ export class TugTextEngine {
   // Emptiness flag — tracked as state, updated on input events.
   private _empty = true;
 
+  // Route atom flag — true when a route atom occupies position 0.
+  private _hasRouteAtom = false;
+
   // Cached min-height for grow-up margin calculation (avoids getComputedStyle per input).
   private _cachedMinHeight = 0;
 
@@ -324,6 +327,7 @@ export class TugTextEngine {
     anchorRect: null as DOMRect | null,
     filtered: [] as CompletionItem[],
     selectedIndex: 0,
+    triggerConsumed: false,
   };
 
   constructor(root: HTMLDivElement) {
@@ -442,6 +446,7 @@ export class TugTextEngine {
     this.cancelTypeahead();
     this.root.innerHTML = "";
     this._empty = true;
+    this._hasRouteAtom = false;
     this.updateEmpty();
     this.onChange?.();
   }
@@ -499,6 +504,7 @@ export class TugTextEngine {
     }
     this.root.innerHTML = parts.join("");
     this._empty = state.text.length === 0;
+    this._hasRouteAtom = this.hasRouteAtomAtStart();
     this.updateEmpty();
     if (state.selection) {
       this.setSelectedRange(state.selection.start, state.selection.end);
@@ -525,6 +531,12 @@ export class TugTextEngine {
   /** Update the data-empty attribute for placeholder visibility. */
   private updateEmpty(): void {
     this.root.dataset.empty = this.isEmpty() ? "true" : "false";
+  }
+
+  /** Return true if a route atom occupies position 0 in the editor. */
+  private hasRouteAtomAtStart(): boolean {
+    const first = this.root.childNodes[0];
+    return first !== undefined && isAtomImg(first) && (first as HTMLImageElement).dataset.atomType === "route";
   }
 
   /**
@@ -629,22 +641,36 @@ export class TugTextEngine {
 
   /** Detect and handle a route prefix as the first character of the document. */
   private detectRoutePrefix(): void {
+    if (this._hasRouteAtom) return;
     const text = this.getText();
     if (text.length === 0) return;
     const firstChar = text[0];
     if (!this.routePrefixes.includes(firstChar)) return;
 
-    // If the prefix is also a completion trigger, don't consume it —
-    // let completion handle it. Just fire the route change.
-    if (this.completionProviders[firstChar]) {
-      this.onRouteChange?.(firstChar);
-      return;
-    }
-
-    // Consume the prefix character
+    // Replace the typed character with a route atom
     this.setSelectedRange(0, 1);
     document.execCommand("delete");
+    this.setSelectedRange(0, 0);
+    document.execCommand("insertHTML", false, routeAtomImgHTML(firstChar));
+    this._hasRouteAtom = true;
     this.onRouteChange?.(firstChar);
+
+    // If the prefix is also a completion trigger, activate typeahead manually
+    const provider = this.completionProviders[firstChar];
+    if (provider) {
+      const sel = window.getSelection();
+      const anchorRect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null;
+      this._typeahead.active = true;
+      this._typeahead.trigger = firstChar;
+      this._typeahead.provider = provider;
+      this._typeahead.anchorOffset = 1;
+      this._typeahead.anchorRect = anchorRect;
+      this._typeahead.query = "";
+      this._typeahead.triggerConsumed = true;
+      this._typeahead.filtered = provider("");
+      this._typeahead.selectedIndex = 0;
+      this.onTypeaheadChange?.(true, this._typeahead.filtered, 0);
+    }
   }
 
   // =================================================================
@@ -718,7 +744,8 @@ export class TugTextEngine {
 
     // Delete @query and insert the atom
     const start = this._typeahead.anchorOffset;
-    const end = start + 1 + this._typeahead.query.length;
+    const triggerLen = this._typeahead.triggerConsumed ? 0 : 1;
+    const end = start + triggerLen + this._typeahead.query.length;
     this.setSelectedRange(start, end);
     document.execCommand("delete");
     const html = atomImgHTML(item.atom.type, item.atom.label, item.atom.value);
@@ -736,6 +763,7 @@ export class TugTextEngine {
     this._typeahead.query = "";
     this._typeahead.filtered = [];
     this._typeahead.selectedIndex = 0;
+    this._typeahead.triggerConsumed = false;
     this.onTypeaheadChange?.(false, [], 0);
   }
 
@@ -913,6 +941,12 @@ export class TugTextEngine {
         range.selectNode(target);
         sel.removeAllRanges();
         sel.addRange(range);
+      }
+      if (this._hasRouteAtom) {
+        const range = this.getSelectedRange();
+        if (range && range.start === 0 && range.end === 0) {
+          this.setSelectedRange(1);
+        }
       }
     });
 
@@ -1160,6 +1194,10 @@ export class TugTextEngine {
       if (inputType.startsWith("insert")) {
         this._empty = false;
       } else {
+        if (this._hasRouteAtom && !this.hasRouteAtomAtStart()) {
+          this._hasRouteAtom = false;
+          this.onRouteChange?.(null);
+        }
         const text = this.getText();
         this._empty = text.length === 0 || text === "\n";
       }

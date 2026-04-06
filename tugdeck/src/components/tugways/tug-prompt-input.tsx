@@ -123,7 +123,7 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
   /**
    * Called when a route prefix is detected as the first character.
    */
-  onRouteChange?: (route: string) => void;
+  onRouteChange?: (route: string | null) => void;
   /**
    * Whether to persist editing state via tugbank [L23].
    * Set to false for test harness editors or transient inputs.

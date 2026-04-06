@@ -167,8 +167,8 @@ export function GalleryPromptInput() {
     setEnterAction(value as InputAction);
   }, []);
 
-  const handleRouteChange = useCallback((route: string) => {
-    if (routeRef.current) routeRef.current.textContent = route;
+  const handleRouteChange = useCallback((route: string | null) => {
+    if (routeRef.current) routeRef.current.textContent = route ?? "none";
   }, []);
 
   return (

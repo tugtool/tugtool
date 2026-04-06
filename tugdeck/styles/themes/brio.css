@@ -783,6 +783,9 @@ body {
   --tug7-element-atom-text-normal-selected-rest: --tug-color(blue, i: 20, t: 85);
   --tug7-element-atom-icon-normal-selected-rest: --tug-color(blue, i: 20, t: 85);
   --tug7-element-atom-outline-normal-highlighted-rest: --tug-color(blue, i: 60, t: 55);
+  --tug7-surface-atom-primary-normal-route-rest: --tug-color(indigo-violet, i: 6, t: 12);
+  --tug7-element-atom-border-normal-route-rest: --tug-color(indigo-violet, i: 8, t: 22);
+  --tug7-element-atom-text-normal-route-rest: --tug-color(indigo-violet, i: 10, t: 55);
 
   /* Skeleton */
   --tug7-surface-skeleton-primary-normal-default-rest: --tug-color(violet, i: 2, t: 18);

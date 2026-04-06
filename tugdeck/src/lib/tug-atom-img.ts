@@ -162,6 +162,43 @@ export function atomImgHTML(type: string, label: string, value?: string): string
   return wrapper.innerHTML;
 }
 
+/** Create a route atom <img> element — a compact styled indicator for the active route. */
+export function createRouteAtomImgElement(char: string): HTMLImageElement {
+  const textWidth = measureTextWidth(char, _font);
+  const padding = 5;
+  const w = padding + Math.ceil(textWidth) + padding;
+
+  const bgColor = getTokenValue("--tug7-surface-atom-primary-normal-route-rest");
+  const borderColor = getTokenValue("--tug7-element-atom-border-normal-route-rest");
+  const textColor = getTokenValue("--tug7-element-atom-text-normal-route-rest");
+
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${HEIGHT}" viewBox="0 0 ${w} ${HEIGHT}">`,
+    `<rect x="0.5" y="0.5" width="${w - 1}" height="${HEIGHT - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
+    `<text x="${w / 2}" y="${HEIGHT / 2 + FONT_SIZE * 0.36}" font-size="${FONT_SIZE}" font-weight="600" font-family="${FONT_FAMILY}" fill="${textColor}" text-anchor="middle">${escapeSVG(char)}</text>`,
+    `</svg>`,
+  ].join("");
+
+  const img = document.createElement("img");
+  img.src = svgToDataURI(svg);
+  img.width = w;
+  img.height = HEIGHT;
+  img.style.verticalAlign = "-6px";
+  img.dataset.atomType = "route";
+  img.dataset.atomLabel = char;
+  img.dataset.atomValue = char;
+  img.title = char;
+  return img;
+}
+
+/** Create route atom as HTML string (for execCommand insertHTML). */
+export function routeAtomImgHTML(char: string): string {
+  const el = createRouteAtomImgElement(char);
+  const wrapper = document.createElement("div");
+  wrapper.appendChild(el);
+  return wrapper.innerHTML;
+}
+
 // ---- Label formatting ----
 
 /**
