@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-04-06T17:46:01Z
+---
+
+## step-3: Added PromptHistoryStore class with push/loadSession/createProvider, L02 subscribe/getSnapshot, 200-entry cap per session, and Tugbank persistence. 14 tests pass.
+
+**Files changed:**
+- t3-stores-944c9ca-1
+
+---
+
+---
 step: step-2
 date: 2025-04-06T17:39:06Z
 ---
