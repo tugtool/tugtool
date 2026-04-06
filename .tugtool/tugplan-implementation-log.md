@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-04-06T21:59:40Z
+---
+
+## step-2: Created FileWatcher in file_watcher.rs with walk() (WalkBuilder, nested gitignore, 50k cap), run() (notify watcher, broadcast fan-out, gitignore rebuild on change). 14 unit tests. 927 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-live-file-completion.md
+
+---
+
+---
 step: step-1
 date: 2025-04-06T21:23:16Z
 ---

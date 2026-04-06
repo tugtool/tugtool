@@ -6,6 +6,7 @@
 pub mod agent_bridge;
 pub mod code;
 pub mod defaults;
+pub mod file_watcher;
 pub mod filesystem;
 pub mod git;
 pub mod stats;
