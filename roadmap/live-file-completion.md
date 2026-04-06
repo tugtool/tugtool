@@ -32,7 +32,7 @@ We own the file index and scoring ourselves rather than depending on Claude Code
 - **[DONE]** Keep FILESYSTEM wire format and behavior unchanged — the refactor is invisible to existing consumers.
 - Implement a two-layer fuzzy scorer in Rust: character-level DP matcher + path-aware structural wrapper that prioritizes basename matches.
 - Add a **query/response FILETREE feed**: client sends query on `FILETREE_QUERY` (0x12), `FileTreeFeed` scores against its `BTreeSet<String>`, responds on `FILETREE` (0x11) with top-N scored results. No bulk file list sent to the browser.
-- Add FileTreeStore in tugdeck — L02-compliant, sends queries via `FILETREE_QUERY`, receives scored results on `FILETREE`.
+- Add FileTreeStore in tugdeck — sends queries via `FILETREE_QUERY`, receives scored results on `FILETREE`. L22-compliant: text engine observes store directly for DOM-driven typeahead updates.
 - Wire the gallery card's `@` trigger to live scored results. Remove `TYPEAHEAD_FILES` stub entirely — tugcast is always running when cards are visible.
 - L22-compliant notification path: FileTreeStore → text engine → typeahead menu. The `CompletionProvider` carries a `subscribe` method so the text engine can observe the store directly and re-fire `onTypeaheadChange` when scored results arrive, without round-tripping through React.
 
@@ -56,7 +56,9 @@ We own the file index and scoring ourselves rather than depending on Claude Code
 7. FileTreeStore in tugdeck (query sender + result receiver, L22-compliant observer for async results)
 8. Subscribable `CompletionProvider`: carries `subscribe` method so text engine observes store directly [L22]
 9. Match highlighting in typeahead menu using scored result match ranges
-10. Gallery card integration: replace `TYPEAHEAD_FILES` stub with live FileTreeStore provider
+10. Retargetable root: optional `root` field in FILETREE_QUERY lets the client change the indexed directory without restarting tugcast
+11. Off-board completion: absolute paths (`/` or `~` prefix) bypass the index and use `readdir` + prefix matching on the filesystem directly
+12. Gallery card integration: replace `TYPEAHEAD_FILES` stub with live FileTreeStore provider
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -186,7 +188,7 @@ We own the file index and scoring ourselves rather than depending on Claude Code
 
 #### [D05] Paths are relative to root (DECIDED) {#d05-relative-paths}
 
-**Decision:** The `files` array in `FileTreeSnapshot` contains paths relative to the project root. The `root` field provides the absolute path for resolution when needed.
+**Decision:** All file paths in the system are relative to the project root. The `BTreeSet<String>` in FileTreeFeed stores relative paths; the `ScoredResult.path` field in FILETREE responses carries relative paths; `CompletionItem.label` displays the relative path.
 
 **Rationale:**
 - Shorter, cleaner for display in completion items.
@@ -194,7 +196,7 @@ We own the file index and scoring ourselves rather than depending on Claude Code
 
 **Implications:**
 - `FileWatcher::walk()` strips the watch directory prefix from all paths.
-- The `root` field in the snapshot is the same as tugcast's `--dir`.
+- The project root is the same as tugcast's `--dir`.
 
 #### [D06] FileWatcher owns gitignore rebuild on change (DECIDED) {#d06-gitignore-rebuild}
 
@@ -232,6 +234,12 @@ When the text engine activates a typeahead and detects `provider.subscribe`, it 
 - The notification path is: FileTreeStore snapshot updates → `subscribe` listener fires → `refreshTypeahead()` → `onTypeaheadChange` → menu DOM updates. No React involvement.
 - First call with a new query may return stale results; the subscribe callback delivers correct results within a few ms. In practice the latency is imperceptible.
 
+**Two invariants prevent degenerate behavior:**
+
+1. **Query deduplication in the provider.** The provider tracks `lastSentQuery` and only calls `sendQuery` when the query string actually changes. Without this, `refreshTypeahead()` → `provider(query)` → `sendQuery` → response → subscriber → `refreshTypeahead()` creates an infinite loop. With deduplication, the second call to `provider("sm")` sees `lastSentQuery === "sm"`, skips the send, and just returns current results.
+
+2. **Staleness check in the provider.** The response payload echoes the `query` that produced it (Spec S01b). When the provider is called, it compares `this._snapshot.query` with the requested query. If they don't match, the snapshot holds results for a different query — the provider returns an empty array. `refreshTypeahead()` sees the empty result and the menu shows nothing (or retains the previous state) until the matching response arrives. This keeps the staleness logic inside the provider where it has access to the snapshot, not in the text engine which only sees `CompletionItem[]`.
+
 #### [D08] FILETREE added to existing FeedStore in gallery (DECIDED) {#d08-gallery-feedstore}
 
 **Decision:** Add `FeedId.FILETREE` and `FeedId.FILETREE_QUERY` to the existing FeedStore's `feedIds` array in `buildGalleryStores()`. Tugcast is always running when cards are visible — no fallback needed.
@@ -246,6 +254,38 @@ When the text engine activates a typeahead and detects `provider.subscribe`, it 
 - `FileTreeStore` constructor takes the FeedStore and subscribes to `FeedId.FILETREE` for responses. Query dispatch uses `FeedId.FILETREE_QUERY`.
 - The `TYPEAHEAD_FILES` stub and `createFileCompletionProvider` factory are removed — they were development scaffolding.
 
+#### [D09] Retargetable root directory (DECIDED) {#d09-retargetable-root}
+
+**Decision:** The FILETREE_QUERY payload accepts an optional `root` field. When present and different from the current root, FileTreeFeed re-walks the new directory, replaces the `BTreeSet`, and scores the query against the new index. When absent, the current root is used. The default root comes from tugcast's `--dir` (which inherits from Claude Code's `cwd`).
+
+**Rationale:**
+- The user may want to complete files in a different directory than the one Claude Code opened (e.g., a monorepo subproject, a sibling repo, or a completely different tree).
+- Retargeting is a client decision — the server just obeys. No need for a separate configuration channel.
+- Re-walking is the same `FileWatcher::walk()` already used at startup — well-tested, bounded by the 50k cap.
+
+**Implications:**
+- FileTreeFeed tracks `current_root: PathBuf`. On query with a new `root`, calls `FileWatcher::walk()` on the new path, replaces the BTreeSet, updates `current_root`, then scores the query.
+- The `notify` watcher continues watching the original directory. A follow-on could restart the watcher on retarget, but for now the index is rebuilt from `walk()` on each retarget and stays static until the next retarget or file event. This is acceptable because retargeting is infrequent.
+- `FileTreeStore.sendQuery()` accepts an optional `root` parameter.
+
+#### [D10] Off-board completion via readdir (DECIDED) {#d10-off-board}
+
+**Decision:** When the query starts with `/` or `~`, FileTreeFeed bypasses the BTreeSet index entirely and performs a `readdir` + prefix match on the filesystem. The response uses the same `FileTreeSnapshot` format but with no scoring (all scores are 0) and no match highlighting.
+
+**Rationale:**
+- The `@` trigger should let developers reference any file on their system — not just files within the indexed project tree.
+- Typing `@/etc/ngi` should complete to `/etc/nginx/nginx.conf` even though `/etc` isn't in the index.
+- Full fuzzy scoring isn't needed for absolute paths — the user is navigating, not searching. Simple prefix matching on the last path component is the right UX.
+
+**Implications:**
+- FileTreeFeed detects absolute-path queries by checking for `/` or `~` prefix.
+- For `~`, expand to `$HOME` before processing.
+- Split the query at the last `/` into `parent_dir` and `name_prefix`. Call `std::fs::read_dir(parent_dir)`, filter entries where the filename starts with `name_prefix` (case-insensitive), take top 8 alphabetically.
+- If `parent_dir` doesn't exist or isn't readable, return empty results.
+- Response paths are absolute (not relative to any root). The client can display them as-is.
+- No match highlighting — `matches` arrays are empty.
+- No `contains_chars` or `fuzzy_score` — completely separate code path.
+
 ---
 
 ### Specification {#specification}
@@ -256,13 +296,15 @@ When the text engine activates a typeahead and detects `provider.subscribe`, it 
 
 ```json
 {
-  "query": "sms"
+  "query": "sms",
+  "root": "/Users/ken/other-project"
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `query` | `string` | The user's current input after the `@` trigger. Empty string returns an alphabetical listing of the root project directory (files with no `/` in their relative path), top-N. |
+| `query` | `string` | The user's current input after the `@` trigger. Empty string returns an alphabetical listing of the root project directory (files with no `/` in their relative path), top-N. Absolute paths (`/` or `~` prefix) trigger off-board readdir completion [D10]. |
+| `root` | `string?` | Optional. Absolute path to the project root for indexing. When present and different from the current root, FileTreeFeed re-walks this directory [D09]. When absent, uses the current root (default: tugcast's `--dir`). Ignored for off-board queries. |
 
 **Spec S01b: FILETREE response payload (server → client)** {#s01b-filetree-response}
 
@@ -338,6 +380,8 @@ notify watcher ──> FileWatcher (shared service)
 | `FsEvent::Modified` | FileWatcher broadcast | **Ignored** — file saves don't change the file list |
 | Query string | mpsc from FILETREE_QUERY | Pre-filter via `contains_chars()`, score survivors via `score_file_path()`, send top-8 results on FILETREE |
 | Empty query string | mpsc from FILETREE_QUERY | Return root-level files (no `/` in path), alphabetical, top 8 |
+| Absolute path query (`/` or `~`) | mpsc from FILETREE_QUERY | Off-board: `readdir` on parent dir, prefix-match filename, return top 8 alphabetically [D10] |
+| Query with `root` field | mpsc from FILETREE_QUERY | If root differs from current: re-walk via `FileWatcher::walk()`, replace BTreeSet, then score [D09] |
 
 FileTreeFeed is a **custom async task** (not a `SnapshotFeed` implementor — the `SnapshotFeed` trait's `run()` signature only accepts a `watch::Sender` and `CancellationToken`, which cannot express the dual-input nature of query + file events). Its `run()` loop uses `tokio::select!` to handle both FileWatcher events and query input concurrently.
 
@@ -369,7 +413,7 @@ interface FileTreeResultSnapshot {
 
 - `subscribe`/`getSnapshot`: standard store interface. Used by the text engine's subscribe path [L22], not by React's render cycle. The typeahead menu is DOM-based — the text engine observes the store directly and updates the menu DOM in the callback.
 - `sendQuery(query)`: sends query string to tugcast via `FILETREE_QUERY` frame
-- `getFileCompletionProvider()`: returns a single stable closure with attached `subscribe` method ([D07]). When called with a query, sends the query via `sendQuery()` and returns current `this._snapshot.results` mapped to `CompletionItem[]` (including `matches` field for highlighting). The `subscribe` property delegates to `this.subscribe()` so the text engine can observe result changes.
+- `getFileCompletionProvider()`: returns a single stable closure with attached `subscribe` method ([D07]). When called with a query: (1) sends the query via `sendQuery()` only if the query changed since the last call (deduplication prevents infinite loop); (2) returns `this._snapshot.results` mapped to `CompletionItem[]` only if `snapshot.query` matches the requested query (staleness check prevents flashing results for intermediate queries), otherwise returns `[]`. The `subscribe` property delegates to `this.subscribe()` so the text engine can observe result changes.
 - `dispose()`: unsubscribes from FeedStore
 
 **Spec S05: CompletionProvider type extension** {#s05-completion-provider}
@@ -420,8 +464,9 @@ The `matches` field carries character ranges for highlighting. When present, the
 | `fuzzy_score()` | fn | same | Character-level DP scorer: `(query, candidate) -> Option<ScoredMatch>` — only called on candidates passing `contains_chars` |
 | `score_file_path()` | fn | same | Path-aware wrapper: basename-first with tier bonus, full-path fallback |
 | `ScoredMatch` | struct | same | `{ score: i32, matches: Vec<(usize, usize)> }` |
-| `FileTreeFeed` | struct | `tugrust/crates/tugcast/src/feeds/filetree.rs` | Custom async task (not `SnapshotFeed`), receives queries via mpsc |
-| `FileTreeFeed::new()` | fn | same | Takes `watch_dir`, initial `BTreeSet<String>`, `broadcast::Sender`, `mpsc::Receiver<String>` |
+| `FileTreeQuery` | struct | `tugrust/crates/tugcast/src/feeds/filetree.rs` | `{ query: String, root: Option<PathBuf> }` — parsed from FILETREE_QUERY payload |
+| `FileTreeFeed` | struct | same | Custom async task (not `SnapshotFeed`), receives queries via mpsc, supports retarget [D09] and off-board [D10] |
+| `FileTreeFeed::new()` | fn | same | Takes `root`, initial `BTreeSet<String>`, `broadcast::Sender`, `mpsc::Receiver<FileTreeQuery>` |
 | `FileTreeSnapshot` | struct | `tugrust/crates/tugcast-core/src/types.rs` | **[DONE]** Response payload type (will need field updates for scored results) |
 | `FeedId::FILETREE` | const | `tugrust/crates/tugcast-core/src/protocol.rs` | **[DONE]** `Self(0x11)` |
 | `FeedId::FILETREE_QUERY` | const | same | `Self(0x12)` — client-to-server query channel |
@@ -431,7 +476,7 @@ The `matches` field carries character ranges for highlighting. When present, the
 | `FileTreeResultSnapshot` | interface | same | `{ query: string, results: ScoredResult[], truncated: boolean }` |
 | `CompletionProvider` | type (modified) | `tugdeck/src/lib/tug-text-engine.ts` | Extended with optional `subscribe` method for async providers [D07] |
 | `CompletionItem` | interface (modified) | same | Extended with optional `matches: [number, number][]` for highlighting [S06] |
-| `refreshTypeahead()` | method | same | Re-calls provider with current query, re-fires `onTypeaheadChange` |
+| `refreshTypeahead()` | method | same | Re-calls provider with current query, re-fires `onTypeaheadChange` (provider handles staleness internally) |
 | `FilesystemFeed::new()` | fn (modified) | `tugrust/crates/tugcast/src/feeds/filesystem.rs` | **[DONE]** Constructor accepts `broadcast::Sender<Vec<FsEvent>>` |
 
 ---
@@ -564,22 +609,29 @@ The `matches` field carries character ranges for highlighting. When present, the
 
 **Tasks:**
 - [ ] Create `tugrust/crates/tugcast/src/feeds/filetree.rs` with `FileTreeFeed` struct
-- [ ] `FileTreeFeed` fields: `watch_dir: PathBuf`, `initial_files: BTreeSet<String>`, `truncated: bool`, `event_tx: broadcast::Sender<Vec<FsEvent>>`, `query_rx: mpsc::Receiver<String>`
-- [ ] Implement `FileTreeFeed::new(watch_dir, initial_files, truncated, event_tx, query_rx)` constructor
+- [ ] `FileTreeFeed` fields: `current_root: PathBuf`, `files: BTreeSet<String>`, `truncated: bool`, `event_tx: broadcast::Sender<Vec<FsEvent>>`, `query_rx: mpsc::Receiver<FileTreeQuery>` (where `FileTreeQuery` is `{ query: String, root: Option<PathBuf> }`)
+- [ ] Implement `FileTreeFeed::new(root, initial_files, truncated, event_tx, query_rx)` constructor
 - [ ] Implement `FileTreeFeed::run(self, watch_tx: watch::Sender<Frame>, cancel: CancellationToken)` — **custom async task, does NOT implement `SnapshotFeed`** (the trait can't express dual-input):
   - Call `self.event_tx.subscribe()` for FileWatcher events
   - Use `tokio::select!` to handle:
     1. **FileWatcher events** (`rx.recv()`): apply Created/Removed/Renamed to BTreeSet, ignore Modified. Handle `RecvError::Lagged` by logging.
-    2. **Query input** (`query_rx.recv()`): if query is empty, return root-level files (paths with no `/`), sorted alphabetically, top 8. Otherwise, pre-filter all paths via `contains_chars()`, score survivors via `score_file_path()`, sort by descending score, take top 8. Serialize as `FileTreeSnapshot` response (Spec S01b), send via `watch_tx`.
+    2. **Query input** (`query_rx.recv()`): dispatch based on query shape:
+       - **Retarget** [D09]: if `root` is `Some` and differs from `current_root`, call `FileWatcher::walk()` on the new root, replace `self.files` and `self.current_root`, then score the query against the new index.
+       - **Off-board** [D10]: if query starts with `/` or `~`, expand `~` to `$HOME`, split at last `/` into `parent_dir` + `name_prefix`, call `std::fs::read_dir(parent_dir)`, filter entries by prefix (case-insensitive), return top 8 alphabetically. Paths in response are absolute. Scores are 0, matches are empty.
+       - **Empty query**: return root-level files (paths with no `/`), sorted alphabetically, top 8.
+       - **Normal query**: pre-filter all paths via `contains_chars()`, score survivors via `score_file_path()`, sort by descending score, take top 8. Serialize as `FileTreeSnapshot` response (Spec S01b), send via `watch_tx`.
     3. **Cancellation** (`cancel.cancelled()`): break the loop.
   - Send empty initial response on startup (no query yet).
 - [ ] Add `pub mod filetree` to `feeds/mod.rs`
-- [ ] Add unit tests: BTreeSet update logic (insert/remove/rename), query scoring returns top-N results sorted by score, empty query returns top files alphabetically, response format matches Spec S01b
+- [ ] Add unit tests: BTreeSet update logic (insert/remove/rename), query scoring returns top-N results sorted by score, empty query returns top files alphabetically, off-board readdir, root retargeting, response format matches Spec S01b
 
 **Tests:**
 - [ ] BTreeSet correctly updated by Created/Removed/Renamed events, Modified ignored
 - [ ] Query scoring pre-filters then scores, returns correctly ranked results with match positions
 - [ ] Empty query returns root-level files only (no `/` in path), alphabetical, top 8
+- [ ] Off-board query (`/tmp/te`) returns prefix-matched entries from `/tmp/`, paths are absolute, scores are 0
+- [ ] Off-board query with nonexistent parent returns empty results (no panic)
+- [ ] Root retarget: query with new `root` re-walks and scores against new index
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo build`
@@ -603,12 +655,12 @@ The `matches` field carries character ranges for highlighting. When present, the
 - [ ] In `main.rs`: create `FileWatcher::new(watch_dir.clone())`
 - [ ] Call `file_watcher.walk()` to get initial `(BTreeSet<String>, truncated)` for FILETREE
 - [ ] Create `broadcast::channel::<Vec<FsEvent>>(256)` for FileWatcher fan-out
-- [ ] Create `mpsc::channel::<String>(16)` for FILETREE_QUERY input
+- [ ] Create `mpsc::channel::<FileTreeQuery>(16)` for FILETREE_QUERY input (where `FileTreeQuery = { query: String, root: Option<PathBuf> }`)
 - [ ] Create `FilesystemFeed::new(watch_dir.clone(), broadcast_tx.clone())`
 - [ ] Create `FileTreeFeed::new(watch_dir.clone(), initial_files, truncated, broadcast_tx.clone(), query_rx)`
 - [ ] Create `watch::channel` for FILETREE response: `let (ft_watch_tx, ft_watch_rx) = watch::channel(Frame::new(FeedId::FILETREE, vec![]))` — initial frame is empty (no query yet)
 - [ ] Add `ft_watch_rx` to `snapshot_watches` vec (so the router subscribes clients to response updates)
-- [ ] Register `FILETREE_QUERY` as an input sink in the router, dispatching frames to `query_tx` (parse payload as JSON, extract `query` string, send to mpsc)
+- [ ] Register `FILETREE_QUERY` as an input sink in the router, dispatching frames to `query_tx` (parse payload as JSON, extract `query` string and optional `root` path, construct `FileTreeQuery`, send to mpsc)
 - [ ] Spawn `file_watcher.run(broadcast_tx, cancel.clone())` as a background task
 - [ ] Spawn `filetree_feed.run(ft_watch_tx, cancel.clone())` as a background task — FileTreeFeed is a custom async task, not spawned through the feed registry
 
@@ -642,14 +694,17 @@ The `matches` field carries character ranges for highlighting. When present, the
   };
   ```
 - [ ] In `tug-text-engine.ts`: add `matches?: [number, number][]` to `CompletionItem` interface
-- [ ] In `tug-text-engine.ts`: add `refreshTypeahead()` method — if typeahead is active, re-call `this._typeahead.provider(this._typeahead.query)`, update `this._typeahead.filtered`, clamp `selectedIndex`, fire `onTypeaheadChange`
+- [ ] In `tug-text-engine.ts`: add `refreshTypeahead()` method — if typeahead is active, re-call `this._typeahead.provider(this._typeahead.query)`, update `this._typeahead.filtered`, clamp `selectedIndex`, fire `onTypeaheadChange`. The provider itself handles staleness (returns empty if `snapshot.query !== query`) — the text engine doesn't need to know about the async model.
 - [ ] In `tug-text-engine.ts`: in `detectTypeaheadTrigger()`, after setting `this._typeahead.provider`, check for `provider.subscribe`. If present, subscribe and store the unsubscribe function in `this._typeahead.unsubscribe`. The listener calls `this.refreshTypeahead()`.
 - [ ] In `tug-text-engine.ts`: add `unsubscribe: (() => void) | null` to `_typeahead` state. In typeahead deactivation, call `this._typeahead.unsubscribe?.()` and null it out.
 - [ ] Create `tugdeck/src/lib/filetree-store.ts` with `FileTreeStore` class
 - [ ] Implement `subscribe(listener)` / `getSnapshot()` returning `FileTreeResultSnapshot`
 - [ ] Constructor takes `FeedStore`, subscribes to `FeedId.FILETREE` for response payloads, parses JSON into `FileTreeResultSnapshot`
-- [ ] Implement `sendQuery(query: string)`: builds `{ query }` JSON payload, sends as `Frame` on `FeedId.FILETREE_QUERY` via the FeedStore's connection
-- [ ] Implement `getFileCompletionProvider()`: returns a single stable closure with attached `subscribe` method ([D07]). The closure calls `sendQuery(query)` and returns current `this._snapshot.results` mapped to `CompletionItem[]` (including `matches` field). The `subscribe` property delegates to `this.subscribe()`.
+- [ ] Implement `sendQuery(query: string, root?: string)`: builds `{ query, root? }` JSON payload, sends as `Frame` on `FeedId.FILETREE_QUERY` via the FeedStore's connection
+- [ ] Implement `getFileCompletionProvider()`: returns a single stable closure with attached `subscribe` method ([D07]). Two internal invariants:
+  1. **Deduplication**: tracks `lastSentQuery` — only calls `sendQuery(query)` when the query string changes (prevents infinite loop when `refreshTypeahead` re-calls the provider).
+  2. **Staleness**: compares `this._snapshot.query` with the requested `query`. If they don't match, returns empty `[]` (results are for an older query). If they match, returns `this._snapshot.results` mapped to `CompletionItem[]` (including `matches` field).
+  The `subscribe` property delegates to `this.subscribe()`.
 - [ ] Implement `dispose()` to unsubscribe from FeedStore
 - [ ] Default snapshot: `{ query: "", results: [], truncated: false }`
 - [ ] Create `tugdeck/src/__tests__/filetree-store.test.ts`:
@@ -659,9 +714,17 @@ The `matches` field carries character ranges for highlighting. When present, the
   - Provider function reference is identical across multiple `getFileCompletionProvider()` calls
   - `sendQuery()` sends correctly formatted FILETREE_QUERY frame
   - `CompletionItem` results include `matches` field from scored results
+  - Provider deduplication: calling provider twice with same query only sends one FILETREE_QUERY frame
+  - Provider staleness: when `snapshot.query` doesn't match requested query, provider returns `[]`
+- [ ] In `tug-text-engine` tests (existing test file or new):
+  - `refreshTypeahead()` re-calls provider and re-fires `onTypeaheadChange` when typeahead is active
+  - `refreshTypeahead()` is a no-op when typeahead is not active
+  - `detectTypeaheadTrigger()` subscribes to provider.subscribe when present; `deactivateTypeahead()` unsubscribes
+  - Subscribable provider: subscriber callback triggers `refreshTypeahead()` and menu updates
 
 **Tests:**
 - [ ] FileTreeStore parses FILETREE response, returns scored completion items with match ranges via subscribable provider
+- [ ] Text engine subscribe/refresh lifecycle: subscribe on activation, refresh on notification, unsubscribe on deactivation
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck && bun test`
@@ -735,6 +798,8 @@ The `matches` field carries character ranges for highlighting. When present, the
 - [x] FILESYSTEM feed refactored to consume FileWatcher broadcast (wire format unchanged, existing consumers unaffected)
 - [ ] Fuzzy scorer: character-level DP + path-aware structural wrapper scores correctly (basename preference, word-boundary bonuses, camelCase)
 - [ ] FILETREE query/response: client sends query on 0x12, receives top-N scored results on 0x11
+- [ ] Retargetable root: query with `root` field re-indexes a different directory [D09]
+- [ ] Off-board completion: absolute paths (`/`, `~`) complete via readdir [D10]
 - [ ] FileTreeStore in tugdeck: sends queries, exposes subscribable `getFileCompletionProvider()` [L22, D07]
 - [ ] Gallery card `@` trigger shows live fuzzy-scored project files with match highlighting
 - [ ] `cd tugrust && cargo nextest run` passes
@@ -744,7 +809,10 @@ The `matches` field carries character ranges for highlighting. When present, the
 - [x] FileWatcher `walk()` returns correct relative paths respecting nested `.gitignore` (Rust unit test)
 - [ ] Fuzzy scorer: `"sms"` matches `"session-metadata-store.ts"`, `"model"` prefers basename match over directory match (Rust unit test)
 - [ ] FileTreeFeed applies Created/Removed/Renamed, ignores Modified, responds to queries with scored results (Rust unit test)
-- [ ] FileTreeStore parses FILETREE response and returns scored completion items (TypeScript unit test)
+- [ ] Off-board completion: `/tmp/te` returns prefix-matched entries, nonexistent parent returns empty (Rust unit test)
+- [ ] Root retarget: query with new `root` re-walks and scores against new index (Rust unit test)
+- [ ] FileTreeStore parses FILETREE response and returns scored completion items with deduplication and staleness checks (TypeScript unit test)
+- [ ] Text engine subscribes to async provider on typeahead activation, refreshes on notification, unsubscribes on deactivation (TypeScript unit test)
 - [x] FILESYSTEM integration test passes unchanged after refactor (Rust integration test)
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
@@ -753,4 +821,72 @@ The `matches` field carries character ranges for highlighting. When present, the
 - [ ] UI hint when `truncated: true`
 - [ ] tug-prompt-entry integration (T3.4)
 - [ ] Lagged recovery: re-walk on `RecvError::Lagged` in FileTreeFeed
+- [ ] Restart `notify` watcher on root retarget (currently the watcher stays on the original directory; retarget rebuilds the index via `walk()` but doesn't move the watcher)
 - [ ] Multi-term queries (space-separated) for Quick Open-style picker
+
+---
+
+### Appendix A: Fuzzy Matching Research {#appendix-research}
+
+*Research conducted 2026-04-06. Informed design decisions D04a (two-layer scoring) and the scoring constants in Step 4.*
+
+#### What the editor frameworks do
+
+| Framework | Built-in matching? | Algorithm |
+|-----------|-------------------|-----------|
+| **ProseMirror** | None — consumer's responsibility | N/A |
+| **Lexical** | None — playground uses `includes()` | N/A |
+| **CodeMirror 6** | Yes (`FuzzyMatcher`) | Tiered penalties: exact prefix → case-folded prefix → word-boundary initials → substring → fuzzy. No path awareness. |
+
+ProseMirror and Lexical deliberately separate trigger/lifecycle management from matching — exactly the `CompletionProvider` pattern we already have. CodeMirror 6 ships a real scorer but it's designed for code identifiers, not file paths.
+
+#### What the file-finding tools do
+
+| Tool | Algorithm | Path awareness? |
+|------|-----------|-----------------|
+| **VS Code** | Two-layer DP: character scorer (`fuzzyScore`) + structural scorer (`scoreItemFuzzy`) | Yes — scores basename first, falls back to full path. Bit-shifted tier thresholds separate label-prefix, label-match, and path-match results. |
+| **fzf** | Smith-Waterman-variant DP (`FuzzyMatchV2`) | Partial — `/` gets a word-boundary bonus (+8), but no explicit basename preference. |
+| **Sublime Text** | Greedy scan with backtracking | Yes — filename portion weighted much more heavily than directory components (separate multiplier). Pioneered this pattern. |
+| **Telescope.nvim** | Delegates to fzf-native (C port of fzf) | Same as fzf. |
+
+#### Key design insight
+
+VS Code and Sublime both use a **two-layer architecture**: a character scorer (DP or greedy scan) + a structural scorer (basename-first with tier bonus). This separation is the right design. A single-layer fuzzy scorer (like fzf) treats `model` in `src/models/user/model.ts` the same whether the characters hit the basename or a directory — it gets the right answer sometimes, but by accident rather than by design.
+
+#### Scoring factors reference
+
+| Factor | Bonus/Penalty | Rationale |
+|--------|--------------|-----------|
+| Base match per character | +16 | fzf convention; scales well |
+| Consecutive match | +8 per char | Strongly rewards contiguous sequences |
+| Word boundary match | +8 | After `-`, `_`, `.`, `/`, space |
+| CamelCase transition | +7 | Uppercase after lowercase |
+| First character match | +8 | Prefix alignment |
+| Exact case match | +1 | Tiebreaker |
+| Gap (first) | −3 | Penalize skipped characters |
+| Gap (extension) | −1 | Diminishing penalty for longer gaps |
+
+#### Match examples
+
+| Query | Candidate | Match type | Behavior |
+|-------|-----------|------------|----------|
+| `sms` | `session-metadata-store.ts` | Basename, word-boundary initials (`s`ession-`m`etadata-`s`tore) | High score: 3 boundary bonuses |
+| `btn` | `ButtonGroup.tsx` | Basename, camelCase (`B`u`t`to`n`) | Moderate score — but would lose to an exact substring match |
+| `model` | `model.ts` | Basename, exact prefix | Top score: prefix + consecutive + short length |
+| `model` | `src/models/user/model.ts` | Basename, exact prefix | Same basename score as above (dirname ignored unless query has `/`) |
+| `model` | `src/models/config.ts` | Full path, substring in dirname | Low score: no basename match, directory-only |
+| `src/comp` | `src/components/Button.tsx` | Full path (query contains `/`) | Scored as full path match |
+
+#### Tiebreaking
+
+When scores are equal:
+1. **Shorter path wins** — `model.ts` over `src/deep/model.ts`
+2. **Lexicographic** — stable, predictable ordering
+
+#### Why not use a library?
+
+- **fzf-for-js / fzf-lite:** Wrong language — scoring is in Rust, not TypeScript.
+- **nucleo / fuzzy-matcher (Rust crates):** Viable alternatives, but ~250 lines of our own Rust gives us full control over the two-layer design (character scorer + path-aware wrapper) and the scoring constants. No external dependency for a core UX feature.
+- **fuse.js:** Bitap-based, designed for short string search. Poor fit for file paths (no boundary bonuses, no path awareness).
+
+The scoring constants are the thing we'll tune. Ship with fzf-inspired defaults, then adjust based on real usage. The algorithm itself won't change.

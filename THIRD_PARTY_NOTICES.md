@@ -6,6 +6,38 @@ the source, what was adopted, and the required copyright notice.
 
 ---
 
+## fzf
+
+**Source:** https://github.com/junegunn/fzf
+**What was adopted:** Scoring constants and two-phase matching architecture from fzf's FuzzyMatchV2 algorithm — boundary bonus (+8 after word separators), consecutive match bonus (+8), camelCase transition bonus (+7), first character bonus (+8), gap penalties (−3 first, −1 extension), base match score (+16). Also adopted the pre-filter + DP scorer two-phase design (cheap subsequence check eliminates non-matches before expensive dynamic programming). The path-aware structural layer (basename-first scoring with tier bonus) was informed by VS Code and Sublime Text rather than fzf.
+**Used in:** `tugrust/crates/tugcast/src/feeds/fuzzy_scorer.rs` (file completion scoring)
+
+```
+MIT License
+
+Copyright (c) 2013-2025 Junegunn Choi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
 ## Excalidraw
 
 **Source:** https://github.com/excalidraw/excalidraw
