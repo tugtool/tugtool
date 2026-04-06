@@ -81,12 +81,17 @@ function truncateLabel(label: string, maxWidth: number): string {
   if (measureTextWidth(label, _font) <= maxWidth) return label;
   const ellipsis = "…";
   const ellipsisW = measureTextWidth(ellipsis, _font);
-  for (let i = label.length - 1; i > 0; i--) {
-    if (measureTextWidth(label.slice(0, i), _font) + ellipsisW <= maxWidth) {
-      return label.slice(0, i) + ellipsis;
+  let lo = 1, hi = label.length - 1, best = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    if (measureTextWidth(label.slice(0, mid), _font) + ellipsisW <= maxWidth) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
     }
   }
-  return ellipsis;
+  return label.slice(0, best) + ellipsis;
 }
 
 // ---- SVG generation ----
