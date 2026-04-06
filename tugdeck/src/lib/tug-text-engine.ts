@@ -8,8 +8,8 @@
  * [L07] Engine is a stable ref; handlers access current state via `this`
  */
 
-import type { AtomSegment } from "@/components/tugways/tug-atom";
 import { atomImgHTML, createAtomImgElement, TUG_ATOM_CHAR } from "./tug-atom-img";
+import type { AtomSegment } from "./tug-atom-img";
 
 // ===================================================================
 // Types

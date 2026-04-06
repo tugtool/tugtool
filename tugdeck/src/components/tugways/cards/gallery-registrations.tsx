@@ -688,12 +688,11 @@ export function registerGalleryCards(): void {
   });
 
   // ---- gallery-atom ----
-  // TugAtom showcase: all known types, states (rest/hover/selected/highlighted/disabled),
-  // dismissible mode, inline text integration, label formatting, and DOM rendering path.
+  // Atom img showcase: all types, inline text, truncation, label modes, dismiss.
   registerCard({
     componentId: "gallery-atom",
     contentFactory: (_cardId) => <GalleryAtom />,
-    defaultMeta: { title: "TugAtom", icon: "AtSign", closable: true },
+    defaultMeta: { title: "Atom", icon: "AtSign", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

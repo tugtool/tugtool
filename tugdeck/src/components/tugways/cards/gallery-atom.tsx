@@ -1,21 +1,19 @@
 /**
- * gallery-atom.tsx -- TugAtom demo tab for the Component Gallery.
+ * gallery-atom.tsx -- Atom img demo tab for the Component Gallery.
  *
- * Shows TugAtom in all states (rest, hover, selected, highlighted, disabled),
- * all known types, dismissible mode with icon-to-X flip, click-to-select,
- * the DOM rendering path for engine integration, and label formatting options.
+ * Shows atom <img> elements in all types, with label formatting,
+ * truncation, dismiss affordance, and inline text flow.
  *
- * @module components/tugways/cards/gallery-atom
+ * Atoms are rendered via createAtomImgElement from tug-atom-img.ts —
+ * the same path used by TugTextEngine inside contentEditable.
  */
 
-import React, { useRef, useLayoutEffect, useCallback, useState } from "react";
+import React, { useRef, useLayoutEffect, useState } from "react";
 import {
-  TugAtom,
-  createAtomDOM,
+  createAtomImgElement,
   formatAtomLabel,
-} from "@/components/tugways/tug-atom";
-import type { AtomSegment, AtomLabelMode } from "@/components/tugways/tug-atom";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
+} from "@/lib/tug-atom-img";
+import type { AtomSegment, AtomLabelMode } from "@/lib/tug-atom-img";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import "./gallery-atom.css";
@@ -31,12 +29,11 @@ const SAMPLE_ATOMS: AtomSegment[] = [
   { kind: "atom", type: "link", label: "anthropic.com", value: "https://www.anthropic.com/research" },
 ];
 
-const LONG_PATH_ATOM: AtomSegment = {
-  kind: "atom",
-  type: "file",
-  label: "very-long-component-name-that-should-truncate.tsx",
-  value: "/Users/kocienda/project/src/components/tugways/cards/very-long-component-name-that-should-truncate.tsx",
-};
+const LONG_LABEL_ATOMS: AtomSegment[] = [
+  { kind: "atom", type: "file", label: "very-long-component-name-that-should-truncate.tsx", value: "very-long-component-name-that-should-truncate.tsx" },
+  { kind: "atom", type: "doc", label: "architecture-decisions-and-design-patterns.md", value: "architecture-decisions-and-design-patterns.md" },
+  { kind: "atom", type: "link", label: "https://www.anthropic.com/research/very/long/path/to/resource", value: "https://www.anthropic.com/research/very/long/path/to/resource" },
+];
 
 const LABEL_MODE_CHOICES: TugChoiceItem[] = [
   { value: "filename", label: "Filename" },
@@ -44,7 +41,22 @@ const LABEL_MODE_CHOICES: TugChoiceItem[] = [
   { value: "absolute", label: "Absolute" },
 ];
 
-// ---- Styles ----
+// ---- Helpers ----
+
+/** Render atoms into a container element via direct DOM writes [L06]. */
+function renderAtoms(
+  container: HTMLElement,
+  atoms: AtomSegment[],
+  options?: Parameters<typeof createAtomImgElement>[3],
+) {
+  container.textContent = "";
+  for (const seg of atoms) {
+    const img = createAtomImgElement(seg.type, seg.label, seg.value, options);
+    img.style.marginRight = "8px";
+    img.style.marginBottom = "4px";
+    container.appendChild(img);
+  }
+}
 
 const descStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -52,44 +64,62 @@ const descStyle: React.CSSProperties = {
   marginBottom: "4px",
 };
 
-const inlineWrapStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "8px",
-  alignItems: "center",
-};
-
 // ---- Gallery component ----
 
 export function GalleryAtom() {
+  const typesRef = useRef<HTMLDivElement>(null);
+  const truncRef = useRef<HTMLDivElement>(null);
+  const inlineRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLDivElement>(null);
   const [labelMode, setLabelMode] = useState<AtomLabelMode>("filename");
-  const domContainerRef = useRef<HTMLDivElement>(null);
-  const [dismissLog, setDismissLog] = useState<string[]>([]);
-  // Track which atom is selected by value (at most one at a time)
-  const [selectedValue, setSelectedValue] = useState<string | null>(null);
 
-  const handleDismiss = useCallback((label: string) => {
-    setDismissLog(prev => [`Dismissed: ${label}`, ...prev].slice(0, 5));
-  }, []);
-
-  const handleSelect = useCallback((value: string) => {
-    setSelectedValue(value);
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    setSelectedValue(null);
-  }, []);
-
-  // Render DOM-path atoms into a container via useLayoutEffect [L01, L06]
+  // All types [L06]
   useLayoutEffect(() => {
-    const container = domContainerRef.current;
-    if (!container) return;
-    container.textContent = "";
-    for (const seg of SAMPLE_ATOMS) {
-      const el = createAtomDOM(seg);
-      container.appendChild(el);
+    if (typesRef.current) renderAtoms(typesRef.current, SAMPLE_ATOMS);
+  }, []);
+
+  // Truncation [L06]
+  useLayoutEffect(() => {
+    if (truncRef.current) renderAtoms(truncRef.current, LONG_LABEL_ATOMS, { maxLabelWidth: 150 });
+  }, []);
+
+  // Inline with text [L06]
+  useLayoutEffect(() => {
+    const el = inlineRef.current;
+    if (!el) return;
+    el.textContent = "";
+    const parts: Array<string | AtomSegment> = [
+      "Please review the changes in ",
+      { kind: "atom", type: "file", label: "main.ts", value: "/src/main.ts" },
+      " and run ",
+      { kind: "atom", type: "command", label: "/commit", value: "/commit" },
+      " when ready. See ",
+      { kind: "atom", type: "link", label: "anthropic.com", value: "https://www.anthropic.com" },
+      " for more details.",
+    ];
+    for (const part of parts) {
+      if (typeof part === "string") {
+        el.appendChild(document.createTextNode(part));
+      } else {
+        el.appendChild(createAtomImgElement(part.type, part.label, part.value));
+      }
     }
   }, []);
+
+  // Label modes [L06]
+  useLayoutEffect(() => {
+    const el = labelRef.current;
+    if (!el) return;
+    el.textContent = "";
+    const fileAtoms = SAMPLE_ATOMS.filter(s => s.type === "file" || s.type === "doc");
+    for (const seg of fileAtoms) {
+      const displayLabel = formatAtomLabel(seg.value, labelMode);
+      const img = createAtomImgElement(seg.type, displayLabel, seg.value);
+      img.style.marginRight = "8px";
+      img.style.marginBottom = "4px";
+      el.appendChild(img);
+    }
+  }, [labelMode]);
 
   return (
     <div className="cg-content" data-testid="gallery-atom">
@@ -97,100 +127,7 @@ export function GalleryAtom() {
       {/* ---- All known types ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Atom Types</div>
-        <div style={inlineWrapStyle}>
-          {SAMPLE_ATOMS.map((seg) => (
-            <TugAtom
-              key={seg.value}
-              type={seg.type}
-              label={seg.label}
-              value={seg.value}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- States: static examples + interactive click-to-select ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">States</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div>
-            <div style={descStyle}>rest (default)</div>
-            <TugAtom type="file" label="main.ts" value="/src/main.ts" />
-          </div>
-          <div>
-            <div style={descStyle}>hover — try hovering the atom above (border intensifies)</div>
-          </div>
-          <div>
-            <div style={descStyle}>selected (two-step delete highlight)</div>
-            <TugAtom type="file" label="main.ts" value="/src/main.ts" selected />
-          </div>
-          <div>
-            <div style={descStyle}>highlighted (search match / typeahead preview)</div>
-            <TugAtom type="file" label="main.ts" value="/src/main.ts" highlighted />
-          </div>
-          <div>
-            <div style={descStyle}>disabled (unavailable reference)</div>
-            <TugAtom type="file" label="deleted-file.ts" value="/src/deleted-file.ts" disabled />
-          </div>
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Click to select ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Click to Select</div>
-        <div style={descStyle}>Click any atom to select it. Clear button deselects.</div>
-        <div style={{ ...inlineWrapStyle, marginBottom: "8px" }}>
-          {SAMPLE_ATOMS.map((seg) => (
-            <TugAtom
-              key={seg.value}
-              type={seg.type}
-              label={seg.label}
-              value={seg.value}
-              selected={selectedValue === seg.value}
-              onClick={() => handleSelect(seg.value)}
-            />
-          ))}
-        </div>
-        <div>
-          <TugPushButton
-            emphasis="outlined"
-            role="action"
-            size="sm"
-            disabled={selectedValue === null}
-            onClick={clearSelection}
-          >
-            Clear Selection
-          </TugPushButton>
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Dismissible (icon flips to X on hover) ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Dismissible (hover to see X)</div>
-        <div style={inlineWrapStyle}>
-          {SAMPLE_ATOMS.map((seg) => (
-            <TugAtom
-              key={seg.value}
-              type={seg.type}
-              label={seg.label}
-              value={seg.value}
-              onDismiss={() => handleDismiss(seg.label)}
-            />
-          ))}
-        </div>
-        {dismissLog.length > 0 && (
-          <div className="gallery-atom-log">
-            {dismissLog.map((msg, i) => (
-              <div key={i}>{msg}</div>
-            ))}
-          </div>
-        )}
+        <div ref={typesRef} className="gallery-atom-row" />
       </div>
 
       <div className="cg-divider" />
@@ -198,63 +135,30 @@ export function GalleryAtom() {
       {/* ---- Inline with text ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Inline with Text</div>
-        <div className="gallery-atom-text-sample">
-          Please review the changes in{" "}
-          <TugAtom type="file" label="main.ts" value="/src/main.ts" />{" "}
-          and run{" "}
-          <TugAtom type="command" label="/commit" value="/commit" />{" "}
-          when ready. See{" "}
-          <TugAtom type="link" label="anthropic.com" value="https://www.anthropic.com" />{" "}
-          for more details.
-        </div>
+        <div ref={inlineRef} className="gallery-atom-text-sample" />
       </div>
 
       <div className="cg-divider" />
 
-      {/* ---- Label truncation ---- */}
+      {/* ---- Truncation ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Truncation & Label Modes</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div>
-            <div style={descStyle}>long filename — truncated with ellipsis, hover for tooltip</div>
-            <TugAtom
-              type={LONG_PATH_ATOM.type}
-              label={LONG_PATH_ATOM.label}
-              value={LONG_PATH_ATOM.value}
-            />
-          </div>
-          <div>
-            <div style={descStyle}>label mode — controls how file paths are displayed</div>
-            <TugChoiceGroup
-              items={LABEL_MODE_CHOICES}
-              value={labelMode}
-              onValueChange={(v) => setLabelMode(v as AtomLabelMode)}
-              size="sm"
-            />
-            <div style={{ ...inlineWrapStyle, marginTop: "8px" }}>
-              {SAMPLE_ATOMS.filter(s => s.type === "file" || s.type === "doc").map((seg) => (
-                <TugAtom
-                  key={`${seg.value}-${labelMode}`}
-                  type={seg.type}
-                  label={formatAtomLabel(seg.value, labelMode)}
-                  value={seg.value}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
+        <div className="cg-section-title">Truncation</div>
+        <div style={descStyle}>Labels truncated to 150px with ellipsis</div>
+        <div ref={truncRef} className="gallery-atom-row" />
       </div>
 
       <div className="cg-divider" />
 
-      {/* ---- DOM rendering path ---- */}
+      {/* ---- Label modes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">DOM Rendering Path (createAtomDOM)</div>
-        <div style={descStyle}>
-          These atoms are built imperatively via createAtomDOM() — the same path
-          used by TugTextEngine's reconciler inside contentEditable.
-        </div>
-        <div ref={domContainerRef} style={inlineWrapStyle} />
+        <div className="cg-section-title">Label Modes</div>
+        <TugChoiceGroup
+          items={LABEL_MODE_CHOICES}
+          value={labelMode}
+          onValueChange={(v) => setLabelMode(v as AtomLabelMode)}
+          size="sm"
+        />
+        <div ref={labelRef} className="gallery-atom-row" style={{ marginTop: "8px" }} />
       </div>
 
     </div>

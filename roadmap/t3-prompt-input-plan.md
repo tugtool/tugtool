@@ -670,15 +670,9 @@ The React `TugAtom` component (`tug-atom.tsx`) predates the img-based atom archi
 - Truncation demo with long labels
 - Inline-with-text sample showing atoms in a text flow
 
-**Carry forward — dismiss affordance:**
-- `createAtomImgElement` gets an optional `onDismiss` callback
-- On `mouseenter`, swap the SVG `src` to show an X icon replacing the type icon
-- On `mouseleave`, swap back to the type icon
-- On `click`, call the `onDismiss` callback
-- This works outside the editor (tag lists, chip displays) — inside the editor, atoms don't get dismiss affordances (backspace handles deletion)
-
 **Do NOT carry forward:**
 - React component states (selected, highlighted, disabled) — the engine handles selection natively via browser `::selection`
+- Dismiss affordance (hover X icon) — deferred; needs engine-level event delegation for contentEditable
 - `contentEditable="false"` badge DOM path — replaced by `<img>` atoms entirely
 
 #### Sub-step 9.2 and beyond (remaining)

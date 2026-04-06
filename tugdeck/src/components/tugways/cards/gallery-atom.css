@@ -1,6 +1,12 @@
 /* ============================================================================
-   gallery-atom.css — Gallery card styles for TugAtom demo.
+   gallery-atom.css — Gallery card styles for atom img demo.
    ========================================================================= */
+
+.gallery-atom-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
 
 .gallery-atom-text-sample {
   font-size: 14px;
@@ -10,11 +16,3 @@
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-.gallery-atom-log {
-  margin-top: 8px;
-  font-family: var(--tug-font-mono);
-  font-size: 11px;
-  line-height: 1.5;
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
