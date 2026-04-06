@@ -38,7 +38,7 @@ const TYPEAHEAD_FILES = [
   "README.md", "package.json", "tsconfig.json",
 ];
 
-function galleryCompletionProvider(query: string): CompletionItem[] {
+function galleryFileCompletionProvider(query: string): CompletionItem[] {
   const q = query.toLowerCase();
   const files = q.length === 0
     ? TYPEAHEAD_FILES.slice(0, 8)
@@ -46,6 +46,22 @@ function galleryCompletionProvider(query: string): CompletionItem[] {
   return files.map(f => ({
     label: f,
     atom: { kind: "atom" as const, type: "file", label: f, value: f },
+  }));
+}
+
+const TYPEAHEAD_COMMANDS = [
+  "/commit", "/review", "/help", "/clear", "/plan",
+  "/implement", "/dash", "/compact", "/memory",
+];
+
+function galleryCommandCompletionProvider(query: string): CompletionItem[] {
+  const q = query.toLowerCase();
+  const cmds = q.length === 0
+    ? TYPEAHEAD_COMMANDS.slice(0, 8)
+    : TYPEAHEAD_COMMANDS.filter(c => c.toLowerCase().includes(q)).slice(0, 8);
+  return cmds.map(c => ({
+    label: c,
+    atom: { kind: "atom" as const, type: "command", label: c, value: c },
   }));
 }
 
@@ -162,12 +178,15 @@ export function GalleryPromptInput() {
         </div>
         <TugPromptInput
           ref={inputRef}
-          placeholder="Type here... @ for file completion, drag files, test IME, Return vs Enter"
+          placeholder="Type here... @ for file, / for command, drag files, test IME, Return vs Enter"
           maxRows={8}
           returnAction={returnAction}
           numpadEnterAction={enterAction}
           onSubmit={handleSubmit}
-          completionProvider={galleryCompletionProvider}
+          completionProviders={{
+            "@": galleryFileCompletionProvider,
+            "/": galleryCommandCompletionProvider,
+          }}
           historyProvider={historyRef.current}
           dropHandler={galleryDropHandler}
         />

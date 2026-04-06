@@ -67,9 +67,9 @@ export interface TugPromptInputProps extends Omit<React.ComponentPropsWithoutRef
    */
   onChange?: () => void;
   /**
-   * Completion provider for @-trigger typeahead.
+   * Completion providers keyed by trigger character (e.g. { "@": fileProvider, "/": commandProvider }).
    */
-  completionProvider?: CompletionProvider;
+  completionProviders?: Record<string, CompletionProvider>;
   /**
    * History provider for Cmd+Up/Down navigation through previous submissions.
    */
@@ -181,7 +181,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
     numpadEnterAction = "submit",
     onSubmit,
     onChange,
-    completionProvider,
+    completionProviders,
     completionDirection = "up",
     historyProvider,
     onTypeaheadChange,
@@ -249,7 +249,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       const engine = new TugTextEngine(el);
       engine.maxHeight = LINE_HEIGHT * maxRows + PADDING_Y;
       engine.growDirection = growDirection;
-      engine.completionProvider = completionProvider ?? null;
+      engine.completionProviders = completionProviders ?? {};
       engine.historyProvider = historyProvider ?? null;
       engine.dropHandler = dropHandler ?? null;
       engine.returnAction = returnAction;
@@ -335,9 +335,9 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
 
     useLayoutEffect(() => {
       if (engineRef.current) {
-        engineRef.current.completionProvider = completionProvider ?? null;
+        engineRef.current.completionProviders = completionProviders ?? {};
       }
-    }, [completionProvider]);
+    }, [completionProviders]);
 
     useLayoutEffect(() => {
       if (engineRef.current) {

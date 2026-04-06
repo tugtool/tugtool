@@ -282,7 +282,7 @@ export class TugTextEngine {
   growDirection: "up" | "down" = "down";
   returnAction: InputAction = "submit";
   numpadEnterAction: InputAction = "submit";
-  completionProvider: CompletionProvider | null = null;
+  completionProviders: Record<string, CompletionProvider> = {};
   historyProvider: HistoryProvider | null = null;
   dropHandler: DropHandler | null = null;
 
@@ -315,6 +315,8 @@ export class TugTextEngine {
   // @-trigger typeahead state
   private _typeahead = {
     active: false,
+    trigger: "",
+    provider: null as CompletionProvider | null,
     query: "",
     anchorOffset: 0,
     anchorRect: null as DOMRect | null,
@@ -601,25 +603,28 @@ export class TugTextEngine {
   // Typeahead
   // =================================================================
 
-  /** Check if the character just typed is @ and activate typeahead. */
+  /** Check if the character just typed is a registered trigger and activate typeahead. */
   private detectTypeaheadTrigger(): void {
     const range = this.getSelectedRange();
     if (!range || range.start !== range.end) return;
     if (range.start === 0) return;
 
-    // Read the character before the caret
     const text = this.getText();
-    if (text[range.start - 1] !== "@") return;
+    const char = text[range.start - 1];
+    const provider = this.completionProviders[char];
+    if (!provider) return;
 
-    // Capture the caret rect at the @ position for popup anchoring
+    // Capture caret rect for popup anchoring
     const sel = window.getSelection();
     const anchorRect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null;
 
     this._typeahead.active = true;
+    this._typeahead.trigger = char;
+    this._typeahead.provider = provider;
     this._typeahead.anchorOffset = range.start - 1;
     this._typeahead.anchorRect = anchorRect;
     this._typeahead.query = "";
-    this._typeahead.filtered = this.completionProvider!("");
+    this._typeahead.filtered = provider("");
     this._typeahead.selectedIndex = 0;
     this.onTypeaheadChange?.(true, this._typeahead.filtered, 0);
   }
@@ -648,7 +653,7 @@ export class TugTextEngine {
     }
 
     this._typeahead.query = query;
-    this._typeahead.filtered = this.completionProvider!(query);
+    this._typeahead.filtered = this._typeahead.provider!(query);
     this._typeahead.selectedIndex = Math.min(
       this._typeahead.selectedIndex,
       Math.max(0, this._typeahead.filtered.length - 1),
@@ -678,6 +683,8 @@ export class TugTextEngine {
   cancelTypeahead(): void {
     if (!this._typeahead.active) return;
     this._typeahead.active = false;
+    this._typeahead.trigger = "";
+    this._typeahead.provider = null;
     this._typeahead.query = "";
     this._typeahead.filtered = [];
     this._typeahead.selectedIndex = 0;
@@ -1114,7 +1121,7 @@ export class TugTextEngine {
 
       if (this._typeahead.active) {
         this.updateTypeaheadQuery();
-      } else if (this.completionProvider) {
+      } else if (Object.keys(this.completionProviders).length > 0) {
         this.detectTypeaheadTrigger();
       }
     });
