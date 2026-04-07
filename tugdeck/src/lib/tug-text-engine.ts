@@ -1366,6 +1366,10 @@ export class TugTextEngine {
       const files = de.dataTransfer?.files;
       if (!files || files.length === 0) return;
 
+      // Preserve scroll position — setting selection and inserting HTML
+      // can cause the browser to scroll the editor to the insertion point.
+      const savedScrollTop = root.scrollTop;
+
       // Position caret at drop point
       const range = document.caretRangeFromPoint(de.clientX, dropY);
       if (range) {
@@ -1391,6 +1395,7 @@ export class TugTextEngine {
         html += atomImgHTML(atom.type, atom.label, atom.value);
       }
       document.execCommand("insertHTML", false, html);
+      root.scrollTop = savedScrollTop;
     });
 
     // 8. beforeinput interception:
