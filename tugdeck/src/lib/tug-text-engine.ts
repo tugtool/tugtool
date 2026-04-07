@@ -53,6 +53,10 @@ export interface HistoryProvider {
   forward(): TugTextEditingState | null;
 }
 
+/** Fraction of line height to shift the drag hit point upward so the
+ *  drop caret draws above the drag ghost instead of behind it. */
+const DROP_Y_OFFSET_RATIO = -0.9;
+
 // ===================================================================
 // TugTextInputDelegate — UITextInput-inspired API
 // ===================================================================
@@ -1250,9 +1254,12 @@ export class TugTextEngine {
       const lh = parseFloat(styles.lineHeight) || 24;
       const caretH = Math.round(lh * 0.85);
 
-      // Position the drop caret indicator
+      // Position the drop caret indicator.
+      // The Y offset nudges the hit point above the drag ghost so the
+      // caret is visible rather than hidden behind the ghost image.
       let positioned = false;
-      const range = document.caretRangeFromPoint(de.clientX, de.clientY);
+      const dropY = de.clientY + lh * DROP_Y_OFFSET_RATIO;
+      const range = document.caretRangeFromPoint(de.clientX, dropY);
       if (range) {
         this.adjustRangeForAtom(range, de.clientX);
         const caretRect = range.getBoundingClientRect();
@@ -1303,7 +1310,7 @@ export class TugTextEngine {
         // returns null (e.g. during internal atom drags over void space).
         const paddingLeft = parseFloat(styles.paddingLeft) || 0;
         const paddingTop = parseFloat(styles.paddingTop) || 0;
-        const relY = de.clientY - rootRect.top + root.scrollTop;
+        const relY = dropY - rootRect.top + root.scrollTop;
         const line = Math.floor((relY - paddingTop) / lh);
         this._dropCaret.style.left = `${paddingLeft}px`;
         this._dropCaret.style.top = `${paddingTop + line * lh + (lh - caretH) / 2}px`;
@@ -1319,10 +1326,12 @@ export class TugTextEngine {
       const de = e as DragEvent;
 
       // Internal atom drag → move
+      const dropLh = parseFloat(getComputedStyle(root).lineHeight) || 24;
+      const dropY = de.clientY + dropLh * DROP_Y_OFFSET_RATIO;
       if (this._dragAtom) {
         const draggedImg = this._dragAtom;
         this._dragAtom = null;
-        const dropRange = document.caretRangeFromPoint(de.clientX, de.clientY);
+        const dropRange = document.caretRangeFromPoint(de.clientX, dropY);
         if (!dropRange) return;
         this.adjustRangeForAtom(dropRange, de.clientX);
 
@@ -1358,7 +1367,7 @@ export class TugTextEngine {
       if (!files || files.length === 0) return;
 
       // Position caret at drop point
-      const range = document.caretRangeFromPoint(de.clientX, de.clientY);
+      const range = document.caretRangeFromPoint(de.clientX, dropY);
       if (range) {
         this.adjustRangeForAtom(range, de.clientX);
         const sel = window.getSelection();
