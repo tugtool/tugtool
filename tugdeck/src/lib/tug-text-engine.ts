@@ -1307,10 +1307,15 @@ export class TugTextEngine {
       this.scrollCaretIntoView();
       this.onChange?.();
 
-      if (this._typeahead.active) {
-        this.updateTypeaheadQuery();
-      } else if (Object.keys(this.completionProviders).length > 0) {
-        this.detectTypeaheadTrigger();
+      // Skip all typeahead logic during IME composition — only react to
+      // committed text. Composition produces intermediate strings that are
+      // meaningless as file/command queries.
+      if (!this._composing) {
+        if (this._typeahead.active) {
+          this.updateTypeaheadQuery();
+        } else if (Object.keys(this.completionProviders).length > 0) {
+          this.detectTypeaheadTrigger();
+        }
       }
 
       // Prefix detection: first character triggers route change

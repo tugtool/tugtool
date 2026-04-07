@@ -863,28 +863,28 @@ The `matches` field carries character ranges for highlighting. When present, the
 
 - [x] FileWatcher shared service: single `notify` watcher with `WalkBuilder`-grade nested gitignore, broadcast to multiple consumers (`cargo nextest run` passes)
 - [x] FILESYSTEM feed refactored to consume FileWatcher broadcast (wire format unchanged, existing consumers unaffected)
-- [ ] Fuzzy scorer: character-level DP + path-aware structural wrapper scores correctly (basename preference, word-boundary bonuses, camelCase)
-- [ ] FILETREE query/response: client sends query on 0x12, receives top-N scored results on 0x11
-- [ ] Retargetable root: query with `root` field re-indexes a different directory [D09]
-- [ ] Off-board completion: absolute paths (`/`, `~`) complete via readdir [D10]
-- [ ] FileTreeStore in tugdeck: sends queries, exposes subscribable `getFileCompletionProvider()` [L22, D07]
-- [ ] Gallery card `@` trigger shows live fuzzy-scored project files with match highlighting
-- [ ] Match positions are character offsets (correct for non-ASCII paths)
-- [ ] Backtracker recovers the exact alignment that produced the score
-- [ ] Malformed FILETREE_QUERY payloads logged, not silently dropped
-- [ ] `cd tugrust && cargo nextest run` passes
-- [ ] `cd tugdeck && bun test` passes
+- [x] Fuzzy scorer: character-level DP + path-aware structural wrapper scores correctly (basename preference, word-boundary bonuses, camelCase)
+- [x] FILETREE query/response: client sends query on 0x12, receives top-N scored results on 0x11
+- [x] Retargetable root: query with `root` field re-indexes a different directory [D09]
+- [x] Off-board completion: absolute paths (`/`, `~`) complete via readdir [D10]
+- [x] FileTreeStore in tugdeck: sends queries, exposes subscribable `getFileCompletionProvider()` [L22, D07]
+- [x] Gallery card `@` trigger shows live fuzzy-scored project files with match highlighting
+- [x] Match positions are character offsets (correct for non-ASCII paths)
+- [x] Backtracker recovers the exact alignment that produced the score
+- [x] Malformed FILETREE_QUERY payloads logged, not silently dropped
+- [x] `cd tugrust && cargo nextest run` passes
+- [x] `cd tugdeck && bun test` passes
 
 **Acceptance tests:**
 - [x] FileWatcher `walk()` returns correct relative paths respecting nested `.gitignore` (Rust unit test)
-- [ ] Fuzzy scorer: `"sms"` matches `"session-metadata-store.ts"`, `"model"` prefers basename match over directory match (Rust unit test)
-- [ ] Fuzzy scorer: non-ASCII path (`"café/modèle.ts"`) produces correct character-offset match positions (Rust unit test)
-- [ ] Fuzzy scorer: backtracker recovers word-boundary positions for `"sms"` → `"session-metadata-store.ts"` (Rust unit test)
-- [ ] FileTreeFeed applies Created/Removed/Renamed, ignores Modified, responds to queries with scored results (Rust unit test)
-- [ ] Off-board completion: `/tmp/te` returns prefix-matched entries, nonexistent parent returns empty (Rust unit test)
-- [ ] Root retarget: query with new `root` re-walks and scores against new index (Rust unit test)
-- [ ] FileTreeStore parses FILETREE response and returns scored completion items with deduplication and staleness checks (TypeScript unit test)
-- [ ] Text engine subscribes to async provider on typeahead activation, refreshes on notification, unsubscribes on deactivation (TypeScript unit test)
+- [x] Fuzzy scorer: `"sms"` matches `"session-metadata-store.ts"`, `"model"` prefers basename match over directory match (Rust unit test)
+- [x] Fuzzy scorer: non-ASCII path (`"café/modèle.ts"`) produces correct character-offset match positions (Rust unit test)
+- [x] Fuzzy scorer: backtracker recovers word-boundary positions for `"sms"` → `"session-metadata-store.ts"` (Rust unit test)
+- [x] FileTreeFeed applies Created/Removed/Renamed, ignores Modified, responds to queries with scored results (Rust unit test)
+- [x] Off-board completion: `/tmp/te` returns prefix-matched entries, nonexistent parent returns empty (Rust unit test)
+- [x] Root retarget: query with new `root` re-walks and scores against new index (Rust unit test)
+- [x] FileTreeStore parses FILETREE response and returns scored completion items with deduplication and staleness checks (TypeScript unit test)
+- [x] Text engine subscribes to async provider on typeahead activation, refreshes on notification, unsubscribes on deactivation (TypeScript unit test)
 - [x] FILESYSTEM integration test passes unchanged after refactor (Rust integration test)
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
