@@ -326,7 +326,7 @@ export class TugTextEngine {
 
   // Drag state — drop caret indicator element [L06]
   private _dropCaret: HTMLDivElement | null = null;
-  private _dragEnterCount = 0;
+  private _dragging = false;
   private _dragAtom: HTMLImageElement | null = null;
 
   // @-trigger typeahead state
@@ -1203,24 +1203,22 @@ export class TugTextEngine {
 
     this.listen(root, "dragend", () => {
       this._dragAtom = null;
+      this._dragging = false;
+      this.removeDropCaret();
+      root.style.caretColor = "";
     });
 
+    // dragenter: only used to allow drops (preventDefault) and hide the
+    // blinking caret. No counting — dragover handles the drop caret.
     this.listen(root, "dragenter", (e: Event) => {
       e.preventDefault();
-      this._dragEnterCount++;
-      if (this._dragEnterCount === 1) {
-        // Hide the blinking caret during drag if selection is collapsed.
-        // Ranged selections stay visible (they use ::selection, not caret-color).
-        const range = this.getSelectedRange();
-        if (range && range.start === range.end) {
-          root.style.caretColor = "transparent";
-        }
-      }
     });
 
-    this.listen(root, "dragleave", () => {
-      this._dragEnterCount--;
-      if (this._dragEnterCount === 0) {
+    // dragleave: clean up only when the cursor truly exits the root.
+    this.listen(root, "dragleave", (e: Event) => {
+      const related = (e as DragEvent).relatedTarget as Node | null;
+      if (!related || !root.contains(related)) {
+        this._dragging = false;
         this.removeDropCaret();
         root.style.caretColor = "";
       }
@@ -1230,73 +1228,92 @@ export class TugTextEngine {
       e.preventDefault();
       const de = e as DragEvent;
       de.dataTransfer!.dropEffect = this._dragAtom ? "move" : "copy";
+
+      // First dragover — hide the blinking caret while dragging.
+      if (!this._dragging) {
+        this._dragging = true;
+        const selRange = this.getSelectedRange();
+        if (selRange && selRange.start === selRange.end) {
+          root.style.caretColor = "transparent";
+        }
+      }
+
+      // Ensure drop caret element exists [L06]
+      const rootRect = root.getBoundingClientRect();
+      if (!this._dropCaret) {
+        this._dropCaret = document.createElement("div");
+        this._dropCaret.style.cssText = "position:absolute;width:2px;pointer-events:none;border-radius:1px";
+        this._dropCaret.style.backgroundColor = getTokenValue("--tug7-element-highlight-fill-normal-drop-rest");
+        root.appendChild(this._dropCaret);
+      }
+      const styles = getComputedStyle(root);
+      const lh = parseFloat(styles.lineHeight) || 24;
+      const caretH = Math.round(lh * 0.85);
+
       // Position the drop caret indicator
+      let positioned = false;
       const range = document.caretRangeFromPoint(de.clientX, de.clientY);
       if (range) {
         this.adjustRangeForAtom(range, de.clientX);
-        const rootRect = root.getBoundingClientRect();
-        if (!this._dropCaret) {
-          this._dropCaret = document.createElement("div");
-          this._dropCaret.style.cssText = "position:absolute;width:2px;pointer-events:none;border-radius:1px";
-          this._dropCaret.style.backgroundColor = getTokenValue("--tug7-element-highlight-fill-normal-drop-rest");
-          root.appendChild(this._dropCaret);
-        }
         const caretRect = range.getBoundingClientRect();
-        const styles = getComputedStyle(root);
-        const lh = parseFloat(styles.lineHeight) || 24;
-        const caretH = Math.round(lh * 0.85);
         if (caretRect.height > 0) {
           this._dropCaret.style.left = `${caretRect.left - rootRect.left + root.scrollLeft}px`;
           const midY = caretRect.top + caretRect.height / 2;
           this._dropCaret.style.top = `${midY - caretH / 2 - rootRect.top + root.scrollTop}px`;
           this._dropCaret.style.height = `${caretH}px`;
+          positioned = true;
         } else {
-          // Degenerate rect — try to position relative to the previous sibling
+          // Degenerate rect (0×0) — happens at root-level boundaries
+          // between atoms, <br>s, and text nodes.  Probe the previous
+          // sibling's trailing edge, unless it's a <br> (empty line) —
+          // in that case fall through to the line-grid fallback.
           const container = range.startContainer;
           const offset = range.startOffset;
-          let positioned = false;
           if (container === root && offset > 0) {
             const prev = container.childNodes[offset - 1];
-            if (prev.nodeType === Node.ELEMENT_NODE) {
-              const prevRect = (prev as HTMLElement).getBoundingClientRect();
-              if (prevRect.height > 0) {
-                const midY = prevRect.top + prevRect.height / 2;
-                this._dropCaret.style.left = `${prevRect.right - rootRect.left + root.scrollLeft}px`;
-                this._dropCaret.style.top = `${midY - caretH / 2 - rootRect.top + root.scrollTop}px`;
-                this._dropCaret.style.height = `${caretH}px`;
-                positioned = true;
-              }
-            } else if (prev.nodeType === Node.TEXT_NODE) {
-              const probe = document.createRange();
-              probe.setStart(prev, prev.textContent?.length ?? 0);
-              probe.collapse(true);
-              const probeRect = probe.getBoundingClientRect();
-              if (probeRect.height > 0) {
-                const midY = probeRect.top + probeRect.height / 2;
-                this._dropCaret.style.left = `${probeRect.left - rootRect.left + root.scrollLeft}px`;
-                this._dropCaret.style.top = `${midY - caretH / 2 - rootRect.top + root.scrollTop}px`;
-                this._dropCaret.style.height = `${caretH}px`;
-                positioned = true;
+            if (!isBR(prev)) {
+              if (prev.nodeType === Node.ELEMENT_NODE) {
+                const prevRect = (prev as HTMLElement).getBoundingClientRect();
+                if (prevRect.height > 0) {
+                  const midY = prevRect.top + prevRect.height / 2;
+                  this._dropCaret.style.left = `${prevRect.right - rootRect.left + root.scrollLeft}px`;
+                  this._dropCaret.style.top = `${midY - caretH / 2 - rootRect.top + root.scrollTop}px`;
+                  this._dropCaret.style.height = `${caretH}px`;
+                  positioned = true;
+                }
+              } else if (prev.nodeType === Node.TEXT_NODE) {
+                const probe = document.createRange();
+                probe.setStart(prev, prev.textContent?.length ?? 0);
+                probe.collapse(true);
+                const probeRect = probe.getBoundingClientRect();
+                if (probeRect.height > 0) {
+                  const midY = probeRect.top + probeRect.height / 2;
+                  this._dropCaret.style.left = `${probeRect.left - rootRect.left + root.scrollLeft}px`;
+                  this._dropCaret.style.top = `${midY - caretH / 2 - rootRect.top + root.scrollTop}px`;
+                  this._dropCaret.style.height = `${caretH}px`;
+                  positioned = true;
+                }
               }
             }
           }
-          if (!positioned) {
-            // True empty line — snap to line grid, centered in line.
-            const paddingLeft = parseFloat(styles.paddingLeft) || 0;
-            const paddingTop = parseFloat(styles.paddingTop) || 0;
-            const relY = de.clientY - rootRect.top + root.scrollTop;
-            const line = Math.floor((relY - paddingTop) / lh);
-            this._dropCaret.style.left = `${paddingLeft}px`;
-            this._dropCaret.style.top = `${paddingTop + line * lh + (lh - caretH) / 2}px`;
-            this._dropCaret.style.height = `${caretH}px`;
-          }
         }
+      }
+      if (!positioned) {
+        // Line-grid fallback — used for empty lines and when caretRangeFromPoint
+        // returns null (e.g. during internal atom drags over void space).
+        const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+        const paddingTop = parseFloat(styles.paddingTop) || 0;
+        const relY = de.clientY - rootRect.top + root.scrollTop;
+        const line = Math.floor((relY - paddingTop) / lh);
+        this._dropCaret.style.left = `${paddingLeft}px`;
+        this._dropCaret.style.top = `${paddingTop + line * lh + (lh - caretH) / 2}px`;
+        this._dropCaret.style.height = `${caretH}px`;
       }
     });
 
     this.listen(root, "drop", (e: Event) => {
       e.preventDefault();
-      this._dragEnterCount = 0;
+      this._dragging = false;
       this.removeDropCaret();
       root.style.caretColor = "";
       const de = e as DragEvent;
