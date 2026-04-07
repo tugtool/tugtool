@@ -67,6 +67,86 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-VariableFont_opsz,wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Italic-VariableFont_opsz,wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/SourceSans3-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/SourceSans3-Italic-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Nunito Sans";
+  src: url("/fonts/NunitoSans-VariableFont_YTLC,opsz,wdth,wght.ttf") format("truetype");
+  font-weight: 200 1000;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Nunito Sans";
+  src: url("/fonts/NunitoSans-Italic-VariableFont_YTLC,opsz,wdth,wght.ttf") format("truetype");
+  font-weight: 200 1000;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("/fonts/AtkinsonHyperlegible-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("/fonts/AtkinsonHyperlegible-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("/fonts/AtkinsonHyperlegible-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("/fonts/AtkinsonHyperlegible-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 /* ============================================================================
    Global Multiplier Tokens
    ========================================================================= */

@@ -5,6 +5,7 @@
 
 export const TUG_TOKEN_NAMES: readonly string[] = [
   "--tug-chrome-height",
+  "--tug-font-family-editor",
   "--tug-font-family-mono",
   "--tug-font-family-sans",
   "--tug-font-size-2xl",

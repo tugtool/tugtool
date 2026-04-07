@@ -42,6 +42,7 @@ body {
   --tug-icon-size-xs: 12px;
 
   /* Font */
+  --tug-font-family-editor: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
   --tug-font-family-mono: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
   --tug-font-family-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --tug-font-size-2xl: 24px;

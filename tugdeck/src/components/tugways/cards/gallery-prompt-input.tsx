@@ -12,10 +12,12 @@
  *   [L07] Providers are stable refs created once per scope
  */
 
-import React, { useRef, useCallback, useMemo, useState } from "react";
+import React, { useRef, useCallback, useMemo, useState, useEffect } from "react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import type { AtomSegment, CompletionProvider, InputAction } from "@/lib/tug-text-engine";
@@ -25,6 +27,8 @@ import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { FeedId } from "@/protocol";
+import { getEditorSettings, putEditorSettings } from "@/settings-api";
+import type { EditorSettings } from "@/settings-api";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -52,6 +56,58 @@ function galleryDropHandler(files: FileList): AtomSegment[] {
   }
   return atoms;
 }
+
+// ===================================================================
+// Editor font options
+// ===================================================================
+
+const EDITOR_FONT_OPTIONS: TugPopupMenuItem[] = [
+  { id: "plex-sans", label: "IBM Plex Sans" },
+  { id: "inter", label: "Inter" },
+  { id: "source-sans", label: "Source Sans 3" },
+  { id: "atkinson", label: "Atkinson Hyperlegible" },
+  { id: "nunito-sans", label: "Nunito Sans" },
+  { id: "hack", label: "Hack (mono)" },
+];
+
+const EDITOR_FONT_STACKS: Record<string, string> = {
+  "plex-sans": '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+  "inter": '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+  "source-sans": '"Source Sans 3", "Source Sans Pro", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+  "atkinson": '"Atkinson Hyperlegible", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+  "nunito-sans": '"Nunito Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+  "hack": '"Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace',
+};
+
+/** Default font size per font (mono reads larger than proportional). */
+const EDITOR_FONT_DEFAULT_SIZE: Record<string, number> = {
+  "plex-sans": 14, "inter": 14, "source-sans": 14,
+  "atkinson": 14, "nunito-sans": 14, "hack": 13,
+};
+
+const FONT_SIZE_OPTIONS: TugPopupMenuItem[] = [
+  { id: "11", label: "11 px" },
+  { id: "12", label: "12 px" },
+  { id: "13", label: "13 px" },
+  { id: "14", label: "14 px" },
+  { id: "15", label: "15 px" },
+  { id: "16", label: "16 px" },
+  { id: "18", label: "18 px" },
+];
+
+const LETTER_SPACING_OPTIONS: TugPopupMenuItem[] = [
+  { id: "-0.25", label: "-0.25 px" },
+  { id: "-0.15", label: "-0.15 px" },
+  { id: "-0.10", label: "-0.10 px" },
+  { id: "-0.05", label: "-0.05 px" },
+  { id: "0", label: "Normal" },
+];
+
+const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
+  fontId: "hack",
+  fontSize: 13,
+  letterSpacing: 0,
+};
 
 const RETURN_CHOICES: TugChoiceItem[] = [
   { value: "submit", label: "Submits" },
@@ -148,9 +204,13 @@ export function GalleryPromptInput() {
   const inputRef = useRef<TugTextInputDelegate>(null);
   const nextAtomIdx = useRef(0);
   const routeRef = useRef<HTMLSpanElement>(null);
+  const editorWrapRef = useRef<HTMLDivElement>(null);
   const [returnAction, setReturnAction] = useState<InputAction>("newline");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
   const [maximized, setMaximized] = useState(false);
+  const [editorFont, setEditorFont] = useState(DEFAULT_EDITOR_SETTINGS.fontId);
+  const [fontSize, setFontSize] = useState(DEFAULT_EDITOR_SETTINGS.fontSize);
+  const [letterSpacing, setLetterSpacing] = useState(DEFAULT_EDITOR_SETTINGS.letterSpacing);
 
   // Stable reference — provider functions are cached, no deps change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,6 +270,62 @@ export function GalleryPromptInput() {
     if (routeRef.current) routeRef.current.textContent = route ?? "none";
   }, []);
 
+  /** Apply all three editor style properties to the wrapper div. */
+  const applyEditorStyles = useCallback((fontId: string, size: number, spacing: number) => {
+    const el = editorWrapRef.current;
+    if (!el) return;
+    const stack = EDITOR_FONT_STACKS[fontId];
+    if (stack) el.style.setProperty("--tug-font-family-editor", stack);
+    el.style.setProperty("--tug-font-size-editor", `${size}px`);
+    el.style.setProperty("--tug-letter-spacing-editor", spacing === 0 ? "normal" : `${spacing}px`);
+  }, []);
+
+  /** Persist current settings to tugbank (fire-and-forget). */
+  const persistRef = useRef<EditorSettings>(DEFAULT_EDITOR_SETTINGS);
+  const persist = useCallback(() => {
+    putEditorSettings(persistRef.current);
+  }, []);
+
+  const handleFontChange = useCallback((id: string) => {
+    const size = EDITOR_FONT_DEFAULT_SIZE[id] ?? 13;
+    setEditorFont(id);
+    setFontSize(size);
+    applyEditorStyles(id, size, persistRef.current.letterSpacing);
+    persistRef.current = { ...persistRef.current, fontId: id, fontSize: size };
+    persist();
+  }, [applyEditorStyles, persist]);
+
+  const handleFontSizeChange = useCallback((id: string) => {
+    const size = parseInt(id, 10);
+    setFontSize(size);
+    applyEditorStyles(persistRef.current.fontId, size, persistRef.current.letterSpacing);
+    persistRef.current = { ...persistRef.current, fontSize: size };
+    persist();
+  }, [applyEditorStyles, persist]);
+
+  const handleLetterSpacingChange = useCallback((id: string) => {
+    const spacing = parseFloat(id);
+    setLetterSpacing(spacing);
+    applyEditorStyles(persistRef.current.fontId, persistRef.current.fontSize, spacing);
+    persistRef.current = { ...persistRef.current, letterSpacing: spacing };
+    persist();
+  }, [applyEditorStyles, persist]);
+
+  // Load persisted settings on mount.
+  useEffect(() => {
+    getEditorSettings().then((saved) => {
+      if (!saved) return;
+      const fontId = EDITOR_FONT_STACKS[saved.fontId] ? saved.fontId : DEFAULT_EDITOR_SETTINGS.fontId;
+      const size = saved.fontSize ?? EDITOR_FONT_DEFAULT_SIZE[fontId] ?? 13;
+      const spacing = saved.letterSpacing ?? 0;
+      setEditorFont(fontId);
+      setFontSize(size);
+      setLetterSpacing(spacing);
+      persistRef.current = { fontId, fontSize: size, letterSpacing: spacing };
+      applyEditorStyles(fontId, size, spacing);
+    });
+  }, [applyEditorStyles]);
+
   return (
     <div className="cg-content" data-testid="gallery-prompt-input">
 
@@ -223,10 +339,29 @@ export function GalleryPromptInput() {
             <TugPushButton size="sm" emphasis="ghost" onClick={() => setMaximized((m: boolean) => !m)}>
               {maximized ? "Minimize" : "Maximize"}
             </TugPushButton>
+            <TugPopupButton
+              label={EDITOR_FONT_OPTIONS.find(f => f.id === editorFont)?.label ?? "Font"}
+              items={EDITOR_FONT_OPTIONS}
+              onSelect={handleFontChange}
+              size="sm"
+            />
+            <TugPopupButton
+              label={`${fontSize}px`}
+              items={FONT_SIZE_OPTIONS}
+              onSelect={handleFontSizeChange}
+              size="sm"
+            />
+            <TugPopupButton
+              label={letterSpacing === 0 ? "Spacing: 0" : `Spacing: ${letterSpacing > 0 ? "+" : ""}${letterSpacing}`}
+              items={LETTER_SPACING_OPTIONS}
+              onSelect={handleLetterSpacingChange}
+              size="sm"
+            />
             <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
-              Route: <span ref={routeRef} style={{ fontFamily: "var(--tug-font-mono)" }}>&gt;</span>
+              Route: <span ref={routeRef} style={{ fontFamily: "var(--tug-font-family-mono)" }}>&gt;</span>
             </span>
           </div>
+          <div ref={editorWrapRef}>
           <TugPromptInput
             ref={inputRef}
             placeholder="Type here... @ for file, / for command, drag files, test IME, Return vs Enter"
@@ -241,6 +376,7 @@ export function GalleryPromptInput() {
             routePrefixes={[">", "$", ":", "/"]}
             onRouteChange={handleRouteChange}
           />
+          </div>
         </div>
       </div>
 

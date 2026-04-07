@@ -153,6 +153,56 @@ export function putFocusedCardId(focusedCardId: string): void {
   });
 }
 
+// ── Editor settings ─────────────────────────────────────────────────────────
+
+/** Editor settings shape stored in tugbank. */
+export interface EditorSettings {
+  fontId: string;
+  fontSize: number;
+  letterSpacing: number;
+}
+
+/**
+ * Read editor settings from the TugbankClient cache.
+ */
+export function readEditorSettings(client: TugbankClient): EditorSettings | null {
+  const entry = client.get("dev.tugtool.editor", "settings");
+  if (entry && entry.kind === "json" && entry.value !== undefined) {
+    return entry.value as EditorSettings;
+  }
+  return null;
+}
+
+/**
+ * PUT editor settings to tugbank (fire-and-forget).
+ */
+export function putEditorSettings(settings: EditorSettings): void {
+  fetch("/api/defaults/dev.tugtool.editor/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: settings }),
+  }).catch((err) => {
+    console.warn("[settings] PUT editorSettings failed:", err);
+  });
+}
+
+/**
+ * GET editor settings from tugbank (HTTP, for use without TugbankClient).
+ */
+export async function getEditorSettings(): Promise<EditorSettings | null> {
+  try {
+    const response = await fetch("/api/defaults/dev.tugtool.editor/settings");
+    if (response.status === 404) return null;
+    const tagged = await response.json() as { kind: string; value: unknown };
+    if (tagged.kind === "json" && tagged.value !== undefined) {
+      return tagged.value as EditorSettings;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * PUT prompt history for a session to tugbank (fire-and-forget).
  *
