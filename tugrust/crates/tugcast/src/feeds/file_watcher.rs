@@ -10,7 +10,6 @@ use std::sync::mpsc as std_mpsc;
 use std::time::Duration;
 
 use ignore::WalkBuilder;
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use tokio::sync::broadcast;
@@ -138,9 +137,6 @@ impl FileWatcher {
     pub async fn run(self, tx: broadcast::Sender<Vec<FsEvent>>, cancel: CancellationToken) {
         let watch_path = self.resolver.watch_path().to_path_buf();
 
-        // TODO: gitignore filtering disabled for event debugging — re-enable
-        // let mut gitignore = build_gitignore(&watch_path);
-
         // Create std::sync::mpsc channel for notify watcher
         let (event_tx, event_rx) = std_mpsc::channel();
 
@@ -172,16 +168,11 @@ impl FileWatcher {
 
             // Drain all available events from the std channel (non-blocking)
             let mut received_events = false;
-            let mut _gitignore_changed = false;
 
             loop {
                 match event_rx.try_recv() {
                     Ok(Ok(event)) => {
                         received_events = true;
-                        // Check for .gitignore changes before filtering
-                        if is_gitignore_event(&event) {
-                            _gitignore_changed = true;
-                        }
                         let fs_events = convert_event(&event, &self);
                         for ev in fs_events {
                             batch.push(ev);
@@ -205,9 +196,6 @@ impl FileWatcher {
                 loop {
                     match event_rx.try_recv() {
                         Ok(Ok(event)) => {
-                            if is_gitignore_event(&event) {
-                                _gitignore_changed = true;
-                            }
                             let fs_events = convert_event(&event, &self);
                             for ev in fs_events {
                                 batch.push(ev);
@@ -224,136 +212,16 @@ impl FileWatcher {
                     }
                 }
 
-                // TODO: gitignore rebuild disabled for event debugging
-                // if gitignore_changed {
-                //     debug!(".gitignore changed, rebuilding matcher");
-                //     gitignore = build_gitignore(&watch_path);
-                // }
-
-                // Deduplicate only — gitignore filtering disabled for now
+                // Deduplicate redundant Modified events
                 deduplicate_batch(&mut batch);
 
                 if !batch.is_empty() {
-                    // send() returns Err only if there are no receivers; that's fine
                     let _ = tx.send(batch.clone());
                     batch.clear();
                 }
             } else {
                 sleep(poll_duration).await;
             }
-        }
-    }
-}
-
-/// Check if a notify Event touches a .gitignore file
-pub(crate) fn is_gitignore_event(event: &Event) -> bool {
-    event
-        .paths
-        .iter()
-        .any(|p| p.file_name().map(|n| n == ".gitignore").unwrap_or(false))
-}
-
-/// Build gitignore matcher from all .gitignore files found under the watch directory.
-///
-/// Uses `WalkBuilder` to discover `.gitignore` files at every directory level
-/// (matching the coverage of `walk()`), then loads each one into a
-/// `GitignoreBuilder`. This ensures that when a nested `.gitignore` changes and
-/// the matcher is rebuilt, the new rules are picked up.
-// TODO: temporarily unused while gitignore event filtering is disabled
-#[allow(dead_code)]
-pub(crate) fn build_gitignore(watch_dir: &Path) -> Gitignore {
-    let mut builder = GitignoreBuilder::new(watch_dir);
-
-    // Walk the directory tree to discover .gitignore files at all levels.
-    // We do NOT apply gitignore filtering during this walk — we want to find
-    // all .gitignore files even inside otherwise-ignored directories.
-    let walker = WalkBuilder::new(watch_dir)
-        .hidden(false)
-        .git_ignore(false)
-        .git_global(false)
-        .git_exclude(false)
-        .require_git(false)
-        .build();
-
-    for entry in walker {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
-                warn!(error = %e, "error walking directory while building gitignore");
-                continue;
-            }
-        };
-
-        // Only interested in files named exactly ".gitignore"
-        if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
-            && entry.file_name() == ".gitignore"
-        {
-            let path = entry.path();
-            if let Some(err) = builder.add(path) {
-                warn!(path = ?path, error = %err, "failed to load .gitignore");
-            }
-        }
-    }
-
-    match builder.build() {
-        Ok(gi) => gi,
-        Err(e) => {
-            warn!(error = %e, "failed to build gitignore matcher, using empty matcher");
-            GitignoreBuilder::new(watch_dir).build().unwrap()
-        }
-    }
-}
-
-/// Check if a path should be ignored according to gitignore rules
-// TODO: temporarily unused while gitignore event filtering is disabled
-#[allow(dead_code)]
-pub(crate) fn is_ignored(path: &Path, watch_dir: &Path, gitignore: &Gitignore) -> bool {
-    let relative = match path.strip_prefix(watch_dir) {
-        Ok(rel) => rel,
-        Err(_) => path,
-    };
-
-    // Always ignore the .git directory itself
-    if relative.starts_with(".git") {
-        return true;
-    }
-
-    // Check if this path is a directory by checking filesystem, or assume file if not exists
-    let is_dir = path.is_dir();
-
-    // Check the path itself
-    if gitignore.matched(relative, is_dir).is_ignore() {
-        return true;
-    }
-
-    // Check if any parent directory is ignored (matched() does not propagate
-    // directory-level ignores to children, so we must walk up explicitly)
-    for ancestor in relative.ancestors().skip(1) {
-        if ancestor == Path::new("") {
-            break;
-        }
-        if gitignore.matched(ancestor, true).is_ignore() {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Check if an FsEvent should be ignored
-// TODO: temporarily unused while gitignore event filtering is disabled
-#[allow(dead_code)]
-pub(crate) fn is_fsevent_ignored(event: &FsEvent, watch_dir: &Path, gitignore: &Gitignore) -> bool {
-    match event {
-        FsEvent::Created { path } | FsEvent::Modified { path } | FsEvent::Removed { path } => {
-            let full_path = watch_dir.join(path);
-            is_ignored(&full_path, watch_dir, gitignore)
-        }
-        FsEvent::Renamed { from, to } => {
-            let from_path = watch_dir.join(from);
-            let to_path = watch_dir.join(to);
-            is_ignored(&from_path, watch_dir, gitignore)
-                && is_ignored(&to_path, watch_dir, gitignore)
         }
     }
 }
@@ -700,63 +568,5 @@ mod tests {
         deduplicate_batch(&mut batch);
         assert_eq!(batch.len(), 1);
         assert!(matches!(batch[0], FsEvent::Created { .. }));
-    }
-
-    // ── build_gitignore() tests ───────────────────────────────────────────────
-
-    #[test]
-    fn test_build_gitignore_loads_root_gitignore() {
-        let temp_dir = TempDir::new().unwrap();
-        let root = temp_dir.path().to_path_buf();
-
-        fs::write(root.join(".gitignore"), "*.log\n").unwrap();
-        fs::write(root.join("debug.log"), "data").unwrap();
-        fs::write(root.join("README.md"), "readme").unwrap();
-
-        let gitignore = build_gitignore(&root);
-
-        // debug.log is matched by *.log rule
-        let log_path = Path::new("debug.log");
-        assert!(
-            gitignore.matched(log_path, false).is_ignore(),
-            "*.log should be ignored"
-        );
-
-        // README.md is not ignored
-        let readme_path = Path::new("README.md");
-        assert!(
-            !gitignore.matched(readme_path, false).is_ignore(),
-            "README.md should not be ignored"
-        );
-    }
-
-    #[test]
-    fn test_build_gitignore_discovers_nested_gitignore() {
-        let temp_dir = TempDir::new().unwrap();
-        let root = temp_dir.path().to_path_buf();
-
-        // Nested subdir with its own .gitignore that ignores *.tmp
-        // (no root .gitignore — this rule only exists in a subdirectory)
-        fs::create_dir(root.join("work")).unwrap();
-        fs::write(root.join("work/.gitignore"), "*.tmp\n").unwrap();
-        fs::write(root.join("work/scratch.tmp"), "").unwrap();
-        fs::write(root.join("README.md"), "readme").unwrap();
-
-        let gitignore = build_gitignore(&root);
-
-        // The nested .gitignore rule should be loaded, so *.tmp is ignored
-        // (GitignoreBuilder without directory scoping, so **/*.tmp matches globally)
-        let nested_tmp = Path::new("work/scratch.tmp");
-        assert!(
-            gitignore.matched(nested_tmp, false).is_ignore(),
-            "work/scratch.tmp should be ignored by nested .gitignore"
-        );
-
-        // README.md should not be ignored
-        let readme = Path::new("README.md");
-        assert!(
-            !gitignore.matched(readme, false).is_ignore(),
-            "README.md should not be ignored"
-        );
     }
 }

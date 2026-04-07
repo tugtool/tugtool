@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use tugcast_core::types::{FsEvent, ScoredResult};
 use tugcast_core::{FeedId, FileTreeSnapshot, Frame};
@@ -93,6 +93,17 @@ impl FileTreeFeed {
                     match result {
                         Ok(events) => {
                             self.apply_events(&events);
+                            // If a .gitignore changed, re-walk to reconcile
+                            // the BTreeSet with the new ignore rules.
+                            if events.iter().any(Self::is_gitignore_change) {
+                                info!("FileTreeFeed: .gitignore changed, re-walking");
+                                let watcher = FileWatcher::new(
+                                    self.current_root.clone(),
+                                );
+                                let (fresh_files, truncated) = watcher.walk();
+                                self.files = fresh_files;
+                                self.truncated = truncated;
+                            }
                         }
                         Err(broadcast::error::RecvError::Lagged(n)) => {
                             warn!("FileTreeFeed: lagged by {n} batches, index may be stale");
@@ -111,6 +122,17 @@ impl FileTreeFeed {
                 }
             }
         }
+    }
+
+    /// Check if an FsEvent touches a .gitignore file.
+    fn is_gitignore_change(event: &FsEvent) -> bool {
+        let path = match event {
+            FsEvent::Created { path } | FsEvent::Modified { path } | FsEvent::Removed { path } => {
+                path
+            }
+            FsEvent::Renamed { to, .. } => to,
+        };
+        path == ".gitignore" || path.ends_with("/.gitignore")
     }
 
     /// Apply filesystem events to the BTreeSet.

@@ -100,12 +100,6 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let watch_path = temp_dir.path().to_path_buf();
 
-        // Create .gitignore file
-        fs::write(watch_path.join(".gitignore"), "ignored_dir/\n").unwrap();
-
-        // Create ignored directory
-        fs::create_dir(watch_path.join("ignored_dir")).unwrap();
-
         // Create the broadcast channel and FileWatcher
         let (broadcast_tx, _) = broadcast::channel::<Vec<FsEvent>>(256);
         let file_watcher = FileWatcher::new(watch_path.clone());
@@ -145,10 +139,6 @@ mod tests {
         sleep(Duration::from_millis(50)).await;
         fs::remove_file(&test_file).unwrap();
 
-        // Create a file in ignored directory (should be filtered by FileWatcher)
-        let ignored_file = watch_path.join("ignored_dir/secret.txt");
-        fs::write(&ignored_file, "ignored").unwrap();
-
         // Wait for debounce and processing
         sleep(Duration::from_millis(400)).await;
 
@@ -160,26 +150,8 @@ mod tests {
 
         let events: Vec<FsEvent> = serde_json::from_slice(&frame.payload).unwrap();
 
-        // Verify we got events for the non-ignored file
+        // Verify we got events for the test file
         assert!(!events.is_empty(), "should have received filesystem events");
-
-        // Verify no events from ignored_dir
-        for event in &events {
-            match event {
-                FsEvent::Created { path }
-                | FsEvent::Modified { path }
-                | FsEvent::Removed { path } => {
-                    assert!(
-                        !path.starts_with("ignored_dir/"),
-                        "should not have events from ignored_dir"
-                    );
-                }
-                FsEvent::Renamed { from, to } => {
-                    assert!(!from.starts_with("ignored_dir/"));
-                    assert!(!to.starts_with("ignored_dir/"));
-                }
-            }
-        }
 
         // Cancel and wait for cleanup
         cancel.cancel();
