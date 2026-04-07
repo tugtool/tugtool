@@ -40,7 +40,7 @@ const WALK_CAP: usize = 50_000;
 
 /// Shared filesystem watcher service.
 ///
-/// Owns the notify watcher, gitignore handling, and initial directory walk.
+/// Owns the notify watcher and initial directory walk.
 /// Broadcasts `Vec<FsEvent>` batches to all subscribers.
 /// Uses `PathResolver` for robust path resolution across symlinks,
 /// synthetic firmlinks (macOS), APFS firmlinks, and Linux bind mounts.
