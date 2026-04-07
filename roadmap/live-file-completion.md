@@ -949,6 +949,80 @@ Boundary rules (unchanged logic, broader coverage):
 
 ---
 
+#### Step 13: Integrate PathResolver into FileWatcher {#step-13}
+
+**Depends on:** #step-12
+
+**Commit:** `fix(tugcast): integrate PathResolver for robust path resolution`
+
+**References:** [roadmap/robust-path-resolution.md], spike results from `/tmp/path-resolver-spike/`
+
+**Problem:**
+
+The FileWatcher registers its `notify` watcher using the `watch_dir` path as-is. On macOS with synthetic firmlinks (via `/etc/synthetic.conf`), FSEvents does NOT fire events for synthetic paths (`/u/...`) or their canonical forms (`/System/Volumes/Data/...`). Only the APFS firmlink form (`/Users/kocienda/Mounts/u/...`) works — proven by spike testing. The current ad-hoc inode-walking fallback in `strip_to_relative` never fires because **no events arrive in the first place** when the wrong path form is registered.
+
+**Approach:**
+
+Replace the ad-hoc path handling in `FileWatcher` with the spike-proven `PathResolver` from `/tmp/path-resolver-spike/src/path_resolver.rs`. The resolver:
+1. Parses `/etc/synthetic.conf` (macOS) to resolve synthetic firmlink paths
+2. Strips `/System/Volumes/Data` from APFS firmlink targets to get the FSEvents-compatible form
+3. Verifies every resolution with `(dev, ino)` identity comparison
+4. Provides `watch_path()` (the form to register with notify) and `to_relative()` (event path → relative path)
+5. Caches discovered alt prefixes for O(1) subsequent lookups
+6. Detects autofs mounts and holds a keep-alive fd to prevent idle unmount
+
+**Artifacts:**
+- New file `tugrust/crates/tugcast/src/feeds/path_resolver.rs` — the `PathResolver` struct (moved from spike, cleaned up)
+- Modified `tugrust/crates/tugcast/src/feeds/file_watcher.rs` — use `PathResolver` instead of ad-hoc `watch_dir_identity` / `strip_to_relative` / `alt_prefixes`
+- Modified `tugrust/crates/tugcast/src/feeds/mod.rs` — add `pub mod path_resolver`
+- Modified `tugrust/crates/tugcast/src/main.rs` — pass resolved path to `FileWatcher::new()`
+
+**Tasks:**
+
+*Create PathResolver module:*
+- [ ] Move the spike's `path_resolver.rs` to `tugrust/crates/tugcast/src/feeds/path_resolver.rs`
+- [ ] Replace `eprintln!` with `tracing` macros (`info!`, `warn!`)
+- [ ] Add `pub mod path_resolver` to `feeds/mod.rs`
+- [ ] Replace `mount` command shelling out in `check_autofs` with `libc::statfs` for proper autofs detection
+
+*Refactor FileWatcher to use PathResolver:*
+- [ ] Remove `watch_dir_identity: (u64, u64)`, `alt_prefixes: Mutex<Vec<PathBuf>>`, `strip_to_relative()`, and `resolve_by_inode()` from `FileWatcher`
+- [ ] Add `resolver: PathResolver` field to `FileWatcher`
+- [ ] `FileWatcher::new(watch_dir)` creates a `PathResolver`, stores it, uses `resolver.watch_path()` as `self.watch_dir`
+- [ ] `convert_event` uses `watcher.resolver.to_relative(p)` instead of `watcher.strip_to_relative(p)`
+- [ ] `walk()` uses `self.resolver.to_relative(path)` for consistent relative path computation
+- [ ] `run()` registers the notify watcher on `self.resolver.watch_path()`, not `self.watch_dir`
+
+*Update main.rs:*
+- [ ] Remove the `dev::resolve_symlinks` call — `PathResolver::new()` handles all resolution
+- [ ] Pass the original `cli.dir` path to `FileWatcher::new()` — the resolver handles everything
+
+*Remove diagnostic logging:*
+- [ ] Remove the `info!` lines added for event debugging in `file_watcher.rs` (the resolver makes them unnecessary)
+
+**Tests:**
+
+Integration test (real filesystem, real watcher):
+- [ ] `filewatcher_events_update_filetree_index` — existing test, verify it still passes with PathResolver
+- [ ] New: test with a symlinked temp directory — create a symlink to a real temp dir, create `FileWatcher` on the symlink path, verify events fire and `to_relative` works
+
+Manual verification (the user's acceptance test):
+- [ ] Start Tug.app (which passes `--dir /u/src/tugtool`)
+- [ ] Verify the `@` trigger shows existing project files
+- [ ] Create a new file in the project root (e.g., `touch /u/src/tugtool/spike-files/manual-test.txt`)
+- [ ] Verify the file appears in `@` completions without app restart
+- [ ] Remove the file
+- [ ] Verify the file disappears from `@` completions without app restart
+- [ ] Repeat with CJK filename (`カタカナ.txt`) and emoji filename (`😉.txt`)
+
+**Checkpoint:**
+- [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo build`
+- [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo nextest run`
+- [ ] `just ci` passes
+- [ ] Manual create/remove test passes on live app
+
+---
+
 ### Deliverables and Checkpoints {#deliverables}
 
 **Deliverable:** Live fuzzy-scored file completion for the `@` trigger — tugcast indexes project files via a shared FileWatcher service, scores queries with a two-layer fuzzy matcher in Rust, and returns top-N scored results to tugdeck via a query/response channel.
@@ -967,6 +1041,8 @@ Boundary rules (unchanged logic, broader coverage):
 - [x] Backtracker recovers the exact alignment that produced the score
 - [ ] Fuzzy scorer operates on Unicode characters, not bytes — correct for CJK, accented Latin, emoji paths. Match ranges are UTF-16 code unit offsets for JavaScript compatibility.
 - [x] Malformed FILETREE_QUERY payloads logged, not silently dropped
+- [ ] PathResolver resolves synthetic firmlinks, APFS firmlinks, symlinks — FSEvents fires events on resolved path
+- [ ] File index updates live: create file → appears in completions, remove file → disappears, no restart needed
 - [x] `cd tugrust && cargo nextest run` passes
 - [x] `cd tugdeck && bun test` passes
 
@@ -984,6 +1060,9 @@ Boundary rules (unchanged logic, broader coverage):
 - [x] FileTreeStore parses FILETREE response and returns scored completion items with deduplication and staleness checks (TypeScript unit test)
 - [x] Text engine subscribes to async provider on typeahead activation, refreshes on notification, unsubscribes on deactivation (TypeScript unit test)
 - [x] FILESYSTEM integration test passes unchanged after refactor (Rust integration test)
+- [ ] PathResolver: synthetic firmlink `/u/...` resolves to `/Users/.../Mounts/u/...` (verified by spike)
+- [ ] PathResolver: `to_relative` works for all three path forms (original, primary, canonical)
+- [ ] Live file index: create a file → next `@` query includes it; remove → next query excludes it
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

@@ -132,14 +132,14 @@ async fn main() {
     let feed = TerminalFeed::new(cli.session.clone());
     let input_tx = feed.input_sender();
 
-    // Resolve watch directory: make absolute, then resolve symlinks so that
-    // paths from FSEvents match our prefix for strip_prefix filtering.
+    // Make the watch directory absolute. PathResolver inside FileWatcher
+    // handles all further resolution (symlinks, synthetic firmlinks, APFS
+    // firmlinks, Linux bind mounts).
     let watch_dir = if cli.dir.is_absolute() {
         cli.dir.clone()
     } else {
         std::env::current_dir().unwrap_or_default().join(&cli.dir)
     };
-    let watch_dir = dev::resolve_symlinks(&watch_dir).unwrap_or(watch_dir);
 
     // Open the TugbankClient. On success, wrap in Arc for shared ownership between
     // migration, the defaults feed, and the HTTP server. On failure, log a warning
