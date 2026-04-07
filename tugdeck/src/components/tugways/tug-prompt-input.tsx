@@ -340,6 +340,10 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
             label.textContent = item.label;
           }
           div.appendChild(label);
+          div.addEventListener("pointermove", () => {
+            // Move keyboard selection to the hovered item — one highlight.
+            engine.typeaheadNavigate(i);
+          });
           div.addEventListener("pointerdown", (e) => {
             e.preventDefault(); // Don't steal focus from editor
             engine.acceptTypeahead(i);

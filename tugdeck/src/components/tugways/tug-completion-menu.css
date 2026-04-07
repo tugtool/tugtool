@@ -69,10 +69,10 @@ body {
    Item — hover state
    --------------------------------------------------------------------------- */
 
-.tug-completion-menu-item:hover {
-  background-color: var(--tugx-completion-item-hover-bg);
-  color: var(--tugx-completion-item-hover-fg);
-}
+/* No :hover rule — mouse hover updates the keyboard selection index via
+   pointermove, so only .tug-completion-menu-item-selected shows a highlight.
+   This prevents the confusing "two highlights" when mouse and keyboard
+   point at different items. */
 
 /* ---------------------------------------------------------------------------
    Item — selected state (keyboard navigation)

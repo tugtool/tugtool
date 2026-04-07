@@ -97,7 +97,7 @@ export interface TugTextInputDelegate {
   readonly isTypeaheadActive: boolean;
   acceptTypeahead(index?: number): void;
   cancelTypeahead(): void;
-  typeaheadNavigate(direction: "up" | "down"): void;
+  typeaheadNavigate(direction: "up" | "down" | number): void;
 
   // --- State management ---
   captureState(): TugTextEditingState;
@@ -882,9 +882,13 @@ export class TugTextEngine {
   }
 
   /** Navigate the typeahead selection up or down. */
-  typeaheadNavigate(direction: "up" | "down"): void {
+  typeaheadNavigate(direction: "up" | "down" | number): void {
     if (!this._typeahead.active) return;
-    if (direction === "down") {
+    if (typeof direction === "number") {
+      const idx = Math.max(0, Math.min(direction, this._typeahead.filtered.length - 1));
+      if (idx === this._typeahead.selectedIndex) return; // avoid redundant updates
+      this._typeahead.selectedIndex = idx;
+    } else if (direction === "down") {
       this._typeahead.selectedIndex = Math.min(this._typeahead.selectedIndex + 1, this._typeahead.filtered.length - 1);
     } else {
       this._typeahead.selectedIndex = Math.max(this._typeahead.selectedIndex - 1, 0);
