@@ -698,30 +698,14 @@ export class TugTextEngine {
     // If the prefix is also a completion trigger, activate typeahead manually
     const provider = this.completionProviders[firstChar];
     if (provider) {
-      // Use the route atom's rect as the anchor — the caret rect is unreliable
-      // after multiple execCommands in the same handler.
+      this.activateTypeaheadAt(firstChar, provider, 1, "");
+      // Override: use the route atom's rect as the anchor — the caret rect
+      // is unreliable after multiple execCommands in the same handler.
       const routeAtom = this.root.childNodes[0];
-      const anchorRect = routeAtom && routeAtom.nodeType === Node.ELEMENT_NODE
-        ? (routeAtom as HTMLElement).getBoundingClientRect()
-        : null;
-      this._typeahead.active = true;
-      this._typeahead.trigger = firstChar;
-      this._typeahead.provider = provider;
-      this._typeahead.anchorOffset = 1;
-      this._typeahead.anchorRect = anchorRect;
-      this._typeahead.query = "";
-      this._typeahead.triggerConsumed = true;
-      this._typeahead.filtered = provider("");
-      this._typeahead.selectedIndex = 0;
-
-      // Subscribe to async providers for L22 result notification.
-      if (provider.subscribe) {
-        this._typeahead.unsubscribe = provider.subscribe(() => {
-          this.refreshTypeahead();
-        });
+      if (routeAtom && routeAtom.nodeType === Node.ELEMENT_NODE) {
+        this._typeahead.anchorRect = (routeAtom as HTMLElement).getBoundingClientRect();
       }
-
-      this.onTypeaheadChange?.(true, this._typeahead.filtered, 0);
+      this._typeahead.triggerConsumed = true;
     }
   }
 
@@ -736,21 +720,50 @@ export class TugTextEngine {
     if (range.start === 0) return;
 
     const text = this.getText();
-    const char = text[range.start - 1];
-    const provider = this.completionProviders[char];
-    if (!provider) return;
 
+    // Check 1: the character just typed IS a trigger (fresh @ typed).
+    const justTyped = text[range.start - 1];
+    let provider = this.completionProviders[justTyped];
+    if (provider) {
+      this.activateTypeaheadAt(justTyped, provider, range.start - 1, "");
+      return;
+    }
+
+    // Check 2: caret is inside an existing trigger string (e.g., after Escape
+    // then continued typing, or backspace reconnecting to @). Scan backward
+    // from the caret for a trigger character with no spaces or newlines between.
+    let scanPos = range.start - 1;
+    while (scanPos >= 0) {
+      const ch = text[scanPos];
+      if (ch === " " || ch === "\n") return; // gap — not connected
+      provider = this.completionProviders[ch];
+      if (provider) {
+        const query = text.slice(scanPos + 1, range.start);
+        this.activateTypeaheadAt(ch, provider, scanPos, query);
+        return;
+      }
+      scanPos--;
+    }
+  }
+
+  /** Shared activation logic for detectTypeaheadTrigger and route-prefix activation. */
+  private activateTypeaheadAt(
+    trigger: string,
+    provider: CompletionProvider,
+    anchorOffset: number,
+    query: string,
+  ): void {
     // Capture caret rect for popup anchoring
     const sel = window.getSelection();
     const anchorRect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null;
 
     this._typeahead.active = true;
-    this._typeahead.trigger = char;
+    this._typeahead.trigger = trigger;
     this._typeahead.provider = provider;
-    this._typeahead.anchorOffset = range.start - 1;
+    this._typeahead.anchorOffset = anchorOffset;
     this._typeahead.anchorRect = anchorRect;
-    this._typeahead.query = "";
-    this._typeahead.filtered = provider("");
+    this._typeahead.query = query;
+    this._typeahead.filtered = provider(query);
     this._typeahead.selectedIndex = 0;
 
     // Subscribe to async providers for L22 result notification.

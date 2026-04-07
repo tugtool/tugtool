@@ -1,20 +1,35 @@
 /* @tug-pairings {
-  --tug7-element-global-text-normal-default-rest     | --tug7-surface-global-primary-normal-overlay-rest | content
-  --tug7-element-global-text-normal-muted-rest       | --tug7-surface-global-primary-normal-overlay-rest | informational
-  --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-overlay-rest | informational
-  --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-global-primary-normal-overlay-rest | content
+  --tugx-completion-fg                              | --tugx-completion-bg                              | content
+  --tugx-completion-border                          | --tugx-completion-bg                              | informational
+  --tugx-completion-item-hover-fg                   | --tugx-completion-item-hover-bg                   | control
 } */
 
 /**
  * @tug-pairings
- * | Element                                            | Surface                                           | Role          | Context                                              |
- * |----------------------------------------------------|---------------------------------------------------|---------------|------------------------------------------------------|
- * | --tug7-element-global-text-normal-default-rest     | --tug7-surface-global-primary-normal-overlay-rest  | content       | .tug-completion-menu-item (color)                    |
- * | --tug7-element-global-text-normal-muted-rest       | --tug7-surface-global-primary-normal-overlay-rest  | informational | .tug-completion-menu-item atom type icon (color)     |
- * | --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-overlay-rest  | informational | .tug-completion-menu (border-color)                  |
- * | --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-global-primary-normal-overlay-rest  | content       | .tug-completion-menu-item-selected (background-color)|
- * | (none — font-weight only)                          | --tug7-surface-global-primary-normal-overlay-rest  | content       | .tug-completion-match (font-weight)                  |
+ * | Element                                            | Surface                                            | Role          | Context                                                       |
+ * |----------------------------------------------------|----------------------------------------------------|---------------|---------------------------------------------------------------|
+ * | --tugx-completion-fg                               | --tugx-completion-bg                               | content       | .tug-completion-menu-item (color)                             |
+ * | --tugx-completion-border                           | --tugx-completion-bg                               | informational | .tug-completion-menu (border-color)                           |
+ * | --tugx-completion-item-hover-fg                    | --tugx-completion-item-hover-bg                    | control       | .tug-completion-menu-item:hover, -selected (bg + color)       |
+ * | (none — font-weight only)                          | --tugx-completion-bg                               | content       | .tug-completion-match (font-weight)                           |
  */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ----
+ *
+ * Shares the overlay surface family with TugPopover and TugPopupMenu:
+ * same background, foreground, border, and shadow tokens.
+ * The hover/selected highlight uses the filled-action-hover control
+ * tokens — same as tug-menu.css .tug-menu-item[data-highlighted].
+ */
+
+body {
+  --tugx-completion-bg:              var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-completion-fg:              var(--tug7-element-global-text-normal-default-rest);
+  --tugx-completion-border:          var(--tug7-element-global-border-normal-default-rest);
+  --tugx-completion-shadow:          var(--tug7-element-global-shadow-normal-overlay-rest);
+  --tugx-completion-item-hover-bg:   var(--tug7-surface-control-primary-filled-action-hover);
+  --tugx-completion-item-hover-fg:   var(--tug7-element-control-text-filled-action-hover);
+}
 
 /* ---------------------------------------------------------------------------
    Root container — floating panel
@@ -28,11 +43,12 @@
   max-height: 240px;
   overflow-y: auto;
   padding: 4px;
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-overlay-rest */
-  background-color: var(--tug7-surface-global-primary-normal-overlay-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  /* @tug-renders-on: --tugx-completion-bg */
+  background-color: var(--tugx-completion-bg);
+  color: var(--tugx-completion-fg);
+  border: 1px solid var(--tugx-completion-border);
   border-radius: var(--tug-radius-sm);
-  box-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
+  box-shadow: var(--tugx-completion-shadow);
 }
 
 /* ---------------------------------------------------------------------------
@@ -47,8 +63,6 @@
   border-radius: var(--tug-radius-xs);
   cursor: pointer;
   font-size: 13px;
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-overlay-rest */
-  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* ---------------------------------------------------------------------------
@@ -56,7 +70,8 @@
    --------------------------------------------------------------------------- */
 
 .tug-completion-menu-item:hover {
-  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  background-color: var(--tugx-completion-item-hover-bg);
+  color: var(--tugx-completion-item-hover-fg);
 }
 
 /* ---------------------------------------------------------------------------
@@ -64,7 +79,8 @@
    --------------------------------------------------------------------------- */
 
 .tug-completion-menu-item-selected {
-  background-color: var(--tug7-element-global-fill-normal-accentCool-rest);
+  background-color: var(--tugx-completion-item-hover-bg);
+  color: var(--tugx-completion-item-hover-fg);
 }
 
 /* ---------------------------------------------------------------------------
