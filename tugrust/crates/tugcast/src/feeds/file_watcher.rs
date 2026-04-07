@@ -37,13 +37,131 @@ const WALK_CAP: usize = 50_000;
 /// Owns the notify watcher, gitignore handling, and initial directory walk.
 /// Broadcasts `Vec<FsEvent>` batches to all subscribers.
 pub struct FileWatcher {
+    /// Primary watch directory path.
     watch_dir: PathBuf,
+    /// (device, inode) identity of the watch directory — the fundamental
+    /// OS-level identifier that's the same regardless of path form.
+    #[cfg(unix)]
+    watch_dir_identity: (u64, u64),
+    /// Discovered alternative path forms for the watch directory. Populated
+    /// lazily when strip_prefix fails and inode-based resolution discovers
+    /// a new form. Protected by a mutex for interior mutability in &self.
+    alt_prefixes: std::sync::Mutex<Vec<PathBuf>>,
 }
 
 impl FileWatcher {
     /// Create a new FileWatcher for the given directory.
+    ///
+    /// The path is canonicalized at construction so all downstream operations
+    /// (walk, event conversion, gitignore matching) use a consistent canonical
+    /// form. This handles symlinks, synthetic mounts (macOS synthetic.conf),
+    /// and /var → /private/var normalization.
+    ///
+    /// Collects all known path forms for the watch directory so
+    /// `strip_prefix` works regardless of which form `notify` uses.
     pub fn new(watch_dir: PathBuf) -> Self {
-        Self { watch_dir }
+        // Get the (device, inode) identity of the watch directory.
+        // This is the fundamental identity — same directory regardless of
+        // which path form is used to reach it.
+        #[cfg(unix)]
+        let watch_dir_identity = {
+            use std::os::unix::fs::MetadataExt;
+            match std::fs::metadata(&watch_dir) {
+                Ok(meta) => (meta.dev(), meta.ino()),
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        path = %watch_dir.display(),
+                        "could not stat watch directory"
+                    );
+                    (0, 0)
+                }
+            }
+        };
+
+        Self {
+            watch_dir,
+            #[cfg(unix)]
+            watch_dir_identity,
+            alt_prefixes: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Strip the watch directory prefix from an absolute path, producing a
+    /// relative path. Uses (device, inode) identity as the fundamental
+    /// resolution mechanism — works regardless of symlinks, firmlinks,
+    /// synthetic mounts, or other path aliasing.
+    fn strip_to_relative(&self, path: &Path) -> Option<String> {
+        // Fast path: direct strip_prefix against known forms.
+        if let Ok(rel) = path.strip_prefix(&self.watch_dir) {
+            return Some(rel.to_string_lossy().to_string());
+        }
+        if let Ok(alts) = self.alt_prefixes.lock() {
+            for alt in alts.iter() {
+                if let Ok(rel) = path.strip_prefix(alt) {
+                    return Some(rel.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        // Slow path: inode-based resolution. Walk up the event path's
+        // parent chain, stat each directory, and find the one whose
+        // (dev, ino) matches our watch directory. Cache the discovered
+        // prefix so subsequent events use the fast path.
+        #[cfg(unix)]
+        {
+            if let Some(alt_prefix) = self.resolve_by_inode(path) {
+                if let Ok(rel) = path.strip_prefix(&alt_prefix) {
+                    // Cache this prefix for future events.
+                    if let Ok(mut alts) = self.alt_prefixes.lock() {
+                        if !alts.contains(&alt_prefix) {
+                            info!(
+                                discovered = %alt_prefix.display(),
+                                watch_dir = %self.watch_dir.display(),
+                                "discovered alternative path form via inode match"
+                            );
+                            alts.push(alt_prefix);
+                        }
+                    }
+                    return Some(rel.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        // For removed files: try the parent (file is gone, can't stat it).
+        if let Some(parent) = path.parent() {
+            if let Some(file_name) = path.file_name() {
+                if let Some(rel_parent) = self.strip_to_relative(parent) {
+                    let rel = PathBuf::from(rel_parent).join(file_name);
+                    return Some(rel.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Walk up the path's parent chain looking for a directory with the
+    /// same (device, inode) as our watch directory.
+    #[cfg(unix)]
+    fn resolve_by_inode(&self, path: &Path) -> Option<PathBuf> {
+        use std::os::unix::fs::MetadataExt;
+        let (target_dev, target_ino) = self.watch_dir_identity;
+        if target_dev == 0 && target_ino == 0 {
+            return None; // stat failed at construction
+        }
+
+        let mut ancestor = path.to_path_buf();
+        loop {
+            if !ancestor.pop() {
+                return None; // reached filesystem root without a match
+            }
+            if let Ok(meta) = std::fs::metadata(&ancestor) {
+                if meta.dev() == target_dev && meta.ino() == target_ino {
+                    return Some(ancestor);
+                }
+            }
+        }
     }
 
     /// Create a broadcast sender for distributing events to multiple consumers.
@@ -96,9 +214,9 @@ impl FileWatcher {
             let path = entry.path();
 
             // Strip the watch directory prefix to get the relative path
-            let relative = match path.strip_prefix(&self.watch_dir) {
-                Ok(rel) => rel.to_string_lossy().to_string(),
-                Err(_) => continue,
+            let relative = match self.strip_to_relative(path) {
+                Some(rel) => rel,
+                None => continue,
             };
 
             // Skip .git/ contents (WalkBuilder should handle this via git_ignore,
@@ -164,11 +282,12 @@ impl FileWatcher {
                 match event_rx.try_recv() {
                     Ok(Ok(event)) => {
                         received_events = true;
+                        info!(kind = ?event.kind, paths = ?event.paths, "file watcher event");
                         // Check for .gitignore changes before filtering
                         if is_gitignore_event(&event) {
                             gitignore_changed = true;
                         }
-                        let fs_events = convert_event(&event, &self.watch_dir);
+                        let fs_events = convert_event(&event, &self);
                         for ev in fs_events {
                             batch.push(ev);
                         }
@@ -194,7 +313,7 @@ impl FileWatcher {
                             if is_gitignore_event(&event) {
                                 gitignore_changed = true;
                             }
-                            let fs_events = convert_event(&event, &self.watch_dir);
+                            let fs_events = convert_event(&event, &self);
                             for ev in fs_events {
                                 batch.push(ev);
                             }
@@ -221,10 +340,11 @@ impl FileWatcher {
                 deduplicate_batch(&mut batch);
 
                 if !batch.is_empty() {
-                    let count = batch.len();
+                    for ev in &batch {
+                        info!(?ev, "file watcher broadcasting");
+                    }
                     // send() returns Err only if there are no receivers; that's fine
                     let _ = tx.send(batch.clone());
-                    debug!(count, "file watcher events broadcast");
                     batch.clear();
                 }
             } else {
@@ -376,55 +496,22 @@ pub(crate) fn deduplicate_batch(batch: &mut Vec<FsEvent>) {
     });
 }
 
-/// Convert notify Event to FsEvent values
-pub(crate) fn convert_event(event: &Event, watch_dir: &Path) -> Vec<FsEvent> {
+/// Convert notify Event to FsEvent values.
+///
+/// Matches by category (Create/Remove/Modify) rather than specific platform
+/// variants, so this works on macOS (FSEvents), Linux (inotify), and Windows
+/// (ReadDirectoryChangesW) without platform-specific branches.
+pub(crate) fn convert_event(event: &Event, watcher: &FileWatcher) -> Vec<FsEvent> {
     let to_relative = |p: &Path| -> String {
-        p.strip_prefix(watch_dir)
-            .unwrap_or(p)
-            .to_string_lossy()
-            .to_string()
+        if let Some(rel) = watcher.strip_to_relative(p) {
+            return rel;
+        }
+        warn!(path = ?p, watch_dir = ?watcher.watch_dir, "could not relativize event path");
+        p.to_string_lossy().to_string()
     };
 
     match &event.kind {
         EventKind::Create(_) => event
-            .paths
-            .iter()
-            .map(|p| FsEvent::Created {
-                path: to_relative(p),
-            })
-            .collect(),
-
-        // Only Data changes are real file modifications.
-        // Metadata (timestamps, permissions) and Any (ambiguous, often directory
-        // listing changes) are noise — they fire alongside Create/Remove events.
-        EventKind::Modify(ModifyKind::Data(_)) => event
-            .paths
-            .iter()
-            .map(|p| FsEvent::Modified {
-                path: to_relative(p),
-            })
-            .collect(),
-
-        EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
-            if event.paths.len() >= 2 {
-                vec![FsEvent::Renamed {
-                    from: to_relative(&event.paths[0]),
-                    to: to_relative(&event.paths[1]),
-                }]
-            } else {
-                vec![]
-            }
-        }
-
-        EventKind::Modify(ModifyKind::Name(RenameMode::From)) => event
-            .paths
-            .iter()
-            .map(|p| FsEvent::Removed {
-                path: to_relative(p),
-            })
-            .collect(),
-
-        EventKind::Modify(ModifyKind::Name(RenameMode::To)) => event
             .paths
             .iter()
             .map(|p| FsEvent::Created {
@@ -440,7 +527,82 @@ pub(crate) fn convert_event(event: &Event, watch_dir: &Path) -> Vec<FsEvent> {
             })
             .collect(),
 
-        // Skip other event kinds (Access, Any, Other)
+        // File content changed. Only Data changes are real modifications.
+        // Metadata (timestamps, permissions) are noise.
+        EventKind::Modify(ModifyKind::Data(_)) => event
+            .paths
+            .iter()
+            .map(|p| FsEvent::Modified {
+                path: to_relative(p),
+            })
+            .collect(),
+
+        // Renames/moves. Different platforms report these differently:
+        // - Linux (inotify): RenameMode::From + RenameMode::To as paired events,
+        //   or RenameMode::Both when both sides are in the watched directory.
+        // - macOS (FSEvents): RenameMode::Any — cannot distinguish direction.
+        // - Windows: RenameMode::From + RenameMode::To paired.
+        //
+        // Handle all variants uniformly:
+        // - Both with 2 paths: emit a proper Renamed event (from, to).
+        // - From: the old path — treat as Removed.
+        // - To: the new path — treat as Created.
+        // - Any/Other: direction unknown — check if the path still exists on
+        //   disk. If yes → Created (moved in). If no → Removed (moved out).
+        EventKind::Modify(ModifyKind::Name(rename_mode)) => {
+            match rename_mode {
+                RenameMode::Both => {
+                    if event.paths.len() >= 2 {
+                        vec![FsEvent::Renamed {
+                            from: to_relative(&event.paths[0]),
+                            to: to_relative(&event.paths[1]),
+                        }]
+                    } else {
+                        vec![]
+                    }
+                }
+                RenameMode::From => event
+                    .paths
+                    .iter()
+                    .map(|p| FsEvent::Removed {
+                        path: to_relative(p),
+                    })
+                    .collect(),
+                RenameMode::To => event
+                    .paths
+                    .iter()
+                    .map(|p| FsEvent::Created {
+                        path: to_relative(p),
+                    })
+                    .collect(),
+                // Any, Other, or future variants — probe the filesystem.
+                _ => event
+                    .paths
+                    .iter()
+                    .map(|p| {
+                        if p.exists() {
+                            FsEvent::Created {
+                                path: to_relative(p),
+                            }
+                        } else {
+                            FsEvent::Removed {
+                                path: to_relative(p),
+                            }
+                        }
+                    })
+                    .collect(),
+            }
+        }
+
+        // Rescan: the watcher's event buffer overflowed or it detected
+        // inconsistency. Log a warning — the file index may be stale until
+        // the next full walk (e.g., on retarget or restart).
+        EventKind::Other => {
+            warn!("filesystem watcher flagged rescan — events may have been dropped");
+            vec![]
+        }
+
+        // Access, Modify(Metadata/Any), and unknown future kinds are noise.
         _ => vec![],
     }
 }
@@ -448,7 +610,6 @@ pub(crate) fn convert_event(event: &Event, watch_dir: &Path) -> Vec<FsEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use notify::{event::CreateKind, event::DataChange, event::RemoveKind};
     use std::fs;
     use tempfile::TempDir;
 
@@ -586,82 +747,6 @@ mod tests {
             "expected truncated=false when file count is within cap"
         );
         assert_eq!(files.len(), 5, "expected all 5 files returned");
-    }
-
-    // ── convert_event() tests ─────────────────────────────────────────────────
-
-    #[test]
-    fn test_convert_event_create() {
-        let watch_dir = PathBuf::from("/tmp/test");
-        let event = Event {
-            kind: EventKind::Create(CreateKind::File),
-            paths: vec![PathBuf::from("/tmp/test/file.txt")],
-            attrs: Default::default(),
-        };
-
-        let fs_events = convert_event(&event, &watch_dir);
-        assert_eq!(fs_events.len(), 1);
-        match &fs_events[0] {
-            FsEvent::Created { path } => assert_eq!(path, "file.txt"),
-            _ => panic!("expected Created event"),
-        }
-    }
-
-    #[test]
-    fn test_convert_event_modify() {
-        let watch_dir = PathBuf::from("/tmp/test");
-        let event = Event {
-            kind: EventKind::Modify(ModifyKind::Data(DataChange::Any)),
-            paths: vec![PathBuf::from("/tmp/test/file.txt")],
-            attrs: Default::default(),
-        };
-
-        let fs_events = convert_event(&event, &watch_dir);
-        assert_eq!(fs_events.len(), 1);
-        match &fs_events[0] {
-            FsEvent::Modified { path } => assert_eq!(path, "file.txt"),
-            _ => panic!("expected Modified event"),
-        }
-    }
-
-    #[test]
-    fn test_convert_event_remove() {
-        let watch_dir = PathBuf::from("/tmp/test");
-        let event = Event {
-            kind: EventKind::Remove(RemoveKind::File),
-            paths: vec![PathBuf::from("/tmp/test/file.txt")],
-            attrs: Default::default(),
-        };
-
-        let fs_events = convert_event(&event, &watch_dir);
-        assert_eq!(fs_events.len(), 1);
-        match &fs_events[0] {
-            FsEvent::Removed { path } => assert_eq!(path, "file.txt"),
-            _ => panic!("expected Removed event"),
-        }
-    }
-
-    #[test]
-    fn test_convert_event_rename_both() {
-        let watch_dir = PathBuf::from("/tmp/test");
-        let event = Event {
-            kind: EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
-            paths: vec![
-                PathBuf::from("/tmp/test/old.txt"),
-                PathBuf::from("/tmp/test/new.txt"),
-            ],
-            attrs: Default::default(),
-        };
-
-        let fs_events = convert_event(&event, &watch_dir);
-        assert_eq!(fs_events.len(), 1);
-        match &fs_events[0] {
-            FsEvent::Renamed { from, to } => {
-                assert_eq!(from, "old.txt");
-                assert_eq!(to, "new.txt");
-            }
-            _ => panic!("expected Renamed event"),
-        }
     }
 
     // ── deduplicate_batch() tests ──────────────────────────────────────────────

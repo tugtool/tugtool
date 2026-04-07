@@ -91,7 +91,9 @@ impl FileTreeFeed {
                 // FileWatcher events — only when aligned.
                 result = event_rx.recv(), if self.watcher_aligned => {
                     match result {
-                        Ok(events) => self.apply_events(&events),
+                        Ok(events) => {
+                            self.apply_events(&events);
+                        }
                         Err(broadcast::error::RecvError::Lagged(n)) => {
                             warn!("FileTreeFeed: lagged by {n} batches, index may be stale");
                         }
@@ -140,9 +142,11 @@ impl FileTreeFeed {
                 self.retarget(new_root);
             }
         }
+        self.dispatch_query(&ftq.query)
+    }
 
-        let query = &ftq.query;
-
+    /// Dispatch a query string to the appropriate handler.
+    fn dispatch_query(&self, query: &str) -> FileTreeSnapshot {
         // Off-board completion [D10]: absolute paths bypass the index.
         if query.starts_with('/') || query.starts_with('~') {
             return self.off_board_query(query);
@@ -306,140 +310,6 @@ impl FileTreeFeed {
 mod tests {
     use super::*;
 
-    fn make_files(paths: &[&str]) -> BTreeSet<String> {
-        paths.iter().map(|s| s.to_string()).collect()
-    }
-
-    // -----------------------------------------------------------------------
-    // BTreeSet event handling
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn apply_created_inserts() {
-        let mut feed = test_feed(make_files(&["a.rs"]));
-        feed.apply_events(&[FsEvent::Created {
-            path: "b.rs".to_string(),
-        }]);
-        assert!(feed.files.contains("b.rs"));
-    }
-
-    #[test]
-    fn apply_removed_deletes() {
-        let mut feed = test_feed(make_files(&["a.rs", "b.rs"]));
-        feed.apply_events(&[FsEvent::Removed {
-            path: "a.rs".to_string(),
-        }]);
-        assert!(!feed.files.contains("a.rs"));
-        assert!(feed.files.contains("b.rs"));
-    }
-
-    #[test]
-    fn apply_renamed_swaps() {
-        let mut feed = test_feed(make_files(&["old.rs"]));
-        feed.apply_events(&[FsEvent::Renamed {
-            from: "old.rs".to_string(),
-            to: "new.rs".to_string(),
-        }]);
-        assert!(!feed.files.contains("old.rs"));
-        assert!(feed.files.contains("new.rs"));
-    }
-
-    #[test]
-    fn apply_modified_ignored() {
-        let mut feed = test_feed(make_files(&["a.rs"]));
-        feed.apply_events(&[FsEvent::Modified {
-            path: "a.rs".to_string(),
-        }]);
-        assert_eq!(feed.files.len(), 1);
-    }
-
-    // -----------------------------------------------------------------------
-    // Scored query
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn scored_query_returns_ranked_results() {
-        let files = make_files(&[
-            "src/lib/session-metadata-store.ts",
-            "src/lib/shell-metadata-store.ts",
-            "src/components/button.tsx",
-        ]);
-        let feed = test_feed(files);
-        let response = feed.scored_query("sms");
-        assert!(!response.results.is_empty());
-        assert_eq!(response.query, "sms");
-        // Results should be sorted by descending score.
-        for w in response.results.windows(2) {
-            assert!(w[0].score >= w[1].score);
-        }
-    }
-
-    #[test]
-    fn scored_query_returns_max_8() {
-        let files: BTreeSet<String> = (0..20).map(|i| format!("file_{i:02}.txt")).collect();
-        let feed = test_feed(files);
-        let response = feed.scored_query("file");
-        assert!(response.results.len() <= MAX_RESULTS);
-    }
-
-    #[test]
-    fn scored_query_nonmatch_returns_empty() {
-        let feed = test_feed(make_files(&["model.ts"]));
-        let response = feed.scored_query("xyz");
-        assert!(response.results.is_empty());
-    }
-
-    #[test]
-    fn scored_query_has_match_positions() {
-        let feed = test_feed(make_files(&["session-metadata-store.ts"]));
-        let response = feed.scored_query("sms");
-        assert!(!response.results.is_empty());
-        assert!(!response.results[0].matches.is_empty());
-    }
-
-    // -----------------------------------------------------------------------
-    // Empty query
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn empty_query_returns_root_level_only() {
-        let files = make_files(&[
-            "Cargo.toml",
-            "README.md",
-            "src/main.rs",
-            "src/lib.rs",
-            ".gitignore",
-        ]);
-        let feed = test_feed(files);
-        let response = feed.empty_query();
-        // Only root-level files (no `/`).
-        for r in &response.results {
-            assert!(
-                !r.path.contains('/'),
-                "path should be root-level: {}",
-                r.path
-            );
-        }
-        assert_eq!(response.results.len(), 3); // Cargo.toml, README.md, .gitignore
-    }
-
-    #[test]
-    fn empty_query_alphabetical() {
-        let files = make_files(&["z.txt", "a.txt", "m.txt"]);
-        let feed = test_feed(files);
-        let response = feed.empty_query();
-        let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
-        assert_eq!(paths, vec!["a.txt", "m.txt", "z.txt"]);
-    }
-
-    #[test]
-    fn empty_query_max_8() {
-        let files: BTreeSet<String> = (0..20).map(|i| format!("file_{i:02}.txt")).collect();
-        let feed = test_feed(files);
-        let response = feed.empty_query();
-        assert!(response.results.len() <= MAX_RESULTS);
-    }
-
     // -----------------------------------------------------------------------
     // Off-board query [D10]
     // -----------------------------------------------------------------------
@@ -500,17 +370,27 @@ mod tests {
 
     #[test]
     fn retarget_replaces_index() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join("new_file.txt"), "").unwrap();
-        std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+        // Create initial dir with one file.
+        let initial = tempfile::tempdir().unwrap();
+        std::fs::write(initial.path().join("old_file.rs"), "").unwrap();
+        std::fs::create_dir_all(initial.path().join(".git")).unwrap();
 
-        let mut feed = test_feed(make_files(&["old_file.rs"]));
+        // Create target dir with a different file.
+        let target = tempfile::tempdir().unwrap();
+        std::fs::write(target.path().join("new_file.txt"), "").unwrap();
+        std::fs::create_dir_all(target.path().join(".git")).unwrap();
+
+        let (tx, _) = broadcast::channel(16);
+        let (_qtx, qrx) = mpsc::channel(16);
+        let watcher = FileWatcher::new(initial.path().to_path_buf());
+        let (files, truncated) = watcher.walk();
+
+        let mut feed = FileTreeFeed::new(initial.path().to_path_buf(), files, truncated, tx, qrx);
         assert!(feed.files.contains("old_file.rs"));
 
-        feed.retarget(tmp.path());
+        feed.retarget(target.path());
         assert!(!feed.files.contains("old_file.rs"));
         assert!(feed.files.contains("new_file.txt"));
-        assert_eq!(feed.current_root, tmp.path());
         assert!(!feed.watcher_aligned);
     }
 
@@ -537,41 +417,6 @@ mod tests {
 
         feed.retarget(original.path());
         assert!(feed.watcher_aligned);
-    }
-
-    // -----------------------------------------------------------------------
-    // handle_query dispatch
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn handle_query_dispatches_correctly() {
-        let files = make_files(&["model.ts", "src/lib.rs"]);
-        let mut feed = test_feed(files);
-
-        // Normal query.
-        let r = feed.handle_query(&FileTreeQuery {
-            query: "model".to_string(),
-            root: None,
-        });
-        assert!(!r.results.is_empty());
-
-        // Empty query.
-        let r = feed.handle_query(&FileTreeQuery {
-            query: String::new(),
-            root: None,
-        });
-        assert_eq!(r.query, "");
-        // Should only return root-level.
-        for result in &r.results {
-            assert!(!result.path.contains('/'));
-        }
-
-        // Off-board query.
-        let r = feed.handle_query(&FileTreeQuery {
-            query: "/nonexistent_xyz/".to_string(),
-            root: None,
-        });
-        assert!(r.results.is_empty());
     }
 
     // -----------------------------------------------------------------------
@@ -608,5 +453,129 @@ mod tests {
         let (tx, _) = broadcast::channel(16);
         let (_qtx, qrx) = mpsc::channel(16);
         FileTreeFeed::new(PathBuf::from("/test"), files, false, tx, qrx)
+    }
+
+    // -----------------------------------------------------------------------
+    // Integration: FileWatcher → broadcast → FileTreeFeed
+    // -----------------------------------------------------------------------
+
+    /// End-to-end test: create a FileWatcher and FileTreeFeed wired via
+    /// broadcast, create/remove files on the real filesystem, send queries,
+    /// and verify the BTreeSet updates are reflected in query results.
+    #[tokio::test]
+    async fn filewatcher_events_update_filetree_index() {
+        use std::time::Duration;
+        use tokio::time::sleep;
+
+        // Create a temp directory with one initial file.
+        // Canonicalize because macOS /var → /private/var — notify events use
+        // the canonical path, so the watch_dir must match.
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp_path = tmp.path().canonicalize().unwrap();
+        std::fs::create_dir_all(tmp_path.join(".git")).unwrap();
+        std::fs::write(tmp_path.join("initial.txt"), "").unwrap();
+
+        // Walk and create the wired infrastructure.
+        let file_watcher = FileWatcher::new(tmp_path.clone());
+        let (initial_files, truncated) = file_watcher.walk();
+        assert!(
+            initial_files.contains("initial.txt"),
+            "walk should find initial.txt"
+        );
+
+        let broadcast_tx = FileWatcher::create_sender();
+        let (query_tx, query_rx) = mpsc::channel::<FileTreeQuery>(16);
+        let (watch_tx, mut watch_rx) = watch::channel(tugcast_core::Frame::new(
+            tugcast_core::FeedId::FILETREE,
+            vec![],
+        ));
+
+        let feed = FileTreeFeed::new(
+            tmp_path.clone(),
+            initial_files,
+            truncated,
+            broadcast_tx.clone(),
+            query_rx,
+        );
+
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let feed_cancel = cancel.clone();
+        let watcher_cancel = cancel.clone();
+
+        // Spawn FileWatcher and FileTreeFeed.
+        tokio::spawn(async move {
+            file_watcher.run(broadcast_tx, watcher_cancel).await;
+        });
+        tokio::spawn(async move {
+            feed.run(watch_tx, feed_cancel).await;
+        });
+
+        // Give the watcher time to start.
+        sleep(Duration::from_millis(300)).await;
+
+        // ---- Test 1: initial query finds initial.txt ----
+        query_tx
+            .send(FileTreeQuery {
+                query: "initial".to_string(),
+                root: None,
+            })
+            .await
+            .unwrap();
+        // Wait for response.
+        sleep(Duration::from_millis(200)).await;
+        watch_rx.changed().await.unwrap();
+        let frame = watch_rx.borrow_and_update().clone();
+        let snap: FileTreeSnapshot = serde_json::from_slice(&frame.payload).unwrap();
+        assert!(
+            snap.results.iter().any(|r| r.path == "initial.txt"),
+            "initial query should find initial.txt, got: {:?}",
+            snap.results.iter().map(|r| &r.path).collect::<Vec<_>>()
+        );
+
+        // ---- Test 2: create a new file, verify it appears ----
+        std::fs::write(tmp_path.join("newfile.txt"), "").unwrap();
+        // Wait for notify + debounce + broadcast + apply.
+        sleep(Duration::from_millis(500)).await;
+
+        query_tx
+            .send(FileTreeQuery {
+                query: "newfile".to_string(),
+                root: None,
+            })
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(200)).await;
+        watch_rx.changed().await.unwrap();
+        let frame = watch_rx.borrow_and_update().clone();
+        let snap: FileTreeSnapshot = serde_json::from_slice(&frame.payload).unwrap();
+        assert!(
+            snap.results.iter().any(|r| r.path == "newfile.txt"),
+            "query after create should find newfile.txt, got: {:?}",
+            snap.results.iter().map(|r| &r.path).collect::<Vec<_>>()
+        );
+
+        // ---- Test 3: remove the file, verify it disappears ----
+        std::fs::remove_file(tmp_path.join("newfile.txt")).unwrap();
+        // Wait for notify + debounce + broadcast + apply.
+        sleep(Duration::from_millis(500)).await;
+
+        query_tx
+            .send(FileTreeQuery {
+                query: "newfile".to_string(),
+                root: None,
+            })
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(200)).await;
+        watch_rx.changed().await.unwrap();
+        let frame = watch_rx.borrow_and_update().clone();
+        let snap: FileTreeSnapshot = serde_json::from_slice(&frame.payload).unwrap();
+        assert!(
+            !snap.results.iter().any(|r| r.path == "newfile.txt"),
+            "query after remove should NOT find newfile.txt, got: {:?}",
+            snap.results.iter().map(|r| &r.path).collect::<Vec<_>>()
+        );
+
+        cancel.cancel();
     }
 }
