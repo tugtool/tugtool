@@ -855,6 +855,100 @@ The `matches` field carries character ranges for highlighting. When present, the
 
 ---
 
+#### Step 12: Unicode-clean fuzzy scorer rewrite {#step-12}
+
+**Depends on:** #step-11
+
+**Commit:** `fix(tugcast): rewrite fuzzy scorer to operate on chars, not bytes`
+
+**References:** [D04a] Two-layer fuzzy scoring, Appendix A scoring factors
+
+**Problem:**
+
+The fuzzy scorer operates on raw bytes (`&[u8]`), not Unicode characters. This causes three categories of failure for non-ASCII paths (CJK, accented Latin, emoji):
+
+1. **False matches in pre-filter.** `contains_chars` compares bytes with `to_ascii_lowercase()`. A continuation byte like `0xAB` in one multi-byte character can match the same byte in a completely different character. The pre-filter can pass candidates that don't actually contain the query characters.
+
+2. **Broken DP table.** `fuzzy_score` builds the DP table indexed by byte position. For `カタカナ` (4 characters, 12 bytes), the table is 13×N instead of 5×N. Each byte of a multi-byte character gets its own row/column, producing meaningless intermediate match states where partial bytes of one character "match" partial bytes of another.
+
+3. **Garbage match ranges.** The backtracker records byte positions for all matched bytes (including continuation bytes), then tries to convert them to character offsets via a `byte_to_char` map that defaults to 0 for non-start bytes. The result is overlapping, out-of-order ranges that produce garbled highlight rendering on the client.
+
+4. **ASCII-only case folding.** `to_ascii_lowercase()` doesn't fold `É` → `é` or any non-ASCII case pairs. The "case-insensitive" claim is actually ASCII-only.
+
+5. **Byte-level boundary detection.** `char_class(b: u8)` classifies all bytes > 127 as `Separator`. Every byte of a CJK character looks like a separator, so no boundary bonuses are ever awarded within or between CJK characters.
+
+**Approach:**
+
+Convert query and candidate to `Vec<char>` (Unicode scalar values) at the entry points of `fuzzy_score` and `score_file_path`. The pre-filter `contains_chars` iterates `.chars()` directly (no allocation). All internal logic — the DP table, boundary detection, backtracker — operates on character indices.
+
+Match ranges are produced as **UTF-16 code unit offsets** (not Unicode codepoint indices) so they work directly with JavaScript's `String.slice()`. For BMP characters (all CJK, kana, accented Latin), one codepoint = one code unit, so the offsets are identical. For astral plane characters (emoji, supplementary CJK), each codepoint contributes 2 code units — the offset accounts for this via `char::len_utf16()`.
+
+**Case folding strategy:**
+
+A helper `fn fold_case(c: char) -> char` uses `c.to_lowercase().next().unwrap_or(c)` — single-char Unicode case fold. This handles the common cases correctly:
+- ASCII: `A` → `a` ✓
+- Accented Latin: `É` → `é`, `Ü` → `ü` ✓
+- Already lowercase / no case (CJK, kana, digits, symbols): identity ✓
+- Rare multi-char expansions (Turkish `İ` → `i` + combining dot): takes first char, degrades gracefully ✓
+
+For exact-case bonus, compare original `char` values directly (no folding).
+
+**Character classification:**
+
+`char_class(c: char) -> CharClass` replaces the byte-level `char_class(b: u8)`:
+
+| `char` predicate | CharClass | Examples |
+|---|---|---|
+| `c.is_lowercase()` | `Lower` | `a`, `é`, `ü` |
+| `c.is_uppercase()` | `Upper` | `A`, `É`, `Ü` |
+| `c.is_ascii_digit()` | `Digit` | `0`–`9` |
+| `c.is_alphanumeric() && !above` | `Other` | `カ`, `漢`, `🎉` |
+| everything else | `Separator` | `-`, `_`, `.`, `/`, ` ` |
+
+Boundary rules (unchanged logic, broader coverage):
+- `Separator → Lower/Upper/Digit/Other` = word boundary ✓ (`/カ`, `-model`)
+- `Lower → Upper` = camelCase boundary ✓ (`mD` in `sessionMetadata`)
+- `Other → Other` = NOT boundary ✓ (`カ→タ` is same-class, no bonus)
+
+**Tasks:**
+
+*Core type change:*
+- [ ] Add `fn fold_case(c: char) -> char` helper: `c.to_lowercase().next().unwrap_or(c)`
+- [ ] Change `contains_chars` to iterate `query.chars()` and `candidate.chars()` (zero-allocation), comparing with `fold_case()`.
+- [ ] Change `fuzzy_score` to convert query and candidate to `Vec<char>` at the top. Build the DP table as `qlen_chars × clen_chars`. All indexing is by character position. Use `fold_case()` for case-insensitive comparison.
+- [ ] Change `char_class` from `fn(u8) -> CharClass` to `fn(char) -> CharClass` using the classification table above. Add `CharClass::Other` variant.
+- [ ] Change `backtrack` to record character positions (DP indices) directly — no `byte_to_char` map.
+- [ ] After backtracking: convert character positions to **UTF-16 code unit offsets** for the final `ScoredMatch.matches`. Build a `char_to_utf16: Vec<usize>` for the candidate where `char_to_utf16[i]` is the cumulative UTF-16 offset of the i-th character (computed via `char::len_utf16()`). This ensures emoji and supplementary CJK produce correct offsets for JavaScript's `String.slice()`.
+- [ ] In `score_file_path`: `basename_start` stays computed via `rfind('/')` on `&str`, converted to UTF-16 offset via `path[..byte_start].chars().map(|c| c.len_utf16()).sum::<usize>()`. Match positions from basename scoring are adjusted by this UTF-16 offset.
+- [ ] Update `ScoredMatch.matches` doc comment: "UTF-16 code unit offset ranges" (not "character-offset ranges").
+
+*Remove byte-level code:*
+- [ ] Remove the `byte_to_char` map from `backtrack` entirely.
+- [ ] Remove all `as_bytes()` calls from `contains_chars` and `fuzzy_score`.
+- [ ] Remove `to_ascii_lowercase()` calls — replaced by `fold_case()`.
+
+*Update tests:*
+- [ ] Existing ASCII tests must still pass (behavior unchanged — for ASCII, UTF-16 offset = char offset = byte offset).
+- [ ] Non-ASCII pre-filter: `contains_chars("カタ", "カタカナ.txt")` returns true; `contains_chars("か", "カタカナ.txt")` returns false (hiragana ≠ katakana).
+- [ ] Non-ASCII scoring: `fuzzy_score("カタカナ", "カタカナ.txt")` produces score > 0 with match ranges `[(0, 4)]` (4 characters, 4 UTF-16 code units, one contiguous range).
+- [ ] Non-ASCII case folding: `fuzzy_score("café", "Café.txt")` matches, `É` folds to `é`.
+- [ ] Emoji scoring: `fuzzy_score("🎉", "🎉party.txt")` produces match range `[(0, 2)]` — 1 character but 2 UTF-16 code units. Verifies astral plane handling.
+- [ ] Emoji in mid-path: `score_file_path("party", "🎉/party.txt")` returns basename match with positions starting at UTF-16 offset 3 (🎉 = 2 code units + `/` = 1).
+- [ ] `score_file_path("カタカナ", "src/カタカナ.txt")` returns basename match with positions adjusted to UTF-16 offset 4 (after `src/`).
+- [ ] CJK boundary detection: `/` → `カ` is a boundary; `カ` → `タ` is not.
+- [ ] Verify no regression in the existing fuzzy scorer tests.
+
+**Tests:**
+- [ ] All existing fuzzy scorer tests pass (ASCII behavior unchanged)
+- [ ] Non-ASCII pre-filter, scoring, case folding, boundary detection, and emoji tests pass
+- [ ] FileTreeFeed tests pass (uses fuzzy scorer internally)
+
+**Checkpoint:**
+- [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo build`
+- [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo nextest run`
+
+---
+
 ### Deliverables and Checkpoints {#deliverables}
 
 **Deliverable:** Live fuzzy-scored file completion for the `@` trigger — tugcast indexes project files via a shared FileWatcher service, scores queries with a two-layer fuzzy matcher in Rust, and returns top-N scored results to tugdeck via a query/response channel.
@@ -871,6 +965,7 @@ The `matches` field carries character ranges for highlighting. When present, the
 - [x] Gallery card `@` trigger shows live fuzzy-scored project files with match highlighting
 - [x] Match positions are character offsets (correct for non-ASCII paths)
 - [x] Backtracker recovers the exact alignment that produced the score
+- [ ] Fuzzy scorer operates on Unicode characters, not bytes — correct for CJK, accented Latin, emoji paths. Match ranges are UTF-16 code unit offsets for JavaScript compatibility.
 - [x] Malformed FILETREE_QUERY payloads logged, not silently dropped
 - [x] `cd tugrust && cargo nextest run` passes
 - [x] `cd tugdeck && bun test` passes
@@ -880,6 +975,9 @@ The `matches` field carries character ranges for highlighting. When present, the
 - [x] Fuzzy scorer: `"sms"` matches `"session-metadata-store.ts"`, `"model"` prefers basename match over directory match (Rust unit test)
 - [x] Fuzzy scorer: non-ASCII path (`"café/modèle.ts"`) produces correct character-offset match positions (Rust unit test)
 - [x] Fuzzy scorer: backtracker recovers word-boundary positions for `"sms"` → `"session-metadata-store.ts"` (Rust unit test)
+- [ ] Fuzzy scorer: `"カタカナ"` matches `"カタカナ.txt"` with contiguous UTF-16 range `[(0,4)]` (Rust unit test)
+- [ ] Fuzzy scorer: `"🎉"` matches `"🎉party.txt"` with range `[(0,2)]` — 2 UTF-16 code units (Rust unit test)
+- [ ] Fuzzy scorer: CJK/accented case folding and boundary detection work correctly (Rust unit test)
 - [x] FileTreeFeed applies Created/Removed/Renamed, ignores Modified, responds to queries with scored results (Rust unit test)
 - [x] Off-board completion: `/tmp/te` returns prefix-matched entries, nonexistent parent returns empty (Rust unit test)
 - [x] Root retarget: query with new `root` re-walks and scores against new index (Rust unit test)

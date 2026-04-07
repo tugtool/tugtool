@@ -723,7 +723,7 @@ export class TugTextEngine {
 
     // Check 1: the character just typed IS a trigger (fresh @ typed).
     const justTyped = text[range.start - 1];
-    let provider = this.completionProviders[justTyped];
+    let provider = this.lookupTrigger(justTyped);
     if (provider) {
       this.activateTypeaheadAt(justTyped, provider, range.start - 1, "");
       return;
@@ -736,7 +736,7 @@ export class TugTextEngine {
     while (scanPos >= 0) {
       const ch = text[scanPos];
       if (ch === " " || ch === "\n") return; // gap — not connected
-      provider = this.completionProviders[ch];
+      provider = this.lookupTrigger(ch);
       if (provider) {
         const query = text.slice(scanPos + 1, range.start);
         this.activateTypeaheadAt(ch, provider, scanPos, query);
@@ -744,6 +744,25 @@ export class TugTextEngine {
       }
       scanPos--;
     }
+  }
+
+  /**
+   * Look up a completion provider for a character, normalizing full-width
+   * Unicode variants to their ASCII equivalents (e.g., ＠ → @, ／ → /).
+   * Japanese and other CJK keyboards produce full-width punctuation that
+   * should trigger the same providers as their ASCII counterparts.
+   */
+  private lookupTrigger(ch: string): CompletionProvider | undefined {
+    const provider = this.completionProviders[ch];
+    if (provider) return provider;
+    // Full-width ASCII punctuation occupies U+FF01–U+FF5E, offset from
+    // ASCII U+0021–U+007E by 0xFEE0.
+    const code = ch.charCodeAt(0);
+    if (code >= 0xFF01 && code <= 0xFF5E) {
+      const ascii = String.fromCharCode(code - 0xFEE0);
+      return this.completionProviders[ascii];
+    }
+    return undefined;
   }
 
   /** Shared activation logic for detectTypeaheadTrigger and route-prefix activation. */
@@ -901,7 +920,11 @@ export class TugTextEngine {
     this.listen(root, "keydown", (e: Event) => {
       if (!this._typeahead.active) return;
       const ke = e as KeyboardEvent;
-      if (ke.isComposing) return;
+      // In WebKit, the Return that commits an IME composition arrives as a
+      // keydown AFTER compositionend (isComposing is already false). The
+      // _compositionJustEnded flag catches this — the Return belongs to the
+      // IME, not the typeahead.
+      if (ke.isComposing || this._compositionJustEnded) return;
       if (ke.key === "Tab" || ke.key === "Enter") {
         ke.preventDefault();
         ke.stopImmediatePropagation();
@@ -1325,10 +1348,28 @@ export class TugTextEngine {
     });
 
     // 11. IME composition tracking
-    this.listen(root, "compositionstart", () => { this._composing = true; });
+    this.listen(root, "compositionstart", () => {
+      this._composing = true;
+      // Dismiss active typeahead when IME composition begins. The backward
+      // scan in detectTypeaheadTrigger will re-discover the @ string when
+      // the next committed character arrives after compositionend.
+      this.cancelTypeahead();
+    });
     this.listen(root, "compositionend", () => {
       this._composing = false;
       this._compositionJustEnded = true;
+      // Defer typeahead update to after the current event handler stack
+      // unwinds so the DOM and selection state are settled. In WebKit the
+      // final input event fires BEFORE compositionend (while _composing is
+      // still true), so the input handler's guard skips it. We catch up
+      // here via microtask — runs before next frame, no visual delay.
+      queueMicrotask(() => {
+        if (this._typeahead.active) {
+          this.updateTypeaheadQuery();
+        } else if (Object.keys(this.completionProviders).length > 0) {
+          this.detectTypeaheadTrigger();
+        }
+      });
     });
     // Clear the compositionJustEnded flag on the next keyup.
     // The Enter that committed the composition produces keydown then keyup —
