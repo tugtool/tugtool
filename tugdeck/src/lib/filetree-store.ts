@@ -131,6 +131,7 @@ export class FileTreeStore {
    */
   getFileCompletionProvider(): CompletionProvider {
     let lastSentQuery: string | null = null;
+    let lastValidResults: CompletionItem[] = [];
 
     const provider = ((query: string): CompletionItem[] => {
       // Deduplication: only send when query changes.
@@ -139,21 +140,25 @@ export class FileTreeStore {
         this.sendQuery(query);
       }
 
-      // Staleness: return [] if snapshot is for a different query.
-      if (this._snapshot.query !== query) {
-        return [];
+      // If the snapshot matches the current query, map fresh results.
+      if (this._snapshot.query === query) {
+        lastValidResults = this._snapshot.results.map((r) => ({
+          label: r.path,
+          atom: {
+            kind: "atom" as const,
+            type: "file",
+            label: r.path,
+            value: r.path,
+          },
+          matches: r.matches,
+        }));
       }
 
-      return this._snapshot.results.map((r) => ({
-        label: r.path,
-        atom: {
-          kind: "atom" as const,
-          type: "file",
-          label: r.path,
-          value: r.path,
-        },
-        matches: r.matches,
-      }));
+      // Return the last valid results — either fresh (snapshot matched) or
+      // carried over from the previous query. Avoids the popup flash that
+      // occurs when returning [] during the 2-5ms between query send and
+      // response arrival.
+      return lastValidResults;
     }) as CompletionProvider;
 
     provider.subscribe = (listener: () => void) => this.subscribe(listener);

@@ -293,6 +293,25 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
           popup.style.display = "none";
           return;
         }
+        // Skip DOM rebuild if results haven't changed (avoids flash between keystrokes).
+        const items = popup.querySelectorAll(".tug-completion-menu-item");
+        let same = items.length === filtered.length;
+        if (same) {
+          for (let k = 0; k < filtered.length; k++) {
+            const label = items[k]?.querySelector(".tug-completion-menu-label");
+            if (label?.textContent !== filtered[k].label) { same = false; break; }
+          }
+        }
+        if (same) {
+          // Just update selection highlight — no rebuild needed.
+          items.forEach((el, k) => {
+            el.className = "tug-completion-menu-item" +
+              (k === selectedIndex ? " tug-completion-menu-item-selected" : "");
+          });
+          popup.style.display = "block";
+          return;
+        }
+
         popup.style.display = "block";
         popup.innerHTML = "";
         filtered.forEach((item, i) => {

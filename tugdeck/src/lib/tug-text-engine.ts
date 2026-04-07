@@ -895,8 +895,27 @@ export class TugTextEngine {
   /** Whether the typeahead popup is active. */
   get isTypeaheadActive(): boolean { return this._typeahead.active; }
 
-  /** The caret rect captured at @ trigger time, for popup anchoring. */
-  get typeaheadAnchorRect(): DOMRect | null { return this._typeahead.anchorRect; }
+  /** Fresh bounding rect of the @ trigger character, for popup anchoring.
+   *  Computed on demand so the popup tracks the trigger even as text reflows. */
+  get typeaheadAnchorRect(): DOMRect | null {
+    if (!this._typeahead.active) return null;
+    // Create a DOM range spanning the trigger character and measure it.
+    const pos = flatToDom(this.root, this._typeahead.anchorOffset);
+    try {
+      const range = document.createRange();
+      range.setStart(pos.node, pos.offset);
+      // Span one character (the trigger) for a stable anchor width.
+      if (pos.node.nodeType === Node.TEXT_NODE && pos.offset < (pos.node.textContent?.length ?? 0)) {
+        range.setEnd(pos.node, pos.offset + 1);
+      } else {
+        range.setEnd(pos.node, pos.offset);
+      }
+      return range.getBoundingClientRect();
+    } catch {
+      // Fallback to the snapshot if DOM range fails.
+      return this._typeahead.anchorRect;
+    }
+  }
 
   // =================================================================
   // Event handling — setup and teardown
