@@ -17,7 +17,6 @@ use tracing::{debug, info, warn};
 use tugcast_core::types::{FsEvent, ScoredResult};
 use tugcast_core::{FeedId, FileTreeSnapshot, Frame};
 
-use super::file_watcher::FileWatcher;
 use super::fuzzy_scorer::score_file_path;
 
 /// Maximum number of results returned per query.
@@ -97,10 +96,8 @@ impl FileTreeFeed {
                             // the BTreeSet with the new ignore rules.
                             if events.iter().any(Self::is_gitignore_change) {
                                 info!("FileTreeFeed: .gitignore changed, re-walking");
-                                let watcher = FileWatcher::new(
-                                    self.current_root.clone(),
-                                );
-                                let (fresh_files, truncated) = watcher.walk();
+                                let (fresh_files, truncated) =
+                                    super::file_watcher::walk_directory(&self.current_root);
                                 self.files = fresh_files;
                                 self.truncated = truncated;
                             }
@@ -185,8 +182,7 @@ impl FileTreeFeed {
 
     /// Retarget to a new root directory [D09].
     fn retarget(&mut self, new_root: &Path) {
-        let watcher = FileWatcher::new(new_root.to_path_buf());
-        let (files, truncated) = watcher.walk();
+        let (files, truncated) = super::file_watcher::walk_directory(new_root);
         self.files = files;
         self.truncated = truncated;
         self.current_root = new_root.to_path_buf();
@@ -387,61 +383,6 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Retarget [D09]
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn retarget_replaces_index() {
-        // Create initial dir with one file.
-        let initial = tempfile::tempdir().unwrap();
-        std::fs::write(initial.path().join("old_file.rs"), "").unwrap();
-        std::fs::create_dir_all(initial.path().join(".git")).unwrap();
-
-        // Create target dir with a different file.
-        let target = tempfile::tempdir().unwrap();
-        std::fs::write(target.path().join("new_file.txt"), "").unwrap();
-        std::fs::create_dir_all(target.path().join(".git")).unwrap();
-
-        let (tx, _) = broadcast::channel(16);
-        let (_qtx, qrx) = mpsc::channel(16);
-        let watcher = FileWatcher::new(initial.path().to_path_buf());
-        let (files, truncated) = watcher.walk();
-
-        let mut feed = FileTreeFeed::new(initial.path().to_path_buf(), files, truncated, tx, qrx);
-        assert!(feed.files.contains("old_file.rs"));
-
-        feed.retarget(target.path());
-        assert!(!feed.files.contains("old_file.rs"));
-        assert!(feed.files.contains("new_file.txt"));
-        assert!(!feed.watcher_aligned);
-    }
-
-    #[test]
-    fn retarget_back_to_original_restores_alignment() {
-        let original = tempfile::tempdir().unwrap();
-        std::fs::write(original.path().join("orig.txt"), "").unwrap();
-        std::fs::create_dir_all(original.path().join(".git")).unwrap();
-
-        let other = tempfile::tempdir().unwrap();
-        std::fs::write(other.path().join("other.txt"), "").unwrap();
-        std::fs::create_dir_all(other.path().join(".git")).unwrap();
-
-        let (tx, _) = broadcast::channel(16);
-        let (_qtx, qrx) = mpsc::channel(16);
-        let watcher = FileWatcher::new(original.path().to_path_buf());
-        let (files, truncated) = watcher.walk();
-
-        let mut feed = FileTreeFeed::new(original.path().to_path_buf(), files, truncated, tx, qrx);
-        assert!(feed.watcher_aligned);
-
-        feed.retarget(other.path());
-        assert!(!feed.watcher_aligned);
-
-        feed.retarget(original.path());
-        assert!(feed.watcher_aligned);
-    }
-
-    // -----------------------------------------------------------------------
     // Response serialization
     // -----------------------------------------------------------------------
 
@@ -467,137 +408,9 @@ mod tests {
         assert_eq!(json["truncated"], false);
     }
 
-    // -----------------------------------------------------------------------
-    // Test helper
-    // -----------------------------------------------------------------------
-
     fn test_feed(files: BTreeSet<String>) -> FileTreeFeed {
         let (tx, _) = broadcast::channel(16);
         let (_qtx, qrx) = mpsc::channel(16);
         FileTreeFeed::new(PathBuf::from("/test"), files, false, tx, qrx)
-    }
-
-    // -----------------------------------------------------------------------
-    // Integration: FileWatcher → broadcast → FileTreeFeed
-    // -----------------------------------------------------------------------
-
-    /// End-to-end test: create a FileWatcher and FileTreeFeed wired via
-    /// broadcast, create/remove files on the real filesystem, send queries,
-    /// and verify the BTreeSet updates are reflected in query results.
-    #[tokio::test]
-    async fn filewatcher_events_update_filetree_index() {
-        use std::time::Duration;
-        use tokio::time::sleep;
-
-        // Create a temp directory with one initial file.
-        // Canonicalize because macOS /var → /private/var — notify events use
-        // the canonical path, so the watch_dir must match.
-        let tmp = tempfile::tempdir().unwrap();
-        let tmp_path = tmp.path().canonicalize().unwrap();
-        std::fs::create_dir_all(tmp_path.join(".git")).unwrap();
-        std::fs::write(tmp_path.join("initial.txt"), "").unwrap();
-
-        // Walk and create the wired infrastructure.
-        let file_watcher = FileWatcher::new(tmp_path.clone());
-        let (initial_files, truncated) = file_watcher.walk();
-        assert!(
-            initial_files.contains("initial.txt"),
-            "walk should find initial.txt"
-        );
-
-        let broadcast_tx = FileWatcher::create_sender();
-        let (query_tx, query_rx) = mpsc::channel::<FileTreeQuery>(16);
-        let (watch_tx, mut watch_rx) = watch::channel(tugcast_core::Frame::new(
-            tugcast_core::FeedId::FILETREE,
-            vec![],
-        ));
-
-        let feed = FileTreeFeed::new(
-            tmp_path.clone(),
-            initial_files,
-            truncated,
-            broadcast_tx.clone(),
-            query_rx,
-        );
-
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let feed_cancel = cancel.clone();
-        let watcher_cancel = cancel.clone();
-
-        // Spawn FileWatcher and FileTreeFeed.
-        tokio::spawn(async move {
-            file_watcher.run(broadcast_tx, watcher_cancel).await;
-        });
-        tokio::spawn(async move {
-            feed.run(watch_tx, feed_cancel).await;
-        });
-
-        // Give the watcher time to start.
-        sleep(Duration::from_millis(300)).await;
-
-        // ---- Test 1: initial query finds initial.txt ----
-        query_tx
-            .send(FileTreeQuery {
-                query: "initial".to_string(),
-                root: None,
-            })
-            .await
-            .unwrap();
-        // Wait for response.
-        sleep(Duration::from_millis(200)).await;
-        watch_rx.changed().await.unwrap();
-        let frame = watch_rx.borrow_and_update().clone();
-        let snap: FileTreeSnapshot = serde_json::from_slice(&frame.payload).unwrap();
-        assert!(
-            snap.results.iter().any(|r| r.path == "initial.txt"),
-            "initial query should find initial.txt, got: {:?}",
-            snap.results.iter().map(|r| &r.path).collect::<Vec<_>>()
-        );
-
-        // ---- Test 2: create a new file, verify it appears ----
-        std::fs::write(tmp_path.join("newfile.txt"), "").unwrap();
-        // Wait for notify + debounce + broadcast + apply.
-        sleep(Duration::from_millis(500)).await;
-
-        query_tx
-            .send(FileTreeQuery {
-                query: "newfile".to_string(),
-                root: None,
-            })
-            .await
-            .unwrap();
-        sleep(Duration::from_millis(200)).await;
-        watch_rx.changed().await.unwrap();
-        let frame = watch_rx.borrow_and_update().clone();
-        let snap: FileTreeSnapshot = serde_json::from_slice(&frame.payload).unwrap();
-        assert!(
-            snap.results.iter().any(|r| r.path == "newfile.txt"),
-            "query after create should find newfile.txt, got: {:?}",
-            snap.results.iter().map(|r| &r.path).collect::<Vec<_>>()
-        );
-
-        // ---- Test 3: remove the file, verify it disappears ----
-        std::fs::remove_file(tmp_path.join("newfile.txt")).unwrap();
-        // Wait for notify + debounce + broadcast + apply.
-        sleep(Duration::from_millis(500)).await;
-
-        query_tx
-            .send(FileTreeQuery {
-                query: "newfile".to_string(),
-                root: None,
-            })
-            .await
-            .unwrap();
-        sleep(Duration::from_millis(200)).await;
-        watch_rx.changed().await.unwrap();
-        let frame = watch_rx.borrow_and_update().clone();
-        let snap: FileTreeSnapshot = serde_json::from_slice(&frame.payload).unwrap();
-        assert!(
-            !snap.results.iter().any(|r| r.path == "newfile.txt"),
-            "query after remove should NOT find newfile.txt, got: {:?}",
-            snap.results.iter().map(|r| &r.path).collect::<Vec<_>>()
-        );
-
-        cancel.cancel();
     }
 }

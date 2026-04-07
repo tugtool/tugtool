@@ -1,8 +1,13 @@
 //! Shared FileWatcher service
 //!
-//! Owns the notify watcher, gitignore handling, and directory walk.
+//! Owns the notify watcher and directory walk. Uses `PathResolver` for robust
+//! path resolution across symlinks, firmlinks, and mount aliases.
 //! Broadcasts `Vec<FsEvent>` batches to all subscribers via a broadcast channel.
 //! Both FilesystemFeed and FileTreeFeed consume a clone of the broadcast sender.
+//!
+//! Gitignore filtering is NOT done here — events flow through unfiltered.
+//! FileTreeFeed's initial walk (via `WalkBuilder`) respects gitignore, and
+//! re-walks on `.gitignore` changes to reconcile.
 
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
@@ -224,6 +229,44 @@ impl FileWatcher {
             }
         }
     }
+}
+
+/// Walk a directory and return a sorted set of relative file paths.
+///
+/// Standalone function for use by FileTreeFeed's re-walk on `.gitignore`
+/// change. Creates a PathResolver internally for path resolution.
+/// Uses `ignore::WalkBuilder` for gitignore support.
+pub fn walk_directory(dir: &Path) -> (BTreeSet<String>, bool) {
+    let resolver = PathResolver::new(dir.to_path_buf());
+    let mut files = BTreeSet::new();
+    let mut truncated = false;
+
+    let walker = WalkBuilder::new(resolver.watch_path())
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(false)
+        .git_exclude(false)
+        .require_git(false)
+        .build();
+
+    for entry in walker.flatten() {
+        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Some(relative) = resolver.to_relative(entry.path()) else {
+            continue;
+        };
+        if relative.starts_with(".git/") || relative == ".git" {
+            continue;
+        }
+        if files.len() >= WALK_CAP {
+            truncated = true;
+            break;
+        }
+        files.insert(relative);
+    }
+
+    (files, truncated)
 }
 
 /// Remove redundant Modified events from a batch.

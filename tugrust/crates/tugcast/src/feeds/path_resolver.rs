@@ -31,8 +31,6 @@ pub struct PathResolver {
     /// Whether the watch path is under an autofs mount (macOS).
     #[allow(dead_code)]
     pub is_autofs: bool,
-    /// Keep-alive file handle to prevent autofs idle unmount.
-    _keepalive: Option<std::fs::File>,
 }
 
 impl PathResolver {
@@ -99,13 +97,6 @@ impl PathResolver {
         #[cfg(not(target_os = "macos"))]
         let is_autofs = false;
 
-        let keepalive = if is_autofs {
-            info!(path = %primary.display(), "autofs detected, opening keep-alive fd");
-            std::fs::File::open(&primary).ok()
-        } else {
-            None
-        };
-
         info!(
             original = %path.display(),
             primary = %primary.display(),
@@ -124,7 +115,6 @@ impl PathResolver {
             identity,
             alt_prefixes: Mutex::new(alt_prefixes),
             is_autofs,
-            _keepalive: keepalive,
         }
     }
 
@@ -221,6 +211,7 @@ fn get_identity(path: &Path) -> Option<(u64, u64)> {
 }
 
 #[cfg(unix)]
+#[allow(dead_code)] // used only from #[cfg(target_os = "macos")] functions
 fn same_identity(a: &Path, b: &Path) -> bool {
     match (get_identity(a), get_identity(b)) {
         (Some(ia), Some(ib)) => ia == ib,
@@ -300,22 +291,21 @@ fn resolve_apfs_firmlink_str(path_str: &str) -> Option<String> {
 // macOS: autofs detection
 // ---------------------------------------------------------------------------
 
+/// Check whether a path is under an autofs mount using statfs(2).
 #[cfg(target_os = "macos")]
 fn check_autofs(path: &Path) -> bool {
-    if let Ok(output) = std::process::Command::new("mount").output() {
-        if let Ok(text) = String::from_utf8(output.stdout) {
-            for line in text.lines() {
-                if line.contains("autofs") || line.contains("auto_home") {
-                    if let Some(on_idx) = line.find(" on ") {
-                        let after_on = &line[on_idx + 4..];
-                        if let Some(paren_idx) = after_on.find(" (") {
-                            let mount_point = &after_on[..paren_idx];
-                            if path.starts_with(mount_point) {
-                                return true;
-                            }
-                        }
-                    }
-                }
+    use std::ffi::CString;
+    let c_path = match CString::new(path.to_string_lossy().as_bytes()) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    unsafe {
+        let mut stat: libc::statfs = std::mem::zeroed();
+        if libc::statfs(c_path.as_ptr(), &mut stat) == 0 {
+            // autofs filesystem type name on macOS
+            let fstypename = std::ffi::CStr::from_ptr(stat.f_fstypename.as_ptr());
+            if let Ok(name) = fstypename.to_str() {
+                return name == "autofs";
             }
         }
     }
