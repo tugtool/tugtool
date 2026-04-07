@@ -13,6 +13,7 @@
  * | --tug7-element-global-text-normal-muted-rest       | --tug7-surface-global-primary-normal-overlay-rest  | informational | .tug-completion-menu-item atom type icon (color)     |
  * | --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-overlay-rest  | informational | .tug-completion-menu (border-color)                  |
  * | --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-global-primary-normal-overlay-rest  | content       | .tug-completion-menu-item-selected (background-color)|
+ * | (none — font-weight only)                          | --tug7-surface-global-primary-normal-overlay-rest  | content       | .tug-completion-match (font-weight)                  |
  */
 
 /* ---------------------------------------------------------------------------

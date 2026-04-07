@@ -769,7 +769,7 @@ export class TugTextEngine {
    * The provider handles staleness internally (returns [] if snapshot.query
    * doesn't match the requested query).
    */
-  refreshTypeahead(): void {
+  private refreshTypeahead(): void {
     if (!this._typeahead.active || !this._typeahead.provider) return;
     this._typeahead.filtered = this._typeahead.provider(this._typeahead.query);
     this._typeahead.selectedIndex = Math.min(

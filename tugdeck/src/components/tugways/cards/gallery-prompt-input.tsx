@@ -12,7 +12,7 @@
  *   [L07] Providers are stable refs created once per scope
  */
 
-import React, { useRef, useCallback, useState } from "react";
+import React, { useRef, useCallback, useMemo, useState } from "react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -135,7 +135,8 @@ function getFileCompletionProvider(): CompletionProvider {
     _fileCompletionProvider = _fileTreeStore.getFileCompletionProvider();
     return _fileCompletionProvider;
   }
-  // No connection — return a no-op provider (shouldn't happen at mount time).
+  // Defensive fallback — connection should always exist at render time.
+  console.warn("FileTreeStore: connection not available at render time");
   return ((_q: string) => []) as CompletionProvider;
 }
 
@@ -150,6 +151,13 @@ export function GalleryPromptInput() {
   const [returnAction, setReturnAction] = useState<InputAction>("newline");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
   const [maximized, setMaximized] = useState(false);
+
+  // Stable reference — provider functions are cached, no deps change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const completionProviders = useMemo(() => ({
+    "@": getFileCompletionProvider(),
+    "/": galleryCommandCompletionProvider,
+  }), []);
 
   const handleSubmit = useCallback(() => {
     const delegate = inputRef.current;
@@ -227,10 +235,7 @@ export function GalleryPromptInput() {
             returnAction={returnAction}
             numpadEnterAction={enterAction}
             onSubmit={handleSubmit}
-            completionProviders={{
-              "@": getFileCompletionProvider(),
-              "/": galleryCommandCompletionProvider,
-            }}
+            completionProviders={completionProviders}
             historyProvider={galleryHistoryProvider}
             dropHandler={galleryDropHandler}
             routePrefixes={[">", "$", ":", "/"]}

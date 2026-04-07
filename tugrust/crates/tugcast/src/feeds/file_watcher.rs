@@ -30,8 +30,6 @@ pub(crate) const DEBOUNCE_MILLIS: u64 = 100;
 pub(crate) const POLL_MILLIS: u64 = 50;
 
 /// Maximum number of files returned by walk()
-// Used by FileTreeFeed (wired in step-4/step-5)
-#[allow(dead_code)]
 const WALK_CAP: usize = 50_000;
 
 /// Shared filesystem watcher service.
@@ -61,8 +59,6 @@ impl FileWatcher {
     /// Skips `.git/` directories. Returns at most `WALK_CAP` files.
     ///
     /// Returns `(paths, truncated)` where `truncated` is true if the cap was hit.
-    // Used by FileTreeFeed (wired in step-4/step-5)
-    #[allow(dead_code)]
     pub fn walk(&self) -> (BTreeSet<String>, bool) {
         self.walk_with_cap(WALK_CAP)
     }

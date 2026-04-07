@@ -203,12 +203,21 @@ async fn main() {
                 query: String,
                 root: Option<String>,
             }
-            if let Ok(raw) = serde_json::from_slice::<RawQuery>(&frame.payload) {
-                let ftq = FileTreeQuery {
-                    query: raw.query,
-                    root: raw.root.map(PathBuf::from),
-                };
-                let _ = ft_adapter_tx.send(ftq).await;
+            match serde_json::from_slice::<RawQuery>(&frame.payload) {
+                Ok(raw) => {
+                    let ftq = FileTreeQuery {
+                        query: raw.query,
+                        root: raw.root.map(PathBuf::from),
+                    };
+                    let _ = ft_adapter_tx.send(ftq).await;
+                }
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        payload_len = frame.payload.len(),
+                        "FILETREE_QUERY: malformed JSON payload"
+                    );
+                }
             }
         }
     });

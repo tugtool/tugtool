@@ -9,9 +9,10 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScoredMatch {
     pub score: i32,
-    /// Byte-offset ranges `(start, end)` for matched characters in the candidate.
+    /// Character-offset ranges `(start, end)` for matched characters in the candidate.
     /// Each range is a half-open interval: the character at `start` is included,
-    /// the character at `end` is excluded.
+    /// the character at `end` is excluded. These are character indices (not byte
+    /// offsets) so JavaScript `String.slice()` works correctly for non-ASCII paths.
     pub matches: Vec<(usize, usize)>,
 }
 
@@ -188,7 +189,7 @@ pub fn fuzzy_score(query: &str, candidate: &str) -> Option<ScoredMatch> {
             // Skip: carry forward best score with gap penalty.
             if prev_best > i32::MIN / 2 {
                 // Penalty depends on whether the previous position was a skip or a match.
-                let prev_was_skip = dp_skip[i * cols + (j - 1)] >= dp_match[i * cols + (j - 1)];
+                let prev_was_skip = dp_skip[i * cols + (j - 1)] > dp_match[i * cols + (j - 1)];
                 let penalty = if prev_was_skip {
                     PENALTY_GAP_EXTENSION
                 } else {
@@ -199,20 +200,14 @@ pub fn fuzzy_score(query: &str, candidate: &str) -> Option<ScoredMatch> {
         }
     }
 
-    // Use a combined dp for backtracking.
-    let dp: Vec<i32> = dp_match
-        .iter()
-        .zip(dp_skip.iter())
-        .map(|(&m, &s)| m.max(s))
-        .collect();
-
-    let final_score = dp[qlen * cols + clen];
+    let final_score = dp_match[qlen * cols + clen].max(dp_skip[qlen * cols + clen]);
     if final_score <= i32::MIN / 2 {
         return None;
     }
 
-    // Backtrack to recover match positions.
-    let matches = backtrack(q, c, &dp, &consecutive, rows, cols);
+    // Backtrack using the separate dp_match/dp_skip tables to recover the
+    // exact alignment that produced the score.
+    let matches = backtrack(q, c, &dp_match, &dp_skip, rows, cols);
 
     Some(ScoredMatch {
         score: final_score,
@@ -220,46 +215,64 @@ pub fn fuzzy_score(query: &str, candidate: &str) -> Option<ScoredMatch> {
     })
 }
 
-/// Backtrack through the DP table to recover matched character positions.
+/// Backtrack through dp_match/dp_skip to recover matched character positions.
+///
+/// At each cell (i, j), the score came from either dp_match (character was
+/// matched → record position, move diagonally) or dp_skip (character was
+/// skipped → move left). Following the actual DP path guarantees the
+/// recovered positions match the alignment that produced the score.
+///
+/// Returns character-offset ranges (not byte offsets) so JavaScript's
+/// `String.slice()` works correctly for non-ASCII paths.
 fn backtrack(
     q: &[u8],
     c: &[u8],
-    dp: &[i32],
-    consecutive: &[i32],
+    dp_match: &[i32],
+    dp_skip: &[i32],
     rows: usize,
     cols: usize,
 ) -> Vec<(usize, usize)> {
+    // Build byte-position → character-index map for the candidate.
+    let byte_to_char: Vec<usize> = {
+        let s = std::str::from_utf8(c).unwrap_or("");
+        let mut map = vec![0usize; c.len()];
+        for (char_idx, (byte_idx, _)) in s.char_indices().enumerate() {
+            if byte_idx < c.len() {
+                map[byte_idx] = char_idx;
+            }
+        }
+        map
+    };
+
     let mut positions: Vec<usize> = Vec::with_capacity(q.len());
     let mut i = rows - 1;
     let mut j = cols - 1;
 
-    while i > 0 && j > 0 {
-        let idx = i * cols + j;
-        let qi_lower = q[i - 1].to_ascii_lowercase();
-        let cj_lower = c[j - 1].to_ascii_lowercase();
+    // Determine whether the final cell was a match or a skip.
+    let mut in_match = dp_match[i * cols + j] >= dp_skip[i * cols + j];
 
-        if qi_lower == cj_lower && consecutive[idx] > 0 {
-            // This position was part of a match.
-            positions.push(j - 1); // 0-indexed byte position in candidate
+    while i > 0 && j > 0 {
+        if in_match {
+            // This cell was a match — record position, move diagonally.
+            let byte_pos = j - 1;
+            let char_pos = if byte_pos < byte_to_char.len() {
+                byte_to_char[byte_pos]
+            } else {
+                byte_pos
+            };
+            positions.push(char_pos);
             i -= 1;
             j -= 1;
-        } else if qi_lower == cj_lower {
-            // Character matches but we might have chosen the skip path.
-            // Check if taking the match here leads to a valid score.
-            let diag = if i > 0 && j > 0 {
-                dp[(i - 1) * cols + (j - 1)]
-            } else {
-                0
-            };
-            if diag > i32::MIN / 2 && dp[idx] > dp[i * cols + (j - 1)] {
-                positions.push(j - 1);
-                i -= 1;
-                j -= 1;
-            } else {
-                j -= 1;
+            if i > 0 && j > 0 {
+                // The match came from max(dp_match, dp_skip) at (i-1, j-1).
+                in_match = dp_match[(i) * cols + (j)] >= dp_skip[(i) * cols + (j)];
             }
         } else {
+            // This cell was a skip — move left.
             j -= 1;
+            if j > 0 {
+                in_match = dp_match[i * cols + j] >= dp_skip[i * cols + j];
+            }
         }
     }
 
@@ -307,15 +320,17 @@ pub fn score_file_path(query: &str, path: &str) -> Option<ScoredMatch> {
     }
 
     // Try basename first.
-    let basename_start = path.rfind('/').map_or(0, |i| i + 1);
-    let basename = &path[basename_start..];
+    let basename_byte_start = path.rfind('/').map_or(0, |i| i + 1);
+    let basename = &path[basename_byte_start..];
+    // Convert byte offset to character offset for position adjustment.
+    let basename_char_start = path[..basename_byte_start].chars().count();
 
     if !basename.is_empty() && contains_chars(query, basename) {
         if let Some(mut m) = fuzzy_score(query, basename) {
-            // Adjust match positions to be relative to the full path.
+            // Adjust match positions to be relative to the full path (character offsets).
             for range in &mut m.matches {
-                range.0 += basename_start;
-                range.1 += basename_start;
+                range.0 += basename_char_start;
+                range.1 += basename_char_start;
             }
             m.score += BASENAME_TIER_BONUS;
             m.score -= path.len() as i32;
@@ -518,10 +533,10 @@ mod tests {
     #[test]
     fn basename_match_positions_are_path_relative() {
         let m = score_file_path("model", "src/lib/model.ts").unwrap();
-        // "model" matches the basename starting at byte offset 8 ("src/lib/" is 8 bytes).
+        // "model" matches the basename starting at character index 8 ("src/lib/" is 8 chars).
         assert!(!m.matches.is_empty());
         let first_start = m.matches[0].0;
-        assert_eq!(first_start, 8, "match should start at basename offset");
+        assert_eq!(first_start, 8, "match should start at basename char offset");
     }
 
     #[test]
@@ -538,5 +553,67 @@ mod tests {
         assert!(m.score > 0);
         // basename_start is 0 for root-level files.
         assert!(!m.matches.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug #1: character offsets (not byte offsets) for non-ASCII paths
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn non_ascii_match_positions_are_char_indices() {
+        // "café" is 5 bytes (é = 2 bytes) but 4 characters.
+        // Query "m" should match at character index 5 in "café/modèle.ts"
+        // (the 'm' after the '/').
+        let m = fuzzy_score("m", "café/modèle.ts").unwrap();
+        assert!(m.score > 0);
+        // 'm' is at byte offset 6 (c=1, a=1, f=1, é=2, /=1) but char index 5.
+        assert_eq!(m.matches, vec![(5, 6)], "should be char index 5, not byte index 6");
+    }
+
+    #[test]
+    fn non_ascii_path_score_file_path() {
+        let m = score_file_path("mod", "café/modèle.ts").unwrap();
+        assert!(m.score > 0);
+        // "mod" matches basename "modèle.ts" starting at char index 5.
+        assert!(!m.matches.is_empty());
+        assert_eq!(m.matches[0].0, 5, "first match at char index 5");
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug #2: backtracker recovers correct word-boundary positions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn backtracker_recovers_boundary_positions_for_sms() {
+        let m = fuzzy_score("sms", "session-metadata-store.ts").unwrap();
+        // The optimal alignment should hit word boundaries:
+        // s(0) at 'session', m(8) at 'metadata', s(17) at 'store'
+        // "session-metadata-store.ts"
+        //  0       8        17
+        assert_eq!(
+            m.matches,
+            vec![(0, 1), (8, 9), (17, 18)],
+            "should match word-boundary initials s(0), m(8), s(17)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug #8: gap penalty — gap start vs extension edge case
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn gap_start_penalized_more_than_extension() {
+        // "ab" in "axb" has one gap of 1 (skip 'x').
+        // "ab" in "axxxb" has one gap of 3 (skip 'xxx').
+        // The shorter gap should score higher (fewer gap extension penalties).
+        // Using lowercase letters to avoid boundary bonuses on 'b'.
+        let short_gap = fuzzy_score("ab", "axb").unwrap();
+        let long_gap = fuzzy_score("ab", "axxxb").unwrap();
+        assert!(
+            short_gap.score > long_gap.score,
+            "shorter gap ({}) should beat longer gap ({})",
+            short_gap.score,
+            long_gap.score
+        );
     }
 }
