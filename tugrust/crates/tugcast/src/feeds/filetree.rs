@@ -7,7 +7,6 @@
 //! This is a custom async task, NOT a `SnapshotFeed` implementor — the trait
 //! can't express the dual-input nature of query + file events.
 
-
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -176,9 +175,9 @@ impl FileTreeFeed {
 
     /// Off-board completion: readdir + prefix match [D10].
     fn off_board_query(&self, query: &str) -> FileTreeSnapshot {
-        let expanded = if query.starts_with('~') {
+        let expanded = if let Some(rest) = query.strip_prefix('~') {
             if let Ok(home) = std::env::var("HOME") {
-                format!("{}{}", home, &query[1..])
+                format!("{}{}", home, rest)
             } else {
                 query.to_string()
             }
@@ -377,9 +376,7 @@ mod tests {
 
     #[test]
     fn scored_query_returns_max_8() {
-        let files: BTreeSet<String> = (0..20)
-            .map(|i| format!("file_{i:02}.txt"))
-            .collect();
+        let files: BTreeSet<String> = (0..20).map(|i| format!("file_{i:02}.txt")).collect();
         let feed = test_feed(files);
         let response = feed.scored_query("file");
         assert!(response.results.len() <= MAX_RESULTS);
@@ -417,7 +414,11 @@ mod tests {
         let response = feed.empty_query();
         // Only root-level files (no `/`).
         for r in &response.results {
-            assert!(!r.path.contains('/'), "path should be root-level: {}", r.path);
+            assert!(
+                !r.path.contains('/'),
+                "path should be root-level: {}",
+                r.path
+            );
         }
         assert_eq!(response.results.len(), 3); // Cargo.toml, README.md, .gitignore
     }
@@ -433,9 +434,7 @@ mod tests {
 
     #[test]
     fn empty_query_max_8() {
-        let files: BTreeSet<String> = (0..20)
-            .map(|i| format!("file_{i:02}.txt"))
-            .collect();
+        let files: BTreeSet<String> = (0..20).map(|i| format!("file_{i:02}.txt")).collect();
         let feed = test_feed(files);
         let response = feed.empty_query();
         assert!(response.results.len() <= MAX_RESULTS);
@@ -459,7 +458,11 @@ mod tests {
         // /tmp should exist on macOS/Linux.
         let response = feed.off_board_query("/tmp/");
         for r in &response.results {
-            assert!(r.path.starts_with('/'), "off-board path should be absolute: {}", r.path);
+            assert!(
+                r.path.starts_with('/'),
+                "off-board path should be absolute: {}",
+                r.path
+            );
             assert_eq!(r.score, 0);
             assert!(r.matches.is_empty());
         }
@@ -526,13 +529,7 @@ mod tests {
         let watcher = FileWatcher::new(original.path().to_path_buf());
         let (files, truncated) = watcher.walk();
 
-        let mut feed = FileTreeFeed::new(
-            original.path().to_path_buf(),
-            files,
-            truncated,
-            tx,
-            qrx,
-        );
+        let mut feed = FileTreeFeed::new(original.path().to_path_buf(), files, truncated, tx, qrx);
         assert!(feed.watcher_aligned);
 
         feed.retarget(other.path());
@@ -595,7 +592,10 @@ mod tests {
         let json = serde_json::to_value(&snapshot).unwrap();
         assert_eq!(json["query"], "sms");
         assert!(json["results"].is_array());
-        assert_eq!(json["results"][0]["path"], "src/lib/session-metadata-store.ts");
+        assert_eq!(
+            json["results"][0]["path"],
+            "src/lib/session-metadata-store.ts"
+        );
         assert_eq!(json["results"][0]["score"], 72);
         assert_eq!(json["truncated"], false);
     }

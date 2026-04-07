@@ -251,12 +251,7 @@ pub fn fuzzy_score(query: &str, candidate: &str) -> Option<ScoredMatch> {
 /// Backtrack through dp_match/dp_skip to recover matched character positions.
 ///
 /// Returns a vector of 0-indexed character positions in the candidate.
-fn backtrack(
-    dp_match: &[i32],
-    dp_skip: &[i32],
-    rows: usize,
-    cols: usize,
-) -> Vec<usize> {
+fn backtrack(dp_match: &[i32], dp_skip: &[i32], rows: usize, cols: usize) -> Vec<usize> {
     let mut positions: Vec<usize> = Vec::with_capacity(rows - 1);
     let mut i = rows - 1;
     let mut j = cols - 1;
@@ -284,10 +279,7 @@ fn backtrack(
 }
 
 /// Convert character positions to merged UTF-16 code unit offset ranges.
-fn merge_to_utf16_ranges(
-    char_positions: &[usize],
-    utf16_offsets: &[usize],
-) -> Vec<(usize, usize)> {
+fn merge_to_utf16_ranges(char_positions: &[usize], utf16_offsets: &[usize]) -> Vec<(usize, usize)> {
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     for &pos in char_positions {
         let start = utf16_offsets[pos];
@@ -498,9 +490,8 @@ mod tests {
     fn basename_preference() {
         let short = score_file_path("model", "model.ts").unwrap();
         let deep = score_file_path("model", "src/models/config.ts");
-        match deep {
-            Some(d) => assert!(short.score > d.score),
-            None => {}
+        if let Some(d) = deep {
+            assert!(short.score > d.score);
         }
     }
 
@@ -508,14 +499,13 @@ mod tests {
     fn basename_match_beats_directory_match() {
         let basename_hit = score_file_path("model", "src/deep/model.ts").unwrap();
         let dir_only = score_file_path("model", "src/models/config.ts");
-        match dir_only {
-            Some(d) => assert!(
+        if let Some(d) = dir_only {
+            assert!(
                 basename_hit.score > d.score,
                 "basename hit ({}) should beat dir-only ({})",
                 basename_hit.score,
                 d.score
-            ),
-            None => {}
+            );
         }
     }
 
@@ -550,7 +540,10 @@ mod tests {
         let m = score_file_path("model", "src/lib/model.ts").unwrap();
         assert!(!m.matches.is_empty());
         // "src/lib/" is 8 chars, all ASCII → 8 UTF-16 code units.
-        assert_eq!(m.matches[0].0, 8, "match should start at basename UTF-16 offset");
+        assert_eq!(
+            m.matches[0].0, 8,
+            "match should start at basename UTF-16 offset"
+        );
     }
 
     #[test]

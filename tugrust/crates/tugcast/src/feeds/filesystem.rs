@@ -26,7 +26,10 @@ impl FilesystemFeed {
     /// created by the FileWatcher; `run()` calls `subscribe()` on it to get its
     /// own receiver.
     pub fn new(watch_dir: PathBuf, event_tx: broadcast::Sender<Vec<FsEvent>>) -> Self {
-        Self { watch_dir, event_tx }
+        Self {
+            watch_dir,
+            event_tx,
+        }
     }
 }
 
@@ -111,8 +114,7 @@ mod tests {
         let feed = FilesystemFeed::new(watch_path.clone(), broadcast_tx.clone());
 
         // Create watch channel
-        let (fs_watch_tx, mut fs_watch_rx) =
-            watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
+        let (fs_watch_tx, mut fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
 
         // Spawn the FileWatcher in the background
         let cancel = CancellationToken::new();

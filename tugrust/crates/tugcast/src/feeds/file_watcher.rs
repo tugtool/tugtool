@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc as std_mpsc;
 use std::time::Duration;
 
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::WalkBuilder;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use tokio::sync::broadcast;
@@ -236,11 +236,10 @@ impl FileWatcher {
 
 /// Check if a notify Event touches a .gitignore file
 pub(crate) fn is_gitignore_event(event: &Event) -> bool {
-    event.paths.iter().any(|p| {
-        p.file_name()
-            .map(|n| n == ".gitignore")
-            .unwrap_or(false)
-    })
+    event
+        .paths
+        .iter()
+        .any(|p| p.file_name().map(|n| n == ".gitignore").unwrap_or(false))
 }
 
 /// Build gitignore matcher from all .gitignore files found under the watch directory.
@@ -273,12 +272,12 @@ pub(crate) fn build_gitignore(watch_dir: &Path) -> Gitignore {
         };
 
         // Only interested in files named exactly ".gitignore"
-        if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-            if entry.file_name() == ".gitignore" {
-                let path = entry.path();
-                if let Some(err) = builder.add(path) {
-                    warn!(path = ?path, error = %err, "failed to load .gitignore");
-                }
+        if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
+            && entry.file_name() == ".gitignore"
+        {
+            let path = entry.path();
+            if let Some(err) = builder.add(path) {
+                warn!(path = ?path, error = %err, "failed to load .gitignore");
             }
         }
     }
@@ -574,12 +573,18 @@ mod tests {
 
         // Cap of 3 with 5 files: should return exactly 3 files and truncated=true
         let (files, truncated) = watcher.walk_with_cap(3);
-        assert!(truncated, "expected truncated=true when file count exceeds cap");
+        assert!(
+            truncated,
+            "expected truncated=true when file count exceeds cap"
+        );
         assert_eq!(files.len(), 3, "expected exactly cap files returned");
 
         // Cap of 10 with 5 files: should return all 5 and truncated=false
         let (files, truncated) = watcher.walk_with_cap(10);
-        assert!(!truncated, "expected truncated=false when file count is within cap");
+        assert!(
+            !truncated,
+            "expected truncated=false when file count is within cap"
+        );
         assert_eq!(files.len(), 5, "expected all 5 files returned");
     }
 
