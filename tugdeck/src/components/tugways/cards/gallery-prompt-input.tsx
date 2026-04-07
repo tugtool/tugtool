@@ -18,7 +18,7 @@ import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import type { AtomSegment, InputAction } from "@/lib/tug-text-engine";
+import type { AtomSegment, CompletionProvider, InputAction } from "@/lib/tug-text-engine";
 import { FeedStore } from "@/lib/feed-store";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -81,27 +81,21 @@ const GALLERY_SESSION_ID = "gallery-mock-session";
  */
 function buildGalleryStores(): {
   metadataStore: SessionMetadataStore | null;
-  fileTreeStore: FileTreeStore;
   historyStore: PromptHistoryStore;
 } {
   const historyStore = new PromptHistoryStore();
   const connection = getConnection();
 
   if (connection !== null) {
-    const feedStore = new FeedStore(connection, [FeedId.CODE_OUTPUT, FeedId.FILETREE, FeedId.FILETREE_QUERY]);
+    const feedStore = new FeedStore(connection, [FeedId.CODE_OUTPUT]);
     const metadataStore = new SessionMetadataStore(feedStore, FeedId.CODE_OUTPUT);
-    const fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
-    return { metadataStore, fileTreeStore, historyStore };
+    return { metadataStore, historyStore };
   }
 
-  // Tugcast is always running when cards are visible, but create a minimal
-  // FileTreeStore with a disconnected FeedStore for type safety.
-  const dummyFeedStore = new FeedStore(null as any, []);
-  const fileTreeStore = new FileTreeStore(dummyFeedStore, FeedId.FILETREE);
-  return { metadataStore: null, fileTreeStore, historyStore };
+  return { metadataStore: null, historyStore };
 }
 
-const { metadataStore: _metadataStore, fileTreeStore: _fileTreeStore, historyStore: _historyStore } = buildGalleryStores();
+const { metadataStore: _metadataStore, historyStore: _historyStore } = buildGalleryStores();
 
 /**
  * Completion provider for the / trigger.
@@ -122,11 +116,28 @@ const galleryCommandCompletionProvider = _metadataStore !== null
       }));
     };
 
-/** Completion provider for the @ trigger — live fuzzy-scored results from tugcast. */
-const galleryFileCompletionProvider = _fileTreeStore.getFileCompletionProvider();
-
 /** History provider scoped to the gallery mock session. */
 const galleryHistoryProvider = _historyStore.createProvider(GALLERY_SESSION_ID);
+
+/**
+ * Create a FileTreeStore lazily — the connection is guaranteed to exist at
+ * component mount time but NOT at module-scope import time.
+ */
+let _fileTreeStore: FileTreeStore | null = null;
+let _fileCompletionProvider: CompletionProvider | null = null;
+
+function getFileCompletionProvider(): CompletionProvider {
+  if (_fileCompletionProvider) return _fileCompletionProvider;
+  const connection = getConnection();
+  if (connection) {
+    const feedStore = new FeedStore(connection, [FeedId.FILETREE]);
+    _fileTreeStore = new FileTreeStore(feedStore, FeedId.FILETREE);
+    _fileCompletionProvider = _fileTreeStore.getFileCompletionProvider();
+    return _fileCompletionProvider;
+  }
+  // No connection — return a no-op provider (shouldn't happen at mount time).
+  return ((_q: string) => []) as CompletionProvider;
+}
 
 // ===================================================================
 // Gallery component
@@ -217,7 +228,7 @@ export function GalleryPromptInput() {
             numpadEnterAction={enterAction}
             onSubmit={handleSubmit}
             completionProviders={{
-              "@": galleryFileCompletionProvider,
+              "@": getFileCompletionProvider(),
               "/": galleryCommandCompletionProvider,
             }}
             historyProvider={galleryHistoryProvider}

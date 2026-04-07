@@ -790,6 +790,71 @@ The `matches` field carries character ranges for highlighting. When present, the
 
 ---
 
+#### Step 11: Quality remediation — correctness and polish {#step-11}
+
+**Depends on:** #step-10
+
+**Commit:** `fix(tugcast/tugdeck): remediate quality issues from post-integration audit`
+
+**References:** Post-integration audit findings #1–#9
+
+**Artifacts:**
+- Modified `tugrust/crates/tugcast/src/feeds/fuzzy_scorer.rs` — backtracker rewrite, char-offset conversion
+- Modified `tugrust/crates/tugcast/src/feeds/filetree.rs` — (no changes expected, but verify)
+- Modified `tugrust/crates/tugcast/src/feeds/file_watcher.rs` — remove stale `#[allow(dead_code)]`
+- Modified `tugrust/crates/tugcast/src/main.rs` — add warning log for malformed FILETREE_QUERY
+- Modified `tugdeck/src/lib/tug-text-engine.ts` — make `refreshTypeahead` private
+- Modified `tugdeck/src/components/tugways/cards/gallery-prompt-input.tsx` — assert connection or document fallback
+- Modified `tugdeck/src/components/tugways/tug-completion-menu.css` — add `@tug-pairings` for `.tug-completion-match`
+
+**Tasks:**
+
+*Bug #1 — Byte offsets vs JavaScript string indices:*
+- [ ] In `fuzzy_scorer.rs`: change match position tracking from byte offsets to character (Unicode scalar) offsets. The `ScoredMatch.matches` field already documents "byte-offset ranges" — change to character offsets so JavaScript `String.slice()` works correctly for non-ASCII paths. Walk the candidate string with `.char_indices()` to map byte positions to character positions during backtracking. Update doc comments on `ScoredMatch.matches` to say "character-offset ranges."
+- [ ] Add unit test: path with non-ASCII characters (e.g., `"café/modèle.ts"`) — verify match positions are character indices, not byte indices.
+
+*Bug #2 — Backtracker uses combined DP table, may recover wrong positions:*
+- [ ] In `fuzzy_scorer.rs`: rewrite `backtrack()` to use the separate `dp_match` and `dp_skip` tables instead of the combined `max(dp_match, dp_skip)`. The backtracker should follow the actual path the DP took: at each cell, check if the score came from `dp_match` (character was matched → record position, move diagonally) or `dp_skip` (character was skipped → move left). This guarantees recovered positions match the alignment that produced the score.
+- [ ] Pass `dp_match` and `dp_skip` to `backtrack()` instead of the combined `dp`.
+- [ ] Add unit test: verify that match positions for `"sms"` against `"session-metadata-store.ts"` land on the word-boundary characters (s at 0, m at 8, s at 17) — the positions that produce the boundary bonuses.
+
+*Bug #3 — Silent error dropping in adapter task:*
+- [ ] In `main.rs`: add `warn!()` in the adapter task's else branch when `serde_json::from_slice` fails. Log the error and the payload length (not the payload itself — it could be large).
+
+*Issue #4 — Plan/code mismatch on fallback:*
+- [ ] In `gallery-prompt-input.tsx`: replace the silent no-op fallback with a `console.warn` so the condition is diagnosable: `console.warn("FileTreeStore: connection not available at render time"); return ...`. The plan says "no fallback" but the code has one — the warning makes the mismatch visible rather than silently broken.
+
+*Issue #5 — completionProviders prop recreated every render:*
+- [ ] In `gallery-prompt-input.tsx`: memoize the `completionProviders` object via `useMemo` so the same reference is reused across renders. The provider functions inside are already stable — this eliminates the unnecessary object allocation.
+
+*Issue #6 — `refreshTypeahead` is public:*
+- [ ] In `tug-text-engine.ts`: change `refreshTypeahead()` from public to private. The subscribe callback captures `this` via closure — it doesn't need public access. Verify no external callers exist.
+
+*Issue #7 — Stale `#[allow(dead_code)]` on WALK_CAP:*
+- [ ] In `file_watcher.rs`: remove `#[allow(dead_code)]` from `WALK_CAP` constant. It's used by `walk()` which is called from `main.rs`. Also remove the stale "// Used by FileTreeFeed (wired in step-4/step-5)" comment — the wiring is done.
+
+*Issue #8 — Gap penalty `>=` comparison:*
+- [ ] In `fuzzy_scorer.rs`: change `let prev_was_skip = dp_skip[...] >= dp_match[...]` to `dp_skip[...] > dp_match[...]`. When scores are equal, prefer treating the previous position as a match (gap start penalty -3) rather than a skip extension (-1). This is more conservative and matches fzf's behavior where a new gap is penalized more heavily.
+- [ ] Add unit test verifying that a gap-start vs gap-extension edge case scores correctly.
+
+*Issue #9 — Missing `@tug-pairings` for `.tug-completion-match`:*
+- [ ] In `tug-completion-menu.css`: add `.tug-completion-match` to the `@tug-pairings` table at the top of the file. It only sets `font-weight` (no color), so no `@tug-renders-on` is needed, but the pairings table should document it for completeness. Entry: `| (none — font-weight only) | --tug7-surface-global-primary-normal-overlay-rest | content | .tug-completion-match (font-weight) |`
+
+**Tests:**
+- [ ] Non-ASCII path match positions are character indices (Rust unit test)
+- [ ] Backtracker recovers correct positions matching the scored alignment (Rust unit test)
+- [ ] Gap penalty edge case scores correctly (Rust unit test)
+- [ ] Existing 24 fuzzy_scorer tests still pass after backtracker rewrite
+- [ ] Existing 19 filetree tests still pass
+- [ ] Existing 15 filetree-store tests still pass
+
+**Checkpoint:**
+- [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo build`
+- [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo nextest run`
+- [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck && bun test`
+
+---
+
 ### Deliverables and Checkpoints {#deliverables}
 
 **Deliverable:** Live fuzzy-scored file completion for the `@` trigger — tugcast indexes project files via a shared FileWatcher service, scores queries with a two-layer fuzzy matcher in Rust, and returns top-N scored results to tugdeck via a query/response channel.
@@ -804,12 +869,17 @@ The `matches` field carries character ranges for highlighting. When present, the
 - [ ] Off-board completion: absolute paths (`/`, `~`) complete via readdir [D10]
 - [ ] FileTreeStore in tugdeck: sends queries, exposes subscribable `getFileCompletionProvider()` [L22, D07]
 - [ ] Gallery card `@` trigger shows live fuzzy-scored project files with match highlighting
+- [ ] Match positions are character offsets (correct for non-ASCII paths)
+- [ ] Backtracker recovers the exact alignment that produced the score
+- [ ] Malformed FILETREE_QUERY payloads logged, not silently dropped
 - [ ] `cd tugrust && cargo nextest run` passes
 - [ ] `cd tugdeck && bun test` passes
 
 **Acceptance tests:**
 - [x] FileWatcher `walk()` returns correct relative paths respecting nested `.gitignore` (Rust unit test)
 - [ ] Fuzzy scorer: `"sms"` matches `"session-metadata-store.ts"`, `"model"` prefers basename match over directory match (Rust unit test)
+- [ ] Fuzzy scorer: non-ASCII path (`"café/modèle.ts"`) produces correct character-offset match positions (Rust unit test)
+- [ ] Fuzzy scorer: backtracker recovers word-boundary positions for `"sms"` → `"session-metadata-store.ts"` (Rust unit test)
 - [ ] FileTreeFeed applies Created/Removed/Renamed, ignores Modified, responds to queries with scored results (Rust unit test)
 - [ ] Off-board completion: `/tmp/te` returns prefix-matched entries, nonexistent parent returns empty (Rust unit test)
 - [ ] Root retarget: query with new `root` re-walks and scores against new index (Rust unit test)
