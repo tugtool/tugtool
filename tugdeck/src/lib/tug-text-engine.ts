@@ -327,6 +327,7 @@ export class TugTextEngine {
   // Drag state — drop caret indicator element [L06]
   private _dropCaret: HTMLDivElement | null = null;
   private _dragEnterCount = 0;
+  private _dragAtom: HTMLImageElement | null = null;
 
   // @-trigger typeahead state
   private _typeahead = {
@@ -1188,9 +1189,22 @@ export class TugTextEngine {
       // If only plain text, let browser handle natively
     }, true); // capture phase
 
-    // 7. Drag & drop — files become atom images
+    // 7. Drag & drop — files become atom images, internal atoms move
     // Drop caret: a thin line positioned at the prospective insertion point [L06].
     // The browser selection is untouched during drag — preserved per L23.
+    this.listen(root, "dragstart", (e: Event) => {
+      const de = e as DragEvent;
+      const target = de.target as HTMLElement;
+      if (target.tagName === "IMG" && target.hasAttribute("data-atom-label")) {
+        this._dragAtom = target as HTMLImageElement;
+        de.dataTransfer!.effectAllowed = "move";
+      }
+    });
+
+    this.listen(root, "dragend", () => {
+      this._dragAtom = null;
+    });
+
     this.listen(root, "dragenter", (e: Event) => {
       e.preventDefault();
       this._dragEnterCount++;
@@ -1215,7 +1229,7 @@ export class TugTextEngine {
     this.listen(root, "dragover", (e: Event) => {
       e.preventDefault();
       const de = e as DragEvent;
-      de.dataTransfer!.dropEffect = "copy";
+      de.dataTransfer!.dropEffect = this._dragAtom ? "move" : "copy";
       // Position the drop caret indicator
       const range = document.caretRangeFromPoint(de.clientX, de.clientY);
       if (range) {
@@ -1286,6 +1300,43 @@ export class TugTextEngine {
       this.removeDropCaret();
       root.style.caretColor = "";
       const de = e as DragEvent;
+
+      // Internal atom drag → move
+      if (this._dragAtom) {
+        const draggedImg = this._dragAtom;
+        this._dragAtom = null;
+        const dropRange = document.caretRangeFromPoint(de.clientX, de.clientY);
+        if (!dropRange) return;
+        this.adjustRangeForAtom(dropRange, de.clientX);
+
+        // Compute flat offsets BEFORE any DOM changes
+        let dropOffset = domToFlat(root, dropRange.startContainer, dropRange.startOffset);
+        // Find the atom's flat offset by selecting it
+        const atomRange = document.createRange();
+        atomRange.selectNode(draggedImg);
+        const atomOffset = domToFlat(root, atomRange.startContainer, atomRange.startOffset);
+
+        // If atom is before drop point, adjust for its removal (atom = 1 char)
+        if (atomOffset < dropOffset) dropOffset -= 1;
+
+        // No-op if dropping back to the same position
+        if (atomOffset === dropOffset) return;
+
+        // Read atom data before removing
+        const atomType = draggedImg.dataset.atomType ?? "file";
+        const atomLabel = draggedImg.dataset.atomLabel ?? "";
+        const atomValue = draggedImg.dataset.atomValue ?? "";
+
+        // Delete the atom, then insert at the adjusted offset
+        this.deleteRange(atomOffset, atomOffset + 1);
+        this.setSelectedRange(dropOffset);
+        const html = atomType === "route"
+          ? routeAtomImgHTML(atomLabel)
+          : atomImgHTML(atomType, atomLabel, atomValue);
+        document.execCommand("insertHTML", false, html);
+        return;
+      }
+
       const files = de.dataTransfer?.files;
       if (!files || files.length === 0) return;
 
