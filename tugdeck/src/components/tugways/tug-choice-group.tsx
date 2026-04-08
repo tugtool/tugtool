@@ -8,16 +8,26 @@
  * variants (sm/md/lg), individual and group-level disable, and role-based color
  * injection for the indicator pill (same pattern as checkbox/switch/radio).
  *
+ * Control semantics (L11): user activation (click or arrow key) dispatches a
+ * `selectValue` action through the responder chain with the newly selected
+ * segment value and a stable `sender` id. Because focus and selection are
+ * coupled in this component (arrow keys move selection, not just focus),
+ * arrow keys dispatch `selectValue` — no separate `focusNext`/`focusPrevious`
+ * actions. Parent responders register a `selectValue` handler via
+ * `useResponder` and switch on `event.sender`. There is no `onValueChange`
+ * callback prop.
+ *
  * NOT a tab bar — this is a value picker, not a view switcher. See roadmap doc.
  *
- * Laws: [L06] appearance via CSS/DOM refs, [L15] token-driven states,
- *       [L16] pairings declared, [L19] component authoring guide
+ * Laws: [L06] appearance via CSS/DOM refs, [L11] controls emit actions,
+ *       [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide
  * Decisions: [D03] appearance via stylesheet injection, [D05] component token naming
  */
 
 import "./tug-choice-group.css";
 
-import React from "react";
+import React, { useCallback, useId } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import {
@@ -26,6 +36,7 @@ import {
   useGroupKeyboardNav,
   renderGroupItemContent,
 } from "./internal/tug-group-utils";
+import { useResponderChain } from "./responder-chain-provider";
 
 // ---- Types ----
 
@@ -71,8 +82,15 @@ export interface TugChoiceGroupProps
    * @selector [data-state="active"] on segments
    */
   value: string;
-  /** Fires when selection changes. */
-  onValueChange: (value: string) => void;
+  /**
+   * Stable identifier passed as `event.sender` on every `selectValue`
+   * action dispatched by this group. Parent responders use this to
+   * disambiguate multi-group forms in their `selectValue` handler.
+   * Defaults to a `useId()`-derived unique string — set explicitly
+   * when the parent needs a predictable id (e.g. for form routing
+   * by semantic name).
+   */
+  senderId?: string;
   /**
    * Visual size.
    * @selector .tug-choice-group-sm | .tug-choice-group-md | .tug-choice-group-lg
@@ -105,7 +123,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
     {
       items,
       value,
-      onValueChange,
+      senderId,
       size = "md",
       role,
       disabled = false,
@@ -140,13 +158,33 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       indEl.style.width = `${segEl.offsetWidth}px`;
     }, [value, items]);
 
+    // Chain dispatch [L11]: selection changes dispatch `selectValue`.
+    // Arrow keys in this component move selection (not just focus),
+    // so arrow-key navigation also dispatches `selectValue` via the
+    // same handler. No separate focusNext/focusPrevious dispatch.
+    const manager = useResponderChain();
+    const fallbackId = useId();
+    const effectiveSenderId = senderId ?? fallbackId;
+    const dispatchSelectValue = useCallback(
+      (nextValue: string) => {
+        if (!manager) return;
+        manager.dispatch({
+          action: "selectValue",
+          value: nextValue,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+      },
+      [manager, effectiveSenderId],
+    );
+
     // ---- Keyboard navigation ----
 
     const handleKeyDown = useGroupKeyboardNav({
       items,
       focusedValue: value,
       onFocusChange: (nextValue) => {
-        onValueChange(nextValue);
+        dispatchSelectValue(nextValue);
       },
       disabled: effectiveDisabled,
       itemRefs: segmentRefs,
@@ -201,7 +239,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
               tabIndex={isActive ? 0 : -1}
               onClick={() => {
                 if (!isDisabled && !isActive) {
-                  onValueChange(item.value);
+                  dispatchSelectValue(item.value);
                 }
               }}
             >

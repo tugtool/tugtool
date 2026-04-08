@@ -54,9 +54,9 @@ export function GalleryBox() {
   // Rounded section
   const [roundedCb, setRoundedCb] = useState(true);
 
-  // L11 migration pattern: single `toggle` action handler for every
-  // checkbox and switch in this card. The setter map is the single
-  // source of truth for which senderId routes to which state setter.
+  // L11 migration pattern: single responder for every interactive
+  // control in this card. Separate handlers per action (toggle,
+  // selectValue) share the same senderId namespace.
   // See gallery-checkbox.tsx for the annotated reference.
   const toggleSetters: Record<string, (v: boolean) => void> = {
     "plain-cb-1": setPlainCb1,
@@ -86,10 +86,31 @@ export function GalleryBox() {
     setter(v);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // selectValue handler for radio groups and choice groups.
+  const selectSetters: Record<string, (v: string) => void> = {
+    "nested-radio": setNestedRadio,
+    "toggle-radio": setToggleRadio,
+    "toggle-seg": setToggleSeg,
+  };
+  const handleSelectValue = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (!sender) return;
+    const setter = selectSetters[sender];
+    if (!setter) return;
+    const v = narrowValue(event, (val): val is string => typeof val === "string");
+    if (v === null) return;
+    setter(v);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const responderId = useId();
   const { ResponderScope, responderRef } = useResponder({
     id: responderId,
-    actions: { toggle: handleToggle },
+    actions: {
+      toggle: handleToggle,
+      selectValue: handleSelectValue,
+    },
   });
 
   return (
@@ -194,7 +215,7 @@ export function GalleryBox() {
                 <TugRadioGroup
                   label="Protocol"
                   value={nestedRadio}
-                  onValueChange={setNestedRadio}
+                  senderId="nested-radio"
                   orientation="horizontal"
                 >
                   <TugRadioItem value="http">HTTP</TugRadioItem>
@@ -225,7 +246,7 @@ export function GalleryBox() {
               <TugRadioGroup
                 aria-label="Protocol"
                 value={toggleRadio}
-                onValueChange={setToggleRadio}
+                senderId="toggle-radio"
                 orientation="horizontal"
               >
                 <TugRadioItem value="http">HTTP</TugRadioItem>
@@ -234,7 +255,7 @@ export function GalleryBox() {
               </TugRadioGroup>
               <TugChoiceGroup
                 value={toggleSeg}
-                onValueChange={setToggleSeg}
+                senderId="toggle-seg"
                 aria-label="View mode"
                 items={[
                   { value: "grid",  label: "Grid"  },

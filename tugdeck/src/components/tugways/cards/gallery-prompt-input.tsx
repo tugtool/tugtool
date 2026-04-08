@@ -12,7 +12,7 @@
  *   [L07] Providers are stable refs created once per scope
  */
 
-import React, { useRef, useCallback, useMemo, useState, useLayoutEffect, useSyncExternalStore } from "react";
+import React, { useRef, useCallback, useId, useMemo, useState, useLayoutEffect, useSyncExternalStore } from "react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -20,6 +20,9 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { narrowValue } from "@/components/tugways/action-vocabulary";
 import type { AtomSegment, CompletionProvider, HistoryProvider, InputAction } from "@/lib/tug-text-engine";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { FeedStore } from "@/lib/feed-store";
@@ -229,13 +232,29 @@ export function GalleryPromptInput() {
     delegate.focus();
   }, []);
 
-  const handleReturnAction = useCallback((value: string) => {
-    setReturnAction(value as InputAction);
+  // L11 (A2.2): the gallery card is a responder that handles
+  // `selectValue` actions dispatched by the key-config TugChoiceGroups.
+  // TugPromptInput has its own nested responder for cut/copy/paste;
+  // clicks inside the editor promote that, clicks on a choice group
+  // promote this outer card (innermost-first DOM walk). See
+  // gallery-checkbox.tsx for the annotated reference pattern.
+  const handleSelectValue = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (!sender) return;
+    const v = narrowValue(event, (val): val is string => typeof val === "string");
+    if (v === null) return;
+    if (sender === "key-return") {
+      setReturnAction(v as InputAction);
+    } else if (sender === "key-enter") {
+      setEnterAction(v as InputAction);
+    }
   }, []);
 
-  const handleEnterAction = useCallback((value: string) => {
-    setEnterAction(value as InputAction);
-  }, []);
+  const responderId = useId();
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: { selectValue: handleSelectValue },
+  });
 
   const handleRouteChange = useCallback((route: string | null) => {
     if (routeRef.current) routeRef.current.textContent = route ?? "none";
@@ -254,7 +273,12 @@ export function GalleryPromptInput() {
   }, [editorStore]);
 
   return (
-    <div className="cg-content" data-testid="gallery-prompt-input">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-prompt-input"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- Interactive Editor ---- */}
       <div className="cg-section">
@@ -315,11 +339,11 @@ export function GalleryPromptInput() {
         <div className="prompt-input-key-config">
           <div className="prompt-input-key-config-row">
             <span className="prompt-input-key-config-label">Return (main keyboard):</span>
-            <TugChoiceGroup items={RETURN_CHOICES} value={returnAction} size="sm" onValueChange={handleReturnAction} />
+            <TugChoiceGroup items={RETURN_CHOICES} value={returnAction} size="sm" senderId="key-return" />
           </div>
           <div className="prompt-input-key-config-row">
             <span className="prompt-input-key-config-label">Enter (numpad):</span>
-            <TugChoiceGroup items={ENTER_CHOICES} value={enterAction} size="sm" onValueChange={handleEnterAction} />
+            <TugChoiceGroup items={ENTER_CHOICES} value={enterAction} size="sm" senderId="key-enter" />
           </div>
           <div className="prompt-input-desc">
             Shift always inverts. hasMarkedText=true → key goes to IME.
@@ -328,5 +352,6 @@ export function GalleryPromptInput() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

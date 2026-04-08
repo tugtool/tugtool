@@ -13,7 +13,7 @@
  * @module components/tugways/cards/gallery-choice-group
  */
 
-import React, { useState } from "react";
+import React, { useCallback, useId, useState } from "react";
 import {
   Bold,
   Italic,
@@ -27,6 +27,9 @@ import {
 } from "lucide-react";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceGroupRole } from "@/components/tugways/tug-choice-group";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { narrowValue } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -73,8 +76,54 @@ export function GalleryChoiceGroup() {
   const [iconRightValue, setIconRightValue] = useState("left");
   const [iconOnlyValue, setIconOnlyValue] = useState("light");
 
+  // L11 migration pattern (A2.2): the gallery card is a responder that
+  // handles `selectValue` actions dispatched by TugChoiceGroup children.
+  // The sender id identifies which choice group within this card. See
+  // gallery-checkbox.tsx for the annotated reference implementation.
+  //
+  // Role entries use a single shared handler that writes into a record
+  // keyed by role name. senderId for role groups is "choice-role-<name>".
+  const setters: Record<string, (v: string) => void> = {
+    "choice-sm": setSmValue,
+    "choice-md": setMdValue,
+    "choice-lg": setLgValue,
+    "choice-accent": setAccentValue,
+    "choice-partial": setPartialValue,
+    "choice-view-instant": setViewMode,
+    "choice-view-animated": setAnimatedValue,
+    "choice-icon-left": setIconLeftValue,
+    "choice-icon-right": setIconRightValue,
+    "choice-icon-only": setIconOnlyValue,
+  };
+  const handleSelectValue = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (!sender) return;
+    const v = narrowValue(event, (val): val is string => typeof val === "string");
+    if (v === null) return;
+    // Role entries route to the roleValues record.
+    if (sender.startsWith("choice-role-")) {
+      const role = sender.slice("choice-role-".length);
+      setRoleValues((prev) => ({ ...prev, [role]: v }));
+      return;
+    }
+    const setter = setters[sender];
+    if (!setter) return;
+    setter(v);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const responderId = useId();
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: { selectValue: handleSelectValue },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-choice-group">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-choice-group"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
@@ -85,7 +134,7 @@ export function GalleryChoiceGroup() {
             <TugChoiceGroup
               size="sm"
               value={smValue}
-              onValueChange={setSmValue}
+              senderId="choice-sm"
               aria-label="Small choice group"
               items={[
                 { value: "alpha", label: "Alpha" },
@@ -99,7 +148,7 @@ export function GalleryChoiceGroup() {
             <TugChoiceGroup
               size="md"
               value={mdValue}
-              onValueChange={setMdValue}
+              senderId="choice-md"
               aria-label="Medium choice group"
               items={[
                 { value: "alpha", label: "Alpha" },
@@ -113,7 +162,7 @@ export function GalleryChoiceGroup() {
             <TugChoiceGroup
               size="lg"
               value={lgValue}
-              onValueChange={setLgValue}
+              senderId="choice-lg"
               aria-label="Large choice group"
               items={[
                 { value: "alpha", label: "Alpha" },
@@ -134,7 +183,7 @@ export function GalleryChoiceGroup() {
           {/* accent (default — no role prop) */}
           <TugChoiceGroup
             value={accentValue}
-            onValueChange={setAccentValue}
+            senderId="choice-accent"
             aria-label="accent (default)"
             items={[
               { value: "off", label: "accent off" },
@@ -147,7 +196,7 @@ export function GalleryChoiceGroup() {
               key={role}
               role={role}
               value={roleValues[role]}
-              onValueChange={(v) => setRoleValues((prev) => ({ ...prev, [role]: v }))}
+              senderId={`choice-role-${role}`}
               aria-label={`${role} role`}
               items={[
                 { value: "off", label: `${role} off` },
@@ -171,7 +220,6 @@ export function GalleryChoiceGroup() {
             <TugChoiceGroup
               disabled
               value={disabledGroupValue}
-              onValueChange={() => {}}
               aria-label="Disabled group"
               items={[
                 { value: "alpha", label: "Alpha" },
@@ -186,7 +234,7 @@ export function GalleryChoiceGroup() {
             </div>
             <TugChoiceGroup
               value={partialValue}
-              onValueChange={setPartialValue}
+              senderId="choice-partial"
               aria-label="Partial disabled group"
               items={[
                 { value: "alpha", label: "Alpha" },
@@ -210,7 +258,7 @@ export function GalleryChoiceGroup() {
           </div>
           <TugChoiceGroup
             value={viewMode}
-            onValueChange={setViewMode}
+            senderId="choice-view-instant"
             aria-label="View mode (instant)"
             items={[
               { value: "grid",  label: "Grid"  },
@@ -236,7 +284,7 @@ export function GalleryChoiceGroup() {
           <TugChoiceGroup
             animated
             value={animatedValue}
-            onValueChange={setAnimatedValue}
+            senderId="choice-view-animated"
             aria-label="View mode (animated)"
             items={[
               { value: "grid",  label: "Grid"  },
@@ -264,7 +312,7 @@ export function GalleryChoiceGroup() {
             </div>
             <TugChoiceGroup
               value={iconLeftValue}
-              onValueChange={setIconLeftValue}
+              senderId="choice-icon-left"
               aria-label="Text formatting"
               items={[
                 { value: "bold",      label: "Bold",      icon: <Bold /> },
@@ -281,7 +329,7 @@ export function GalleryChoiceGroup() {
             </div>
             <TugChoiceGroup
               value={iconRightValue}
-              onValueChange={setIconRightValue}
+              senderId="choice-icon-right"
               aria-label="Text alignment"
               items={[
                 { value: "left",   label: "Left",   icon: <AlignLeft />,   iconPosition: "right" },
@@ -298,7 +346,7 @@ export function GalleryChoiceGroup() {
             </div>
             <TugChoiceGroup
               value={iconOnlyValue}
-              onValueChange={setIconOnlyValue}
+              senderId="choice-icon-only"
               aria-label="Color theme"
               items={[
                 { value: "light",  icon: <Sun />,     "aria-label": "Light" },
@@ -312,5 +360,6 @@ export function GalleryChoiceGroup() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

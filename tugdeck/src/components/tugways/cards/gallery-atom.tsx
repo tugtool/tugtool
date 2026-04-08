@@ -8,7 +8,7 @@
  * the same path used by TugTextEngine inside contentEditable.
  */
 
-import React, { useRef, useLayoutEffect, useState } from "react";
+import React, { useCallback, useId, useRef, useLayoutEffect, useState } from "react";
 import {
   createAtomImgElement,
   formatAtomLabel,
@@ -16,6 +16,9 @@ import {
 import type { AtomSegment, AtomLabelMode } from "@/lib/tug-atom-img";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { narrowValue } from "@/components/tugways/action-vocabulary";
 import "./gallery-atom.css";
 
 // ---- Sample data ----
@@ -121,8 +124,28 @@ export function GalleryAtom() {
     }
   }, [labelMode]);
 
+  // L11 (A2.2): selectValue handler for the label mode choice group.
+  const handleSelectValue = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (sender !== "atom-label-mode") return;
+    const v = narrowValue(event, (val): val is string => typeof val === "string");
+    if (v === null) return;
+    setLabelMode(v as AtomLabelMode);
+  }, []);
+
+  const responderId = useId();
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: { selectValue: handleSelectValue },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-atom">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-atom"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- All known types ---- */}
       <div className="cg-section">
@@ -155,12 +178,13 @@ export function GalleryAtom() {
         <TugChoiceGroup
           items={LABEL_MODE_CHOICES}
           value={labelMode}
-          onValueChange={(v) => setLabelMode(v as AtomLabelMode)}
+          senderId="atom-label-mode"
           size="sm"
         />
         <div ref={labelRef} className="gallery-atom-row" style={{ marginTop: "8px" }} />
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

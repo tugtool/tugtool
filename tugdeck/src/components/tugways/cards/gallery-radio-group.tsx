@@ -10,9 +10,12 @@
  * @module components/tugways/cards/gallery-radio-group
  */
 
-import React, { useState } from "react";
+import React, { useCallback, useId, useState } from "react";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import type { TugRadioRole } from "@/components/tugways/tug-radio-group";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { narrowValue } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -42,8 +45,42 @@ export function GalleryRadioGroup() {
   const [labeledValue, setLabeledValue] = useState("email");
   const [disabledGroupValue, setDisabledGroupValue] = useState("b");
 
+  // L11 migration pattern (A2.2): the gallery card is a responder that
+  // handles `selectValue` actions dispatched by TugRadioGroup children.
+  // The sender id identifies which radio group within this card
+  // dispatched. See gallery-checkbox.tsx for the annotated reference.
+  const setters: Record<string, (v: string) => void> = {
+    "radio-sm": setSizeSmValue,
+    "radio-md": setSizeMdValue,
+    "radio-lg": setSizeLgValue,
+    "radio-horz": setHorzValue,
+    "radio-vert": setVertValue,
+    "radio-labeled": setLabeledValue,
+    "radio-disabled": setDisabledGroupValue,
+  };
+  const handleSelectValue = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (!sender) return;
+    const setter = setters[sender];
+    if (!setter) return;
+    const v = narrowValue(event, (val): val is string => typeof val === "string");
+    if (v === null) return;
+    setter(v);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const responderId = useId();
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: { selectValue: handleSelectValue },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-radio-group">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-radio-group"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
@@ -51,7 +88,7 @@ export function GalleryRadioGroup() {
         <div style={{ display: "flex", flexDirection: "row", gap: "32px", alignItems: "flex-start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>sm</div>
-            <TugRadioGroup size="sm" value={sizeSmValue} onValueChange={setSizeSmValue} aria-label="Small radio group">
+            <TugRadioGroup size="sm" value={sizeSmValue} senderId="radio-sm" aria-label="Small radio group">
               <TugRadioItem value="a">Alpha</TugRadioItem>
               <TugRadioItem value="b">Beta</TugRadioItem>
               <TugRadioItem value="c">Gamma</TugRadioItem>
@@ -59,7 +96,7 @@ export function GalleryRadioGroup() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>md</div>
-            <TugRadioGroup size="md" value={sizeMdValue} onValueChange={setSizeMdValue} aria-label="Medium radio group">
+            <TugRadioGroup size="md" value={sizeMdValue} senderId="radio-md" aria-label="Medium radio group">
               <TugRadioItem value="a">Alpha</TugRadioItem>
               <TugRadioItem value="b">Beta</TugRadioItem>
               <TugRadioItem value="c">Gamma</TugRadioItem>
@@ -67,7 +104,7 @@ export function GalleryRadioGroup() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>lg</div>
-            <TugRadioGroup size="lg" value={sizeLgValue} onValueChange={setSizeLgValue} aria-label="Large radio group">
+            <TugRadioGroup size="lg" value={sizeLgValue} senderId="radio-lg" aria-label="Large radio group">
               <TugRadioItem value="a">Alpha</TugRadioItem>
               <TugRadioItem value="b">Beta</TugRadioItem>
               <TugRadioItem value="c">Gamma</TugRadioItem>
@@ -87,7 +124,7 @@ export function GalleryRadioGroup() {
             <TugRadioGroup
               orientation="horizontal"
               value={horzValue}
-              onValueChange={setHorzValue}
+              senderId="radio-horz"
               aria-label="Horizontal radio group"
             >
               <TugRadioItem value="option-1">Option 1</TugRadioItem>
@@ -100,7 +137,7 @@ export function GalleryRadioGroup() {
             <TugRadioGroup
               orientation="vertical"
               value={vertValue}
-              onValueChange={setVertValue}
+              senderId="radio-vert"
               aria-label="Vertical radio group"
             >
               <TugRadioItem value="option-1">Option 1</TugRadioItem>
@@ -139,7 +176,7 @@ export function GalleryRadioGroup() {
           label="Notification channel"
           name="notification-channel"
           value={labeledValue}
-          onValueChange={setLabeledValue}
+          senderId="radio-labeled"
         >
           <TugRadioItem value="email">Email</TugRadioItem>
           <TugRadioItem value="push">Push notification</TugRadioItem>
@@ -159,7 +196,7 @@ export function GalleryRadioGroup() {
             <TugRadioGroup
               disabled
               value={disabledGroupValue}
-              onValueChange={setDisabledGroupValue}
+              senderId="radio-disabled"
               aria-label="Disabled group"
             >
               <TugRadioItem value="a">Alpha</TugRadioItem>
@@ -180,5 +217,6 @@ export function GalleryRadioGroup() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

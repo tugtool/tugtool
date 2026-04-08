@@ -7,24 +7,34 @@
  * horizontal and vertical orientation, optional visible group label, and
  * role-based color injection for the selected indicator.
  *
+ * Control semantics (L11): user activation (click or Radix-managed arrow keys)
+ * dispatches a `selectValue` action through the responder chain with the newly
+ * selected item id as `value` and a stable `sender` id for parent
+ * disambiguation. Parent responders register a `selectValue` action handler via
+ * `useResponder` that switches on `event.sender` to route updates to the right
+ * state. There is no `onValueChange` callback prop — the chain is the sole
+ * mechanism for communicating selection changes outward.
+ *
  * Composed children: TugButton (each item's click target and visual rendering) [L20].
  * Radio indicator appearance is owned by this component via radio-scoped tokens.
  * TugButton keeps its own tokens, tunable independently per theme.
  *
- * Laws: [L06] appearance via CSS, [L16] pairings declared,
- *       [L19] component authoring guide, [L20] token sovereignty
+ * Laws: [L06] appearance via CSS, [L11] controls emit actions,
+ *       [L16] pairings declared, [L19] component authoring guide,
+ *       [L20] token sovereignty
  * Decisions: [D05] component token naming
  */
 
 import "./tug-radio-group.css";
 
-import React from "react";
+import React, { useCallback, useId } from "react";
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
 import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";
 import type { TugButtonSize } from "./internal/tug-button";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugGroupRole, buildRoleStyle } from "./internal/tug-group-utils";
+import { useResponderChain } from "./responder-chain-provider";
 
 // ---- Types ----
 
@@ -65,8 +75,15 @@ export interface TugRadioGroupProps
   value?: string;
   /** Uncontrolled default value. */
   defaultValue?: string;
-  /** Fires when selection changes. */
-  onValueChange?: (value: string) => void;
+  /**
+   * Stable identifier passed as `event.sender` on every `selectValue`
+   * action dispatched by this group. Parent responders use this to
+   * disambiguate multi-group forms in their `selectValue` handler.
+   * Defaults to a `useId()`-derived unique string — set explicitly
+   * when the parent needs a predictable id (e.g. for form routing
+   * by semantic name).
+   */
+  senderId?: string;
   /** Visible group label rendered above the items. Falls back to aria-label for a11y. */
   label?: string;
   /**
@@ -104,7 +121,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     {
       value,
       defaultValue,
-      onValueChange,
+      senderId,
       label,
       orientation = "vertical",
       size = "md",
@@ -129,6 +146,26 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
 
     const ctx: TugRadioGroupContextValue = { size, disabled: effectiveDisabled };
 
+    // Chain dispatch [L11]: on user activation (click or Radix-handled
+    // arrow keys), dispatch `selectValue` through the responder chain
+    // with the newly selected item id as `value` and the stable sender
+    // id. No-op when no ResponderChainProvider is mounted.
+    const manager = useResponderChain();
+    const fallbackId = useId();
+    const effectiveSenderId = senderId ?? fallbackId;
+    const handleValueChange = useCallback(
+      (nextValue: string) => {
+        if (!manager) return;
+        manager.dispatch({
+          action: "selectValue",
+          value: nextValue,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+      },
+      [manager, effectiveSenderId],
+    );
+
     return (
       <TugRadioGroupContext.Provider value={ctx}>
         <RadioGroupPrimitive.Root
@@ -136,7 +173,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
           data-slot="tug-radio-group"
           value={value}
           defaultValue={defaultValue}
-          onValueChange={onValueChange}
+          onValueChange={handleValueChange}
           name={name}
           disabled={effectiveDisabled}
           aria-label={!label ? ariaLabel : undefined}

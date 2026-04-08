@@ -78,11 +78,21 @@ export function buildRoleStyle(
 // ---- Keyboard navigation ----
 
 /**
+ * Direction of a roving-tabIndex arrow-key navigation event. Passed to
+ * the hook's `onFocusChange` callback so the consumer can dispatch
+ * `focusNext`/`focusPrevious` responder chain actions that match the
+ * user's intent (the simple "did it go forward or backward" question
+ * the key-press resolves — wrapping is transparent to the consumer).
+ */
+export type GroupNavDirection = "next" | "previous" | "first" | "last";
+
+/**
  * Generic arrow-key navigation hook for group components.
  *
  * Handles ArrowLeft/Up (previous), ArrowRight/Down (next), Home (first), End (last)
- * with wrapping. Skips disabled items. Calls onFocusChange with the new value and its
- * index in the full items array, then focuses the corresponding element via itemRefs.
+ * with wrapping. Skips disabled items. Calls onFocusChange with the new value, its
+ * index in the full items array, and the direction the user navigated, then focuses
+ * the corresponding element via itemRefs.
  *
  * Supports two usage modes:
  *
@@ -100,7 +110,7 @@ export function buildRoleStyle(
 export function useGroupKeyboardNav(opts: {
   items: { value: string; disabled?: boolean }[];
   focusedValue: string;
-  onFocusChange: (value: string, index: number) => void;
+  onFocusChange: (value: string, index: number, direction: GroupNavDirection) => void;
   onActivate?: (value: string) => void;
   disabled: boolean;
   itemRefs: React.MutableRefObject<(HTMLElement | null)[]>;
@@ -115,6 +125,7 @@ export function useGroupKeyboardNav(opts: {
       const currentEnabledIndex = enabledItems.findIndex((item) => item.value === focusedValue);
 
       let nextValue: string | undefined;
+      let direction: GroupNavDirection | undefined;
 
       switch (e.key) {
         case "ArrowLeft":
@@ -125,6 +136,7 @@ export function useGroupKeyboardNav(opts: {
               ? enabledItems.length - 1
               : currentEnabledIndex - 1;
           nextValue = enabledItems[prevIndex]?.value;
+          direction = "previous";
           break;
         }
         case "ArrowRight":
@@ -135,16 +147,19 @@ export function useGroupKeyboardNav(opts: {
               ? 0
               : currentEnabledIndex + 1;
           nextValue = enabledItems[nextIndex]?.value;
+          direction = "next";
           break;
         }
         case "Home": {
           e.preventDefault();
           nextValue = enabledItems[0]?.value;
+          direction = "first";
           break;
         }
         case "End": {
           e.preventDefault();
           nextValue = enabledItems[enabledItems.length - 1]?.value;
+          direction = "last";
           break;
         }
         case " ":
@@ -162,9 +177,9 @@ export function useGroupKeyboardNav(opts: {
           return;
       }
 
-      if (nextValue !== undefined && nextValue !== focusedValue) {
+      if (nextValue !== undefined && nextValue !== focusedValue && direction !== undefined) {
         const fullIndex = items.findIndex((item) => item.value === nextValue);
-        onFocusChange(nextValue, fullIndex);
+        onFocusChange(nextValue, fullIndex, direction);
         itemRefs.current[fullIndex]?.focus();
       }
     },

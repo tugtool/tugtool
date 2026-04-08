@@ -8,14 +8,31 @@
  * Role="toolbar" on root per WAI-ARIA spec for a collection of interactive
  * widgets. Each button uses aria-pressed to communicate on/off state.
  *
- * Laws: [L06] appearance via CSS/DOM, [L15] token-driven states,
- *       [L16] pairings declared, [L19] component authoring guide
+ * Control semantics (L11): user activation (click or Space/Enter on the
+ * focused item) dispatches `setValue` through the responder chain with
+ * the new `string[]` of active values as `value` and a stable `sender`
+ * id. Arrow-key navigation moves roving focus and dispatches
+ * `focusNext` (Right/Down) or `focusPrevious` (Left/Up) so chain
+ * observers can track keyboard navigation. Parent responders register
+ * a `setValue` handler via `useResponder` and switch on `event.sender`.
+ * There is no `onValueChange` callback prop.
+ *
+ * Note on the `setValue` payload: `TugOptionGroup`'s value is
+ * a multi-select set (`string[]`), so the appropriate vocabulary
+ * action is `setValue` (the catch-all for domain-specific values),
+ * not `selectValue` (which carries `value: string` for single-select
+ * controls). Handlers receive the full new set and can just call
+ * the setter: `setState(narrowed)`.
+ *
+ * Laws: [L06] appearance via CSS/DOM, [L11] controls emit actions,
+ *       [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide
  * Decisions: [D03] appearance via stylesheet injection, [D05] component token naming
  */
 
 import "./tug-option-group.css";
 
-import React from "react";
+import React, { useCallback, useId } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import {
@@ -24,6 +41,7 @@ import {
   renderGroupItemContent,
   useGroupKeyboardNav,
 } from "./internal/tug-group-utils";
+import { useResponderChain } from "./responder-chain-provider";
 
 // ---- Types ----
 
@@ -69,8 +87,13 @@ export interface TugOptionGroupProps
    * @selector [data-state="on"] on items
    */
   value: string[];
-  /** Fires when the set of active values changes. */
-  onValueChange: (value: string[]) => void;
+  /**
+   * Stable identifier passed as `event.sender` on every `setValue`,
+   * `focusNext`, and `focusPrevious` action dispatched by this group.
+   * Parent responders use this to disambiguate multi-group forms in
+   * their handlers. Defaults to a `useId()`-derived unique string.
+   */
+  senderId?: string;
   /**
    * Visual size.
    * @selector .tug-option-group-sm | .tug-option-group-md | .tug-option-group-lg
@@ -98,7 +121,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
     {
       items,
       value,
-      onValueChange,
+      senderId,
       size = "md",
       role,
       disabled = false,
@@ -125,29 +148,68 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       return firstEnabled?.value ?? items[0]?.value ?? "";
     });
 
+    // Chain dispatch [L11]: user activation dispatches `setValue` with
+    // the new `string[]` as value. Arrow-key navigation dispatches
+    // `focusNext`/`focusPrevious` via the chain as observable events.
+    const manager = useResponderChain();
+    const fallbackId = useId();
+    const effectiveSenderId = senderId ?? fallbackId;
+
+    const dispatchSetValue = useCallback(
+      (next: string[]) => {
+        if (!manager) return;
+        manager.dispatch({
+          action: "setValue",
+          value: next,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+      },
+      [manager, effectiveSenderId],
+    );
+
+    const dispatchFocusDirection = useCallback(
+      (direction: "next" | "previous" | "first" | "last") => {
+        if (!manager) return;
+        // Map Home/End to focusNext/focusPrevious since the vocabulary
+        // doesn't distinguish first/last. Observers that care about
+        // direction get it; observers that just need "something moved"
+        // see any of the two actions.
+        const action = (direction === "next" || direction === "last")
+          ? "focusNext"
+          : "focusPrevious";
+        manager.dispatch({
+          action,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+      },
+      [manager, effectiveSenderId],
+    );
+
     // ---- Toggle logic ----
 
     const toggleItem = React.useCallback(
       (itemValue: string) => {
-        if (value.includes(itemValue)) {
-          // Remove — maintain order by filtering
-          onValueChange(value.filter((v) => v !== itemValue));
-        } else {
-          // Add — append at end
-          onValueChange([...value, itemValue]);
-        }
+        const next = value.includes(itemValue)
+          ? value.filter((v) => v !== itemValue)
+          : [...value, itemValue];
+        dispatchSetValue(next);
       },
-      [value, onValueChange],
+      [value, dispatchSetValue],
     );
 
     // ---- Keyboard navigation ----
-    // Roving tabIndex: arrows move focus; Space/Enter toggles via onActivate.
+    // Roving tabIndex: arrows move focus (and dispatch focusNext/
+    // focusPrevious through the chain); Space/Enter toggles via
+    // onActivate (which dispatches setValue via toggleItem).
 
     const handleKeyDown = useGroupKeyboardNav({
       items,
       focusedValue,
-      onFocusChange: (newValue) => {
+      onFocusChange: (newValue, _index, direction) => {
         setFocusedValue(newValue);
+        dispatchFocusDirection(direction);
       },
       onActivate: (itemValue) => {
         toggleItem(itemValue);
