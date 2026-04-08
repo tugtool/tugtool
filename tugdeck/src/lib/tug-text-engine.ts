@@ -76,11 +76,14 @@ export interface TugTextInputDelegate {
   // --- Selection ---
   getSelectedRange(): { start: number; end: number } | null;
   setSelectedRange(start: number, end?: number): void;
+  selectWordAtPoint(clientX: number, clientY: number): { start: number; end: number } | null;
   readonly hasMarkedText: boolean;
 
   // --- Mutation ---
   insertText(text: string): void;
   insertAtom(atom: AtomSegment): void;
+  paste(html: string, plain: string): void;
+  deleteSelection(): void;
   deleteRange(start: number, end: number): number;
   deleteBackward(): void;
   deleteForward(): void;
@@ -417,6 +420,49 @@ export class TugTextEngine {
     document.execCommand("selectAll");
   }
 
+  /**
+   * Select the word at the given viewport coordinates, matching the
+   * macOS "right-click selects word" behavior. If a ranged selection
+   * already exists inside the editor, it is preserved as-is. Otherwise,
+   * a caret is placed at the click point and expanded to word bounds
+   * via Selection.modify (supported in WebKit and Chromium).
+   *
+   * Returns the resulting flat selection range, or null if the click
+   * point is outside the editor or no word could be found.
+   */
+  selectWordAtPoint(clientX: number, clientY: number): { start: number; end: number } | null {
+    // Preserve an existing ranged selection anchored in this editor.
+    const existing = this.getSelectedRange();
+    if (existing && existing.end > existing.start) return existing;
+
+    // Resolve the click point to a DOM caret. caretRangeFromPoint is
+    // the WebKit/Blink API; if unavailable, give up.
+    const caret = typeof document.caretRangeFromPoint === "function"
+      ? document.caretRangeFromPoint(clientX, clientY)
+      : null;
+    if (!caret || !this.root.contains(caret.startContainer)) return null;
+
+    // Ensure focus so Selection.modify operates inside the editor.
+    this.root.focus();
+
+    const sel = window.getSelection();
+    if (!sel) return null;
+    sel.removeAllRanges();
+    sel.addRange(caret);
+
+    // Expand to word bounds. Selection.modify is non-standard but
+    // available in all WebKit/Chromium engines we target.
+    const selMod = sel as Selection & {
+      modify?: (alter: string, direction: string, granularity: string) => void;
+    };
+    if (typeof selMod.modify === "function") {
+      selMod.modify("move", "backward", "word");
+      selMod.modify("extend", "forward", "word");
+    }
+
+    return this.getSelectedRange();
+  }
+
   // =================================================================
   // Mutation — all via execCommand for native undo
   // =================================================================
@@ -430,6 +476,46 @@ export class TugTextEngine {
     this.root.focus();
     const html = atomImgHTML(atom.type, atom.label, atom.value);
     document.execCommand("insertHTML", false, html);
+  }
+
+  /**
+   * Delete the currently selected text range. No-op if the selection
+   * is empty or collapsed. Used by the context-menu Cut path: we
+   * write the selection to the clipboard first (inside the user
+   * gesture), play the activation blink, then call this to remove
+   * the text after the animation — so the visible disappearance
+   * matches the flash.
+   */
+  deleteSelection(): void {
+    const range = this.getSelectedRange();
+    if (!range || range.start === range.end) return;
+    this.root.focus();
+    document.execCommand("delete");
+  }
+
+  /**
+   * Paste clipboard content at the current selection.
+   *
+   * Shared between the native paste event listener (Cmd+V) and
+   * programmatic paste (e.g., context menu item). Branches:
+   * - HTML containing `data-atom-label` → our own atoms; extract body
+   *   content and insert as HTML so atoms survive the round trip.
+   * - Anything else with plain text → insert as plain text, stripping
+   *   any external rich-text markup.
+   * - Nothing pasteable → no-op.
+   */
+  paste(html: string, plain: string): void {
+    if (html.includes("data-atom-label")) {
+      const match = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      const content = match ? match[1] : html;
+      this.root.focus();
+      document.execCommand("insertHTML", false, content);
+      return;
+    }
+    if (plain) {
+      this.root.focus();
+      document.execCommand("insertText", false, plain);
+    }
   }
 
   deleteRange(start: number, end: number): number {
@@ -1181,24 +1267,15 @@ export class TugTextEngine {
       }
     });
 
-    // 6. Paste — preserve atoms from our clipboard, strip external rich text
+    // 6. Paste — preserve atoms from our clipboard, strip external rich text.
+    // Delegates to this.paste() so the native paste event and programmatic
+    // paste (e.g. context menu) follow the same code path.
     this.listen(root, "paste", (e: Event) => {
       const ce = e as ClipboardEvent;
       const html = ce.clipboardData?.getData("text/html") || "";
       const plain = ce.clipboardData?.getData("text/plain") || "";
-
-      if (html.includes("data-atom-label")) {
-        // Our atoms — extract body content and insert via insertHTML
-        ce.preventDefault();
-        const match = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-        const content = match ? match[1] : html;
-        document.execCommand("insertHTML", false, content);
-      } else if (html && plain) {
-        // External rich text — strip markup, insert as plain text
-        ce.preventDefault();
-        document.execCommand("insertText", false, plain);
-      }
-      // If only plain text, let browser handle natively
+      ce.preventDefault();
+      this.paste(html, plain);
     }, true); // capture phase
 
     // 7. Drag & drop — files become atom images, internal atoms move

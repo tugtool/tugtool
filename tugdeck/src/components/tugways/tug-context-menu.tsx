@@ -21,7 +21,7 @@ import "./tug-menu.css";
 
 import React, { useRef } from "react";
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
-import { animate } from "@/components/tugways/tug-animator";
+import { playMenuItemBlink } from "@/components/tugways/tug-menu-item-blink";
 
 // ---- Types ----
 
@@ -107,56 +107,12 @@ export function TugContextMenu({
 
     const target = event.currentTarget as HTMLElement;
 
-    // Read computed filled-action colors for WAAPI keyframes.
-    // getPropertyValue() returns a string with leading whitespace per CSS spec;
-    // .trim() is required. WAAPI cannot interpolate CSS variable references
-    // directly — we must resolve to concrete color values. [L06]
-    const computed = getComputedStyle(target);
-    const blinkBg = computed
-      .getPropertyValue("--tug7-surface-control-primary-filled-action-active")
-      .trim() || "transparent";
-    const blinkFg = computed
-      .getPropertyValue("--tug7-element-control-text-filled-action-active")
-      .trim() || "inherit";
-
-    // Read the standard easing value at runtime — WAAPI does not resolve
-    // var() references in easing strings.
-    const easing = computed
-      .getPropertyValue("--tug-motion-easing-standard")
-      .trim() || "cubic-bezier(0.2, 0, 0, 1)";
-
-    // Double-blink keyframes: highlight → transparent → highlight → highlight.
-    // Uses filled-action colors for strong visual feedback.
-    const blinkKeyframes = [
-      { backgroundColor: blinkBg, color: blinkFg },
-      { backgroundColor: "transparent", color: "inherit" },
-      { backgroundColor: blinkBg, color: blinkFg },
-      { backgroundColor: blinkBg, color: blinkFg },
-    ];
-
-    // Drive blink via TugAnimator; sequence menu close on animate().finished.
-    // slow = 350ms. blinkingRef is reset inside .finished.then() so the menu
-    // can accept new selections after reopening.
-    //
-    // .catch() handles WAAPI rejection (e.g. element removed from DOM before
-    // animation completes). On rejection: reset blinkingRef, call onSelect as
-    // best-effort fallback, and close the menu. Without this guard, blinkingRef
-    // would stay true permanently and all subsequent selections would be swallowed.
-    animate(target, blinkKeyframes, {
-      duration: "--tug-motion-duration-slow",
-      easing,
-    }).finished.then(() => {
-      blinkingRef.current = false;
-
-      // Fire caller's callback.
-      onSelect?.(id);
-
-      // Close the menu by dispatching Escape — Radix handles this natively
-      // without any React state re-render. [L06]
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    }).catch(() => {
-      // Animation rejected (element detached, interrupted, etc.).
-      // Reset guard and fire the callback so selection is never lost.
+    // Drive the shared double-blink feedback, then fire onSelect and
+    // close the menu by dispatching Escape — Radix handles close
+    // natively, no React state re-render required [L06]. The blink
+    // helper resolves even if the animation is interrupted, so the
+    // callback is never lost.
+    playMenuItemBlink(target).then(() => {
       blinkingRef.current = false;
       onSelect?.(id);
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));

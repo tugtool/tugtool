@@ -195,12 +195,15 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const handleCanvasPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Only deselect when clicking the canvas background itself, not a card.
+      // First-responder promotion is handled by the
+      // ResponderChainProvider's document-level pointerdown listener
+      // via data-responder-id; this handler is purely about the
+      // canvas-deselect visual feedback.
       if (e.target === e.currentTarget) {
         setDeselected(true);
-        manager.makeFirstResponder("deck-canvas");
       }
     },
-    [manager],
+    [],
   );
 
   // Hook order: useDeckManager -> useSyncExternalStore -> useState -> useRef ->
@@ -215,7 +218,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // store instance (stable singleton), and the manager singleton.
   // DeckCanvas auto-becomes first responder on mount because parentId is null
   // and no first responder is set yet.
-  const { ResponderScope } = useResponder({
+  const { ResponderScope, responderRef } = useResponder({
     id: "deck-canvas",
     /**
      * canHandle: () => true makes DeckCanvas a last-resort responder.
@@ -398,6 +401,15 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   return (
     <ResponderScope>
+      {/*
+       * Responder root wrapper: filters all pointerdowns below through
+       * this element's data-responder-id so the chain's document-level
+       * promotion resolves "deck-canvas" as the ancestor responder
+       * when a click lands on the canvas background or any card
+       * without its own data-responder-id. Card-level responders
+       * inside containerRef win via innermost-first DOM walk.
+       */}
+      <div ref={responderRef} style={{ position: "absolute", inset: 0 }}>
       {/* Canvas background click target for deselecting cards */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
@@ -504,6 +516,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           />
         );
       })}
+      </div>
       </div>
     </ResponderScope>
   );

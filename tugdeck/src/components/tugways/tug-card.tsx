@@ -479,11 +479,14 @@ export function Tugcard({
   //   - read scrollLeft/scrollTop for tab state capture
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Make this card the first responder when clicked anywhere on the card.
+  // First-responder promotion is handled centrally by
+  // ResponderChainProvider's document-level pointerdown listener,
+  // which walks the DOM from the event target looking for
+  // data-responder-id. No per-component pointerdown handler is
+  // needed — nested responders (e.g. an editor inside this card)
+  // naturally win over the card because their data-responder-id is
+  // deeper in the DOM tree.
   const manager = useRequiredResponderChain();
-  const handleCardPointerDown = useCallback(() => {
-    manager.makeFirstResponder(cardId);
-  }, [manager, cardId]);
 
   // Register the content area as a selection boundary with SelectionGuard.
   // Uses useLayoutEffect (Rule of Tug #3) so the boundary is available when
@@ -830,7 +833,7 @@ export function Tugcard({
     selectFn(currentTabs[nextIdx].id);
   }, []);
 
-  const { ResponderScope } = useResponder({
+  const { ResponderScope, responderRef } = useResponder({
     id: cardId,
     actions: {
       close: (_event: ActionEvent) => handleClose(),
@@ -999,15 +1002,23 @@ export function Tugcard({
 
   const closable = effectiveMeta.closable !== false; // default true
 
+  // Compose the existing cardEl state-setter ref with the responderRef
+  // so one DOM element receives both: setCardEl captures the element
+  // for the portal context, and responderRef writes data-responder-id
+  // for the chain's first-responder resolution.
+  const rootRefCallback = useCallback((el: HTMLDivElement | null) => {
+    setCardEl(el);
+    responderRef(el);
+  }, [responderRef]);
+
   return (
     <TugcardPortalContext value={cardEl}>
     <div
-      ref={setCardEl}
+      ref={rootRefCallback}
       className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
       data-slot="tug-card"
       data-card-id={cardId}
       data-collapsed={collapsed ? "true" : "false"}
-      onPointerDown={handleCardPointerDown}
     >
       {/* CardTitleBar: title bar with controls and collapse support */}
       <CardTitleBar

@@ -14,6 +14,9 @@
  */
 
 import { createContext } from "react";
+import type { TugAction } from "./action-vocabulary";
+
+export type { TugAction } from "./action-vocabulary";
 
 // ---- ActionPhase and ActionEvent ----
 
@@ -38,12 +41,16 @@ export type ActionPhase = "discrete" | "begin" | "change" | "commit" | "cancel";
  * a full ActionEvent, even for discrete (button click) actions.
  *
  * [D01] ActionEvent is the sole dispatch currency
- * [D02] Handler signature is (event: ActionEvent) => void
+ * [D02] Handler signature is (event: ActionEvent) => void | (() => void)
  * Spec S01 (#s01-action-event-type)
  */
 export interface ActionEvent {
-  /** Semantic action name from the action vocabulary. */
-  action: string;
+  /**
+   * Semantic action name from the TugAction vocabulary.
+   * See action-vocabulary.ts for the complete list and payload
+   * conventions. Misspellings are compile errors.
+   */
+  action: TugAction;
   /** The control that initiated the event (ref or instance). Optional. */
   sender?: unknown;
   /** Typed payload (color, number, point, etc.). Optional for discrete actions. */
@@ -51,6 +58,27 @@ export interface ActionEvent {
   /** Lifecycle phase. Use "discrete" for one-shot actions (button clicks, menu selections). */
   phase: ActionPhase;
 }
+
+/**
+ * Return type of an action handler.
+ *
+ * Handlers may return:
+ * - `void` — the handler's work is complete. Standard case.
+ * - `() => void` — a "continuation" callback that the caller may invoke
+ *   at a later commit point (e.g., after a menu activation blink
+ *   finishes). The sync portion of the handler (e.g., a user-gesture-bound
+ *   clipboard write) runs inline; the deferred portion (e.g., mutating
+ *   the document after visual feedback) runs from the continuation.
+ *
+ * Callers that need the continuation use `dispatchForContinuation`.
+ * `dispatch` discards it and just reports handled/unhandled.
+ *
+ * [D02] Two-phase action handling via optional continuation
+ */
+export type ActionHandlerResult = void | (() => void);
+
+/** Action handler signature — receives the event, optionally returns a continuation. */
+export type ActionHandler = (event: ActionEvent) => ActionHandlerResult;
 
 // ---- ResponderNode interface ----
 
@@ -73,14 +101,19 @@ export interface ActionEvent {
 export interface ResponderNode {
   id: string;
   parentId: string | null;
-  actions: Record<string, (event: ActionEvent) => void>;
+  /**
+   * Partial map of TugAction names to handlers. A responder registers
+   * handlers for only the subset of actions it cares about; other
+   * actions walk past it in the chain.
+   */
+  actions: Partial<Record<TugAction, ActionHandler>>;
   /**
    * Advisory capability override for validation queries only.
    * dispatch() never consults this -- only canHandle() and validateAction()
    * queries do. Use for runtime-determined capabilities not in the actions map.
    */
-  canHandle?: (action: string) => boolean;
-  validateAction?: (action: string) => boolean;
+  canHandle?: (action: TugAction) => boolean;
+  validateAction?: (action: TugAction) => boolean;
 }
 
 // ---- ResponderChainManager ----
@@ -94,11 +127,37 @@ export interface ResponderNode {
  * Maintains a validationVersion counter that increments on any structural
  * change so useSyncExternalStore subscribers know to re-check.
  */
+/**
+ * Result of dispatchForContinuation — whether the event was handled and,
+ * if the handler returned a continuation callback, that callback.
+ */
+export interface DispatchResult {
+  /** True if a responder's actions map contained a matching handler. */
+  handled: boolean;
+  /**
+   * Optional continuation returned by the handler. Callers that need
+   * two-phase execution (e.g., a menu that plays a blink after the sync
+   * phase and wants the visible side effect to run after) invoke this
+   * at their commit point.
+   */
+  continuation?: () => void;
+}
+
+/**
+ * Signature of a dispatch observer. Fires after every call to dispatch,
+ * dispatchForContinuation, or dispatchTo — whether or not a handler
+ * matched. `handled` reflects the final outcome. Use for components that
+ * need to react to chain traffic (e.g. a context menu that closes on
+ * any external action).
+ */
+export type DispatchObserver = (event: ActionEvent, handled: boolean) => void;
+
 export class ResponderChainManager {
   private nodes: Map<string, ResponderNode> = new Map();
   private firstResponderId: string | null = null;
   private validationVersion = 0;
   private subscribers: Set<() => void> = new Set();
+  private dispatchObservers: Set<DispatchObserver> = new Set();
   private defaultButtonStack: HTMLButtonElement[] = [];
 
   // ---- Registration ----
@@ -163,32 +222,60 @@ export class ResponderChainManager {
   // ---- Action dispatch ----
 
   /**
-   * Dispatch an action through the chain.
+   * Dispatch an action through the chain and return both whether it was
+   * handled and any continuation callback returned by the handler.
    *
    * Walks from the first responder upward via parentId. For each node,
-   * checks `event.action` in the actions map only (not the canHandle function).
-   * If the action key exists, calls the handler with the full ActionEvent and
-   * returns true. Continues to parent if not found. Returns false if the root
-   * is reached with no match.
+   * checks `event.action` in the actions map only (not the canHandle
+   * function). If the action key exists, calls the handler with the
+   * full ActionEvent and captures its return value; if the return value
+   * is a function, it becomes the continuation. Continues to parent if
+   * not found.
    *
-   * Note: canHandle is advisory for validation queries only and is never
-   * consulted during dispatch.
+   * After the walk (handled or not), every dispatch observer is
+   * notified — enabling "close on any action" patterns for context
+   * menus and similar transient UIs.
+   *
+   * Note: canHandle is advisory for validation queries only and is
+   * never consulted during dispatch.
+   *
+   * [D01] ActionEvent is the sole dispatch currency
+   * [D02] Handlers may return continuations for two-phase execution
+   * Spec S02 (#s02-dispatch-method)
+   */
+  dispatchForContinuation(event: ActionEvent): DispatchResult {
+    let handled = false;
+    let continuation: (() => void) | undefined;
+
+    let currentId: string | null = this.firstResponderId;
+    while (currentId !== null) {
+      const node = this.nodes.get(currentId);
+      if (!node) break;
+      const handler = node.actions[event.action];
+      if (handler !== undefined) {
+        const result = handler(event);
+        if (typeof result === "function") {
+          continuation = result;
+        }
+        handled = true;
+        break;
+      }
+      currentId = node.parentId;
+    }
+
+    this.notifyDispatchObservers(event, handled);
+    return { handled, continuation };
+  }
+
+  /**
+   * Dispatch an action through the chain. Boolean-return wrapper around
+   * dispatchForContinuation for callers that don't need the continuation.
    *
    * [D01] ActionEvent is the sole dispatch currency
    * Spec S02 (#s02-dispatch-method)
    */
   dispatch(event: ActionEvent): boolean {
-    let currentId: string | null = this.firstResponderId;
-    while (currentId !== null) {
-      const node = this.nodes.get(currentId);
-      if (!node) break;
-      if (event.action in node.actions) {
-        node.actions[event.action](event);
-        return true;
-      }
-      currentId = node.parentId;
-    }
-    return false;
+    return this.dispatchForContinuation(event).handled;
   }
 
   // ---- Validation queries ----
@@ -202,12 +289,12 @@ export class ResponderChainManager {
    *    it returns true, return true.
    * Continues to parent if neither matches. Returns false if root reached.
    */
-  canHandle(action: string): boolean {
+  canHandle(action: TugAction): boolean {
     let currentId: string | null = this.firstResponderId;
     while (currentId !== null) {
       const node = this.nodes.get(currentId);
       if (!node) break;
-      if (action in node.actions) return true;
+      if (node.actions[action] !== undefined) return true;
       if (node.canHandle && node.canHandle(action)) return true;
       currentId = node.parentId;
     }
@@ -221,13 +308,13 @@ export class ResponderChainManager {
    * responder's validateAction function if present; defaults to true if not.
    * Returns false if no responder can handle the action.
    */
-  validateAction(action: string): boolean {
+  validateAction(action: TugAction): boolean {
     let currentId: string | null = this.firstResponderId;
     while (currentId !== null) {
       const node = this.nodes.get(currentId);
       if (!node) break;
       const handles =
-        action in node.actions ||
+        node.actions[action] !== undefined ||
         (node.canHandle ? node.canHandle(action) : false);
       if (handles) {
         return node.validateAction ? node.validateAction(action) : true;
@@ -258,11 +345,50 @@ export class ResponderChainManager {
     if (!node) {
       throw new Error(`dispatchTo: target "${targetId}" is not registered`);
     }
-    if (event.action in node.actions) {
-      node.actions[event.action](event);
-      return true;
+    let handled = false;
+    const handler = node.actions[event.action];
+    if (handler !== undefined) {
+      handler(event);
+      handled = true;
     }
-    return false;
+    this.notifyDispatchObservers(event, handled);
+    return handled;
+  }
+
+  // ---- Target-based first-responder resolution ----
+
+  /**
+   * Walk the DOM from `target` upward looking for the nearest ancestor
+   * (inclusive of the target itself) that carries a `data-responder-id`
+   * attribute whose value is a registered responder node. Returns the
+   * id, or null if no registered responder is found along the path.
+   *
+   * Used by ResponderChainProvider's document-level pointerdown
+   * listener to promote the "innermost responder under the event
+   * target" to first responder. This is what makes nested responders
+   * compose naturally: clicking inside an editor that lives inside a
+   * card makes the editor the first responder, not the card, without
+   * any per-component wiring.
+   *
+   * Registration of `data-responder-id` is done by `useResponder`'s
+   * `responderRef` callback; callers must attach that ref to their
+   * root DOM element for this lookup to find them.
+   */
+  findResponderForTarget(target: Node | null): string | null {
+    let el: Element | null =
+      target instanceof Element
+        ? target
+        : target instanceof Node
+          ? target.parentElement
+          : null;
+    while (el) {
+      const id = el.getAttribute("data-responder-id");
+      if (id && this.nodes.has(id)) {
+        return id;
+      }
+      el = el.parentElement;
+    }
+    return null;
   }
 
   // ---- Per-node capability query ----
@@ -276,10 +402,10 @@ export class ResponderChainManager {
    * [D07] nodeCanHandle for per-node capability query
    * Spec S07 (#s07-node-can-handle)
    */
-  nodeCanHandle(nodeId: string, action: string): boolean {
+  nodeCanHandle(nodeId: string, action: TugAction): boolean {
     const node = this.nodes.get(nodeId);
     if (!node) return false;
-    if (action in node.actions) return true;
+    if (node.actions[action] !== undefined) return true;
     if (node.canHandle && node.canHandle(action)) return true;
     return false;
   }
@@ -345,12 +471,42 @@ export class ResponderChainManager {
     return this.validationVersion;
   }
 
+  // ---- Dispatch observers ----
+
+  /**
+   * Subscribe to every action flowing through the chain.
+   *
+   * The callback fires after every `dispatch`, `dispatchForContinuation`,
+   * and `dispatchTo` call — whether the event was handled or not. The
+   * `handled` argument reports the final outcome. Returns an
+   * unsubscribe function.
+   *
+   * Use case: a transient UI (e.g. a context menu) that needs to close
+   * itself whenever unrelated action traffic flows through the chain.
+   * The observer can filter by action name or sender.
+   */
+  observeDispatch(callback: DispatchObserver): () => void {
+    this.dispatchObservers.add(callback);
+    return () => {
+      this.dispatchObservers.delete(callback);
+    };
+  }
+
   // ---- Private helpers ----
 
   private incrementAndNotify(): void {
     this.validationVersion += 1;
     for (const cb of this.subscribers) {
       cb();
+    }
+  }
+
+  private notifyDispatchObservers(event: ActionEvent, handled: boolean): void {
+    // Snapshot to a local array so observers that unsubscribe themselves
+    // during notification don't mutate the set mid-iteration.
+    const observers = Array.from(this.dispatchObservers);
+    for (const obs of observers) {
+      obs(event, handled);
     }
   }
 }

@@ -66,10 +66,21 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       if (binding.preventDefaultOnMatch) {
         event.preventDefault();
       }
-      const handled = manager.dispatch({ action: binding.action, phase: "discrete" });
+      // Use dispatchForContinuation so two-phase action handlers (those
+      // that return a continuation callback from their sync body — e.g.
+      // cut: synchronously write clipboard, continuation deletes selection)
+      // run to completion under keyboard shortcuts. The context menu
+      // defers continuations until after its activation blink; the
+      // keyboard path has no blink, so the continuation fires immediately
+      // after the sync phase.
+      const { handled, continuation } = manager.dispatchForContinuation({
+        action: binding.action,
+        phase: "discrete",
+      });
       if (handled) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        continuation?.();
       }
     }
 
@@ -121,12 +132,36 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // Stage 4: implicit passthrough.
     }
 
+    // ---- Target-based first-responder promotion ----
+    // One document-level capture-phase pointerdown listener resolves the
+    // innermost registered responder under the event target (via
+    // data-responder-id attributes written by useResponder) and promotes
+    // it to first responder. This is the single mechanism for
+    // click-to-focus in the chain — no per-component makeFirstResponder
+    // calls, no focus listeners, no pointerdown handlers in tug-card or
+    // tug-prompt-input or elsewhere. Nested responders compose
+    // naturally: clicking inside an editor inside a card makes the
+    // editor first responder without any per-component wiring.
+    //
+    // Capture phase on document ensures this runs before any React-
+    // delegated onPointerDown handler in the tree, so even if a
+    // component still has an old unconditional makeFirstResponder
+    // pointerdown handler during migration, our promotion survives.
+    function promoteOnPointerDown(event: PointerEvent): void {
+      const id = manager.findResponderForTarget(event.target as Node | null);
+      if (id !== null && id !== manager.getFirstResponder()) {
+        manager.makeFirstResponder(id);
+      }
+    }
+
     document.addEventListener("keydown", captureListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
+    document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
 
     return () => {
       document.removeEventListener("keydown", captureListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
+      document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });
       selectionGuard.detach();
     };
   }, [manager]);

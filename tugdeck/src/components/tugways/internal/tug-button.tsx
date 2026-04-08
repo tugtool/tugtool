@@ -15,6 +15,7 @@ import React, { useSyncExternalStore } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 import { useResponderChain } from "../responder-chain-provider";
+import type { TugAction } from "../action-vocabulary";
 import { useTugBoxDisabled } from "./tug-box-context";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
@@ -92,7 +93,7 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    *
    * [D06] TugButton never hides -- disable instead of hide
    */
-  action?: string;
+  action?: TugAction;
 
   /**
    * Explicit-target dispatch: ID of the responder node that should receive

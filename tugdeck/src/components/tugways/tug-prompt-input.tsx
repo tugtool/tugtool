@@ -15,9 +15,10 @@
 import "./tug-prompt-input.css";
 import "./tug-completion-menu.css";
 
-import React, { useRef, useState, useLayoutEffect, useImperativeHandle, useCallback } from "react";
+import React, { useRef, useState, useLayoutEffect, useImperativeHandle, useCallback, useMemo, useId } from "react";
 import { cn } from "@/lib/utils";
 import { TugTextEngine } from "@/lib/tug-text-engine";
+import { TugEditorContextMenu, type TugContextMenuEntry } from "@/components/tugways/tug-editor-context-menu";
 import type {
   AtomSegment,
   InputAction,
@@ -30,6 +31,8 @@ import type {
 } from "@/lib/tug-text-engine";
 import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 
 // Re-export for consumers that import from the component module
 export type { TugTextInputDelegate } from "@/lib/tug-text-engine";
@@ -227,9 +230,12 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       isEmpty() { return engineRef.current?.isEmpty() ?? true; },
       getSelectedRange() { return engineRef.current?.getSelectedRange() ?? null; },
       setSelectedRange(start: number, end?: number) { engineRef.current?.setSelectedRange(start, end); },
+      selectWordAtPoint(clientX: number, clientY: number) { return engineRef.current?.selectWordAtPoint(clientX, clientY) ?? null; },
       get hasMarkedText() { return engineRef.current?.hasMarkedText ?? false; },
       insertText(text: string) { engineRef.current?.insertText(text); },
       insertAtom(atom: AtomSegment) { engineRef.current?.insertAtom(atom); },
+      paste(html: string, plain: string) { engineRef.current?.paste(html, plain); },
+      deleteSelection() { engineRef.current?.deleteSelection(); },
       deleteRange(start: number, end: number) { return engineRef.current?.deleteRange(start, end) ?? start; },
       deleteBackward() { engineRef.current?.deleteBackward(); },
       deleteForward() { engineRef.current?.deleteForward(); },
@@ -466,50 +472,208 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       return () => { unsubscribeThemeChange(onThemeChange); };
     }, []);
 
-    // Prevent interaction when disabled
+    // Prevent interaction when disabled. First-responder promotion
+    // is handled centrally by ResponderChainProvider via the
+    // document-level pointerdown listener that walks the DOM for
+    // data-responder-id — no per-component promotion needed here.
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
       if (disabled) e.preventDefault();
     }, [disabled]);
 
+    // ---- Context menu (cut/copy/paste) ----
+    //
+    // Uses TugEditorContextMenu — a portaled positioned <div> that never
+    // steals focus. The contentEditable retains focus for the entire
+    // menu lifecycle, which means:
+    //   - the selection highlight stays painted (no overlay needed),
+    //   - ⌘X/C/V route to the editor as usual while the menu is open,
+    //   - clipboard commands execute inside a synchronous user gesture
+    //     (the item's mousedown handler), so execCommand works directly.
+    //
+    // Right-click auto-selects the word under the pointer when there is
+    // no existing ranged selection, matching macOS native behavior.
+    // Future: atom-aware commands based on what the selection contains.
+
+    // Menu state: null when closed, {x, y, hasSelection} when open.
+    // hasSelection is sampled once on open and drives Cut/Copy enablement.
+    const [menuState, setMenuState] = useState<{
+      x: number;
+      y: number;
+      hasSelection: boolean;
+    } | null>(null);
+
+    useLayoutEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      const onContextMenu = (e: MouseEvent) => {
+        const engine = engineRef.current;
+        if (!engine) return;
+        // Only intercept right-clicks that land inside the editor proper.
+        // Clicks on container padding (around the editor) fall through to
+        // the browser's native menu.
+        if (!engine.root.contains(e.target as Node)) return;
+        e.preventDefault();
+        // No makeFirstResponder call needed here: the document-level
+        // pointerdown listener in ResponderChainProvider has already
+        // promoted this node via data-responder-id lookup, and a
+        // right-click issues pointerdown before contextmenu.
+        const range = engine.selectWordAtPoint(e.clientX, e.clientY);
+        const hasSelection = range !== null && range.end > range.start;
+        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+      };
+      container.addEventListener("contextmenu", onContextMenu);
+      return () => container.removeEventListener("contextmenu", onContextMenu);
+    }, []);
+
+    const closeMenu = useCallback(() => setMenuState(null), []);
+
+    // ---- Responder chain actions (cut / copy / paste) ----
+    //
+    // Registered via useResponder so both keyboard shortcuts (⌘X/⌘C/⌘V,
+    // routed by the keybinding map and responder-chain-provider) and
+    // the context menu (which dispatches through the chain) share a
+    // single implementation [L11]. Handlers use the two-phase pattern:
+    // the synchronous body runs inside the user gesture (clipboard
+    // writes, clipboard reads) and an optional continuation callback
+    // runs at the caller's commit point. The menu invokes the
+    // continuation after its activation blink; the keyboard path
+    // invokes it immediately.
+
+    const responderId = useId();
+
+    const handleCut = useCallback((): ActionHandlerResult => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      // Sync phase: write the selection to the clipboard. Use "copy"
+      // (not "cut") so the selection stays visible during the activation
+      // blink — the continuation deletes it afterward.
+      document.execCommand("copy");
+      return () => engine.deleteSelection();
+    }, []);
+
+    const handleCopy = useCallback((): ActionHandlerResult => {
+      // No editor change — no continuation needed.
+      document.execCommand("copy");
+    }, []);
+
+    const handlePaste = useCallback((): ActionHandlerResult => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      // Kick off the clipboard read inside the user gesture.
+      // navigator.clipboard.read() needs transient activation at the
+      // call site; the subsequent awaits just wait for the promise to
+      // resolve and don't need further activation. The insertion runs
+      // in the continuation (after the menu blink, or immediately for
+      // keyboard shortcut).
+      const readPromise: Promise<{ html: string; plain: string }> = (async () => {
+        let html = "";
+        let plain = "";
+        try {
+          const clip = navigator.clipboard;
+          if (typeof clip.read === "function") {
+            const clipItems = await clip.read();
+            for (const item of clipItems) {
+              if (!html && item.types.includes("text/html")) {
+                html = await (await item.getType("text/html")).text();
+              }
+              if (!plain && item.types.includes("text/plain")) {
+                plain = await (await item.getType("text/plain")).text();
+              }
+              if (html && plain) break;
+            }
+          } else if (typeof clip.readText === "function") {
+            plain = await clip.readText();
+          }
+        } catch {
+          try {
+            plain = await navigator.clipboard.readText();
+          } catch {
+            /* give up */
+          }
+        }
+        return { html, plain };
+      })();
+
+      return () => {
+        void readPromise.then(({ html, plain }) => engine.paste(html, plain));
+      };
+    }, []);
+
+    const { ResponderScope, responderRef } = useResponder({
+      id: responderId,
+      actions: {
+        cut: handleCut,
+        copy: handleCopy,
+        paste: handlePaste,
+      },
+    });
+
+    const menuItems = useMemo<TugContextMenuEntry[]>(() => {
+      const hasSelection = menuState?.hasSelection ?? false;
+      return [
+        { id: "cut",   label: "Cut",   shortcut: "\u2318X", disabled: !hasSelection },
+        { id: "copy",  label: "Copy",  shortcut: "\u2318C", disabled: !hasSelection },
+        { id: "paste", label: "Paste", shortcut: "\u2318V" },
+      ];
+    }, [menuState?.hasSelection]);
+
+    // Compose containerRef with responderRef so one DOM element
+    // receives both: containerRef is used by the contextmenu listener
+    // and by sizing/positioning, and responderRef writes
+    // data-responder-id for the chain's first-responder resolution.
+    const composedContainerRef = useCallback((el: HTMLDivElement | null) => {
+      containerRef.current = el;
+      responderRef(el);
+    }, [responderRef]);
+
     return (
-      <div
-        ref={containerRef}
-        data-slot="tug-prompt-input"
-        className={cn(
-          "tug-prompt-input",
-          disabled && "tug-prompt-input-disabled",
-          className,
-        )}
-        data-maximized={maximized || undefined}
-        onPointerDown={handlePointerDown}
-        {...rest}
-      >
-        {persistState && <TugPromptInputPersistence engineRef={engineRef} pendingRestoreRef={pendingRestoreRef} />}
+      <ResponderScope>
         <div
-          ref={editorRef}
-          className="tug-prompt-input-editor"
-          contentEditable={!disabled}
-          role="textbox"
-          aria-multiline="true"
-          aria-disabled={disabled || undefined}
-          data-focus-style={focusStyle}
-          data-borderless={borderless || undefined}
+          ref={composedContainerRef}
+          data-slot="tug-prompt-input"
+          className={cn(
+            "tug-prompt-input",
+            disabled && "tug-prompt-input-disabled",
+            className,
+          )}
           data-maximized={maximized || undefined}
-          data-placeholder={placeholder}
-          data-empty="true"
-          data-td-select="custom"
-          spellCheck={false}
-          autoCorrect="off"
-          autoCapitalize="off"
-          suppressContentEditableWarning
-        />
-        <div
-          ref={completionRef}
-          data-slot="tug-completion-menu"
-          className="tug-completion-menu"
-          style={{ display: "none" }}
-        />
-      </div>
+          onPointerDown={handlePointerDown}
+          {...rest}
+        >
+          {persistState && <TugPromptInputPersistence engineRef={engineRef} pendingRestoreRef={pendingRestoreRef} />}
+          <div
+            ref={editorRef}
+            className="tug-prompt-input-editor"
+            contentEditable={!disabled}
+            role="textbox"
+            aria-multiline="true"
+            aria-disabled={disabled || undefined}
+            data-focus-style={focusStyle}
+            data-borderless={borderless || undefined}
+            data-maximized={maximized || undefined}
+            data-placeholder={placeholder}
+            data-empty="true"
+            data-td-select="custom"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            suppressContentEditableWarning
+          />
+          <div
+            ref={completionRef}
+            data-slot="tug-completion-menu"
+            className="tug-completion-menu"
+            style={{ display: "none" }}
+          />
+          <TugEditorContextMenu
+            open={menuState !== null}
+            x={menuState?.x ?? 0}
+            y={menuState?.y ?? 0}
+            items={menuItems}
+            onClose={closeMenu}
+          />
+        </div>
+      </ResponderScope>
     );
   }
 );
