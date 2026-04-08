@@ -12,7 +12,7 @@
  *   [L07] Providers are stable refs created once per scope
  */
 
-import React, { useRef, useCallback, useMemo, useState, useEffect } from "react";
+import React, { useRef, useCallback, useMemo, useState, useLayoutEffect, useSyncExternalStore } from "react";
 import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -20,16 +20,14 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import type { AtomSegment, CompletionProvider, InputAction } from "@/lib/tug-text-engine";
-import { setAtomFont } from "@/lib/tug-atom-img";
+import type { AtomSegment, CompletionProvider, HistoryProvider, InputAction } from "@/lib/tug-text-engine";
+import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { FeedStore } from "@/lib/feed-store";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { FeedId } from "@/protocol";
-import { getEditorSettings, putEditorSettings } from "@/settings-api";
-import type { EditorSettings } from "@/settings-api";
 import "./gallery-prompt-input.css";
 
 // ===================================================================
@@ -41,12 +39,6 @@ const SAMPLE_ATOMS: AtomSegment[] = [
   { kind: "atom", type: "file", label: "README.md", value: "/project/README.md" },
   { kind: "atom", type: "command", label: "/commit", value: "/commit" },
   { kind: "atom", type: "file", label: "src/lib/feed-store.ts", value: "/project/src/lib/feed-store.ts" },
-];
-
-/** Fallback slash commands seeded when no live connection is available. */
-const MOCK_SLASH_COMMANDS = [
-  "/commit", "/review", "/help", "/clear", "/plan",
-  "/implement", "/dash", "/compact", "/memory",
 ];
 
 function galleryDropHandler(files: FileList): AtomSegment[] {
@@ -68,17 +60,6 @@ const EDITOR_FONT_OPTIONS: TugPopupMenuItem[] = [
   { id: "hack", label: "Hack (mono)" },
 ];
 
-const EDITOR_FONT_STACKS: Record<string, string> = {
-  "plex-sans": '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
-  "inter": '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
-  "hack": '"Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace',
-};
-
-/** Default font size per font (mono reads larger than proportional). */
-const EDITOR_FONT_DEFAULT_SIZE: Record<string, number> = {
-  "plex-sans": 14, "inter": 14, "hack": 13,
-};
-
 const FONT_SIZE_OPTIONS: TugPopupMenuItem[] = [
   { id: "11", label: "11 px" },
   { id: "12", label: "12 px" },
@@ -96,12 +77,6 @@ const LETTER_SPACING_OPTIONS: TugPopupMenuItem[] = [
   { id: "-0.05", label: "-0.05 px" },
   { id: "0", label: "Normal" },
 ];
-
-const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
-  fontId: "hack",
-  fontSize: 13,
-  letterSpacing: 0,
-};
 
 const RETURN_CHOICES: TugChoiceItem[] = [
   { value: "submit", label: "Submits" },
@@ -121,53 +96,41 @@ const GALLERY_SESSION_ID = "gallery-mock-session";
 // ===================================================================
 
 /**
- * Build store instances for the gallery card.
+ * Build store instances for this card's prompt input.
  *
- * If a live connection is available, wires SessionMetadataStore to the real
- * FeedStore so it picks up system_metadata events. Otherwise, seeds the store
- * with mock slash commands via a synthetic FeedStore-like mock. [D05]
- *
- * PromptHistoryStore always works — in-memory only when tugbank is unavailable.
+ * Each card owns its stores. Today there is one global connection;
+ * in the future the connection (or project root) will be card-level.
  */
-function buildGalleryStores(): {
-  metadataStore: SessionMetadataStore | null;
+function buildCardStores(): {
+  metadataStore: SessionMetadataStore;
   historyStore: PromptHistoryStore;
 } {
   const historyStore = new PromptHistoryStore();
-  const connection = getConnection();
-
-  if (connection !== null) {
-    const feedStore = new FeedStore(connection, [FeedId.CODE_OUTPUT]);
-    const metadataStore = new SessionMetadataStore(feedStore, FeedId.CODE_OUTPUT);
-    return { metadataStore, historyStore };
-  }
-
-  return { metadataStore: null, historyStore };
+  const connection = getConnection()!;
+  const feedStore = new FeedStore(connection, [FeedId.CODE_OUTPUT]);
+  const metadataStore = new SessionMetadataStore(feedStore, FeedId.CODE_OUTPUT);
+  return { metadataStore, historyStore };
 }
 
-const { metadataStore: _metadataStore, historyStore: _historyStore } = buildGalleryStores();
+interface CardPromptServices {
+  commandCompletionProvider: CompletionProvider;
+  historyStore: PromptHistoryStore;
+  historyProvider: HistoryProvider;
+}
 
-/**
- * Completion provider for the / trigger.
- *
- * Uses the live SessionMetadataStore when available. Falls back to mock
- * slash command list when no connection exists. [D05]
- */
-const galleryCommandCompletionProvider = _metadataStore !== null
-  ? _metadataStore.getCommandCompletionProvider()
-  : (query: string) => {
-      const q = query.toLowerCase();
-      const cmds = q.length === 0
-        ? MOCK_SLASH_COMMANDS.slice(0, 8)
-        : MOCK_SLASH_COMMANDS.filter(c => c.toLowerCase().includes(q)).slice(0, 8);
-      return cmds.map(c => ({
-        label: c,
-        atom: { kind: "atom" as const, type: "command", label: c, value: c },
-      }));
+let _cardServices: CardPromptServices | null = null;
+
+function getCardServices(): CardPromptServices {
+  if (!_cardServices) {
+    const { metadataStore, historyStore } = buildCardStores();
+    _cardServices = {
+      commandCompletionProvider: metadataStore.getCommandCompletionProvider(),
+      historyStore,
+      historyProvider: historyStore.createProvider(GALLERY_SESSION_ID),
     };
-
-/** History provider scoped to the gallery mock session. */
-const galleryHistoryProvider = _historyStore.createProvider(GALLERY_SESSION_ID);
+  }
+  return _cardServices;
+}
 
 /**
  * Create a FileTreeStore lazily — the connection is guaranteed to exist at
@@ -202,15 +165,29 @@ export function GalleryPromptInput() {
   const [returnAction, setReturnAction] = useState<InputAction>("newline");
   const [enterAction, setEnterAction] = useState<InputAction>("submit");
   const [maximized, setMaximized] = useState(false);
-  const [editorFont, setEditorFont] = useState(DEFAULT_EDITOR_SETTINGS.fontId);
-  const [fontSize, setFontSize] = useState(DEFAULT_EDITOR_SETTINGS.fontSize);
-  const [letterSpacing, setLetterSpacing] = useState(DEFAULT_EDITOR_SETTINGS.letterSpacing);
+
+  // Editor settings store — constructed lazily, once per card. [L02, L06, L22]
+  const editorStoreRef = useRef<EditorSettingsStore | null>(null);
+  if (!editorStoreRef.current) editorStoreRef.current = new EditorSettingsStore();
+  const editorStore = editorStoreRef.current;
+
+  // Popup button labels observe the store via useSyncExternalStore. [L02]
+  const editorSettings = useSyncExternalStore(editorStore.subscribe, editorStore.getSnapshot);
+
+  // Bind the store to the editor wrapper DOM element so CSS properties
+  // are applied directly, and atoms regenerate on change. [L06, L22, L23]
+  useLayoutEffect(() => {
+    const el = editorWrapRef.current;
+    if (!el) return;
+    editorStore.bind(el, () => inputRef.current?.regenerateAtoms());
+    return () => editorStore.unbind();
+  }, [editorStore]);
 
   // Stable reference — provider functions are cached, no deps change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const completionProviders = useMemo(() => ({
     "@": getFileCompletionProvider(),
-    "/": galleryCommandCompletionProvider,
+    "/": getCardServices().commandCompletionProvider,
   }), []);
 
   const handleSubmit = useCallback(() => {
@@ -218,7 +195,7 @@ export function GalleryPromptInput() {
     if (!delegate) return;
     if (!delegate.isEmpty()) {
       const state = delegate.captureState();
-      _historyStore.push({
+      getCardServices().historyStore.push({
         id: `${GALLERY_SESSION_ID}-${Date.now()}`,
         sessionId: GALLERY_SESSION_ID,
         projectPath: "",
@@ -264,65 +241,17 @@ export function GalleryPromptInput() {
     if (routeRef.current) routeRef.current.textContent = route ?? "none";
   }, []);
 
-  /** Apply all three editor style properties to the wrapper div and update atom font. */
-  const applyEditorStyles = useCallback((fontId: string, size: number, spacing: number) => {
-    const el = editorWrapRef.current;
-    if (!el) return;
-    const stack = EDITOR_FONT_STACKS[fontId];
-    if (stack) {
-      el.style.setProperty("--tug-font-family-editor", stack);
-      setAtomFont(stack, size);
-    }
-    el.style.setProperty("--tug-font-size-editor", `${size}px`);
-    el.style.setProperty("--tug-letter-spacing-editor", spacing === 0 ? "normal" : `${spacing}px`);
-    inputRef.current?.regenerateAtoms();
-  }, []);
-
-  /** Persist current settings to tugbank (fire-and-forget). */
-  const persistRef = useRef<EditorSettings>(DEFAULT_EDITOR_SETTINGS);
-  const persist = useCallback(() => {
-    putEditorSettings(persistRef.current);
-  }, []);
-
   const handleFontChange = useCallback((id: string) => {
-    const size = EDITOR_FONT_DEFAULT_SIZE[id] ?? 13;
-    setEditorFont(id);
-    setFontSize(size);
-    applyEditorStyles(id, size, persistRef.current.letterSpacing);
-    persistRef.current = { ...persistRef.current, fontId: id, fontSize: size };
-    persist();
-  }, [applyEditorStyles, persist]);
+    editorStore.set({ fontId: id });
+  }, [editorStore]);
 
   const handleFontSizeChange = useCallback((id: string) => {
-    const size = parseInt(id, 10);
-    setFontSize(size);
-    applyEditorStyles(persistRef.current.fontId, size, persistRef.current.letterSpacing);
-    persistRef.current = { ...persistRef.current, fontSize: size };
-    persist();
-  }, [applyEditorStyles, persist]);
+    editorStore.set({ fontSize: parseInt(id, 10) });
+  }, [editorStore]);
 
   const handleLetterSpacingChange = useCallback((id: string) => {
-    const spacing = parseFloat(id);
-    setLetterSpacing(spacing);
-    applyEditorStyles(persistRef.current.fontId, persistRef.current.fontSize, spacing);
-    persistRef.current = { ...persistRef.current, letterSpacing: spacing };
-    persist();
-  }, [applyEditorStyles, persist]);
-
-  // Load persisted settings on mount.
-  useEffect(() => {
-    getEditorSettings().then((saved) => {
-      if (!saved) return;
-      const fontId = EDITOR_FONT_STACKS[saved.fontId] ? saved.fontId : DEFAULT_EDITOR_SETTINGS.fontId;
-      const size = saved.fontSize ?? EDITOR_FONT_DEFAULT_SIZE[fontId] ?? 13;
-      const spacing = saved.letterSpacing ?? 0;
-      setEditorFont(fontId);
-      setFontSize(size);
-      setLetterSpacing(spacing);
-      persistRef.current = { fontId, fontSize: size, letterSpacing: spacing };
-      applyEditorStyles(fontId, size, spacing);
-    });
-  }, [applyEditorStyles]);
+    editorStore.set({ letterSpacing: parseFloat(id) });
+  }, [editorStore]);
 
   return (
     <div className="cg-content" data-testid="gallery-prompt-input">
@@ -338,19 +267,19 @@ export function GalleryPromptInput() {
               {maximized ? "Minimize" : "Maximize"}
             </TugPushButton>
             <TugPopupButton
-              label={EDITOR_FONT_OPTIONS.find(f => f.id === editorFont)?.label ?? "Font"}
+              label={EDITOR_FONT_OPTIONS.find(f => f.id === editorSettings.fontId)?.label ?? "Font"}
               items={EDITOR_FONT_OPTIONS}
               onSelect={handleFontChange}
               size="sm"
             />
             <TugPopupButton
-              label={`${fontSize}px`}
+              label={`${editorSettings.fontSize}px`}
               items={FONT_SIZE_OPTIONS}
               onSelect={handleFontSizeChange}
               size="sm"
             />
             <TugPopupButton
-              label={letterSpacing === 0 ? "Spacing: 0" : `Spacing: ${letterSpacing > 0 ? "+" : ""}${letterSpacing}`}
+              label={editorSettings.letterSpacing === 0 ? "Spacing: 0" : `Spacing: ${editorSettings.letterSpacing > 0 ? "+" : ""}${editorSettings.letterSpacing}`}
               items={LETTER_SPACING_OPTIONS}
               onSelect={handleLetterSpacingChange}
               size="sm"
@@ -369,7 +298,7 @@ export function GalleryPromptInput() {
             numpadEnterAction={enterAction}
             onSubmit={handleSubmit}
             completionProviders={completionProviders}
-            historyProvider={galleryHistoryProvider}
+            historyProvider={getCardServices().historyProvider}
             dropHandler={galleryDropHandler}
             routePrefixes={[">", "$", ":", "/"]}
             onRouteChange={handleRouteChange}

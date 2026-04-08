@@ -7,6 +7,7 @@ import wasmUrl from "../crates/tugmark-wasm/pkg/tugmark_wasm_bg.wasm?url";
 import { TugConnection } from "./connection";
 import { setConnection } from "./lib/connection-singleton";
 import { TugbankClient } from "./lib/tugbank-client";
+import { setTugbankClient } from "./lib/tugbank-singleton";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { readLayout, readTheme, readTabStates, readDeckState } from "./settings-api";
@@ -39,6 +40,7 @@ setConnection(connection);
 // Create TugbankClient — registers for DEFAULTS frames on this connection.
 // Must be created before connect() so it receives the initial snapshot frame.
 const tugbankClient = new TugbankClient(connection);
+setTugbankClient(tugbankClient);
 
 // Get the deck container from the DOM (module scope — must be synchronous)
 const container = document.getElementById("deck-container");
