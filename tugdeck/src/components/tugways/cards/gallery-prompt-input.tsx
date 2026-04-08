@@ -107,8 +107,8 @@ function buildCardStores(): {
 } {
   const historyStore = new PromptHistoryStore();
   const connection = getConnection()!;
-  const feedStore = new FeedStore(connection, [FeedId.CODE_OUTPUT]);
-  const metadataStore = new SessionMetadataStore(feedStore, FeedId.CODE_OUTPUT);
+  const metaFeedStore = new FeedStore(connection, [FeedId.SESSION_METADATA]);
+  const metadataStore = new SessionMetadataStore(metaFeedStore, FeedId.SESSION_METADATA);
   return { metadataStore, historyStore };
 }
 

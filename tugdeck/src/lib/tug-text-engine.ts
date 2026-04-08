@@ -353,6 +353,7 @@ export class TugTextEngine {
   constructor(root: HTMLDivElement) {
     this.root = root;
     this.setupEvents();
+    this.updateEmpty();
   }
 
   // =================================================================
@@ -523,7 +524,8 @@ export class TugTextEngine {
       }
     }
     this.root.innerHTML = parts.join("");
-    this._empty = state.text.length === 0;
+    // A lone "\n" is WebKit's trailing caret-stub BR, not user content.
+    this._empty = state.text.length === 0 || state.text === "\n";
     this._hasRouteAtom = this.hasRouteAtomAtStart();
     this.updateEmpty();
     this.autoResize();

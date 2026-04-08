@@ -1,0 +1,13 @@
+[package]
+name = "tuglog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Shared tracing initialization for Tug binaries"
+
+[dependencies]
+dirs = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }

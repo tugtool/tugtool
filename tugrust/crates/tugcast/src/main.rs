@@ -21,7 +21,6 @@ use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use tugbank_core::TugbankClient;
 use tugbank_core::notify as tugbank_notify;
 use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
@@ -39,11 +38,7 @@ use crate::router::{BROADCAST_CAPACITY, FeedRouter};
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing with RUST_LOG support
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    let _log_guard = tuglog::init("tugcast");
 
     // Create own process group so the app can kill tugcast + all children
     // (tugcode, bun) with a single kill(-pgid, SIGTERM). Without this,
@@ -285,6 +280,15 @@ async fn main() {
         });
     }
 
+    // Session metadata snapshot — filters system_metadata from CODE_OUTPUT.
+    let (session_meta_tx, session_meta_rx) = watch::channel(Frame::new(FeedId::SESSION_METADATA, vec![]));
+    let session_meta_feed =
+        feeds::session_metadata::SessionMetadataFeed::new(code_tx.subscribe());
+    let session_meta_cancel = cancel.clone();
+    tokio::spawn(async move {
+        session_meta_feed.run(session_meta_tx, session_meta_cancel).await;
+    });
+
     // Create replay buffer for CodeOutput lag recovery (P4)
     use crate::router::{LagPolicy, ReplayBuffer};
     let code_replay = ReplayBuffer::new(1000);
@@ -345,6 +349,7 @@ async fn main() {
         stats_proc_rx,
         stats_token_rx,
         stats_build_rx,
+        session_meta_rx,
     ];
     if let Some(rx) = defaults_rx {
         snapshot_watches.push(rx);

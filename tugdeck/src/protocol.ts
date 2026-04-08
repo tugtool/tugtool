@@ -32,8 +32,9 @@ export const FeedId = {
   // Code (Claude Code bridge)
   CODE_OUTPUT: 0x40,
   CODE_INPUT: 0x41,
-  // Defaults
+  // Defaults / Session
   DEFAULTS: 0x50,
+  SESSION_METADATA: 0x51,
   // Shell (reserved for Phase T2+)
   SHELL_OUTPUT: 0x60,
   SHELL_INPUT: 0x61,

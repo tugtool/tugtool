@@ -69,6 +69,8 @@ impl FeedId {
     // -- Defaults --
     /// Domain defaults snapshot (tugcast → tugdeck)
     pub const DEFAULTS: Self = Self(0x50);
+    /// Session metadata snapshot (tugcast → tugdeck)
+    pub const SESSION_METADATA: Self = Self(0x51);
 
     // -- Shell (reserved for Phase T2+) --
     /// Shell command output (tugcast → tugdeck)

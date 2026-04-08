@@ -15,7 +15,6 @@ use tokio::process::Command;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::{Instant, sleep, timeout};
 use tracing::{info, warn};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// tugexec: Launcher for tugdeck dashboard
 #[derive(Parser, Debug)]
@@ -617,11 +616,7 @@ async fn supervisor_loop(
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing with RUST_LOG support
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    let _log_guard = tuglog::init("tugexec");
 
     let cli = Cli::parse();
 
