@@ -1,6 +1,6 @@
 # Design Decisions
 
-*Each decision records a non-obvious choice and its rationale. Decisions are referenced from [laws-of-tug.md](laws-of-tug.md) as `[D##]` and laws are referenced here as `[L##]`.*
+*Each decision records a non-obvious choice and its rationale. Decisions are referenced from [tuglaws.md](tuglaws.md) as `[D##]` and laws are referenced here as `[L##]`.*
 
 ---
 

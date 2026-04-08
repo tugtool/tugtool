@@ -15,7 +15,7 @@ The Laws of Tug exist because I repeatedly hit specific failure modes building t
 
 ## Laws referenced in this document
 
-This document argues against standard React patterns by reference to specific Laws of Tug. For the full list and their design-decision rationale, see [laws-of-tug.md](laws-of-tug.md). The laws cited here:
+This document argues against standard React patterns by reference to specific Laws of Tug. For the full list and their design-decision rationale, see [tuglaws.md](tuglaws.md). The laws cited here:
 
 | Law | Rule |
 |-----|------|

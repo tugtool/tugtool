@@ -2,7 +2,7 @@
 
 *The theme runtime is CSS-first and file-based.*
 
-*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [laws-of-tug.md](laws-of-tug.md).*
+*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md).*
 
 ---
 

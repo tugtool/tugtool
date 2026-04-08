@@ -2,7 +2,7 @@
 
 *The TugColor palette is a continuous OKLCH color space. Components consume semantic tokens; the palette provides the colors those tokens resolve to.*
 
-*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [laws-of-tug.md](laws-of-tug.md).*
+*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md).*
 
 ---
 

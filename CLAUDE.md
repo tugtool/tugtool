@@ -46,7 +46,7 @@ Theme tokens live in `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes
 
 ## Tugdeck — Laws of Tug
 
-Before implementing any tugways/tugdeck code, verify against the [Laws of Tug](tuglaws/laws-of-tug.md) and [Design Decisions](tuglaws/design-decisions.md). Critical laws:
+Before implementing any tugways/tugdeck code, verify against the [Laws of Tug](tuglaws/tuglaws.md) and [Design Decisions](tuglaws/design-decisions.md). Critical laws:
 
 1. **One `root.render()`, at mount, ever.** [L01]
 2. **External state enters React through `useSyncExternalStore` only.** [L02]

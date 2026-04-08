@@ -2,7 +2,7 @@
 
 *Every design-system CSS custom property uses a prefix that declares its kind, making classification instant and unambiguous.*
 
-*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [laws-of-tug.md](laws-of-tug.md).*
+*Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md).*
 
 ---
 

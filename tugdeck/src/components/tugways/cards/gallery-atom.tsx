@@ -24,7 +24,7 @@ const SAMPLE_ATOMS: AtomSegment[] = [
   { kind: "atom", type: "file", label: "main.ts", value: "/Users/kocienda/project/src/main.ts" },
   { kind: "atom", type: "file", label: "feed-store.ts", value: "/Users/kocienda/project/src/lib/feed-store.ts" },
   { kind: "atom", type: "command", label: "/commit", value: "/commit" },
-  { kind: "atom", type: "doc", label: "laws-of-tug.md", value: "/Users/kocienda/project/tuglaws/laws-of-tug.md" },
+  { kind: "atom", type: "doc", label: "tuglaws.md", value: "/Users/kocienda/project/tuglaws/tuglaws.md" },
   { kind: "atom", type: "image", label: "screenshot.png", value: "/Users/kocienda/Desktop/screenshot.png" },
   { kind: "atom", type: "link", label: "anthropic.com", value: "https://www.anthropic.com/research" },
 ];
