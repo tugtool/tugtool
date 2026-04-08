@@ -1,4 +1,4 @@
-# Laws of Tug
+# Tuglaws
 
 *Invariants for the tugways system. Violating any law requires updating the design first — never silently diverge.*
 

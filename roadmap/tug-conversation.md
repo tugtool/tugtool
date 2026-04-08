@@ -778,7 +778,7 @@ These issues were identified during code review of TugWorkerPool but deferred to
 
 **Status:** Not started.
 
-**Goal:** Fix all issues that make the Phase 3A.2 worker pipeline non-functional in the browser. The code passed all bun tests but rendered nothing — a blank screen with zero DOM nodes. This phase does not add features. It makes the existing code work correctly and conform to the Laws of Tug.
+**Goal:** Fix all issues that make the Phase 3A.2 worker pipeline non-functional in the browser. The code passed all bun tests but rendered nothing — a blank screen with zero DOM nodes. This phase does not add features. It makes the existing code work correctly and conform to the Tuglaws.
 
 **Inputs:** Phase 3A.2 code (TugWorkerPool, markdown-worker.ts, TugMarkdownView worker pipeline). Audit findings from post-merge debugging session.
 
@@ -870,7 +870,7 @@ If the worker fails to load: verify `[TugWorkerPool] All workers failed — swit
 
 **Status:** Not started.
 
-**Goal:** Replace the entire worker-based markdown pipeline with a pulldown-cmark WASM module that runs synchronously on the main thread. Remove all worker infrastructure. The result is a TugMarkdownView that renders 1MB in under 50ms and 10MB in under 200ms, with no workers, no async chains, no Vite detection issues, and full Laws of Tug compliance.
+**Goal:** Replace the entire worker-based markdown pipeline with a pulldown-cmark WASM module that runs synchronously on the main thread. Remove all worker infrastructure. The result is a TugMarkdownView that renders 1MB in under 50ms and 10MB in under 200ms, with no workers, no async chains, no Vite detection issues, and full Tuglaws compliance.
 
 **Inputs:** Phase 3A code (BlockHeightIndex, RenderedBlockWindow — these are keepers). Spike benchmark results: pulldown-cmark WASM lexes+parses 1MB in 14ms and 10MB in 132ms on JSC (Safari/WKWebView). `marked.lexer()` takes 15,000ms for the same 1MB — a confirmed JSC regex regression (marked issue #2863).
 
@@ -1149,7 +1149,7 @@ Final laws audit — full pass over tug-markdown-view.tsx against tuglaws/:
 - Stress 10MB: viewport visible in <200ms.
 - Streaming: smooth at 60fps for 5000+ words.
 - Zero worker infrastructure remains in the codebase. No TugWorkerPool, no markdown-worker, no worker test fixtures.
-- Full Laws of Tug compliance: L02 (useSyncExternalStore for streaming), L05 (no RAF on React commits), L06 (DOM-only appearance changes), L07 (refs/singletons, no stale closures), L16 (CSS annotations), L19 (component authoring).
+- Full Tuglaws compliance: L02 (useSyncExternalStore for streaming), L05 (no RAF on React commits), L06 (DOM-only appearance changes), L07 (refs/singletons, no stale closures), L16 (CSS annotations), L19 (component authoring).
 - WASM build integrated into justfile. Developer setup documented.
 - pulldown-cmark handles all GFM block types: headings, paragraphs, code blocks, lists, blockquotes, tables, horizontal rules, HTML blocks.
 
@@ -1376,7 +1376,7 @@ Verify: all content types work. Regions accumulate. Clear resets. Scrolling smoo
 - No `content` prop — all content through the handle.
 - Gallery card: action buttons, single component instance, no mode switching.
 - Streaming: L22-compliant store observer calls setRegion.
-- Full Laws of Tug compliance: L03, L06, L07, L19, L22.
+- Full Tuglaws compliance: L03, L06, L07, L19, L22.
 
 ---
 
@@ -1623,7 +1623,7 @@ Verify in browser:
 - Programmatic scroll methods work (scrollTo, scrollToTop, scrollToBottom, scrollToElement).
 - Follow-bottom engages/disengages correctly.
 - `scrollend` used where supported, timer fallback elsewhere.
-- Full Laws of Tug compliance: L03, L06, L07, D93.
+- Full Tuglaws compliance: L03, L06, L07, D93.
 - No `overflow-anchor` dependency.
 - No rAF+setTimeout timing hacks.
 

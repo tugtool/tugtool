@@ -6,7 +6,7 @@
  * - Key configuration for Return/Enter
  * - Session history via Cmd+Up/Down
  *
- * Laws of Tug compliance:
+ * Tuglaws compliance:
  *   [L01] One root.render() at mount — component manages engine internally
  *   [L06] Appearance via CSS and DOM, never React state
  *   [L07] Providers are stable refs created once per scope

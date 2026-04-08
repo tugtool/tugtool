@@ -446,9 +446,9 @@ The shell and Claude Code environments are **parallel but synchronized** — not
 
 ## Design Laws
 
-### Existing Laws of Tug (apply to Tide)
+### Existing Tuglaws (apply to Tide)
 
-All existing Laws of Tug apply to Tide's rendering. L01 (one render), L02 (useSyncExternalStore), L06 (CSS/DOM for appearance), etc.
+All existing Tuglaws apply to Tide's rendering. L01 (one render), L02 (useSyncExternalStore), L06 (CSS/DOM for appearance), etc.
 
 ### Proposed New Law
 
@@ -1469,7 +1469,7 @@ Each component:
 - Accepts typed structured data (not raw text)
 - Has a clear data interface matching the adapter output schema from Phase T5/T6
 - Falls back gracefully if data is malformed
-- Respects theme tokens and Laws of Tug
+- Respects theme tokens and Tuglaws
 
 **Exit criteria:**
 - Each component renders correctly with mock structured data.

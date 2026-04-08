@@ -44,9 +44,9 @@ cd tugrust && cargo nextest run
 
 Theme tokens live in `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes/harmony.css`. These are hand-authored CSS files — there is no generation script. Edit them directly when adding or tuning tokens.
 
-## Tugdeck — Laws of Tug
+## Tugdeck — Tuglaws
 
-Before implementing any tugways/tugdeck code, verify against the [Laws of Tug](tuglaws/tuglaws.md) and [Design Decisions](tuglaws/design-decisions.md). Critical laws:
+Before implementing any tugways/tugdeck code, verify against the [Tuglaws](tuglaws/tuglaws.md) and [Design Decisions](tuglaws/design-decisions.md). Critical laws:
 
 1. **One `root.render()`, at mount, ever.** [L01]
 2. **External state enters React through `useSyncExternalStore` only.** [L02]

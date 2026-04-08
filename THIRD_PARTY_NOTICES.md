@@ -41,7 +41,7 @@ SOFTWARE.
 ## Excalidraw
 
 **Source:** https://github.com/excalidraw/excalidraw
-**What was adopted:** Architectural patterns that informed the Laws of Tug: single-render-root discipline (L01), external-state-via-subscription pattern (L02), appearance-changes-via-DOM-not-state separation (L06), component authoring conventions (L19). Excalidraw's canvas-based rendering architecture, state management approach, and component organization were studied extensively during the initial design of the tugways system.
+**What was adopted:** Architectural patterns that informed the Tuglaws: single-render-root discipline (L01), external-state-via-subscription pattern (L02), appearance-changes-via-DOM-not-state separation (L06), component authoring conventions (L19). Excalidraw's canvas-based rendering architecture, state management approach, and component organization were studied extensively during the initial design of the tugways system.
 **Used in:** `tuglaws/tuglaws.md` (design principles), tugdeck component architecture
 
 ```

@@ -13,7 +13,7 @@
  *   - Selection: native browser caret (we don't render our own)
  *   - Undo: own stack with immutable snapshots
  *
- * Laws of Tug compliance:
+ * Tuglaws compliance:
  *   [L01] One root.render() at mount — engine runs in DOM zone after that
  *   [L06] All text/atom rendering via direct DOM manipulation, no React state
  *   [L07] Engine is a stable ref; handlers access current state via `this`
