@@ -44,7 +44,7 @@
   font-family: var(--tug-font-family-editor);
   font-size: var(--tug-font-size-editor, 13px);
   letter-spacing: var(--tug-letter-spacing-editor, normal);
-  line-height: 24px;
+  line-height: 1.7;
   /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
   color: var(--tug7-element-global-text-normal-default-rest);
   background-color: var(--tug7-surface-global-primary-normal-control-rest);

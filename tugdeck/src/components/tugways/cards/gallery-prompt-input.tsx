@@ -21,6 +21,7 @@ import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import type { AtomSegment, CompletionProvider, InputAction } from "@/lib/tug-text-engine";
+import { setAtomFont } from "@/lib/tug-atom-img";
 import { FeedStore } from "@/lib/feed-store";
 import { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -64,25 +65,18 @@ function galleryDropHandler(files: FileList): AtomSegment[] {
 const EDITOR_FONT_OPTIONS: TugPopupMenuItem[] = [
   { id: "plex-sans", label: "IBM Plex Sans" },
   { id: "inter", label: "Inter" },
-  { id: "source-sans", label: "Source Sans 3" },
-  { id: "atkinson", label: "Atkinson Hyperlegible" },
-  { id: "nunito-sans", label: "Nunito Sans" },
   { id: "hack", label: "Hack (mono)" },
 ];
 
 const EDITOR_FONT_STACKS: Record<string, string> = {
   "plex-sans": '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
   "inter": '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
-  "source-sans": '"Source Sans 3", "Source Sans Pro", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
-  "atkinson": '"Atkinson Hyperlegible", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
-  "nunito-sans": '"Nunito Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
   "hack": '"Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace',
 };
 
 /** Default font size per font (mono reads larger than proportional). */
 const EDITOR_FONT_DEFAULT_SIZE: Record<string, number> = {
-  "plex-sans": 14, "inter": 14, "source-sans": 14,
-  "atkinson": 14, "nunito-sans": 14, "hack": 13,
+  "plex-sans": 14, "inter": 14, "hack": 13,
 };
 
 const FONT_SIZE_OPTIONS: TugPopupMenuItem[] = [
@@ -270,14 +264,18 @@ export function GalleryPromptInput() {
     if (routeRef.current) routeRef.current.textContent = route ?? "none";
   }, []);
 
-  /** Apply all three editor style properties to the wrapper div. */
+  /** Apply all three editor style properties to the wrapper div and update atom font. */
   const applyEditorStyles = useCallback((fontId: string, size: number, spacing: number) => {
     const el = editorWrapRef.current;
     if (!el) return;
     const stack = EDITOR_FONT_STACKS[fontId];
-    if (stack) el.style.setProperty("--tug-font-family-editor", stack);
+    if (stack) {
+      el.style.setProperty("--tug-font-family-editor", stack);
+      setAtomFont(stack, size);
+    }
     el.style.setProperty("--tug-font-size-editor", `${size}px`);
     el.style.setProperty("--tug-letter-spacing-editor", spacing === 0 ? "normal" : `${spacing}px`);
+    inputRef.current?.regenerateAtoms();
   }, []);
 
   /** Persist current settings to tugbank (fire-and-forget). */

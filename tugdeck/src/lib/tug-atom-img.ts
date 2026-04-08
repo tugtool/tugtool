@@ -54,12 +54,40 @@ const ATOM_ICON_PATHS: Record<string, string> = {
 
 // ---- Layout constants ----
 
-const FONT_SIZE = 12;
-const FONT_FAMILY = "system-ui, sans-serif";
-const ICON_SIZE = 12;
+let _fontSize = 12;
+let _editorFontSize = 14;
+/** Font family for Canvas measurement (can include custom fonts). */
+let _measureFamily = "system-ui, sans-serif";
+/** Font family for SVG markup (must use generic families — custom fonts
+ *  loaded via @font-face are not available inside data-URI SVGs). */
+let _svgFamily = "system-ui, sans-serif";
+/** Atom layout dimensions, scaled from the current _fontSize. */
+function atomHeight(): number { return Math.round(_fontSize * 1.75); }
+function iconSize(): number { return _fontSize; }
 const PADDING = 6;
 const GAP = 4;
-const HEIGHT = 22;
+
+/**
+ * Set the font used for atom label rendering and measurement.
+ * `family` is the full CSS font-family stack (e.g. `"Hack", monospace`).
+ * The SVG font is derived by stripping custom font names and keeping
+ * only generic families that work inside data-URI SVGs.
+ * Call this when the editor font changes, then regenerateAtoms().
+ */
+export function setAtomFont(family: string, size?: number): void {
+  _measureFamily = family;
+  // Keep only generic CSS font families for SVG rendering.
+  const generics = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded"]);
+  const svgParts = family.split(",")
+    .map(s => s.replace(/"/g, "").trim())
+    .filter(s => generics.has(s));
+  _svgFamily = svgParts.length > 0 ? svgParts.join(", ") : "sans-serif";
+  // Atom label font is ~85% of the editor font size (e.g. 12px for a 14px editor).
+  if (size !== undefined) {
+    _editorFontSize = size;
+    _fontSize = Math.round(size * 0.85);
+  }
+}
 
 // ---- Text measurement ----
 
@@ -74,17 +102,21 @@ function measureTextWidth(text: string, font: string): number {
   return ctx.measureText(text).width;
 }
 
-const _font = `${FONT_SIZE}px ${FONT_FAMILY}`;
+/** Current atom font as a CSS font shorthand (for Canvas measurement). */
+function atomFont(): string {
+  return `${_fontSize}px ${_measureFamily}`;
+}
 
 /** Truncate text to fit within maxWidth, appending "…" if needed. */
 function truncateLabel(label: string, maxWidth: number): string {
-  if (measureTextWidth(label, _font) <= maxWidth) return label;
+  if (measureTextWidth(label, atomFont()) <= maxWidth) return label;
   const ellipsis = "…";
-  const ellipsisW = measureTextWidth(ellipsis, _font);
+  const font = atomFont();
+  const ellipsisW = measureTextWidth(ellipsis, font);
   let lo = 1, hi = label.length - 1, best = 0;
   while (lo <= hi) {
     const mid = (lo + hi) >>> 1;
-    if (measureTextWidth(label.slice(0, mid), _font) + ellipsisW <= maxWidth) {
+    if (measureTextWidth(label.slice(0, mid), font) + ellipsisW <= maxWidth) {
       best = mid;
       lo = mid + 1;
     } else {
@@ -105,14 +137,15 @@ function buildAtomSVG(
   iconColor: string,
   textColor: string,
 ): { svg: string; width: number } {
-  const textWidth = measureTextWidth(displayLabel, _font);
-  const w = PADDING + ICON_SIZE + GAP + Math.ceil(textWidth) + PADDING;
-  const icon = `<g transform="translate(${PADDING},${(HEIGHT - ICON_SIZE) / 2}) scale(${ICON_SIZE / 24})" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</g>`;
+  const font = atomFont();
+  const textWidth = measureTextWidth(displayLabel, font);
+  const w = PADDING + iconSize() + GAP + Math.ceil(textWidth) + PADDING;
+  const icon = `<g transform="translate(${PADDING},${(atomHeight() - iconSize()) / 2}) scale(${iconSize() / 24})" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</g>`;
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${HEIGHT}" viewBox="0 0 ${w} ${HEIGHT}">`,
-    `<rect x="0.5" y="0.5" width="${w - 1}" height="${HEIGHT - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${atomHeight()}" viewBox="0 0 ${w} ${atomHeight()}">`,
+    `<rect x="0.5" y="0.5" width="${w - 1}" height="${atomHeight() - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
     icon,
-    `<text x="${PADDING + ICON_SIZE + GAP}" y="${HEIGHT / 2 + FONT_SIZE * 0.36}" font-size="${FONT_SIZE}" font-family="${FONT_FAMILY}" fill="${textColor}">${escapeSVG(displayLabel)}</text>`,
+    `<text x="${PADDING + iconSize() + GAP}" y="${atomHeight() / 2 + _fontSize * 0.32}" font-size="${_fontSize}" font-family="${_svgFamily}" fill="${textColor}">${escapeSVG(displayLabel)}</text>`,
     `</svg>`,
   ].join("");
   return { svg, width: w };
@@ -144,8 +177,8 @@ export function createAtomImgElement(
   const img = document.createElement("img");
   img.src = svgToDataURI(svg);
   img.width = width;
-  img.height = HEIGHT;
-  img.style.verticalAlign = "-6px";
+  img.height = atomHeight();
+  img.style.verticalAlign = `${-Math.round(atomHeight() * 0.5 - _editorFontSize * 0.35)}px`;
   img.style.margin = "0 2px";
   img.dataset.atomType = type;
   img.dataset.atomLabel = label;
@@ -165,7 +198,7 @@ export function atomImgHTML(type: string, label: string, value?: string): string
 
 /** Create a route atom <img> element — a compact styled indicator for the active route. */
 export function createRouteAtomImgElement(char: string): HTMLImageElement {
-  const textWidth = measureTextWidth(char, _font);
+  const textWidth = measureTextWidth(char, atomFont());
   const padding = 5;
   const w = padding + Math.ceil(textWidth) + padding;
 
@@ -174,17 +207,17 @@ export function createRouteAtomImgElement(char: string): HTMLImageElement {
   const textColor = getTokenValue("--tug7-element-atom-text-normal-route-rest");
 
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${HEIGHT}" viewBox="0 0 ${w} ${HEIGHT}">`,
-    `<rect x="0.5" y="0.5" width="${w - 1}" height="${HEIGHT - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
-    `<text x="${w / 2}" y="${HEIGHT / 2 + FONT_SIZE * 0.36}" font-size="${FONT_SIZE}" font-weight="600" font-family="${FONT_FAMILY}" fill="${textColor}" text-anchor="middle">${escapeSVG(char)}</text>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${atomHeight()}" viewBox="0 0 ${w} ${atomHeight()}">`,
+    `<rect x="0.5" y="0.5" width="${w - 1}" height="${atomHeight() - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
+    `<text x="${w / 2}" y="${atomHeight() / 2 + _fontSize * 0.32}" font-size="${_fontSize}" font-weight="600" font-family="${_svgFamily}" fill="${textColor}" text-anchor="middle">${escapeSVG(char)}</text>`,
     `</svg>`,
   ].join("");
 
   const img = document.createElement("img");
   img.src = svgToDataURI(svg);
   img.width = w;
-  img.height = HEIGHT;
-  img.style.verticalAlign = "-6px";
+  img.height = atomHeight();
+  img.style.verticalAlign = `${-Math.round(atomHeight() * 0.5 - _editorFontSize * 0.35)}px`;
   img.style.margin = "0 2px";
   img.dataset.atomType = "route";
   img.dataset.atomLabel = char;

@@ -107,6 +107,9 @@ export interface TugTextInputDelegate {
   captureState(): TugTextEditingState;
   restoreState(state: TugTextEditingState): void;
 
+  // --- Appearance ---
+  regenerateAtoms(): void;
+
   // --- Testing ---
   getEditorElement(): HTMLDivElement | null;
 }
@@ -546,6 +549,9 @@ export class TugTextEngine {
         ? createRouteAtomImgElement(label)
         : createAtomImgElement(type, label, value);
       el.src = fresh.src;
+      el.width = fresh.width;
+      el.height = fresh.height;
+      el.style.verticalAlign = fresh.style.verticalAlign;
     }
   }
 

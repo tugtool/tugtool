@@ -248,6 +248,7 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       typeaheadNavigate(direction: "up" | "down") { engineRef.current?.typeaheadNavigate(direction); },
       captureState() { return engineRef.current?.captureState() ?? { text: "", atoms: [], selection: null }; },
       restoreState(state: TugTextEditingState) { engineRef.current?.restoreState(state); },
+      regenerateAtoms() { engineRef.current?.regenerateAtoms(); },
       getEditorElement() { return engineRef.current?.root ?? null; },
     }), []);
 
