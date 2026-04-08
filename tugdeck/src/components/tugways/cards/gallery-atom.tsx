@@ -8,7 +8,7 @@
  * the same path used by TugTextEngine inside contentEditable.
  */
 
-import React, { useCallback, useId, useRef, useLayoutEffect, useState } from "react";
+import React, { useId, useRef, useLayoutEffect, useState } from "react";
 import {
   createAtomImgElement,
   formatAtomLabel,
@@ -16,9 +16,7 @@ import {
 import type { AtomSegment, AtomLabelMode } from "@/lib/tug-atom-img";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { narrowValue } from "@/components/tugways/action-vocabulary";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import "./gallery-atom.css";
 
 // ---- Sample data ----
@@ -124,19 +122,14 @@ export function GalleryAtom() {
     }
   }, [labelMode]);
 
-  // L11 (A2.2): selectValue handler for the label mode choice group.
-  const handleSelectValue = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (sender !== "atom-label-mode") return;
-    const v = narrowValue(event, (val): val is string => typeof val === "string");
-    if (v === null) return;
-    setLabelMode(v as AtomLabelMode);
-  }, []);
-
-  const responderId = useId();
-  const { ResponderScope, responderRef } = useResponder({
-    id: responderId,
-    actions: { selectValue: handleSelectValue },
+  // L11 migration via useResponderForm — the label mode choice group
+  // dispatches `selectValue`. Its gensym'd sender id is bound to a
+  // wrapper setter that casts the string payload to AtomLabelMode.
+  const labelModeId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: {
+      [labelModeId]: (v: string) => setLabelMode(v as AtomLabelMode),
+    },
   });
 
   return (
@@ -178,7 +171,7 @@ export function GalleryAtom() {
         <TugChoiceGroup
           items={LABEL_MODE_CHOICES}
           value={labelMode}
-          senderId="atom-label-mode"
+          senderId={labelModeId}
           size="sm"
         />
         <div ref={labelRef} className="gallery-atom-row" style={{ marginTop: "8px" }} />

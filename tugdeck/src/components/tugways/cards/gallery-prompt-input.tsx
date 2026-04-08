@@ -20,9 +20,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { narrowValue } from "@/components/tugways/action-vocabulary";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { AtomSegment, CompletionProvider, HistoryProvider, InputAction } from "@/lib/tug-text-engine";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { FeedStore } from "@/lib/feed-store";
@@ -232,28 +230,18 @@ export function GalleryPromptInput() {
     delegate.focus();
   }, []);
 
-  // L11 (A2.2): the gallery card is a responder that handles
-  // `selectValue` actions dispatched by the key-config TugChoiceGroups.
-  // TugPromptInput has its own nested responder for cut/copy/paste;
-  // clicks inside the editor promote that, clicks on a choice group
-  // promote this outer card (innermost-first DOM walk). See
-  // gallery-checkbox.tsx for the annotated reference pattern.
-  const handleSelectValue = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (!sender) return;
-    const v = narrowValue(event, (val): val is string => typeof val === "string");
-    if (v === null) return;
-    if (sender === "key-return") {
-      setReturnAction(v as InputAction);
-    } else if (sender === "key-enter") {
-      setEnterAction(v as InputAction);
-    }
-  }, []);
-
-  const responderId = useId();
-  const { ResponderScope, responderRef } = useResponder({
-    id: responderId,
-    actions: { selectValue: handleSelectValue },
+  // L11 migration via useResponderForm — this card handles `selectValue`
+  // from two key-config choice groups. TugPromptInput has its own nested
+  // responder for cut/copy/paste; clicks inside the editor promote that,
+  // clicks on a choice group promote this outer card (innermost-first
+  // DOM walk). Gensym'd sender ids per group.
+  const keyReturnId = useId();
+  const keyEnterId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: {
+      [keyReturnId]: (v: string) => setReturnAction(v as InputAction),
+      [keyEnterId]: (v: string) => setEnterAction(v as InputAction),
+    },
   });
 
   const handleRouteChange = useCallback((route: string | null) => {
@@ -339,11 +327,11 @@ export function GalleryPromptInput() {
         <div className="prompt-input-key-config">
           <div className="prompt-input-key-config-row">
             <span className="prompt-input-key-config-label">Return (main keyboard):</span>
-            <TugChoiceGroup items={RETURN_CHOICES} value={returnAction} size="sm" senderId="key-return" />
+            <TugChoiceGroup items={RETURN_CHOICES} value={returnAction} size="sm" senderId={keyReturnId} />
           </div>
           <div className="prompt-input-key-config-row">
             <span className="prompt-input-key-config-label">Enter (numpad):</span>
-            <TugChoiceGroup items={ENTER_CHOICES} value={enterAction} size="sm" senderId="key-enter" />
+            <TugChoiceGroup items={ENTER_CHOICES} value={enterAction} size="sm" senderId={keyEnterId} />
           </div>
           <div className="prompt-input-desc">
             Shift always inverts. hasMarkedText=true → key goes to IME.

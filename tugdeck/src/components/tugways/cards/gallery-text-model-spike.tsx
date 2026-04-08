@@ -27,9 +27,7 @@ import React, { useRef, useLayoutEffect, useCallback, useId, useState } from "re
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
-import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { narrowValue } from "@/components/tugways/action-vocabulary";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import "./gallery-text-model-spike.css";
 
 // ===================================================================
@@ -1166,26 +1164,22 @@ function SpikeEditor() {
     engine.clear();
   }, []);
 
-  // L11 (A2.2): selectValue handler for the key-config choice groups.
-  // See gallery-checkbox.tsx for the annotated migration pattern.
-  const handleSelectValue = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (!sender) return;
-    const v = narrowValue(event, (val): val is string => typeof val === "string");
-    if (v === null) return;
-    if (sender === "spike-key-return") {
-      setReturnAction(v);
-      appendLog(`return: ${v}, shift+return: ${v === "submit" ? "newline" : "submit"}`);
-    } else if (sender === "spike-key-enter") {
-      setEnterAction(v);
-      appendLog(`numpad enter: ${v}, shift+enter: ${v === "submit" ? "newline" : "submit"}`);
-    }
-  }, [appendLog]);
-
-  const responderId = useId();
-  const { ResponderScope, responderRef } = useResponder({
-    id: responderId,
-    actions: { selectValue: handleSelectValue },
+  // L11 migration via useResponderForm — see gallery-checkbox.tsx for
+  // the annotated reference. Each setter closure also appends to the
+  // dispatch log so the demo surfaces the chain activity.
+  const spikeKeyReturnId = useId();
+  const spikeKeyEnterId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: {
+      [spikeKeyReturnId]: (v: string) => {
+        setReturnAction(v);
+        appendLog(`return: ${v}, shift+return: ${v === "submit" ? "newline" : "submit"}`);
+      },
+      [spikeKeyEnterId]: (v: string) => {
+        setEnterAction(v);
+        appendLog(`numpad enter: ${v}, shift+enter: ${v === "submit" ? "newline" : "submit"}`);
+      },
+    },
   });
 
   return (
@@ -1242,11 +1236,11 @@ function SpikeEditor() {
         <div className="spike-key-config">
           <div className="spike-key-config-row">
             <span className="spike-key-config-label">Return (main keyboard):</span>
-            <TugChoiceGroup items={RETURN_CHOICES} value={returnAction} size="sm" senderId="spike-key-return" />
+            <TugChoiceGroup items={RETURN_CHOICES} value={returnAction} size="sm" senderId={spikeKeyReturnId} />
           </div>
           <div className="spike-key-config-row">
             <span className="spike-key-config-label">Enter (numpad):</span>
-            <TugChoiceGroup items={ENTER_CHOICES} value={enterAction} size="sm" senderId="spike-key-enter" />
+            <TugChoiceGroup items={ENTER_CHOICES} value={enterAction} size="sm" senderId={spikeKeyEnterId} />
           </div>
           <div className="spike-approach-desc">
             Shift always inverts. hasMarkedText=true → key goes to IME.

@@ -10,15 +10,13 @@
  * @module components/tugways/cards/gallery-box
  */
 
-import React, { useCallback, useId, useState } from "react";
+import React, { useId, useState } from "react";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
-import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { narrowValue } from "@/components/tugways/action-vocabulary";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // GalleryBox
@@ -54,62 +52,51 @@ export function GalleryBox() {
   // Rounded section
   const [roundedCb, setRoundedCb] = useState(true);
 
-  // L11 migration pattern: single responder for every interactive
-  // control in this card. Separate handlers per action (toggle,
-  // selectValue) share the same senderId namespace.
-  // See gallery-checkbox.tsx for the annotated reference.
-  const toggleSetters: Record<string, (v: boolean) => void> = {
-    "plain-cb-1": setPlainCb1,
-    "plain-cb-2": setPlainCb2,
-    "bordered-sw-1": setBorderedSw1,
-    "bordered-sw-2": setBorderedSw2,
-    "filled-cb-1": setFilledCb1,
-    "filled-sw-1": setFilledSw1,
-    "legend-cb": setLegendCb,
-    "legend-sw": setLegendSw,
-    "above-cb": setAboveCb,
-    "above-sw": setAboveSw,
-    "nested-cb": setNestedCb,
-    "nested-sw": setNestedSw,
-    "box-enabled": setBoxEnabled,
-    "toggle-cb": setToggleCb,
-    "toggle-sw": setToggleSw,
-    "rounded-cb": setRoundedCb,
-  };
-  const handleToggle = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (!sender) return;
-    const setter = toggleSetters[sender];
-    if (!setter) return;
-    const v = narrowValue(event, (val): val is boolean => typeof val === "boolean");
-    if (v === null) return;
-    setter(v);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // L11 migration via useResponderForm — see gallery-checkbox.tsx for the
+  // annotated reference. Gensym'd sender ids for every control.
+  const plainCb1Id = useId();
+  const plainCb2Id = useId();
+  const borderedSw1Id = useId();
+  const borderedSw2Id = useId();
+  const filledCb1Id = useId();
+  const filledSw1Id = useId();
+  const legendCbId = useId();
+  const legendSwId = useId();
+  const aboveCbId = useId();
+  const aboveSwId = useId();
+  const nestedCbId = useId();
+  const nestedSwId = useId();
+  const boxEnabledId = useId();
+  const toggleCbId = useId();
+  const toggleSwId = useId();
+  const roundedCbId = useId();
+  const nestedRadioId = useId();
+  const toggleRadioId = useId();
+  const toggleSegId = useId();
 
-  // selectValue handler for radio groups and choice groups.
-  const selectSetters: Record<string, (v: string) => void> = {
-    "nested-radio": setNestedRadio,
-    "toggle-radio": setToggleRadio,
-    "toggle-seg": setToggleSeg,
-  };
-  const handleSelectValue = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (!sender) return;
-    const setter = selectSetters[sender];
-    if (!setter) return;
-    const v = narrowValue(event, (val): val is string => typeof val === "string");
-    if (v === null) return;
-    setter(v);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const responderId = useId();
-  const { ResponderScope, responderRef } = useResponder({
-    id: responderId,
-    actions: {
-      toggle: handleToggle,
-      selectValue: handleSelectValue,
+  const { ResponderScope, responderRef } = useResponderForm({
+    toggle: {
+      [plainCb1Id]: setPlainCb1,
+      [plainCb2Id]: setPlainCb2,
+      [borderedSw1Id]: setBorderedSw1,
+      [borderedSw2Id]: setBorderedSw2,
+      [filledCb1Id]: setFilledCb1,
+      [filledSw1Id]: setFilledSw1,
+      [legendCbId]: setLegendCb,
+      [legendSwId]: setLegendSw,
+      [aboveCbId]: setAboveCb,
+      [aboveSwId]: setAboveSw,
+      [nestedCbId]: setNestedCb,
+      [nestedSwId]: setNestedSw,
+      [boxEnabledId]: setBoxEnabled,
+      [toggleCbId]: setToggleCb,
+      [toggleSwId]: setToggleSw,
+      [roundedCbId]: setRoundedCb,
+    },
+    selectValue: {
+      [nestedRadioId]: setNestedRadio,
+      [toggleRadioId]: setToggleRadio,
+      [toggleSegId]: setToggleSeg,
     },
   });
 
@@ -131,8 +118,8 @@ export function GalleryBox() {
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>plain</div>
             <TugBox variant="plain" label="Preferences" labelPosition="above">
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <TugCheckbox label="Enable notifications" checked={plainCb1} senderId="plain-cb-1" />
-                <TugCheckbox label="Auto-save changes" checked={plainCb2} senderId="plain-cb-2" />
+                <TugCheckbox label="Enable notifications" checked={plainCb1} senderId={plainCb1Id} />
+                <TugCheckbox label="Auto-save changes" checked={plainCb2} senderId={plainCb2Id} />
               </div>
             </TugBox>
           </div>
@@ -142,8 +129,8 @@ export function GalleryBox() {
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>bordered</div>
             <TugBox variant="bordered" label="Display">
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <TugSwitch label="Dark mode" checked={borderedSw1} senderId="bordered-sw-1" />
-                <TugSwitch label="Reduce motion" checked={borderedSw2} senderId="bordered-sw-2" />
+                <TugSwitch label="Dark mode" checked={borderedSw1} senderId={borderedSw1Id} />
+                <TugSwitch label="Reduce motion" checked={borderedSw2} senderId={borderedSw2Id} />
               </div>
             </TugBox>
           </div>
@@ -153,8 +140,8 @@ export function GalleryBox() {
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>filled</div>
             <TugBox variant="filled" label="Access">
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <TugCheckbox label="Remember me" checked={filledCb1} senderId="filled-cb-1" />
-                <TugSwitch label="Two-factor auth" checked={filledSw1} senderId="filled-sw-1" />
+                <TugCheckbox label="Remember me" checked={filledCb1} senderId={filledCb1Id} />
+                <TugSwitch label="Two-factor auth" checked={filledSw1} senderId={filledSw1Id} />
               </div>
             </TugBox>
           </div>
@@ -180,8 +167,8 @@ export function GalleryBox() {
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>labelPosition="legend"</div>
             <TugBox variant="bordered" label="Notifications" labelPosition="legend">
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <TugCheckbox label="Email alerts" checked={legendCb} senderId="legend-cb" />
-                <TugSwitch label="Push notifications" checked={legendSw} senderId="legend-sw" />
+                <TugCheckbox label="Email alerts" checked={legendCb} senderId={legendCbId} />
+                <TugSwitch label="Push notifications" checked={legendSw} senderId={legendSwId} />
               </div>
             </TugBox>
           </div>
@@ -191,8 +178,8 @@ export function GalleryBox() {
             <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>labelPosition="above"</div>
             <TugBox variant="bordered" label="Notifications" labelPosition="above">
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <TugCheckbox label="Email alerts" checked={aboveCb} senderId="above-cb" />
-                <TugSwitch label="Push notifications" checked={aboveSw} senderId="above-sw" />
+                <TugCheckbox label="Email alerts" checked={aboveCb} senderId={aboveCbId} />
+                <TugSwitch label="Push notifications" checked={aboveSw} senderId={aboveSwId} />
               </div>
             </TugBox>
           </div>
@@ -207,15 +194,15 @@ export function GalleryBox() {
         <div className="cg-section-title">Nested Boxes</div>
         <TugBox variant="bordered" label="Account Settings">
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <TugCheckbox label="Enable notifications" checked={nestedCb} senderId="nested-cb" />
-            <TugSwitch label="Dark mode" checked={nestedSw} senderId="nested-sw" />
+            <TugCheckbox label="Enable notifications" checked={nestedCb} senderId={nestedCbId} />
+            <TugSwitch label="Dark mode" checked={nestedSw} senderId={nestedSwId} />
 
             <TugBox variant="filled" label="Advanced">
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <TugRadioGroup
                   label="Protocol"
                   value={nestedRadio}
-                  senderId="nested-radio"
+                  senderId={nestedRadioId}
                   orientation="horizontal"
                 >
                   <TugRadioItem value="http">HTTP</TugRadioItem>
@@ -237,16 +224,16 @@ export function GalleryBox() {
           <TugSwitch
             label="Enable settings"
             checked={boxEnabled}
-            senderId="box-enabled"
+            senderId={boxEnabledId}
           />
           <TugBox variant="bordered" label="Settings" disabled={!boxEnabled}>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <TugCheckbox label="Notifications" checked={toggleCb} senderId="toggle-cb" />
-              <TugSwitch label="Dark mode" checked={toggleSw} senderId="toggle-sw" />
+              <TugCheckbox label="Notifications" checked={toggleCb} senderId={toggleCbId} />
+              <TugSwitch label="Dark mode" checked={toggleSw} senderId={toggleSwId} />
               <TugRadioGroup
                 aria-label="Protocol"
                 value={toggleRadio}
-                senderId="toggle-radio"
+                senderId={toggleRadioId}
                 orientation="horizontal"
               >
                 <TugRadioItem value="http">HTTP</TugRadioItem>
@@ -255,7 +242,7 @@ export function GalleryBox() {
               </TugRadioGroup>
               <TugChoiceGroup
                 value={toggleSeg}
-                senderId="toggle-seg"
+                senderId={toggleSegId}
                 aria-label="View mode"
                 items={[
                   { value: "grid",  label: "Grid"  },
@@ -284,7 +271,7 @@ export function GalleryBox() {
             <div key={r} style={{ width: "180px" }}>
               <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>rounded="{r}"</div>
               <TugBox variant="bordered" label={r} rounded={r}>
-                <TugCheckbox label="Option" checked={roundedCb} senderId="rounded-cb" />
+                <TugCheckbox label="Option" checked={roundedCb} senderId={roundedCbId} />
               </TugBox>
             </div>
           ))}

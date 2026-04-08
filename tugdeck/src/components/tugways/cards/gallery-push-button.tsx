@@ -10,15 +10,13 @@
  * @module components/tugways/cards/gallery-push-button
  */
 
-import React, { useCallback, useId, useState } from "react";
+import React, { useId, useState } from "react";
 import { Star, ArrowRight } from "lucide-react";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
-import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { narrowValue } from "@/components/tugways/action-vocabulary";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -127,27 +125,15 @@ export function GalleryPushButton() {
   const [previewDisabled, setPreviewDisabled] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // L11 migration pattern: this card is a responder that handles the
-  // `toggle` action dispatched by its TugCheckbox children. See
-  // gallery-checkbox.tsx for the annotated reference implementation.
-  const toggleSetters: Record<string, (v: boolean) => void> = {
-    "preview-disabled": setPreviewDisabled,
-    "preview-loading": setPreviewLoading,
-  };
-  const handleToggle = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (!sender) return;
-    const setter = toggleSetters[sender];
-    if (!setter) return;
-    const v = narrowValue(event, (val): val is boolean => typeof val === "boolean");
-    if (v === null) return;
-    setter(v);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const responderId = useId();
-  const { ResponderScope, responderRef } = useResponder({
-    id: responderId,
-    actions: { toggle: handleToggle },
+  // L11 migration pattern via useResponderForm — see gallery-checkbox.tsx
+  // for the annotated reference.
+  const previewDisabledId = useId();
+  const previewLoadingId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    toggle: {
+      [previewDisabledId]: setPreviewDisabled,
+      [previewLoadingId]: setPreviewLoading,
+    },
   });
 
   // Label for the role dropdown: undefined → "accent (default)"
@@ -216,7 +202,7 @@ export function GalleryPushButton() {
           <div className="cg-control-group">
             <TugCheckbox
               checked={previewDisabled}
-              senderId="preview-disabled"
+              senderId={previewDisabledId}
               label="Disabled"
               size="sm"
             />
@@ -225,7 +211,7 @@ export function GalleryPushButton() {
           <div className="cg-control-group">
             <TugCheckbox
               checked={previewLoading}
-              senderId="preview-loading"
+              senderId={previewLoadingId}
               label="Loading"
               size="sm"
             />

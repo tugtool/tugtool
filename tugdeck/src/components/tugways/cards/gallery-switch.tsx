@@ -9,12 +9,10 @@
  * @module components/tugways/cards/gallery-switch
  */
 
-import React, { useCallback, useId, useState } from "react";
+import React, { useId, useState } from "react";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole, TugSwitchSize } from "@/components/tugways/tug-switch";
-import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { narrowValue } from "@/components/tugways/action-vocabulary";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -41,27 +39,15 @@ export function GallerySwitch() {
   const [enabled1, setEnabled1] = useState(false);
   const [enabled2, setEnabled2] = useState(true);
 
-  // L11 migration pattern: this card is a responder that handles the
-  // `toggle` action dispatched by its TugSwitch children. See
-  // gallery-checkbox.tsx for the annotated reference implementation.
-  const setters: Record<string, (v: boolean) => void> = {
-    "sw-1": setEnabled1,
-    "sw-2": setEnabled2,
-  };
-  const handleToggle = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (!sender) return;
-    const setter = setters[sender];
-    if (!setter) return;
-    const v = narrowValue(event, (val): val is boolean => typeof val === "boolean");
-    if (v === null) return;
-    setter(v);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const responderId = useId();
-  const { ResponderScope, responderRef } = useResponder({
-    id: responderId,
-    actions: { toggle: handleToggle },
+  // L11 migration pattern via useResponderForm — see gallery-checkbox.tsx
+  // for the annotated reference. Gensym'd sender ids, declarative bindings.
+  const sw1Id = useId();
+  const sw2Id = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    toggle: {
+      [sw1Id]: setEnabled1,
+      [sw2Id]: setEnabled2,
+    },
   });
 
   return (
@@ -90,12 +76,12 @@ export function GallerySwitch() {
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugSwitch
             checked={enabled1}
-            senderId="sw-1"
+            senderId={sw1Id}
             label={`Off → ${String(enabled1)}`}
           />
           <TugSwitch
             checked={enabled2}
-            senderId="sw-2"
+            senderId={sw2Id}
             label={`On → ${String(enabled2)}`}
           />
         </div>

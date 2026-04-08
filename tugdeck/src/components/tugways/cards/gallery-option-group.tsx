@@ -14,7 +14,7 @@
  * @module components/tugways/cards/gallery-option-group
  */
 
-import React, { useCallback, useId, useState } from "react";
+import React, { useId, useState } from "react";
 import {
   Bold,
   Italic,
@@ -30,9 +30,7 @@ import {
 import { TugOptionGroup } from "@/components/tugways/tug-option-group";
 import type { TugOptionGroupRole } from "@/components/tugways/tug-option-group";
 import { TugBox } from "@/components/tugways/tug-box";
-import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { narrowValue } from "@/components/tugways/action-vocabulary";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -75,50 +73,42 @@ export function GalleryOptionGroup() {
   // Section 6: TugBox cascade
   const [cascadeValue, setCascadeValue] = useState<string[]>(["bold", "italic"]);
 
-  // L11 migration pattern (A2.2): the gallery card is a responder that
-  // handles `setValue` actions dispatched by TugOptionGroup children.
-  // TugOptionGroup dispatches `setValue` with the full new `string[]`
-  // as the payload (not `selectValue` with a single string — the
-  // vocabulary's `selectValue` is for single-select, `setValue` is the
-  // catch-all for domain-specific values including arrays).
+  // L11 migration via useResponderForm — see gallery-checkbox.tsx for the
+  // annotated reference. TugOptionGroup dispatches `setValue` with a
+  // `string[]` payload, so the bindings go in the `setValueStringArray`
+  // slot. Gensym'd sender ids per option group.
   //
   // TugOptionGroup also dispatches `focusNext`/`focusPrevious` on
   // arrow-key roving focus. This card doesn't handle those — they
-  // flow through the chain unhandled, which is fine (observable via
-  // the dispatch log).
-  const setters: Record<string, (v: string[]) => void> = {
-    "option-format": setFormatValue,
-    "option-align": setAlignValue,
-    "option-sm": setSmValue,
-    "option-md": setMdValue,
-    "option-lg": setLgValue,
-    "option-partial": setPartialValue,
-    "option-cascade": setCascadeValue,
+  // flow through the chain unhandled, which is fine.
+  const formatId = useId();
+  const alignId = useId();
+  const smId = useId();
+  const mdId = useId();
+  const lgId = useId();
+  const partialId = useId();
+  const cascadeId = useId();
+  const roleBaseId = useId();
+  const roleIds: Record<string, string> = Object.fromEntries(
+    ROLE_ENTRIES.map(({ label }) => [label, `${roleBaseId}-${label}`]),
+  );
+
+  const setValueStringArrayBindings: Record<string, (v: string[]) => void> = {
+    [formatId]: setFormatValue,
+    [alignId]: setAlignValue,
+    [smId]: setSmValue,
+    [mdId]: setMdValue,
+    [lgId]: setLgValue,
+    [partialId]: setPartialValue,
+    [cascadeId]: setCascadeValue,
   };
-  const handleSetValue = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (!sender) return;
-    const v = narrowValue(
-      event,
-      (val): val is string[] =>
-        Array.isArray(val) && val.every((x) => typeof x === "string"),
-    );
-    if (v === null) return;
-    // Role entries route to the roleValues record keyed by label.
-    if (sender.startsWith("option-role-")) {
-      const label = sender.slice("option-role-".length);
+  for (const { label } of ROLE_ENTRIES) {
+    setValueStringArrayBindings[roleIds[label]] = (v: string[]) =>
       setRoleValues((prev) => ({ ...prev, [label]: v }));
-      return;
-    }
-    const setter = setters[sender];
-    if (!setter) return;
-    setter(v);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const responderId = useId();
-  const { ResponderScope, responderRef } = useResponder({
-    id: responderId,
-    actions: { setValue: handleSetValue },
+  }
+
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueStringArray: setValueStringArrayBindings,
   });
 
   return (
@@ -138,7 +128,7 @@ export function GalleryOptionGroup() {
           </div>
           <TugOptionGroup
             value={formatValue}
-            senderId="option-format"
+            senderId={formatId}
             aria-label="Text formatting"
             items={[
               { value: "bold",      icon: <Bold />,      "aria-label": "Bold" },
@@ -166,7 +156,7 @@ export function GalleryOptionGroup() {
           </div>
           <TugOptionGroup
             value={alignValue}
-            senderId="option-align"
+            senderId={alignId}
             aria-label="Text alignment"
             items={[
               { value: "left",    label: "Left",    icon: <AlignLeft /> },
@@ -195,7 +185,7 @@ export function GalleryOptionGroup() {
             <TugOptionGroup
               size="sm"
               value={smValue}
-              senderId="option-sm"
+              senderId={smId}
               aria-label="Small option group"
               items={[
                 { value: "list",   icon: <List />,       "aria-label": "List" },
@@ -209,7 +199,7 @@ export function GalleryOptionGroup() {
             <TugOptionGroup
               size="md"
               value={mdValue}
-              senderId="option-md"
+              senderId={mdId}
               aria-label="Medium option group"
               items={[
                 { value: "list",   icon: <List />,       "aria-label": "List" },
@@ -223,7 +213,7 @@ export function GalleryOptionGroup() {
             <TugOptionGroup
               size="lg"
               value={lgValue}
-              senderId="option-lg"
+              senderId={lgId}
               aria-label="Large option group"
               items={[
                 { value: "list",   icon: <List />,       "aria-label": "List" },
@@ -249,7 +239,7 @@ export function GalleryOptionGroup() {
               <TugOptionGroup
                 role={role}
                 value={roleValues[label]}
-                senderId={`option-role-${label}`}
+                senderId={roleIds[label]}
                 aria-label={`${label} option group`}
                 items={[
                   { value: "b", icon: <Bold />,      "aria-label": "Bold" },
@@ -289,7 +279,7 @@ export function GalleryOptionGroup() {
             </div>
             <TugOptionGroup
               value={partialValue}
-              senderId="option-partial"
+              senderId={partialId}
               aria-label="Partial disabled option group"
               items={[
                 { value: "bold",      icon: <Bold />,      "aria-label": "Bold" },
@@ -313,7 +303,7 @@ export function GalleryOptionGroup() {
           <TugBox disabled label="Formatting Options" variant="bordered">
             <TugOptionGroup
               value={cascadeValue}
-              senderId="option-cascade"
+              senderId={cascadeId}
               aria-label="Cascaded disabled option group"
               items={[
                 { value: "bold",      icon: <Bold />,      "aria-label": "Bold" },

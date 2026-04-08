@@ -9,7 +9,7 @@
  * @module components/tugways/cards/gallery-sheet
  */
 
-import React, { useCallback, useId, useRef } from "react";
+import React, { useMemo, useRef } from "react";
 import {
   TugSheet,
   TugSheetTrigger,
@@ -20,9 +20,7 @@ import type { TugSheetHandle } from "@/components/tugways/tug-sheet";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
-import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { narrowValue } from "@/components/tugways/action-vocabulary";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -309,26 +307,25 @@ function RichChecklistContent({ onClose }: { onClose: () => void }) {
 
   const completedCount = Object.values(checked).filter(Boolean).length;
 
-  // L11 migration pattern — dynamic sender case: each checkbox in the
-  // list passes its item id as `senderId`, and the `toggle` handler
-  // uses that id directly as the key into the `checked` record. Unlike
-  // gallery-checkbox (static setter map), this card has an unbounded
-  // list, so the handler pattern is a record-update keyed on sender.
-  // The payload's boolean carries the new state, so no need to flip
-  // the previous value — the user can't manufacture a stale-read
-  // race because each dispatch carries the fresh value.
-  const handleToggle = useCallback((event: ActionEvent) => {
-    const sender = typeof event.sender === "string" ? event.sender : null;
-    if (!sender) return;
-    const v = narrowValue(event, (val): val is boolean => typeof val === "boolean");
-    if (v === null) return;
-    setChecked((prev) => ({ ...prev, [sender]: v }));
+  // L11 migration via useResponderForm — dynamic sender variant.
+  // Unlike other cards where each control gets a `useId()` gensym,
+  // this card's senderIds come from data (the checklist item ids).
+  // useResponderForm's bindings map just maps each item id to a
+  // single-key setter that writes into the record. Rebuilt per render
+  // since CHECKLIST_ITEMS is constant — useMemo keeps identity stable
+  // for the handler cache.
+  const toggleBindings = useMemo(() => {
+    const map: Record<string, (v: boolean) => void> = {};
+    for (const item of CHECKLIST_ITEMS) {
+      map[item.id] = (v: boolean) => {
+        setChecked((prev) => ({ ...prev, [item.id]: v }));
+      };
+    }
+    return map;
   }, []);
 
-  const responderId = useId();
-  const { ResponderScope, responderRef } = useResponder({
-    id: responderId,
-    actions: { toggle: handleToggle },
+  const { ResponderScope, responderRef } = useResponderForm({
+    toggle: toggleBindings,
   });
 
   return (
