@@ -435,6 +435,12 @@ Dispatch `selectValue` with `{ value: selectedId, sender: senderId, phase: "disc
 
 Dispatch `selectTab` and `closeTab` with `{ value: tabId, sender: senderId, phase: "discrete" }`. Remove `onTabSelect` and `onTabClose`. The enclosing card's `previousTab` / `nextTab` action handlers stay where they are — they're card-level navigation, not tab-bar-level.
 
+**Responder ownership.** `Tugcard` already registers a responder with `id: cardId` and already has direct store access via `useDeckManager()`. A2.3 adds two entries to that existing actions map: `selectTab: (event) => { saveCurrentTabState(); store.setActiveTab(cardId, event.value as string); }` and `closeTab: (event) => store.removeTab(cardId, event.value as string)`. No new responder node, no callback prop forwarding through `deck-canvas`. The inline arrows currently in `deck-canvas.tsx` (`onTabSelect={(tabId) => store.setActiveTab(cardState.id, tabId)}` and the `onTabClose` peer) disappear in the same commit.
+
+**Side-effect deduplication bonus.** The `saveCurrentTabState` call is currently duplicated three times in `tug-card.tsx` — once in the `handleTabSelect` wrapper and once each in `handlePreviousTab` / `handleNextTab`. After A2.3, `previousTab` / `nextTab` handlers compute the target tabId and dispatch `selectTab` through the chain (which routes back to the same Tugcard responder, no infinite loop, single handler call), so the save-state side effect runs once in the `selectTab` handler instead of three places.
+
+**`onTabAdd` is deferred to A2.5**, not handled here. The tab bar's `+` button is a `tug-popup-button` consumer; its migration belongs in the popup-button substep where every popup-button consumer migrates together. Until then, `onTabAdd` remains a callback prop on Tugcard — the only residual tab-related callback. A2 exit criteria are evaluated at the end of A2, not between substeps, so this is permitted.
+
 #### A2.4 — Accordions: `tug-accordion`
 
 Dispatch `toggleSection` with `{ value: sectionId | sectionIds, sender, phase }`. Remove `onValueChange`. Both single-expand and multi-expand modes dispatch the same action; the payload's shape (string vs array) distinguishes.
@@ -442,6 +448,15 @@ Dispatch `toggleSection` with `{ value: sectionId | sectionIds, sender, phase }`
 #### A2.5 — Popup menus: `tug-popup-button`
 
 Follow the `TugEditorContextMenu` precedent: the menu item's `action` field *is* the action name (use the typed item type from A1 step 2). Dispatch via `dispatchForContinuation` to pick up any continuation returned by the handler. Remove `onSelect`.
+
+**Includes the tab bar's `+` button (deferred from A2.3).** The tab bar's add-tab affordance is a `tug-popup-button` whose menu lists registered card types; selecting one currently fires `onSelect → onTabAdd → store.addTab(cardId, componentId)` via callback props. A2.5 migrates this consumer alongside every other popup-button consumer:
+
+- **New action `addTab` in the vocabulary** — payload `{ value: componentId, sender: cardId }`. Distinct from the existing `addTabToActiveCard` action (which adds a hardcoded `"hello"` tab to the topmost card from the menu/keystroke path); `addTab` carries both the target card and the user-chosen componentId.
+- **Tugcard handler** — `addTab: (event) => store.addTab(cardId, event.value as string)`. Drops in alongside the `selectTab` / `closeTab` handlers added in A2.3. The `cardId` is in scope because Tugcard owns the chain node.
+- **Prop removals** — `onTabAdd` comes off Tugcard's props, off TugTabBar's props, and the inline arrow `(cId) => store.addTab(cardState.id, cId)` disappears from `deck-canvas.tsx`.
+- **Test churn** — same shape as A2.3's test updates: `onTabAdd={() => {}}` stub usages get deleted; any instrumentation tests that captured `addedComponentIds` get rewritten to assert against the store snapshot.
+
+After A2.5, Tugcard has zero callback props for tab interactions. All three actions (`selectTab`, `closeTab`, `addTab`) plus the existing menu/keystroke `addTabToActiveCard` flow through the chain.
 
 #### A2.6 — Value-editing controls: `tug-slider`, `tug-value-input`
 
