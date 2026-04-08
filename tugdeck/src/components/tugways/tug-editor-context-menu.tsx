@@ -79,17 +79,60 @@ import React, {
   useRef,
 } from "react";
 import { createPortal } from "react-dom";
-import type { TugContextMenuEntry, TugContextMenuItem } from "./tug-context-menu";
 import { playMenuItemBlink } from "./tug-menu-item-blink";
 import { useRequiredResponderChain } from "./responder-chain-provider";
 import type { TugAction } from "./action-vocabulary";
 
-// Re-export for convenience so consumers can import entries from either
-// menu module interchangeably. In TugEditorContextMenu, each item's
-// `id` is interpreted as the responder-chain action name dispatched
-// when the item is activated — so use names from the action vocabulary
-// (e.g. "cut", "copy", "paste").
-export type { TugContextMenuEntry };
+// ---- Typed entry shapes ----
+//
+// TugEditorContextMenu has its own entry types, distinct from
+// tug-context-menu's TugContextMenuEntry, so the `action` field can
+// be typed as `TugAction`. Typos in an item's action are compile
+// errors at the item definition site, not runtime `handled: false`
+// dead-ends. This is the L11-correct shape: a control emitting a
+// typed action name, with no string coercion anywhere on the path
+// from item definition to chain dispatch.
+
+/**
+ * An action item in an editor context menu. Activating the item
+ * dispatches `action` through the responder chain.
+ */
+export interface TugEditorContextMenuItem {
+  /** Entry discriminator. Omit or set to "item" for action items. */
+  type?: "item";
+  /**
+   * The responder-chain action to dispatch when the item is
+   * activated. Typed against `TugAction` so misspellings are compile
+   * errors and autocomplete surfaces the vocabulary.
+   */
+  action: TugAction;
+  /** Display label for this item. Also used as the typeahead match target. */
+  label: string;
+  /** Optional icon node rendered before the label. */
+  icon?: React.ReactNode;
+  /** Optional keyboard shortcut hint rendered after the label (display only). */
+  shortcut?: string;
+  /** Whether this item is disabled. Disabled items are skipped by typeahead and not activatable. */
+  disabled?: boolean;
+}
+
+/** A horizontal rule separating item groups. */
+export interface TugEditorContextMenuSeparator {
+  type: "separator";
+}
+
+/** A non-interactive section label. */
+export interface TugEditorContextMenuLabel {
+  type: "label";
+  /** Label text. */
+  label: string;
+}
+
+/** Discriminated union of all entry types in a TugEditorContextMenu items array. */
+export type TugEditorContextMenuEntry =
+  | TugEditorContextMenuItem
+  | TugEditorContextMenuSeparator
+  | TugEditorContextMenuLabel;
 
 export interface TugEditorContextMenuProps {
   /** Whether the menu is open. */
@@ -99,15 +142,14 @@ export interface TugEditorContextMenuProps {
   /** Viewport y coordinate of the anchor point (typically clientY of the contextmenu event). */
   y: number;
   /**
-   * Menu entries — items, separators, and section labels. For action
-   * items, `id` is interpreted as the responder-chain action name
-   * dispatched when the item is activated. Use names from the action
-   * vocabulary (e.g. "cut", "copy", "paste"). The responder that
-   * handles the dispatch must be the first responder (or an ancestor)
-   * when the item is activated — typically the editor that opened
-   * the menu.
+   * Menu entries — items, separators, and section labels. Each action
+   * item's `action` field is the responder-chain action name
+   * dispatched when the item is activated. The responder that handles
+   * the dispatch must be the first responder (or an ancestor) when
+   * the item is activated — typically the editor that opened the
+   * menu.
    */
-  items: TugContextMenuEntry[];
+  items: TugEditorContextMenuEntry[];
   /** Called when the menu should close (Escape, outside click, or after a selection). */
   onClose: () => void;
 }
@@ -119,7 +161,7 @@ const VIEWPORT_MARGIN = 8;
 const TYPEAHEAD_BUFFER_TIMEOUT_MS = 500;
 
 /** True if the entry is a selectable, non-disabled action item. */
-function isActionable(entry: TugContextMenuEntry): entry is TugContextMenuItem {
+function isActionable(entry: TugEditorContextMenuEntry): entry is TugEditorContextMenuItem {
   if (entry.type === "separator" || entry.type === "label") return false;
   return !entry.disabled;
 }
@@ -147,10 +189,10 @@ export function TugEditorContextMenu({
   // The only React state is `open` (mount/unmount lifecycle) via the prop.
   const itemsRef = useRef(items);
   const onCloseRef = useRef(onClose);
-  // Keyboard-selected item id (the item painted via data-highlighted).
+  // Keyboard-selected item's action (the item painted via data-highlighted).
   // Updated by typeahead and pointer enter; writes bypass React state
   // and imperatively set the attribute on the matching DOM node.
-  const selectedIdRef = useRef<string | null>(null);
+  const selectedActionRef = useRef<TugAction | null>(null);
   const typeBufferRef = useRef("");
   const typeBufferTimerRef = useRef<number | null>(null);
   // Re-entrancy guard: while the activation blink is in flight, ignore
@@ -165,7 +207,7 @@ export function TugEditorContextMenu({
   useLayoutEffect(() => {
     if (open) return;
     positionedRef.current = false;
-    selectedIdRef.current = null;
+    selectedActionRef.current = null;
     typeBufferRef.current = "";
     if (typeBufferTimerRef.current !== null) {
       window.clearTimeout(typeBufferTimerRef.current);
@@ -176,23 +218,24 @@ export function TugEditorContextMenu({
 
   /**
    * Imperatively set the highlighted menu item. Queries the DOM by
-   * data-item-id and toggles the `data-highlighted` attribute. Avoids
-   * React state for appearance per L06 — single item highlighted at
-   * any instant, no render cycle, driven by both keyboard typeahead
-   * and pointer enter so mouse and keyboard share one selection.
+   * data-item-action and toggles the `data-highlighted` attribute.
+   * Avoids React state for appearance per L06 — single item
+   * highlighted at any instant, no render cycle, driven by both
+   * keyboard typeahead and pointer enter so mouse and keyboard share
+   * one selection.
    */
-  const setHighlightedItem = useCallback((id: string | null) => {
+  const setHighlightedItem = useCallback((action: TugAction | null) => {
     const menu = menuRef.current;
     if (!menu) return;
-    selectedIdRef.current = id;
+    selectedActionRef.current = action;
     // Clear any previously-highlighted item.
     menu.querySelectorAll<HTMLElement>("[data-highlighted]").forEach((el) => {
       el.removeAttribute("data-highlighted");
     });
     // Mark the new one, if any.
-    if (id) {
-      const escId = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id;
-      const next = menu.querySelector<HTMLElement>(`[data-item-id="${escId}"]`);
+    if (action) {
+      const escAction = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(action) : action;
+      const next = menu.querySelector<HTMLElement>(`[data-item-action="${escAction}"]`);
       next?.setAttribute("data-highlighted", "");
     }
   }, []);
@@ -222,9 +265,9 @@ export function TugEditorContextMenu({
   }, [open, x, y]);
 
   /**
-   * Activate an item by id. Two-phase execution via the responder chain:
+   * Activate an item. Two-phase execution via the responder chain:
    *
-   * 1. Dispatch `{action: id, phase: "discrete"}` through the chain
+   * 1. Dispatch `{action, phase: "discrete"}` through the chain
    *    synchronously — inside the current user gesture. The first
    *    responder's handler runs inside the mousedown/keydown stack,
    *    so clipboard APIs and execCommand work. If the handler returns
@@ -238,17 +281,17 @@ export function TugEditorContextMenu({
    *    matching the "button press then result" UX [L11].
    *
    * Then close the menu.
+   *
+   * `action` is typed as TugAction because menu items are declared
+   * with typed actions at the consumer site (via TugEditorContextMenuItem).
+   * No cast or coercion is needed on the dispatch path.
    */
-  const activateItem = useCallback((target: HTMLElement, id: string) => {
+  const activateItem = useCallback((target: HTMLElement, action: TugAction) => {
     if (blinkingRef.current) return;
     blinkingRef.current = true;
     // Phase 1: synchronous dispatch through the responder chain.
-    // The item id is treated as a TugAction name (callers are
-    // expected to use names from the vocabulary — "cut", "copy", etc.).
-    // Cast is safe because the action-vocabulary fallbacks through the
-    // chain result in handled=false for unknown names.
     const { continuation } = manager.dispatchForContinuation({
-      action: id as TugAction,
+      action,
       phase: "discrete",
     });
     // Phase 2: play the blink, then the continuation (if any), then close.
@@ -277,7 +320,7 @@ export function TugEditorContextMenu({
         entry.label.toLowerCase().startsWith(buffer),
     );
     if (match && isActionable(match)) {
-      setHighlightedItem(match.id);
+      setHighlightedItem(match.action);
     }
     if (typeBufferTimerRef.current !== null) {
       window.clearTimeout(typeBufferTimerRef.current);
@@ -388,16 +431,17 @@ export function TugEditorContextMenu({
 
       // Enter / Space — activate the keyboard-selected item, if any.
       if (e.key === "Enter" || e.key === " ") {
-        const selId = selectedIdRef.current;
-        if (!selId) return;
+        const action = selectedActionRef.current;
+        if (!action) return;
         e.preventDefault();
         e.stopPropagation();
-        // Locate the item's DOM element for the blink. Escape the id
-        // for use in the attribute selector.
+        // Locate the item's DOM element for the blink via its action
+        // name. Escape the action for use in the attribute selector.
+        const escAction = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(action) : action;
         const target = menuRef.current?.querySelector<HTMLElement>(
-          `[data-item-id="${typeof CSS !== "undefined" && CSS.escape ? CSS.escape(selId) : selId}"]`,
+          `[data-item-action="${escAction}"]`,
         );
-        if (target) activateItem(target, selId);
+        if (target) activateItem(target, action);
         return;
       }
 
@@ -482,8 +526,8 @@ export function TugEditorContextMenu({
 
         return (
           <div
-            key={item.id}
-            data-item-id={item.id}
+            key={item.action}
+            data-item-action={item.action}
             className="tug-menu-item"
             role="menuitem"
             aria-disabled={disabled || undefined}
@@ -498,13 +542,13 @@ export function TugEditorContextMenu({
               if (e.button !== 0) return;
               e.preventDefault();
               if (disabled) return;
-              activateItem(e.currentTarget as HTMLElement, item.id);
+              activateItem(e.currentTarget as HTMLElement, item.action);
             }}
             // Mouse hover updates the highlighted item via a direct
             // DOM write (L06) — shares the same single-selection model
             // as keyboard typeahead.
             onPointerEnter={() => {
-              if (!disabled) setHighlightedItem(item.id);
+              if (!disabled) setHighlightedItem(item.action);
             }}
           >
             {item.icon !== undefined && (

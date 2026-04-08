@@ -227,3 +227,47 @@ export type TugAction =
   | WindowAction
   | MetaAction
   | GalleryAction;
+
+// ---- narrowValue ----
+
+/**
+ * Narrow an `ActionEvent.value` to a known type via a user-provided
+ * type-guard. Returns the narrowed value on success, `null` on failure.
+ *
+ * The responder chain's action names are typed via `TugAction`, but
+ * payloads on `ActionEvent.value` are `unknown` by design (see Part 4
+ * decision 1 in the audit: "middle ground" granularity — one action
+ * per semantic, rich payloads documented per-action in this file
+ * rather than baked into the type system). Handlers that read
+ * `event.value` should reach for this utility instead of a bare cast,
+ * so a wrong-shape dispatch fails gracefully instead of silently.
+ *
+ * Convention: every handler that depends on a specific payload shape
+ * calls `narrowValue` with a matching type guard and early-returns on
+ * `null`. The payload shape is documented on the action's definition
+ * above (e.g. `setValue` → `value: number` for sliders, `value: string`
+ * for inputs). Handlers pick the guard that matches their use case.
+ *
+ * Example:
+ *
+ * ```ts
+ * const handleSetValue: ActionHandler = (event) => {
+ *   const n = narrowValue(event, (v): v is number => typeof v === "number");
+ *   if (n === null) return; // wrong shape — silently ignore
+ *   // use n safely as a number
+ * };
+ * ```
+ *
+ * This is a convention, not compile-time enforcement. The compiler
+ * can't catch a handler that casts `event.value as number` directly
+ * — it can only catch that by migrating to per-action discriminated
+ * unions, which the audit decision deferred. Code reviews and the
+ * documented convention are the enforcement mechanism for now.
+ */
+export function narrowValue<T>(
+  event: { value?: unknown },
+  guard: (value: unknown) => value is T,
+): T | null {
+  if (guard(event.value)) return event.value;
+  return null;
+}

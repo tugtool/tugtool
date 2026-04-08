@@ -18,7 +18,7 @@ import "./tug-completion-menu.css";
 import React, { useRef, useState, useLayoutEffect, useImperativeHandle, useCallback, useMemo, useId } from "react";
 import { cn } from "@/lib/utils";
 import { TugTextEngine } from "@/lib/tug-text-engine";
-import { TugEditorContextMenu, type TugContextMenuEntry } from "@/components/tugways/tug-editor-context-menu";
+import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "@/components/tugways/tug-editor-context-menu";
 import type {
   AtomSegment,
   InputAction,
@@ -608,12 +608,12 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       },
     });
 
-    const menuItems = useMemo<TugContextMenuEntry[]>(() => {
+    const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
       const hasSelection = menuState?.hasSelection ?? false;
       return [
-        { id: "cut",   label: "Cut",   shortcut: "\u2318X", disabled: !hasSelection },
-        { id: "copy",  label: "Copy",  shortcut: "\u2318C", disabled: !hasSelection },
-        { id: "paste", label: "Paste", shortcut: "\u2318V" },
+        { action: "cut",   label: "Cut",   shortcut: "\u2318X", disabled: !hasSelection },
+        { action: "copy",  label: "Copy",  shortcut: "\u2318C", disabled: !hasSelection },
+        { action: "paste", label: "Paste", shortcut: "\u2318V" },
       ];
     }, [menuState?.hasSelection]);
 
