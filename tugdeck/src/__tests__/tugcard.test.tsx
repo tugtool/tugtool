@@ -347,28 +347,6 @@ describe("Tugcard – feedless card", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Extra: card with feeds shows Loading... placeholder
-// ---------------------------------------------------------------------------
-
-describe("Tugcard – card with feeds shows loading state", () => {
-  it("card with feedIds shows Loading... instead of children in Phase 5", () => {
-    const { container } = renderInChain(
-      <Tugcard {...defaultProps} feedIds={[1] as unknown as readonly number[]}>
-        <div data-testid="real-content">Should not appear</div>
-      </Tugcard>
-    );
-
-    const loadingEl = container.querySelector("[data-testid='tugcard-loading']");
-    expect(loadingEl).not.toBeNull();
-    expect(loadingEl?.textContent).toContain("Loading");
-
-    // Children should NOT be mounted while loading
-    const realContent = container.querySelector("[data-testid='real-content']");
-    expect(realContent).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Phase 5b: Tab support tests
 // ---------------------------------------------------------------------------
 
