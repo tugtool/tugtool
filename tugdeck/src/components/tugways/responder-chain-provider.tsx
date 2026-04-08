@@ -133,35 +133,76 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     }
 
     // ---- Target-based first-responder promotion ----
-    // One document-level capture-phase pointerdown listener resolves the
-    // innermost registered responder under the event target (via
-    // data-responder-id attributes written by useResponder) and promotes
-    // it to first responder. This is the single mechanism for
-    // click-to-focus in the chain — no per-component makeFirstResponder
-    // calls, no focus listeners, no pointerdown handlers in tug-card or
-    // tug-prompt-input or elsewhere. Nested responders compose
-    // naturally: clicking inside an editor inside a card makes the
-    // editor first responder without any per-component wiring.
     //
-    // Capture phase on document ensures this runs before any React-
-    // delegated onPointerDown handler in the tree, so even if a
-    // component still has an old unconditional makeFirstResponder
-    // pointerdown handler during migration, our promotion survives.
-    function promoteOnPointerDown(event: PointerEvent): void {
-      const id = manager.findResponderForTarget(event.target as Node | null);
+    // Two document-level capture-phase listeners (pointerdown and
+    // focusin) resolve the innermost registered responder under the
+    // event target — via `data-responder-id` attributes written by
+    // `useResponder` — and promote it to first responder. This is the
+    // single mechanism for "click-to-focus" and "Tab-to-focus" in the
+    // chain. No per-component `makeFirstResponder` calls, no focus
+    // listeners on individual editors, no pointerdown handlers in
+    // tug-card or tug-prompt-input. Nested responders compose
+    // naturally: clicking or tabbing into an editor inside a card
+    // makes the editor first responder without any per-component
+    // wiring.
+    //
+    // Why capture phase on document (vs. bubble, vs. a deeper element):
+    //
+    // 1. Running in capture phase at the document level means these
+    //    listeners fire *before* the event reaches the target, and
+    //    therefore before any React-delegated onPointerDown/onFocus
+    //    handler in the tree. During a mixed-state migration, if an
+    //    old component still has an unconditional `makeFirstResponder`
+    //    call in its own pointerdown handler, our promotion runs first
+    //    and the old handler becomes redundant but not harmful.
+    //
+    // 2. Descendant elements cannot suppress us with
+    //    `event.stopPropagation()`. Capture-phase listeners on an
+    //    ancestor run *before* the event reaches the stopping element
+    //    — stopPropagation at a descendant only affects the remaining
+    //    propagation path (remaining capture to target, then bubble
+    //    back), not listeners that already ran. So even a component
+    //    that calls `e.stopPropagation()` in its own pointerdown
+    //    handler cannot prevent first-responder promotion here.
+    //    `stopImmediatePropagation` likewise only affects listeners
+    //    on the *same* element, so a descendant's version can't touch
+    //    a document-level listener. The only way to break this
+    //    invariant would be another capture-phase listener at
+    //    document or window that called `stopImmediatePropagation`
+    //    *and* was registered before ours — which no other code in
+    //    the suite does.
+    //
+    // Focus-based promotion is needed alongside pointer-based because
+    // keyboard-only users reach responders via Tab, programmatic
+    // `.focus()`, or the browser's initial focus restoration on
+    // page load — none of which fire a pointerdown. `focusin` bubbles
+    // (unlike `focus`), so a single document-level listener catches
+    // it for every descendant.
+    function promoteFromTarget(target: Node | null): void {
+      const id = manager.findResponderForTarget(target);
       if (id !== null && id !== manager.getFirstResponder()) {
         manager.makeFirstResponder(id);
       }
     }
 
+    function promoteOnPointerDown(event: PointerEvent): void {
+      promoteFromTarget(event.target as Node | null);
+    }
+
+    function promoteOnFocusIn(event: FocusEvent): void {
+      promoteFromTarget(event.target as Node | null);
+    }
+
     document.addEventListener("keydown", captureListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
     document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
+    document.addEventListener("focusin", promoteOnFocusIn, { capture: true });
 
     return () => {
       document.removeEventListener("keydown", captureListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
       document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });
+      document.removeEventListener("focusin", promoteOnFocusIn, { capture: true });
       selectionGuard.detach();
     };
   }, [manager]);

@@ -174,6 +174,7 @@ export class ResponderChainManager {
     this.nodes.set(node.id, node);
     if (node.parentId === null && this.firstResponderId === null) {
       this.firstResponderId = node.id;
+      this.syncFirstResponderDomAttribute();
       this.incrementAndNotify();
     }
   }
@@ -196,6 +197,7 @@ export class ResponderChainManager {
       } else {
         this.firstResponderId = null;
       }
+      this.syncFirstResponderDomAttribute();
       this.incrementAndNotify();
     }
   }
@@ -205,12 +207,14 @@ export class ResponderChainManager {
   /** Sets firstResponderId, increments validationVersion, notifies subscribers. */
   makeFirstResponder(id: string): void {
     this.firstResponderId = id;
+    this.syncFirstResponderDomAttribute();
     this.incrementAndNotify();
   }
 
   /** Clears firstResponderId, increments validationVersion, notifies subscribers. */
   resignFirstResponder(): void {
     this.firstResponderId = null;
+    this.syncFirstResponderDomAttribute();
     this.incrementAndNotify();
   }
 
@@ -507,6 +511,73 @@ export class ResponderChainManager {
     const observers = Array.from(this.dispatchObservers);
     for (const obs of observers) {
       obs(event, handled);
+    }
+  }
+
+  /**
+   * Sync the `data-first-responder` attribute on the DOM so exactly one
+   * element in the document carries it at any instant — specifically,
+   * the element whose `data-responder-id` matches the current
+   * `firstResponderId`. Called from every method that changes
+   * `firstResponderId`.
+   *
+   * The attribute's *value* is the responder id, not "true" — so the
+   * DOM is self-describing. Searching devtools for
+   * `[data-first-responder]` shows the attribute with its id
+   * inline (e.g. `data-first-responder="editor-:r5:"`), and you can
+   * immediately tell which responder the chain considers active
+   * without having to cross-reference `data-responder-id`.
+   *
+   * A single `console.log` fires on every change with a gray-prefixed
+   * marker and the DOM element as a second argument — devtools makes
+   * the element clickable so you can jump to it in the Elements panel.
+   * Filter the console for `[responder-chain]` to see the full
+   * first-responder history, or mute it if it's too noisy for your
+   * current workflow.
+   *
+   * Implementation: clear the attribute from any element that has it,
+   * then find the element with the matching `data-responder-id` and
+   * set it. DOM-free environments (server-side rendering, unit tests
+   * without jsdom) are detected via `typeof document` and skipped
+   * entirely — logging included.
+   *
+   * Cost: two `querySelector` calls per first-responder change,
+   * bounded by document size. Negligible in practice.
+   */
+  private syncFirstResponderDomAttribute(): void {
+    if (typeof document === "undefined") return;
+    // Clear the previous marker. In normal operation there is at most
+    // one, but we use querySelectorAll defensively in case something
+    // external set the attribute.
+    document.querySelectorAll<HTMLElement>("[data-first-responder]").forEach((el) => {
+      el.removeAttribute("data-first-responder");
+    });
+    if (this.firstResponderId === null) {
+      // eslint-disable-next-line no-console
+      console.log("%c[responder-chain] first responder cleared", "color:#888");
+      return;
+    }
+    const id = this.firstResponderId;
+    const escapedId =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(id)
+        : id;
+    const el = document.querySelector<HTMLElement>(`[data-responder-id="${escapedId}"]`);
+    if (el) {
+      // Attribute value is the id itself, so searching devtools for
+      // `[data-first-responder]` shows `data-first-responder="<id>"`
+      // inline — no cross-referencing required.
+      el.setAttribute("data-first-responder", id);
+      // eslint-disable-next-line no-console
+      console.log(`%c[responder-chain] first responder → %c${id}`, "color:#888", "color:inherit;font-weight:600", el);
+    } else {
+      // No DOM element matches the id. This can happen if the
+      // responder registered via useResponder but forgot to attach
+      // responderRef, or if the responder was registered during a
+      // render that hadn't committed yet. Either way, log a warning
+      // so it surfaces during development.
+      // eslint-disable-next-line no-console
+      console.warn(`[responder-chain] first responder "${id}" has no matching [data-responder-id] element — did the caller attach responderRef?`);
     }
   }
 }
