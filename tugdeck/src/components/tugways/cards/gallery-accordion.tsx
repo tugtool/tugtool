@@ -8,7 +8,7 @@
  * @module components/tugways/cards/gallery-accordion
  */
 
-import React from "react";
+import React, { useId, useState } from "react";
 import { Settings, User, Bell } from "lucide-react";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import { TugBox } from "@/components/tugways/tug-box";
@@ -16,6 +16,7 @@ import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugProgress } from "@/components/tugways/tug-progress";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugSwitch } from "@/components/tugways/tug-switch";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // Shared text style for paragraph content inside accordion items
 const paraStyle: React.CSSProperties = {
@@ -36,8 +37,29 @@ const labelStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 
 export function GalleryAccordion() {
+  // L11 migration (A2.4): two controlled accordions driven through the
+  // responder chain via useResponderForm. The single-mode binding lives in
+  // `toggleSectionSingle` (string payload); the multi-mode binding in
+  // `toggleSectionMulti` (string[] payload). Gensym'd sender ids per
+  // accordion. See gallery-checkbox.tsx for the annotated reference.
+  const [chainSingle, setChainSingle] = useState<string>("docs");
+  const [chainMulti, setChainMulti] = useState<string[]>(["alerts", "privacy"]);
+
+  const chainSingleId = useId();
+  const chainMultiId = useId();
+
+  const { ResponderScope, responderRef } = useResponderForm({
+    toggleSectionSingle: { [chainSingleId]: setChainSingle },
+    toggleSectionMulti: { [chainMultiId]: setChainMulti },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-accordion">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-accordion"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- 1. Single Mode ---- */}
       <div className="cg-section">
@@ -334,6 +356,65 @@ export function GalleryAccordion() {
         </div>
       </div>
 
+      <div className="cg-divider" />
+
+      {/* ---- 9. Chain-controlled (A2.4) ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Chain-Controlled (A2.4)</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "480px" }}>
+          <div>
+            <div style={labelStyle}>
+              single mode — dispatches <code>toggleSection</code> with <code>string</code>,
+              handled via <code>useResponderForm.toggleSectionSingle</code>
+            </div>
+            <TugAccordion
+              type="single"
+              collapsible
+              value={chainSingle}
+              senderId={chainSingleId}
+            >
+              <TugAccordionItem value="docs" trigger="Documentation">
+                <p style={paraStyle}>Reference guides and API docs.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="examples" trigger="Examples">
+                <p style={paraStyle}>Sample projects and runnable snippets.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="support" trigger="Support">
+                <p style={paraStyle}>Community forums and bug reports.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginTop: "8px" }}>
+              Open: <strong>{chainSingle === "" ? "none" : chainSingle}</strong>
+            </div>
+          </div>
+          <div>
+            <div style={labelStyle}>
+              multi mode — dispatches <code>toggleSection</code> with <code>string[]</code>,
+              handled via <code>useResponderForm.toggleSectionMulti</code>
+            </div>
+            <TugAccordion
+              type="multiple"
+              value={chainMulti}
+              senderId={chainMultiId}
+            >
+              <TugAccordionItem value="alerts" trigger="Alerts">
+                <p style={paraStyle}>Notification channels and thresholds.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="privacy" trigger="Privacy">
+                <p style={paraStyle}>Data sharing and tracking preferences.</p>
+              </TugAccordionItem>
+              <TugAccordionItem value="security" trigger="Security">
+                <p style={paraStyle}>Password, 2FA, and active sessions.</p>
+              </TugAccordionItem>
+            </TugAccordion>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginTop: "8px" }}>
+              Open: <strong>{chainMulti.length === 0 ? "none" : chainMulti.join(", ")}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
+    </ResponderScope>
   );
 }

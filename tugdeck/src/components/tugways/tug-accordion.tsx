@@ -6,17 +6,26 @@
  * inset, plain), and TugBox disabled cascade. Animation uses CSS keyframes
  * with Radix's content-height variable.
  *
- * Laws: [L06] appearance via CSS, [L14] Radix Presence owns DOM lifecycle — use CSS keyframes,
- *       [L16] pairings declared, [L19] component authoring guide
+ * Per [L11], TugAccordion is a control: when the user expands or collapses
+ * an item, it dispatches a `toggleSection` action through the responder
+ * chain. The payload's `value` is `string` for `type="single"` and
+ * `string[]` for `type="multiple"`; the responder handler narrows on the
+ * shape. Uncontrolled accordions still dispatch — Radix's internal state
+ * stays in sync regardless of whether anyone observes the dispatch.
+ *
+ * Laws: [L06] appearance via CSS, [L11] controls emit actions; responders
+ *       handle actions, [L14] Radix Presence owns DOM lifecycle — use
+ *       CSS keyframes, [L16] pairings declared, [L19] component authoring guide
  */
 
 import "./tug-accordion.css";
 
-import React from "react";
+import React, { useCallback, useId } from "react";
 import * as Accordion from "@radix-ui/react-accordion";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+import { useResponderChain } from "./responder-chain-provider";
 
 // ---- TugAccordion Props (discriminated union) ----
 
@@ -31,8 +40,6 @@ export interface TugAccordionSingleProps {
   value?: string;
   /** Initial open item (uncontrolled). */
   defaultValue?: string;
-  /** Called when the open item changes. */
-  onValueChange?: (value: string) => void;
   /**
    * Allow all items to be closed simultaneously.
    * @default false
@@ -51,8 +58,6 @@ export interface TugAccordionMultipleProps {
   value?: string[];
   /** Initial open items (uncontrolled). */
   defaultValue?: string[];
-  /** Called when the set of open items changes. */
-  onValueChange?: (value: string[]) => void;
 }
 
 /** Border variant for the accordion. */
@@ -76,6 +81,12 @@ export interface TugAccordionSharedProps {
    * @default false
    */
   disabled?: boolean;
+  /**
+   * Stable opaque sender id for chain dispatches. Auto-derived via `useId()`
+   * if omitted. Parent responders disambiguate multi-accordion forms by
+   * matching this id in their `toggleSection` handler bindings. [L11]
+   */
+  senderId?: string;
   /** Additional CSS class names. */
   className?: string;
   /** TugAccordionItem children. */
@@ -90,18 +101,71 @@ export type TugAccordionProps = (TugAccordionSingleProps | TugAccordionMultipleP
 
 export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
   function TugAccordion(props, ref) {
-    const { variant = "separator", disabled = false, className, children, ...rest } = props;
+    const {
+      variant = "separator",
+      disabled = false,
+      senderId,
+      className,
+      children,
+      ...rest
+    } = props;
 
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
 
-    // Build Radix-compatible props with effectiveDisabled injected.
-    // The discriminated union is passed through via ...rest so TypeScript can
-    // narrow correctly at the Radix Root level.
-    const rootProps = {
-      ...rest,
-      disabled: effectiveDisabled,
-    } as React.ComponentPropsWithoutRef<typeof Accordion.Root>;
+    // Chain dispatch [L11]: on user toggle, dispatch a `toggleSection`
+    // action through the responder chain. Single-mode payload is `string`
+    // (the open item id, or "" when collapsed); multi-mode payload is
+    // `string[]` (the set of currently open item ids). The responder
+    // handler narrows on shape via the `toggleSectionSingle` /
+    // `toggleSectionMulti` slots in `useResponderForm`.
+    //
+    // Uncontrolled accordions still dispatch — Radix tracks the open set
+    // internally and we just notify the chain. If no responder cares,
+    // the dispatch walks past unhandled (which is correct).
+    const manager = useResponderChain();
+    const fallbackSenderId = useId();
+    const effectiveSenderId = senderId ?? fallbackSenderId;
+    const handleSingleValueChange = useCallback(
+      (value: string) => {
+        if (!manager) return;
+        manager.dispatch({
+          action: "toggleSection",
+          value,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+      },
+      [manager, effectiveSenderId],
+    );
+    const handleMultiValueChange = useCallback(
+      (value: string[]) => {
+        if (!manager) return;
+        manager.dispatch({
+          action: "toggleSection",
+          value,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+      },
+      [manager, effectiveSenderId],
+    );
+
+    // Build Radix-compatible props with effectiveDisabled and our internal
+    // onValueChange injected. The discriminated union is preserved via
+    // `props.type` so the right callback shape goes to Radix.
+    const rootProps =
+      props.type === "single"
+        ? ({
+            ...rest,
+            disabled: effectiveDisabled,
+            onValueChange: handleSingleValueChange,
+          } as React.ComponentPropsWithoutRef<typeof Accordion.Root>)
+        : ({
+            ...rest,
+            disabled: effectiveDisabled,
+            onValueChange: handleMultiValueChange,
+          } as React.ComponentPropsWithoutRef<typeof Accordion.Root>);
 
     return (
       <Accordion.Root
