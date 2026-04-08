@@ -393,15 +393,6 @@ export interface TugcardProps {
   tabs?: TabItem[];
   /** The currently active tab id. Required when tabs is provided. */
   activeTabId?: string;
-  /** Called when the user picks a new card type from the [+] type picker.
-   *
-   *  This is the only remaining tab callback prop after A2.3. Tab select
-   *  and close are dispatched through the responder chain (`selectTab` /
-   *  `closeTab`) and handled by Tugcard's responder directly. The
-   *  `+` button's popup-menu migrates to chain dispatch in A2.5
-   *  (`tug-popup-button` substep), at which point this prop disappears
-   *  too. */
-  onTabAdd?: (componentId: string) => void;
 
   /**
    * Card-level title prefix. When non-empty, the header displays
@@ -454,7 +445,6 @@ export function Tugcard({
   children,
   tabs,
   activeTabId,
-  onTabAdd,
   cardTitle,
   acceptedFamilies,
 }: TugcardProps) {
@@ -850,6 +840,16 @@ export function Tugcard({
         if (typeof event.value !== "string") return;
         store.removeTab(cardId, event.value);
       },
+      // addTab [L11, A2.5]: dispatched by TugTabBar's `+` popup menu
+      // after the A2.5 tug-popup-button migration. Payload is
+      // `value: componentId`. This card's id plus the incoming
+      // componentId are the arguments to store.addTab, completing the
+      // chain-native tab-add flow. Distinct from the global
+      // addTabToActiveCard action handled by deck-canvas.
+      addTab: (event: ActionEvent) => {
+        if (typeof event.value !== "string") return;
+        store.addTab(cardId, event.value);
+      },
       // Stubs: minimize, toggleMenu, find are no-ops until implemented.
       minimize: (_event: ActionEvent) => {},
       toggleMenu: (_event: ActionEvent) => {},
@@ -897,16 +897,14 @@ export function Tugcard({
 
   // When tabs.length > 1, render TugTabBar in the accessory slot.
   // When tabs.length <= 1, use the original accessory prop (or null).
-  // Tab select / close flow through this card's responder via the chain
-  // (selectTab / closeTab actions) — no callback prop forwarding for
-  // those. onTabAdd remains a callback prop pending A2.5.
-  const resolvedAccessory: React.ReactNode | null = hasMultipleTabs && onTabAdd
+  // All tab interactions — select, close, add — flow through this
+  // card's responder via the chain. No callback prop forwarding.
+  const resolvedAccessory: React.ReactNode | null = hasMultipleTabs
     ? (
         <TugTabBar
           cardId={cardId}
           tabs={tabs}
           activeTabId={activeTabId!}
-          onTabAdd={onTabAdd}
           acceptedFamilies={acceptedFamilies}
         />
       )

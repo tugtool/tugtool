@@ -52,16 +52,10 @@ export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div
   /**
    * Stable opaque sender id for chain dispatches. Auto-derived via `useId()`
    * if omitted. Parent responders disambiguate multi-tab-bar scenarios by
-   * matching this id in their `selectTab` / `closeTab` handler bindings. [L11]
+   * matching this id in their `selectTab` / `closeTab` / `addTab` handler
+   * bindings. [L11]
    */
   senderId?: string;
-  /** Called when the user selects a card type from the [+] type picker.
-   *
-   *  Note: this remains a callback prop pending A2.5 (`tug-popup-button`
-   *  migration), where the `+` button's popup-menu items will dispatch a
-   *  new `addTab` action through the chain. Until then, callers wire this
-   *  to `store.addTab(cardId, componentId)` directly. */
-  onTabAdd: (componentId: string) => void;
   /**
    * Families of card types to show in the [+] type picker.
    * Only registrations whose `family` matches one of these strings appear.
@@ -336,7 +330,9 @@ function useTabOverflow(
  * Renders each tab as a button with an optional icon and title.
  * The active tab has `data-active="true"` set for CSS targeting.
  * A [+] button at the end opens a TugPopupMenu type picker listing all
- * registered card types; selecting one calls `onTabAdd(componentId)`.
+ * registered card types; selecting one dispatches an `addTab` action
+ * through the responder chain with the chosen componentId as the
+ * payload. The enclosing Tugcard's responder handles the dispatch.
  *
  * Overflow handling is provided by the `useTabOverflow` hook, which attaches
  * a ResizeObserver to the bar container and applies data-overflow attributes
@@ -360,7 +356,6 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     tabs,
     activeTabId,
     senderId,
-    onTabAdd,
     acceptedFamilies,
     onOverflowChange,
     className,
@@ -396,6 +391,18 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       manager.dispatch({
         action: "closeTab",
         value: tabId,
+        sender: effectiveSenderId,
+        phase: "discrete",
+      });
+    },
+    [manager, effectiveSenderId],
+  );
+  const dispatchAddTab = useCallback(
+    (componentId: string) => {
+      if (!manager) return;
+      manager.dispatch({
+        action: "addTab",
+        value: componentId,
         sender: effectiveSenderId,
         phase: "discrete",
       });
@@ -445,11 +452,13 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   });
 
   // Stable handler for [+] button type picker selection.
+  // Dispatches `addTab` through the chain; Tugcard's responder handles
+  // it by calling `store.addTab(cardId, componentId)`. [L11, A2.5]
   const handleTypeSelect = useCallback(
     (componentId: string) => {
-      onTabAdd(componentId);
+      dispatchAddTab(componentId);
     },
-    [onTabAdd],
+    [dispatchAddTab],
   );
 
   // Handler for selecting a tab from the overflow dropdown. [D05]

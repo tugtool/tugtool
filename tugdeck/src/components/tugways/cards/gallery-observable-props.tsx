@@ -36,11 +36,12 @@
  * @module components/tugways/cards/gallery-observable-props
  */
 
-import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import React, { useId, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { usePropertyStore } from "@/components/tugways/hooks/use-property-store";
 import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/property-store";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // Schema constants (module-scope to avoid recreation on each render)
@@ -248,24 +249,39 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
     });
   };
 
-  const handleFontFamilySelect = (value: string) => {
-    manager.dispatchTo(cardId, {
-      action: "setProperty",
-      phase: "discrete",
-      value: {
-        path: "style.fontFamily",
-        value,
-        source: "inspector",
+  // L11 migration via useResponderForm — the font-family popup dispatches
+  // setValue with a string payload; its binding does the explicit-target
+  // setProperty dispatch to this specific cardId. This is the same
+  // inspector pattern the original card demonstrated, now routed via the
+  // chain-dispatch path from TugPopupButton instead of a direct callback.
+  const fontFamilyPopupId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: {
+      [fontFamilyPopupId]: (value: string) => {
+        manager.dispatchTo(cardId, {
+          action: "setProperty",
+          phase: "discrete",
+          value: {
+            path: "style.fontFamily",
+            value,
+            source: "inspector",
+          },
+        });
       },
-    });
-  };
+    },
+  });
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="cg-content" data-testid="gallery-observable-props">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-observable-props"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ------------------------------------------------------------------ */}
       {/* Target element: appearance driven by PropertyStore via              */}
@@ -365,8 +381,12 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
           <TugPopupButton
             label={fontFamily}
             size="sm"
-            items={FONT_FAMILY_OPTIONS.map((ff) => ({ id: ff, label: ff }))}
-            onSelect={handleFontFamilySelect}
+            senderId={fontFamilyPopupId}
+            items={FONT_FAMILY_OPTIONS.map((ff) => ({
+              action: "setValue" as const,
+              value: ff,
+              label: ff,
+            }))}
           />
         </div>
       </div>
@@ -434,5 +454,6 @@ export function GalleryObservableProps({ cardId }: { cardId: string }) {
         </table>
       </div>
     </div>
+    </ResponderScope>
   );
 }

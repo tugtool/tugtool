@@ -17,7 +17,7 @@ import { TugPromptInput } from "@/components/tugways/tug-prompt-input";
 import type { TugTextInputDelegate } from "@/components/tugways/tug-prompt-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
-import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
+import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -55,28 +55,31 @@ function galleryDropHandler(files: FileList): AtomSegment[] {
 // Editor font options
 // ===================================================================
 
-const EDITOR_FONT_OPTIONS: TugPopupMenuItem[] = [
-  { id: "plex-sans", label: "IBM Plex Sans" },
-  { id: "inter", label: "Inter" },
-  { id: "hack", label: "Hack (mono)" },
+const EDITOR_FONT_OPTIONS: TugPopupButtonItem[] = [
+  { action: "setValue", value: "plex-sans", label: "IBM Plex Sans" },
+  { action: "setValue", value: "inter", label: "Inter" },
+  { action: "setValue", value: "hack", label: "Hack (mono)" },
 ];
 
-const FONT_SIZE_OPTIONS: TugPopupMenuItem[] = [
-  { id: "11", label: "11 px" },
-  { id: "12", label: "12 px" },
-  { id: "13", label: "13 px" },
-  { id: "14", label: "14 px" },
-  { id: "15", label: "15 px" },
-  { id: "16", label: "16 px" },
-  { id: "18", label: "18 px" },
+// Font size items dispatch numeric payloads — the parent binds via the
+// setValueNumber slot in useResponderForm and reads event.value as number.
+const FONT_SIZE_OPTIONS: TugPopupButtonItem[] = [
+  { action: "setValue", value: 11, label: "11 px" },
+  { action: "setValue", value: 12, label: "12 px" },
+  { action: "setValue", value: 13, label: "13 px" },
+  { action: "setValue", value: 14, label: "14 px" },
+  { action: "setValue", value: 15, label: "15 px" },
+  { action: "setValue", value: 16, label: "16 px" },
+  { action: "setValue", value: 18, label: "18 px" },
 ];
 
-const LETTER_SPACING_OPTIONS: TugPopupMenuItem[] = [
-  { id: "-0.25", label: "-0.25 px" },
-  { id: "-0.15", label: "-0.15 px" },
-  { id: "-0.10", label: "-0.10 px" },
-  { id: "-0.05", label: "-0.05 px" },
-  { id: "0", label: "Normal" },
+// Letter spacing items also dispatch numeric payloads (fractional px).
+const LETTER_SPACING_OPTIONS: TugPopupButtonItem[] = [
+  { action: "setValue", value: -0.25, label: "-0.25 px" },
+  { action: "setValue", value: -0.15, label: "-0.15 px" },
+  { action: "setValue", value: -0.10, label: "-0.10 px" },
+  { action: "setValue", value: -0.05, label: "-0.05 px" },
+  { action: "setValue", value: 0, label: "Normal" },
 ];
 
 const RETURN_CHOICES: TugChoiceItem[] = [
@@ -230,35 +233,37 @@ export function GalleryPromptInput() {
     delegate.focus();
   }, []);
 
-  // L11 migration via useResponderForm — this card handles `selectValue`
-  // from two key-config choice groups. TugPromptInput has its own nested
-  // responder for cut/copy/paste; clicks inside the editor promote that,
-  // clicks on a choice group promote this outer card (innermost-first
-  // DOM walk). Gensym'd sender ids per group.
+  // L11 migration via useResponderForm — this card handles:
+  //  - selectValue from two key-config choice groups (return / enter action)
+  //  - setValue (string) from the font picker popup
+  //  - setValue (number) from the font-size and letter-spacing popups
+  //
+  // TugPromptInput has its own nested responder for cut/copy/paste; clicks
+  // inside the editor promote that, clicks on a toolbar control promote
+  // this outer card (innermost-first DOM walk). Gensym'd sender ids per
+  // control.
   const keyReturnId = useId();
   const keyEnterId = useId();
+  const fontPopupId = useId();
+  const fontSizePopupId = useId();
+  const letterSpacingPopupId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
       [keyReturnId]: (v: string) => setReturnAction(v as InputAction),
       [keyEnterId]: (v: string) => setEnterAction(v as InputAction),
+    },
+    setValueString: {
+      [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
+    },
+    setValueNumber: {
+      [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
+      [letterSpacingPopupId]: (v: number) => editorStore.set({ letterSpacing: v }),
     },
   });
 
   const handleRouteChange = useCallback((route: string | null) => {
     if (routeRef.current) routeRef.current.textContent = route ?? "none";
   }, []);
-
-  const handleFontChange = useCallback((id: string) => {
-    editorStore.set({ fontId: id });
-  }, [editorStore]);
-
-  const handleFontSizeChange = useCallback((id: string) => {
-    editorStore.set({ fontSize: parseInt(id, 10) });
-  }, [editorStore]);
-
-  const handleLetterSpacingChange = useCallback((id: string) => {
-    editorStore.set({ letterSpacing: parseFloat(id) });
-  }, [editorStore]);
 
   return (
     <ResponderScope>
@@ -279,21 +284,21 @@ export function GalleryPromptInput() {
               {maximized ? "Minimize" : "Maximize"}
             </TugPushButton>
             <TugPopupButton
-              label={EDITOR_FONT_OPTIONS.find(f => f.id === editorSettings.fontId)?.label ?? "Font"}
+              label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
               items={EDITOR_FONT_OPTIONS}
-              onSelect={handleFontChange}
+              senderId={fontPopupId}
               size="sm"
             />
             <TugPopupButton
               label={`${editorSettings.fontSize}px`}
               items={FONT_SIZE_OPTIONS}
-              onSelect={handleFontSizeChange}
+              senderId={fontSizePopupId}
               size="sm"
             />
             <TugPopupButton
               label={editorSettings.letterSpacing === 0 ? "Spacing: 0" : `Spacing: ${editorSettings.letterSpacing > 0 ? "+" : ""}${editorSettings.letterSpacing}`}
               items={LETTER_SPACING_OPTIONS}
-              onSelect={handleLetterSpacingChange}
+              senderId={letterSpacingPopupId}
               size="sm"
             />
             <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>

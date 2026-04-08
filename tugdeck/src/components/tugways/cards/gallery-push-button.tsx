@@ -126,32 +126,44 @@ export function GalleryPushButton() {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   // L11 migration pattern via useResponderForm — see gallery-checkbox.tsx
-  // for the annotated reference.
+  // for the annotated reference. Checkbox toggles bind to the toggle slot;
+  // the three popup-button pickers dispatch setValue with a string payload
+  // (emphasis / role / size are all string enums) and bind to the
+  // setValueString slot via gensym'd sender ids.
   const previewDisabledId = useId();
   const previewLoadingId = useId();
+  const emphasisPopupId = useId();
+  const rolePopupId = useId();
+  const sizePopupId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     toggle: {
       [previewDisabledId]: setPreviewDisabled,
       [previewLoadingId]: setPreviewLoading,
+    },
+    setValueString: {
+      [emphasisPopupId]: (v) => setPreviewEmphasis(v as TugButtonEmphasis),
+      [rolePopupId]: (v) => {
+        if (v === "__default__") setPreviewRole(undefined);
+        else setPreviewRole(v as TugButtonRole);
+      },
+      [sizePopupId]: (v) => setPreviewSize(v as TugButtonSize),
     },
   });
 
   // Label for the role dropdown: undefined → "accent (default)"
   const roleDropdownLabel = previewRole === undefined ? "accent (default)" : previewRole;
 
-  // Role dropdown items: first item is "accent (default)" which maps to undefined
+  // Role dropdown items: first item is "accent (default)" which maps to undefined.
+  // Each item carries `action: "setValue"` with `value` = the role string;
+  // the role popup's binding above branches on "__default__".
   const roleItems = [
-    { id: "__default__", label: "accent (default)" },
-    ...ALL_ROLES.filter((r) => r !== "accent").map((r) => ({ id: r, label: r })),
+    { action: "setValue" as const, value: "__default__", label: "accent (default)" },
+    ...ALL_ROLES.filter((r) => r !== "accent").map((r) => ({
+      action: "setValue" as const,
+      value: r,
+      label: r,
+    })),
   ];
-
-  const handleRoleSelect = (id: string) => {
-    if (id === "__default__") {
-      setPreviewRole(undefined);
-    } else {
-      setPreviewRole(id as TugButtonRole);
-    }
-  };
 
   return (
     <ResponderScope>
@@ -169,11 +181,12 @@ export function GalleryPushButton() {
             <TugPopupButton
               label={previewEmphasis}
               size="sm"
+              senderId={emphasisPopupId}
               items={(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((v) => ({
-                id: v,
+                action: "setValue" as const,
+                value: v,
                 label: v,
               }))}
-              onSelect={(id) => setPreviewEmphasis(id as TugButtonEmphasis)}
             />
           </div>
           <div className="cg-control-group">
@@ -181,8 +194,8 @@ export function GalleryPushButton() {
             <TugPopupButton
               label={roleDropdownLabel}
               size="sm"
+              senderId={rolePopupId}
               items={roleItems}
-              onSelect={handleRoleSelect}
             />
           </div>
 
@@ -191,11 +204,12 @@ export function GalleryPushButton() {
             <TugPopupButton
               label={previewSize}
               size="sm"
+              senderId={sizePopupId}
               items={ALL_SIZES.map((s) => ({
-                id: s,
+                action: "setValue" as const,
+                value: s,
                 label: s,
               }))}
-              onSelect={(id) => setPreviewSize(id as TugButtonSize)}
             />
           </div>
 

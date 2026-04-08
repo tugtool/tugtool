@@ -3,36 +3,56 @@
  *
  * Shows TugPopupButton (the convenience wrapper with fixed outlined-option style)
  * and TugPopupMenu (the headless menu composed with custom triggers).
+ *
+ * After A2.5, TugPopupButton items carry a typed `action` field and an
+ * optional `value` payload; activation dispatches through the responder
+ * chain. The gallery card uses a single `useResponderForm` with a
+ * `setValueString` binding to observe the dispatches and write the demo
+ * status state. The `TugPopupMenu` direct-usage section stays on the
+ * callback-based API because `TugPopupMenu` is the headless building
+ * block for composition cases (tab bar, completion menu, custom
+ * triggers).
  */
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { Star, Settings, Palette, ChevronDown } from "lucide-react";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
-import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
+import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import type { TugButtonSize } from "@/components/tugways/internal/tug-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import "./gallery-popup-button.css";
 
 // ---- Sample data ----
+//
+// Every TugPopupButton item dispatches `setValue` with the `value` field
+// as the payload. The parent card's `setValueString` binding writes the
+// value into local demo state so the status line can display it.
 
-const SAMPLE_ITEMS: TugPopupMenuItem[] = [
-  { id: "alpha", label: "Alpha", icon: <Star size={12} /> },
-  { id: "beta", label: "Beta", icon: <Star size={12} /> },
-  { id: "gamma", label: "Gamma" },
-  { id: "delta", label: "Delta (disabled)", disabled: true },
+const SAMPLE_ITEMS: TugPopupButtonItem[] = [
+  { action: "setValue", value: "alpha", label: "Alpha", icon: <Star size={12} /> },
+  { action: "setValue", value: "beta", label: "Beta", icon: <Star size={12} /> },
+  { action: "setValue", value: "gamma", label: "Gamma" },
+  { action: "setValue", value: "delta", label: "Delta (disabled)", disabled: true },
 ];
 
-const THEME_ITEMS: TugPopupMenuItem[] = [
-  { id: "theme-alpha", label: "Alpha", icon: <Palette size={12} /> },
-  { id: "theme-beta", label: "Beta", icon: <Palette size={12} /> },
-  { id: "theme-gamma", label: "Gamma", icon: <Palette size={12} /> },
+const SIZE_ITEMS: TugPopupButtonItem[] = [
+  { action: "setValue", value: "sm", label: "Small" },
+  { action: "setValue", value: "md", label: "Medium" },
+  { action: "setValue", value: "lg", label: "Large" },
 ];
 
-const SIZE_ITEMS: TugPopupMenuItem[] = [
-  { id: "sm", label: "Small" },
-  { id: "md", label: "Medium" },
-  { id: "lg", label: "Large" },
+const EMPHASIS_ITEMS: TugPopupButtonItem[] = [
+  { action: "setValue", value: "filled", label: "filled" },
+  { action: "setValue", value: "outlined", label: "outlined" },
+  { action: "setValue", value: "ghost", label: "ghost" },
+];
+
+const ROLE_ITEMS: TugPopupButtonItem[] = [
+  { action: "setValue", value: "accent", label: "accent" },
+  { action: "setValue", value: "action", label: "action" },
+  { action: "setValue", value: "danger", label: "danger" },
 ];
 
 const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
@@ -42,8 +62,46 @@ const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
 export function GalleryPopupButton() {
   const [lastSelected, setLastSelected] = useState<string | null>(null);
 
+  // L11 migration via useResponderForm — every TugPopupButton in this
+  // card shares a single `setValueString` binding that writes to
+  // `lastSelected`. Each popup-button gets its own gensym'd senderId
+  // bound to the same setter closure so every one updates the same
+  // status line. ALL_SIZES is a known-length array (sm, md, lg) so we
+  // call useId() three times at the top level to satisfy the Rules of
+  // Hooks — no useId-in-loop.
+  const sampleSmPopupId = useId();
+  const sampleMdPopupId = useId();
+  const sampleLgPopupId = useId();
+  const sampleSizePopupIds: Record<TugButtonSize, string> = {
+    sm: sampleSmPopupId,
+    md: sampleMdPopupId,
+    lg: sampleLgPopupId,
+  };
+  const contextEmphasisPopupId = useId();
+  const contextRolePopupId = useId();
+  const contextSizePopupId = useId();
+  // TugPopupMenu direct-usage section stays callback-based (it's the
+  // internal headless building block). Those callbacks still write to
+  // `setLastSelected` directly.
+
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: {
+      [sampleSmPopupId]: setLastSelected,
+      [sampleMdPopupId]: setLastSelected,
+      [sampleLgPopupId]: setLastSelected,
+      [contextEmphasisPopupId]: setLastSelected,
+      [contextRolePopupId]: setLastSelected,
+      [contextSizePopupId]: setLastSelected,
+    },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-popup-button">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-popup-button"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- Standard TugPopupButton (outlined-option) ---- */}
       <div className="cg-section">
@@ -56,8 +114,8 @@ export function GalleryPopupButton() {
                 <TugPopupButton
                   label="Select..."
                   size={size}
+                  senderId={sampleSizePopupIds[size]}
                   items={SAMPLE_ITEMS}
-                  onSelect={(id) => setLastSelected(id)}
                 />
               </div>
             </div>
@@ -83,7 +141,11 @@ export function GalleryPopupButton() {
                     Theme
                   </TugButton>
                 }
-                items={THEME_ITEMS}
+                items={[
+                  { id: "theme-alpha", label: "Alpha", icon: <Palette size={12} /> },
+                  { id: "theme-beta", label: "Beta", icon: <Palette size={12} /> },
+                  { id: "theme-gamma", label: "Gamma", icon: <Palette size={12} /> },
+                ]}
                 onSelect={(id) => setLastSelected(id)}
               />
             </div>
@@ -97,7 +159,11 @@ export function GalleryPopupButton() {
                     Size
                   </TugButton>
                 }
-                items={SIZE_ITEMS}
+                items={[
+                  { id: "sm", label: "Small" },
+                  { id: "md", label: "Medium" },
+                  { id: "lg", label: "Large" },
+                ]}
                 onSelect={(id) => setLastSelected(id)}
               />
             </div>
@@ -111,7 +177,12 @@ export function GalleryPopupButton() {
                     Options
                   </TugButton>
                 }
-                items={SAMPLE_ITEMS}
+                items={[
+                  { id: "alpha", label: "Alpha", icon: <Star size={12} /> },
+                  { id: "beta", label: "Beta", icon: <Star size={12} /> },
+                  { id: "gamma", label: "Gamma" },
+                  { id: "delta", label: "Delta (disabled)", disabled: true },
+                ]}
                 onSelect={(id) => setLastSelected(id)}
               />
             </div>
@@ -125,7 +196,12 @@ export function GalleryPopupButton() {
                     Settings
                   </TugButton>
                 }
-                items={SAMPLE_ITEMS}
+                items={[
+                  { id: "alpha", label: "Alpha", icon: <Star size={12} /> },
+                  { id: "beta", label: "Beta", icon: <Star size={12} /> },
+                  { id: "gamma", label: "Gamma" },
+                  { id: "delta", label: "Delta (disabled)", disabled: true },
+                ]}
                 onSelect={(id) => setLastSelected(id)}
               />
             </div>
@@ -139,7 +215,11 @@ export function GalleryPopupButton() {
                     Theme
                   </TugButton>
                 }
-                items={THEME_ITEMS}
+                items={[
+                  { id: "theme-alpha", label: "Alpha", icon: <Palette size={12} /> },
+                  { id: "theme-beta", label: "Beta", icon: <Palette size={12} /> },
+                  { id: "theme-gamma", label: "Gamma", icon: <Palette size={12} /> },
+                ]}
                 onSelect={(id) => setLastSelected(id)}
               />
             </div>
@@ -151,7 +231,12 @@ export function GalleryPopupButton() {
                 trigger={
                   <TugButton emphasis="outlined" role="action" size="sm" subtype="icon" icon={<Settings size={14} />} aria-label="Settings" />
                 }
-                items={SAMPLE_ITEMS}
+                items={[
+                  { id: "alpha", label: "Alpha", icon: <Star size={12} /> },
+                  { id: "beta", label: "Beta", icon: <Star size={12} /> },
+                  { id: "gamma", label: "Gamma" },
+                  { id: "delta", label: "Delta (disabled)", disabled: true },
+                ]}
                 onSelect={(id) => setLastSelected(id)}
               />
             </div>
@@ -167,27 +252,35 @@ export function GalleryPopupButton() {
         <div className="gpb-context-bar">
           <span className="gpb-context-label">Emphasis</span>
           <div className="gpb-button-wrapper">
-            <TugPopupButton label="outlined" size="sm" items={[
-              { id: "filled", label: "filled" },
-              { id: "outlined", label: "outlined" },
-              { id: "ghost", label: "ghost" },
-            ]} onSelect={() => {}} />
+            <TugPopupButton
+              label="outlined"
+              size="sm"
+              senderId={contextEmphasisPopupId}
+              items={EMPHASIS_ITEMS}
+            />
           </div>
           <span className="gpb-context-label">Role</span>
           <div className="gpb-button-wrapper">
-            <TugPopupButton label="action" size="sm" items={[
-              { id: "accent", label: "accent" },
-              { id: "action", label: "action" },
-              { id: "danger", label: "danger" },
-            ]} onSelect={() => {}} />
+            <TugPopupButton
+              label="action"
+              size="sm"
+              senderId={contextRolePopupId}
+              items={ROLE_ITEMS}
+            />
           </div>
           <span className="gpb-context-label">Size</span>
           <div className="gpb-button-wrapper">
-            <TugPopupButton label="md" size="sm" items={SIZE_ITEMS} onSelect={() => {}} />
+            <TugPopupButton
+              label="md"
+              size="sm"
+              senderId={contextSizePopupId}
+              items={SIZE_ITEMS}
+            />
           </div>
         </div>
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

@@ -16,13 +16,14 @@
  * @module components/tugways/cards/gallery-registrations
  */
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { Star } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
-import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
+import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { TabItem } from "@/layout-tree";
 import { GalleryPushButton } from "./gallery-push-button";
 import { GalleryChainActions } from "./gallery-chain-actions";
@@ -141,10 +142,10 @@ export function GalleryDropdown() {
 // ---------------------------------------------------------------------------
 
 /** Sample items for the TugPopupButton gallery demo. Module-scope to avoid recreation. */
-const DEMO_POPUP_BUTTON_ITEMS: TugPopupMenuItem[] = [
-  { id: "option-alpha", label: "Alpha",            icon: <Star size={12} /> },
-  { id: "option-beta",  label: "Beta",             icon: <Star size={12} /> },
-  { id: "option-gamma", label: "Gamma (disabled)", disabled: true },
+const DEMO_POPUP_BUTTON_ITEMS: TugPopupButtonItem[] = [
+  { action: "setValue", value: "option-alpha", label: "Alpha",            icon: <Star size={12} /> },
+  { action: "setValue", value: "option-beta",  label: "Beta",             icon: <Star size={12} /> },
+  { action: "setValue", value: "option-gamma", label: "Gamma (disabled)", disabled: true },
 ];
 
 /**
@@ -154,14 +155,24 @@ const DEMO_POPUP_BUTTON_ITEMS: TugPopupMenuItem[] = [
  */
 export function TugPopupButtonDemo() {
   const [lastSelected, setLastSelected] = useState<string | null>(null);
+  const popupId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: {
+      [popupId]: setLastSelected,
+    },
+  });
 
   return (
-    <div className="cg-popup-button-demo">
+    <ResponderScope>
+    <div
+      className="cg-popup-button-demo"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
       <TugPopupButton
         label="Open Menu"
         size="sm"
+        senderId={popupId}
         items={DEMO_POPUP_BUTTON_ITEMS}
-        onSelect={(id) => setLastSelected(id)}
       />
       {lastSelected !== null && (
         <div className="cg-demo-status">
@@ -169,6 +180,7 @@ export function TugPopupButtonDemo() {
         </div>
       )}
     </div>
+    </ResponderScope>
   );
 }
 

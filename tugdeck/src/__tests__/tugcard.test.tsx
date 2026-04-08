@@ -381,7 +381,6 @@ describe("Tugcard – tab support: TugTabBar in accessory slot", () => {
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div data-testid="active-content">Hello content</div>
       </Tugcard>
@@ -412,7 +411,6 @@ describe("Tugcard – tab support: TugTabBar in accessory slot", () => {
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>
@@ -442,7 +440,6 @@ describe("Tugcard – tab support: header follows active tab metadata", () => {
         meta={{ title: "Original Title" }}
         tabs={tabs}
         activeTabId="tab-2"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>
@@ -465,7 +462,6 @@ describe("Tugcard – tab support: header follows active tab metadata", () => {
         meta={{ title: "Original Title" }}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>
@@ -494,7 +490,6 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>
@@ -519,7 +514,6 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>,
@@ -554,7 +548,6 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>,
@@ -585,7 +578,6 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>,
@@ -628,7 +620,6 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
         cardTitle="Component Gallery"
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>
@@ -654,7 +645,6 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
         // cardTitle intentionally omitted
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>
@@ -680,7 +670,6 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
         cardTitle=""
         tabs={tabs}
         activeTabId="tab-1"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>
@@ -706,7 +695,6 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
         cardTitle="Component Gallery"
         tabs={tabs}
         activeTabId="tab-2"
-        onTabAdd={() => {}}
       >
         <div>content</div>
       </Tugcard>
@@ -867,8 +855,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
               cardId="card-sf4"
               tabs={[tab1, tab2]}
               activeTabId={tab1.id}
-              onTabAdd={() => {}}
-            >
+                  >
               <div>content</div>
             </Tugcard>
           </ResponderChainProvider>
@@ -926,8 +913,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
               cardId="card-sg"
               tabs={[tab1, tab2]}
               activeTabId={tab1.id}
-              onTabAdd={() => {}}
-            >
+                  >
               <div>content</div>
             </Tugcard>
           </ResponderChainProvider>
@@ -992,8 +978,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               cardId="card-rs"
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
-              onTabAdd={() => {}}
-            >
+                  >
               <div>content</div>
             </Tugcard>
           </ResponderChainProvider>
@@ -1050,8 +1035,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               cardId="card-rsel"
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
-              onTabAdd={() => {}}
-            >
+                  >
               <div>content</div>
             </Tugcard>
           </ResponderChainProvider>
@@ -1111,8 +1095,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               cardId="card-rcb"
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
-              onTabAdd={() => {}}
-            >
+                  >
               <PersistentChild />
             </Tugcard>
           </ResponderChainProvider>
@@ -1200,8 +1183,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               cardId="card-t01"
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
-              onTabAdd={() => {}}
-            >
+                  >
               <PersistentChild />
             </Tugcard>
           </ResponderChainProvider>

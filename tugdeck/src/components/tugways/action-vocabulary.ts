@@ -142,8 +142,15 @@ export type ValueAction =
 //
 // selectTab:  payload — `value: string` (tab id).
 // closeTab:   payload — `value: string` (tab id).
-// addTab:     payload — optional domain-specific. Used by card-level
-//             "new tab" controls.
+// addTab:     payload — `value: string` (componentId of the new tab).
+//             Dispatched by card-level "new tab" controls (e.g. the
+//             tab bar's `+` popup-button menu). The responder that
+//             handles it (typically `Tugcard`) uses its own cardId
+//             plus the componentId from the payload to call
+//             `store.addTab(cardId, componentId)`. Distinct from
+//             `addTabToActiveCard`, which is the global menu/keystroke
+//             path that targets the focused card with a hardcoded
+//             component type.
 // reopenTab:  payload — none. Restore the most recently closed tab.
 export type TabAction =
   | "selectTab"

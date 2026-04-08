@@ -75,11 +75,12 @@ export function TugTabBarDemo() {
     });
   };
 
-  const { ResponderScope, responderRef } = useResponderForm({
-    selectTab: { [tabBarId]: handleTabSelect },
-    closeTab: { [tabBarId]: handleTabClose },
-  });
-
+  // TugTabBar dispatches `addTab` through the chain with the chosen
+  // componentId as the payload. The demo ignores the incoming
+  // componentId and generates a sequential "Tab N" entry so the demo
+  // behavior (numeric labels) stays stable regardless of which type
+  // the user picked. In production, the Tugcard responder uses the
+  // componentId directly.
   const handleTabAdd = (_componentId: string) => {
     const n = nextTabIndexRef.current++;
     const newTab: TabItem = {
@@ -91,6 +92,12 @@ export function TugTabBarDemo() {
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
   };
+
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectTab: { [tabBarId]: handleTabSelect },
+    closeTab: { [tabBarId]: handleTabClose },
+    addTab: { [tabBarId]: handleTabAdd },
+  });
 
   /** Add five tabs at once to quickly trigger overflow. */
   const handleAddFive = () => {
@@ -134,7 +141,6 @@ export function TugTabBarDemo() {
         tabs={tabs}
         activeTabId={activeTabId}
         senderId={tabBarId}
-        onTabAdd={handleTabAdd}
         onOverflowChange={handleOverflowChange}
       />
       <div className="cg-demo-controls">

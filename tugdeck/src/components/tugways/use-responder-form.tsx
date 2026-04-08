@@ -77,6 +77,7 @@
  * | `setValueStringArray` | setValue     | string[]        | option group               |
  * | `selectTab`           | selectTab    | string          | tab bar                    |
  * | `closeTab`            | closeTab     | string          | tab bar                    |
+ * | `addTab`              | addTab       | string          | tab bar `+` popup          |
  * | `toggleSectionSingle` | toggleSection | string          | single-expand accordion    |
  * | `toggleSectionMulti`  | toggleSection | string[]        | multi-expand accordion     |
  *
@@ -148,6 +149,8 @@ export interface TugResponderFormBindings {
   selectTab?: Record<string, (value: string) => void>;
   /** closeTab action (string payload) — tab bar. */
   closeTab?: Record<string, (value: string) => void>;
+  /** addTab action (string payload — componentId) — tab bar `+` popup. */
+  addTab?: Record<string, (value: string) => void>;
   /** toggleSection action with single-value payload — single-expand accordion. */
   toggleSectionSingle?: Record<string, (value: string) => void>;
   /** toggleSection action with multi-value payload — multi-expand accordion. */
@@ -295,6 +298,18 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
     setter(event.value);
   }, []);
 
+  const handleAddTab = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (!sender) return;
+    const setter = bindingsRef.current.addTab?.[sender];
+    if (!setter) {
+      logUnbound("addTab", event.sender);
+      return;
+    }
+    if (typeof event.value !== "string") return;
+    setter(event.value);
+  }, []);
+
   const handleToggleSection = useCallback((event: ActionEvent) => {
     const sender = typeof event.sender === "string" ? event.sender : null;
     if (!sender) return;
@@ -350,6 +365,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
   }
   if (bindings.selectTab) actions.selectTab = handleSelectTab;
   if (bindings.closeTab) actions.closeTab = handleCloseTab;
+  if (bindings.addTab) actions.addTab = handleAddTab;
   if (bindings.toggleSectionSingle || bindings.toggleSectionMulti) {
     actions.toggleSection = handleToggleSection;
   }

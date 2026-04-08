@@ -23,21 +23,22 @@
  * @module components/tugways/cards/gallery-cascade-inspector
  */
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { Star } from "lucide-react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
-import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
+import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /** Sample items for the TugPopupButton demo within the Cascade Inspector tab. */
-const INSPECTOR_DEMO_ITEMS: TugPopupMenuItem[] = [
-  { id: "item-alpha", label: "Alpha", icon: <Star size={12} /> },
-  { id: "item-beta", label: "Beta", icon: <Star size={12} /> },
-  { id: "item-gamma", label: "Gamma (disabled)", disabled: true },
+const INSPECTOR_DEMO_ITEMS: TugPopupButtonItem[] = [
+  { action: "setValue", value: "item-alpha", label: "Alpha", icon: <Star size={12} /> },
+  { action: "setValue", value: "item-beta", label: "Beta", icon: <Star size={12} /> },
+  { action: "setValue", value: "item-gamma", label: "Gamma (disabled)", disabled: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -58,8 +59,23 @@ const INSPECTOR_DEMO_ITEMS: TugPopupMenuItem[] = [
 export function GalleryCascadeInspector() {
   const [dropdownSelected, setDropdownSelected] = useState<string | null>(null);
 
+  // L11 migration via useResponderForm — the demo popup dispatches
+  // setValue with a string payload; its binding writes to local state
+  // so the status line updates.
+  const dropdownPopupId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: {
+      [dropdownPopupId]: setDropdownSelected,
+    },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-cascade-inspector">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-cascade-inspector"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- Activation instructions ---- */}
       <div className="cg-section">
@@ -86,8 +102,8 @@ export function GalleryCascadeInspector() {
           <TugPopupButton
             label="Open Menu"
             size="sm"
+            senderId={dropdownPopupId}
             items={INSPECTOR_DEMO_ITEMS}
-            onSelect={(id) => setDropdownSelected(id)}
           />
           {dropdownSelected !== null && (
             <span className="cg-demo-status">
@@ -207,5 +223,6 @@ export function GalleryCascadeInspector() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

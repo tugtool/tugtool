@@ -10,10 +10,11 @@
  * @module components/tugways/cards/gallery-title-bar
  */
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { CardTitleBar } from "@/components/tugways/tug-card";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // GalleryTitleBar
@@ -43,8 +44,22 @@ export function GalleryTitleBar() {
     setLastEvent("close clicked");
   };
 
+  // L11 migration via useResponderForm — the icon picker dispatches
+  // setValue with a string payload; its binding writes iconName state.
+  const iconPopupId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: {
+      [iconPopupId]: setIconName,
+    },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-title-bar">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-title-bar"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
       <div className="cg-section">
         <div className="cg-section-title">Title Bar Demo (Step 3)</div>
         <p className="cg-description">
@@ -66,14 +81,14 @@ export function GalleryTitleBar() {
             <TugPopupButton
               label={iconName || "None"}
               size="sm"
+              senderId={iconPopupId}
               items={[
-                { id: "", label: "None" },
-                { id: "Layout", label: "Layout" },
-                { id: "Settings", label: "Settings" },
-                { id: "Terminal", label: "Terminal" },
-                { id: "Code", label: "Code" },
+                { action: "setValue", value: "", label: "None" },
+                { action: "setValue", value: "Layout", label: "Layout" },
+                { action: "setValue", value: "Settings", label: "Settings" },
+                { action: "setValue", value: "Terminal", label: "Terminal" },
+                { action: "setValue", value: "Code", label: "Code" },
               ]}
-              onSelect={(id) => setIconName(id)}
             />
           </div>
 
@@ -146,5 +161,6 @@ export function GalleryTitleBar() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }
