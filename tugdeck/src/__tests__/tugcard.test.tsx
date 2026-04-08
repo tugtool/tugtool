@@ -68,10 +68,16 @@ function renderWithManager(ui: React.ReactElement) {
 /**
  * Render a Tugcard with both a controlled manager and a mock store that
  * records setTabState calls. Useful for Step 4 phase 5f tests.
+ *
+ * Pass `storeOverrides` to swap individual store methods (e.g. record
+ * `setActiveTab` / `removeTab` calls when testing the A2.3 chain handlers).
  */
-function renderWithManagerAndStore(ui: React.ReactElement) {
+function renderWithManagerAndStore(
+  ui: React.ReactElement,
+  storeOverrides?: Partial<import("../deck-manager-store").IDeckManagerStore>,
+) {
   const manager = new ResponderChainManager();
-  const store = makeMockStore();
+  const store = makeMockStore(storeOverrides);
   const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
   const result = render(
     <DeckManagerContext.Provider value={store}>
@@ -397,8 +403,6 @@ describe("Tugcard – tab support: TugTabBar in accessory slot", () => {
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div data-testid="active-content">Hello content</div>
@@ -430,8 +434,6 @@ describe("Tugcard – tab support: TugTabBar in accessory slot", () => {
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
@@ -462,8 +464,6 @@ describe("Tugcard – tab support: header follows active tab metadata", () => {
         meta={{ title: "Original Title" }}
         tabs={tabs}
         activeTabId="tab-2"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
@@ -487,8 +487,6 @@ describe("Tugcard – tab support: header follows active tab metadata", () => {
         meta={{ title: "Original Title" }}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
@@ -518,8 +516,6 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
@@ -530,58 +526,65 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     expect(manager.canHandle("nextTab")).toBe(true);
   });
 
-  it("nextTab calls onTabSelect with the next tab id", () => {
+  it("nextTab dispatches setActiveTab with the next tab id (A2.3)", () => {
     registerTabCard("hello", "Hello");
     registerTabCard("terminal", "Terminal");
 
-    const selectedIds: string[] = [];
+    const setActiveCalls: Array<{ cardId: string; tabId: string }> = [];
     const tabs = [
       makeTab("tab-1", "hello", "Hello"),
       makeTab("tab-2", "terminal", "Terminal"),
     ];
 
-    const { manager } = renderWithManager(
+    const { manager } = renderWithManagerAndStore(
       <Tugcard
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={(id) => selectedIds.push(id)}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
-      </Tugcard>
+      </Tugcard>,
+      {
+        setActiveTab: (cardId: string, tabId: string) => {
+          setActiveCalls.push({ cardId, tabId });
+        },
+      },
     );
 
     act(() => {
       manager.dispatch({ action: "nextTab", phase: "discrete" });
     });
 
-    expect(selectedIds.length).toBe(1);
-    expect(selectedIds[0]).toBe("tab-2");
+    expect(setActiveCalls.length).toBe(1);
+    expect(setActiveCalls[0].tabId).toBe("tab-2");
+    expect(setActiveCalls[0].cardId).toBe(defaultProps.cardId);
   });
 
-  it("previousTab calls onTabSelect with the previous tab id (wraps around)", () => {
+  it("previousTab dispatches setActiveTab with the previous tab id, wrapping around (A2.3)", () => {
     registerTabCard("hello", "Hello");
     registerTabCard("terminal", "Terminal");
 
-    const selectedIds: string[] = [];
+    const setActiveCalls: Array<{ cardId: string; tabId: string }> = [];
     const tabs = [
       makeTab("tab-1", "hello", "Hello"),
       makeTab("tab-2", "terminal", "Terminal"),
     ];
 
-    const { manager } = renderWithManager(
+    const { manager } = renderWithManagerAndStore(
       <Tugcard
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={(id) => selectedIds.push(id)}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
-      </Tugcard>
+      </Tugcard>,
+      {
+        setActiveTab: (cardId: string, tabId: string) => {
+          setActiveCalls.push({ cardId, tabId });
+        },
+      },
     );
 
     act(() => {
@@ -589,27 +592,30 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     });
 
     // Wraps from tab-1 (index 0) back to tab-2 (index 1, last)
-    expect(selectedIds.length).toBe(1);
-    expect(selectedIds[0]).toBe("tab-2");
+    expect(setActiveCalls.length).toBe(1);
+    expect(setActiveCalls[0].tabId).toBe("tab-2");
   });
 
   it("previousTab/nextTab are no-ops when tabs.length <= 1", () => {
     registerTabCard("hello", "Hello");
 
-    const selectedIds: string[] = [];
+    const setActiveCalls: Array<{ cardId: string; tabId: string }> = [];
     const tabs = [makeTab("tab-1", "hello", "Hello")];
 
-    const { manager } = renderWithManager(
+    const { manager } = renderWithManagerAndStore(
       <Tugcard
         {...defaultProps}
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={(id) => selectedIds.push(id)}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
-      </Tugcard>
+      </Tugcard>,
+      {
+        setActiveTab: (cardId: string, tabId: string) => {
+          setActiveCalls.push({ cardId, tabId });
+        },
+      },
     );
 
     act(() => {
@@ -617,7 +623,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
       manager.dispatch({ action: "previousTab", phase: "discrete" });
     });
 
-    expect(selectedIds.length).toBe(0);
+    expect(setActiveCalls.length).toBe(0);
   });
 });
 
@@ -644,8 +650,6 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
         cardTitle="Component Gallery"
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
@@ -672,8 +676,6 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
         // cardTitle intentionally omitted
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
@@ -700,8 +702,6 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
         cardTitle=""
         tabs={tabs}
         activeTabId="tab-1"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
@@ -728,8 +728,6 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
         cardTitle="Component Gallery"
         tabs={tabs}
         activeTabId="tab-2"
-        onTabSelect={() => {}}
-        onTabClose={() => {}}
         onTabAdd={() => {}}
       >
         <div>content</div>
@@ -891,8 +889,6 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
               cardId="card-sf4"
               tabs={[tab1, tab2]}
               activeTabId={tab1.id}
-              onTabSelect={() => {}}
-              onTabClose={() => {}}
               onTabAdd={() => {}}
             >
               <div>content</div>
@@ -952,8 +948,6 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
               cardId="card-sg"
               tabs={[tab1, tab2]}
               activeTabId={tab1.id}
-              onTabSelect={() => {}}
-              onTabClose={() => {}}
               onTabAdd={() => {}}
             >
               <div>content</div>
@@ -1020,8 +1014,6 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               cardId="card-rs"
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
-              onTabSelect={() => {}}
-              onTabClose={() => {}}
               onTabAdd={() => {}}
             >
               <div>content</div>
@@ -1080,8 +1072,6 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               cardId="card-rsel"
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
-              onTabSelect={() => {}}
-              onTabClose={() => {}}
               onTabAdd={() => {}}
             >
               <div>content</div>
@@ -1143,8 +1133,6 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
               cardId="card-rcb"
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
-              onTabSelect={() => {}}
-              onTabClose={() => {}}
               onTabAdd={() => {}}
             >
               <PersistentChild />
@@ -1234,8 +1222,6 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
               cardId="card-t01"
               tabs={[tab1, tab2]}
               activeTabId={currentTab}
-              onTabSelect={() => {}}
-              onTabClose={() => {}}
               onTabAdd={() => {}}
             >
               <PersistentChild />

@@ -498,8 +498,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
                   feedIds={registration.defaultFeedIds ?? []}
                   tabs={hasMultipleTabs ? cardState.tabs : undefined}
                   activeTabId={cardState.activeTabId}
-                  onTabSelect={hasMultipleTabs ? (tabId) => store.setActiveTab(cardState.id, tabId) : undefined}
-                  onTabClose={hasMultipleTabs ? (tabId) => store.removeTab(cardState.id, tabId) : undefined}
                   onTabAdd={hasMultipleTabs ? (cId) => store.addTab(cardState.id, cId) : undefined}
                   onClose={handleClose}
                   onDragStart={injected.onDragStart}

@@ -2,11 +2,14 @@
  * TugTabBar — presentational tab strip for multi-tab Tugcards.
  *
  * Renders in the Tugcard accessory slot when a card has more than one tab.
- * Purely presentational: no DeckManager coupling. All state changes flow
- * through callback props to DeckManager which updates CardState.
+ * Purely presentational: no DeckManager coupling. Per [L11], TugTabBar is a
+ * control, not a responder — it dispatches `selectTab` and `closeTab`
+ * actions through the chain, where the enclosing Tugcard's responder
+ * handles them and updates the store.
  *
  * **Authoritative references:**
  * - [L06] Appearance changes go through CSS and DOM, never React state
+ * - [L11] Controls emit actions; responders handle actions
  * - [L16] Every foreground rule declares its rendering surface
  * - [L19] Component authoring guide
  * - [D01] DOM measurement for full widths, fixed constant for icon-only
@@ -16,7 +19,7 @@
  */
 
 import "./tug-tab-bar.css";
-import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { icons } from "lucide-react";
 import type { TabItem } from "@/layout-tree";
@@ -24,6 +27,7 @@ import { getAllRegistrations } from "@/card-registry";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
 import type { TugPopupMenuItem } from "./internal/tug-popup-menu";
+import { useResponderChain } from "./responder-chain-provider";
 import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";
 import {
   computeOverflow,
@@ -45,11 +49,18 @@ export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div
   tabs: TabItem[];
   /** The currently active tab id. */
   activeTabId: string;
-  /** Called when the user clicks a tab to select it. */
-  onTabSelect: (tabId: string) => void;
-  /** Called when the user clicks the close button on a tab. */
-  onTabClose: (tabId: string) => void;
-  /** Called when the user selects a card type from the [+] type picker. */
+  /**
+   * Stable opaque sender id for chain dispatches. Auto-derived via `useId()`
+   * if omitted. Parent responders disambiguate multi-tab-bar scenarios by
+   * matching this id in their `selectTab` / `closeTab` handler bindings. [L11]
+   */
+  senderId?: string;
+  /** Called when the user selects a card type from the [+] type picker.
+   *
+   *  Note: this remains a callback prop pending A2.5 (`tug-popup-button`
+   *  migration), where the `+` button's popup-menu items will dispatch a
+   *  new `addTab` action through the chain. Until then, callers wire this
+   *  to `store.addTab(cardId, componentId)` directly. */
   onTabAdd: (componentId: string) => void;
   /**
    * Families of card types to show in the [+] type picker.
@@ -348,8 +359,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     cardId,
     tabs,
     activeTabId,
-    onTabSelect,
-    onTabClose,
+    senderId,
     onTabAdd,
     acceptedFamilies,
     onOverflowChange,
@@ -358,6 +368,40 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   }: TugTabBarProps,
   ref,
 ) {
+  // Chain dispatch [L11]: tab select/close actions are dispatched through
+  // the responder chain. The enclosing card's responder handles them by
+  // matching `event.sender` against this tab bar's senderId. If no
+  // ResponderChainProvider is mounted (unit tests, standalone preview)
+  // dispatch is a no-op — TugTabBar still renders correctly but the
+  // user's clicks have no observable effect, which is the expected
+  // standalone-preview behavior.
+  const manager = useResponderChain();
+  const fallbackSenderId = useId();
+  const effectiveSenderId = senderId ?? fallbackSenderId;
+  const dispatchSelectTab = useCallback(
+    (tabId: string) => {
+      if (!manager) return;
+      manager.dispatch({
+        action: "selectTab",
+        value: tabId,
+        sender: effectiveSenderId,
+        phase: "discrete",
+      });
+    },
+    [manager, effectiveSenderId],
+  );
+  const dispatchCloseTab = useCallback(
+    (tabId: string) => {
+      if (!manager) return;
+      manager.dispatch({
+        action: "closeTab",
+        value: tabId,
+        sender: effectiveSenderId,
+        phase: "discrete",
+      });
+    },
+    [manager, effectiveSenderId],
+  );
   // Ref for the tab bar container, used by useTabOverflow. [D02]
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -409,14 +453,14 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   );
 
   // Handler for selecting a tab from the overflow dropdown. [D05]
-  // Calls onTabSelect with the tab ID; DeckManager updates activeTabId,
-  // triggering re-render, and the ResizeObserver recomputes overflow with
-  // the new active tab visible.
+  // Dispatches `selectTab` through the responder chain; the enclosing
+  // card's responder updates activeTabId, triggering re-render, and the
+  // ResizeObserver recomputes overflow with the new active tab visible.
   const handleOverflowSelect = useCallback(
     (tabId: string) => {
-      onTabSelect(tabId);
+      dispatchSelectTab(tabId);
     },
-    [onTabSelect],
+    [dispatchSelectTab],
   );
 
   return (
@@ -433,13 +477,13 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
         const isActive = tab.id === activeTabId;
 
         const handleTabClick = () => {
-          onTabSelect(tab.id);
+          dispatchSelectTab(tab.id);
         };
 
         const handleCloseClick = (event: React.MouseEvent<HTMLButtonElement>) => {
           // Stop propagation so the close click does not trigger tab select.
           event.stopPropagation();
-          onTabClose(tab.id);
+          dispatchCloseTab(tab.id);
         };
 
         const iconName = getAllRegistrations().get(tab.componentId)?.defaultMeta.icon;

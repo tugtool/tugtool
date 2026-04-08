@@ -393,11 +393,14 @@ export interface TugcardProps {
   tabs?: TabItem[];
   /** The currently active tab id. Required when tabs is provided. */
   activeTabId?: string;
-  /** Called when the user clicks a tab to select it. */
-  onTabSelect?: (tabId: string) => void;
-  /** Called when the user clicks the close (x) button on a tab. */
-  onTabClose?: (tabId: string) => void;
-  /** Called when the user picks a new card type from the [+] type picker. */
+  /** Called when the user picks a new card type from the [+] type picker.
+   *
+   *  This is the only remaining tab callback prop after A2.3. Tab select
+   *  and close are dispatched through the responder chain (`selectTab` /
+   *  `closeTab`) and handled by Tugcard's responder directly. The
+   *  `+` button's popup-menu migrates to chain dispatch in A2.5
+   *  (`tug-popup-button` substep), at which point this prop disappears
+   *  too. */
   onTabAdd?: (componentId: string) => void;
 
   /**
@@ -451,8 +454,6 @@ export function Tugcard({
   children,
   tabs,
   activeTabId,
-  onTabSelect,
-  onTabClose,
   onTabAdd,
   cardTitle,
   acceptedFamilies,
@@ -546,9 +547,6 @@ export function Tugcard({
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
 
-  const onTabSelectRef = useRef(onTabSelect);
-  onTabSelectRef.current = onTabSelect;
-
   // ---------------------------------------------------------------------------
   // saveCurrentTabState helper ([D01], #lifecycle-flow)
   // ---------------------------------------------------------------------------
@@ -581,17 +579,19 @@ export function Tugcard({
     store.setTabState(tabId, bag);
   };
 
-  // Wrap onTabSelect to save current state before switching tabs.
-  const handleTabSelect = useCallback(
+  // Tab-select side effect: save the OUTGOING tab's state before
+  // switching, then commit the new active tab to the store. Called from
+  // the `selectTab` chain handler below; also called via dispatch from
+  // `previousTab` / `nextTab` handlers, which now route through the chain
+  // so this side effect runs in exactly one place ([D01], #lifecycle-flow).
+  const performSelectTab = useCallback(
     (newTabId: string) => {
-      if (!onTabSelect) return;
       // Save full state for the OLD active tab before unmounting it.
       saveCurrentTabStateRef.current?.();
-      // Call parent callback to update activeTabId (triggers remount of new content).
-      onTabSelect(newTabId);
+      // Commit the new active tab through the store, triggering re-render.
+      store.setActiveTab(cardId, newTabId);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [onTabSelect],
+    [store, cardId],
   );
 
   // Register a stable save callback with DeckManager ([D01]).
@@ -806,32 +806,30 @@ export function Tugcard({
     window.getSelection()?.selectAllChildren(el);
   }, []);
 
-  // previousTab / nextTab: read from refs so closures never go stale (Rule #5).
-  // Call saveCurrentTabState before switching so keyboard-driven tab
-  // switches preserve scroll, selection, and card content state ([#lifecycle-flow]).
+  // previousTab / nextTab: read tabs/active id from refs (closures never
+  // go stale, Rule #5), compute the target tab id, and route through
+  // performSelectTab so the save-state side effect happens exactly once
+  // ([#lifecycle-flow]). Both handlers no-op when there's nothing to
+  // switch to.
   const handlePreviousTab = useCallback(() => {
     const currentTabs = tabsRef.current;
     const currentActiveId = activeTabIdRef.current;
-    const selectFn = onTabSelectRef.current;
-    if (!currentTabs || currentTabs.length <= 1 || !currentActiveId || !selectFn) return;
+    if (!currentTabs || currentTabs.length <= 1 || !currentActiveId) return;
     const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
     if (idx === -1) return;
     const prevIdx = (idx - 1 + currentTabs.length) % currentTabs.length;
-    saveCurrentTabStateRef.current?.();
-    selectFn(currentTabs[prevIdx].id);
-  }, []);
+    performSelectTab(currentTabs[prevIdx].id);
+  }, [performSelectTab]);
 
   const handleNextTab = useCallback(() => {
     const currentTabs = tabsRef.current;
     const currentActiveId = activeTabIdRef.current;
-    const selectFn = onTabSelectRef.current;
-    if (!currentTabs || currentTabs.length <= 1 || !currentActiveId || !selectFn) return;
+    if (!currentTabs || currentTabs.length <= 1 || !currentActiveId) return;
     const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
     if (idx === -1) return;
     const nextIdx = (idx + 1) % currentTabs.length;
-    saveCurrentTabStateRef.current?.();
-    selectFn(currentTabs[nextIdx].id);
-  }, []);
+    performSelectTab(currentTabs[nextIdx].id);
+  }, [performSelectTab]);
 
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,
@@ -840,6 +838,18 @@ export function Tugcard({
       selectAll: (_event: ActionEvent) => handleSelectAll(),
       previousTab: (_event: ActionEvent) => handlePreviousTab(),
       nextTab: (_event: ActionEvent) => handleNextTab(),
+      // selectTab / closeTab [L11, A2.3]: dispatched by TugTabBar in our
+      // accessory slot. Payload is `value: tabId`. The responder owns the
+      // store-mutation; deck-canvas no longer wires inline arrows for
+      // these. selectTab also runs the save-current-tab-state side effect.
+      selectTab: (event: ActionEvent) => {
+        if (typeof event.value !== "string") return;
+        performSelectTab(event.value);
+      },
+      closeTab: (event: ActionEvent) => {
+        if (typeof event.value !== "string") return;
+        store.removeTab(cardId, event.value);
+      },
       // Stubs: minimize, toggleMenu, find are no-ops until implemented.
       minimize: (_event: ActionEvent) => {},
       toggleMenu: (_event: ActionEvent) => {},
@@ -887,14 +897,15 @@ export function Tugcard({
 
   // When tabs.length > 1, render TugTabBar in the accessory slot.
   // When tabs.length <= 1, use the original accessory prop (or null).
-  const resolvedAccessory: React.ReactNode | null = hasMultipleTabs && onTabSelect && onTabClose && onTabAdd
+  // Tab select / close flow through this card's responder via the chain
+  // (selectTab / closeTab actions) — no callback prop forwarding for
+  // those. onTabAdd remains a callback prop pending A2.5.
+  const resolvedAccessory: React.ReactNode | null = hasMultipleTabs && onTabAdd
     ? (
         <TugTabBar
           cardId={cardId}
           tabs={tabs}
           activeTabId={activeTabId!}
-          onTabSelect={handleTabSelect}
-          onTabClose={onTabClose}
           onTabAdd={onTabAdd}
           acceptedFamilies={acceptedFamilies}
         />

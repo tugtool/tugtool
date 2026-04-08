@@ -5,9 +5,10 @@
  * status display, and bulk-add/reset controls.
  */
 
-import React, { useState, useRef } from "react";
+import React, { useId, useState, useRef } from "react";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { TabItem } from "@/layout-tree";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,11 @@ export function TugTabBarDemo() {
   const [overflowCount, setOverflowCount] = useState<number>(0);
   const nextTabIndexRef = useRef(DEMO_INITIAL_TABS.length + 1);
 
+  // L11 migration via useResponderForm — TugTabBar dispatches selectTab
+  // and closeTab through the chain. The gensym'd sender id is bound to
+  // wrapper setters that drive the local demo state and the
+  // last-selected status line.
+  const tabBarId = useId();
   const handleTabSelect = (tabId: string) => {
     setActiveTabId(tabId);
     setLastSelected(tabId);
@@ -68,6 +74,11 @@ export function TugTabBarDemo() {
       return remaining;
     });
   };
+
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectTab: { [tabBarId]: handleTabSelect },
+    closeTab: { [tabBarId]: handleTabClose },
+  });
 
   const handleTabAdd = (_componentId: string) => {
     const n = nextTabIndexRef.current++;
@@ -113,13 +124,16 @@ export function TugTabBarDemo() {
   };
 
   return (
-    <div className="cg-tab-bar-demo">
+    <ResponderScope>
+    <div
+      className="cg-tab-bar-demo"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
       <TugTabBar
         cardId="gallery-demo-card"
         tabs={tabs}
         activeTabId={activeTabId}
-        onTabSelect={handleTabSelect}
-        onTabClose={handleTabClose}
+        senderId={tabBarId}
         onTabAdd={handleTabAdd}
         onOverflowChange={handleOverflowChange}
       />
@@ -143,6 +157,7 @@ export function TugTabBarDemo() {
         </div>
       )}
     </div>
+    </ResponderScope>
   );
 }
 
