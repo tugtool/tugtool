@@ -9,9 +9,12 @@
  * @module components/tugways/cards/gallery-switch
  */
 
-import React, { useState } from "react";
+import React, { useCallback, useId, useState } from "react";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole, TugSwitchSize } from "@/components/tugways/tug-switch";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { narrowValue } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -34,12 +37,40 @@ const ALL_ROLES: TugSwitchRole[] = [
 // ---------------------------------------------------------------------------
 
 export function GallerySwitch() {
-  // Controlled state for the interactive demo
+  // Controlled state for the interactive demo.
   const [enabled1, setEnabled1] = useState(false);
   const [enabled2, setEnabled2] = useState(true);
 
+  // L11 migration pattern: this card is a responder that handles the
+  // `toggle` action dispatched by its TugSwitch children. See
+  // gallery-checkbox.tsx for the annotated reference implementation.
+  const setters: Record<string, (v: boolean) => void> = {
+    "sw-1": setEnabled1,
+    "sw-2": setEnabled2,
+  };
+  const handleToggle = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (!sender) return;
+    const setter = setters[sender];
+    if (!setter) return;
+    const v = narrowValue(event, (val): val is boolean => typeof val === "boolean");
+    if (v === null) return;
+    setter(v);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const responderId = useId();
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: { toggle: handleToggle },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-switch">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-switch"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
@@ -59,12 +90,12 @@ export function GallerySwitch() {
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <TugSwitch
             checked={enabled1}
-            onCheckedChange={setEnabled1}
+            senderId="sw-1"
             label={`Off → ${String(enabled1)}`}
           />
           <TugSwitch
             checked={enabled2}
-            onCheckedChange={setEnabled2}
+            senderId="sw-2"
             label={`On → ${String(enabled2)}`}
           />
         </div>
@@ -124,5 +155,6 @@ export function GallerySwitch() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

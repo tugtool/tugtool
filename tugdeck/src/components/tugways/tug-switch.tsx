@@ -4,7 +4,16 @@
  * Wraps @radix-ui/react-switch. Supports size variants, inline label,
  * disabled state, and role-based color injection via CSS custom properties.
  *
- * Laws: [L06] appearance via CSS, [L15] token-driven states, [L16] pairings declared,
+ * Control semantics (L11): user activation dispatches a `toggle` action
+ * through the responder chain with the new boolean state as `value`
+ * and a stable `sender` id for parent disambiguation. Parent
+ * responders register a `toggle` action handler via `useResponder`
+ * that switches on `event.sender` to route updates to the right state.
+ * There is no `onCheckedChange` callback prop — the chain is the sole
+ * mechanism for communicating state changes outward.
+ *
+ * Laws: [L06] appearance via CSS, [L11] controls emit actions,
+ *       [L15] token-driven states, [L16] pairings declared,
  *       [L19] component authoring guide
  * Decisions: [D03] appearance via stylesheet injection, [D05] component token naming,
  *            [D06] components/tugways public API
@@ -12,10 +21,11 @@
 
 import "./tug-switch.css";
 
-import React from "react";
+import React, { useCallback, useId } from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+import { useResponderChain } from "./responder-chain-provider";
 
 // ---- Types ----
 
@@ -64,8 +74,15 @@ export interface TugSwitchProps {
   checked?: boolean;
   /** Default checked state (uncontrolled). */
   defaultChecked?: boolean;
-  /** Callback when checked state changes. */
-  onCheckedChange?: (checked: boolean) => void;
+  /**
+   * Stable identifier passed as `event.sender` on every `toggle`
+   * action dispatched by this switch. Parent responders use this to
+   * disambiguate multi-switch forms in their `toggle` handler.
+   * Defaults to a `useId()`-derived unique string — set explicitly
+   * when the parent needs a predictable id (e.g. for form routing
+   * by semantic name).
+   */
+  senderId?: string;
   /** Inline label text. Renders a wrapping label element. */
   label?: string;
   /**
@@ -112,7 +129,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     {
       checked,
       defaultChecked,
-      onCheckedChange,
+      senderId,
       label,
       size = "md",
       disabled = false,
@@ -129,6 +146,28 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
 
+    // Chain dispatch [L11]: on user activation, dispatch a `toggle`
+    // action through the responder chain with the new boolean state
+    // as `value` and a stable sender id. If no ResponderChainProvider
+    // is mounted (e.g. unit tests, standalone preview), the dispatch
+    // is a no-op — the Radix primitive still tracks internal state
+    // for uncontrolled usage.
+    const manager = useResponderChain();
+    const fallbackId = useId();
+    const effectiveSenderId = senderId ?? fallbackId;
+    const handleCheckedChange = useCallback(
+      (next: boolean) => {
+        if (!manager) return;
+        manager.dispatch({
+          action: "toggle",
+          value: next,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+      },
+      [manager, effectiveSenderId],
+    );
+
     // Role injection — every path injects surface-toggle-track tokens. [L06]
     // No role prop = accent. Single path, zero branches.
     const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
@@ -144,7 +183,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
         data-slot="tug-switch"
         checked={checked}
         defaultChecked={defaultChecked}
-        onCheckedChange={onCheckedChange}
+        onCheckedChange={handleCheckedChange}
         disabled={effectiveDisabled}
         name={name}
         value={value}

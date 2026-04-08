@@ -9,7 +9,7 @@
  * @module components/tugways/cards/gallery-sheet
  */
 
-import React, { useRef } from "react";
+import React, { useCallback, useId, useRef } from "react";
 import {
   TugSheet,
   TugSheetTrigger,
@@ -20,6 +20,9 @@ import type { TugSheetHandle } from "@/components/tugways/tug-sheet";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { narrowValue } from "@/components/tugways/action-vocabulary";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -306,12 +309,34 @@ function RichChecklistContent({ onClose }: { onClose: () => void }) {
 
   const completedCount = Object.values(checked).filter(Boolean).length;
 
-  function toggle(id: string) {
-    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
+  // L11 migration pattern — dynamic sender case: each checkbox in the
+  // list passes its item id as `senderId`, and the `toggle` handler
+  // uses that id directly as the key into the `checked` record. Unlike
+  // gallery-checkbox (static setter map), this card has an unbounded
+  // list, so the handler pattern is a record-update keyed on sender.
+  // The payload's boolean carries the new state, so no need to flip
+  // the previous value — the user can't manufacture a stale-read
+  // race because each dispatch carries the fresh value.
+  const handleToggle = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (!sender) return;
+    const v = narrowValue(event, (val): val is boolean => typeof val === "boolean");
+    if (v === null) return;
+    setChecked((prev) => ({ ...prev, [sender]: v }));
+  }, []);
+
+  const responderId = useId();
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: { toggle: handleToggle },
+  });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+    <ResponderScope>
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
       <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)" }}>
         {completedCount} of {CHECKLIST_ITEMS.length} complete
       </div>
@@ -320,7 +345,7 @@ function RichChecklistContent({ onClose }: { onClose: () => void }) {
           <TugCheckbox
             key={item.id}
             checked={checked[item.id]}
-            onCheckedChange={() => toggle(item.id)}
+            senderId={item.id}
             label={item.label}
             size="sm"
           />
@@ -331,5 +356,6 @@ function RichChecklistContent({ onClose }: { onClose: () => void }) {
         <TugPushButton emphasis="filled" onClick={onClose}>Save</TugPushButton>
       </div>
     </div>
+    </ResponderScope>
   );
 }

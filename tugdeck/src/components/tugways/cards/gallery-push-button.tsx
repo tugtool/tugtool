@@ -10,12 +10,15 @@
  * @module components/tugways/cards/gallery-push-button
  */
 
-import React, { useState } from "react";
+import React, { useCallback, useId, useState } from "react";
 import { Star, ArrowRight } from "lucide-react";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { narrowValue } from "@/components/tugways/action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -124,6 +127,29 @@ export function GalleryPushButton() {
   const [previewDisabled, setPreviewDisabled] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // L11 migration pattern: this card is a responder that handles the
+  // `toggle` action dispatched by its TugCheckbox children. See
+  // gallery-checkbox.tsx for the annotated reference implementation.
+  const toggleSetters: Record<string, (v: boolean) => void> = {
+    "preview-disabled": setPreviewDisabled,
+    "preview-loading": setPreviewLoading,
+  };
+  const handleToggle = useCallback((event: ActionEvent) => {
+    const sender = typeof event.sender === "string" ? event.sender : null;
+    if (!sender) return;
+    const setter = toggleSetters[sender];
+    if (!setter) return;
+    const v = narrowValue(event, (val): val is boolean => typeof val === "boolean");
+    if (v === null) return;
+    setter(v);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const responderId = useId();
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: { toggle: handleToggle },
+  });
+
   // Label for the role dropdown: undefined → "accent (default)"
   const roleDropdownLabel = previewRole === undefined ? "accent (default)" : previewRole;
 
@@ -142,7 +168,12 @@ export function GalleryPushButton() {
   };
 
   return (
-    <div className="cg-content" data-testid="gallery-buttons">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-buttons"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
       {/* ---- Preview Controls ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Preview Controls</div>
@@ -185,7 +216,7 @@ export function GalleryPushButton() {
           <div className="cg-control-group">
             <TugCheckbox
               checked={previewDisabled}
-              onCheckedChange={(checked) => setPreviewDisabled(checked === true)}
+              senderId="preview-disabled"
               label="Disabled"
               size="sm"
             />
@@ -194,7 +225,7 @@ export function GalleryPushButton() {
           <div className="cg-control-group">
             <TugCheckbox
               checked={previewLoading}
-              onCheckedChange={(checked) => setPreviewLoading(checked === true)}
+              senderId="preview-loading"
               label="Loading"
               size="sm"
             />
@@ -414,5 +445,6 @@ export function GalleryPushButton() {
         </div>
       </div>
     </div>
+    </ResponderScope>
   );
 }

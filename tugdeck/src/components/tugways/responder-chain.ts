@@ -250,6 +250,7 @@ export class ResponderChainManager {
   dispatchForContinuation(event: ActionEvent): DispatchResult {
     let handled = false;
     let continuation: (() => void) | undefined;
+    let handledBy: string | null = null;
 
     let currentId: string | null = this.firstResponderId;
     while (currentId !== null) {
@@ -262,12 +263,14 @@ export class ResponderChainManager {
           continuation = result;
         }
         handled = true;
+        handledBy = currentId;
         break;
       }
       currentId = node.parentId;
     }
 
     this.notifyDispatchObservers(event, handled);
+    this.logDispatch(event, handled, handledBy);
     return { handled, continuation };
   }
 
@@ -512,6 +515,37 @@ export class ResponderChainManager {
     for (const obs of observers) {
       obs(event, handled);
     }
+  }
+
+  /**
+   * Log every dispatch to the console with a gray prefix so developers
+   * can see what's flowing through the chain in real time. Includes
+   * the action name, sender (if present), value (if present), whether
+   * it was handled, and which responder handled it. Filter the console
+   * for `[responder-chain] dispatch` to see only chain traffic and
+   * mute the existing first-responder transition logs.
+   *
+   * Noise budget: one log per user-initiated action (click, key, menu
+   * selection). That's the same cadence as user interactions — not a
+   * firehose. If it ever becomes a problem we can gate it on a
+   * `window.__tugChainDebug` flag, but for now the signal is high
+   * enough to justify always-on.
+   */
+  private logDispatch(event: ActionEvent, handled: boolean, handledBy: string | null): void {
+    if (typeof console === "undefined") return;
+    const senderPart = event.sender !== undefined ? ` sender=${JSON.stringify(event.sender)}` : "";
+    const valuePart = event.value !== undefined ? ` value=${JSON.stringify(event.value)}` : "";
+    const outcomePart = handled
+      ? `handled by ${handledBy}`
+      : "unhandled";
+    // eslint-disable-next-line no-console
+    console.log(
+      `%c[responder-chain] dispatch %c${event.action}%c${senderPart}${valuePart} %c(${outcomePart})`,
+      "color:#888",
+      "color:inherit;font-weight:600",
+      "color:#888",
+      handled ? "color:#4a7" : "color:#c55",
+    );
   }
 
   /**
