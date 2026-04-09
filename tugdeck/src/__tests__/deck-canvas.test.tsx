@@ -40,6 +40,11 @@ import { registerHelloWorldCard } from "@/components/tugways/cards/hello-world-c
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-registrations";
 import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
+import type { TugAction } from "@/components/tugways/action-vocabulary";
+
+// Test helper: cast an arbitrary string to TugAction for chain-mechanics
+// tests that exercise behavior independent of the production vocabulary.
+const asAction = (name: string) => name as unknown as TugAction;
 
 
 // Clean up mounted React trees after each test.
@@ -93,6 +98,8 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     // Phase 5f3 additions
     registerSaveCallback: (_id: string, _callback: () => void) => {},
     unregisterSaveCallback: (_id: string) => {},
+    // Collapse toggle (added in Step 3 of the collapse feature)
+    toggleCardCollapse: (_id: string) => {},
   };
 }
 
@@ -101,16 +108,15 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
 /**
  * Render DeckCanvas inside both ResponderChainProvider and DeckManagerContext.Provider.
  * Every DeckCanvas render requires both providers after the Phase 5a2 migration.
+ * DeckCanvasProps is currently empty — the `connection` parameter was removed
+ * in an earlier refactor; this helper no longer forwards one.
  */
-function renderDeckCanvasWithStore(
-  store?: IDeckManagerStore,
-  connection: import("@/connection").TugConnection | null = null,
-) {
+function renderDeckCanvasWithStore(store?: IDeckManagerStore) {
   const resolvedStore = store ?? makeMockStore();
   return render(
     <ResponderChainProvider>
       <DeckManagerContext.Provider value={resolvedStore}>
-        <DeckCanvas connection={connection} />
+        <DeckCanvas />
       </DeckManagerContext.Provider>
     </ResponderChainProvider>
   );
@@ -182,7 +188,7 @@ describe("DeckCanvas – responder registration", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -207,7 +213,7 @@ describe("DeckCanvas – responder registration", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -237,7 +243,7 @@ describe("DeckCanvas – cycleCard action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -264,7 +270,7 @@ describe("DeckCanvas – cycleCard action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -298,7 +304,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -333,7 +339,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -367,7 +373,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -419,7 +425,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={reactiveStore}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -460,7 +466,7 @@ describe("DeckCanvas – Ctrl+` key pipeline integration", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -675,6 +681,8 @@ class ReactiveStore implements IDeckManagerStore {
   // Phase 5f3 additions
   registerSaveCallback = (_id: string, _callback: () => void): void => {};
   unregisterSaveCallback = (_id: string): void => {};
+  // Collapse toggle (added in Step 3 of the collapse feature)
+  toggleCardCollapse = (_id: string): void => {};
 
   /** Update state and notify subscribers (triggers useSyncExternalStore re-render). */
   setState(next: DeckState): void {
@@ -718,7 +726,7 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
       ({ container } = render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
       ));
@@ -782,7 +790,7 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
       ({ container } = render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
       ));
@@ -841,7 +849,7 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
       ({ container } = render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
       ));
@@ -927,7 +935,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -965,7 +973,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -1001,7 +1009,7 @@ describe("DeckCanvas – Step 7: addTabToActiveCard responder action", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -1297,7 +1305,7 @@ describe("DeckCanvas – last-resort canHandle", () => {
       render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
@@ -1307,8 +1315,8 @@ describe("DeckCanvas – last-resort canHandle", () => {
     expect(manager).not.toBeNull();
     // DeckCanvas registers with canHandle: () => true, making it a last-resort
     // responder. canHandle() should return true for any arbitrary action string.
-    expect(manager!.canHandle("anyArbitraryAction")).toBe(true);
-    expect(manager!.canHandle("some-invented-action-xyz")).toBe(true);
-    expect(manager!.canHandle("")).toBe(true);
+    expect(manager!.canHandle(asAction("anyArbitraryAction"))).toBe(true);
+    expect(manager!.canHandle(asAction("some-invented-action-xyz"))).toBe(true);
+    expect(manager!.canHandle(asAction(""))).toBe(true);
   });
 });

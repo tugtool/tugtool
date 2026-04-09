@@ -16,6 +16,34 @@
  * item's `value` field; semantic-action use cases can carry a different
  * action per item.
  *
+ * ## Known limitation: continuation ordering
+ *
+ * TugPopupButton dispatches via `manager.dispatchForContinuation` and
+ * runs any returned continuation callback immediately after the dispatch
+ * returns. This differs from the `TugEditorContextMenu` precedent in one
+ * detail: the precedent dispatches **before** the blink animation so the
+ * continuation can fire **after** the visual feedback completes (matching
+ * the "button press, then result" UX). TugPopupButton dispatches **after**
+ * the blink because it delegates blink timing to `TugPopupMenu`'s internal
+ * animate-then-onSelect sequence, and TugPopupMenu fires its `onSelect`
+ * callback only after the blink animation finishes.
+ *
+ * Net effect: in TugPopupButton, the dispatch + continuation both run
+ * effectively at the moment the menu is about to close, not before the
+ * blink. For the current value-picker use cases (font size, theme,
+ * emphasis, role, tab add, etc.) this doesn't matter — handlers are
+ * void-returning and don't use continuations at all. But if a future
+ * consumer wants to defer a visible side effect past the blink flash,
+ * that timing window doesn't exist here — the blink has already happened
+ * by the time the handler runs.
+ *
+ * Fixing this would require restructuring `TugPopupMenu`'s internal
+ * sequence to dispatch-then-blink, or having TugPopupButton bypass
+ * TugPopupMenu's blink and manage its own animation. Both are
+ * invasive. Flagged here so future consumers who do need the precedent's
+ * exact timing know to use `TugPopupMenu` directly (and manage the
+ * dispatch themselves) rather than TugPopupButton.
+ *
  * Styling delegated to TugButton (trigger appearance) and TugPopupMenu (dropdown).
  * No component CSS — this is a pure composition.
  *
@@ -36,6 +64,21 @@ import type { TugAction } from "./action-vocabulary";
 // ---- Types ----
 
 /**
+ * Payload types supported by the `value` field of a `TugPopupButtonItem`.
+ *
+ * Matches the runtime-narrowable payload shapes handled by
+ * `useResponderForm`'s binding slots: booleans (toggle), strings
+ * (selectValue, setValueString, selectTab, closeTab, addTab,
+ * toggleSectionSingle), numbers (setValueNumber), and string arrays
+ * (setValueStringArray, toggleSectionMulti). If a new slot is added to
+ * the form hook with a different payload shape, extend this union.
+ *
+ * This constraint is what gives `TugPopupButtonItem<V>` its compile-time
+ * homogeneity guarantee — see the docstring on the interface itself.
+ */
+export type TugPopupButtonPayload = boolean | number | string | string[];
+
+/**
  * A single item in a TugPopupButton menu. Activating the item dispatches
  * `action` through the responder chain, carrying `value` as the payload.
  *
@@ -48,8 +91,52 @@ import type { TugAction } from "./action-vocabulary";
  * with the addition of an optional `value` payload field. The precedent's
  * type-safety guarantee is preserved: `action` is `TugAction`, so
  * misspellings are compile errors and autocomplete surfaces the vocabulary.
+ *
+ * ## Payload homogeneity via generic parameter `V`
+ *
+ * `TugPopupButtonItem` is parameterized by a payload type `V` bounded to
+ * `TugPopupButtonPayload`. A single items array must be homogeneous —
+ * every item's `value` has the same type as every other item's `value`
+ * in that array. This closes the A2.5 loophole where an array of mixed
+ * string/number items could silently misroute to the wrong
+ * `useResponderForm` slot.
+ *
+ * ### Default is `never`, not `unknown`
+ *
+ * The default type parameter is `never` — a deliberate choice to force
+ * consumers to annotate their items at the declaration site. Writing
+ * `TugPopupButtonItem[]` without a type argument resolves to
+ * `TugPopupButtonItem<never>[]`, which only accepts items with
+ * `value: undefined` (semantic-action items with no payload). Any
+ * consumer that passes values must annotate explicitly:
+ *
+ * ```ts
+ * // Font-size picker: numeric payload
+ * const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
+ *   { action: "setValue", value: 12, label: "12 px" },
+ *   { action: "setValue", value: 14, label: "14 px" },
+ *   // { action: "setValue", value: "16", label: "16 px" }  // ← compile error
+ * ];
+ * ```
+ *
+ * TypeScript will also infer `V` from an items literal passed inline to
+ * `TugPopupButton`, so explicit annotation at the declaration site is
+ * only required when the items array is a named `const` declared
+ * separately from the component usage. Inline literals with mixed
+ * payload types will fail inference (no single `V` satisfies both a
+ * number and a string), resulting in a compile error.
+ *
+ * ## Remaining consumer discipline
+ *
+ * The `senderId → form hook slot` correspondence is still a runtime
+ * string match — `TugPopupButtonItem<number>` doesn't force the consumer
+ * to bind the senderId to `setValueNumber` rather than `setValueString`
+ * at the form hook site. If the slot is wrong, the runtime narrower in
+ * `use-responder-form.tsx` drops the payload and logs an `unbound
+ * sender` dev warning. The compile-time guarantee is homogeneity; the
+ * runtime guardrail is the dev warning.
  */
-export interface TugPopupButtonItem {
+export interface TugPopupButtonItem<V extends TugPopupButtonPayload = never> {
   /**
    * The responder-chain action to dispatch when the item is activated.
    * Typed against `TugAction` so misspellings are compile errors.
@@ -57,10 +144,12 @@ export interface TugPopupButtonItem {
   action: TugAction;
   /**
    * Optional payload shipped as the dispatched event's `value` field.
-   * For value-picker menus this is the actual value (string, number,
-   * string[], etc.); for pure semantic-action menus it can be omitted.
+   * The payload type is the generic parameter `V`, constrained to
+   * `TugPopupButtonPayload`. For pure semantic-action items, `value`
+   * can be omitted; for value pickers, all items in a single array
+   * must share the same `V`.
    */
-  value?: unknown;
+  value?: V;
   /** Display label for this item. */
   label: string;
   /** Optional icon node rendered before the label. */
@@ -75,12 +164,15 @@ export interface TugPopupButtonItem {
  * TugPopupButton always renders a TugButton with emphasis="outlined",
  * role="option", and a ChevronDown trailing icon.
  * These are fixed; pass label, items, optional senderId and size/className.
+ *
+ * Parameterized by payload type `V` — flows from `items: TugPopupButtonItem<V>[]`
+ * via inference or explicit annotation at the usage site.
  */
-export interface TugPopupButtonProps {
+export interface TugPopupButtonProps<V extends TugPopupButtonPayload = never> {
   /** Label content rendered inside the trigger button. */
   label: React.ReactNode;
   /** List of items to display in the popup menu. */
-  items: TugPopupButtonItem[];
+  items: TugPopupButtonItem<V>[];
   /**
    * Stable opaque sender id for chain dispatches. Auto-derived via
    * `useId()` if omitted. Parent responders disambiguate multi-popup
@@ -118,7 +210,7 @@ export interface TugPopupButtonProps {
  * responder returns a continuation callback, it's invoked after the
  * dispatch returns (before the popup menu closes).
  */
-export function TugPopupButton({
+export function TugPopupButton<V extends TugPopupButtonPayload = never>({
   label,
   items,
   senderId,
@@ -126,7 +218,7 @@ export function TugPopupButton({
   className,
   "aria-label": ariaLabel,
   "data-testid": dataTestId,
-}: TugPopupButtonProps) {
+}: TugPopupButtonProps<V>) {
   // Chain dispatch [L11]. manager is null in standalone previews / unit
   // tests that don't mount a ResponderChainProvider — in that case the
   // dispatch becomes a no-op and the popup still renders and closes

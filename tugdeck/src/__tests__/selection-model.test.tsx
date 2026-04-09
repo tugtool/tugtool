@@ -22,6 +22,7 @@ import { Tugcard } from "@/components/tugways/tug-card";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager } from "./mock-deck-manager-store";
+import type { FeedIdValue } from "@/protocol";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,7 +48,7 @@ function renderWithManager(ui: React.ReactElement) {
 const defaultProps = {
   cardId: "card-sel-test",
   meta: { title: "Selection Test Card" },
-  feedIds: [] as readonly number[],
+  feedIds: [] as readonly FeedIdValue[],
 } as const;
 
 // ---------------------------------------------------------------------------

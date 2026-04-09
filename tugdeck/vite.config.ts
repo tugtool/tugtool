@@ -343,7 +343,8 @@ function discoverThemeCssInputs(): Record<string, string> {
   return inputs;
 }
 
-export default defineConfig(() => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default (defineConfig as any)(() => {
   const tugcastPort = process.env.TUGCAST_PORT || "55255";
   const proxyConfig = {
     "/auth": { target: `http://localhost:${tugcastPort}` },
@@ -403,7 +404,8 @@ export default defineConfig(() => {
         output: {
           // Emit per-theme CSS to assets/themes/<name>.css (no hash) so
           // the production link swap can target a stable path. [D08]
-          assetFileNames: (assetInfo) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          assetFileNames: (assetInfo: any) => {
             const name = assetInfo.name ?? "";
             if (name.endsWith(".css")) {
               // Theme entry CSS files are named "themes/<themeName>" by discoverThemeCssInputs.

@@ -151,7 +151,16 @@ export interface TugResponderFormBindings {
   closeTab?: Record<string, (value: string) => void>;
   /** addTab action (string payload — componentId) — tab bar `+` popup. */
   addTab?: Record<string, (value: string) => void>;
-  /** toggleSection action with single-value payload — single-expand accordion. */
+  /**
+   * toggleSection action with single-value payload — single-expand accordion.
+   *
+   * **The payload can be an empty string `""`** when the user collapses
+   * the currently open item in a collapsible single-mode accordion
+   * (Radix reports "no open item" as an empty string). Setters bound
+   * to this slot must handle that sentinel — for example by storing
+   * the empty string and rendering a "no open section" state, or by
+   * explicitly checking `v === ""` and taking a different branch.
+   */
   toggleSectionSingle?: Record<string, (value: string) => void>;
   /** toggleSection action with multi-value payload — multi-expand accordion. */
   toggleSectionMulti?: Record<string, (value: string[]) => void>;

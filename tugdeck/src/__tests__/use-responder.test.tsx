@@ -19,8 +19,14 @@ import { describe, it, expect, mock } from "bun:test";
 import { render, act } from "@testing-library/react";
 
 import { ResponderChainContext, ResponderChainManager, ResponderNode } from "@/components/tugways/responder-chain";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
+import type { ActionEvent, ActionHandler } from "@/components/tugways/responder-chain";
+import type { TugAction } from "@/components/tugways/action-vocabulary";
 import { useResponder } from "@/components/tugways/use-responder";
+
+// Test helpers: synthetic action names for chain-mechanics tests.
+const asActions = (a: Record<string, ActionHandler>) =>
+  a as unknown as Partial<Record<TugAction, ActionHandler>>;
+const asAction = (name: string) => name as unknown as TugAction;
 
 // ---- Helpers ----
 
@@ -144,7 +150,7 @@ describe("useResponder – unregister on unmount", () => {
     });
 
     // Dispatch should return false -- node no longer in chain
-    expect(manager.dispatch({ action: "anything", phase: "discrete" })).toBe(false);
+    expect(manager.dispatch({ action: asAction("anything"), phase: "discrete" })).toBe(false);
     expect(manager.getFirstResponder()).toBe(null);
   });
 });
@@ -187,7 +193,7 @@ describe("useResponder – two-level nesting", () => {
     function ParentComponent({ children }: { children: React.ReactNode }) {
       const { ResponderScope } = useResponder({
         id: "parent",
-        actions: { bubbled: (_event: ActionEvent) => { parentHandled = true; } },
+        actions: asActions({ bubbled: (_event: ActionEvent) => { parentHandled = true; } }),
       });
       return <ResponderScope>{children}</ResponderScope>;
     }
@@ -208,7 +214,7 @@ describe("useResponder – two-level nesting", () => {
     });
 
     manager.makeFirstResponder("child");
-    const handled = manager.dispatch({ action: "bubbled", phase: "discrete" });
+    const handled = manager.dispatch({ action: asAction("bubbled"), phase: "discrete" });
     expect(handled).toBe(true);
     expect(parentHandled).toBe(true);
   });

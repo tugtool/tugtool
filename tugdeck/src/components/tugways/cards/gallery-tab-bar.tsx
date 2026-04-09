@@ -9,6 +9,7 @@ import React, { useId, useState, useRef } from "react";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { getRegistration } from "@/card-registry";
 import type { TabItem } from "@/layout-tree";
 
 // ---------------------------------------------------------------------------
@@ -76,17 +77,23 @@ export function TugTabBarDemo() {
   };
 
   // TugTabBar dispatches `addTab` through the chain with the chosen
-  // componentId as the payload. The demo ignores the incoming
-  // componentId and generates a sequential "Tab N" entry so the demo
-  // behavior (numeric labels) stays stable regardless of which type
-  // the user picked. In production, the Tugcard responder uses the
-  // componentId directly.
-  const handleTabAdd = (_componentId: string) => {
+  // componentId as the payload. The demo uses that componentId to
+  // build a real tab of that type — looking up the registration for
+  // the title so the new tab reflects the user's pick. The sequential
+  // `demo-tab-new-<n>` id keeps tab ids unique within the demo session.
+  // Falls back to "hello" if the componentId is somehow unregistered
+  // (e.g. empty string), which should not happen in the production
+  // code path but keeps the demo robust. [Punch #3]
+  const handleTabAdd = (componentId: string) => {
     const n = nextTabIndexRef.current++;
+    const registration = getRegistration(componentId);
+    const resolvedComponentId = registration ? componentId : "hello";
+    const resolvedTitle =
+      registration?.defaultMeta.title ?? `Tab ${n}`;
     const newTab: TabItem = {
       id: `demo-tab-new-${n}`,
-      componentId: "hello",
-      title: `Tab ${n}`,
+      componentId: resolvedComponentId,
+      title: resolvedTitle,
       closable: true,
     };
     setTabs((prev) => [...prev, newTab]);

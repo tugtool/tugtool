@@ -387,8 +387,8 @@ describe("useTugcardPersistence – parent-sets-ref, child-reads-ref indirection
     });
 
     // onContentReady should have fired with the restored DOM state.
-    expect(readyFiredWithState).toBe("restored-value");
-    expect(domTextAtReady).toBe("restored-value");
+    expect(readyFiredWithState as unknown as string).toBe("restored-value");
+    expect(domTextAtReady as unknown as string).toBe("restored-value");
     // Flag must be reset to false after firing.
     expect(callbacks.restorePendingRef!.current).toBe(false);
   });

@@ -101,7 +101,7 @@ describe("wire format v1", () => {
     };
     const encoded = encodeFrame(frame);
     const decoded = decodeFrame(encoded);
-    expect(decoded.feedId).toBe(0x99);
+    expect(decoded.feedId).toBe(0x99 as typeof decoded.feedId);
     expect(new TextDecoder().decode(decoded.payload)).toBe("opaque");
   });
 });

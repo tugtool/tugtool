@@ -441,9 +441,21 @@ Dispatch `selectTab` and `closeTab` with `{ value: tabId, sender: senderId, phas
 
 **`onTabAdd` is deferred to A2.5**, not handled here. The tab bar's `+` button is a `tug-popup-button` consumer; its migration belongs in the popup-button substep where every popup-button consumer migrates together. Until then, `onTabAdd` remains a callback prop on Tugcard — the only residual tab-related callback. A2 exit criteria are evaluated at the end of A2, not between substeps, so this is permitted.
 
+**As-shipped (commit `fe332454` + Punch #1 fix):** landed as planned with two post-substep corrections worth noting here:
+
+- The initial A2.3 implementation took a shortcut: `handlePreviousTab` / `handleNextTab` called a local `performSelectTab` helper directly rather than dispatching `selectTab` through the chain. This meant keyboard-driven tab switches were invisible to `observeDispatch` subscribers and the dispatch log, breaking the "every interaction is observable" invariant A2 is supposed to deliver. **Fixed in the Pre-A2.6 cleanup (Punch #1)**: both keyboard handlers now dispatch `selectTab` through the chain with a gensym'd `keyboardTabNavSenderId` distinct from the tab bar's own sender id, so observers can tell keyboard switches apart from click-driven ones. The chain walks to the same Tugcard responder, runs `performSelectTab` there, and the save-state side effect still fires exactly once.
+- The initial tests rewrote three `nextTab`/`previousTab` instrumentation tests to assert on `store.setActiveTab` capture via a `storeOverrides` parameter added to `renderWithManagerAndStore`, using a mock store. Those tests are unit-level; no integration test fires a real DOM click on a rendered `TugTabBar` and verifies the event → focusin → chain dispatch → handler → store path end-to-end. Gap noted; see the Pre-A2.6 cleanup commit for the rewritten test patterns. A TugTabBar end-to-end test remains future work.
+
 #### A2.4 — Accordions: `tug-accordion`
 
 Dispatch `toggleSection` with `{ value: sectionId | sectionIds, sender, phase }`. Remove `onValueChange`. Both single-expand and multi-expand modes dispatch the same action; the payload's shape (string vs array) distinguishes.
+
+**As-shipped (commit `857045c4` + Punch #2 + Punch #4):**
+
+- Gallery scope expanded from pure migration to migration + demo addition. The original gallery had 8 uncontrolled accordions; a "Chain-Controlled (A2.4)" section was added with two controlled demos exercising `useResponderForm`'s `toggleSectionSingle` and `toggleSectionMulti` slots. This gave those slots their first runtime exercise anywhere in the codebase (they'd existed since the Pre-A2.3 cleanup but had no consumers).
+- **Single-mode collapse-all sentinel**: when a `type="single" collapsible` accordion user collapses the currently-open item, Radix reports the new value as an empty string `""`. TugAccordion forwards that sentinel verbatim. Any consumer binding via `toggleSectionSingle` must treat `""` as "no open section." Documented in the `useResponderForm` slot JSDoc and in the TugAccordion module docstring (Punch #4).
+- **Unit test coverage added** in Pre-A2.6 cleanup (Punch #2): `src/__tests__/tug-accordion.test.tsx` covers single-mode dispatch, the empty-string collapse sentinel, multi-mode dispatch with string[] payload, multi-mode incremental open/close, explicit `senderId` prop, useId fallback stability, and multi-accordion sender id disambiguation. Tests drive a real `ResponderChainManager` with `observeDispatch` — not by stubbing the dispatch layer.
+- The discriminated union branching on `props.type` in TugAccordion still uses a local type assertion (`as React.ComponentPropsWithoutRef<typeof Accordion.Root>`) because the discriminated union doesn't narrow cleanly through the onValueChange parameter. Works at runtime, type-safe at the use site, acceptable trade-off.
 
 #### A2.5 — Popup menus: `tug-popup-button`
 
@@ -457,6 +469,17 @@ Follow the `TugEditorContextMenu` precedent: the menu item's `action` field *is*
 - **Test churn** — same shape as A2.3's test updates: `onTabAdd={() => {}}` stub usages get deleted; any instrumentation tests that captured `addedComponentIds` get rewritten to assert against the store snapshot.
 
 After A2.5, Tugcard has zero callback props for tab interactions. All three actions (`selectTab`, `closeTab`, `addTab`) plus the existing menu/keystroke `addTabToActiveCard` flow through the chain.
+
+**As-shipped (commit `29f46fda` + Punch #3, #5, #7):**
+
+- **Item shape is a deliberate extension of the precedent**, not a literal copy. `TugPopupButtonItem<V>` carries both `action: TugAction` and optional `value?: V` where `V extends TugPopupButtonPayload` (`boolean | number | string | string[]`). The precedent's `TugEditorContextMenuItem` has no `value` field because context menus dispatch semantic actions (cut/copy/paste) without payloads. Popup buttons are value pickers that need a payload; the `value` field is the additive delta.
+- **Generic parameter defaults to `never` (Punch #7)**, not to the wide payload union. This forces consumers to annotate their item arrays (`TugPopupButtonItem<number>[]` for font-size pickers, etc.) — without annotation, the default `never` only accepts items with `value: undefined` (the semantic-action shape). Mixed-type arrays fail typecheck because inference can't find a single `V` that satisfies both a number and a string. This closes a gap from the initial A2.5 implementation where `value: unknown` allowed silent payload-type mismatches.
+- **Continuation ordering limitation documented (Punch #5)**: TugPopupButton's blink-then-dispatch sequence differs from the `TugEditorContextMenu` precedent's dispatch-then-blink-then-continuation sequence. Acceptable for current value-picker use cases (handlers don't use continuations) but noted in the module docstring as a constraint — future semantic-action popup-button consumers that need the precedent's exact timing should use `TugPopupMenu` directly.
+- **Pre-existing demo bug fixed (Punch #3)**: gallery-tab-bar's `handleTabAdd` previously ignored the incoming componentId and hardcoded `"hello"` for every tab regardless of what the user picked from the `+` menu. After A2.5 the chain carries the real componentId explicitly, so the demo was surfacing a long-standing bug that was previously invisible. Fixed: the demo now looks up the registration and builds a real tab of the chosen type.
+- **`gallery-observable-props` pedagogical adjustment**: the inspector popup previously demonstrated `dispatchTo` directly via callback (`onSelect` → `manager.dispatchTo(cardId, ...)`). After A2.5 it routes through a local `useResponderForm` binding that re-dispatches `setProperty` via `dispatchTo`. Adds one hop but preserves the type-safe item shape. The pedagogical demo still works; the flow is slightly less direct.
+- **Rules of Hooks near-miss caught**: initial gallery-popup-button migration called `useId()` inside `.map()` over `ALL_SIZES`, violating the Rules of Hooks. Fixed before commit by calling `useId()` three times at the top level (sm/md/lg) and keying a static `Record<TugButtonSize, string>`.
+
+**As-shipped caveat about `onTabAdd` test stubs**: the initial A2.5 verification step only ran `bun run check` and `bun test`, both of which ignored test files (`tsconfig.json` excluded `src/__tests__/**/*`, and `bun test` doesn't typecheck). This missed 22 orphaned `onTabAdd={() => {}}` stub props in `tugcard.test.tsx` — React passes them through at runtime, so the tests still passed. The stubs were caught and deleted in the same session as A2.5 via explicit grep. The permanent fix came in the Pre-A2.6 cleanup (Punch #6): test files are now included in typecheck, so orphaned prop references surface as errors at the next `bun run check`.
 
 #### A2.6 — Value-editing controls: `tug-slider`, `tug-value-input`
 

@@ -77,7 +77,7 @@ describe("Section 1: What doesn't work", () => {
     let rerender!: ReturnType<typeof render>["rerender"];
     act(() => { ({ rerender } = render(<Parent shouldRestore={false} />)); });
     act(() => { rerender(<Parent shouldRestore={true} />); });
-    expect(inlineCount).toBe(0);
+    expect(inlineCount!).toBe(0);
   });
 
   it("T-CT02: flushSync inside useLayoutEffect is a noop", () => {
@@ -97,7 +97,7 @@ describe("Section 1: What doesn't work", () => {
     let rerender!: ReturnType<typeof render>["rerender"];
     act(() => { ({ rerender } = render(<Parent shouldRestore={false} />)); });
     act(() => { rerender(<Parent shouldRestore={true} />); });
-    expect(count).toBe(0);
+    expect(count!).toBe(0);
   });
 
   it("T-CT03: bottom-up effect ordering — parent still sees stale child DOM", () => {
@@ -121,7 +121,7 @@ describe("Section 1: What doesn't work", () => {
     let rerender!: ReturnType<typeof render>["rerender"];
     act(() => { ({ rerender } = render(<Shell tab="t1" />)); });
     act(() => { rerender(<Shell tab="t2" />); });
-    expect(parentSaw).toBe(0);
+    expect(parentSaw!).toBe(0);
   });
 
   it("T-CT04: parent no-deps useLayoutEffect doesn't fire on child's re-render", () => {
@@ -204,7 +204,7 @@ describe("Section 2: What does work", () => {
     let rerender!: ReturnType<typeof render>["rerender"];
     act(() => { ({ rerender } = render(<Parent shouldRestore={false} />)); });
     act(() => { rerender(<Parent shouldRestore={true} />); });
-    expect(inlineCount).toBe(3);
+    expect(inlineCount!).toBe(3);
   });
 
   it("T-CT07: useLayoutEffect fires bottom-up (children before parents)", () => {
@@ -260,7 +260,7 @@ describe("Section 3: Single RAF — the right timing mechanism", () => {
     // The child-driven ready callback (T-CT09) is the deterministic
     // alternative that works in both test and browser environments.
     if (rafSawCount !== null) {
-      expect(rafSawCount).toBe(3);
+      expect(rafSawCount as number).toBe(3);
     } else {
       // Test env can't verify RAF timing. This is expected.
       // The browser guarantee: RAF fires after sync re-renders.
@@ -332,7 +332,7 @@ describe("Section 3: Single RAF — the right timing mechanism", () => {
 
     // Child's useLayoutEffect fires after its re-render commits DOM.
     // The parent's callback is called with the committed DOM visible.
-    expect(parentSawItemCount).toBe(3);
+    expect(parentSawItemCount!).toBe(3);
     expect(parentAppliedScroll).toBe(true);
   });
 
@@ -378,7 +378,7 @@ describe("Section 3: Single RAF — the right timing mechanism", () => {
     act(() => { rerender(<Shell tab="t2" />); });
 
     // The parent's second render (from setScrollPhase) sees committed child DOM.
-    expect(secondRenderSaw).toBe(3);
+    expect(secondRenderSaw!).toBe(3);
   });
 });
 

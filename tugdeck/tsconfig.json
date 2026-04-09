@@ -8,7 +8,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "noEmit": true,
     "declaration": false,
     "sourceMap": false,
     "jsx": "react-jsx",
@@ -16,8 +16,14 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "types": ["bun-types"],
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/__tests__/**/*", "src/_archive/**/*"]
+  "exclude": [
+    "src/_archive/**/*",
+    "src/__tests__/conversation-types.test.ts",
+    "src/__tests__/ordering.test.ts"
+  ]
 }

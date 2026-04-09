@@ -714,8 +714,11 @@ export function parseTugColor(
 
   // Resolve preset defaults: if the color has a preset and i/t were not explicitly
   // provided, use the preset's intensity/tone as defaults (instead of 50/50).
-  let defaultIntensity = DEFAULTS.intensity;
-  let defaultTone = DEFAULTS.tone;
+  // Type widened to `number` because `DEFAULTS.intensity` is a literal `50` via
+  // `as const`, but presetValues.intensity is an arbitrary number that needs to
+  // assign into this variable.
+  let defaultIntensity: number = DEFAULTS.intensity;
+  let defaultTone: number = DEFAULTS.tone;
   if (color?.preset && knownPresets) {
     const presetValues = knownPresets.get(color.preset);
     if (presetValues) {

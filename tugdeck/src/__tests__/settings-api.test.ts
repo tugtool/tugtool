@@ -66,10 +66,10 @@ describe("putTabState", () => {
   test("sends PUT to correct URL with json-tagged body", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
 
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: url as string, init: init ?? {} });
       return makeResponse(200, {});
-    };
+    }) as unknown as typeof fetch;
 
     const tabId = "tab-abc-123";
     const bag: TabStateBag = { scroll: { x: 10, y: 50 }, content: { key: "val" } };
@@ -94,10 +94,10 @@ describe("putTabState", () => {
   test("tab ID with special characters is percent-encoded in URL", async () => {
     const calls: { url: string }[] = [];
 
-    globalThis.fetch = async (url: string | URL | Request) => {
+    globalThis.fetch = (async (url: string | URL | Request) => {
       calls.push({ url: url as string });
       return makeResponse(200, {});
-    };
+    }) as unknown as typeof fetch;
 
     const tabId = "tab/with spaces&chars";
     putTabState(tabId, {});
@@ -121,10 +121,10 @@ describe("putFocusedCardId", () => {
   test("sends PUT to correct URL with string-tagged body", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
 
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: url as string, init: init ?? {} });
       return makeResponse(200, {});
-    };
+    }) as unknown as typeof fetch;
 
     putFocusedCardId("card-xyz");
     await new Promise((r) => setTimeout(r, 0));
@@ -226,10 +226,10 @@ describe("putPromptHistory", () => {
   test("sends PUT to correct URL with json-tagged body", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
 
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: url as string, init: init ?? {} });
       return makeResponse(200, {});
-    };
+    }) as unknown as typeof fetch;
 
     const sessionId = "session-abc-123";
     const entries: HistoryEntry[] = [
@@ -294,8 +294,8 @@ describe("getPromptHistory", () => {
       },
     ];
 
-    globalThis.fetch = async () =>
-      makeResponse(200, { kind: "json", value: entries });
+    globalThis.fetch = (async () =>
+      makeResponse(200, { kind: "json", value: entries })) as unknown as typeof fetch;
 
     const result = await getPromptHistory(sessionId);
 
@@ -307,7 +307,7 @@ describe("getPromptHistory", () => {
   });
 
   test("returns empty array on 404 response", async () => {
-    globalThis.fetch = async () => makeResponse(404, null);
+    globalThis.fetch = (async () => makeResponse(404, null)) as unknown as typeof fetch;
 
     const result = await getPromptHistory("session-no-history");
     expect(result).toEqual([]);

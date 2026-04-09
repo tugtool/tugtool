@@ -65,7 +65,7 @@ describe("PromptHistoryStore.push", () => {
 
   test("push() adds entry and notifies subscribers", async () => {
     // Stub fetch so putPromptHistory doesn't throw.
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     let notifications = 0;
@@ -81,7 +81,7 @@ describe("PromptHistoryStore.push", () => {
   });
 
   test("push() updates totalEntries across sessions", async () => {
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     store.push(makeEntry("sess-1", "first"));
@@ -92,7 +92,7 @@ describe("PromptHistoryStore.push", () => {
   });
 
   test("getSnapshot().sessionEntries tracks most recently active session", async () => {
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     store.push(makeEntry("sess-1", "a"));
@@ -115,7 +115,7 @@ describe("PromptHistoryStore capacity cap", () => {
   });
 
   test("push() enforces 200-entry cap — oldest entry is dropped at 201", async () => {
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     const SID = "sess-cap";
@@ -147,7 +147,7 @@ describe("PromptHistoryStore.createProvider", () => {
   });
 
   test("back() returns last entry first, then older entries", async () => {
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     const SID = "sess-nav";
@@ -173,7 +173,7 @@ describe("PromptHistoryStore.createProvider", () => {
   });
 
   test("forward() returns newer entries and draft when reaching end", async () => {
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     const SID = "sess-fwd";
@@ -197,7 +197,7 @@ describe("PromptHistoryStore.createProvider", () => {
   });
 
   test("forward() returns null when already at draft position", async () => {
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     store.push(makeEntry("sess-x", "something"));
@@ -209,7 +209,7 @@ describe("PromptHistoryStore.createProvider", () => {
   });
 
   test("createProvider() does not return entries from other sessions", async () => {
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     store.push(makeEntry("sess-A", "from session A"));
@@ -226,7 +226,7 @@ describe("PromptHistoryStore.createProvider", () => {
   });
 
   test("back() returns null when session has no entries", async () => {
-    globalThis.fetch = async () => makeResponse(200, {});
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     const provider = store.createProvider("empty-session");
@@ -247,10 +247,10 @@ describe("PromptHistoryStore tugbank persistence", () => {
 
   test("push() calls putPromptHistory with correct sessionId and entries", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: url as string, init: init ?? {} });
       return makeResponse(200, {});
-    };
+    }) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     const entry = makeEntry("sess-persist", "hello tugbank");
@@ -276,10 +276,10 @@ describe("PromptHistoryStore tugbank persistence", () => {
 
   test("push() includes all session entries in the PUT body", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: url as string, init: init ?? {} });
       return makeResponse(200, {});
-    };
+    }) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     store.push(makeEntry("sess-multi", "first"));
@@ -312,8 +312,8 @@ describe("PromptHistoryStore.loadSession", () => {
       makeEntry("sess-load", "persisted entry B"),
     ];
 
-    globalThis.fetch = async () =>
-      makeResponse(200, { kind: "json", value: persistedEntries });
+    globalThis.fetch = (async () =>
+      makeResponse(200, { kind: "json", value: persistedEntries })) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     await store.loadSession("sess-load");
@@ -325,10 +325,10 @@ describe("PromptHistoryStore.loadSession", () => {
     let fetchCount = 0;
     const persistedEntries: HistoryEntry[] = [makeEntry("sess-noop", "entry")];
 
-    globalThis.fetch = async () => {
+    globalThis.fetch = (async () => {
       fetchCount++;
       return makeResponse(200, { kind: "json", value: persistedEntries });
-    };
+    }) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     await store.loadSession("sess-noop");
@@ -338,7 +338,7 @@ describe("PromptHistoryStore.loadSession", () => {
   });
 
   test("loadSession() returns empty array on 404", async () => {
-    globalThis.fetch = async () => makeResponse(404, {});
+    globalThis.fetch = (async () => makeResponse(404, {})) as unknown as typeof fetch;
 
     const store = new PromptHistoryStore();
     await store.loadSession("sess-404");

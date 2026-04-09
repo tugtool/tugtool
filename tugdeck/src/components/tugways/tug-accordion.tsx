@@ -13,6 +13,18 @@
  * shape. Uncontrolled accordions still dispatch — Radix's internal state
  * stays in sync regardless of whether anyone observes the dispatch.
  *
+ * ## Single-mode collapse-all sentinel
+ *
+ * For `type="single" collapsible`, when the user collapses the currently
+ * open item (closing all items), Radix reports the new value as an empty
+ * string `""`. TugAccordion forwards that sentinel verbatim in the
+ * `toggleSection` dispatch, so handlers bound via
+ * `useResponderForm.toggleSectionSingle` must treat `""` as "no open
+ * section." This is a deliberate passthrough of Radix's convention —
+ * don't map it to `null` or `undefined` at the dispatch layer, because
+ * doing so would lose the ability to represent the distinct "user
+ * explicitly collapsed the section" event.
+ *
  * Laws: [L06] appearance via CSS, [L11] controls emit actions; responders
  *       handle actions, [L14] Radix Presence owns DOM lifecycle — use
  *       CSS keyframes, [L16] pairings declared, [L19] component authoring guide

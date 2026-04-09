@@ -596,7 +596,7 @@ describe("SmartScroll", () => {
       const onScroll = mock((scroll: SmartScroll) => { received = scroll; });
       const { ss, container } = makeSmartScroll({}, { callbacks: { onScroll } });
       dispatchScroll(container);
-      expect(received).toBe(ss);
+      expect(received as unknown as SmartScroll).toBe(ss);
       ss.dispose();
     });
   });

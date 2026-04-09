@@ -34,8 +34,8 @@ import type { CardRegistration } from "../card-registry";
 // need to inspect fetch calls can temporarily replace globalThis.fetch within
 // their own body and restore it afterward.
 // ---------------------------------------------------------------------------
-const _noopFetch = async () =>
-  ({ status: 200, ok: true, json: async () => ({}) } as unknown as Response);
+const _noopFetch = (async () =>
+  ({ status: 200, ok: true, json: async () => ({}) } as unknown as Response)) as unknown as typeof fetch;
 
 beforeEach(() => {
   globalThis.fetch = _noopFetch;
@@ -83,6 +83,7 @@ function makeRegistration(componentId: string, title = "Test Card"): CardRegistr
   return {
     componentId,
     defaultMeta: { title, closable: true },
+    contentFactory: () => null,
   };
 }
 
@@ -124,7 +125,7 @@ describe("DeckManager.addCard – registered component", () => {
     expect(state.cards.length).toBe(1);
 
     const card = state.cards[0];
-    expect(card.id).toBe(cardId);
+    expect(card.id).toBe(cardId!);
     expect(card.size.width).toBe(400);
     expect(card.size.height).toBe(300);
     expect(card.tabs.length).toBe(1);
@@ -152,6 +153,7 @@ describe("DeckManager.addCard – registered component", () => {
     registerCard({
       componentId: "sticky",
       defaultMeta: { title: "Sticky", closable: false },
+      contentFactory: () => null,
     });
     manager.addCard("sticky");
     const card = manager.getDeckState().cards[0];
@@ -595,7 +597,7 @@ describe("DeckManager.addTab", () => {
     const newTabId = manager.addTab(cardId, "terminal");
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
-    expect(card.activeTabId).toBe(newTabId);
+    expect(card.activeTabId).toBe(newTabId!);
   });
 
   it("returns null for unregistered componentId", () => {
@@ -1075,6 +1077,7 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     registerCard({
       componentId: "gallery-host",
       defaultMeta: { title: "Gallery Host", closable: true },
+      contentFactory: () => null,
       defaultTabs: [
         { id: templateTabId1, componentId: "gallery-buttons", title: "Buttons", closable: false },
         { id: templateTabId2, componentId: "gallery-chain-actions", title: "Chain Actions", closable: false },
@@ -1086,10 +1089,12 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     registerCard({
       componentId: "gallery-buttons",
       defaultMeta: { title: "Buttons", closable: false },
+      contentFactory: () => null,
     });
     registerCard({
       componentId: "gallery-chain-actions",
       defaultMeta: { title: "Chain Actions", closable: false },
+      contentFactory: () => null,
     });
 
     const cardId = manager.addCard("gallery-host");
@@ -1137,6 +1142,7 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     registerCard({
       componentId: "gallery-host",
       defaultMeta: { title: "Gallery Host", closable: true },
+      contentFactory: () => null,
       acceptsFamilies: ["developer"],
     });
     registerCard(makeRegistration("hello", "Hello"));
@@ -1330,10 +1336,10 @@ describe("DeckManager.focusCard calls putFocusedCardId (Phase 5f Step 3)", () =>
     manager.addCard("hello");
 
     const putCalls: string[] = [];
-    globalThis.fetch = async (url: string | URL | Request) => {
+    globalThis.fetch = (async (url: string | URL | Request) => {
       putCalls.push(url as string);
       return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
-    };
+    }) as unknown as typeof fetch;
 
     // Focus card1 (currently not top — card2 was added last).
     manager.handleCardFocused(card1Id);
@@ -1354,10 +1360,10 @@ describe("DeckManager.focusCard calls putFocusedCardId (Phase 5f Step 3)", () =>
     const card2Id = manager.addCard("hello") as string;
 
     const putCalls: string[] = [];
-    globalThis.fetch = async (url: string | URL | Request) => {
+    globalThis.fetch = (async (url: string | URL | Request) => {
       putCalls.push(url as string);
       return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
-    };
+    }) as unknown as typeof fetch;
 
     // card2 is already top-most (last in array). This should still PUT.
     manager.handleCardFocused(card2Id);
@@ -1420,11 +1426,11 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
 
     const fetchedUrls: string[] = [];
     const fetchInits: RequestInit[] = [];
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       fetchedUrls.push(url as string);
       if (init) fetchInits.push(init);
       return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
-    };
+    }) as unknown as typeof fetch;
 
     // Simulate visibilitychange with document.hidden = true.
     Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
@@ -1472,10 +1478,10 @@ describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
     manager.setTabState("tab-z", { scroll: { x: 5, y: 10 } });
 
     const fetchedInits: RequestInit[] = [];
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
       if (init) fetchedInits.push(init);
       return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
-    };
+    }) as unknown as typeof fetch;
 
     // Call prepareForReload — flushes once, sets reloadPending.
     manager.prepareForReload();

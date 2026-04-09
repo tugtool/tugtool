@@ -35,7 +35,7 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 // ---------------------------------------------------------------------------
 
 /** Sample items for the TugPopupButton demo within the Cascade Inspector tab. */
-const INSPECTOR_DEMO_ITEMS: TugPopupButtonItem[] = [
+const INSPECTOR_DEMO_ITEMS: TugPopupButtonItem<string>[] = [
   { action: "setValue", value: "item-alpha", label: "Alpha", icon: <Star size={12} /> },
   { action: "setValue", value: "item-beta", label: "Beta", icon: <Star size={12} /> },
   { action: "setValue", value: "item-gamma", label: "Gamma (disabled)", disabled: true },

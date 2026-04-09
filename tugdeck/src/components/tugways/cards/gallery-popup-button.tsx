@@ -30,26 +30,26 @@ import "./gallery-popup-button.css";
 // as the payload. The parent card's `setValueString` binding writes the
 // value into local demo state so the status line can display it.
 
-const SAMPLE_ITEMS: TugPopupButtonItem[] = [
+const SAMPLE_ITEMS: TugPopupButtonItem<string>[] = [
   { action: "setValue", value: "alpha", label: "Alpha", icon: <Star size={12} /> },
   { action: "setValue", value: "beta", label: "Beta", icon: <Star size={12} /> },
   { action: "setValue", value: "gamma", label: "Gamma" },
   { action: "setValue", value: "delta", label: "Delta (disabled)", disabled: true },
 ];
 
-const SIZE_ITEMS: TugPopupButtonItem[] = [
+const SIZE_ITEMS: TugPopupButtonItem<string>[] = [
   { action: "setValue", value: "sm", label: "Small" },
   { action: "setValue", value: "md", label: "Medium" },
   { action: "setValue", value: "lg", label: "Large" },
 ];
 
-const EMPHASIS_ITEMS: TugPopupButtonItem[] = [
+const EMPHASIS_ITEMS: TugPopupButtonItem<string>[] = [
   { action: "setValue", value: "filled", label: "filled" },
   { action: "setValue", value: "outlined", label: "outlined" },
   { action: "setValue", value: "ghost", label: "ghost" },
 ];
 
-const ROLE_ITEMS: TugPopupButtonItem[] = [
+const ROLE_ITEMS: TugPopupButtonItem<string>[] = [
   { action: "setValue", value: "accent", label: "accent" },
   { action: "setValue", value: "action", label: "action" },
   { action: "setValue", value: "danger", label: "danger" },

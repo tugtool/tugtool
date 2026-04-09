@@ -22,7 +22,7 @@
  */
 
 import "./tug-card.css";
-import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronDown, ChevronUp, Ellipsis, X, icons } from "lucide-react";
 import type { FeedIdValue } from "../../protocol";
 import type { TabItem, TabStateBag } from "../../layout-tree";
@@ -479,6 +479,15 @@ export function Tugcard({
   // deeper in the DOM tree.
   const manager = useRequiredResponderChain();
 
+  // Gensym'd sender id for keyboard-driven tab switches (previousTab /
+  // nextTab handlers below). These handlers dispatch `selectTab` through
+  // the chain so keyboard-driven switches are observable in the dispatch
+  // log and to `observeDispatch` subscribers — matching the mouse-click
+  // and overflow-popup paths. Using a separate sender id (distinct from
+  // the tab bar's own) lets observers tell keyboard-driven switches
+  // apart from click-driven ones. [L11, Punch #1]
+  const keyboardTabNavSenderId = useId();
+
   // Register the content area as a selection boundary with SelectionGuard.
   // Uses useLayoutEffect (Rule of Tug #3) so the boundary is available when
   // Tugcard's selection-restore useLayoutEffect fires. ([D02])
@@ -797,10 +806,16 @@ export function Tugcard({
   }, []);
 
   // previousTab / nextTab: read tabs/active id from refs (closures never
-  // go stale, Rule #5), compute the target tab id, and route through
-  // performSelectTab so the save-state side effect happens exactly once
-  // ([#lifecycle-flow]). Both handlers no-op when there's nothing to
-  // switch to.
+  // go stale, Rule #5), compute the target tab id, and dispatch
+  // `selectTab` through the responder chain. The dispatch walks to this
+  // same Tugcard responder (single handler invocation, no infinite loop)
+  // and runs `performSelectTab` via the `selectTab` action handler
+  // below — so the save-state side effect still happens exactly once,
+  // AND keyboard-driven switches become observable in the dispatch log
+  // and to `observeDispatch` subscribers, matching click-driven and
+  // overflow-popup paths. [L11, Punch #1, #lifecycle-flow]
+  //
+  // Both handlers no-op when there's nothing to switch to.
   const handlePreviousTab = useCallback(() => {
     const currentTabs = tabsRef.current;
     const currentActiveId = activeTabIdRef.current;
@@ -808,8 +823,13 @@ export function Tugcard({
     const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
     if (idx === -1) return;
     const prevIdx = (idx - 1 + currentTabs.length) % currentTabs.length;
-    performSelectTab(currentTabs[prevIdx].id);
-  }, [performSelectTab]);
+    manager.dispatch({
+      action: "selectTab",
+      value: currentTabs[prevIdx].id,
+      sender: keyboardTabNavSenderId,
+      phase: "discrete",
+    });
+  }, [manager, keyboardTabNavSenderId]);
 
   const handleNextTab = useCallback(() => {
     const currentTabs = tabsRef.current;
@@ -818,8 +838,13 @@ export function Tugcard({
     const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
     if (idx === -1) return;
     const nextIdx = (idx + 1) % currentTabs.length;
-    performSelectTab(currentTabs[nextIdx].id);
-  }, [performSelectTab]);
+    manager.dispatch({
+      action: "selectTab",
+      value: currentTabs[nextIdx].id,
+      sender: keyboardTabNavSenderId,
+      phase: "discrete",
+    });
+  }, [manager, keyboardTabNavSenderId]);
 
   const { ResponderScope, responderRef } = useResponder({
     id: cardId,

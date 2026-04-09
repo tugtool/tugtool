@@ -170,8 +170,8 @@ describe("S2: DOM is committed when onContentReady fires", () => {
     act(() => { ({ rerender } = render(<Parent shouldRestore={false} />)); });
     act(() => { rerender(<Parent shouldRestore={true} />); });
 
-    expect(domCountAtReady).toBe(3);
-    expect(domTextAtReady).toBe("alphabetagamma");
+    expect(domCountAtReady as unknown as number).toBe(3);
+    expect(domTextAtReady as unknown as string).toBe("alphabetagamma");
   });
 });
 
@@ -498,7 +498,7 @@ describe("S7: Persistence context indirection", () => {
     act(() => { rerender(<CardShell activeTab="t2" />); });
 
     // onContentReady fired with 3 items in the DOM.
-    expect(readyFiredWithCount).toBe(3);
+    expect(readyFiredWithCount as unknown as number).toBe(3);
   });
 });
 
@@ -562,7 +562,7 @@ describe("S8: Nested content components", () => {
     expect(readyFired).toBe(true);
     // The grandchild's DOM is committed because the wrapper re-rendered
     // (it owns the state), and React commits the entire subtree.
-    expect(domTextAtReady).toBe("deep-adeep-b");
+    expect(domTextAtReady as unknown as string).toBe("deep-adeep-b");
   });
 });
 
@@ -662,8 +662,8 @@ describe("S10: DOM measurements in onContentReady callback", () => {
     act(() => { rerender(<Parent shouldRestore={true} />); });
 
     expect(scrollApplied).toBe(true);
-    expect(measuredChildCount).toBe(3);
-    expect(measuredAttributes).toBe("true");
+    expect(measuredChildCount as unknown as number).toBe(3);
+    expect(measuredAttributes as unknown as string).toBe("true");
   });
 });
 

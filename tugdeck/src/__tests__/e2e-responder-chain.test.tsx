@@ -91,6 +91,8 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     // Phase 5f3 additions
     registerSaveCallback: (_id: string, _callback: () => void) => {},
     unregisterSaveCallback: (_id: string) => {},
+    // Collapse toggle
+    toggleCardCollapse: (_id: string) => {},
   };
 }
 
@@ -145,6 +147,8 @@ class ReactiveStore implements IDeckManagerStore {
   // Phase 5f3 additions
   registerSaveCallback = (_id: string, _callback: () => void): void => {};
   unregisterSaveCallback = (_id: string): void => {};
+  // Collapse toggle
+  toggleCardCollapse = (_id: string): void => {};
 
   setState(next: DeckState): void {
     this._state = next;
@@ -207,7 +211,7 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
         <ResponderChainProvider>
           <ManagerCapture managerRef={managerRef} />
           <DeckManagerContext.Provider value={reactiveStore}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
       );
@@ -277,7 +281,7 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
         <ResponderChainProvider>
           <ManagerCapture managerRef={managerRef} />
           <DeckManagerContext.Provider value={reactiveStore}>
-            <DeckCanvas connection={null} />
+            <DeckCanvas />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
       );

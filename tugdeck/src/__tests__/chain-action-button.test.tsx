@@ -26,6 +26,13 @@ import { describe, it, expect, mock, afterEach, spyOn } from "bun:test";
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import type { ActionHandler } from "@/components/tugways/responder-chain";
+import type { TugAction } from "@/components/tugways/action-vocabulary";
+
+// Test helpers: synthetic action names for chain-mechanics tests.
+const asActions = (a: Record<string, ActionHandler>) =>
+  a as unknown as Partial<Record<TugAction, ActionHandler>>;
+const asAction = (name: string) => name as unknown as TugAction;
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugButton } from "@/components/tugways/internal/tug-button";
@@ -144,7 +151,7 @@ describe("chain-action TugButton – click behavior", () => {
     manager.register({
       id: "root",
       parentId: null,
-      actions: { copy: (event: ActionEvent) => dispatched.push(event) },
+      actions: { copy: (event: ActionEvent) => { dispatched.push(event); } },
     });
 
     const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
@@ -349,13 +356,13 @@ describe("chain-action TugButton – target prop", () => {
     manager.register({
       id: "canvas",
       parentId: null,
-      actions: { other: (event: ActionEvent) => rootDispatched.push(event) },
+      actions: asActions({ other: (event: ActionEvent) => { rootDispatched.push(event); } }),
     });
     // target node: handles actionName
     manager.register({
       id: "inspector",
       parentId: "canvas",
-      actions: { [actionName]: (event: ActionEvent) => targetDispatched.push(event) },
+      actions: asActions({ [actionName]: (event: ActionEvent) => { targetDispatched.push(event); } }),
     });
     return { manager, targetDispatched, rootDispatched };
   }
@@ -364,7 +371,7 @@ describe("chain-action TugButton – target prop", () => {
     const { manager, targetDispatched } = makeManagerWithTarget("setColor");
 
     const { container } = renderWithManager(manager, {
-      action: "setColor",
+      action: asAction("setColor"),
       target: "inspector",
       children: "Set Color",
     });
@@ -381,7 +388,7 @@ describe("chain-action TugButton – target prop", () => {
 
     // Button with target="inspector" -- inspector handles "setColor"
     const { container } = renderWithManager(manager, {
-      action: "setColor",
+      action: asAction("setColor"),
       target: "inspector",
       children: "Set Color",
     });
@@ -410,7 +417,7 @@ describe("chain-action TugButton – target prop", () => {
     manager.register({
       id: "root",
       parentId: null,
-      actions: { copy: (event: ActionEvent) => dispatched.push(event) },
+      actions: { copy: (event: ActionEvent) => { dispatched.push(event); } },
     });
 
     const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
@@ -460,7 +467,7 @@ describe("chain-action TugButton – target prop", () => {
     });
 
     const { container } = renderWithManager(manager, {
-      action: "setColor",
+      action: asAction("setColor"),
       target: "inspector",
       children: "Set Color",
     });

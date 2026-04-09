@@ -142,7 +142,7 @@ export function GalleryDropdown() {
 // ---------------------------------------------------------------------------
 
 /** Sample items for the TugPopupButton gallery demo. Module-scope to avoid recreation. */
-const DEMO_POPUP_BUTTON_ITEMS: TugPopupButtonItem[] = [
+const DEMO_POPUP_BUTTON_ITEMS: TugPopupButtonItem<string>[] = [
   { action: "setValue", value: "option-alpha", label: "Alpha",            icon: <Star size={12} /> },
   { action: "setValue", value: "option-beta",  label: "Beta",             icon: <Star size={12} /> },
   { action: "setValue", value: "option-gamma", label: "Gamma (disabled)", disabled: true },

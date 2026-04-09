@@ -63,6 +63,15 @@ function makeMockStore() {
     ) => {
       calls.mergeTab.push([sourceCardId, tabId, targetCardId, insertAtIndex]);
     },
+    // Phase 5f additions
+    getTabState: () => undefined,
+    setTabState: () => {},
+    initialFocusedCardId: undefined,
+    // Phase 5f3 additions
+    registerSaveCallback: () => {},
+    unregisterSaveCallback: () => {},
+    // Collapse toggle
+    toggleCardCollapse: () => {},
     _calls: calls,
   };
 }

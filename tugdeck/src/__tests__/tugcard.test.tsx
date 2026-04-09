@@ -31,6 +31,7 @@ import { ResponderChainContext, ResponderChainManager } from "@/components/tugwa
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { TabItem } from "@/layout-tree";
+import type { FeedIdValue } from "@/protocol";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager, makeMockStore } from "./mock-deck-manager-store";
 import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
@@ -93,7 +94,7 @@ function renderWithManagerAndStore(
 const defaultProps = {
   cardId: "card-test-1",
   meta: { title: "Test Card" },
-  feedIds: [] as readonly number[],
+  feedIds: [] as readonly FeedIdValue[],
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -360,6 +361,7 @@ function registerTabCard(componentId: string, title: string, icon?: string): voi
   registerCard({
     componentId,
     defaultMeta: { title, icon, closable: true },
+    contentFactory: () => <div>{title}</div>,
   });
 }
 
@@ -835,6 +837,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
     registerCard({
       componentId: "hello",
       defaultMeta: { title: "Hello", closable: true },
+      contentFactory: () => <div>Hello</div>,
     });
 
     const tab1: TabItem = { id: "tab-sf4-1", componentId: "hello", title: "Tab 1", closable: true };
@@ -887,6 +890,7 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
     registerCard({
       componentId: "hello",
       defaultMeta: { title: "Hello", closable: true },
+      contentFactory: () => <div>Hello</div>,
     });
 
     const tab1: TabItem = { id: "tab-sg-1", componentId: "hello", title: "Tab 1", closable: true };
@@ -954,6 +958,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     registerCard({
       componentId: "hello",
       defaultMeta: { title: "Hello", closable: true },
+      contentFactory: () => <div>Hello</div>,
     });
 
     const tab1: TabItem = { id: "tab-rs-1", componentId: "hello", title: "Tab 1", closable: true };
@@ -1011,6 +1016,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     registerCard({
       componentId: "hello",
       defaultMeta: { title: "Hello", closable: true },
+      contentFactory: () => <div>Hello</div>,
     });
 
     const tab1: TabItem = { id: "tab-rsel-1", componentId: "hello", title: "Tab 1", closable: true };
@@ -1063,6 +1069,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     registerCard({
       componentId: "hello",
       defaultMeta: { title: "Hello", closable: true },
+      contentFactory: () => <div>Hello</div>,
     });
 
     const tab1: TabItem = { id: "tab-rcb-1", componentId: "hello", title: "Tab 1", closable: true };
@@ -1140,6 +1147,7 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
     registerCard({
       componentId: "hello",
       defaultMeta: { title: "Hello", closable: true },
+      contentFactory: () => <div>Hello</div>,
     });
 
     const tab1: TabItem = { id: "tab-t01-1", componentId: "hello", title: "Tab 1", closable: true };

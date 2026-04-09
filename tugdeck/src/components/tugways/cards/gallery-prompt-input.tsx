@@ -55,7 +55,7 @@ function galleryDropHandler(files: FileList): AtomSegment[] {
 // Editor font options
 // ===================================================================
 
-const EDITOR_FONT_OPTIONS: TugPopupButtonItem[] = [
+const EDITOR_FONT_OPTIONS: TugPopupButtonItem<string>[] = [
   { action: "setValue", value: "plex-sans", label: "IBM Plex Sans" },
   { action: "setValue", value: "inter", label: "Inter" },
   { action: "setValue", value: "hack", label: "Hack (mono)" },
@@ -63,7 +63,7 @@ const EDITOR_FONT_OPTIONS: TugPopupButtonItem[] = [
 
 // Font size items dispatch numeric payloads — the parent binds via the
 // setValueNumber slot in useResponderForm and reads event.value as number.
-const FONT_SIZE_OPTIONS: TugPopupButtonItem[] = [
+const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: "setValue", value: 11, label: "11 px" },
   { action: "setValue", value: 12, label: "12 px" },
   { action: "setValue", value: 13, label: "13 px" },
@@ -74,7 +74,7 @@ const FONT_SIZE_OPTIONS: TugPopupButtonItem[] = [
 ];
 
 // Letter spacing items also dispatch numeric payloads (fractional px).
-const LETTER_SPACING_OPTIONS: TugPopupButtonItem[] = [
+const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: "setValue", value: -0.25, label: "-0.25 px" },
   { action: "setValue", value: -0.15, label: "-0.15 px" },
   { action: "setValue", value: -0.10, label: "-0.10 px" },

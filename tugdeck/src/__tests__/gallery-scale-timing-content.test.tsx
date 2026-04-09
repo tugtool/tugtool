@@ -64,7 +64,7 @@ function invokeRangeOnPointerUp(el: HTMLInputElement, value: string): void {
   const props = getReactProps(el);
   const onPointerUp = props?.["onPointerUp"] as ((e: { target: { value: string } }) => void) | undefined;
   if (typeof onPointerUp === "function") {
-    act(() => { onPointerUp!({ target: { value } } as unknown as React.PointerEvent<HTMLInputElement>); });
+    act(() => { onPointerUp!({ target: { value } }); });
   }
 }
 
