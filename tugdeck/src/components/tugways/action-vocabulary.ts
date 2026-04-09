@@ -200,8 +200,10 @@ export type MetaAction = "setProperty";
 //
 // These are used only by gallery cards and tests to demonstrate chain
 // features (mutation-tx previews, chain-action buttons). They are not
-// intended for production use. Kept separate so real production code
-// can grep for TugAction minus these and get only shipping actions.
+// intended for production use. Exported as a separate string-literal
+// union so galleries can opt into them via the `TugAction<Extra>`
+// generic parameter: `TugAction<GalleryAction>`. Production code uses
+// bare `TugAction` and never sees these names in autocomplete.
 //
 // demoAction:      payload — none. Generic "something happened" for
 //                  the chain-actions gallery demonstration.
@@ -222,8 +224,30 @@ export type GalleryAction =
  * The complete set of typed action names recognized by the responder
  * chain. Every ActionEvent's `action`, every `useResponder` actions
  * map key, and every KeyBinding.action must be one of these.
+ *
+ * Generic on `Extra extends string` so non-production consumers
+ * (galleries, demos, tests) can opt into additional action names
+ * without polluting the production vocabulary's autocomplete. The
+ * default is `never`, so bare `TugAction` is the production-only set.
+ *
+ * Usage:
+ *
+ * ```ts
+ * // Production: bare TugAction — GalleryAction names are NOT in the union.
+ * const action: TugAction = "cut";           // OK
+ * const bad: TugAction = "previewColor";     // compile error
+ *
+ * // Gallery opt-in: pass GalleryAction as the Extra parameter.
+ * const demo: TugAction<GalleryAction> = "previewColor"; // OK
+ * ```
+ *
+ * The chain's dispatch and registration APIs are likewise generic on
+ * `Extra`, defaulting to `never`. Production call sites see only
+ * production names; gallery call sites thread `GalleryAction` (or any
+ * other string-literal union) through the type parameter and see
+ * their extras alongside the production names.
  */
-export type TugAction =
+export type TugAction<Extra extends string = never> =
   | ClipboardAction
   | EditingAction
   | NavigationAction
@@ -233,7 +257,7 @@ export type TugAction =
   | AccordionAction
   | WindowAction
   | MetaAction
-  | GalleryAction;
+  | Extra;
 
 // ---- narrowValue ----
 

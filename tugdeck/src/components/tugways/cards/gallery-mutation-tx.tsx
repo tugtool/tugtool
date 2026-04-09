@@ -28,7 +28,7 @@
 import React, { useRef, useLayoutEffect } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
+import type { ActionEvent, GalleryAction } from "@/components/tugways/responder-chain";
 import { mutationTransactionManager } from "@/components/tugways/mutation-transaction";
 import { StyleCascadeReader } from "@/components/tugways/style-cascade-reader";
 
@@ -70,7 +70,7 @@ function xToHue(clientX: number, rect: DOMRect): number {
  * are not part of the continuous gesture path.
  *
  * **Responder wiring:**
- * Controls call `manager.dispatchTo(DEMO_RESPONDER_ID, event)` (explicit-target
+ * Controls call `manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, event)` (explicit-target
  * dispatch). The demo's own responder node handles `previewColor`, `previewHue`,
  * and `previewPosition` actions and translates action phases to transaction
  * lifecycle calls.
@@ -144,11 +144,16 @@ export function GalleryMutationTx() {
   // ([D41]) so the node is registered before any event can fire.
   // The action handlers close over stable refs (mockCardRef, display refs) and
   // the singleton mutationTransactionManager -- no stale closure issues.
-  useResponder({
+  //
+  // The `<GalleryAction>` type parameter opts into the demo-only
+  // vocabulary. `previewColor`, `previewHue`, and `previewPosition`
+  // are gallery-only action names; passing `GalleryAction` widens the
+  // action map's key set to include them alongside production actions.
+  useResponder<GalleryAction>({
     id: DEMO_RESPONDER_ID,
     actions: {
       // ---- previewColor: maps color input events to background-color transaction ----
-      previewColor: (event: ActionEvent) => {
+      previewColor: (event: ActionEvent<GalleryAction>) => {
         const el = mockCardRef.current;
         if (!el) return;
         const color = event.value as string;
@@ -177,7 +182,7 @@ export function GalleryMutationTx() {
       },
 
       // ---- previewHue: maps pointer-scrub x-position to HSL hue on background-color ----
-      previewHue: (event: ActionEvent) => {
+      previewHue: (event: ActionEvent<GalleryAction>) => {
         const el = mockCardRef.current;
         if (!el) return;
 
@@ -206,7 +211,7 @@ export function GalleryMutationTx() {
       },
 
       // ---- previewPosition: maps range slider input to left/top on the mock card ----
-      previewPosition: (event: ActionEvent) => {
+      previewPosition: (event: ActionEvent<GalleryAction>) => {
         const el = mockCardRef.current;
         if (!el) return;
         const { left, top } = (event.value as { left: number; top: number });
@@ -360,7 +365,7 @@ export function GalleryMutationTx() {
                 target && mutationTransactionManager.getActiveTransaction(target) !== null
                   ? "change"
                   : "begin";
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewColor",
                 phase,
                 value: color,
@@ -368,7 +373,7 @@ export function GalleryMutationTx() {
             }}
             onChange={(e) => {
               const color = (e.target as HTMLInputElement).value;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewColor",
                 phase: "commit",
                 value: color,
@@ -401,7 +406,7 @@ export function GalleryMutationTx() {
                 e.currentTarget.setPointerCapture(e.pointerId);
               }
               scrubActiveRef.current = true;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewHue",
                 phase: "begin",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
@@ -409,7 +414,7 @@ export function GalleryMutationTx() {
             }}
             onPointerMove={(e) => {
               if (!scrubActiveRef.current) return;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewHue",
                 phase: "change",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
@@ -418,7 +423,7 @@ export function GalleryMutationTx() {
             onPointerUp={(e) => {
               if (!scrubActiveRef.current) return;
               scrubActiveRef.current = false;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewHue",
                 phase: "commit",
                 value: xToHue(e.clientX, e.currentTarget.getBoundingClientRect()),
@@ -427,7 +432,7 @@ export function GalleryMutationTx() {
             onPointerCancel={() => {
               if (!scrubActiveRef.current) return;
               scrubActiveRef.current = false;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewHue",
                 phase: "cancel",
               });
@@ -435,7 +440,7 @@ export function GalleryMutationTx() {
             onKeyDown={(e) => {
               if (e.key === "Escape" && scrubActiveRef.current) {
                 scrubActiveRef.current = false;
-                manager.dispatchTo(DEMO_RESPONDER_ID, {
+                manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                   action: "previewHue",
                   phase: "cancel",
                 });
@@ -475,7 +480,7 @@ export function GalleryMutationTx() {
               // Begin on pointerdown -- NOT on focus (to avoid auto-cancel on focus).
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewPosition",
                 phase: "begin",
                 value: { left, top },
@@ -484,7 +489,7 @@ export function GalleryMutationTx() {
             onInput={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewPosition",
                 phase: "change",
                 value: { left, top },
@@ -493,7 +498,7 @@ export function GalleryMutationTx() {
             onPointerUp={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewPosition",
                 phase: "commit",
                 value: { left, top },
@@ -517,7 +522,7 @@ export function GalleryMutationTx() {
             onPointerDown={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewPosition",
                 phase: "begin",
                 value: { left, top },
@@ -526,7 +531,7 @@ export function GalleryMutationTx() {
             onInput={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewPosition",
                 phase: "change",
                 value: { left, top },
@@ -535,7 +540,7 @@ export function GalleryMutationTx() {
             onPointerUp={() => {
               const left = sliderXRef.current ? Number(sliderXRef.current.value) : INITIAL_LEFT_PX;
               const top = sliderYRef.current ? Number(sliderYRef.current.value) : INITIAL_TOP_PX;
-              manager.dispatchTo(DEMO_RESPONDER_ID, {
+              manager.dispatchTo<GalleryAction>(DEMO_RESPONDER_ID, {
                 action: "previewPosition",
                 phase: "commit",
                 value: { left, top },

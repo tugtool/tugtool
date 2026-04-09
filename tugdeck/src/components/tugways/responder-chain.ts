@@ -16,7 +16,7 @@
 import { createContext } from "react";
 import type { TugAction } from "./action-vocabulary";
 
-export type { TugAction } from "./action-vocabulary";
+export type { TugAction, GalleryAction } from "./action-vocabulary";
 
 // ---- ActionPhase and ActionEvent ----
 
@@ -44,13 +44,18 @@ export type ActionPhase = "discrete" | "begin" | "change" | "commit" | "cancel";
  * [D02] Handler signature is (event: ActionEvent) => void | (() => void)
  * Spec S01 (#s01-action-event-type)
  */
-export interface ActionEvent {
+export interface ActionEvent<Extra extends string = never> {
   /**
    * Semantic action name from the TugAction vocabulary.
    * See action-vocabulary.ts for the complete list and payload
    * conventions. Misspellings are compile errors.
+   *
+   * The `Extra` type parameter lets non-production consumers
+   * (galleries, demos) extend the vocabulary without polluting the
+   * default. Defaults to `never` — bare `ActionEvent` is the
+   * production form.
    */
-  action: TugAction;
+  action: TugAction<Extra>;
   /** The control that initiated the event (ref or instance). Optional. */
   sender?: unknown;
   /** Typed payload (color, number, point, etc.). Optional for discrete actions. */
@@ -77,8 +82,14 @@ export interface ActionEvent {
  */
 export type ActionHandlerResult = void | (() => void);
 
-/** Action handler signature — receives the event, optionally returns a continuation. */
-export type ActionHandler = (event: ActionEvent) => ActionHandlerResult;
+/**
+ * Action handler signature — receives the event, optionally returns a
+ * continuation. Generic on the same `Extra` parameter as `ActionEvent`
+ * so gallery consumers can type their handlers with opt-in extras.
+ */
+export type ActionHandler<Extra extends string = never> = (
+  event: ActionEvent<Extra>,
+) => ActionHandlerResult;
 
 // ---- ResponderNode interface ----
 
@@ -98,22 +109,23 @@ export type ActionHandler = (event: ActionEvent) => ActionHandlerResult;
  * [D02] Handler signature is (event: ActionEvent) => void
  * Spec S04 (#s04-responder-node-actions)
  */
-export interface ResponderNode {
+export interface ResponderNode<Extra extends string = never> {
   id: string;
   parentId: string | null;
   /**
    * Partial map of TugAction names to handlers. A responder registers
    * handlers for only the subset of actions it cares about; other
-   * actions walk past it in the chain.
+   * actions walk past it in the chain. Generic on `Extra` so galleries
+   * can register handlers for opt-in action names.
    */
-  actions: Partial<Record<TugAction, ActionHandler>>;
+  actions: Partial<Record<TugAction<Extra>, ActionHandler<Extra>>>;
   /**
    * Advisory capability override for validation queries only.
    * dispatch() never consults this -- only canHandle() and validateAction()
    * queries do. Use for runtime-determined capabilities not in the actions map.
    */
-  canHandle?: (action: TugAction) => boolean;
-  validateAction?: (action: TugAction) => boolean;
+  canHandle?: (action: TugAction<Extra>) => boolean;
+  validateAction?: (action: TugAction<Extra>) => boolean;
 }
 
 // ---- ResponderChainManager ----
@@ -152,7 +164,47 @@ export interface DispatchResult {
  */
 export type DispatchObserver = (event: ActionEvent, handled: boolean) => void;
 
+/**
+ * Internal helper: look up an action handler on a stored responder
+ * node. Accepts a `TugAction<Extra>` (widened by the caller) and
+ * narrows to the stored node's key type via a single localized cast.
+ *
+ * Rationale: `ResponderNode.actions` is typed against `TugAction`
+ * (the default `never` form), but the manager's public dispatch and
+ * query methods accept `TugAction<Extra>` so gallery and test
+ * consumers can register opt-in action names. At runtime every
+ * action is just a string, and the stored function object only ever
+ * receives events whose action matches the key it was registered
+ * under — so the variance mismatch is soundness at runtime, and the
+ * cast is the minimum amount of type-system escape needed to bridge
+ * the generic public API to the non-generic internal storage.
+ */
+function lookupHandler(
+  node: ResponderNode,
+  action: string,
+): ActionHandler | undefined {
+  return node.actions[action as TugAction];
+}
+
 export class ResponderChainManager {
+  // Internal storage uses the default `ResponderNode` (i.e.
+  // `ResponderNode<never>`) — the narrowest, production-only form.
+  // Gallery consumers that register with an `Extra` type parameter
+  // widen at the `register` boundary via an `as unknown as` assertion.
+  // The assertion is sound at runtime because the manager treats
+  // action names as opaque strings: it only indexes `node.actions` by
+  // `event.action` and passes the event back to the same function
+  // object that was registered for that key, so the handler always
+  // receives the exact event shape it was written against.
+  //
+  // TypeScript's variance rules forbid a direct structural widening
+  // (ActionHandler is contravariant in its event parameter), hence
+  // the one `as unknown as` cast inside `register`. The escape hatch
+  // is confined to that single call site; every other method below
+  // operates on `ResponderNode<never>` safely, because the extras
+  // that gallery consumers add are only visible through their own
+  // generic API — the manager never constructs new ActionEvents on
+  // their behalf.
   private nodes: Map<string, ResponderNode> = new Map();
   private firstResponderId: string | null = null;
   private validationVersion = 0;
@@ -170,8 +222,10 @@ export class ResponderChainManager {
    * responder automatically. Increments validationVersion and notifies
    * subscribers in that case.
    */
-  register(node: ResponderNode): void {
-    this.nodes.set(node.id, node);
+  register<Extra extends string = never>(node: ResponderNode<Extra>): void {
+    // Widen to `ResponderNode<never>` for internal storage. See the
+    // comment on `private nodes` for why this cast is sound at runtime.
+    this.nodes.set(node.id, node as unknown as ResponderNode);
     if (node.parentId === null && this.firstResponderId === null) {
       this.firstResponderId = node.id;
       this.syncFirstResponderDomAttribute();
@@ -247,7 +301,9 @@ export class ResponderChainManager {
    * [D02] Handlers may return continuations for two-phase execution
    * Spec S02 (#s02-dispatch-method)
    */
-  dispatchForContinuation(event: ActionEvent): DispatchResult {
+  dispatchForContinuation<Extra extends string = never>(
+    event: ActionEvent<Extra>,
+  ): DispatchResult {
     let handled = false;
     let continuation: (() => void) | undefined;
     let handledBy: string | null = null;
@@ -256,9 +312,9 @@ export class ResponderChainManager {
     while (currentId !== null) {
       const node = this.nodes.get(currentId);
       if (!node) break;
-      const handler = node.actions[event.action];
+      const handler = lookupHandler(node, event.action);
       if (handler !== undefined) {
-        const result = handler(event);
+        const result = handler(event as ActionEvent);
         if (typeof result === "function") {
           continuation = result;
         }
@@ -269,8 +325,8 @@ export class ResponderChainManager {
       currentId = node.parentId;
     }
 
-    this.notifyDispatchObservers(event, handled);
-    this.logDispatch(event, handled, handledBy);
+    this.notifyDispatchObservers(event as ActionEvent, handled);
+    this.logDispatch(event as ActionEvent, handled, handledBy);
     return { handled, continuation };
   }
 
@@ -281,7 +337,7 @@ export class ResponderChainManager {
    * [D01] ActionEvent is the sole dispatch currency
    * Spec S02 (#s02-dispatch-method)
    */
-  dispatch(event: ActionEvent): boolean {
+  dispatch<Extra extends string = never>(event: ActionEvent<Extra>): boolean {
     return this.dispatchForContinuation(event).handled;
   }
 
@@ -296,13 +352,13 @@ export class ResponderChainManager {
    *    it returns true, return true.
    * Continues to parent if neither matches. Returns false if root reached.
    */
-  canHandle(action: TugAction): boolean {
+  canHandle<Extra extends string = never>(action: TugAction<Extra>): boolean {
     let currentId: string | null = this.firstResponderId;
     while (currentId !== null) {
       const node = this.nodes.get(currentId);
       if (!node) break;
-      if (node.actions[action] !== undefined) return true;
-      if (node.canHandle && node.canHandle(action)) return true;
+      if (lookupHandler(node, action) !== undefined) return true;
+      if (node.canHandle && node.canHandle(action as TugAction)) return true;
       currentId = node.parentId;
     }
     return false;
@@ -315,16 +371,18 @@ export class ResponderChainManager {
    * responder's validateAction function if present; defaults to true if not.
    * Returns false if no responder can handle the action.
    */
-  validateAction(action: TugAction): boolean {
+  validateAction<Extra extends string = never>(action: TugAction<Extra>): boolean {
     let currentId: string | null = this.firstResponderId;
     while (currentId !== null) {
       const node = this.nodes.get(currentId);
       if (!node) break;
       const handles =
-        node.actions[action] !== undefined ||
-        (node.canHandle ? node.canHandle(action) : false);
+        lookupHandler(node, action) !== undefined ||
+        (node.canHandle ? node.canHandle(action as TugAction) : false);
       if (handles) {
-        return node.validateAction ? node.validateAction(action) : true;
+        return node.validateAction
+          ? node.validateAction(action as TugAction)
+          : true;
       }
       currentId = node.parentId;
     }
@@ -347,18 +405,21 @@ export class ResponderChainManager {
    * [D03] dispatchTo throws on unregistered target
    * Spec S03 (#s03-dispatch-to-method)
    */
-  dispatchTo(targetId: string, event: ActionEvent): boolean {
+  dispatchTo<Extra extends string = never>(
+    targetId: string,
+    event: ActionEvent<Extra>,
+  ): boolean {
     const node = this.nodes.get(targetId);
     if (!node) {
       throw new Error(`dispatchTo: target "${targetId}" is not registered`);
     }
     let handled = false;
-    const handler = node.actions[event.action];
+    const handler = lookupHandler(node, event.action);
     if (handler !== undefined) {
-      handler(event);
+      handler(event as ActionEvent);
       handled = true;
     }
-    this.notifyDispatchObservers(event, handled);
+    this.notifyDispatchObservers(event as ActionEvent, handled);
     return handled;
   }
 
@@ -372,22 +433,25 @@ export class ResponderChainManager {
    * action). Callers that want two-phase execution use this method and
    * invoke the returned continuation at their commit point.
    */
-  dispatchToForContinuation(targetId: string, event: ActionEvent): DispatchResult {
+  dispatchToForContinuation<Extra extends string = never>(
+    targetId: string,
+    event: ActionEvent<Extra>,
+  ): DispatchResult {
     const node = this.nodes.get(targetId);
     if (!node) {
       throw new Error(`dispatchTo: target "${targetId}" is not registered`);
     }
     let handled = false;
     let continuation: (() => void) | undefined;
-    const handler = node.actions[event.action];
+    const handler = lookupHandler(node, event.action);
     if (handler !== undefined) {
-      const result = handler(event);
+      const result = handler(event as ActionEvent);
       if (typeof result === "function") {
         continuation = result;
       }
       handled = true;
     }
-    this.notifyDispatchObservers(event, handled);
+    this.notifyDispatchObservers(event as ActionEvent, handled);
     return { handled, continuation };
   }
 
@@ -438,11 +502,14 @@ export class ResponderChainManager {
    * [D07] nodeCanHandle for per-node capability query
    * Spec S07 (#s07-node-can-handle)
    */
-  nodeCanHandle(nodeId: string, action: TugAction): boolean {
+  nodeCanHandle<Extra extends string = never>(
+    nodeId: string,
+    action: TugAction<Extra>,
+  ): boolean {
     const node = this.nodes.get(nodeId);
     if (!node) return false;
-    if (node.actions[action] !== undefined) return true;
-    if (node.canHandle && node.canHandle(action)) return true;
+    if (lookupHandler(node, action) !== undefined) return true;
+    if (node.canHandle && node.canHandle(action as TugAction)) return true;
     return false;
   }
 

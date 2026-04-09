@@ -25,7 +25,7 @@
 
 import React, { createContext, useCallback, useContext, useLayoutEffect, useRef } from "react";
 import { ResponderChainContext } from "./responder-chain";
-import type { ActionHandler, TugAction } from "./responder-chain";
+import type { ActionHandler, ResponderNode, TugAction } from "./responder-chain";
 
 // ---- ResponderParentContext ----
 
@@ -40,8 +40,18 @@ export const ResponderParentContext = createContext<string | null>(null);
 
 // ---- UseResponderOptions ----
 
-/** Options for useResponder. */
-export interface UseResponderOptions {
+/**
+ * Options for useResponder.
+ *
+ * Generic on `Extra extends string` so consumers can opt into action
+ * names outside the production `TugAction` vocabulary (see
+ * `action-vocabulary.ts`'s docstring). Production call sites use
+ * `useResponder({ ... })` with the default `never` and see only
+ * production action names in autocomplete; galleries and demos use
+ * `useResponder<GalleryAction>({ ... })` to register handlers for
+ * their opt-in names.
+ */
+export interface UseResponderOptions<Extra extends string = never> {
   /** Stable string ID for this responder node. Should be a constant at the call site. */
   id: string;
   /**
@@ -59,14 +69,21 @@ export interface UseResponderOptions {
    * [D02] Handler signature is (event: ActionEvent) => void | (() => void)
    * Spec S05 (#s05-use-responder-options)
    */
-  actions?: Partial<Record<TugAction, ActionHandler>>;
+  actions?: Partial<Record<TugAction<Extra>, ActionHandler<Extra>>>;
   /**
    * Advisory canHandle function for actions not in the actions map.
    * Consulted by canHandle() and validateAction() queries only -- never by dispatch().
+   *
+   * Optional — when omitted, the hook skips installing the wrapper
+   * closure entirely and the responder node's `canHandle` field
+   * stays `undefined`, which the chain treats as "no advisory
+   * override." Callers who genuinely need runtime-determined
+   * capabilities (e.g. DeckCanvas as last-resort responder) provide
+   * this function; all other responders leave it out.
    */
-  canHandle?: (action: TugAction) => boolean;
+  canHandle?: (action: TugAction<Extra>) => boolean;
   /** Per-action enabled-state query. Defaults to true if omitted. */
-  validateAction?: (action: TugAction) => boolean;
+  validateAction?: (action: TugAction<Extra>) => boolean;
 }
 
 // ---- useResponder ----
@@ -110,7 +127,9 @@ export interface UseResponderResult {
  *   2. Attach responderRef to its root DOM element so the chain can
  *      resolve it during pointerdown capture.
  */
-export function useResponder(options: UseResponderOptions): UseResponderResult {
+export function useResponder<Extra extends string = never>(
+  options: UseResponderOptions<Extra>,
+): UseResponderResult {
   const manager = useContext(ResponderChainContext);
 
   if (manager === null) {
@@ -127,6 +146,24 @@ export function useResponder(options: UseResponderOptions): UseResponderResult {
   // loophole described in the audit doc section 2.5 / R5).
   const optionsRef = useRef(options);
   optionsRef.current = options;
+
+  // Capture whether the caller provided `canHandle` / `validateAction`
+  // at mount time. The hook uses these flags to decide whether to
+  // install live-lookup closures for those fields or to leave them
+  // undefined on the registered node. Leaving them undefined lets the
+  // chain's dispatch/query code skip the advisory-override branch
+  // entirely, which is the expected behavior for the vast majority of
+  // responders that don't need runtime capability overrides.
+  //
+  // Design note: the flag is captured once at mount (not read live
+  // from optionsRef). A caller that adds `canHandle` after the fact
+  // would need to re-register to have it take effect — which is fine,
+  // because `canHandle` existence is a structural property of the
+  // responder's identity, not a per-render toggle. The R5 live-proxy
+  // mechanism handles handler identity changes; this flag handles
+  // structural shape changes, which are not expected to happen.
+  const hasCanHandleAtMount = useRef(options.canHandle !== undefined);
+  const hasValidateActionAtMount = useRef(options.validateAction !== undefined);
 
   // Register during the commit phase (useLayoutEffect), unregister on unmount.
   // useLayoutEffect fires synchronously after all DOM mutations but before the
@@ -149,43 +186,58 @@ export function useResponder(options: UseResponderOptions): UseResponderResult {
     // so re-renders with new handler identities are reflected without
     // re-registering the node. Closes the stale-closure loophole
     // documented in R5 of the audit.
-    const liveActions = new Proxy({} as Partial<Record<TugAction, ActionHandler>>, {
-      get(_, prop: string | symbol): ActionHandler | undefined {
-        if (typeof prop !== "string") return undefined;
-        const actions = optionsRef.current.actions;
-        return actions ? actions[prop as TugAction] : undefined;
+    const liveActions = new Proxy(
+      {} as Partial<Record<TugAction<Extra>, ActionHandler<Extra>>>,
+      {
+        get(_, prop: string | symbol): ActionHandler<Extra> | undefined {
+          if (typeof prop !== "string") return undefined;
+          const actions = optionsRef.current.actions;
+          return actions ? actions[prop as TugAction<Extra>] : undefined;
+        },
+        has(_, prop: string | symbol): boolean {
+          if (typeof prop !== "string") return false;
+          const actions = optionsRef.current.actions;
+          return actions ? prop in actions : false;
+        },
+        ownKeys(): ArrayLike<string | symbol> {
+          const actions = optionsRef.current.actions;
+          return actions ? Reflect.ownKeys(actions) : [];
+        },
+        getOwnPropertyDescriptor(_, prop: string | symbol) {
+          if (typeof prop !== "string") return undefined;
+          const actions = optionsRef.current.actions;
+          if (actions && prop in actions) {
+            return {
+              enumerable: true,
+              configurable: true,
+              value: actions[prop as TugAction<Extra>],
+            };
+          }
+          return undefined;
+        },
       },
-      has(_, prop: string | symbol): boolean {
-        if (typeof prop !== "string") return false;
-        const actions = optionsRef.current.actions;
-        return actions ? prop in actions : false;
-      },
-      ownKeys(): ArrayLike<string | symbol> {
-        const actions = optionsRef.current.actions;
-        return actions ? Reflect.ownKeys(actions) : [];
-      },
-      getOwnPropertyDescriptor(_, prop: string | symbol) {
-        if (typeof prop !== "string") return undefined;
-        const actions = optionsRef.current.actions;
-        if (actions && prop in actions) {
-          return {
-            enumerable: true,
-            configurable: true,
-            value: actions[prop as TugAction],
-          };
-        }
-        return undefined;
-      },
-    });
-    manager.register({
+    );
+    // Build the node without always installing canHandle/validateAction
+    // wrapper closures. Callers who did not provide those fields get
+    // `undefined` on the node, which the chain treats as "no advisory
+    // override" and skips in dispatch/query walks. Only callers who
+    // actually supplied a function pay the closure cost, and for
+    // those we still read via optionsRef so handler identity changes
+    // are reflected without re-registering.
+    const node: ResponderNode<Extra> = {
       id,
       parentId,
       actions: liveActions,
-      // canHandle and validateAction are also looked up live via
-      // closures over optionsRef so they reflect current state.
-      canHandle: (action: TugAction) => optionsRef.current.canHandle?.(action) ?? false,
-      validateAction: (action: TugAction) => optionsRef.current.validateAction?.(action) ?? true,
-    });
+    };
+    if (hasCanHandleAtMount.current) {
+      node.canHandle = (action: TugAction<Extra>) =>
+        optionsRef.current.canHandle?.(action) ?? false;
+    }
+    if (hasValidateActionAtMount.current) {
+      node.validateAction = (action: TugAction<Extra>) =>
+        optionsRef.current.validateAction?.(action) ?? true;
+    }
+    manager.register(node);
     return () => {
       manager.unregister(id);
     };

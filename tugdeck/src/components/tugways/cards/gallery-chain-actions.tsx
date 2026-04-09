@@ -13,7 +13,7 @@
 import React, { useState } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
-import type { ActionEvent } from "@/components/tugways/responder-chain";
+import type { ActionEvent, GalleryAction } from "@/components/tugways/responder-chain";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 
@@ -55,17 +55,25 @@ function ActionEventDemo() {
   // useResponder uses useLayoutEffect internally ([D41]), so the node is
   // registered before any click event can fire.
   // The setter is stable across re-renders, so the closure is never stale.
-  useResponder({
+  //
+  // The `<GalleryAction>` type parameter opts into the demo-only
+  // vocabulary — "demoAction" is not in the production `TugAction`
+  // union, and passing GalleryAction as the Extra type widens the
+  // action map's key set to include it.
+  useResponder<GalleryAction>({
     id: "action-event-demo",
     actions: {
-      demoAction: (event: ActionEvent) => {
+      demoAction: (event: ActionEvent<GalleryAction>) => {
         setLastEventText(`action: "${event.action}", phase: "${event.phase}"`);
       },
     },
   });
 
   const handleDispatch = () => {
-    manager.dispatchTo("action-event-demo", { action: "demoAction", phase: "discrete" });
+    manager.dispatchTo<GalleryAction>("action-event-demo", {
+      action: "demoAction",
+      phase: "discrete",
+    });
   };
 
   return (
