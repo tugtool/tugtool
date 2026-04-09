@@ -14,9 +14,13 @@
  * / `undo` / `redo` via the shared `useTextInputResponder` hook —
  * the same hook used by TugInput and TugTextarea. It also dispatches
  * a `setValue` action with `phase: "discrete"` on every commit path
- * (blur, Enter, arrow key). Outside a provider, the input renders
- * plainly without chain participation — matching the two-path
- * pattern from A2.7.
+ * (blur, Enter, arrow key). Outside a provider, the input still
+ * renders correctly with its full imperative editing cycle — the
+ * chain dispatches become no-ops and the custom context menu is
+ * suppressed, but native editing is unaffected. A single component
+ * handles both cases via `useOptionalResponder`; provider
+ * transitions never flip React's component identity, so caret and
+ * focus survive wrap/unwrap tests.
  *
  * When used standalone, parents bind via the `setValueNumber` slot
  * in `useResponderForm` using a gensym'd `senderId`. When nested
@@ -318,80 +322,26 @@ function buildInputClassName(
   return cn("tug-value-input", `tug-value-input-${size}`, className);
 }
 
-// ---- Plain variant (no provider) ----
+// ---- Public component ----
 
-const TugValueInputPlain = React.forwardRef<HTMLInputElement, TugValueInputProps>(
-  function TugValueInputPlain(
-    {
-      value,
-      senderId: _senderId,
-      formatter,
-      min,
-      max,
-      step = 1,
-      size = "md",
-      editMode = "display",
-      disabled = false,
-      className,
-      style,
-      ...rest
-    },
-    ref,
-  ) {
-    const boxDisabled = useTugBoxDisabled();
-    const effectiveDisabled = disabled || boxDisabled;
-
-    // No provider → dispatch is a no-op. Editing still works natively.
-    const dispatchCommit = useCallback((_v: number) => {
-      /* no-op — no manager in scope */
-    }, []);
-
-    const editing = useValueInputEditing({
-      value,
-      formatter,
-      min,
-      max,
-      step,
-      editMode,
-      dispatchCommit,
-    });
-
-    const mergedRef = useCallback(
-      (node: HTMLInputElement | null) => {
-        editing.inputRef.current = node;
-        if (typeof ref === "function") {
-          ref(node);
-        } else if (ref) {
-          (ref as React.MutableRefObject<HTMLInputElement | null>).current = node;
-        }
-      },
-      [ref, editing.inputRef],
-    );
-
-    return (
-      <input
-        ref={mergedRef}
-        type="text"
-        data-slot="tug-value-input"
-        className={buildInputClassName(size, className)}
-        defaultValue={editing.displayValue}
-        style={{ width: editing.inputWidth, ...style }}
-        aria-disabled={effectiveDisabled || undefined}
-        aria-label="Value"
-        onFocus={editing.handleFocus}
-        onMouseUp={editing.handleMouseUp}
-        onKeyDown={editing.handleKeyDown}
-        onBlur={editing.handleBlur}
-        {...rest}
-      />
-    );
-  },
-);
-
-// ---- Responder variant (inside provider) ----
-
-const TugValueInputWithResponder = React.forwardRef<HTMLInputElement, TugValueInputProps>(
-  function TugValueInputWithResponder(
+/**
+ * TugValueInput — chain-aware when inside a provider, plain when not.
+ *
+ * Single component that adapts to its environment: inside a
+ * `<ResponderChainProvider>` it registers as a chain responder with
+ * cut/copy/paste/selectAll/undo/redo handlers, dispatches `setValue`
+ * on commit paths, and shows a right-click context menu; outside a
+ * provider it renders as a plain native `<input>` with full local
+ * editing (focus, blur, arrow keys, Enter, Escape) but `setValue`
+ * becomes a no-op and the custom menu is suppressed. The branch
+ * happens inside the hooks, not at the component-type level, so a
+ * provider transition never flips React's reconciliation identity —
+ * the `<input>` element stays mounted and preserves caret, focus,
+ * and the imperative display/edit cycle state. See
+ * `useOptionalResponder` for the transition mechanics.
+ */
+export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputProps>(
+  function TugValueInput(
     {
       value,
       senderId,
@@ -413,6 +363,12 @@ const TugValueInputWithResponder = React.forwardRef<HTMLInputElement, TugValueIn
     const effectiveDisabled = disabled || boxDisabled;
 
     // ---- Chain dispatch [L11] ----
+    //
+    // `useResponderChain()` returns `null` outside a provider. The
+    // dispatchCommit callback guards on that and becomes a no-op,
+    // so `useValueInputEditing` below can wire it into blur/Enter/
+    // arrow-key handlers unconditionally — no provider means no
+    // dispatch, native editing is unaffected.
     const manager = useResponderChain();
     const fallbackSenderId = useId();
     const effectiveSenderId = senderId ?? fallbackSenderId;
@@ -440,12 +396,14 @@ const TugValueInputWithResponder = React.forwardRef<HTMLInputElement, TugValueIn
     });
 
     // Everything chain-related lives in the shared hook: the six
-    // editing action handlers, responder-node registration, ref
+    // editing action handlers, responder-node registration (via
+    // `useOptionalResponder` — tolerates no-provider mode), ref
     // composition (editing.inputRef + forwarded + data-responder-id),
-    // the onContextMenu bridge, and the context menu JSX. Pass
-    // `editing.inputRef` through as the hook's `inputRef` — the same
-    // ref that `useValueInputEditing` reads selection from is the one
-    // the hook writes to when composing refs, so they stay in sync.
+    // the onContextMenu bridge, and the context menu JSX (gated to
+    // null when there is no provider). Pass `editing.inputRef`
+    // through as the hook's `inputRef` — the same ref that
+    // `useValueInputEditing` reads selection from is the one the
+    // hook writes to when composing refs, so they stay in sync.
     const { composedRef, handleContextMenu, contextMenu } = useTextInputResponder({
       inputRef: editing.inputRef,
       disabled: effectiveDisabled,
@@ -474,26 +432,5 @@ const TugValueInputWithResponder = React.forwardRef<HTMLInputElement, TugValueIn
         {contextMenu}
       </>
     );
-  },
-);
-
-// ---- Public component ----
-
-/**
- * TugValueInput — chain-aware when inside a provider, plain when not.
- *
- * Branches at render time on the presence of a ResponderChainManager:
- * no provider → plain `<input>` render with the native editing cycle;
- * provider present → responder-wired render with cut/copy/paste/
- * selectAll/undo/redo handlers registered on the chain, plus a
- * right-click context menu dispatching the same actions.
- */
-export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputProps>(
-  function TugValueInput(props, ref) {
-    const manager = useResponderChain();
-    if (manager === null) {
-      return <TugValueInputPlain {...props} ref={ref} />;
-    }
-    return <TugValueInputWithResponder {...props} ref={ref} />;
   },
 );

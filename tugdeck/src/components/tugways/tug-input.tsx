@@ -5,28 +5,30 @@
  * are driven by --tug7-field-* tokens — theme switches update CSS
  * variables at the DOM level with no React re-renders.
  *
- * ## Chain participation (A2.7)
+ * ## Chain participation
  *
- * When rendered inside a `<ResponderChainProvider>`, TugInput registers
- * itself as a responder node and handles the six standard editing
- * actions (`cut`, `copy`, `paste`, `selectAll`, `undo`, `redo`) via
- * the shared `useTextInputResponder` hook. See its module docstring
- * for the execCommand-vs-Clipboard-API rationale, the two-phase
- * dispatch pattern, and the reason paste must run synchronously.
- * TugTextarea and TugValueInput consume the same hook.
+ * TugInput consumes `useTextInputResponder`, which registers the
+ * component as a chain responder (via `useOptionalResponder`) and
+ * handles the six standard editing actions (`cut`, `copy`, `paste`,
+ * `selectAll`, `undo`, `redo`). See that hook's module docstring for
+ * the execCommand-vs-Clipboard-API rationale, the two-phase dispatch
+ * pattern, and the reason paste must run synchronously. TugTextarea
+ * and TugValueInput consume the same hook.
  *
- * ## Two-path rendering (no-provider fallback)
+ * ## No-provider tolerance
  *
- * TugInput may legitimately render outside a `ResponderChainProvider`
- * — e.g. in Storybook-style standalone previews, in tests that don't
- * set up the chain, or in pre-mount snapshots. `useResponder` throws
- * outside a provider (deliberately — see its docstring), so TugInput
- * branches at render time: if `useResponderChain()` returns `null`,
- * it renders a plain `<input>` with no chain registration; if the
- * manager is present, it renders the inner `TugInputWithResponder`
- * variant that registers and wires the handlers. This keeps the
- * strict invariant of `useResponder` intact while letting consumers
- * use `TugInput` anywhere.
+ * TugInput works both inside and outside a `<ResponderChainProvider>`.
+ * Inside a provider, the input is registered as a responder, its
+ * action handlers are reachable from the chain, `data-responder-id` is
+ * on the DOM element, and the right-click context menu is available.
+ * Outside a provider, the input still renders as a plain native
+ * `<input>`: registration is skipped, no `data-responder-id`, no
+ * custom context menu (the browser's default is shown). All chain
+ * features degrade gracefully without a branch at the component-type
+ * level, so a test that wraps or unwraps a provider around a mounted
+ * TugInput preserves the underlying DOM element — caret, focus, and
+ * native selection survive the transition. See the
+ * `useOptionalResponder` docstring for the reconciliation details.
  *
  * Laws: [L06] appearance via CSS, [L11] controls emit actions;
  *       responders handle actions, [L15] token-driven states,
@@ -40,7 +42,6 @@ import "./tug-input.css";
 import React, { useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
-import { useResponderChain } from "./responder-chain-provider";
 import { useTextInputResponder } from "./use-text-input-responder";
 
 // ---- Types ----
@@ -103,43 +104,24 @@ function buildInputClassName(
   );
 }
 
-// ---- Plain variant (no provider) ----
+// ---- Public component ----
 
-const TugInputPlain = React.forwardRef<HTMLInputElement, TugInputProps>(
-  function TugInputPlain(
-    {
-      size = "md",
-      validation = "default",
-      focusStyle = "background",
-      borderless = false,
-      className,
-      disabled,
-      ...rest
-    },
-    ref,
-  ) {
-    const boxDisabled = useTugBoxDisabled();
-    const effectiveDisabled = disabled || boxDisabled;
-
-    return (
-      <input
-        ref={ref}
-        data-slot="tug-input"
-        data-focus-style={focusStyle}
-        data-borderless={borderless || undefined}
-        className={buildInputClassName(size, validation, className)}
-        disabled={effectiveDisabled}
-        aria-invalid={validation === "invalid" ? "true" : undefined}
-        {...rest}
-      />
-    );
-  },
-);
-
-// ---- Responder variant (inside provider) ----
-
-const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
-  function TugInputWithResponder(
+/**
+ * TugInput — chain-aware when inside a provider, plain when not.
+ *
+ * Single component that adapts to its environment: inside a
+ * `<ResponderChainProvider>` it registers as a chain responder with
+ * cut/copy/paste/selectAll/undo/redo handlers and a right-click
+ * context menu; outside a provider it renders as a plain native
+ * `<input>` with no chain wiring and no custom menu. The branch
+ * happens inside the hooks, not at the component-type level, so a
+ * provider transition never flips React's reconciliation identity —
+ * the `<input>` element stays mounted and preserves caret, focus,
+ * and selection. See `useOptionalResponder` for the transition
+ * mechanics and `useTextInputResponder` for the menu gating.
+ */
+export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
+  function TugInput(
     {
       size = "md",
       validation = "default",
@@ -162,10 +144,12 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
     const inputRef = useRef<HTMLInputElement | null>(null);
 
     // Everything chain-related lives in the shared hook: the six
-    // editing action handlers, responder registration, ref
+    // editing action handlers, responder registration (via
+    // `useOptionalResponder` — tolerates no-provider mode), ref
     // composition (internal + forwarded + data-responder-id), the
-    // onContextMenu bridge, and the context menu JSX. See
-    // `use-text-input-responder.tsx` for the full rationale.
+    // onContextMenu bridge, and the context menu JSX (gated to null
+    // when there is no provider). See `use-text-input-responder.tsx`
+    // for the full rationale.
     const { composedRef, handleContextMenu, contextMenu } = useTextInputResponder({
       inputRef,
       disabled: effectiveDisabled,
@@ -189,30 +173,5 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
         {contextMenu}
       </>
     );
-  },
-);
-
-// ---- Public component ----
-
-/**
- * TugInput — chain-aware when inside a provider, plain when not.
- *
- * Branches at render time on the presence of a ResponderChainManager:
- * no provider → plain `<input>` render (pre-A2.7 behavior), provider
- * present → responder-wired render with cut/copy/paste/selectAll/
- * undo/redo handlers registered on the chain.
- *
- * Switching between the two variants across provider boundaries
- * remounts the input (React sees a different component type). This
- * is acceptable because ResponderChainProvider identity is stable in
- * real apps — the branch is effectively decided at mount.
- */
-export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
-  function TugInput(props, ref) {
-    const manager = useResponderChain();
-    if (manager === null) {
-      return <TugInputPlain {...props} ref={ref} />;
-    }
-    return <TugInputWithResponder {...props} ref={ref} />;
   },
 );

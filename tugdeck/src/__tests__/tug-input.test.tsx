@@ -41,7 +41,10 @@ import { render, fireEvent, cleanup } from "@testing-library/react";
 
 import { TugInput } from "@/components/tugways/tug-input";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
-import { ResponderChainContext } from "@/components/tugways/responder-chain";
+import {
+  ResponderChainContext,
+  ResponderChainManager as ResponderChainManagerCtor,
+} from "@/components/tugways/responder-chain";
 import type { ResponderChainManager } from "@/components/tugways/responder-chain";
 
 // ---------------------------------------------------------------------------
@@ -188,6 +191,126 @@ describe("TugInput – focusin promotion (A2.7)", () => {
 
     inputB.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     expect(manager.getFirstResponder()).toBe(idB);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// State preservation across context-value transitions
+// ---------------------------------------------------------------------------
+//
+// The old two-path render used two React component types — TugInputPlain
+// when no chain manager was in scope, TugInputWithResponder when one
+// was — and the public TugInput branched between them at the
+// component-type level. A context-value transition (manager null ↔
+// non-null) therefore switched component types at TugInput's tree
+// position, which React reconciles as an unmount + remount of the
+// subtree, destroying the underlying <input> DOM element and losing
+// caret, focus, uncontrolled text state, and similar.
+//
+// The current design is a single TugInput component that adapts via
+// useOptionalResponder (inside useTextInputResponder), so
+// context-value transitions never flip the component type — React
+// reconciles the same <input> element across them. These tests pin
+// that invariant to the element-identity level:
+// `elementBefore === elementAfter` after toggling the chain context
+// value around the same tree.
+//
+// Test setup: a stable ancestor (`ContextToggleHarness`) always
+// renders `ResponderChainContext.Provider` at the root and toggles
+// its `value` prop between a real manager and null. The tree
+// structure is stable; only the context value changes. Under the
+// old two-path render, TugInput's internal component-type branch
+// would still unmount the input; under the new design, the <input>
+// element survives. We use the bare context (not
+// ResponderChainProvider) because we're verifying React
+// reconciliation at TugInput's tree position, not provider-level
+// end-to-end behavior like focusin promotion — those are covered
+// by other tests in this file.
+
+describe("TugInput – state preservation across context-value transitions", () => {
+  it("preserves the underlying <input> element when the chain context value toggles null → manager", () => {
+    function CaptureAndChild({ manager }: { manager: ResponderChainManager | null }) {
+      return (
+        <ResponderChainContext.Provider value={manager}>
+          <TugInput data-testid="toggle-input" defaultValue="initial" />
+        </ResponderChainContext.Provider>
+      );
+    }
+
+    const { container, rerender } = render(<CaptureAndChild manager={null} />);
+    const inputBefore = getInput(container, "toggle-input");
+    expect(inputBefore.getAttribute("data-responder-id")).toBeNull();
+
+    inputBefore.value = "typed-text";
+
+    // Install a real manager via the stable context provider.
+    const managerInstance = new ResponderChainManagerCtor();
+    rerender(<CaptureAndChild manager={managerInstance} />);
+
+    const inputAfter = getInput(container, "toggle-input");
+    // Same DOM element instance — this is the critical assertion.
+    expect(inputAfter).toBe(inputBefore);
+    // Uncontrolled text value survived.
+    expect(inputAfter.value).toBe("typed-text");
+    // data-responder-id now present because a manager is in scope.
+    expect(inputAfter.getAttribute("data-responder-id")).not.toBeNull();
+  });
+
+  it("preserves the underlying <input> element when the chain context value toggles manager → null", () => {
+    const manager = new ResponderChainManagerCtor();
+    function CaptureAndChild({ m }: { m: ResponderChainManager | null }) {
+      return (
+        <ResponderChainContext.Provider value={m}>
+          <TugInput data-testid="toggle-input-2" defaultValue="initial" />
+        </ResponderChainContext.Provider>
+      );
+    }
+
+    const { container, rerender } = render(<CaptureAndChild m={manager} />);
+    const inputBefore = getInput(container, "toggle-input-2");
+    expect(inputBefore.getAttribute("data-responder-id")).not.toBeNull();
+
+    inputBefore.value = "typed-text";
+
+    rerender(<CaptureAndChild m={null} />);
+
+    const inputAfter = getInput(container, "toggle-input-2");
+    expect(inputAfter).toBe(inputBefore);
+    expect(inputAfter.value).toBe("typed-text");
+    // Attribute removed as part of the manager-leave transition.
+    expect(inputAfter.getAttribute("data-responder-id")).toBeNull();
+  });
+
+  it("survives a full null → manager → null → manager round-trip on the same element", () => {
+    function CaptureAndChild({ m }: { m: ResponderChainManager | null }) {
+      return (
+        <ResponderChainContext.Provider value={m}>
+          <TugInput data-testid="rt-input" defaultValue="initial" />
+        </ResponderChainContext.Provider>
+      );
+    }
+
+    const { container, rerender } = render(<CaptureAndChild m={null} />);
+    const elementRef = getInput(container, "rt-input");
+    elementRef.value = "round-trip-text";
+
+    // null → manager
+    const manager1 = new ResponderChainManagerCtor();
+    rerender(<CaptureAndChild m={manager1} />);
+    expect(getInput(container, "rt-input")).toBe(elementRef);
+    expect(elementRef.value).toBe("round-trip-text");
+
+    // manager → null
+    rerender(<CaptureAndChild m={null} />);
+    expect(getInput(container, "rt-input")).toBe(elementRef);
+    expect(elementRef.value).toBe("round-trip-text");
+
+    // null → different manager
+    const manager2 = new ResponderChainManagerCtor();
+    rerender(<CaptureAndChild m={manager2} />);
+    expect(getInput(container, "rt-input")).toBe(elementRef);
+    expect(elementRef.value).toBe("round-trip-text");
+    expect(elementRef.getAttribute("data-responder-id")).not.toBeNull();
   });
 });
 

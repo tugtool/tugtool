@@ -126,7 +126,8 @@
  */
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useResponder } from "./use-responder";
+import { useOptionalResponder } from "./use-responder";
+import { useResponderChain } from "./responder-chain-provider";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import type { TugAction } from "./action-vocabulary";
 import {
@@ -199,12 +200,22 @@ export interface UseTextInputResponderResult<T extends TextInputLikeElement> {
    */
   handleContextMenu: (e: React.MouseEvent<T>) => void;
   /**
-   * Ready-to-render `<TugEditorContextMenu>` element. Drop as a
+   * Ready-to-render `<TugEditorContextMenu>` element (or `null` when
+   * no chain provider is in scope — see note below). Drop as a
    * sibling of the input/textarea. The hook owns its open state,
    * cursor position, item list, and close handler — consumers never
    * touch any of it.
+   *
+   * Returns `null` when the hook is called outside a
+   * `ResponderChainProvider`: `TugEditorContextMenu` internally
+   * requires a chain manager to dispatch cut/copy/paste through, so
+   * it can't render without one. The opener is likewise gated, so
+   * the menu is never opened in the no-provider case. On a provider
+   * transition the `contextMenu` slot flips between `null` and the
+   * real menu element; the sibling input element is unaffected, so
+   * caret and focus survive.
    */
-  contextMenu: React.ReactElement;
+  contextMenu: React.ReactNode;
 }
 
 export function useTextInputResponder<T extends TextInputLikeElement>({
@@ -213,6 +224,18 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   forwardedRef,
   onContextMenu: consumerOnContextMenu,
 }: UseTextInputResponderOptions<T>): UseTextInputResponderResult<T> {
+  // Read the chain manager once. `useResponderChain` (unlike
+  // `useRequiredResponderChain`) returns `null` when no provider is
+  // in scope. The hook uses this to decide whether to render the
+  // right-click context menu and whether to let the opener fire:
+  // outside a provider the menu cannot dispatch cut/copy/paste
+  // through the chain, so it's gated off. When a provider enters or
+  // leaves mid-lifecycle, the menu availability flips with it, but
+  // the host input element itself stays mounted — see the
+  // `useOptionalResponder` docstring for why state survives the
+  // transition.
+  const manager = useResponderChain();
+
   // Mounted flag for the async paste continuation. `useRef` is enough
   // because the continuation reads it synchronously in a promise
   // callback; no subscriber semantics are required.
@@ -393,7 +416,16 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     undo: handleUndo,
     redo: handleRedo,
   };
-  const { responderRef } = useResponder({ id: responderId, actions });
+  // `useOptionalResponder` (not `useResponder`) so the three consuming
+  // components — TugInput, TugTextarea, TugValueInput — can render
+  // as a single component regardless of whether a ResponderChainProvider
+  // is in scope. When the provider is absent, registration and the
+  // `data-responder-id` attribute are skipped; when present, the
+  // behavior is identical to `useResponder`. The component type and
+  // DOM element stay stable across provider transitions, so caret
+  // position, focus, and selection survive any test that wraps or
+  // unwraps a provider around a mounted leaf control.
+  const { responderRef } = useOptionalResponder({ id: responderId, actions });
 
   // ---- Ref composition ----
   //
@@ -431,9 +463,18 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   // Opens the menu at the cursor. Consumers reach this via the
   // bridged `handleContextMenu` below, which also fires the
   // consumer's own `onContextMenu` prop afterward.
+  //
+  // Gated on `manager !== null`: outside a chain provider the menu
+  // items have nowhere to dispatch their cut/copy/paste actions, so
+  // suppress the menu entirely rather than show disabled items or
+  // invite a crash when the menu tries to consume the chain. Native
+  // right-click behavior on the underlying input is unaffected — the
+  // browser's default context menu is shown instead (we don't call
+  // `preventDefault` when we bail early).
   const openMenu = useCallback(
     (e: React.MouseEvent<T>) => {
       if (disabled) return;
+      if (manager === null) return;
       e.preventDefault();
       const node = inputRef.current;
       if (!node) return;
@@ -446,7 +487,7 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
         node.selectionStart !== node.selectionEnd;
       setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
     },
-    [disabled, inputRef],
+    [disabled, manager, inputRef],
   );
 
   // Bridge: menu first, consumer callback after. Previously every
@@ -476,15 +517,29 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   // themselves in three places with identical props. Now the hook
   // owns the entire menu surface; consumers just interpolate
   // `{contextMenu}` into their render output.
-  const contextMenu = (
-    <TugEditorContextMenu
-      open={menuState !== null}
-      x={menuState?.x ?? 0}
-      y={menuState?.y ?? 0}
-      items={menuItems}
-      onClose={closeMenu}
-    />
-  );
+  //
+  // Gated on `manager !== null`: `TugEditorContextMenu` internally
+  // calls `useRequiredResponderChain` (to obtain the manager it
+  // dispatches into), so rendering it outside a provider would throw
+  // at mount. When there is no chain, we return `null` for
+  // `contextMenu` — the openMenu callback above is already gated on
+  // the same condition, so `menuState` can never be non-null in the
+  // no-provider case, and the null slot never transitions to an open
+  // menu. Across a provider transition (null → non-null), the
+  // contextMenu position in the JSX fragment swaps from `null` to a
+  // fresh `TugEditorContextMenu`; the sibling `<input>` element
+  // stays mounted at its own position, so caret and focus survive
+  // the swap.
+  const contextMenu: React.ReactNode =
+    manager !== null ? (
+      <TugEditorContextMenu
+        open={menuState !== null}
+        x={menuState?.x ?? 0}
+        y={menuState?.y ?? 0}
+        items={menuItems}
+        onClose={closeMenu}
+      />
+    ) : null;
 
   return {
     composedRef,

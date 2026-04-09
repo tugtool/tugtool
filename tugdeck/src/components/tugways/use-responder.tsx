@@ -105,11 +105,26 @@ export interface UseResponderResult {
 }
 
 /**
- * Register the calling component as a responder node.
+ * Register the calling component as a responder node. **Strict form.**
  *
  * Must be called inside a <ResponderChainProvider>. Throws a descriptive
- * error if the manager context is null (programming error -- not a valid
- * runtime state for components that intend to register as responders).
+ * error if the manager context is null — programming error, not a valid
+ * runtime state for components that intend to register as responders.
+ *
+ * Use this for components where chain participation is load-bearing for
+ * correctness — tug-card, tug-prompt-input, deck-canvas, any responder
+ * whose actions must be routable from the chain. The throw catches
+ * "I forgot the provider" bugs at mount rather than letting them
+ * silently degrade into a no-op at runtime.
+ *
+ * For leaf controls that must render in standalone previews and tests
+ * without a chain provider (TugInput, TugTextarea, TugValueInput), use
+ * {@link useOptionalResponder} instead. It has the same signature and
+ * return shape but skips the registration step when the manager is
+ * absent, so the component can participate in the chain when mounted
+ * inside a provider and quietly stand alone otherwise — without
+ * splitting its JSX into a plain/responder two-path render that would
+ * flip React's component identity on provider transitions.
  *
  * Returns { ResponderScope, responderRef }.
  * - `ResponderScope` is a stable wrapper component that provides this
@@ -135,6 +150,70 @@ export function useResponder<Extra extends string = never>(
   if (manager === null) {
     throw new Error("useResponder must be used inside a <ResponderChainProvider>");
   }
+
+  // Delegate to useOptionalResponder for the actual body. Both hooks
+  // share one implementation; the only difference is the top-level
+  // throw above. useContext is called again inside
+  // useOptionalResponder — cheap and correct, and keeps the hook call
+  // order stable per caller (strict vs tolerant callers each use
+  // exactly one of these entry points per component, so their
+  // per-component call orders never mix).
+  return useOptionalResponder(options);
+}
+
+/**
+ * Register the calling component as a responder node. **Tolerant form.**
+ *
+ * Same signature and return shape as {@link useResponder}. Same behavior
+ * when rendered inside a <ResponderChainProvider>: registers the node,
+ * writes `data-responder-id`, returns a stable ResponderScope. But when
+ * the manager context is null, this hook gracefully no-ops instead of
+ * throwing — the layout effect skips the registration call, the ref
+ * callback skips the attribute write, and the returned ResponderScope
+ * is still stable but has no effect because no descendant will resolve
+ * the parent context to a registered node.
+ *
+ * Intended for leaf controls that must render in both contexts:
+ * - Inside a provider (real app, gallery demos, integration tests): the
+ *   control registers and participates in the chain like any other
+ *   responder. Actions dispatched through the chain reach the control
+ *   and drive its behavior.
+ * - Outside a provider (standalone previews, unit tests that don't set
+ *   up a chain, pre-mount snapshots): the control still renders
+ *   correctly, handles its own DOM events directly, and silently
+ *   degrades its chain features (chain-dispatched actions have nowhere
+ *   to go; the `data-responder-id` attribute is omitted).
+ *
+ * The critical property this hook enables is **state preservation
+ * across provider transitions**. A test that mounts the control
+ * standalone, wraps it in a provider mid-run, then unwraps the
+ * provider, does not trigger a component-type flip at the leaf
+ * component's position in the tree. React reconciles the same DOM
+ * element through the transition, so caret position, focus,
+ * selection, and any uncontrolled text state all survive. This is the
+ * reason the hook exists: the old pattern of splitting a leaf control
+ * into `TugXxxPlain` and `TugXxxWithResponder` component types created
+ * exactly this footgun — switching between them on provider presence
+ * unmounted the subtree and destroyed user-visible input state.
+ *
+ * On manager transition (null → non-null or vice versa):
+ * - `useContext(ResponderChainContext)` picks up the new value; the
+ *   hook re-renders.
+ * - The layout effect's dependency array includes `manager`, so the
+ *   effect runs its cleanup (unregistering from the old manager, if
+ *   any) and re-runs with the new manager (registering, if non-null).
+ * - The `responderRef` callback's useCallback deps include `manager`,
+ *   so its identity changes on transition. React calls the previous
+ *   callback with `null` (removing `data-responder-id` from the
+ *   element) and then calls the new callback with the element (which
+ *   writes the attribute only if the new manager is non-null).
+ * - The DOM element itself is never replaced — it stays mounted across
+ *   the transition, preserving all user-visible state.
+ */
+export function useOptionalResponder<Extra extends string = never>(
+  options: UseResponderOptions<Extra>,
+): UseResponderResult {
+  const manager = useContext(ResponderChainContext);
 
   const parentId = useContext(ResponderParentContext);
 
@@ -181,6 +260,14 @@ export function useResponder<Extra extends string = never>(
   // useCallback-wrap their handlers still gets correct dispatch — the
   // manager always sees the current render's handlers.
   useLayoutEffect(() => {
+    // No manager in scope → nothing to register, no cleanup needed.
+    // The effect's dep array still includes `manager`, so a later
+    // transition to a non-null manager will re-run this effect and
+    // register the node at that point. The early return returns
+    // `undefined` as the cleanup slot, which React correctly
+    // interprets as "nothing to clean up on the next run."
+    if (manager === null) return;
+
     const id = optionsRef.current.id;
     // Live-lookup proxy: every access reads from optionsRef.current.actions
     // so re-renders with new handler identities are reflected without
@@ -260,20 +347,34 @@ export function useResponder<Extra extends string = never>(
     };
   }
 
-  // Stable ref callback that writes data-responder-id to the host element.
-  // Handles cleanup when the element is detached and re-attachment on
-  // element swap (React may remount the host in rare cases).
+  // Stable ref callback that writes `data-responder-id` to the host
+  // element — but only when a chain manager is in scope. When there
+  // is no manager, the attribute is omitted so devtools cannot see an
+  // orphaned id that points at nothing, and so existing tests that
+  // assert "no data-responder-id when rendered standalone" continue
+  // to pass.
+  //
+  // `manager` is in the useCallback dependency array: on a provider
+  // transition (null ↔ non-null) the callback identity changes, which
+  // triggers React's standard ref-callback lifecycle — the previous
+  // callback is called with `null` (which removes the attribute from
+  // `prev`, if the previous callback had written one) and then the
+  // new callback is called with the element (which writes the
+  // attribute only if the new manager is non-null). The DOM element
+  // itself is never replaced; only the attribute flips on transition.
+  // This is how state survives the transition — the element is the
+  // same element across provider changes.
   const currentElementRef = useRef<Element | null>(null);
   const responderRef = useCallback((el: Element | null) => {
     const prev = currentElementRef.current;
     if (prev && prev !== el) {
       prev.removeAttribute("data-responder-id");
     }
-    if (el) {
+    if (el && manager !== null) {
       el.setAttribute("data-responder-id", options.id);
     }
     currentElementRef.current = el;
-  }, [options.id]);
+  }, [options.id, manager]);
 
   return { ResponderScope: scopeRef.current, responderRef };
 }

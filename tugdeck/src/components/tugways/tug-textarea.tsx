@@ -8,19 +8,23 @@
  * Auto-resize adjusts height imperatively via the native input event [L06].
  * Character counter renders below the textarea when maxLength is set.
  *
- * ## Chain participation (A2.7)
+ * ## Chain participation
  *
- * When rendered inside a `<ResponderChainProvider>`, TugTextarea
- * registers itself as a responder node and handles the six standard
- * editing actions (`cut`, `copy`, `paste`, `selectAll`, `undo`,
- * `redo`) via the shared `useTextInputResponder` hook — the same
- * hook used by TugInput and TugValueInput. See its module docstring
- * for the full dispatch semantics, the paste-sync rationale, and the
+ * TugTextarea consumes `useTextInputResponder`, which registers the
+ * component as a chain responder (via `useOptionalResponder`) and
+ * handles the six standard editing actions (`cut`, `copy`, `paste`,
+ * `selectAll`, `undo`, `redo`). See that hook's module docstring for
+ * the full dispatch semantics, the paste-sync rationale, and the
  * reason execCommand("paste") must run in the sync phase.
  *
- * Like TugInput, TugTextarea uses a two-path rendering strategy: it
- * falls back to a plain `<textarea>` render when no provider is in
- * scope, so it can still be used in standalone previews / tests.
+ * Like TugInput, TugTextarea is a single component that adapts to
+ * its environment: inside a `<ResponderChainProvider>` it registers
+ * as a responder with a right-click context menu; outside a provider
+ * it renders as a plain `<textarea>` with no chain wiring. Provider
+ * transitions preserve the `<textarea>` element (caret, focus,
+ * selection, auto-resize height all survive) because the branching
+ * happens inside the hooks, not at the component-type level. See
+ * `useOptionalResponder` for the transition mechanics.
  *
  * Laws: [L06] appearance via CSS / imperative DOM for auto-resize,
  *       [L11] controls emit actions; responders handle actions,
@@ -35,7 +39,6 @@ import "./tug-textarea.css";
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
-import { useResponderChain } from "./responder-chain-provider";
 import { useTextInputResponder } from "./use-text-input-responder";
 
 // ---- Types ----
@@ -292,106 +295,74 @@ const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
   return textarea;
 };
 
-// ---- Plain variant (no provider) ----
+// ---- Public component ----
 
-const TugTextareaPlain = React.forwardRef<HTMLTextAreaElement, TugTextareaProps>(
-  function TugTextareaPlain(
-    {
-      size = "md",
-      validation = "default",
-      resize,
-      focusStyle = "background",
-      borderless = false,
-      ...rest
-    },
-    ref,
-  ) {
-    return (
+/**
+ * TugTextarea — chain-aware when inside a provider, plain when not.
+ *
+ * Single component that adapts to its environment: inside a
+ * `<ResponderChainProvider>` it registers as a chain responder with
+ * cut/copy/paste/selectAll/undo/redo handlers and a right-click
+ * context menu; outside a provider it renders as a plain native
+ * `<textarea>` with no chain wiring and no custom menu. The branch
+ * happens inside the hooks, not at the component-type level, so a
+ * provider transition never flips React's reconciliation identity —
+ * the `<textarea>` element stays mounted and preserves caret, focus,
+ * selection, and any auto-resize geometry state. See
+ * `useOptionalResponder` for the transition mechanics and
+ * `useTextInputResponder` for the menu gating.
+ */
+export const TugTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  TugTextareaProps
+>(function TugTextarea(
+  {
+    size = "md",
+    validation = "default",
+    resize,
+    focusStyle = "background",
+    borderless = false,
+    disabled,
+    onContextMenu,
+    ...rest
+  },
+  ref,
+) {
+  const boxDisabled = useTugBoxDisabled();
+  const effectiveDisabled = disabled || boxDisabled;
+
+  // Local ref to the textarea DOM node for the editing action
+  // handlers in the shared hook to reach `select()`, `setRangeText()`,
+  // etc. The hook writes this ref itself as part of `composedRef`.
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Everything chain-related lives in the shared hook: six editing
+  // action handlers, responder registration (via
+  // `useOptionalResponder` — tolerates no-provider mode), ref
+  // composition (internal + forwarded + data-responder-id), the
+  // onContextMenu bridge, and the context menu JSX (gated to null
+  // when there is no provider). See `use-text-input-responder.tsx`.
+  const { composedRef, handleContextMenu, contextMenu } = useTextInputResponder({
+    inputRef: textareaRef,
+    disabled: effectiveDisabled,
+    forwardedRef: ref,
+    onContextMenu,
+  });
+
+  return (
+    <>
       <TugTextareaBody
         size={size}
         validation={validation}
         resize={resize}
         focusStyle={focusStyle}
         borderless={borderless}
-        hostRef={ref}
+        disabled={disabled}
+        hostRef={composedRef}
+        onContextMenu={handleContextMenu}
         {...rest}
       />
-    );
-  },
-);
-
-// ---- Responder variant (inside provider) ----
-
-const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextareaProps>(
-  function TugTextareaWithResponder(
-    {
-      size = "md",
-      validation = "default",
-      resize,
-      focusStyle = "background",
-      borderless = false,
-      disabled,
-      onContextMenu,
-      ...rest
-    },
-    ref,
-  ) {
-    const boxDisabled = useTugBoxDisabled();
-    const effectiveDisabled = disabled || boxDisabled;
-
-    // Local ref to the textarea DOM node for the editing action
-    // handlers in the shared hook to reach `select()`,
-    // `setRangeText()`, etc. The hook writes this ref itself as part
-    // of `composedRef`.
-    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-    // Everything chain-related lives in the shared hook: six editing
-    // action handlers, responder registration, ref composition
-    // (internal + forwarded + data-responder-id), the onContextMenu
-    // bridge, and the context menu JSX. See
-    // `use-text-input-responder.tsx`.
-    const { composedRef, handleContextMenu, contextMenu } = useTextInputResponder({
-      inputRef: textareaRef,
-      disabled: effectiveDisabled,
-      forwardedRef: ref,
-      onContextMenu,
-    });
-
-    return (
-      <>
-        <TugTextareaBody
-          size={size}
-          validation={validation}
-          resize={resize}
-          focusStyle={focusStyle}
-          borderless={borderless}
-          disabled={disabled}
-          hostRef={composedRef}
-          onContextMenu={handleContextMenu}
-          {...rest}
-        />
-        {contextMenu}
-      </>
-    );
-  },
-);
-
-// ---- Public component ----
-
-/**
- * TugTextarea — chain-aware when inside a provider, plain when not.
- *
- * Same two-path strategy as TugInput: if no `ResponderChainProvider`
- * is in scope, fall back to a plain `<textarea>` render; otherwise
- * register as a responder and wire the six editing actions.
- */
-export const TugTextarea = React.forwardRef<
-  HTMLTextAreaElement,
-  TugTextareaProps
->(function TugTextarea(props, ref) {
-  const manager = useResponderChain();
-  if (manager === null) {
-    return <TugTextareaPlain {...props} ref={ref} />;
-  }
-  return <TugTextareaWithResponder {...props} ref={ref} />;
+      {contextMenu}
+    </>
+  );
 });
