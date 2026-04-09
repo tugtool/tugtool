@@ -3,7 +3,9 @@
  *
  * Shows TugConfirmPopover in all modes: danger confirmation, action confirmation,
  * custom labels, positioning (bottom vs top), and the imperative Promise API.
- * All demos show a persistent result indicator.
+ * Every demo drives the popover through the imperative
+ * `TugConfirmPopoverHandle.confirm()` API and awaits the result to update a
+ * persistent result indicator.
  *
  * @module components/tugways/cards/gallery-confirm-popover
  */
@@ -37,11 +39,47 @@ export function GalleryConfirmPopover() {
   const [customResult, setCustomResult] = React.useState("none");
   const [bottomResult, setBottomResult] = React.useState("none");
   const [topResult, setTopResult] = React.useState("none");
-  const confirmRef = React.useRef<TugConfirmPopoverHandle>(null);
   const [promiseResult, setPromiseResult] = React.useState("none");
 
-  async function handleDeleteWithPromise() {
-    const confirmed = await confirmRef.current?.confirm();
+  const dangerRef = React.useRef<TugConfirmPopoverHandle>(null);
+  const actionRef = React.useRef<TugConfirmPopoverHandle>(null);
+  const customRef = React.useRef<TugConfirmPopoverHandle>(null);
+  const bottomRef = React.useRef<TugConfirmPopoverHandle>(null);
+  const topRef = React.useRef<TugConfirmPopoverHandle>(null);
+  const promiseRef = React.useRef<TugConfirmPopoverHandle>(null);
+
+  // Imperative confirm() bridges. Each handler opens the popover and
+  // awaits the result, then updates the local display state. Triggers
+  // go through the popover's Radix trigger (to anchor the positioning)
+  // AND through confirm() (to set the resolver). Both converge on the
+  // same open state.
+  async function handleDanger() {
+    const confirmed = await dangerRef.current?.confirm();
+    setDangerResult(confirmed ? "confirmed" : "cancelled");
+  }
+
+  async function handleAction() {
+    const confirmed = await actionRef.current?.confirm();
+    setActionResult(confirmed ? "confirmed" : "cancelled");
+  }
+
+  async function handleCustom() {
+    const confirmed = await customRef.current?.confirm();
+    setCustomResult(confirmed ? "discarded" : "kept editing");
+  }
+
+  async function handleBottom() {
+    const confirmed = await bottomRef.current?.confirm();
+    setBottomResult(confirmed ? "confirmed" : "cancelled");
+  }
+
+  async function handleTop() {
+    const confirmed = await topRef.current?.confirm();
+    setTopResult(confirmed ? "confirmed" : "cancelled");
+  }
+
+  async function handlePromise() {
+    const confirmed = await promiseRef.current?.confirm();
     setPromiseResult(confirmed ? "confirmed" : "cancelled");
   }
 
@@ -54,13 +92,12 @@ export function GalleryConfirmPopover() {
         <div style={labelStyle}>Default role="danger" — delete action guard</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
           <TugConfirmPopover
+            ref={dangerRef}
             message="Are you sure?"
             confirmLabel="Delete"
             confirmRole="danger"
-            onConfirm={() => setDangerResult("confirmed")}
-            onCancel={() => setDangerResult("cancelled")}
           >
-            <TugPushButton role="danger" emphasis="filled" size="sm">
+            <TugPushButton role="danger" emphasis="filled" size="sm" onClick={handleDanger}>
               Delete Item
             </TugPushButton>
           </TugConfirmPopover>
@@ -78,13 +115,12 @@ export function GalleryConfirmPopover() {
         <div style={labelStyle}>confirmRole="action" — non-destructive confirmation</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
           <TugConfirmPopover
+            ref={actionRef}
             message="Are you sure?"
             confirmLabel="Publish"
             confirmRole="action"
-            onConfirm={() => setActionResult("confirmed")}
-            onCancel={() => setActionResult("cancelled")}
           >
-            <TugPushButton role="action" emphasis="filled" size="sm">
+            <TugPushButton role="action" emphasis="filled" size="sm" onClick={handleAction}>
               Publish
             </TugPushButton>
           </TugConfirmPopover>
@@ -102,13 +138,12 @@ export function GalleryConfirmPopover() {
         <div style={labelStyle}>Custom confirmLabel and cancelLabel</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
           <TugConfirmPopover
+            ref={customRef}
             message="Are you sure?"
             confirmLabel="Discard"
             cancelLabel="Keep Editing"
-            onConfirm={() => setCustomResult("discarded")}
-            onCancel={() => setCustomResult("kept editing")}
           >
-            <TugPushButton emphasis="outlined" size="sm">
+            <TugPushButton emphasis="outlined" size="sm" onClick={handleCustom}>
               Discard Changes
             </TugPushButton>
           </TugConfirmPopover>
@@ -126,26 +161,24 @@ export function GalleryConfirmPopover() {
         <div style={labelStyle}>side="bottom" (default) vs side="top" — buttons always nearest to trigger</div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
           <TugConfirmPopover
+            ref={bottomRef}
             message="Are you sure?"
             confirmLabel="Confirm"
             confirmRole="action"
-            onConfirm={() => setBottomResult("confirmed")}
-            onCancel={() => setBottomResult("cancelled")}
           >
-            <TugPushButton emphasis="outlined" size="sm">
+            <TugPushButton emphasis="outlined" size="sm" onClick={handleBottom}>
               Bottom (default)
             </TugPushButton>
           </TugConfirmPopover>
 
           <TugConfirmPopover
+            ref={topRef}
             message="Are you sure?"
             confirmLabel="Confirm"
             confirmRole="action"
             side="top"
-            onConfirm={() => setTopResult("confirmed")}
-            onCancel={() => setTopResult("cancelled")}
           >
-            <TugPushButton emphasis="outlined" size="sm">
+            <TugPushButton emphasis="outlined" size="sm" onClick={handleTop}>
               Top
             </TugPushButton>
           </TugConfirmPopover>
@@ -163,7 +196,7 @@ export function GalleryConfirmPopover() {
         <div style={labelStyle}>Imperative confirm() via useRef — resolves true/false</div>
         <div style={{ display: "flex", alignItems: "flex-start" }}>
           <TugConfirmPopover
-            ref={confirmRef}
+            ref={promiseRef}
             message="Are you sure?"
             confirmLabel="Delete"
             confirmRole="danger"
@@ -172,7 +205,7 @@ export function GalleryConfirmPopover() {
               role="danger"
               emphasis="filled"
               size="sm"
-              onClick={handleDeleteWithPromise}
+              onClick={handlePromise}
             >
               Delete (Promise)
             </TugPushButton>
