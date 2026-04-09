@@ -46,6 +46,12 @@ import {
   ResponderChainManager as ResponderChainManagerCtor,
 } from "@/components/tugways/responder-chain";
 import type { ResponderChainManager } from "@/components/tugways/responder-chain";
+import {
+  installFakeNativeClipboardBridge,
+  uninstallFakeNativeClipboardBridge,
+  installFakeClipboardReadText,
+  uninstallFakeClipboardReadText,
+} from "./helpers/paste-shims";
 
 // ---------------------------------------------------------------------------
 // execCommand spy
@@ -400,12 +406,99 @@ describe("TugInput – action handlers (A2.7)", () => {
     expect(execCommandCalls[0].command).toBe("redo");
   });
 
-  // Paste behavior is verified manually — the capture-then-defer /
-  // native-bridge paths depend on Safari/WKWebView clipboard semantics
-  // that happy-dom does not simulate faithfully (ClipboardEvent with a
-  // populated clipboardData, document.activeElement after focus(),
-  // etc.). See use-text-input-responder.tsx and tug-native-clipboard.ts
-  // for the production implementation.
+  // Paste's three-branch reader cascade is tested in two targeted
+  // smoke tests below. The execCommand-success branch (branch 2) is
+  // deliberately not tested — shimming a synthetic ClipboardEvent
+  // with populated DataTransfer dispatched synchronously by
+  // execCommand is too fragile in happy-dom to be maintainable, and
+  // a full polyfill would grow into a happy-dom clone. That branch
+  // is verified manually in real browsers. Branch 1 (native bridge)
+  // and branch 3 (Clipboard API fallback) are production code paths
+  // in Tug.app and in dev browsers respectively, so they get real
+  // tests here. The insertion tail — the bug-prone half shared
+  // across all three branches — is exhaustively covered by
+  // `apply-pasted-text.test.ts`.
+});
+
+// ---------------------------------------------------------------------------
+// Paste cascade — focused branch integration tests
+// ---------------------------------------------------------------------------
+
+describe("TugInput – paste cascade", () => {
+  it("paste via native bridge: reads from Swift-side NSPasteboard and inserts on continuation", async () => {
+    // Install a fake window.webkit.messageHandlers.clipboardRead
+    // that synchronously calls the __tugNativeClipboardCallback on
+    // the next microtask with our test text. This is the production
+    // code path in Tug.app.
+    installFakeNativeClipboardBridge({ returnText: "pasted-native" });
+    try {
+      const { container, manager } = renderWithProvider(
+        <TugInput data-testid="paste-native" defaultValue="before" />
+      );
+      const input = getInput(container, "paste-native");
+      const id = input.getAttribute("data-responder-id") as string;
+      // Caret at end so the inserted text appends.
+      input.setSelectionRange(input.value.length, input.value.length);
+
+      const result = manager.dispatchToForContinuation(id, {
+        action: "paste",
+        phase: "discrete",
+      });
+      // Paste handler returns a continuation even on the native path
+      // — the actual insert is deferred until after the menu blink.
+      expect(result.continuation).toBeDefined();
+
+      // Run the continuation. It awaits the microtask-delivered
+      // native callback via the promise chain inside the handler.
+      result.continuation?.();
+
+      // Flush microtasks so the promise chain (queueMicrotask →
+      // callback resolves promise → promise.then calls applyPastedText)
+      // completes before assertion.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(input.value).toBe("beforepasted-native");
+    } finally {
+      uninstallFakeNativeClipboardBridge();
+    }
+  });
+
+  it("paste via Clipboard API fallback: reads navigator.clipboard.readText and inserts on continuation", async () => {
+    // happy-dom's default `document.execCommand("paste")` does not
+    // fire a paste event, so the execCommand branch naturally falls
+    // through to the Clipboard API branch. Stub
+    // `navigator.clipboard.readText` to return our test text. This
+    // is the production code path in dev browsers (Chrome, Firefox).
+    installFakeClipboardReadText("pasted-api");
+    try {
+      const { container, manager } = renderWithProvider(
+        <TugInput data-testid="paste-api" defaultValue="before" />
+      );
+      const input = getInput(container, "paste-api");
+      const id = input.getAttribute("data-responder-id") as string;
+      input.setSelectionRange(input.value.length, input.value.length);
+
+      const result = manager.dispatchToForContinuation(id, {
+        action: "paste",
+        phase: "discrete",
+      });
+      expect(result.continuation).toBeDefined();
+
+      result.continuation?.();
+
+      // Flush microtasks so the clipboard.readText promise resolves
+      // and the continuation's .then runs applyPastedText.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(input.value).toBe("beforepasted-api");
+    } finally {
+      uninstallFakeClipboardReadText();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -134,7 +134,67 @@ import {
   TugEditorContextMenu,
   type TugEditorContextMenuEntry,
 } from "./tug-editor-context-menu";
-import { hasNativeClipboardBridge, readClipboardViaNative } from "@/lib/tug-native-clipboard";
+import {
+  hasNativeClipboardBridge,
+  readClipboardViaNative,
+  warnIfWKWebViewRace,
+} from "@/lib/tug-native-clipboard";
+
+// ---- applyPastedText — pure helper ----
+//
+// The tail of every paste branch (native bridge, execCommand event
+// capture, Clipboard API fallback) does the same work: guard against
+// the component being unmounted while the async read was in flight,
+// guard against the element being detached, capture the current
+// selection range, replace it with the pasted text via
+// `setRangeText`, and dispatch a synthetic `input` event so
+// controlled React inputs stay in sync with the DOM value.
+//
+// Before extraction, this tail was triplicated across three branches
+// in `handlePaste` — three near-identical blocks in one function,
+// each with the same mountedRef guard, the same null-input guard,
+// the same selectionStart/End capture, the same setRangeText call
+// with `"end"` cursor placement, and the same input-event dispatch.
+// Extracting it (a) eliminates the duplication, and (b) turns the
+// bug-prone half of paste (state: mountedRef, inputRef, selection
+// range, event dispatch) into a pure function that can be unit
+// tested in happy-dom without any clipboard polyfill at all.
+//
+// The function is exported so tests can exercise it directly. It is
+// not intended for use outside the paste-handler cascade — consumers
+// building their own paste should go through the full hook.
+export function applyPastedText(
+  inputRef: React.MutableRefObject<TextInputLikeElement | null>,
+  mountedRef: React.MutableRefObject<boolean>,
+  text: string,
+): void {
+  // Guard against the component unmounting between the async read
+  // starting and the continuation running — the input ref may still
+  // point at a detached element, and writing to it would be a silent
+  // no-op in the browser but a confusing footgun in tests.
+  if (!mountedRef.current) return;
+  // Empty clipboard (or a native bridge read that resolved with no
+  // text / no html payload) is a no-op — don't dispatch a spurious
+  // input event for a no-op edit.
+  if (!text) return;
+  const node = inputRef.current;
+  if (!node) return;
+  // `selectionStart` / `selectionEnd` can be null on some element
+  // states (not all input types are text — `<input type="number">`
+  // doesn't expose selection); fall back to "insert at end" in that
+  // case, matching native paste behavior when the browser can't
+  // resolve a caret.
+  const start = node.selectionStart ?? node.value.length;
+  const end = node.selectionEnd ?? node.value.length;
+  // `"end"` leaves the caret after the inserted text, matching the
+  // behavior of a native paste.
+  node.setRangeText(text, start, end, "end");
+  // Synthetic input event so React's controlled-input bookkeeping
+  // picks up the new value via its onChange listener — without this,
+  // controlled consumers would see a DOM value that disagrees with
+  // their React state until the next keystroke.
+  node.dispatchEvent(new Event("input", { bubbles: true }));
+}
 
 /** Any DOM element that has an editable text value, caret, and selection. */
 export type TextInputLikeElement = HTMLInputElement | HTMLTextAreaElement;
@@ -292,21 +352,32 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     // the menu stays live) and the insertion is deferred to the
     // continuation so the text appears after the activation blink —
     // matching cut / selectAll / undo / redo on every browser.
+    // `hasNativeClipboardBridge()` is a live check, not a module-load
+    // cache — a late-installed bridge (Swift registers after first JS
+    // execution) is picked up on the next paste. The diagnostic for
+    // the race window where a user pastes before the bridge install
+    // lives at the fall-through site below via `warnIfWKWebViewRace`.
     if (hasNativeClipboardBridge()) {
       const nativeReadPromise = readClipboardViaNative();
       return () => {
         if (!mountedRef.current) return;
         void nativeReadPromise.then(({ text }) => {
-          if (!text || !mountedRef.current) return;
-          const node = inputRef.current;
-          if (!node) return;
-          const start = node.selectionStart ?? node.value.length;
-          const end = node.selectionEnd ?? node.value.length;
-          node.setRangeText(text, start, end, "end");
-          node.dispatchEvent(new Event("input", { bubbles: true }));
+          applyPastedText(inputRef, mountedRef, text);
         });
       };
     }
+
+    // ---- Fall-through race diagnostic ----
+    //
+    // We're taking the JS Clipboard API path. In a normal browser
+    // that's legitimate (no WKWebView, no native bridge expected).
+    // Inside a WKWebView it's the race condition from the audit:
+    // the Swift-side `clipboardRead` handler should have been
+    // installed by MainWindow.swift before the first JS execution,
+    // but for whatever reason wasn't. Emit a one-shot console
+    // warning so the race is audible in dev consoles; production
+    // Tug.app with a correctly-installed bridge stays silent.
+    warnIfWKWebViewRace();
 
     // ---- Browser fallback (no WKWebView bridge) ----
     //
@@ -347,13 +418,7 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
       const text = capturedText;
       if (!text) return; // clipboard was empty — no-op
       return () => {
-        if (!mountedRef.current) return;
-        const node = inputRef.current;
-        if (!node) return;
-        const start = node.selectionStart ?? node.value.length;
-        const end = node.selectionEnd ?? node.value.length;
-        node.setRangeText(text, start, end, "end");
-        node.dispatchEvent(new Event("input", { bubbles: true }));
+        applyPastedText(inputRef, mountedRef, text);
       };
     }
 
@@ -368,13 +433,7 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     return () => {
       if (!mountedRef.current) return;
       void readPromise.then((text) => {
-        if (!text || !mountedRef.current) return;
-        const node = inputRef.current;
-        if (!node) return;
-        const start = node.selectionStart ?? node.value.length;
-        const end = node.selectionEnd ?? node.value.length;
-        node.setRangeText(text, start, end, "end");
-        node.dispatchEvent(new Event("input", { bubbles: true }));
+        applyPastedText(inputRef, mountedRef, text);
       });
     };
   }, [disabled, inputRef]);

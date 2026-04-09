@@ -100,6 +100,81 @@ export function hasNativeClipboardBridge(): boolean {
   return typeof webkit?.messageHandlers?.clipboardRead?.postMessage === "function";
 }
 
+/**
+ * True if the page is running inside a WKWebView, independent of
+ * whether the clipboard bridge is installed.
+ *
+ * Detects WKWebView by checking for `window.webkit.messageHandlers`
+ * — a surface that only exists in WKWebView contexts, never in plain
+ * Safari web content. Used to distinguish "no native bridge because
+ * we're in a normal browser" (legitimate — fall through to JS APIs
+ * silently) from "no native bridge because the Swift side hasn't
+ * installed the `clipboardRead` handler yet" (a race — worth warning
+ * about at the point of actual fall-through).
+ *
+ * Pair with {@link hasNativeClipboardBridge} at paste-handler
+ * fall-through sites: if the bridge is missing AND we're inside a
+ * WKWebView, it's the race condition the audit identified — call
+ * {@link warnIfWKWebViewRace} to make it audible.
+ */
+export function isInsideWKWebView(): boolean {
+  const webkit = (globalThis as unknown as { webkit?: { messageHandlers?: unknown } }).webkit;
+  return webkit?.messageHandlers !== undefined;
+}
+
+// ---- WKWebView race diagnostic ----
+//
+// Single-shot warning flag. Flipped on the first fall-through that
+// matches "inside WKWebView but native clipboard bridge missing" so
+// the console isn't spammed across many paste attempts during the
+// same page load. Reset by `__resetWKWebViewRaceWarningForTest` for
+// test isolation.
+let wkWebViewRaceWarningFired = false;
+
+/**
+ * Emit a one-shot console warning if a paste handler has just fallen
+ * through to the JS clipboard path while running inside a WKWebView
+ * — the race condition from the audit.
+ *
+ * Called from the paste fall-through site (not from a React effect).
+ * This is a **causal** diagnostic, not a speculative one: the warning
+ * fires at the exact moment the wrong branch was taken, not at mount
+ * time as a pre-emptive assertion. That means it requires zero React
+ * lifecycle involvement, holds no state beyond a module-level
+ * "already fired" flag, and stays silent in every environment where
+ * the race does not actually happen (plain browser development,
+ * Tug.app production with the bridge correctly installed).
+ *
+ * The warning fires at most once per page load. Subsequent paste
+ * fall-throughs are silent — the point has been made, further
+ * warnings would just be noise. A fresh page load (or a test that
+ * calls `__resetWKWebViewRaceWarningForTest`) resets the flag.
+ */
+export function warnIfWKWebViewRace(): void {
+  if (wkWebViewRaceWarningFired) return;
+  if (!isInsideWKWebView()) return;
+  wkWebViewRaceWarningFired = true;
+  console.warn(
+    "[tug-native-clipboard] Paste fell through to JS Clipboard API, " +
+      "but the page is running inside a WKWebView. The Swift-side " +
+      "`clipboardRead` message handler was not installed at dispatch " +
+      "time — a paste that fires before `MainWindow.swift` registers " +
+      "the handler takes the JS fallback path and may trigger Safari's " +
+      "permission popup. Check `MainWindow.swift`'s WKScriptMessageHandler " +
+      "setup; expected install order is before the first JS evaluation.",
+  );
+}
+
+/**
+ * Test-only reset of the WKWebView race warning flag. Exported so
+ * unit tests can exercise `warnIfWKWebViewRace` without bleeding state
+ * across test cases. Not part of the public runtime API — the name
+ * starts with `__` so it's clearly private-by-convention.
+ */
+export function __resetWKWebViewRaceWarningForTest(): void {
+  wkWebViewRaceWarningFired = false;
+}
+
 /** How long to wait for the Swift callback before giving up. */
 const NATIVE_CLIPBOARD_TIMEOUT_MS = 1000;
 
