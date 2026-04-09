@@ -37,7 +37,6 @@ import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
 import { useTextInputResponder } from "./use-text-input-responder";
-import { TugEditorContextMenu } from "./tug-editor-context-menu";
 
 // ---- Types ----
 
@@ -112,12 +111,13 @@ export interface TugTextareaProps
 // ---- Shared rendering helper ----
 //
 // Both the plain and responder-wired variants render identical JSX.
-// The only seam is how the textarea's ref is composed: the plain
-// variant forwards straight through to the consumer's ref, while the
-// responder variant also writes data-responder-id via `extraRef`. By
-// collapsing the rendering into a single helper, we keep the CSS
-// classes, the auto-resize effect, the character counter, and the
-// maxLength wrapper in one place.
+// The body owns the auto-resize imperative ref, the character counter,
+// and the optional maxLength wrapper. The caller (plain or
+// WithResponder) supplies a single `ref` prop that the body merges
+// with its own internal ref. The plain variant hands through the
+// consumer's forwarded ref directly; the WithResponder variant passes
+// the pre-composed `composedRef` from `useTextInputResponder` (which
+// has already merged internal + forwarded + data-responder-id).
 
 interface TugTextareaBodyProps
   extends Omit<TugTextareaProps, "size" | "validation" | "resize" | "focusStyle" | "borderless"> {
@@ -126,10 +126,17 @@ interface TugTextareaBodyProps
   resize?: TugTextareaResize;
   focusStyle: "background" | "ring";
   borderless: boolean;
-  /** Additional ref callback applied alongside the forwarded ref. */
-  extraRef?: (el: HTMLTextAreaElement | null) => void;
-  /** The forwarded ref from the public component. */
-  forwardedRef: React.Ref<HTMLTextAreaElement>;
+  /**
+   * Single ref slot. Composed with the body's own auto-resize ref via
+   * the internal `setRef`. For the plain variant this is the
+   * consumer's forwarded ref; for the responder variant it's the
+   * hook's `composedRef` (which already merges the consumer ref + the
+   * hook's inputRef + data-responder-id).
+   *
+   * Named `hostRef` rather than `ref` so the body can stay a plain
+   * `React.FC` without tripping the reserved-`ref`-prop name.
+   */
+  hostRef?: React.Ref<HTMLTextAreaElement>;
 }
 
 const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
@@ -147,15 +154,14 @@ const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
   onChange,
   value,
   defaultValue,
-  extraRef,
-  forwardedRef,
+  hostRef,
   ...rest
 }) => {
   const boxDisabled = useTugBoxDisabled();
   const effectiveDisabled = disabled || boxDisabled;
 
-  // Internal ref for imperative DOM manipulation; merged with forwarded
-  // ref and the optional extraRef (responderRef).
+  // Internal ref for imperative auto-resize. Merged with the caller's
+  // `hostRef` in setRef below so the element lands on both.
   const internalRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Counter state — track current character count for the counter display.
@@ -165,21 +171,20 @@ const TugTextareaBody: React.FC<TugTextareaBodyProps> = ({
     return 0;
   });
 
-  // Merge the forwarded ref, internal ref, and extraRef onto the one
-  // textarea element. React calls setRef with the element on mount
-  // and with null on unmount, so we must clean up the extraRef the
-  // same way we clean up the forwarded ref.
+  // Merge the caller-supplied `hostRef` with the body's own
+  // `internalRef`. React calls setRef with the element on mount and
+  // with null on unmount, so the hostRef gets cleaned up the same
+  // way internalRef does.
   const setRef = useCallback(
     (el: HTMLTextAreaElement | null) => {
       internalRef.current = el;
-      if (typeof forwardedRef === "function") {
-        forwardedRef(el);
-      } else if (forwardedRef) {
-        (forwardedRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
+      if (typeof hostRef === "function") {
+        hostRef(el);
+      } else if (hostRef) {
+        (hostRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
       }
-      extraRef?.(el);
     },
-    [forwardedRef, extraRef],
+    [hostRef],
   );
 
   // Auto-resize: adjust height imperatively on input events [L06].
@@ -308,7 +313,7 @@ const TugTextareaPlain = React.forwardRef<HTMLTextAreaElement, TugTextareaProps>
         resize={resize}
         focusStyle={focusStyle}
         borderless={borderless}
-        forwardedRef={ref}
+        hostRef={ref}
         {...rest}
       />
     );
@@ -336,42 +341,21 @@ const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextar
 
     // Local ref to the textarea DOM node for the editing action
     // handlers in the shared hook to reach `select()`,
-    // `setRangeText()`, etc. Composed onto the textarea alongside the
-    // forwarded ref and responderRef via the body's `extraRef` slot.
+    // `setRangeText()`, etc. The hook writes this ref itself as part
+    // of `composedRef`.
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-    // All six editing actions, the right-click context menu, and
-    // responder-node registration come from the shared hook. See
-    // `use-text-input-responder.tsx` for the dispatch semantics and
-    // paste-sync rationale.
-    const {
-      responderRef,
-      menuState,
-      handleContextMenu: openMenu,
-      closeMenu,
-      menuItems,
-    } = useTextInputResponder({ inputRef: textareaRef, disabled: effectiveDisabled });
-
-    // Compose the internal textareaRef with the responder ref via the
-    // body's `extraRef` slot. The body handles merging the forwarded
-    // ref itself.
-    const extraRef = useCallback(
-      (el: HTMLTextAreaElement | null) => {
-        textareaRef.current = el;
-        responderRef(el);
-      },
-      [responderRef],
-    );
-
-    // Bridge the hook's menu opener with the consumer's optional
-    // `onContextMenu` prop.
-    const handleContextMenu = useCallback(
-      (e: React.MouseEvent<HTMLTextAreaElement>) => {
-        openMenu(e);
-        onContextMenu?.(e);
-      },
-      [openMenu, onContextMenu],
-    );
+    // Everything chain-related lives in the shared hook: six editing
+    // action handlers, responder registration, ref composition
+    // (internal + forwarded + data-responder-id), the onContextMenu
+    // bridge, and the context menu JSX. See
+    // `use-text-input-responder.tsx`.
+    const { composedRef, handleContextMenu, contextMenu } = useTextInputResponder({
+      inputRef: textareaRef,
+      disabled: effectiveDisabled,
+      forwardedRef: ref,
+      onContextMenu,
+    });
 
     return (
       <>
@@ -382,18 +366,11 @@ const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextar
           focusStyle={focusStyle}
           borderless={borderless}
           disabled={disabled}
-          extraRef={extraRef}
-          forwardedRef={ref}
+          hostRef={composedRef}
           onContextMenu={handleContextMenu}
           {...rest}
         />
-        <TugEditorContextMenu
-          open={menuState !== null}
-          x={menuState?.x ?? 0}
-          y={menuState?.y ?? 0}
-          items={menuItems}
-          onClose={closeMenu}
-        />
+        {contextMenu}
       </>
     );
   },

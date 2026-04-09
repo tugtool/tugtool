@@ -46,7 +46,6 @@ import { clamp, validateNumericInput } from "@/lib/tug-validate";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
 import { useTextInputResponder } from "./use-text-input-responder";
-import { TugEditorContextMenu } from "./tug-editor-context-menu";
 
 // ---- Props ----
 
@@ -440,47 +439,19 @@ const TugValueInputWithResponder = React.forwardRef<HTMLInputElement, TugValueIn
       dispatchCommit,
     });
 
-    // All six editing actions, the right-click context menu, and
-    // responder-node registration come from the shared hook — same
-    // implementation as TugInput and TugTextarea. See
-    // `use-text-input-responder.tsx` for the dispatch semantics and
-    // paste-sync rationale.
-    const {
-      responderRef,
-      menuState,
-      handleContextMenu: openMenu,
-      closeMenu,
-      menuItems,
-    } = useTextInputResponder({
+    // Everything chain-related lives in the shared hook: the six
+    // editing action handlers, responder-node registration, ref
+    // composition (editing.inputRef + forwarded + data-responder-id),
+    // the onContextMenu bridge, and the context menu JSX. Pass
+    // `editing.inputRef` through as the hook's `inputRef` — the same
+    // ref that `useValueInputEditing` reads selection from is the one
+    // the hook writes to when composing refs, so they stay in sync.
+    const { composedRef, handleContextMenu, contextMenu } = useTextInputResponder({
       inputRef: editing.inputRef,
       disabled: effectiveDisabled,
+      forwardedRef: ref,
+      onContextMenu,
     });
-
-    // Compose three refs onto one input: internal (for editing
-    // handlers), forwarded (for consumer), responder (for
-    // data-responder-id).
-    const composedRef = useCallback(
-      (node: HTMLInputElement | null) => {
-        editing.inputRef.current = node;
-        if (typeof ref === "function") {
-          ref(node);
-        } else if (ref) {
-          (ref as React.MutableRefObject<HTMLInputElement | null>).current = node;
-        }
-        responderRef(node);
-      },
-      [ref, editing.inputRef, responderRef],
-    );
-
-    // Bridge the hook's menu opener with the consumer's optional
-    // `onContextMenu` prop.
-    const handleContextMenu = useCallback(
-      (e: React.MouseEvent<HTMLInputElement>) => {
-        openMenu(e);
-        onContextMenu?.(e);
-      },
-      [openMenu, onContextMenu],
-    );
 
     return (
       <>
@@ -500,13 +471,7 @@ const TugValueInputWithResponder = React.forwardRef<HTMLInputElement, TugValueIn
           onContextMenu={handleContextMenu}
           {...rest}
         />
-        <TugEditorContextMenu
-          open={menuState !== null}
-          x={menuState?.x ?? 0}
-          y={menuState?.y ?? 0}
-          items={menuItems}
-          onClose={closeMenu}
-        />
+        {contextMenu}
       </>
     );
   },

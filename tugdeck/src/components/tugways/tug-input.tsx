@@ -37,12 +37,11 @@
 
 import "./tug-input.css";
 
-import React, { useCallback, useRef } from "react";
+import React, { useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
 import { useTextInputResponder } from "./use-text-input-responder";
-import { TugEditorContextMenu } from "./tug-editor-context-menu";
 
 // ---- Types ----
 
@@ -158,48 +157,21 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
 
     // Local ref to the input DOM node — needed by the editing action
     // handlers in the shared hook to reach `selectionStart`,
-    // `select()`, `setRangeText()`, etc.
+    // `select()`, `setRangeText()`, etc. The hook writes this ref
+    // itself as part of `composedRef`.
     const inputRef = useRef<HTMLInputElement | null>(null);
 
-    // All six editing actions, the right-click context menu, and
-    // responder-node registration come from the shared hook. See
-    // `use-text-input-responder.tsx` for the dispatch semantics,
-    // paste-sync rationale, and disabled-guard rules.
-    const {
-      responderRef,
-      menuState,
-      handleContextMenu: openMenu,
-      closeMenu,
-      menuItems,
-    } = useTextInputResponder({ inputRef, disabled: effectiveDisabled });
-
-    // Compose three refs onto one input element: the forwarded ref
-    // (from the consumer), the internal inputRef (used by handlers
-    // inside the hook), and the responderRef (writes data-responder-id
-    // for the chain's findResponderForTarget walk).
-    const composedRef = useCallback(
-      (el: HTMLInputElement | null) => {
-        inputRef.current = el;
-        if (typeof ref === "function") {
-          ref(el);
-        } else if (ref) {
-          (ref as React.MutableRefObject<HTMLInputElement | null>).current = el;
-        }
-        responderRef(el);
-      },
-      [ref, responderRef],
-    );
-
-    // Bridge the hook's menu opener with the consumer's optional
-    // `onContextMenu` prop — the consumer still gets to observe the
-    // event after the menu state has been set.
-    const handleContextMenu = useCallback(
-      (e: React.MouseEvent<HTMLInputElement>) => {
-        openMenu(e);
-        onContextMenu?.(e);
-      },
-      [openMenu, onContextMenu],
-    );
+    // Everything chain-related lives in the shared hook: the six
+    // editing action handlers, responder registration, ref
+    // composition (internal + forwarded + data-responder-id), the
+    // onContextMenu bridge, and the context menu JSX. See
+    // `use-text-input-responder.tsx` for the full rationale.
+    const { composedRef, handleContextMenu, contextMenu } = useTextInputResponder({
+      inputRef,
+      disabled: effectiveDisabled,
+      forwardedRef: ref,
+      onContextMenu,
+    });
 
     return (
       <>
@@ -214,13 +186,7 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
           onContextMenu={handleContextMenu}
           {...rest}
         />
-        <TugEditorContextMenu
-          open={menuState !== null}
-          x={menuState?.x ?? 0}
-          y={menuState?.y ?? 0}
-          items={menuItems}
-          onClose={closeMenu}
-        />
+        {contextMenu}
       </>
     );
   },

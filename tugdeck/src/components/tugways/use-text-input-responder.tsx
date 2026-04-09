@@ -89,28 +89,36 @@
  *
  * ## Usage
  *
+ * The hook returns a pre-composed `ref`, a pre-bridged
+ * `handleContextMenu`, and a ready-to-render `contextMenu` element,
+ * so every consumer is the same three-line wire-up:
+ *
  * ```tsx
  * const inputRef = useRef<HTMLInputElement | null>(null);
- * const { responderRef, menuState, handleContextMenu, closeMenu, menuItems } =
- *   useTextInputResponder({ inputRef, disabled });
+ * const { composedRef, handleContextMenu, contextMenu } =
+ *   useTextInputResponder({
+ *     inputRef,
+ *     disabled,
+ *     forwardedRef,           // optional — merged into composedRef
+ *     onContextMenu,          // optional — chained after menu opens
+ *   });
  *
  * return (
  *   <>
  *     <input
- *       ref={composeRefs(inputRef, responderRef, forwardedRef)}
+ *       ref={composedRef}
  *       onContextMenu={handleContextMenu}
  *       ...
  *     />
- *     <TugEditorContextMenu
- *       open={menuState !== null}
- *       x={menuState?.x ?? 0}
- *       y={menuState?.y ?? 0}
- *       items={menuItems}
- *       onClose={closeMenu}
- *     />
+ *     {contextMenu}
  *   </>
  * );
  * ```
+ *
+ * `composedRef` populates the hook's internal `inputRef`, applies the
+ * consumer's `forwardedRef` (function or object form), and writes
+ * `data-responder-id` for the chain's first-responder resolution —
+ * all in one ref callback. Consumers do not compose refs themselves.
  *
  * Laws: [L06] appearance via CSS/DOM,
  *       [L11] controls emit actions; responders handle actions,
@@ -121,7 +129,10 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import { useResponder } from "./use-responder";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import type { TugAction } from "./action-vocabulary";
-import type { TugEditorContextMenuEntry } from "./tug-editor-context-menu";
+import {
+  TugEditorContextMenu,
+  type TugEditorContextMenuEntry,
+} from "./tug-editor-context-menu";
 import { hasNativeClipboardBridge, readClipboardViaNative } from "@/lib/tug-native-clipboard";
 
 /** Any DOM element that has an editable text value, caret, and selection. */
@@ -139,7 +150,7 @@ export interface UseTextInputResponderOptions<T extends TextInputLikeElement> {
    * Ref to the host input/textarea DOM element. The hook reads
    * `selectionStart` / `selectionEnd` on it for context-menu
    * enablement and calls `select()` / `setRangeText()` on it from the
-   * handlers. Must be the same element the returned `responderRef`
+   * handlers. Must be the same element the returned `composedRef`
    * is attached to.
    */
   inputRef: React.MutableRefObject<T | null>;
@@ -151,33 +162,57 @@ export interface UseTextInputResponderOptions<T extends TextInputLikeElement> {
    * mutate a disabled field.
    */
   disabled: boolean;
+  /**
+   * Consumer's forwarded ref (from `React.forwardRef`). When provided,
+   * `composedRef` applies it alongside writing the hook's internal
+   * `inputRef` and the responder chain's `data-responder-id`. Handles
+   * both callback refs and `MutableRefObject` refs. Omit when the
+   * caller composes refs itself.
+   */
+  forwardedRef?: React.Ref<T>;
+  /**
+   * Consumer's `onContextMenu` handler. The returned
+   * `handleContextMenu` opens the right-click menu first and then
+   * invokes this callback, so consumers still observe the event for
+   * analytics, logging, or additional side effects without breaking
+   * the menu. Parameterized on `T` so consumers pass a native
+   * `React.MouseEventHandler<HTMLInputElement>` /
+   * `HTMLTextAreaElement` without variance conflicts.
+   */
+  onContextMenu?: (e: React.MouseEvent<T>) => void;
 }
 
-export interface UseTextInputResponderResult {
+export interface UseTextInputResponderResult<T extends TextInputLikeElement> {
   /**
-   * Attach this to the same DOM element as `inputRef`. It writes
-   * `data-responder-id` for first-responder resolution via the chain
-   * provider's document-level capture listeners.
+   * Attach to the host input/textarea element. Populates the hook's
+   * internal `inputRef`, applies the forwarded consumer ref (if any),
+   * and writes `data-responder-id` for the chain's innermost-first
+   * responder resolution — one ref callback, three destinations.
    */
-  responderRef: (el: Element | null) => void;
-  /** Current state of the context menu. `null` when closed. */
-  menuState: TextInputContextMenuState | null;
+  composedRef: (el: T | null) => void;
   /**
-   * Attach to the input's `onContextMenu` prop. Opens the context
-   * menu at the cursor and samples the current selection for
-   * Cut/Copy enablement.
+   * Pass to the input's `onContextMenu` prop. Opens the editor
+   * context menu at the cursor and chains the consumer's
+   * `onContextMenu` callback after (if provided). Samples the
+   * current selection at open time so Cut/Copy are disabled when
+   * no range is selected — matching native input behavior.
    */
-  handleContextMenu: (e: React.MouseEvent<HTMLElement>) => void;
-  /** Close the context menu. Pass to `TugEditorContextMenu.onClose`. */
-  closeMenu: () => void;
-  /** Items to pass to `TugEditorContextMenu.items`. */
-  menuItems: TugEditorContextMenuEntry[];
+  handleContextMenu: (e: React.MouseEvent<T>) => void;
+  /**
+   * Ready-to-render `<TugEditorContextMenu>` element. Drop as a
+   * sibling of the input/textarea. The hook owns its open state,
+   * cursor position, item list, and close handler — consumers never
+   * touch any of it.
+   */
+  contextMenu: React.ReactElement;
 }
 
 export function useTextInputResponder<T extends TextInputLikeElement>({
   inputRef,
   disabled,
-}: UseTextInputResponderOptions<T>): UseTextInputResponderResult {
+  forwardedRef,
+  onContextMenu: consumerOnContextMenu,
+}: UseTextInputResponderOptions<T>): UseTextInputResponderResult<T> {
   // Mounted flag for the async paste continuation. `useRef` is enough
   // because the continuation reads it synchronously in a promise
   // callback; no subscriber semantics are required.
@@ -360,12 +395,44 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   };
   const { responderRef } = useResponder({ id: responderId, actions });
 
+  // ---- Ref composition ----
+  //
+  // One callback writes three destinations:
+  //   1. The hook's internal `inputRef` (so the action handlers can
+  //      reach `selectionStart`, `select()`, `setRangeText()`, etc.).
+  //   2. The consumer's forwarded ref (if provided) — honored for both
+  //      function refs and MutableRefObject refs, matching React's
+  //      own ref-handling semantics.
+  //   3. `responderRef` from `useResponder`, which writes
+  //      `data-responder-id` for the chain's innermost-first walk.
+  //
+  // Every consumer of this hook used to open-code this merge. Moving
+  // it into the hook removes ~12 duplicated lines per consumer and
+  // eliminates the "did you remember to call responderRef last?"
+  // footgun.
+
+  const composedRef = useCallback(
+    (el: T | null) => {
+      inputRef.current = el;
+      if (typeof forwardedRef === "function") {
+        forwardedRef(el);
+      } else if (forwardedRef) {
+        (forwardedRef as React.MutableRefObject<T | null>).current = el;
+      }
+      responderRef(el);
+    },
+    [inputRef, forwardedRef, responderRef],
+  );
+
   // ---- Context menu state ----
 
   const [menuState, setMenuState] = useState<TextInputContextMenuState | null>(null);
 
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent<HTMLElement>) => {
+  // Opens the menu at the cursor. Consumers reach this via the
+  // bridged `handleContextMenu` below, which also fires the
+  // consumer's own `onContextMenu` prop afterward.
+  const openMenu = useCallback(
+    (e: React.MouseEvent<T>) => {
       if (disabled) return;
       e.preventDefault();
       const node = inputRef.current;
@@ -382,6 +449,16 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     [disabled, inputRef],
   );
 
+  // Bridge: menu first, consumer callback after. Previously every
+  // consumer open-coded this two-liner.
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent<T>) => {
+      openMenu(e);
+      consumerOnContextMenu?.(e);
+    },
+    [openMenu, consumerOnContextMenu],
+  );
+
   const closeMenu = useCallback(() => setMenuState(null), []);
 
   const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
@@ -395,11 +472,23 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     ];
   }, [menuState?.hasSelection]);
 
+  // Ready-to-render context menu. Consumers used to build this JSX
+  // themselves in three places with identical props. Now the hook
+  // owns the entire menu surface; consumers just interpolate
+  // `{contextMenu}` into their render output.
+  const contextMenu = (
+    <TugEditorContextMenu
+      open={menuState !== null}
+      x={menuState?.x ?? 0}
+      y={menuState?.y ?? 0}
+      items={menuItems}
+      onClose={closeMenu}
+    />
+  );
+
   return {
-    responderRef,
-    menuState,
+    composedRef,
     handleContextMenu,
-    closeMenu,
-    menuItems,
+    contextMenu,
   };
 }
