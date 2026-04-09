@@ -1,12 +1,57 @@
 /**
  * TugAlert — App-modal dialog for critical interruptions requiring explicit user response.
  *
- * Wraps @radix-ui/react-alert-dialog. Supports imperative Promise-based API
- * (via TugAlertHandle.alert()) and declarative controlled usage. TugAlertProvider
- * mounts a singleton instance in the root tree; useTugAlert() provides access
- * from any component.
+ * Wraps @radix-ui/react-alert-dialog. Exposes a single ergonomic entry
+ * point: the imperative Promise API via `TugAlertHandle.alert(options)`.
+ * Two usage patterns:
  *
- * Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authoring guide,
+ * - **Singleton via TugAlertProvider.** Mount one `<TugAlertProvider>`
+ *   in the root tree, then call `const showAlert = useTugAlert()` from
+ *   any descendant. The hook resolves the Promise the provider's
+ *   singleton opens.
+ * - **Inline with a local ref.** Mount `<TugAlert ref={alertRef} title="..." />`
+ *   directly and call `alertRef.current.alert(options)`. Per-call
+ *   overrides stack on top of the props for title, message, labels,
+ *   icon, and confirm role.
+ *
+ * ## Chain-native button wiring
+ *
+ * The confirm and cancel buttons dispatch `confirmDialog` /
+ * `cancelDialog` through the responder chain rather than calling local
+ * handlers directly. The alert registers itself as a responder via
+ * `useOptionalResponder` with matching handlers that resolve the
+ * pending promise and close. The dispatch walks from the innermost
+ * responder (promoted by the pointerdown capture from the button click
+ * to the `.tug-alert-content` element, which carries
+ * `data-responder-id`) and lands back on the alert's own handler — the
+ * same short self-loop used by TugConfirmPopover. [L11]
+ *
+ * The Radix `AlertDialog.Cancel` / `AlertDialog.Action` wrappers are
+ * retained so their accessibility affordances (Enter-to-confirm,
+ * initial focus on the action button, Escape-to-cancel via
+ * DismissableLayer) continue to work. When Radix's internal click
+ * fires `onOpenChange(false)` alongside our chain dispatch, the
+ * second resolveAndClose call is a no-op because the resolver ref was
+ * already nulled by the first.
+ *
+ * Rendered outside a `ResponderChainProvider`, `useOptionalResponder`
+ * no-ops and the buttons fall back to invoking the handler functions
+ * directly so the component still works as a plain alert dialog.
+ *
+ * ## No observeDispatch subscription — modal semantics
+ *
+ * Unlike TugConfirmPopover (which is an anchored popover and dismisses
+ * on any external chain activity), TugAlert is modal: the overlay
+ * physically blocks clicks outside, and the user is expected to
+ * explicitly confirm or cancel. A chain-driven auto-dismiss would
+ * surprise users whose alert disappears because an unrelated keyboard
+ * shortcut fired. The alert stays open until the user responds via the
+ * confirm button, the cancel button, Escape, or Cmd+.
+ *
+ * Laws: [L06] appearance via CSS,
+ *       [L11] controls emit actions; responders handle actions,
+ *       [L16] pairings declared,
+ *       [L19] component authoring guide,
  *       [L20] token sovereignty (composes TugButton)
  */
 
@@ -17,6 +62,8 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { icons } from "lucide-react";
 import { TugPushButton } from "./tug-push-button";
 import type { TugButtonRole } from "./internal/tug-button";
+import { useResponderChain } from "./responder-chain-provider";
+import { useOptionalResponder } from "./use-responder";
 
 /* ---------------------------------------------------------------------------
  * Helpers
@@ -82,16 +129,11 @@ export interface TugAlertProps {
    */
   icon?: string;
   /**
-   * Controlled open state.
-   * @selector [data-state]
+   * Stable opaque sender id for chain dispatches. Auto-derived via
+   * `useId()` if omitted. Disambiguates multi-alert pages when a
+   * parent responder observes dispatches by sender. [L11]
    */
-  open?: boolean;
-  /** Open state callback. */
-  onOpenChange?: (open: boolean) => void;
-  /** Confirm callback (declarative API). */
-  onConfirm?: () => void;
-  /** Cancel callback (declarative API). */
-  onCancel?: () => void;
+  senderId?: string;
 }
 
 /* ---------------------------------------------------------------------------
@@ -101,8 +143,9 @@ export interface TugAlertProps {
 /**
  * TugAlert — app-modal dialog composing Radix AlertDialog.
  *
- * Use `ref.current.alert()` for the imperative Promise API, or
- * supply `onConfirm`/`onCancel` for the declarative callback pattern.
+ * Use `ref.current.alert(options)` for the imperative Promise API, or
+ * mount under `TugAlertProvider` and call `useTugAlert()` for the
+ * singleton pattern.
  */
 export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
   function TugAlert(
@@ -113,10 +156,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       cancelLabel: cancelLabelProp = "Cancel",
       confirmRole: confirmRoleProp = "action",
       icon: iconProp,
-      open: openProp,
-      onOpenChange,
-      onConfirm,
-      onCancel,
+      senderId: senderIdProp,
     },
     ref,
   ) {
@@ -134,6 +174,52 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
 
     // Resolver for imperative mode. Null when not in an active promise.
     const resolverRef = React.useRef<((value: boolean) => void) | null>(null);
+
+    // Chain manager — null when rendered outside a ResponderChainProvider
+    // (standalone previews, unit tests). Buttons fall back to calling
+    // the primary handler directly.
+    const manager = useResponderChain();
+
+    const fallbackResponderId = React.useId();
+    const fallbackSenderId = React.useId();
+    const responderId = fallbackResponderId;
+    const senderId = senderIdProp ?? fallbackSenderId;
+
+    // Primary handler — resolves the pending promise and closes the
+    // dialog. Shared by the chain action handlers, the no-provider
+    // fallback on button click, and the Radix onOpenChange dismissal
+    // path (Escape, Cmd+., AlertDialog.Cancel/Action's built-in close).
+    // Idempotent: a second call with the resolver already null just
+    // closes redundantly, which matches the "two converging close
+    // paths" expectation when Radix's Cancel/Action wrappers fire
+    // alongside the chain dispatch.
+    const resolveAndClose = React.useCallback((value: boolean) => {
+      if (resolverRef.current) {
+        resolverRef.current(value);
+        resolverRef.current = null;
+      }
+      setOpen(false);
+    }, []);
+
+    const handleConfirmAction = React.useCallback(() => {
+      resolveAndClose(true);
+    }, [resolveAndClose]);
+
+    const handleCancelAction = React.useCallback(() => {
+      resolveAndClose(false);
+    }, [resolveAndClose]);
+
+    // Register the alert as a chain responder so the buttons inside
+    // the portaled content can dispatch confirmDialog / cancelDialog
+    // and have the walk land back here. Tolerant of no-provider
+    // contexts.
+    const { responderRef } = useOptionalResponder({
+      id: responderId,
+      actions: {
+        confirmDialog: handleConfirmAction,
+        cancelDialog: handleCancelAction,
+      },
+    });
 
     React.useImperativeHandle(ref, () => ({
       alert(options) {
@@ -167,52 +253,58 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       ? (icons[resolvedIconName as keyof typeof icons] ?? null)
       : null;
 
-    // Controlled open: if openProp is provided, use it; otherwise use internal state.
-    const isOpen = openProp !== undefined ? openProp : open;
-
     // IMPORTANT: Never clear overrideRef during close. The exit animation
     // needs the override values to stay so the content doesn't revert to
     // singleton defaults while fading out. Overrides are cleared on next open
     // (the imperative alert() sets fresh overrides before opening).
 
-    function handleConfirm() {
-      if (resolverRef.current) {
-        resolverRef.current(true);
-        resolverRef.current = null;
-      }
-      setOpen(false);
-      onOpenChange?.(false);
-      onConfirm?.();
-    }
-
-    function handleCancel() {
-      if (resolverRef.current) {
-        resolverRef.current(false);
-        resolverRef.current = null;
-      }
-      setOpen(false);
-      onOpenChange?.(false);
-      onCancel?.();
-    }
-
+    // Radix-level dismissal (Escape via DismissableLayer, Cmd+. via
+    // onKeyDown, AlertDialog.Cancel/Action built-in close) routes
+    // through here. Convert any open→false transition to a cancel so
+    // the pending promise resolves with false. The cancel-and-close is
+    // idempotent, so Radix's own close after a chain-dispatched
+    // confirm is a no-op.
     function handleOpenChange(nextOpen: boolean) {
       if (!nextOpen) {
-        // Escape or programmatic close — treat as cancel.
-        if (resolverRef.current) {
-          resolverRef.current(false);
-          resolverRef.current = null;
-        }
-        onCancel?.();
+        resolveAndClose(false);
+        return;
       }
       setOpen(nextOpen);
-      onOpenChange?.(nextOpen);
+    }
+
+    // Button onClick handlers. Normal path: dispatch through the
+    // chain, which walks back to the alert's own responder handler.
+    // No-provider fallback: call the primary handler directly.
+    function onConfirmClick() {
+      if (!manager) {
+        handleConfirmAction();
+        return;
+      }
+      manager.dispatch({
+        action: "confirmDialog",
+        sender: senderId,
+        phase: "discrete",
+      });
+    }
+
+    function onCancelClick() {
+      if (!manager) {
+        handleCancelAction();
+        return;
+      }
+      manager.dispatch({
+        action: "cancelDialog",
+        sender: senderId,
+        phase: "discrete",
+      });
     }
 
     return (
-      <AlertDialog.Root open={isOpen} onOpenChange={handleOpenChange}>
+      <AlertDialog.Root open={open} onOpenChange={handleOpenChange}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="tug-alert-overlay" />
           <AlertDialog.Content
+            ref={responderRef as (el: HTMLDivElement | null) => void}
             className="tug-alert-content"
             data-slot="tug-alert"
             onKeyDown={(e) => {
@@ -244,7 +336,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             <div className="tug-alert-actions">
               {cancelLabel !== null && (
                 <AlertDialog.Cancel asChild>
-                  <TugPushButton emphasis="outlined" onClick={handleCancel}>
+                  <TugPushButton emphasis="outlined" onClick={onCancelClick}>
                     {cancelLabel}
                   </TugPushButton>
                 </AlertDialog.Cancel>
@@ -253,7 +345,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                 <TugPushButton
                   emphasis="filled"
                   role={confirmRole}
-                  onClick={handleConfirm}
+                  onClick={onConfirmClick}
                 >
                   {confirmLabel}
                 </TugPushButton>
