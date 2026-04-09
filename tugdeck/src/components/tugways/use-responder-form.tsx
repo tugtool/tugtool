@@ -156,12 +156,14 @@ export interface TugResponderFormBindings {
    * setValue action with number payload — slider, value-input.
    *
    * **Phase awareness.** Sliders dispatch `setValue` with phases
-   * `"begin" | "change" | "commit"` during a pointer drag, and
-   * `"discrete"` for keyboard/wheel changes or for bare value-input
+   * `"begin" | "change" | "commit"` during a pointer drag, `"cancel"`
+   * on Escape-mid-drag, and `"discrete"` for keyboard changes
+   * (arrows, Home/End, PageUp/PageDown) or for bare value-input
    * edits. Setters bound to this slot receive the phase as a second
    * argument so handlers can branch between live preview (change) and
    * committed values (commit / discrete) — e.g. drive a local ref for
-   * transient preview and only persist on commit.
+   * transient preview and only persist on commit, rolling back to
+   * the begin snapshot on cancel.
    *
    * Consumers that don't care about phases can declare `(v: number) => void`
    * and TypeScript accepts it (narrower parameter list is assignable to

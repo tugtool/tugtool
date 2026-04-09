@@ -233,7 +233,8 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           e.preventDefault();
           const effectiveMax = max ?? Infinity;
           const next = clamp(value + step, -Infinity, effectiveMax);
-          dispatchCommit(next);
+          // Guard: at max, clamp returns value unchanged — no dispatch.
+          if (next !== value) dispatchCommit(next);
           const input = inputRef.current;
           if (input) {
             const formatted = formatter ? formatter.format(next) : String(next);
@@ -244,7 +245,8 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           e.preventDefault();
           const effectiveMin = min ?? -Infinity;
           const next = clamp(value - step, effectiveMin, Infinity);
-          dispatchCommit(next);
+          // Guard: at min, clamp returns value unchanged — no dispatch.
+          if (next !== value) dispatchCommit(next);
           const input = inputRef.current;
           if (input) {
             const formatted = formatter ? formatter.format(next) : String(next);
@@ -300,7 +302,14 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
         parsed = validateNumericInput(raw, { min: effectiveMin, max: effectiveMax, step });
       }
 
-      if (parsed !== null) {
+      // Only dispatch when the parsed value actually differs from
+      // the current prop. Tabbing through a form of untouched inputs
+      // would otherwise fire one spurious `setValue` dispatch per
+      // blur, polluting observeDispatch logs and forcing intermediate
+      // responders to re-evaluate identical payloads. React setState
+      // already bails on identical values, but the chain walk still
+      // happens — guarding here saves every responder in the path.
+      if (parsed !== null && parsed !== value) {
         dispatchCommit(parsed);
       }
 

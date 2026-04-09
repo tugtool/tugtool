@@ -13,8 +13,10 @@
  *     current value before the drag moves it).
  *   - `"change"`: intermediate value updates during pointer drag.
  *   - `"commit"`: pointerup / drag release (final value).
- *   - `"discrete"`: keyboard arrow keys, Home/End, or wheel — no
+ *   - `"discrete"`: keyboard arrow keys, Home/End — no
  *     begin/change/commit window, just a single committed value.
+ *     (Radix slider does not bind wheel events, so scroll-wheel
+ *     interactions are not part of the slider's dispatch surface.)
  *
  * Parent responders bind via the `setValueNumber` slot in
  * `useResponderForm`; the setter's second argument is the phase, so
@@ -49,15 +51,29 @@
  * false, the `onValueChange` dispatch uses `"discrete"` phase, and the
  * handler for `onValueCommit` no-ops so we don't double-dispatch.
  *
- * ## Known limitation: no cancel phase
+ * ## Escape-mid-drag cancel phase
  *
- * Radix does not expose a hook for pointer-cancel or Escape-mid-drag,
- * so TugSlider never dispatches `phase: "cancel"`. If a parent wants
- * to roll back a live preview on drag-cancel, the practical signals
- * are "commit fired" (no rollback) vs "blur without commit" (rollback)
- * — which today happens to be unreachable in the Radix slider because
- * any interaction that reaches onValueChange also reaches onValueCommit.
- * Flagged here for any future consumer that needs true cancel semantics.
+ * Pressing Escape on the focused thumb while a drag is in progress
+ * dispatches `phase: "cancel"` carrying the `value` that was current
+ * at drag start (the same `value` payload that `"begin"` carried).
+ * A parent responder that drove a live preview on `"change"` can
+ * subscribe to `"cancel"` and roll back to the begin snapshot without
+ * needing to buffer it themselves.
+ *
+ * After dispatching `"cancel"`, TugSlider suppresses any follow-up
+ * Radix `onValueCommit` (via a `cancelledRef` flag) so the cancelled
+ * drag doesn't double-fire as a `"commit"` once focus leaves the
+ * thumb. The Escape key also blurs the thumb, preserving the pre-A2.6
+ * keyboard behavior.
+ *
+ * Pointer-cancel (e.g. the user drags outside the browser window and
+ * the OS aborts the gesture) is not distinguished from pointer-release
+ * — Radix doesn't expose a `pointercancel` hook. For that case the
+ * window-level safety-net listener clears `draggingRef` without
+ * dispatching, and the last `"change"` value stands as the committed
+ * state. If you need true cancel semantics for pointer-aborted drags,
+ * wrap the slider in a handler that listens for `pointercancel` at
+ * the window level and dispatches `"cancel"` itself.
  *
  * Laws: [L06] appearance via CSS, [L11] controls emit actions;
  *       responders handle actions, [L15] token-driven states,
@@ -67,7 +83,7 @@
 
 import "./tug-slider.css";
 
-import React, { useCallback, useId, useRef } from "react";
+import React, { useCallback, useEffect, useId, useRef } from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
@@ -202,9 +218,53 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     const fallbackSenderId = useId();
     const effectiveSenderId = senderId ?? fallbackSenderId;
     const draggingRef = useRef(false);
+    // Snapshot of the controlled `value` at drag start — carried on
+    // the "cancel" dispatch so a parent responder that held a live-
+    // preview buffer can roll back to the pre-drag state without
+    // needing to remember the begin payload themselves.
+    const beginValueRef = useRef<number>(value);
+    // Set by the Escape-cancel handler; consumed by handleSliderCommit
+    // to suppress a follow-up Radix onValueCommit that would otherwise
+    // turn a cancelled drag into a spurious "commit" dispatch.
+    const cancelledRef = useRef(false);
+
+    // ---- draggingRef leak-recovery safety net ----
+    //
+    // Happy path: Radix fires `onValueCommit` on pointer release →
+    // `handleSliderCommit` clears `draggingRef`. Leak path: user
+    // pointerdowns on the slider, drags outside the browser window,
+    // and releases — Radix's pointerup listener may not fire, leaving
+    // `draggingRef` stuck at `true`. A subsequent keyboard step would
+    // then incorrectly dispatch `change + commit` instead of a single
+    // `discrete`.
+    //
+    // Fix: install always-on window-level `pointerup` / `pointercancel`
+    // listeners that unconditionally clear `draggingRef`. They are
+    // trivially cheap — a single ref read per event. No dispatch is
+    // fired from the safety net: "commit" semantics remain Radix's
+    // responsibility via the normal `onValueCommit` path. The safety
+    // net only closes the leak window so subsequent interactions see
+    // a clean state.
+    //
+    // Also runs on unmount via the effect cleanup — no listener leaks.
+    useEffect(() => {
+      if (typeof window === "undefined") return;
+      const clearDragging = () => {
+        draggingRef.current = false;
+      };
+      window.addEventListener("pointerup", clearDragging);
+      window.addEventListener("pointercancel", clearDragging);
+      return () => {
+        window.removeEventListener("pointerup", clearDragging);
+        window.removeEventListener("pointercancel", clearDragging);
+      };
+    }, []);
 
     const dispatchSetValue = useCallback(
-      (v: number, phase: "begin" | "change" | "commit" | "discrete") => {
+      (
+        v: number,
+        phase: "begin" | "change" | "commit" | "discrete" | "cancel",
+      ) => {
         if (!manager) return;
         manager.dispatch({
           action: "setValue",
@@ -221,10 +281,15 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     // Start the drag here so the "begin" dispatch carries the
     // pre-change value (the current prop), letting parents snapshot
     // initial state for a live-preview rollback if they need one.
+    // We also stash the pre-drag value in `beginValueRef` so a later
+    // Escape-cancel can roll back to the same snapshot even after
+    // "change" dispatches have mutated the controlled prop.
     const handlePointerDown = useCallback(
       (_e: React.PointerEvent<HTMLSpanElement>) => {
         if (effectiveDisabled) return;
         draggingRef.current = true;
+        cancelledRef.current = false;
+        beginValueRef.current = value;
         dispatchSetValue(value, "begin");
       },
       [effectiveDisabled, dispatchSetValue, value],
@@ -232,11 +297,19 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
 
     // ---- Radix value adapter ----
     //
-    // While dragging → "change". Otherwise (keyboard/wheel) →
-    // "discrete". `handleValueCommit` below will then no-op for
-    // non-drag paths so we don't double-dispatch.
+    // While dragging → "change". Otherwise (keyboard: arrows, Home,
+    // End, PageUp, PageDown) → "discrete". `handleValueCommit` below
+    // will then no-op for non-drag paths so we don't double-dispatch.
+    //
+    // Second disabled gate: Radix itself refuses to call `onValueChange`
+    // when `disabled` is true (see `disabled ? void 0 : handleSlideStart`
+    // in react-slider/dist/index.mjs), but we guard here anyway as a
+    // defence-in-depth safety net — if Radix ever regresses or a
+    // consumer synthesizes a dispatch via other means, a disabled
+    // slider still refuses to emit.
     const handleSliderChange = useCallback(
       (vals: number[]) => {
+        if (effectiveDisabled) return;
         const next = vals[0];
         if (draggingRef.current) {
           dispatchSetValue(next, "change");
@@ -244,34 +317,64 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
           dispatchSetValue(next, "discrete");
         }
       },
-      [dispatchSetValue],
+      [dispatchSetValue, effectiveDisabled],
     );
 
     // ---- Radix commit adapter ----
     //
     // Fires at the end of both pointer drags and keyboard
     // interactions. We only dispatch "commit" if a pointer drag was
-    // actually in progress — otherwise the earlier onValueChange
-    // already dispatched "discrete" and this would be a duplicate.
+    // actually in progress AND was not cancelled via Escape —
+    // otherwise the earlier onValueChange already dispatched
+    // "discrete" (keyboard path) or the cancel handler already
+    // rolled things back (Escape path), and this would be a
+    // spurious duplicate.
     const handleSliderCommit = useCallback(
       (vals: number[]) => {
+        if (effectiveDisabled) return;
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          return;
+        }
         if (!draggingRef.current) return;
         draggingRef.current = false;
         dispatchSetValue(vals[0], "commit");
       },
-      [dispatchSetValue],
+      [dispatchSetValue, effectiveDisabled],
     );
 
-    // ---- Thumb keydown: Escape/Enter release focus ----
-
+    // ---- Thumb keydown: Escape cancel + Enter/Escape blur ----
+    //
+    // Escape mid-drag dispatches `phase: "cancel"` with the pre-drag
+    // value snapshot, so a parent responder that drove a live preview
+    // on `"change"` can roll back. We then flip `cancelledRef` so any
+    // follow-up Radix `onValueCommit` (e.g. from the drag ending when
+    // focus leaves the thumb on blur) is suppressed and doesn't
+    // double-fire as a "commit" after the cancel.
+    //
+    // Escape / Enter also blur the thumb — this is pre-A2.6 behavior
+    // and is preserved. The blur itself may or may not reach Radix's
+    // onValueCommit depending on whether a value actually changed
+    // since begin; cancelledRef covers both paths.
     const handleThumbKeyDown = useCallback(
       (e: React.KeyboardEvent<HTMLSpanElement>) => {
-        if (e.key === "Escape" || e.key === "Enter") {
+        if (effectiveDisabled) return;
+        if (e.key === "Escape") {
+          if (draggingRef.current) {
+            dispatchSetValue(beginValueRef.current, "cancel");
+            draggingRef.current = false;
+            cancelledRef.current = true;
+          }
+          e.preventDefault();
+          e.currentTarget.blur();
+          return;
+        }
+        if (e.key === "Enter") {
           e.preventDefault();
           e.currentTarget.blur();
         }
       },
-      [],
+      [dispatchSetValue, effectiveDisabled],
     );
 
     // ---- Layout class ----

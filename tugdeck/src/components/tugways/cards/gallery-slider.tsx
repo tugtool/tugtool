@@ -2,7 +2,7 @@
  * GallerySlider — TugSlider demos for the Component Gallery.
  *
  * Every slider here binds its state through `useResponderForm` so drag
- * phases (`begin`/`change`/`commit`) and keyboard/wheel discrete
+ * phases (`begin`/`change`/`commit`/`cancel`) and keyboard discrete
  * changes both arrive at the same setter. The demo only cares about
  * the final numeric value, so it ignores the phase argument — a
  * unary `setXxx` is assignable to the phased slot signature.
