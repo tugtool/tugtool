@@ -99,14 +99,14 @@
  * thumb. The Escape key also blurs the thumb, preserving the pre-A2.6
  * keyboard behavior.
  *
- * Pointer-cancel (e.g. the user drags outside the browser window and
- * the OS aborts the gesture) is not distinguished from pointer-release
- * — Radix doesn't expose a `pointercancel` hook. For that case the
- * window-level safety-net listener clears `draggingRef` without
- * dispatching, and the last `"change"` value stands as the committed
- * state. If you need true cancel semantics for pointer-aborted drags,
- * wrap the slider in a handler that listens for `pointercancel` at
- * the window level and dispatches `"cancel"` itself.
+ * Pointer-cancel (the OS aborts a pointer gesture — iOS native scroll
+ * takes over, a system modal steals input, the pointer capture is
+ * released involuntarily) IS distinguished from pointer-release. The
+ * window-level `pointercancel` listener dispatches `phase: "cancel"`
+ * with the pre-drag value snapshot and sets `cancelledRef` so any
+ * follow-up spurious `onValueCommit` from Radix is suppressed. A
+ * normal `pointerup` just clears `draggingRef` and lets Radix's
+ * `onValueCommit` flow the commit dispatch.
  *
  * Laws: [L06] appearance via CSS, [L11] controls emit actions;
  *       responders handle actions, [L15] token-driven states,
@@ -261,46 +261,6 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     // turn a cancelled drag into a spurious "commit" dispatch.
     const cancelledRef = useRef(false);
 
-    // ---- draggingRef leak-recovery safety net ----
-    //
-    // Happy path: Radix fires `onValueCommit` on pointer release →
-    // `handleSliderCommit` clears `draggingRef`. Leak path: user
-    // pointerdowns on the slider, drags outside the browser window,
-    // and releases — Radix's pointerup listener may not fire, leaving
-    // `draggingRef` stuck at `true`. A subsequent keyboard step would
-    // then incorrectly dispatch `change + commit` instead of a single
-    // `discrete`.
-    //
-    // Fix: install always-on window-level `pointerup` / `pointercancel`
-    // listeners that unconditionally clear `draggingRef`. They are
-    // trivially cheap — a single ref write per event. No dispatch is
-    // fired from the safety net: "commit" semantics remain Radix's
-    // responsibility via the normal `onValueCommit` path. The safety
-    // net only closes the leak window so subsequent interactions see
-    // a clean state.
-    //
-    // Registered via useLayoutEffect rather than useEffect per [L03]:
-    // the leak-recovery listener is a pointer-handler dependency, and
-    // L03 requires setups that keyboard/pointer handlers depend on to
-    // be complete before any browser event can fire. useLayoutEffect
-    // runs synchronously after DOM mutations and before paint, so the
-    // listener is guaranteed to be installed before the first possible
-    // user interaction.
-    //
-    // Also runs on unmount via the effect cleanup — no listener leaks.
-    useLayoutEffect(() => {
-      if (typeof window === "undefined") return;
-      const clearDragging = () => {
-        draggingRef.current = false;
-      };
-      window.addEventListener("pointerup", clearDragging);
-      window.addEventListener("pointercancel", clearDragging);
-      return () => {
-        window.removeEventListener("pointerup", clearDragging);
-        window.removeEventListener("pointercancel", clearDragging);
-      };
-    }, []);
-
     const dispatchSetValue = useCallback(
       (
         v: number,
@@ -316,6 +276,69 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       },
       [manager, effectiveSenderId],
     );
+
+    // Live ref to the latest `dispatchSetValue` so the window-level
+    // listener installed once at mount can call the current-render
+    // closure without re-registering. Matches the live-proxy pattern
+    // used by `useResponder` for action handlers. [L07]
+    const dispatchSetValueRef = useRef(dispatchSetValue);
+    dispatchSetValueRef.current = dispatchSetValue;
+
+    // ---- Window-level pointerup / pointercancel handling ----
+    //
+    // Two distinct concerns share the same registration effect:
+    //
+    // 1. **pointerup (leak-recovery safety net).** Happy path: Radix
+    //    fires `onValueCommit` on pointer release → `handleSliderCommit`
+    //    clears `draggingRef`. Leak path: user pointerdowns on the
+    //    slider, drags outside the browser window, and releases —
+    //    Radix's pointerup may not fire, leaving `draggingRef` stuck
+    //    at `true`. Our listener unconditionally clears the flag on
+    //    any window pointerup. It does NOT dispatch — commit
+    //    semantics remain Radix's responsibility via the normal
+    //    `onValueCommit` path.
+    //
+    // 2. **pointercancel → cancel phase.** When the OS aborts a
+    //    pointer gesture (pointer enters a native scroll on iOS, a
+    //    system modal steals input, etc.), the browser fires
+    //    `pointercancel` instead of `pointerup` and Radix does NOT
+    //    fire `onValueCommit`. For an in-progress drag, this is
+    //    semantically a cancel: the user did not intend the last
+    //    preview value as the final state. We dispatch `phase:
+    //    "cancel"` with the pre-drag snapshot (so parents can roll
+    //    back a live preview to the begin value) and set
+    //    `cancelledRef` so any follow-up spurious `onValueCommit`
+    //    from Radix is suppressed.
+    //
+    // Registered via useLayoutEffect per [L03]: pointer-handler
+    // dependencies must be installed before any browser event can
+    // fire. The effect's empty dep array keeps the registration
+    // stable; live-ref lookup on `dispatchSetValueRef` captures the
+    // current-render closure without re-registering.
+    useLayoutEffect(() => {
+      if (typeof window === "undefined") return;
+
+      const onPointerUp = () => {
+        // Normal release — just clear the flag. Don't dispatch; Radix
+        // handles commit through onValueCommit on its own.
+        draggingRef.current = false;
+      };
+
+      const onPointerCancel = () => {
+        if (draggingRef.current) {
+          dispatchSetValueRef.current(beginValueRef.current, "cancel");
+          draggingRef.current = false;
+          cancelledRef.current = true;
+        }
+      };
+
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointercancel", onPointerCancel);
+      return () => {
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", onPointerCancel);
+      };
+    }, []);
 
     // ---- Pointer tracking ----
     //

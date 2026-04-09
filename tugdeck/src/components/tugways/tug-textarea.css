@@ -60,6 +60,13 @@
   border-radius: 0.375rem; /* 6px — matches tug-input and tug-button md */
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
   resize: none;
+
+  /* Opt back in to text selection — body has user-select: none as a
+     baseline (see globals.css) to prevent selection starting in card
+     chrome. Form controls need explicit opt-in so the caret appears
+     and ranged selection works. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */

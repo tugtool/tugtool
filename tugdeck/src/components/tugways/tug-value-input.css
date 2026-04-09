@@ -46,6 +46,11 @@ body {
   transition: background-color var(--tug-motion-duration-fast),
               border-color var(--tug-motion-duration-fast);
   padding: 0 var(--tug-space-xs);
+
+  /* Opt back in to text selection — body has user-select: none as a
+     baseline (globals.css). Form controls need explicit opt-in. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* ---- Selection highlight ---- */

@@ -324,6 +324,65 @@ describe("TugSlider – drag hit-test (A2.6)", () => {
 // draggingRef leak-recovery
 // ---------------------------------------------------------------------------
 
+describe("TugSlider – window pointercancel → cancel phase (A2.6 hardening)", () => {
+  it("a window pointercancel during an active drag dispatches phase 'cancel' with the pre-drag value", () => {
+    const { container, dispatched } = renderWithChainObserver(
+      <StatefulSlider
+        initialValue={40}
+        senderId="slider-pointer-cancel"
+        min={0}
+        max={100}
+        step={1}
+        showValue={false}
+      />
+    );
+
+    const root = getSliderRoot(container);
+    // Begin a drag. clientX=100 on the stubbed 200-px track → Radix
+    // hit-tests to 50; our change@50 fires.
+    fireEvent.pointerDown(root, { button: 0, clientX: 100 });
+
+    // OS aborts the gesture — window pointercancel fires without a
+    // preceding pointerup. The listener should dispatch cancel@40
+    // (the pre-drag value snapshot).
+    window.dispatchEvent(new Event("pointercancel"));
+
+    const events = setValueEvents(dispatched);
+    // Expect tail to be cancel@40. Earlier events are begin/change
+    // from the pointerdown.
+    const cancel = events.find((e) => e.phase === "cancel");
+    expect(cancel).toBeDefined();
+    expect(cancel).toMatchObject({
+      phase: "cancel",
+      value: 40,
+      sender: "slider-pointer-cancel",
+    });
+  });
+
+  it("a window pointerup during an active drag does NOT dispatch cancel (normal release)", () => {
+    const { container, dispatched } = renderWithChainObserver(
+      <StatefulSlider
+        initialValue={40}
+        senderId="slider-pointer-release"
+        min={0}
+        max={100}
+        step={1}
+        showValue={false}
+      />
+    );
+
+    const root = getSliderRoot(container);
+    fireEvent.pointerDown(root, { button: 0, clientX: 100 });
+    window.dispatchEvent(new Event("pointerup"));
+
+    const events = setValueEvents(dispatched);
+    // pointerup must NOT dispatch cancel — it's a normal release.
+    // Radix handles commit via its own onValueCommit path.
+    const cancel = events.find((e) => e.phase === "cancel");
+    expect(cancel).toBeUndefined();
+  });
+});
+
 describe("TugSlider – draggingRef leak recovery (A2.6)", () => {
   it("window pointerup after pointerdown clears the drag flag so a later keyboard step dispatches 'discrete'", () => {
     const { container, dispatched } = renderWithChainObserver(

@@ -73,12 +73,16 @@
 
 import "./tug-input.css";
 
-import React, { useCallback, useId, useRef } from "react";
+import React, { useCallback, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
 import { useResponder } from "./use-responder";
 import type { ActionHandlerResult } from "./responder-chain";
+import {
+  TugEditorContextMenu,
+  type TugEditorContextMenuEntry,
+} from "./tug-editor-context-menu";
 
 // ---- Types ----
 
@@ -184,6 +188,7 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
       borderless = false,
       className,
       disabled,
+      onContextMenu,
       ...rest
     },
     ref,
@@ -208,6 +213,18 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
       [ref],
     );
 
+    // Mounted flag used by the async paste continuation to avoid
+    // writing to a detached input after unmount. useRef is enough
+    // because reads in the continuation are synchronous relative to
+    // React's render cycle.
+    const mountedRef = useRef(true);
+    React.useEffect(() => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+      };
+    }, []);
+
     // Disabled inputs never handle actions — the early returns in each
     // handler defend against the dispatch layer somehow sending actions
     // to a disabled input (which shouldn't happen via normal focus, but
@@ -217,8 +234,7 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
       const el = inputRef.current;
       if (!el) return;
       // execCommand("cut") is the only API that integrates with the
-      // native input's undo stack. Deprecated but universally
-      // supported for this use case.
+      // native input's undo stack.
       document.execCommand("cut");
     }, [effectiveDisabled]);
 
@@ -246,6 +262,7 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
       return () => {
         void readPromise.then((text) => {
           if (!text) return;
+          if (!mountedRef.current) return;
           const start = el.selectionStart ?? el.value.length;
           const end = el.selectionEnd ?? el.value.length;
           el.setRangeText(text, start, end, "end");
@@ -296,17 +313,80 @@ const TugInputWithResponder = React.forwardRef<HTMLInputElement, TugInputProps>(
       [composeInputRef, responderRef],
     );
 
+    // ---- Context menu (right-click) ----
+    //
+    // Matches the tug-prompt-input precedent: on right-click over the
+    // input, open a TugEditorContextMenu anchored at the cursor with
+    // cut / copy / paste / selectAll items. Cut and Copy are disabled
+    // when there is no ranged selection. Menu item activation
+    // dispatches the item's action through the chain; the innermost-
+    // first walk routes it right back to this input, which handles
+    // it via the same execCommand / Clipboard API path used by the
+    // keyboard shortcuts.
+    //
+    // The menu is a portaled positioned `<div>` that never steals
+    // focus, so the input keeps its caret and selection while the
+    // menu is open — clipboard commands run inside a user gesture
+    // from the menu item's mousedown handler.
+    const [menuState, setMenuState] = useState<{
+      x: number;
+      y: number;
+      hasSelection: boolean;
+    } | null>(null);
+
+    const handleContextMenu = useCallback(
+      (e: React.MouseEvent<HTMLInputElement>) => {
+        if (effectiveDisabled) return;
+        e.preventDefault();
+        const el = inputRef.current;
+        if (!el) return;
+        // Native input right-click does NOT auto-select a word; it
+        // positions the caret and enables Cut/Copy only if a prior
+        // selection exists. Match that behavior.
+        const hasSelection =
+          el.selectionStart !== null &&
+          el.selectionEnd !== null &&
+          el.selectionStart !== el.selectionEnd;
+        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+        onContextMenu?.(e);
+      },
+      [effectiveDisabled, onContextMenu],
+    );
+
+    const closeMenu = useCallback(() => setMenuState(null), []);
+
+    const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
+      const hasSelection = menuState?.hasSelection ?? false;
+      return [
+        { action: "cut", label: "Cut", shortcut: "\u2318X", disabled: !hasSelection },
+        { action: "copy", label: "Copy", shortcut: "\u2318C", disabled: !hasSelection },
+        { action: "paste", label: "Paste", shortcut: "\u2318V" },
+        { type: "separator" },
+        { action: "selectAll", label: "Select All", shortcut: "\u2318A" },
+      ];
+    }, [menuState?.hasSelection]);
+
     return (
-      <input
-        ref={composedRef}
-        data-slot="tug-input"
-        data-focus-style={focusStyle}
-        data-borderless={borderless || undefined}
-        className={buildInputClassName(size, validation, className)}
-        disabled={effectiveDisabled}
-        aria-invalid={validation === "invalid" ? "true" : undefined}
-        {...rest}
-      />
+      <>
+        <input
+          ref={composedRef}
+          data-slot="tug-input"
+          data-focus-style={focusStyle}
+          data-borderless={borderless || undefined}
+          className={buildInputClassName(size, validation, className)}
+          disabled={effectiveDisabled}
+          aria-invalid={validation === "invalid" ? "true" : undefined}
+          onContextMenu={handleContextMenu}
+          {...rest}
+        />
+        <TugEditorContextMenu
+          open={menuState !== null}
+          x={menuState?.x ?? 0}
+          y={menuState?.y ?? 0}
+          items={menuItems}
+          onClose={closeMenu}
+        />
+      </>
     );
   },
 );

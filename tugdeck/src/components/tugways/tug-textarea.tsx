@@ -35,12 +35,16 @@
 
 import "./tug-textarea.css";
 
-import React, { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useResponderChain } from "./responder-chain-provider";
 import { useResponder } from "./use-responder";
 import type { ActionHandlerResult } from "./responder-chain";
+import {
+  TugEditorContextMenu,
+  type TugEditorContextMenuEntry,
+} from "./tug-editor-context-menu";
 
 // ---- Types ----
 
@@ -329,6 +333,7 @@ const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextar
       focusStyle = "background",
       borderless = false,
       disabled,
+      onContextMenu,
       ...rest
     },
     ref,
@@ -341,6 +346,16 @@ const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextar
     // textarea alongside the forwarded ref and responderRef via the
     // shared body's `extraRef` slot.
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+    // Mounted flag used by the async paste continuation to avoid
+    // writing to a detached textarea after unmount.
+    const mountedRef = useRef(true);
+    React.useEffect(() => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+      };
+    }, []);
 
     const handleCut = useCallback((): ActionHandlerResult => {
       if (effectiveDisabled) return;
@@ -367,6 +382,7 @@ const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextar
       return () => {
         void readPromise.then((text) => {
           if (!text) return;
+          if (!mountedRef.current) return;
           const start = el.selectionStart ?? el.value.length;
           const end = el.selectionEnd ?? el.value.length;
           el.setRangeText(text, start, end, "end");
@@ -414,18 +430,70 @@ const TugTextareaWithResponder = React.forwardRef<HTMLTextAreaElement, TugTextar
       [responderRef],
     );
 
+    // ---- Context menu (right-click) ----
+    //
+    // Same pattern as tug-input.tsx and tug-prompt-input.tsx: open a
+    // portaled TugEditorContextMenu at the click coordinates with
+    // cut/copy/paste/selectAll items. Menu item activation dispatches
+    // through the chain and the innermost-first walk routes it back
+    // to this textarea, which handles it via the normal handlers.
+    const [menuState, setMenuState] = useState<{
+      x: number;
+      y: number;
+      hasSelection: boolean;
+    } | null>(null);
+
+    const handleContextMenu = useCallback(
+      (e: React.MouseEvent<HTMLTextAreaElement>) => {
+        if (effectiveDisabled) return;
+        e.preventDefault();
+        const el = textareaRef.current;
+        if (!el) return;
+        const hasSelection =
+          el.selectionStart !== null &&
+          el.selectionEnd !== null &&
+          el.selectionStart !== el.selectionEnd;
+        setMenuState({ x: e.clientX, y: e.clientY, hasSelection });
+        onContextMenu?.(e);
+      },
+      [effectiveDisabled, onContextMenu],
+    );
+
+    const closeMenu = useCallback(() => setMenuState(null), []);
+
+    const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
+      const hasSelection = menuState?.hasSelection ?? false;
+      return [
+        { action: "cut", label: "Cut", shortcut: "\u2318X", disabled: !hasSelection },
+        { action: "copy", label: "Copy", shortcut: "\u2318C", disabled: !hasSelection },
+        { action: "paste", label: "Paste", shortcut: "\u2318V" },
+        { type: "separator" },
+        { action: "selectAll", label: "Select All", shortcut: "\u2318A" },
+      ];
+    }, [menuState?.hasSelection]);
+
     return (
-      <TugTextareaBody
-        size={size}
-        validation={validation}
-        resize={resize}
-        focusStyle={focusStyle}
-        borderless={borderless}
-        disabled={disabled}
-        extraRef={extraRef}
-        forwardedRef={ref}
-        {...rest}
-      />
+      <>
+        <TugTextareaBody
+          size={size}
+          validation={validation}
+          resize={resize}
+          focusStyle={focusStyle}
+          borderless={borderless}
+          disabled={disabled}
+          extraRef={extraRef}
+          forwardedRef={ref}
+          onContextMenu={handleContextMenu}
+          {...rest}
+        />
+        <TugEditorContextMenu
+          open={menuState !== null}
+          x={menuState?.x ?? 0}
+          y={menuState?.y ?? 0}
+          items={menuItems}
+          onClose={closeMenu}
+        />
+      </>
     );
   },
 );

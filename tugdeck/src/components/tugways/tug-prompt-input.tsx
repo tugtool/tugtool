@@ -599,21 +599,47 @@ export const TugPromptInput = React.forwardRef<TugTextInputDelegate, TugPromptIn
       };
     }, []);
 
+    // ---- selectAll / undo / redo ----
+    //
+    // These round-trip through the engine's own APIs. Unlike cut/copy/
+    // paste they don't need a continuation — the engine's selectAll
+    // and undo/redo are synchronous state transitions with no
+    // clipboard / user-gesture constraint. Registering these handlers
+    // is what makes ⌘A / ⌘Z / ⇧⌘Z work against the focused editor via
+    // the chain once those bindings are wired in the keybinding map.
+
+    const handleSelectAll = useCallback((): ActionHandlerResult => {
+      engineRef.current?.selectAll();
+    }, []);
+
+    const handleUndo = useCallback((): ActionHandlerResult => {
+      engineRef.current?.undo();
+    }, []);
+
+    const handleRedo = useCallback((): ActionHandlerResult => {
+      engineRef.current?.redo();
+    }, []);
+
     const { ResponderScope, responderRef } = useResponder({
       id: responderId,
       actions: {
         cut: handleCut,
         copy: handleCopy,
         paste: handlePaste,
+        selectAll: handleSelectAll,
+        undo: handleUndo,
+        redo: handleRedo,
       },
     });
 
     const menuItems = useMemo<TugEditorContextMenuEntry[]>(() => {
       const hasSelection = menuState?.hasSelection ?? false;
       return [
-        { action: "cut",   label: "Cut",   shortcut: "\u2318X", disabled: !hasSelection },
-        { action: "copy",  label: "Copy",  shortcut: "\u2318C", disabled: !hasSelection },
-        { action: "paste", label: "Paste", shortcut: "\u2318V" },
+        { action: "cut",       label: "Cut",        shortcut: "\u2318X", disabled: !hasSelection },
+        { action: "copy",      label: "Copy",       shortcut: "\u2318C", disabled: !hasSelection },
+        { action: "paste",     label: "Paste",      shortcut: "\u2318V" },
+        { type: "separator" },
+        { action: "selectAll", label: "Select All", shortcut: "\u2318A" },
       ];
     }, [menuState?.hasSelection]);
 
