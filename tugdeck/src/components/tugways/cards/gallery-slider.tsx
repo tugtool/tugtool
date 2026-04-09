@@ -1,10 +1,17 @@
 /**
  * GallerySlider — TugSlider demos for the Component Gallery.
+ *
+ * Every slider here binds its state through `useResponderForm` so drag
+ * phases (`begin`/`change`/`commit`) and keyboard/wheel discrete
+ * changes both arrive at the same setter. The demo only cares about
+ * the final numeric value, so it ignores the phase argument — a
+ * unary `setXxx` is assignable to the phased slot signature.
  */
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { Volume1, Volume2 } from "lucide-react";
 import { TugSlider } from "@/components/tugways/tug-slider";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { createNumberFormatter } from "@/lib/tug-format";
 import "./gallery-slider.css";
 
@@ -40,8 +47,42 @@ export function GallerySlider() {
   const [ticksValue, setTicksValue] = useState(4);
   const [volumeValue, setVolumeValue] = useState(6);
 
+  // ---- Gensym'd sender ids ----
+  const smId = useId();
+  const mdId = useId();
+  const lgId = useId();
+  const inlineId = useId();
+  const stackedId = useId();
+  const percentId = useId();
+  const decimalId = useId();
+  const integerId = useId();
+  const noValueId = useId();
+  const ticksId = useId();
+  const volumeId = useId();
+
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueNumber: {
+      [smId]: setSmValue,
+      [mdId]: setMdValue,
+      [lgId]: setLgValue,
+      [inlineId]: setInlineValue,
+      [stackedId]: setStackedValue,
+      [percentId]: setPercentValue,
+      [decimalId]: setDecimalValue,
+      [integerId]: setIntegerValue,
+      [noValueId]: setNoValueValue,
+      [ticksId]: setTicksValue,
+      [volumeId]: setVolumeValue,
+    },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-slider">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-slider"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- Section 1: Sizes ---- */}
       <div className="cg-section">
@@ -52,7 +93,7 @@ export function GallerySlider() {
             <TugSlider
               size="sm"
               value={smValue}
-              onValueChange={setSmValue}
+              senderId={smId}
               label="Small"
             />
             <div className="cg-demo-status">Value: <code>{smValue}</code></div>
@@ -62,7 +103,7 @@ export function GallerySlider() {
             <TugSlider
               size="md"
               value={mdValue}
-              onValueChange={setMdValue}
+              senderId={mdId}
               label="Medium"
             />
             <div className="cg-demo-status">Value: <code>{mdValue}</code></div>
@@ -72,7 +113,7 @@ export function GallerySlider() {
             <TugSlider
               size="lg"
               value={lgValue}
-              onValueChange={setLgValue}
+              senderId={lgId}
               label="Large"
             />
             <div className="cg-demo-status">Value: <code>{lgValue}</code></div>
@@ -92,7 +133,7 @@ export function GallerySlider() {
               size="md"
               layout="inline"
               value={inlineValue}
-              onValueChange={setInlineValue}
+              senderId={inlineId}
               label="Opacity"
             />
           </div>
@@ -102,7 +143,7 @@ export function GallerySlider() {
               size="md"
               layout="stacked"
               value={stackedValue}
-              onValueChange={setStackedValue}
+              senderId={stackedId}
               label="Volume"
             />
           </div>
@@ -120,7 +161,7 @@ export function GallerySlider() {
             <TugSlider
               size="md"
               value={percentValue}
-              onValueChange={setPercentValue}
+              senderId={percentId}
               min={0}
               max={1}
               step={0.01}
@@ -133,7 +174,7 @@ export function GallerySlider() {
             <TugSlider
               size="md"
               value={decimalValue}
-              onValueChange={setDecimalValue}
+              senderId={decimalId}
               min={0}
               max={10}
               step={0.1}
@@ -146,7 +187,7 @@ export function GallerySlider() {
             <TugSlider
               size="md"
               value={integerValue}
-              onValueChange={setIntegerValue}
+              senderId={integerId}
               min={0}
               max={100}
               step={1}
@@ -164,7 +205,6 @@ export function GallerySlider() {
         <TugSlider
           size="md"
           value={disabledValue}
-          onValueChange={() => {}}
           label="Locked"
           disabled
         />
@@ -178,7 +218,7 @@ export function GallerySlider() {
         <TugSlider
           size="md"
           value={noValueValue}
-          onValueChange={setNoValueValue}
+          senderId={noValueId}
           label="Track Only"
           showValue={false}
         />
@@ -195,7 +235,7 @@ export function GallerySlider() {
             <TugSlider
               size="md"
               value={ticksValue}
-              onValueChange={setTicksValue}
+              senderId={ticksId}
               min={0}
               max={10}
               step={1}
@@ -209,7 +249,7 @@ export function GallerySlider() {
             <TugSlider
               size="md"
               value={volumeValue}
-              onValueChange={setVolumeValue}
+              senderId={volumeId}
               min={0}
               max={10}
               step={1}
@@ -224,5 +264,6 @@ export function GallerySlider() {
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

@@ -2,8 +2,9 @@
  * GalleryValueInput — TugValueInput demos for the Component Gallery.
  */
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { TugValueInput } from "@/components/tugways/tug-value-input";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { createNumberFormatter } from "@/lib/tug-format";
 
 // ---- Formatters (module scope to avoid recreation on each render) ----
@@ -24,11 +25,36 @@ export function GalleryValueInput() {
   const [decimalValue, setDecimalValue] = useState(5.0);
   const [integerValue, setIntegerValue] = useState(42);
 
-  // Section 3: Disabled
+  // Section 3: Disabled (unchanged but present for visual completeness).
   const [disabledValue] = useState(30);
 
+  // Gensym'd sender ids — each control gets a unique, stable id so
+  // parent handler bindings can disambiguate without string literals.
+  const smId = useId();
+  const mdId = useId();
+  const lgId = useId();
+  const percentId = useId();
+  const decimalId = useId();
+  const integerId = useId();
+
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueNumber: {
+      [smId]: setSmValue,
+      [mdId]: setMdValue,
+      [lgId]: setLgValue,
+      [percentId]: setPercentValue,
+      [decimalId]: setDecimalValue,
+      [integerId]: setIntegerValue,
+    },
+  });
+
   return (
-    <div className="cg-content" data-testid="gallery-value-input">
+    <ResponderScope>
+    <div
+      className="cg-content"
+      data-testid="gallery-value-input"
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+    >
 
       {/* ---- Section 1: Sizes ---- */}
       <div className="cg-section">
@@ -36,17 +62,17 @@ export function GalleryValueInput() {
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "3rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>sm</span>
-            <TugValueInput size="sm" value={smValue} onValueCommit={setSmValue} min={0} max={100} />
+            <TugValueInput size="sm" value={smValue} senderId={smId} min={0} max={100} />
             <span className="cg-demo-status">Value: <code>{smValue}</code></span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "3rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>md</span>
-            <TugValueInput size="md" value={mdValue} onValueCommit={setMdValue} min={0} max={100} />
+            <TugValueInput size="md" value={mdValue} senderId={mdId} min={0} max={100} />
             <span className="cg-demo-status">Value: <code>{mdValue}</code></span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span style={{ width: "3rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>lg</span>
-            <TugValueInput size="lg" value={lgValue} onValueCommit={setLgValue} min={0} max={100} />
+            <TugValueInput size="lg" value={lgValue} senderId={lgId} min={0} max={100} />
             <span className="cg-demo-status">Value: <code>{lgValue}</code></span>
           </div>
         </div>
@@ -62,7 +88,7 @@ export function GalleryValueInput() {
             <span style={{ width: "5rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>percent</span>
             <TugValueInput
               value={percentValue}
-              onValueCommit={setPercentValue}
+              senderId={percentId}
               formatter={percentFormatter}
               min={0}
               max={1}
@@ -74,7 +100,7 @@ export function GalleryValueInput() {
             <span style={{ width: "5rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>decimal</span>
             <TugValueInput
               value={decimalValue}
-              onValueCommit={setDecimalValue}
+              senderId={decimalId}
               formatter={decimalFormatter}
               min={0}
               max={10}
@@ -86,7 +112,7 @@ export function GalleryValueInput() {
             <span style={{ width: "5rem", fontSize: "0.625rem", color: "var(--tug7-element-global-text-normal-subtle-rest)" }}>integer</span>
             <TugValueInput
               value={integerValue}
-              onValueCommit={setIntegerValue}
+              senderId={integerId}
               min={0}
               max={100}
               step={1}
@@ -101,9 +127,10 @@ export function GalleryValueInput() {
       {/* ---- Section 3: Disabled ---- */}
       <div className="cg-section">
         <div className="cg-section-title">TugValueInput — Disabled</div>
-        <TugValueInput value={disabledValue} onValueCommit={() => {}} disabled />
+        <TugValueInput value={disabledValue} disabled />
       </div>
 
     </div>
+    </ResponderScope>
   );
 }

@@ -7,18 +7,35 @@
  * All input value management is imperative via refs — no React state for
  * the display/edit cycle. [L06]
  *
- * Laws: [L06] appearance via DOM refs not React state, [L15] token-driven states,
- *       [L16] pairings declared, [L19] component authoring guide
+ * Per [L11], TugValueInput is a control: on commit (blur, Enter, or arrow
+ * increment/decrement) it dispatches a `setValue` action with `phase:
+ * "discrete"` through the responder chain. Every commit path is discrete
+ * because a text input has no scrub semantics — there's no begin/change/
+ * commit window like a slider drag. Escape reverts without dispatching.
+ *
+ * When used standalone (e.g. numeric fields in settings forms), parents
+ * bind via the `setValueNumber` slot in `useResponderForm` using a
+ * gensym'd `senderId`. When nested inside `TugSlider`, the slider passes
+ * its own `senderId` down so both the slider drag and the value-input
+ * edits dispatch under the same sender — the parent handler receives
+ * both and can branch on `event.phase` (`"change"` for live scrub,
+ * `"discrete"` for the text field commit).
+ *
+ * Laws: [L06] appearance via DOM refs not React state,
+ *       [L11] controls emit actions; responders handle actions,
+ *       [L15] token-driven states, [L16] pairings declared,
+ *       [L19] component authoring guide
  * Decisions: [D05] component token naming
  */
 
 import "./tug-value-input.css";
 
-import React, { useRef, useCallback, useLayoutEffect } from "react";
+import React, { useRef, useCallback, useId, useLayoutEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { TugFormatter } from "@/lib/tug-format";
 import { clamp, validateNumericInput } from "@/lib/tug-validate";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
+import { useResponderChain } from "./responder-chain-provider";
 
 // ---- Props ----
 
@@ -26,8 +43,15 @@ export interface TugValueInputProps
   extends Omit<React.ComponentPropsWithoutRef<"input">, "value" | "onChange" | "defaultValue" | "type" | "size"> {
   /** Current numeric value. Display is derived from this via the formatter. */
   value: number;
-  /** Called when the user commits a new value (Enter, blur, or arrow key). */
-  onValueCommit: (value: number) => void;
+  /**
+   * Stable opaque sender id for chain dispatches. Auto-derived via
+   * `useId()` if omitted. Parent responders disambiguate multi-input
+   * forms by matching this id in their `setValue` handler bindings.
+   * When nested inside `TugSlider`, the slider passes its own senderId
+   * down so both the drag and text-input dispatches share the same
+   * sender. [L11]
+   */
+  senderId?: string;
   /** Formatter for display/parse. When absent, shows raw number. */
   formatter?: TugFormatter<number>;
   /** Minimum value. Used for clamping on commit and arrow key lower bound. */
@@ -72,7 +96,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
   function TugValueInput(
     {
       value,
-      onValueCommit,
+      senderId,
       formatter,
       min,
       max,
@@ -88,6 +112,28 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
   ) {
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
+
+    // ---- Chain dispatch [L11] ----
+    //
+    // All commit paths (blur, Enter, arrow keys) dispatch `setValue`
+    // with `phase: "discrete"`. The manager is null in standalone
+    // previews / unit tests that don't mount a ResponderChainProvider
+    // — in that case dispatches become no-ops, matching A2 convention.
+    const manager = useResponderChain();
+    const fallbackSenderId = useId();
+    const effectiveSenderId = senderId ?? fallbackSenderId;
+    const dispatchCommit = useCallback(
+      (committed: number) => {
+        if (!manager) return;
+        manager.dispatch({
+          action: "setValue",
+          value: committed,
+          sender: effectiveSenderId,
+          phase: "discrete",
+        });
+      },
+      [manager, effectiveSenderId],
+    );
 
     // ---- Imperative value management [L06] ----
     //
@@ -187,7 +233,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           e.preventDefault();
           const effectiveMax = max ?? Infinity;
           const next = clamp(value + step, -Infinity, effectiveMax);
-          onValueCommit(next);
+          dispatchCommit(next);
           const input = inputRef.current;
           if (input) {
             const formatted = formatter ? formatter.format(next) : String(next);
@@ -198,7 +244,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           e.preventDefault();
           const effectiveMin = min ?? -Infinity;
           const next = clamp(value - step, effectiveMin, Infinity);
-          onValueCommit(next);
+          dispatchCommit(next);
           const input = inputRef.current;
           if (input) {
             const formatted = formatter ? formatter.format(next) : String(next);
@@ -207,7 +253,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
           }
         }
       },
-      [value, formatter, editMode, min, max, step, onValueCommit],
+      [value, formatter, editMode, min, max, step, dispatchCommit],
     );
 
     // ---- Blur handler ----
@@ -255,7 +301,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       }
 
       if (parsed !== null) {
-        onValueCommit(parsed);
+        dispatchCommit(parsed);
       }
 
       // Restore display format (whether committed or reverted).
@@ -263,7 +309,7 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
         const committed = parsed ?? value;
         input.value = formatter ? formatter.format(committed) : String(committed);
       }
-    }, [min, max, step, value, formatter, editMode, onValueCommit]);
+    }, [min, max, step, value, formatter, editMode, dispatchCommit]);
 
     return (
       <input

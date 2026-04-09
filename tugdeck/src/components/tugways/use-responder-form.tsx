@@ -68,22 +68,35 @@
  * typed correctly and the hook can apply the right narrower when a
  * dispatch arrives:
  *
- * | Slot                  | Chain action | Payload type    | Used by                    |
- * |-----------------------|--------------|-----------------|----------------------------|
- * | `toggle`              | toggle       | boolean         | checkbox, switch           |
- * | `selectValue`         | selectValue  | string          | radio group, choice group  |
- * | `setValueNumber`      | setValue     | number          | slider, value-input        |
- * | `setValueString`      | setValue     | string          | text input, textarea       |
- * | `setValueStringArray` | setValue     | string[]        | option group               |
- * | `selectTab`           | selectTab    | string          | tab bar                    |
- * | `closeTab`            | closeTab     | string          | tab bar                    |
- * | `addTab`              | addTab       | string          | tab bar `+` popup          |
- * | `toggleSectionSingle` | toggleSection | string          | single-expand accordion    |
- * | `toggleSectionMulti`  | toggleSection | string[]        | multi-expand accordion     |
+ * | Slot                  | Chain action  | Payload type | Setter signature                            | Used by                   |
+ * |-----------------------|---------------|--------------|---------------------------------------------|---------------------------|
+ * | `toggle`              | toggle        | boolean      | `(v: boolean) => void`                      | checkbox, switch          |
+ * | `selectValue`         | selectValue   | string       | `(v: string) => void`                       | radio group, choice group |
+ * | `setValueNumber`      | setValue      | number       | `(v: number, phase: ActionPhase) => void`   | slider, value-input       |
+ * | `setValueString`      | setValue      | string       | `(v: string, phase: ActionPhase) => void`   | text input, textarea      |
+ * | `setValueStringArray` | setValue      | string[]     | `(v: string[], phase: ActionPhase) => void` | option group              |
+ * | `selectTab`           | selectTab     | string       | `(v: string) => void`                       | tab bar                   |
+ * | `closeTab`            | closeTab      | string       | `(v: string) => void`                       | tab bar                   |
+ * | `addTab`              | addTab        | string       | `(v: string) => void`                       | tab bar `+` popup         |
+ * | `toggleSectionSingle` | toggleSection | string       | `(v: string) => void`                       | single-expand accordion   |
+ * | `toggleSectionMulti`  | toggleSection | string[]     | `(v: string[]) => void`                     | multi-expand accordion    |
  *
  * Slots for actions not yet migrated (A2.3 onward) are present in the
  * type so downstream migrations can start using the helper
  * immediately without needing to extend the hook.
+ *
+ * ## Phase-aware setValue slots
+ *
+ * The `setValue*` slots pass `event.phase` to the bound setter as a
+ * second argument. Phases are `"discrete" | "begin" | "change" |
+ * "commit" | "cancel"` (see `ActionPhase`). This lets sliders drive a
+ * ref-based live preview on `"change"` and only persist state on
+ * `"commit"` / `"discrete"`, without forking the slot for each control
+ * type. Consumers that don't care about phase can declare
+ * `(v: number) => void` — TypeScript accepts the narrower parameter
+ * list because function parameters are contravariant: a unary setter
+ * is assignable to the wider `(v, phase) => void` slot signature.
+ * The phase is passed at runtime but ignored.
  *
  * ## Dispatches from unbound senders
  *
@@ -119,7 +132,7 @@
  */
 
 import React, { useCallback, useId, useRef } from "react";
-import type { ActionEvent, ActionHandler, TugAction } from "./responder-chain";
+import type { ActionEvent, ActionHandler, ActionPhase, TugAction } from "./responder-chain";
 import { useResponder } from "./use-responder";
 
 // ---- Types ----
@@ -139,12 +152,38 @@ export interface TugResponderFormBindings {
   toggle?: Record<string, (value: boolean) => void>;
   /** selectValue action (string payload) — radio group, choice group. */
   selectValue?: Record<string, (value: string) => void>;
-  /** setValue action with number payload — slider, value-input. */
-  setValueNumber?: Record<string, (value: number) => void>;
-  /** setValue action with string payload — text input, textarea. */
-  setValueString?: Record<string, (value: string) => void>;
-  /** setValue action with string[] payload — option group. */
-  setValueStringArray?: Record<string, (value: string[]) => void>;
+  /**
+   * setValue action with number payload — slider, value-input.
+   *
+   * **Phase awareness.** Sliders dispatch `setValue` with phases
+   * `"begin" | "change" | "commit"` during a pointer drag, and
+   * `"discrete"` for keyboard/wheel changes or for bare value-input
+   * edits. Setters bound to this slot receive the phase as a second
+   * argument so handlers can branch between live preview (change) and
+   * committed values (commit / discrete) — e.g. drive a local ref for
+   * transient preview and only persist on commit.
+   *
+   * Consumers that don't care about phases can declare `(v: number) => void`
+   * and TypeScript accepts it (narrower parameter list is assignable to
+   * the wider slot signature). The phase is passed but ignored.
+   */
+  setValueNumber?: Record<string, (value: number, phase: ActionPhase) => void>;
+  /**
+   * setValue action with string payload — text input, textarea.
+   *
+   * Receives phase as a second argument (text inputs are typically
+   * `"discrete"`, but the slot carries phase for symmetry with
+   * `setValueNumber` so future pre-commit input widgets can flow
+   * without extending the hook).
+   */
+  setValueString?: Record<string, (value: string, phase: ActionPhase) => void>;
+  /**
+   * setValue action with string[] payload — option group.
+   *
+   * Receives phase as a second argument for consistency; option
+   * groups currently always dispatch `"discrete"`.
+   */
+  setValueStringArray?: Record<string, (value: string[], phase: ActionPhase) => void>;
   /** selectTab action (string payload) — tab bar. */
   selectTab?: Record<string, (value: string) => void>;
   /** closeTab action (string payload) — tab bar. */
@@ -259,7 +298,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
     const numberSetter = b.setValueNumber?.[sender];
     if (numberSetter !== undefined) {
       if (typeof event.value !== "number") return;
-      numberSetter(event.value);
+      numberSetter(event.value, event.phase);
       return;
     }
 
@@ -267,7 +306,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
     const stringSetter = b.setValueString?.[sender];
     if (stringSetter !== undefined) {
       if (typeof event.value !== "string") return;
-      stringSetter(event.value);
+      stringSetter(event.value, event.phase);
       return;
     }
 
@@ -276,7 +315,7 @@ export function useResponderForm(bindings: TugResponderFormBindings): UseRespond
     if (stringArraySetter !== undefined) {
       if (!Array.isArray(event.value)) return;
       if (!event.value.every((x) => typeof x === "string")) return;
-      stringArraySetter(event.value);
+      stringArraySetter(event.value, event.phase);
       return;
     }
 
