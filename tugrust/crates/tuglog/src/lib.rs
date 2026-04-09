@@ -38,7 +38,7 @@ pub struct LogGuard {
 /// temp directory if the home directory can't be determined.
 fn log_dir() -> PathBuf {
     let base = dirs::data_dir()
-        .unwrap_or_else(|| std::env::temp_dir())
+        .unwrap_or_else(std::env::temp_dir)
         .join("Tug")
         .join("Logs");
     let _ = fs::create_dir_all(&base);
@@ -63,10 +63,7 @@ pub fn init(name: &str) -> LogGuard {
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     tracing_subscriber::registry()
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(fmt::layer().with_writer(non_blocking))
         .init();
 

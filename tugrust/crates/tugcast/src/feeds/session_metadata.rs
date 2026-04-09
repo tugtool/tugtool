@@ -69,7 +69,8 @@ mod tests {
 
     #[test]
     fn detects_system_metadata() {
-        let payload = br#"{"type":"system_metadata","session_id":"abc","cwd":"/tmp","slash_commands":[]}"#;
+        let payload =
+            br#"{"type":"system_metadata","session_id":"abc","cwd":"/tmp","slash_commands":[]}"#;
         assert!(is_system_metadata(payload));
     }
 

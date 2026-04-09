@@ -281,12 +281,14 @@ async fn main() {
     }
 
     // Session metadata snapshot — filters system_metadata from CODE_OUTPUT.
-    let (session_meta_tx, session_meta_rx) = watch::channel(Frame::new(FeedId::SESSION_METADATA, vec![]));
-    let session_meta_feed =
-        feeds::session_metadata::SessionMetadataFeed::new(code_tx.subscribe());
+    let (session_meta_tx, session_meta_rx) =
+        watch::channel(Frame::new(FeedId::SESSION_METADATA, vec![]));
+    let session_meta_feed = feeds::session_metadata::SessionMetadataFeed::new(code_tx.subscribe());
     let session_meta_cancel = cancel.clone();
     tokio::spawn(async move {
-        session_meta_feed.run(session_meta_tx, session_meta_cancel).await;
+        session_meta_feed
+            .run(session_meta_tx, session_meta_cancel)
+            .await;
     });
 
     // Create replay buffer for CodeOutput lag recovery (P4)
