@@ -603,7 +603,93 @@ Fix — one new file plus one pattern change:
 
 #### A2.8 — Floating surfaces: `tug-confirm-popover`, `tug-alert`, `tug-sheet`, `tug-popover`
 
-Dispatch `confirmDialog` / `cancelDialog` / `dismissDialog` / `dismissPopover`. Remove `onConfirm`, `onCancel`, `onOpenChange`. These also become Phase R6 candidates (subscribe to `observeDispatch` for external dismiss).
+Dispatch `confirmDialog` / `cancelDialog` / `dismissPopover`. Remove `onConfirm`, `onCancel`, `onOpenChange`. Per decision below, `dismissDialog` is **not** added — every dismissal (Escape, click-outside, Cmd+., Cancel button) routes through `cancelDialog`, matching the Part 4 "cancel is the dismissal semantic" convention. The four surfaces also absorb the `observeDispatch` retrofit that Phase R6 originally deferred to A4 — folded into A2.8 so each surface becomes fully chain-native in one pass instead of being revisited.
+
+**Lay of the land — prep audit before implementation**
+
+*Scope — four files, three distinct migration shapes*
+
+| File | Lines | Callback props to remove | Imperative API to preserve |
+|---|---:|---|---|
+| `tugdeck/src/components/tugways/tug-confirm-popover.tsx` | 177 | `onConfirm`, `onCancel`, `onOpenChange` | `TugConfirmPopoverHandle.confirm()` → `Promise<boolean>` |
+| `tugdeck/src/components/tugways/tug-alert.tsx` | 360 | `onConfirm`, `onCancel`, `onOpenChange` | `TugAlertHandle.alert(opts)` + `TugAlertProvider` + `useTugAlert()` |
+| `tugdeck/src/components/tugways/tug-sheet.tsx` | 499 | `onOpenChange` | `TugSheetHandle.open/close` + `useTugSheet()` → `{showSheet, renderSheet}` |
+| `tugdeck/src/components/tugways/tug-popover.tsx` | 157 | `onOpenChange` (thin Radix wrapper) | — |
+
+The imperative Promise APIs (`confirm()`, `alert()`, `useTugSheet()`) are **not** the L11 violation the audit is pointing at — they are a legitimate Promise adapter over chain dispatch and stay intact. Only the `onConfirm` / `onCancel` / `onOpenChange` React callback props leave. Internally, the resolver pairs that currently fire from inline button `onClick` handlers will be rewired to fire from `confirmDialog` / `cancelDialog` action handlers registered via `useOptionalResponder`.
+
+*Vocabulary status*
+
+`action-vocabulary.ts` already has `confirmDialog`, `cancelDialog`, `dismissPopover`, `openMenu` (lines 104–108). **No new actions are added in A2.8.** `dismissDialog` was floated in earlier plan text but is rejected in favor of reusing `cancelDialog`, matching the documented convention that "cancel" is the dismissal semantic for dialog-like responders. Escape, Cmd+., click-outside, and explicit Cancel buttons all dispatch `cancelDialog` with the same resolver behavior.
+
+`TugAction` is now generic (`TugAction<Extra extends string = never>`, post-`38918b16`), so gallery cards that need demo-only actions opt in via `TugAction<GalleryAction>` without polluting the production union. A2.8 does not need any extra action names — the existing dialog vocabulary is sufficient.
+
+*Consumers that will need updating*
+
+- `tugdeck/src/components/tugways/cards/gallery-confirm-popover.tsx` — 6 `onConfirm`/`onCancel` call sites (lines 60–61, 84–85, 108–109, 132–133, 145–146).
+- `tugdeck/src/components/tugways/cards/gallery-alert.tsx` — audit during implementation.
+- `tugdeck/src/components/tugways/cards/gallery-sheet.tsx` — audit during implementation.
+- `tugdeck/src/components/tugways/cards/gallery-popover.tsx` — audit during implementation.
+- `tugdeck/src/deck-manager.ts:310` mounts `TugAlertProvider`. Stays the same — the singleton instance is wired internally, not via callback prop.
+- Any production `TugConfirmPopover` / `TugAlert` call sites outside galleries (to be enumerated during sub-step 1).
+
+Gallery consumers register a responder (`useResponder`, or `useResponderForm` if slot-based setters are cleaner) with `confirmDialog` / `cancelDialog` / `dismissPopover` handlers that drive their local result display.
+
+*Architectural wrinkles*
+
+1. **`useOptionalResponder` replaces two-path forking.** A2.6/A2.7 initially used `useResponderChain() === null` to branch into plain vs. responder component types for leaf inputs that had to render outside a provider — that pattern was retired in `0a416494`. A2.8 uses `useOptionalResponder` from day one: one component, tolerant of null manager, preserves DOM element identity across provider transitions so tests that mount a surface standalone and wrap it mid-run don't flip React's component identity. The strict `useResponder` stays reserved for load-bearing chain participants (`tug-card`, `tug-prompt-input`, `deck-canvas`).
+
+2. **Promise resolvers move behind the action handler.** Today `handleConfirm` / `handleCancel` are inline functions that (a) set `open=false`, (b) resolve the pending promise via `resolverRef.current`, and (c) call `onConfirm` / `onCancel`. Post-migration: the action handlers registered via `useOptionalResponder`'s actions map do (a) and (b); (c) is deleted. Internal button `onClick` handlers dispatch `confirmDialog` / `cancelDialog` through the chain, which walks back to the same component's handler — a short loop, but architecturally consistent with A2.1–A2.7.
+
+3. **`tug-popover.tsx` has no intrinsic confirm/cancel buttons.** It's a compound-API wrapper (`TugPopover` / `TugPopoverTrigger` / `TugPopoverContent` / `TugPopoverClose`) over Radix. The only user-interaction callback prop is `onOpenChange`. Migration: the popover becomes a responder that **handles** `dismissPopover` and `cancelDialog` by calling its internal `setOpen(false)`. It does **not** emit actions — dismissal from inside the popover's content is the consumer's responsibility (a `TugConfirmPopover` built on top, a menu item dispatching `dismissPopover`, or the `observeDispatch` path from sub-step 0).
+
+4. **`dismissPopover` innermost-first walk.** `tug-editor-context-menu` already owns `dismissPopover` via `observeDispatch`. If a context menu is nested inside a `TugPopover` (plausible in gallery demos), the chain walks innermost-first and the editor context menu wins — the outer popover only closes if the menu's handler chose not to consume the action. This is correct semantically (close the innermost floating surface first) but deserves a sanity check during sub-step 4.
+
+5. **`tug-sheet.tsx` is the largest file and has the most moving parts.** 499 lines covering: compound API (`TugSheet` / `TugSheetTrigger` / `TugSheetContent`), Radix `FocusScope` focus trapping, `tug-animator` `group()` entry/exit animations, `TugcardPortalContext` portaling into the card element, `inert` attribute management on `.tugcard-body` for card-scoped modality, trigger-element focus restoration, and the `useTugSheet()` Promise hook. The A2.8 change is surgical: register as a responder, add a `cancelDialog` handler that calls `onOpenChange(false)` internally, and drop the `onOpenChange` **prop** (keeping the internal wiring). Everything else stays.
+
+6. **`tug-alert` override-ref pattern stays.** The imperative `alert(options)` call writes into `overrideRef` before flipping `open` true, and the override values are deliberately **not** cleared during close so the exit animation doesn't revert to singleton defaults. This behavior survives A2.8 unchanged — only the `onConfirm` / `onCancel` / `onOpenChange` prop boundaries are touched.
+
+7. **`TugAlertProvider` singleton pattern stays.** `deck-manager.ts` mounts one `TugAlert` instance; `useTugAlert()` returns a `showAlert` function routed through a context. The provider doesn't change — the singleton's internal buttons switch from `onClick={handleConfirm}` to `onClick={dispatch("confirmDialog")}`, and `handleConfirm` is wired as the `confirmDialog` action handler instead of a button prop.
+
+*Pre-step 0 — retrofit `observeDispatch` to `tug-popup-button`*
+
+Before A2.8 sub-step 1, establish a second `observeDispatch` precedent beyond `tug-editor-context-menu`. Today `tug-popup-button.tsx:226` uses `useResponderChain` but does not subscribe to `observeDispatch` — its dismiss path is still Radix-owned. Retrofitting this one surface before A2.8 accomplishes two things: (a) proves the pattern generalizes beyond the editor context menu to a plain popup; (b) gives A2.8 sub-steps 1–4 a concrete, recent template to copy from instead of reaching back to `tug-editor-context-menu.tsx:355`.
+
+Scope of pre-step 0: add a single `useLayoutEffect` to `tug-popup-button.tsx` that subscribes to `manager.observeDispatch` while the popup is open, dismissing on any dispatch (with a blink guard equivalent to the editor context menu's). New tests verify the subscribe/unsubscribe lifecycle and the blink-guard behavior. `tug-context-menu` and `tug-tooltip` are **not** yet chain-native and stay out of scope — they are separate chain-onboarding work for Phase A4, not pre-A2.8.
+
+*Proposed implementation order — seven sub-steps*
+
+Each sub-step is its own commit. Sub-steps run sequentially, not bundled; this matches user preference ("go sub-step by sub-step"). The A2.6/A2.7 pattern of landing a core step and then running factor-out follow-ups (factor-out, Safari paste fix, observeDispatch retrofit) is expected for A2.8 too, landed as additional commits after the initial sub-step completes.
+
+0. **Pre-step — retrofit `observeDispatch` to `tug-popup-button`.** Establish the second precedent (see above). Smallest change in the set; builds confidence in the pattern before the larger surfaces.
+
+1. **`tug-confirm-popover.tsx` — smallest migration, cleanest shape.** Register responder via `useOptionalResponder`, add `confirmDialog` + `cancelDialog` action handlers that own the resolver-pair logic, remove `onConfirm` / `onCancel` / `onOpenChange` props from the public interface, switch internal button `onClick` handlers to `manager.dispatch`. Preserve `confirm()` imperative Promise API — it now resolves from the action handler. Subscribe to `observeDispatch` for external dismiss (Radix's click-outside and Escape still fire `onOpenChange` at the Radix layer, but the `cancelDialog` action handler becomes the single source of truth for "what happens when this popover dismisses"). Migrate `gallery-confirm-popover.tsx` to register a responder that updates local result state from `confirmDialog` / `cancelDialog` dispatches.
+
+2. **`tug-alert.tsx` — largest API surface, architecturally identical.** Same treatment: `useOptionalResponder`, `confirmDialog` + `cancelDialog` handlers, internal buttons dispatch, Cmd+. routes through the chain, resolver pair lives in the handlers, `alert()` Promise API unchanged externally. Drop `onConfirm` / `onCancel` / `onOpenChange` props. `TugAlertProvider` and `useTugAlert` unchanged externally. Add `observeDispatch` subscription while open. Migrate `gallery-alert.tsx` consumer.
+
+3. **`tug-sheet.tsx` — largest file, smallest migration surface.** Register responder, handle `cancelDialog` by calling internal `onOpenChange(false)`, drop the `onOpenChange` **prop** from the public interface while preserving the compound-API internal wiring. Escape and Cmd+. routes through the chain. Add `observeDispatch` subscription — guarded behavior TBD (sheets are card-modal with an opaque scrim that swallows pointer events, so the "click outside dismisses" semantics that `observeDispatch` encodes may not apply; decide during implementation whether sheets opt in or sit out). `useTugSheet`'s `close` callback continues to work. Migrate `gallery-sheet.tsx` consumer.
+
+4. **`tug-popover.tsx` — thin Radix wrapper, handler-only.** Register responder, handle `dismissPopover` and `cancelDialog` by calling internal `setOpen(false)`. Drop `onOpenChange` prop. Add `observeDispatch` subscription. Sanity-check innermost-first walk against any nested context-menu consumers. Migrate `gallery-popover.tsx` consumer.
+
+5. **Test coverage for the four surfaces.** Per-component unit tests along the same shape as `tug-input.test.tsx` and `tug-slider.test.tsx`: dispatch `confirmDialog` resolves the Promise with `true`; dispatch `cancelDialog` resolves with `false`; `observeDispatch` lifecycle (subscribe on open, unsubscribe on close, dismiss on unrelated dispatch); disabled / inert edge cases; sender disambiguation for multiple simultaneous dialogs on one page. `tug-sheet.test.tsx` additionally exercises the `TugcardPortalContext` requirement and the `inert` attribute management. The TugAlertProvider singleton needs one test covering `useTugAlert()` end-to-end against a registered responder.
+
+6. **Factor-out pass (expected, not guaranteed).** If `tug-confirm-popover` and `tug-alert` end up with enough duplication in their resolver-pair + action-handler wiring, extract a shared `useDialogResolverResponder` hook along the same shape as `use-text-input-responder.tsx`. Decide after sub-step 2 lands — don't speculate ahead.
+
+*A2.8 exit criteria (specializes the A2 exit criteria below)*
+
+- Zero `onConfirm` / `onCancel` / `onOpenChange` props remain on the four floating-surface components' public interfaces.
+- Each surface registers via `useOptionalResponder` and handles `confirmDialog` / `cancelDialog` / `dismissPopover` as appropriate.
+- Each surface subscribes to `observeDispatch` while open (folding A4/R6 into A2.8).
+- All four galleries demo the chain-native pattern via registered responders, no callback props at the consumer layer either.
+- `bun run check` and `bun test` clean with added test coverage for all four surfaces.
+- Sub-step 0 (`tug-popup-button` `observeDispatch` retrofit) lands before sub-step 1.
+
+**Decisions locked in before implementation**
+
+1. **`dismissDialog` vs `cancelDialog`.** Reuse `cancelDialog` for every dismissal path — no new action name. Part 4 convention is that "cancel is the dismissal semantic for dialog-like responders," and `cancelDialog` already exists in `action-vocabulary.ts`.
+2. **Sub-step discipline.** One commit per sub-step. No bundling. Factor-out follow-ups land as additional commits after the initial sub-step completes, matching the A2.6/A2.7 rhythm.
+3. **`observeDispatch` scope.** Folded into A2.8 (not deferred to A4), with a pre-A2.8 sub-step 0 that retrofits `tug-popup-button` first to establish the pattern. This leaves Phase A4 reduced to onboarding `tug-context-menu` and `tug-tooltip` to the chain (separate concern — those aren't chain-native yet).
+4. **Imperative Promise APIs preserved.** `TugConfirmPopoverHandle.confirm()`, `TugAlertHandle.alert()`, `useTugAlert()`, `useTugSheet()` are not L11 violations — they are Promise adapters over chain dispatch and survive A2.8 unchanged. Only React callback props for user interactions (`onConfirm` / `onCancel` / `onOpenChange`) leave.
 
 #### A2 exit criteria
 
