@@ -9,7 +9,7 @@
  * @module components/tugways/cards/gallery-sheet
  */
 
-import React, { useMemo, useRef } from "react";
+import React, { useCallback, useId, useMemo, useRef } from "react";
 import {
   TugSheet,
   TugSheetTrigger,
@@ -20,6 +20,7 @@ import type { TugSheetHandle } from "@/components/tugways/tug-sheet";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 const labelStyle: React.CSSProperties = {
@@ -62,18 +63,32 @@ const fieldRowStyle: React.CSSProperties = {
  * 5. Rich scrollable content (checklist).
  */
 export function GallerySheet() {
-  // Controlled state for compound API sections
-  const [basicOpen, setBasicOpen] = React.useState(false);
-  const [descOpen, setDescOpen] = React.useState(false);
-  const [richOpen, setRichOpen] = React.useState(false);
-
   // Section 4: imperative ref
   const sheetRef = useRef<TugSheetHandle>(null);
-  const [imperativeOpen, setImperativeOpen] = React.useState(false);
 
   // Section 1: useTugSheet() hook
   const { showSheet, renderSheet } = useTugSheet();
   const [hookResult, setHookResult] = React.useState<string | undefined>(undefined);
+
+  // Chain manager — the compound-API sections close their sheets by
+  // dispatching cancelDialog, matching the L11 pattern established by
+  // TugConfirmPopover and TugAlert. Per-sheet sender ids disambiguate
+  // so each sheet's own handler closes its own instance.
+  const manager = useResponderChain();
+  const basicSenderId = useId();
+  const descSenderId = useId();
+  const richSenderId = useId();
+
+  const dispatchCancel = useCallback(
+    (sender: string) => {
+      manager?.dispatch({
+        action: "cancelDialog",
+        sender,
+        phase: "discrete",
+      });
+    },
+    [manager],
+  );
 
   return (
     <div className="cg-content" data-testid="gallery-sheet">
@@ -134,11 +149,11 @@ export function GallerySheet() {
           Compound API — TugSheet / TugSheetTrigger / TugSheetContent with a settings form
         </div>
         <div style={{ display: "flex" }}>
-          <TugSheet open={basicOpen} onOpenChange={setBasicOpen}>
+          <TugSheet>
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Open Settings</TugPushButton>
             </TugSheetTrigger>
-            <TugSheetContent title="Card Settings">
+            <TugSheetContent title="Card Settings" senderId={basicSenderId}>
               <div style={fieldGroupStyle}>
                 <div style={fieldRowStyle}>
                   <label style={fieldLabelStyle} htmlFor="sheet-basic-name">Card name</label>
@@ -159,8 +174,8 @@ export function GallerySheet() {
                 </div>
               </div>
               <div className="tug-sheet-actions">
-                <TugPushButton emphasis="outlined" onClick={() => setBasicOpen(false)}>Cancel</TugPushButton>
-                <TugPushButton emphasis="filled" onClick={() => setBasicOpen(false)}>Save</TugPushButton>
+                <TugPushButton emphasis="outlined" onClick={() => dispatchCancel(basicSenderId)}>Cancel</TugPushButton>
+                <TugPushButton emphasis="filled" onClick={() => dispatchCancel(basicSenderId)}>Save</TugPushButton>
               </div>
             </TugSheetContent>
           </TugSheet>
@@ -176,13 +191,14 @@ export function GallerySheet() {
           Optional <code>description</code> prop — renders beneath the title, wired to aria-describedby
         </div>
         <div style={{ display: "flex" }}>
-          <TugSheet open={descOpen} onOpenChange={setDescOpen}>
+          <TugSheet>
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Share Settings</TugPushButton>
             </TugSheetTrigger>
             <TugSheetContent
               title="Share Card"
               description="Choose who can view or edit this card. Changes take effect immediately."
+              senderId={descSenderId}
             >
               <div style={fieldGroupStyle}>
                 <div style={fieldRowStyle}>
@@ -196,8 +212,8 @@ export function GallerySheet() {
                 </div>
               </div>
               <div className="tug-sheet-actions">
-                <TugPushButton emphasis="outlined" onClick={() => setDescOpen(false)}>Cancel</TugPushButton>
-                <TugPushButton emphasis="filled" onClick={() => setDescOpen(false)}>Invite</TugPushButton>
+                <TugPushButton emphasis="outlined" onClick={() => dispatchCancel(descSenderId)}>Cancel</TugPushButton>
+                <TugPushButton emphasis="filled" onClick={() => dispatchCancel(descSenderId)}>Invite</TugPushButton>
               </div>
             </TugSheetContent>
           </TugSheet>
@@ -212,11 +228,7 @@ export function GallerySheet() {
         <div style={labelStyle}>
           useRef&lt;TugSheetHandle&gt; + sheetRef.current.open() / .close() — programmatic control
         </div>
-        <TugSheet
-          ref={sheetRef}
-          open={imperativeOpen}
-          onOpenChange={setImperativeOpen}
-        >
+        <TugSheet ref={sheetRef}>
           {/* No TugSheetTrigger — opened programmatically */}
           <TugSheetContent title="Notifications">
             <div style={fieldGroupStyle}>
@@ -251,7 +263,6 @@ export function GallerySheet() {
           <TugPushButton
             emphasis="outlined"
             size="sm"
-            disabled={!imperativeOpen}
             onClick={() => sheetRef.current?.close()}
           >
             Close
@@ -268,12 +279,12 @@ export function GallerySheet() {
           Scrollable content within the sheet&apos;s max-height constraint — checklist with multiple items
         </div>
         <div style={{ display: "flex" }}>
-          <TugSheet open={richOpen} onOpenChange={setRichOpen}>
+          <TugSheet>
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Review Checklist</TugPushButton>
             </TugSheetTrigger>
-            <TugSheetContent title="Pre-launch Checklist">
-              <RichChecklistContent onClose={() => setRichOpen(false)} />
+            <TugSheetContent title="Pre-launch Checklist" senderId={richSenderId}>
+              <RichChecklistContent onClose={() => dispatchCancel(richSenderId)} />
             </TugSheetContent>
           </TugSheet>
         </div>

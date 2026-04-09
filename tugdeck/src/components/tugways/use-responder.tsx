@@ -244,6 +244,12 @@ export function useOptionalResponder<Extra extends string = never>(
   const hasCanHandleAtMount = useRef(options.canHandle !== undefined);
   const hasValidateActionAtMount = useRef(options.validateAction !== undefined);
 
+  // Tracks the DOM element the responderRef callback was most
+  // recently called with. Declared up here (rather than alongside
+  // responderRef below) so the registration layout effect can read
+  // it at effect time to close the stale-focus timing hole.
+  const currentElementRef = useRef<Element | null>(null);
+
   // Register during the commit phase (useLayoutEffect), unregister on unmount.
   // useLayoutEffect fires synchronously after all DOM mutations but before the
   // browser paints, ensuring the responder is registered before any keyboard or
@@ -325,6 +331,48 @@ export function useOptionalResponder<Extra extends string = never>(
         optionsRef.current.validateAction?.(action) ?? true;
     }
     manager.register(node);
+
+    // ---- Stale-focus re-promotion ----
+    //
+    // Close the autoFocus / any-pre-registration-focus timing hole.
+    //
+    // React's `autoFocus` prop and some synchronous focus flows fire
+    // `element.focus()` during the commit mutation phase — BEFORE ref
+    // callbacks run and BEFORE layout effects. That means when
+    // `focusin` fires, the newly-mounted responder's
+    // `data-responder-id` attribute hasn't been written yet, and the
+    // newly-mounted responder node isn't in the manager yet. The
+    // chain provider's document-level focusin listener walks from the
+    // focus target up through the DOM, skips past the un-instrumented
+    // element, and promotes some ancestor responder instead.
+    // Concretely: an autoFocus'd input inside a freshly mounted sheet
+    // leaves first responder on the CARD, not the input, and a later
+    // ⌘A routes to the card's selectAll handler instead of the
+    // input's.
+    //
+    // The fix runs here, at the point where registration completes.
+    // If `document.activeElement` is inside this responder's DOM
+    // element, that means focus has already landed here but the
+    // earlier focusin promotion couldn't find us. Re-run promotion
+    // now: `findResponderForTarget(activeEl)` walks from the focused
+    // element up — and this time it stops at the newly-registered
+    // node (or an inner child that also just registered). The walk
+    // is innermost-first, so if a deeper child has also just
+    // registered, the child wins, which is what we want.
+    const el = currentElementRef.current;
+    if (el && typeof document !== "undefined") {
+      const activeEl = document.activeElement;
+      if (activeEl && el.contains(activeEl)) {
+        const resolvedId = manager.findResponderForTarget(activeEl);
+        if (
+          resolvedId !== null &&
+          resolvedId !== manager.getFirstResponder()
+        ) {
+          manager.makeFirstResponder(resolvedId);
+        }
+      }
+    }
+
     return () => {
       manager.unregister(id);
     };
@@ -364,7 +412,6 @@ export function useOptionalResponder<Extra extends string = never>(
   // itself is never replaced; only the attribute flips on transition.
   // This is how state survives the transition — the element is the
   // same element across provider changes.
-  const currentElementRef = useRef<Element | null>(null);
   const responderRef = useCallback((el: Element | null) => {
     const prev = currentElementRef.current;
     if (prev && prev !== el) {

@@ -7,13 +7,47 @@
  * fully interactive.
  *
  * Compound API: TugSheet (Root) / TugSheetTrigger / TugSheetContent.
- * Portals into the card root element via TugcardPortalContext.
+ * Portals into the card root element via TugcardPortalContext. Open
+ * state is internal — consumers open the sheet via `TugSheetTrigger`
+ * (click-to-open), an imperative ref handle (`TugSheetHandle.open()`),
+ * or the `useTugSheet()` hook's `showSheet()` Promise API. There is no
+ * public `open`/`onOpenChange` controlled-mode prop; the sheet owns
+ * its own open state and exposes close as a chain action.
  *
  * Imperative hook: useTugSheet() — returns { showSheet, renderSheet }.
  * Call renderSheet() once in your component's JSX; call showSheet() anywhere
  * to present a sheet imperatively and await its result.
  *
- * Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authoring guide,
+ * ## Chain-native close path
+ *
+ * TugSheetContent registers itself as a responder via
+ * `useOptionalResponder` with a `cancelDialog` handler that closes the
+ * sheet through the internal context's onOpenChange. Inside the sheet,
+ * Escape and Cmd+. dispatch `cancelDialog` through the chain and the
+ * walk lands back on the sheet's own handler (routed via the input or
+ * other focused-responder's parent chain — the sheet is the parent
+ * via ResponderScope). Consumer Cancel/Save buttons inside a sheet
+ * dispatch `cancelDialog` directly through the chain to close the
+ * sheet, matching the pattern established by TugConfirmPopover and
+ * TugAlert. [L11]
+ *
+ * Rendered outside a `ResponderChainProvider`, `useOptionalResponder`
+ * no-ops and Escape/Cmd+. fall back to calling the context's
+ * onOpenChange directly. Consumer buttons must provide their own
+ * close path (e.g., via the imperative ref) in that case.
+ *
+ * ## No observeDispatch subscription — card-modal semantics
+ *
+ * Like TugAlert, TugSheet is modal (card-scoped via `inert` on the
+ * card body). External chain activity — including activity in other
+ * cards on the same canvas — should not auto-dismiss a sheet the user
+ * has opened. The sheet stays open until the user explicitly closes
+ * it via a Cancel button, Save button, Escape, or Cmd+.
+ *
+ * Laws: [L06] appearance via CSS,
+ *       [L11] controls emit actions; responders handle actions,
+ *       [L16] pairings declared,
+ *       [L19] component authoring guide,
  *       [L20] token sovereignty (composes child controls)
  */
 
@@ -33,6 +67,8 @@ import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
 import { TugcardPortalContext } from "./tug-card";
 import { group } from "@/components/tugways/tug-animator";
+import { useResponderChain } from "./responder-chain-provider";
+import { useOptionalResponder } from "./use-responder";
 
 /* ---------------------------------------------------------------------------
  * Internal context
@@ -73,12 +109,13 @@ export interface TugSheetHandle {
 /** TugSheet root props. */
 export interface TugSheetProps {
   /**
-   * Controlled open state.
-   * @selector [data-state="open"] | [data-state="closed"]
+   * Seed the initial open state. Primarily an internal affordance for
+   * the `useTugSheet()` hook, which mounts a sheet in an already-open
+   * state instead of synthesizing an immediate trigger click. Defaults
+   * to false; most consumers never set this and open the sheet via
+   * `TugSheetTrigger` or the imperative ref handle.
    */
-  open?: boolean;
-  /** Open state callback. */
-  onOpenChange?: (open: boolean) => void;
+  defaultOpen?: boolean;
   /** Trigger + Content children. */
   children: React.ReactNode;
 }
@@ -95,21 +132,13 @@ export interface TugSheetProps {
  * ```
  */
 export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
-  function TugSheet({ open: openProp, onOpenChange, children }, ref) {
-    const [internalOpen, setInternalOpen] = useState(false);
+  function TugSheet({ defaultOpen = false, children }, ref) {
+    const [open, setOpen] = useState(defaultOpen);
     const contentId = useId();
 
-    const isOpen = openProp !== undefined ? openProp : internalOpen;
-
-    const handleOpenChange = useCallback(
-      (next: boolean) => {
-        if (openProp === undefined) {
-          setInternalOpen(next);
-        }
-        onOpenChange?.(next);
-      },
-      [openProp, onOpenChange],
-    );
+    const handleOpenChange = useCallback((next: boolean) => {
+      setOpen(next);
+    }, []);
 
     useImperativeHandle(ref, () => ({
       open() {
@@ -121,7 +150,7 @@ export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
     }));
 
     return (
-      <TugSheetContext value={{ open: isOpen, onOpenChange: handleOpenChange, contentId }}>
+      <TugSheetContext value={{ open, onOpenChange: handleOpenChange, contentId }}>
         {children}
       </TugSheetContext>
     );
@@ -203,6 +232,12 @@ export interface TugSheetContentProps {
    * Override initial focus target. Call event.preventDefault() to manage manually.
    */
   onOpenAutoFocus?: (event: Event) => void;
+  /**
+   * Stable opaque sender id for chain dispatches. Auto-derived via
+   * `useId()` if omitted. Parent responders disambiguate multi-sheet
+   * pages when observing dispatches by sender. [L11]
+   */
+  senderId?: string;
   /** Arbitrary content. */
   children?: React.ReactNode;
 }
@@ -218,6 +253,7 @@ export function TugSheetContent({
   title,
   description,
   onOpenAutoFocus,
+  senderId: senderIdProp,
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId } = useTugSheetContext();
@@ -225,6 +261,49 @@ export function TugSheetContent({
 
   const titleId = `${contentId}-title`;
   const descriptionId = `${contentId}-desc`;
+
+  // Chain manager — null when rendered outside a ResponderChainProvider.
+  // Escape / Cmd+. fall back to calling onOpenChange directly in that
+  // case; otherwise they dispatch cancelDialog through the chain and
+  // the walk lands back on our own registered handler.
+  const manager = useResponderChain();
+
+  const fallbackResponderId = useId();
+  const fallbackSenderId = useId();
+  const responderId = fallbackResponderId;
+  const senderId = senderIdProp ?? fallbackSenderId;
+
+  // Stable primary close action. Kept here and referenced by both the
+  // cancelDialog chain handler and the no-provider keydown fallback so
+  // a single function owns the "close the sheet" semantics.
+  const closeSheet = useCallback(() => {
+    onOpenChange(false);
+  }, [onOpenChange]);
+
+  // Register the sheet content as a chain responder. The cancelDialog
+  // handler closes the sheet; there is no confirmDialog handler (a
+  // sheet's "confirm" is the consumer's responsibility — their save
+  // logic runs first, then they dispatch cancelDialog to close).
+  // Tolerant of no-provider contexts.
+  const { ResponderScope, responderRef } = useOptionalResponder({
+    id: responderId,
+    actions: {
+      cancelDialog: closeSheet,
+    },
+  });
+
+  // Composed ref callback for the sheet content div. Writes to the
+  // internal sheetContentRef (used by the enter/exit animation
+  // effects) AND hands the element to responderRef which writes
+  // data-responder-id. useCallback-stabilized so React doesn't
+  // toggle data-responder-id off and on every render.
+  const composedContentRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      sheetContentRef.current = el;
+      responderRef(el);
+    },
+    [responderRef],
+  );
 
   // Presence: keep the portal mounted during the exit animation.
   // `mounted` becomes true when open goes true, and false only after the exit animation completes.
@@ -313,8 +392,62 @@ export function TugSheetContent({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape" || (e.metaKey && e.key === ".")) {
       e.preventDefault();
-      onOpenChange(false);
+      // Route through the chain so the sheet's own cancelDialog
+      // handler closes it. The walk starts from the focused element
+      // (whatever has focus inside the sheet — an input, a button)
+      // and walks up via parentId to this sheet's responder node
+      // (the sheet wraps its children in ResponderScope so the
+      // parent chain is correctly set). Fallback: no provider → call
+      // closeSheet directly.
+      if (manager) {
+        manager.dispatch({
+          action: "cancelDialog",
+          sender: senderId,
+          phase: "discrete",
+        });
+      } else {
+        closeSheet();
+      }
     }
+  }
+
+  // Suppress Safari/macOS's default focus shift on mousedown for
+  // any non-text-input target inside the sheet.
+  //
+  // Why: macOS WebKit does not move focus to a <button> on click
+  // (only keyboard Tab focuses buttons). When the user clicks a
+  // button inside the sheet while a text input has focus, Safari
+  // walks up from the button looking for the nearest focusable
+  // ancestor — which lands on FocusScope's `Primitive.div`
+  // (tabIndex=-1), the element that WRAPS our `.tug-sheet-content`.
+  // That element is OUTSIDE `.tug-sheet-content` in the DOM tree,
+  // so the chain's findResponderForTarget walk goes up past it to
+  // the card, promoting the wrong responder. A cancelDialog
+  // dispatched from the button's onClick then finds no handler and
+  // the sheet stays open — the first click appears to do nothing
+  // except clear the input selection.
+  //
+  // Fix: preventDefault mousedown on any target that is not a text
+  // input. This suppresses the focus shift entirely — focus stays
+  // on whatever was focused before (usually a sheet input), the
+  // click event still fires (click doesn't depend on focus), and
+  // the pointerdown-promotion from the earlier capture listener
+  // has already set first responder to the sheet, so the
+  // cancelDialog dispatch lands on the sheet's handler and closes
+  // it normally. Text inputs (input, textarea, contenteditable)
+  // are excluded so clicks inside them still move focus and
+  // position the caret.
+  function handleContentMouseDown(e: React.MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (
+      target.closest(
+        'input, textarea, [contenteditable="true"], [contenteditable=""]',
+      )
+    ) {
+      return;
+    }
+    e.preventDefault();
   }
 
   function handleMountAutoFocus(e: Event) {
@@ -358,7 +491,7 @@ export function TugSheetContent({
           onUnmountAutoFocus={handleUnmountAutoFocus}
         >
           <div
-            ref={sheetContentRef}
+            ref={composedContentRef}
             id={contentId}
             className="tug-sheet-content"
             role="dialog"
@@ -366,7 +499,9 @@ export function TugSheetContent({
             aria-describedby={description ? descriptionId : undefined}
             data-slot="tug-sheet"
             onKeyDown={handleKeyDown}
+            onMouseDown={handleContentMouseDown}
           >
+          <ResponderScope>
           {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape */}
           <div className="tug-sheet-header">
             <h2 id={titleId} className="tug-sheet-title">{title}</h2>
@@ -379,6 +514,7 @@ export function TugSheetContent({
 
           {/* Sheet body: arbitrary content */}
           <div className="tug-sheet-body">{children}</div>
+          </ResponderScope>
         </div>
         </FocusScopeRadix.FocusScope>
       </div>
@@ -411,6 +547,13 @@ export interface ShowSheetOptions {
 interface UseTugSheetState {
   options: ShowSheetOptions;
   resolve: (result: string | undefined) => void;
+  /**
+   * Monotonic id incremented per `showSheet()` call. Used as the
+   * React `key` on the rendered <TugSheet> so each new call mounts a
+   * fresh component instance, letting `defaultOpen` re-fire and the
+   * enter animation replay cleanly.
+   */
+  callId: number;
 }
 
 /**
@@ -461,39 +604,111 @@ export function useTugSheet(): {
     console.warn("[useTugSheet] called outside a Tugcard — TugcardPortalContext is null. Sheet will not render.");
   }
 
+  // State tracks the current active sheet's options plus a monotonically
+  // increasing callId. The callId is used as the React `key` on the
+  // rendered <TugSheet> so each `showSheet()` call mounts a fresh
+  // component instance: defaultOpen fires on the new mount, the enter
+  // animation plays, and the previous sheet's React subtree is cleanly
+  // replaced (rather than re-used, which would skip defaultOpen and
+  // prevent a mid-animation interrupt from re-opening cleanly).
   const [state, setState] = useState<UseTugSheetState | null>(null);
+  const callIdRef = useRef(0);
   const resolverRef = useRef<((result: string | undefined) => void) | null>(null);
+  const manager = useResponderChain();
+
+  // Stable senderId scoped to this hook call. Passed down to the
+  // TugSheetContent rendered by `renderSheet`, and used as the filter
+  // key for the observeDispatch subscription below so the hook only
+  // reacts to its own sheet's chain-driven dismissals.
+  const senderId = useId();
+
+  // Resolve the pending promise without touching the hook's local
+  // state. Used by both the explicit `close(result)` callback and the
+  // observeDispatch subscription for Escape / Cmd+. dismissal. We
+  // deliberately do NOT clear `state` here — that would unmount the
+  // <TugSheet> immediately and interrupt its exit animation. The old
+  // sheet stays mounted in the React tree, internally animating out;
+  // on the next `showSheet()` call, a new callId forces a remount via
+  // `key` and the stale sheet is replaced.
+  const resolveHook = useCallback((result: string | undefined) => {
+    resolverRef.current?.(result);
+    resolverRef.current = null;
+  }, []);
+
+  // While a hook-rendered sheet is mounted, observe the chain for a
+  // cancelDialog dispatch carrying this hook's senderId. This catches
+  // the Escape / Cmd+. path: the sheet's own handler fires first and
+  // closes internal state (triggering the exit animation), then this
+  // observer runs and resolves the pending promise with undefined.
+  //
+  // Explicit consumer-driven closes via the `close(result)` callback
+  // null `resolverRef` BEFORE dispatching cancelDialog, so the observer
+  // sees `null` and skips its resolve path — the explicit close's
+  // `resolveHook(result)` has already happened.
+  useLayoutEffect(() => {
+    if (!state || !manager) return;
+    return manager.observeDispatch((event) => {
+      if (event.action !== "cancelDialog") return;
+      if (event.sender !== senderId) return;
+      if (resolverRef.current === null) return;
+      resolveHook(undefined);
+    });
+  }, [state, manager, senderId, resolveHook]);
 
   const showSheet = useCallback((options: ShowSheetOptions): Promise<string | undefined> => {
     return new Promise<string | undefined>((resolve) => {
       resolverRef.current = resolve;
-      setState({ options, resolve });
+      callIdRef.current += 1;
+      setState({ options, resolve, callId: callIdRef.current });
     });
   }, []);
 
   const renderSheet = useCallback((): React.ReactNode => {
     if (!state) return null;
 
-    const { options } = state;
+    const { options, callId } = state;
 
+    // close(result) — the callback handed to consumer content. Resolve
+    // the pending promise immediately (so `await showSheet(...)` yields
+    // the result the user just picked), then dispatch cancelDialog
+    // through the chain. The sheet's own cancelDialog handler catches
+    // it and flips internal open state false, triggering the exit
+    // animation. Nulling resolverRef before the dispatch is load-
+    // bearing: the observeDispatch subscription above is guarded on
+    // resolverRef being non-null, so it will no-op for this dispatch
+    // and not try to resolve the promise a second time.
+    //
+    // No-provider fallback: without a chain manager the dispatch path
+    // is unavailable, so we fall back to the pre-migration behavior
+    // of clearing hook state synchronously. This unmounts the sheet
+    // without an exit animation — acceptable for tests and isolated
+    // previews that don't mount a ResponderChainProvider.
     const close = (result?: string) => {
-      resolverRef.current?.(result);
-      resolverRef.current = null;
-      setState(null);
+      resolveHook(result);
+      if (manager) {
+        manager.dispatch({
+          action: "cancelDialog",
+          sender: senderId,
+          phase: "discrete",
+        });
+      } else {
+        setState(null);
+      }
     };
 
     return (
-      <TugSheet open={true} onOpenChange={(open) => { if (!open) close(); }}>
+      <TugSheet key={callId} defaultOpen>
         <TugSheetContent
           title={options.title}
           description={options.description}
           onOpenAutoFocus={options.onOpenAutoFocus}
+          senderId={senderId}
         >
           {options.content(close)}
         </TugSheetContent>
       </TugSheet>
     );
-  }, [state]);
+  }, [state, senderId, resolveHook, manager]);
 
   return { showSheet, renderSheet };
 }

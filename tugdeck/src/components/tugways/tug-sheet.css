@@ -79,6 +79,16 @@ body {
   overflow-y: auto;
   /* Box model */
   box-sizing: border-box;
+  /* Opt back in to text selection — body has user-select: none as a
+     baseline, and the sheet is portaled outside .tugcard-content so it
+     does not inherit the content area's user-select: text. Without this
+     opt-in, WebKit will treat the first click on a button inside the
+     sheet (while a text input inside the sheet has an active
+     selection) as a selection-clear action instead of a button click,
+     forcing the user to click twice. See tug-input.css for the same
+     pattern on text inputs. */
+  user-select: text;
+  -webkit-user-select: text;
   /* Base state: off-screen above clip. TugAnimator's fill:forwards holds the final position. */
   transform: translateY(-100%);
 }
