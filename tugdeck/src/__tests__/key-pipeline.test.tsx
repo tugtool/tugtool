@@ -437,4 +437,90 @@ describe("matchKeybinding", () => {
     const event = makeEvent("Space");
     expect(matchKeybinding(event)).toBeNull();
   });
+
+  // ---- Phase A3 / R4: macOS standard shortcut set ----
+  //
+  // Each case below asserts that the binding resolves to the correct
+  // typed action. The action handlers themselves are tested in the
+  // component files (tug-card for close / previousTab / nextTab /
+  // find, deck-canvas for addTabToActiveCard / showSettings,
+  // tug-prompt-input + use-text-input-responder for undo / redo,
+  // the four floating surfaces for cancelDialog). This block is
+  // narrowly scoped to the map lookup so a misspelled modifier or
+  // key code fails loudly at the keybinding level.
+
+  it("Cmd+Z (KeyZ, meta) → undo with preventDefaultOnMatch", () => {
+    const binding = matchKeybinding(makeEvent("KeyZ", { metaKey: true }));
+    expect(binding?.action).toBe("undo");
+    expect(binding?.preventDefaultOnMatch).toBe(true);
+  });
+
+  it("Shift+Cmd+Z (KeyZ, meta+shift) → redo with preventDefaultOnMatch", () => {
+    const binding = matchKeybinding(
+      makeEvent("KeyZ", { metaKey: true, shiftKey: true }),
+    );
+    expect(binding?.action).toBe("redo");
+    expect(binding?.preventDefaultOnMatch).toBe(true);
+  });
+
+  it("Cmd+Z must not match redo (shift discriminator)", () => {
+    // Regression guard: undo and redo share the same key code, and
+    // the only discriminator is shift. If matchKeybinding loses its
+    // strict modifier equality we get a silent shortcut collision.
+    const binding = matchKeybinding(makeEvent("KeyZ", { metaKey: true }));
+    expect(binding?.action).not.toBe("redo");
+  });
+
+  it("Cmd+W → close", () => {
+    expect(matchKeybinding(makeEvent("KeyW", { metaKey: true }))?.action).toBe(
+      "close",
+    );
+  });
+
+  it("Cmd+T → addTabToActiveCard", () => {
+    expect(matchKeybinding(makeEvent("KeyT", { metaKey: true }))?.action).toBe(
+      "addTabToActiveCard",
+    );
+  });
+
+  it("Cmd+, → showSettings", () => {
+    expect(matchKeybinding(makeEvent("Comma", { metaKey: true }))?.action).toBe(
+      "showSettings",
+    );
+  });
+
+  it("Cmd+. → cancelDialog", () => {
+    expect(matchKeybinding(makeEvent("Period", { metaKey: true }))?.action).toBe(
+      "cancelDialog",
+    );
+  });
+
+  it("Cmd+F → find", () => {
+    expect(matchKeybinding(makeEvent("KeyF", { metaKey: true }))?.action).toBe(
+      "find",
+    );
+  });
+
+  it("Shift+Cmd+[ → previousTab", () => {
+    const binding = matchKeybinding(
+      makeEvent("BracketLeft", { metaKey: true, shiftKey: true }),
+    );
+    expect(binding?.action).toBe("previousTab");
+  });
+
+  it("Shift+Cmd+] → nextTab", () => {
+    const binding = matchKeybinding(
+      makeEvent("BracketRight", { metaKey: true, shiftKey: true }),
+    );
+    expect(binding?.action).toBe("nextTab");
+  });
+
+  it("Cmd+[ without shift does not match previousTab", () => {
+    // Tab-nav shortcuts require the shift modifier; plain ⌘[ is a
+    // browser back binding we do not want to reinterpret.
+    const binding = matchKeybinding(
+      makeEvent("BracketLeft", { metaKey: true }),
+    );
+    expect(binding).toBeNull();
+  });
 });
