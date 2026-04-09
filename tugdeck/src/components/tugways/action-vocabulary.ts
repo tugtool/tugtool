@@ -259,46 +259,81 @@ export type TugAction<Extra extends string = never> =
   | MetaAction
   | Extra;
 
-// ---- narrowValue ----
-
-/**
- * Narrow an `ActionEvent.value` to a known type via a user-provided
- * type-guard. Returns the narrowed value on success, `null` on failure.
- *
- * The responder chain's action names are typed via `TugAction`, but
- * payloads on `ActionEvent.value` are `unknown` by design (see Part 4
- * decision 1 in the audit: "middle ground" granularity — one action
- * per semantic, rich payloads documented per-action in this file
- * rather than baked into the type system). Handlers that read
- * `event.value` should reach for this utility instead of a bare cast,
- * so a wrong-shape dispatch fails gracefully instead of silently.
- *
- * Convention: every handler that depends on a specific payload shape
- * calls `narrowValue` with a matching type guard and early-returns on
- * `null`. The payload shape is documented on the action's definition
- * above (e.g. `setValue` → `value: number` for sliders, `value: string`
- * for inputs). Handlers pick the guard that matches their use case.
- *
- * Example:
- *
- * ```ts
- * const handleSetValue: ActionHandler = (event) => {
- *   const n = narrowValue(event, (v): v is number => typeof v === "number");
- *   if (n === null) return; // wrong shape — silently ignore
- *   // use n safely as a number
- * };
- * ```
- *
- * This is a convention, not compile-time enforcement. The compiler
- * can't catch a handler that casts `event.value as number` directly
- * — it can only catch that by migrating to per-action discriminated
- * unions, which the audit decision deferred. Code reviews and the
- * documented convention are the enforcement mechanism for now.
- */
-export function narrowValue<T>(
-  event: { value?: unknown },
-  guard: (value: unknown) => value is T,
-): T | null {
-  if (guard(event.value)) return event.value;
-  return null;
-}
+// ---- Payload narrowing — how handlers read `event.value` safely ----
+//
+// `ActionEvent.value` is typed as `unknown` by design (see the file
+// header for the "middle ground" rationale: one action per semantic,
+// rich payloads documented per-action above rather than baked into
+// the type system). Handlers that read `event.value` need a
+// narrowing step before using it. Two patterns are in use across
+// the codebase; each fits a different shape of handler.
+//
+// ### Pattern 1 — form-slot narrowing via `useResponderForm`
+//
+// This is the dominant pattern. Components built on top of
+// `useResponderForm` (every A2.1–A2.7 control: checkbox, switch,
+// radio, choice, tab bar, accordion, popup button, slider,
+// value-input, text input, textarea) register their handlers
+// through typed slots:
+//
+// ```ts
+// useResponderForm({
+//   toggle: { [senderId]: (v: boolean) => setChecked(v) },
+//   setValueNumber: { [senderId]: (v: number, phase) => setValue(v) },
+//   selectValue: { [selectGroupId]: (v: string) => setSelected(v) },
+// });
+// ```
+//
+// The hook narrows at the slot boundary (`typeof event.value !==
+// "boolean"` / `"string"` / `"number"`, `Array.isArray` for
+// string[] slots) and invokes the typed setter only on a match. The
+// *setter's type signature is the enforcement mechanism*: consumers
+// literally cannot write `(v: unknown) => …`, because the slot's
+// declared type forces them to annotate the value parameter with
+// the narrowed type. One narrowing point per slot, one typed
+// contract at each call site. Consumers never touch `event.value`
+// themselves.
+//
+// This is structurally safer than any ad-hoc narrowing utility and
+// should be the default path for any form-style control.
+//
+// ### Pattern 2 — inline `typeof` gates for direct-dispatch responders
+//
+// A handful of non-form responders handle actions outside the
+// `useResponderForm` abstraction: cards dispatching `setProperty` /
+// `addTab`, the editor text-input suite dispatching clipboard
+// actions, gallery demos dispatching their preview actions. These
+// handlers read `event.value` directly and must guard it inline
+// before use:
+//
+// ```ts
+// addTab: (event: ActionEvent) => {
+//   if (typeof event.value !== "string") return;
+//   store.addTab(cardId, event.value);
+// },
+//
+// setProperty: (event: ActionEvent) => {
+//   const payload = event.value as
+//     | { path: string; value: unknown; source?: string }
+//     | undefined;
+//   if (!payload || typeof payload.path !== "string") return;
+//   store.set(payload.path, payload.value, payload.source ?? "inspector");
+// },
+// ```
+//
+// Inline `typeof` for primitives; cast-plus-field-check for
+// structured payloads whose shape can't be expressed in `typeof`.
+// Both patterns early-return on mismatch so a wrong-shape dispatch
+// is a silent no-op rather than a runtime crash.
+//
+// ### Why no `narrowValue` helper
+//
+// A Phase A1 proposal added a `narrowValue<T>(event, guard)`
+// utility intended to standardize Pattern 2. It was never adopted:
+// by the time A2.4 shipped, `useResponderForm` had absorbed
+// narrowing into its slot contracts (Pattern 1), and the few
+// remaining direct-dispatch handlers found inline `typeof` to be
+// shorter than writing a type guard for `narrowValue` to consume.
+// The utility was removed in A6 as dead code with zero call sites.
+// If per-action payload discriminated unions ever become
+// worthwhile, that's the successor — not a handler-level helper.
